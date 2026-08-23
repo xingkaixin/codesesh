@@ -1,17 +1,5 @@
 import type { CSSProperties } from "react";
-import type { SmartTag } from "../lib/api";
-
-export const SMART_TAG_LABELS: Record<SmartTag, string> = {
-  bugfix: "bugfix",
-  refactoring: "refactoring",
-  "feature-dev": "feature-dev",
-  testing: "testing",
-  docs: "docs",
-  "git-ops": "git-ops",
-  "build-deploy": "build-deploy",
-  exploration: "exploration",
-  planning: "planning",
-};
+import { SMART_TAGS, type SmartTag } from "../lib/api";
 
 // SmartTag values double as the --tag-{tone}-* CSS variable names in
 // index.css, which owns the actual color values.
@@ -19,7 +7,7 @@ export const SMART_TAG_TONES: Record<
   SmartTag,
   { text: string; border: string; background: string; bar: string }
 > = Object.fromEntries(
-  (Object.keys(SMART_TAG_LABELS) as SmartTag[]).map((tag) => [
+  SMART_TAGS.map((tag) => [
     tag,
     {
       text: `var(--tag-${tag}-text)`,
@@ -65,7 +53,7 @@ export function SmartTagChips({
           className="console-mono rounded-sm border px-1.5 py-0.5 text-[10px] font-medium"
           style={getSmartTagChipStyle(tag)}
         >
-          {SMART_TAG_LABELS[tag]}
+          {tag}
         </span>
       ))}
       {remaining > 0 ? (

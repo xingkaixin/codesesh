@@ -1,6 +1,8 @@
 export type * from "./session.js";
 export {
   assertIdentifiedSessionHead,
+  isSmartTag,
+  SMART_TAGS,
   toPublicReferencedSessionHead,
   toPublicSessionHead,
 } from "./session.js";

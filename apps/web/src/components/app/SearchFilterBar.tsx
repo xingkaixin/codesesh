@@ -1,21 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { AgentInfo, FileActivityKind, SmartTag } from "../../lib/api";
+import { SMART_TAGS, type AgentInfo, type FileActivityKind } from "../../lib/api";
 import { getProjectIdentityKey } from "../../lib/projects";
-import { SMART_TAG_LABELS } from "../SmartTagChips";
 import { FilterChip } from "./FilterChip";
 import type { CostRangeId, SearchFilterState, SearchProjectOption } from "./types";
-
-export const SMART_TAG_OPTIONS: SmartTag[] = [
-  "bugfix",
-  "refactoring",
-  "feature-dev",
-  "testing",
-  "docs",
-  "git-ops",
-  "build-deploy",
-  "exploration",
-  "planning",
-];
 
 export const SEARCH_TOOL_OPTIONS = ["apply_patch", "bash", "read", "edit", "grep"] as const;
 
@@ -104,11 +91,11 @@ export function SearchFilterBar({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">Tag</span>
-        {SMART_TAG_OPTIONS.map((tag) => (
+        {SMART_TAGS.map((tag) => (
           <FilterChip
             key={tag}
             active={filters.tag === tag}
-            label={SMART_TAG_LABELS[tag]}
+            label={tag}
             onClick={() => setFilter("tag", tag)}
           />
         ))}

@@ -47,6 +47,8 @@ export type {
   BookmarkView,
 } from "@codesesh/core/contract";
 
+export { SMART_TAGS } from "@codesesh/core/contract";
+
 import { sessionRoutePath } from "@codesesh/core/contract";
 import type {
   AgentInfo,

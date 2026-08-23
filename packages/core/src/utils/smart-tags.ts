@@ -1,18 +1,7 @@
 import type { MessagePart, SessionDetail, SmartTag, ToolPart } from "../types/index.js";
+import { SMART_TAGS } from "../contract/index.js";
 
 export const SMART_TAG_CLASSIFIER_REVISION = "smart-tags-v1";
-
-const TAG_ORDER: SmartTag[] = [
-  "bugfix",
-  "refactoring",
-  "feature-dev",
-  "testing",
-  "docs",
-  "git-ops",
-  "build-deploy",
-  "exploration",
-  "planning",
-];
 
 const USER_RULES: Array<[SmartTag, RegExp]> = [
   ["bugfix", /\b(fix|bug|error|crash|exception|fail(?:ed|ure)?)\b|修复|错误|报错|崩溃|异常/i],
@@ -73,7 +62,7 @@ export function classifySessionTags(session: Pick<SessionDetail, "messages">): S
     tags.add("exploration");
   }
 
-  return TAG_ORDER.filter((tag) => tags.has(tag));
+  return SMART_TAGS.filter((tag) => tags.has(tag));
 }
 
 function partText(part: MessagePart): string {

@@ -8,6 +8,7 @@ import type { SessionHead, SmartTag } from "@codesesh/core/runtime";
 import {
   filterSessionTreeByActivityWindow,
   isProjectIdentityKind,
+  isSmartTag,
   type FileActivityKind,
   type ProjectIdentityRef,
   type SearchRequestOptions,
@@ -15,18 +16,6 @@ import {
 import type { TimeWindow } from "../time-window-resolution.js";
 
 export type SessionListDefaults = TimeWindow;
-
-const SMART_TAGS: readonly string[] = [
-  "bugfix",
-  "refactoring",
-  "feature-dev",
-  "testing",
-  "docs",
-  "git-ops",
-  "build-deploy",
-  "exploration",
-  "planning",
-];
 
 export interface LimitPolicy {
   defaultValue: number;
@@ -178,9 +167,7 @@ export function parseSessionQuery(
 }
 
 export function parseSmartTags(values: string[]): SmartTag[] | undefined {
-  const tags = values
-    .map((value) => value.toLowerCase())
-    .filter((value): value is SmartTag => SMART_TAGS.includes(value));
+  const tags = values.map((value) => value.toLowerCase()).filter(isSmartTag);
   return tags.length > 0 ? [...new Set(tags)] : undefined;
 }
 

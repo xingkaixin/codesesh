@@ -14,16 +14,23 @@ export interface SessionStats {
 
 export type CostSource = "recorded" | "estimated";
 
-export type SmartTag =
-  | "bugfix"
-  | "refactoring"
-  | "feature-dev"
-  | "testing"
-  | "docs"
-  | "git-ops"
-  | "build-deploy"
-  | "exploration"
-  | "planning";
+export const SMART_TAGS = [
+  "bugfix",
+  "refactoring",
+  "feature-dev",
+  "testing",
+  "docs",
+  "git-ops",
+  "build-deploy",
+  "exploration",
+  "planning",
+] as const;
+
+export type SmartTag = (typeof SMART_TAGS)[number];
+
+export function isSmartTag(value: string): value is SmartTag {
+  return SMART_TAGS.some((tag) => tag === value);
+}
 
 export type FileActivityKind = "read" | "edit" | "write" | "delete";
 

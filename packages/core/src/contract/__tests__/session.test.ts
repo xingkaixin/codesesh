@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { IdentifiedSessionHead } from "../session.js";
-import { toPublicReferencedSessionHead, toPublicSessionHead } from "../session.js";
+import {
+  isSmartTag,
+  SMART_TAGS,
+  toPublicReferencedSessionHead,
+  toPublicSessionHead,
+} from "../session.js";
 
 const session: IdentifiedSessionHead = {
   reference: { agentName: "codex", sessionId: "session" },
@@ -50,5 +55,13 @@ describe("public session heads", () => {
       session: toPublicSessionHead(session),
       snippet: "match",
     });
+  });
+});
+
+describe("smart tags", () => {
+  it("derives runtime validation and ordering from the public catalog", () => {
+    expect(SMART_TAGS.every(isSmartTag)).toBe(true);
+    expect(isSmartTag("BUGFIX")).toBe(false);
+    expect(isSmartTag("unknown")).toBe(false);
   });
 });

@@ -83,7 +83,7 @@ export {
 } from "../discovery/index.js";
 export type { CacheReadOutcome } from "../discovery/index.js";
 export { PRICING_CAPTURE_EPOCH } from "../pricing/index.js";
-export { filterSessionTreeByActivityWindow } from "../contract/index.js";
+export { filterSessionTreeByActivityWindow, isSmartTag, SMART_TAGS } from "../contract/index.js";
 export type {
   AgentScanIntent,
   AgentScanPlan,
