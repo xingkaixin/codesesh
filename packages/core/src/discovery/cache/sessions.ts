@@ -50,8 +50,6 @@ const SESSION_ROW_DELETE_ORDER = [
   "session_model_cost",
   "session_cost_summary",
   "session_file_activity",
-  "cached_sessions",
-  "project_sessions",
   "sessions",
 ] as const;
 const SESSION_HEAD_SELECT_COLUMNS = `
@@ -759,7 +757,6 @@ export function clearCache(): void {
       db.exec(`
         DELETE FROM agent_cache;
         DELETE FROM cache_initialization;
-        DELETE FROM cached_sessions;
         DELETE FROM pending_reindex;
         DELETE FROM session_documents;
         DELETE FROM session_file_activity;
@@ -768,7 +765,6 @@ export function clearCache(): void {
         DELETE FROM session_model_cost;
         DELETE FROM session_cost_summary;
         DELETE FROM sessions;
-        DELETE FROM project_sessions;
         -- analytics_revision is an invalidation counter, not cached data.
         DELETE FROM cache_meta WHERE key <> 'analytics_revision';
       `);

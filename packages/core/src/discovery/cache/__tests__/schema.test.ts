@@ -88,6 +88,8 @@ describe("cache schema boundary", () => {
     }
     expect(state?.names.has("messages_fts")).toBe(false);
     expect(state?.names.has("search_index_publication_entries")).toBe(false);
+    expect(state?.names.has("cached_sessions")).toBe(false);
+    expect(state?.names.has("project_sessions")).toBe(false);
     expect(state?.documentColumns).toEqual([
       "id",
       "agent_name",
@@ -109,7 +111,7 @@ describe("cache schema boundary", () => {
         "publication_id",
       ]),
     );
-    expect(state?.version).toBe(31);
+    expect(state?.version).toBe(CACHE_SCHEMA_VERSION);
   });
 
   it("refuses a newer cache schema without mutating it", () => {
@@ -209,7 +211,7 @@ describe("cache schema boundary", () => {
       ),
     }));
 
-    expect(migrated).toEqual({ objects: [], version: 31 });
+    expect(migrated).toEqual({ objects: [], version: CACHE_SCHEMA_VERSION });
   });
 
   it("adds an empty hash chain column when upgrading schema 24", () => {
@@ -238,7 +240,7 @@ describe("cache schema boundary", () => {
       ).content_chain_digest,
     }));
 
-    expect(migrated).toEqual({ version: 31, digest: null });
+    expect(migrated).toEqual({ version: CACHE_SCHEMA_VERSION, digest: null });
   });
 
   it("backfills session usage summaries when upgrading schema 28", () => {
@@ -326,7 +328,7 @@ describe("cache schema boundary", () => {
     }));
 
     expect(migrated).toEqual({
-      version: 31,
+      version: CACHE_SCHEMA_VERSION,
       summary: {
         message_count: 2,
         untimed_message_count: 1,
@@ -501,7 +503,7 @@ describe("cache schema boundary", () => {
           .get("codex", session.reference.sessionId) != null,
     }));
 
-    expect(migrated).toEqual({ version: 31, detailVersion: "", pending: true });
+    expect(migrated).toEqual({ version: CACHE_SCHEMA_VERSION, detailVersion: "", pending: true });
   });
 
   it("marks legacy project identities stale by leaving added provenance empty", () => {
@@ -540,7 +542,7 @@ describe("cache schema boundary", () => {
     });
 
     expect(migrated).toEqual({
-      version: 31,
+      version: CACHE_SCHEMA_VERSION,
       resolverRevision: null,
       inputSignature: null,
       classifierRevision: null,
@@ -610,7 +612,7 @@ describe("cache schema boundary", () => {
       });
 
       expect(migrated).toEqual({
-        version: 31,
+        version: CACHE_SCHEMA_VERSION,
         partsJson: legacyPartsJson,
         partsFormatVersion: 0,
       });
