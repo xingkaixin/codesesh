@@ -28,24 +28,34 @@ export async function invalidateLiveSessionDerivedQueries(
   queryClient: QueryClient,
   event: SessionsUpdatedEvent,
 ): Promise<void> {
-  const changedDetailKeys = new Map<string, readonly unknown[]>();
+  const changedSessionsByAgent = new Map<string, Set<string>>();
+  const addChangedSession = (agentName: string, sessionId: string) => {
+    const normalizedAgent = agentName.toLowerCase();
+    const sessionIds = changedSessionsByAgent.get(normalizedAgent) ?? new Set<string>();
+    sessionIds.add(sessionId);
+    changedSessionsByAgent.set(normalizedAgent, sessionIds);
+  };
+
   for (const item of event.changedSessionHeads) {
     const { agentName, sessionId } = item.reference;
-    changedDetailKeys.set(
-      `${agentName.toLowerCase()}\0${sessionId}`,
-      queryKeys.sessionDetail(agentName.toLowerCase(), sessionId),
-    );
+    addChangedSession(agentName, sessionId);
   }
   for (const { agentName, sessionId } of event.removedSessionRefs) {
-    changedDetailKeys.set(
-      `${agentName.toLowerCase()}\0${sessionId}`,
-      queryKeys.sessionDetail(agentName.toLowerCase(), sessionId),
-    );
+    addChangedSession(agentName, sessionId);
   }
+  if (changedSessionsByAgent.size === 0) return;
 
-  await Promise.all(
-    Array.from(changedDetailKeys.values(), (queryKey) =>
-      queryClient.invalidateQueries({ queryKey, exact: true }),
-    ),
-  );
+  await queryClient.invalidateQueries({
+    predicate: ({ queryKey }) => {
+      if (
+        queryKey.length !== 3 ||
+        queryKey[0] !== queryKeys.sessionDetails[0] ||
+        typeof queryKey[1] !== "string" ||
+        typeof queryKey[2] !== "string"
+      ) {
+        return false;
+      }
+      return changedSessionsByAgent.get(queryKey[1])?.has(queryKey[2]) ?? false;
+    },
+  });
 }
