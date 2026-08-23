@@ -2,6 +2,37 @@ import { describe, expect, it } from "vitest";
 import { TranscriptBuilder } from "../transcript-builder.js";
 
 describe("TranscriptBuilder", () => {
+  it("retains message structure without transcript content", () => {
+    const builder = new TranscriptBuilder({ contentRetention: "structure" });
+    builder.appendMessage({
+      id: "m1",
+      role: "assistant",
+      timestampMs: 1,
+      parts: [
+        { type: "text", text: "large response" },
+        {
+          type: "tool",
+          tool: "read",
+          callID: "call-1",
+          state: { status: "running", input: { path: "secret.ts" } },
+        },
+      ],
+    });
+    builder.resolveToolCall("call-1", { output: "large output", status: "completed" });
+
+    expect(builder.finish().messages).toEqual([
+      expect.objectContaining({
+        parts: [
+          expect.objectContaining({ type: "text", text: "[content]" }),
+          expect.objectContaining({
+            type: "tool",
+            state: { status: "completed" },
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it("groups streaming assistant parts until a tool closes the text message", () => {
     const builder = new TranscriptBuilder();
     const meta = { id: "assistant", timestampMs: 10, agent: "codex" };

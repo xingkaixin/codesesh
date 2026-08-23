@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KimiCodeAgent } from "../kimi-code.js";
+import { TranscriptBuilder } from "../transcript-builder.js";
 
 const SESSION_ID = "ses_test-kimi-code";
 const WORK_DIR = "/tmp/kimi-code-project";
@@ -65,6 +66,30 @@ afterEach(() => {
 });
 
 describe("KimiCodeAgent", () => {
+  it("does not retain transcript payloads while scanning heads", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
+    tempDirs.push(dataRoot);
+    const payload = "head-scan-payload-that-must-not-be-retained";
+    createSession(dataRoot, [
+      {
+        type: "context.append_message",
+        message: { role: "user", content: payload },
+      },
+    ]);
+    const finish = vi.spyOn(TranscriptBuilder.prototype, "finish");
+
+    const agent = createAgent(dataRoot);
+    expect(agent.scan()[0]?.stats.message_count).toBe(1);
+    const headTranscript = finish.mock.results[0]?.value;
+    expect(JSON.stringify(headTranscript)).not.toContain(payload);
+    expect(JSON.stringify(headTranscript)).toContain("[content]");
+    finish.mockRestore();
+
+    expect(agent.getSessionData(SESSION_ID).messages[0]?.parts).toEqual([
+      expect.objectContaining({ type: "text", text: payload }),
+    ]);
+  });
+
   it("surfaces state read failures instead of treating them as malformed sessions", () => {
     const dataRoot = mkdtempSync(join(tmpdir(), "codesesh-kimi-code-test-"));
     tempDirs.push(dataRoot);
