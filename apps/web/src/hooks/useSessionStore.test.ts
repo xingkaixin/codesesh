@@ -66,6 +66,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
@@ -287,7 +288,7 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
-  it("reuses aggregate data across consecutive live event batches", async () => {
+  it("coalesces aggregate refreshes and guarantees a trailing refresh", async () => {
     let now = Date.now();
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { result } = await renderStore();
@@ -296,20 +297,27 @@ describe("useSessionStore", () => {
     vi.mocked(api.fetchProjects).mockClear();
     vi.mocked(api.fetchDashboard).mockClear();
 
-    for (let batch = 0; batch < 3; batch += 1) {
-      now += 500;
-      await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
-    }
-
+    now += 500;
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
     await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledOnce());
-    expect(api.fetchProjects).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledOnce());
     await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledOnce());
 
-    now += 1_001;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    now += 500;
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+    now += 500;
     await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
+    expect(api.fetchAgents).toHaveBeenCalledOnce();
+    expect(api.fetchProjects).toHaveBeenCalledOnce();
+    expect(api.fetchDashboard).toHaveBeenCalledOnce();
+
+    await act(() => vi.advanceTimersByTimeAsync(1_500));
+    vi.useRealTimers();
+
     await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledOnce());
+    await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledTimes(2));
   });
 
