@@ -1,5 +1,5 @@
 import { consola } from "consola";
-import type { BaseAgent } from "@codesesh/core/runtime";
+import type { BaseAgent } from "@codesesh/core/runtime/agents";
 import { VERSION } from "./version.js";
 
 export function printScanResults(agents: BaseAgent[]): void {

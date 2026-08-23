@@ -2,11 +2,11 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   closeCacheStorage,
-  createRegisteredAgents,
   scanSessions,
   type LiveSnapshot,
   type ScanOptions,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { createRegisteredAgents } from "@codesesh/core/runtime/agents";
 import type {
   AgentScanStatus,
   BackfillStatus,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileSystemSessionSource } from "@codesesh/core/runtime";
+import { FileSystemSessionSource } from "@codesesh/core/runtime/agents";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import {
   BackfillLifecycle,
@@ -19,8 +19,8 @@ const core = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@codesesh/core/runtime")>()),
+vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
   readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
 }));
 

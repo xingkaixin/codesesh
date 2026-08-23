@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  attachMissingProjectIdentities,
-  FileSystemSessionSource,
-  SMART_TAG_CLASSIFIER_REVISION,
-} from "@codesesh/core/runtime";
+import { attachMissingProjectIdentities } from "@codesesh/core/runtime/discovery";
+import { FileSystemSessionSource } from "@codesesh/core/runtime/agents";
+import { SMART_TAG_CLASSIFIER_REVISION } from "@codesesh/core/runtime/diagnostics";
 import type {
   AggregateSessionSourceCapability,
   BaseAgent,
+  SessionCacheMeta,
+  SessionSourceFailure,
+} from "@codesesh/core/runtime/agents";
+import type {
   CachedResult,
   IdentifiedSessionHead,
   LiveSnapshot,
   PendingSearchIndexMaintenance,
-  SessionCacheMeta,
   SessionHead,
-  SessionSourceFailure,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
 import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { StagedWorkerRun, WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
@@ -72,8 +72,8 @@ const searchIndex = vi.hoisted(() => ({
   snapshot: vi.fn(() => ({ activeBatchId: undefined, pendingBatches: 0 })),
 }));
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@codesesh/core/runtime")>();
+vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
   // Spy that still delegates to the real implementation, so diff behavior is unchanged.
   core.sessionSignature.mockImplementation(original.sessionSignature);
   return {
@@ -89,9 +89,13 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     sessionSignature: core.sessionSignature,
-    SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
   };
 });
+
+vi.mock("@codesesh/core/runtime/diagnostics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/diagnostics")>()),
+  SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
+}));
 
 vi.mock("./search-index-job-runner.js", () => ({
   SearchIndexJobRunner: class {

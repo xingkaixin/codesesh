@@ -1,6 +1,9 @@
 import "./diagnostics-bridge.js";
 import { parentPort } from "node:worker_threads";
-import { computeIdentityProjection, type ProjectIdentityProjection } from "@codesesh/core/runtime";
+import {
+  computeIdentityProjection,
+  type ProjectIdentityProjection,
+} from "@codesesh/core/runtime/projects";
 
 export interface ProjectIdentityWorkerRequest {
   type: "resolve";

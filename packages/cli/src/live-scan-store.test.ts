@@ -4,16 +4,18 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   attachMissingProjectIdentities,
-  FileSystemSessionSource,
-  type AgentScanOptions,
   type IdentifiedSessionHead,
-  type AgentRoots,
   type ScanOptions,
-  type SessionCacheMeta,
   type SessionDetail,
   type SessionHead,
+} from "@codesesh/core/runtime/discovery";
+import {
+  FileSystemSessionSource,
+  type AgentScanOptions,
+  type AgentRoots,
+  type SessionCacheMeta,
   type SessionSourceRef,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/agents";
 import { createSessionIdentity, toPublicSessionHead } from "@codesesh/core/contract";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
 import { buildScanRefreshDelta } from "./scan-refresh-delta.js";
@@ -300,16 +302,17 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
+vi.mock("@codesesh/core/runtime/agents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/agents")>()),
+  createRegisteredAgents: core.createRegisteredAgents,
+}));
+
+vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
   return {
     ...actual,
     closeCacheStorage: core.closeCacheStorage,
-    createRegisteredAgents: core.createRegisteredAgents,
-    filterSessions: core.filterSessions,
     getAgentFullSyncCursor: core.getAgentFullSyncCursor,
-    getAgentLastFullSyncAt: core.getAgentLastFullSyncAt,
-    isAgentCacheInitialized: core.isAgentCacheInitialized,
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     readCachedSessions: core.readCachedSessions,
@@ -317,7 +320,6 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
     markAgentFullSyncCompleted: core.markAgentFullSyncCompleted,
-    resolveAgentRoots: core.resolveAgentRoots,
     scanSessions: core.scanSessions,
     saveCachedSessions: core.saveCachedSessions,
     saveCachedSessionChanges: core.saveCachedSessionChanges,

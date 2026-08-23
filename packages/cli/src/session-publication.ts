@@ -1,4 +1,4 @@
-import type { IdentifiedSessionHead } from "@codesesh/core/runtime";
+import type { IdentifiedSessionHead } from "@codesesh/core/runtime/discovery";
 import type { SessionsUpdatedEvent } from "@codesesh/core/contract";
 import type { LiveSessionIndex } from "./live-session-index.js";
 import { appLogger } from "./logging.js";

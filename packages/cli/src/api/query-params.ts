@@ -4,15 +4,14 @@
  * no storage access.
  */
 import type { Context } from "hono";
-import type { SessionHead, SmartTag } from "@codesesh/core/runtime";
+import type { SessionHead, SmartTag } from "@codesesh/core/runtime/discovery";
 import {
   filterSessionTreeByActivityWindow,
-  isProjectIdentityKind,
   isSmartTag,
   type FileActivityKind,
-  type ProjectIdentityRef,
   type SearchRequestOptions,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { isProjectIdentityKind, type ProjectIdentityRef } from "@codesesh/core/runtime/projects";
 import type { TimeWindow } from "../time-window-resolution.js";
 
 export type SessionListDefaults = TimeWindow;

@@ -1,4 +1,5 @@
-import { readAgentLastFullSyncAt, type BaseAgent, type ScanOptions } from "@codesesh/core/runtime";
+import { readAgentLastFullSyncAt, type ScanOptions } from "@codesesh/core/runtime/discovery";
+import { type BaseAgent } from "@codesesh/core/runtime/agents";
 import type {
   BackfillAttemptRef,
   BackfillLifecycle,

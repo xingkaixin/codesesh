@@ -28,15 +28,23 @@ vi.mock("node:worker_threads", () => ({
   },
 }));
 
-vi.mock("@codesesh/core/runtime", () => ({
-  commitDurableSessionPublication: mocks.commitDurableSessionPublication,
+vi.mock("@codesesh/core/runtime/agents", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
+}));
+
+vi.mock("@codesesh/core/runtime/discovery", () => ({
+  commitDurableSessionPublication: mocks.commitDurableSessionPublication,
   markAgentCacheInitialized: mocks.markAgentCacheInitialized,
   sessionDetailVersion: (meta: { id?: string }) => `detail:${meta.id ?? "none"}`,
-  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
   syncSessionSearchIndex: mocks.syncSessionSearchIndex,
   syncSessionSearchIndexChanges: mocks.syncSessionSearchIndexChanges,
-  // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
+}));
+
+vi.mock("@codesesh/core/runtime/pricing", () => ({
+  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
+}));
+
+vi.mock("@codesesh/core/runtime/diagnostics", () => ({
   setCoreDiagnostics: vi.fn(),
 }));
 

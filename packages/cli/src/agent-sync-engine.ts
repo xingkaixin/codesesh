@@ -11,7 +11,6 @@ import {
   readAgentCacheInitialization,
   resolveSessionSnapshotCompleteness,
   selectAgentRefresh,
-  type BaseAgent,
   type AgentRefreshSelection,
   type CachedResult,
   type IdentifiedSessionHead,
@@ -19,9 +18,9 @@ import {
   type LiveSnapshot,
   type SessionHead,
   type SessionPersistenceDiff,
-  type SessionSourceFailure,
   type SessionSnapshotCompleteness,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { type BaseAgent, type SessionSourceFailure } from "@codesesh/core/runtime/agents";
 import type {
   ScanCompletion,
   ScanStatusEvent,

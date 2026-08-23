@@ -1,5 +1,8 @@
 import { Worker } from "node:worker_threads";
-import { normalizeProjectDirectory, type ProjectIdentityProjection } from "@codesesh/core/runtime";
+import {
+  normalizeProjectDirectory,
+  type ProjectIdentityProjection,
+} from "@codesesh/core/runtime/projects";
 import { appLogger } from "./logging.js";
 import type {
   ProjectIdentityWorkerMessage,

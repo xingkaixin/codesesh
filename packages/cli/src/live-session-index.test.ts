@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BaseAgent, IdentifiedSessionHead, LiveSnapshot } from "@codesesh/core/runtime";
+import type { BaseAgent } from "@codesesh/core/runtime/agents";
+import type { IdentifiedSessionHead, LiveSnapshot } from "@codesesh/core/runtime/discovery";
 import { LiveSessionIndex } from "./live-session-index.js";
 
 function makeAgent(name: string): BaseAgent {

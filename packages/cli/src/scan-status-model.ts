@@ -1,4 +1,4 @@
-import type { AgentScanProgress } from "@codesesh/core/runtime";
+import type { AgentScanProgress } from "@codesesh/core/runtime/agents";
 import type {
   BackfillStatus,
   ScanCompletion,

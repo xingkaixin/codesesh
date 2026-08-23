@@ -41,7 +41,7 @@ const workerMocks = vi.hoisted(() => {
 
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
 vi.mock("node:fs", () => ({ existsSync: () => workerMocks.workerExists }));
-vi.mock("@codesesh/core/runtime", () => ({
+vi.mock("@codesesh/core/runtime/pricing", () => ({
   getPricingGeneration: () => ({ id: 17 }),
 }));
 vi.mock("./logging.js", () => ({

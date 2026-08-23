@@ -4,7 +4,7 @@ import {
   type CachedResult,
   type IdentifiedSessionHead,
   type PersistedSessionHeadChange,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
 import type { SearchIndexMaintenanceStatus } from "@codesesh/core/contract";
 import { toError } from "./errors.js";
 import { appLogger } from "./logging.js";

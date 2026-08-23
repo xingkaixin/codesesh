@@ -33,8 +33,8 @@ const coreMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@codesesh/core/runtime", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@codesesh/core/runtime")>();
+vi.mock("@codesesh/core/runtime/projects", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/projects")>();
   return {
     ...actual,
     attachProjectMetrics: (...args: Parameters<typeof actual.attachProjectMetrics>) => {
@@ -47,28 +47,50 @@ vi.mock("@codesesh/core/runtime", async (importOriginal) => {
       coreMocks.attachProjectMetrics(...args);
       return actual.attachProjectMetricsFromTree(...args);
     },
+    matchesProjectIdentity: (...args: Parameters<typeof actual.matchesProjectIdentity>) => {
+      coreMocks.matchesProjectIdentity(...args);
+      return actual.matchesProjectIdentity(...args);
+    },
+  };
+});
+
+vi.mock("@codesesh/core/runtime/analytics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/analytics")>();
+  return {
+    ...actual,
     buildDashboard: (...args: Parameters<typeof actual.buildDashboard>) => {
       coreMocks.buildDashboard(...args);
       return actual.buildDashboard(...args);
     },
+  };
+});
+
+vi.mock("@codesesh/core/runtime/search", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@codesesh/core/runtime/search")>();
+  return {
+    ...actual,
     filterSessionSearchCandidates: (
       ...args: Parameters<typeof actual.filterSessionSearchCandidates>
     ) => {
       coreMocks.filterSessionSearchCandidates(...args);
       return actual.filterSessionSearchCandidates(...args);
     },
-    getAnalyticsRevision: coreMocks.getAnalyticsRevision,
-    listDashboardCostFacts: coreMocks.listDashboardCostFacts,
-    materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
-    listFileActivity: coreMocks.listFileActivity,
-    matchesProjectIdentity: (...args: Parameters<typeof actual.matchesProjectIdentity>) => {
-      coreMocks.matchesProjectIdentity(...args);
-      return actual.matchesProjectIdentity(...args);
-    },
-    listSessionAliases: coreMocks.listSessionAliases,
     executeSessionSearch: coreMocks.executeSessionSearch,
   };
 });
+
+vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
+  getAnalyticsRevision: coreMocks.getAnalyticsRevision,
+  listDashboardCostFacts: coreMocks.listDashboardCostFacts,
+  materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
+  listFileActivity: coreMocks.listFileActivity,
+}));
+
+vi.mock("@codesesh/core/runtime/state", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@codesesh/core/runtime/state")>()),
+  listSessionAliases: coreMocks.listSessionAliases,
+}));
 
 vi.mock("@codesesh/core/contract", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/contract")>();
@@ -98,18 +120,17 @@ import {
   ProjectIdentityRequestAbortedError,
   type ProjectIdentityResolver,
 } from "../../project-identity-resolver.js";
+import type { ChangeCheckResult, SessionCacheMeta } from "@codesesh/core/runtime/agents";
+import type { DashboardCostFacts } from "@codesesh/core/runtime/analytics";
 import type {
-  ChangeCheckResult,
-  DashboardCostFacts,
   FileActivityResult,
   IdentifiedSessionHead,
   LiveSnapshot,
-  SessionCacheMeta,
   SessionHead,
   SessionDetail,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
 import type { SearchResult } from "@codesesh/core/contract";
-import { BaseAgent } from "@codesesh/core/runtime";
+import { BaseAgent } from "@codesesh/core/runtime/agents";
 import { appLogger } from "../../logging.js";
 
 // --- Helpers ---

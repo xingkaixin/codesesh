@@ -28,7 +28,8 @@ import {
   hasExplicitPortArg,
   parsePort,
 } from "./ports.js";
-import { createRegisteredAgents, perf } from "@codesesh/core/runtime";
+import { createRegisteredAgents } from "@codesesh/core/runtime/agents";
+import { perf } from "@codesesh/core/runtime/diagnostics";
 import { startPricingRefresh } from "./pricing-refresh.js";
 
 // Node's default reaction to an unhandled rejection is to terminate without
@@ -189,7 +190,7 @@ const main = defineCommand({
     });
 
     if (clearCache) {
-      const { clearCache: clear } = await import("@codesesh/core/runtime");
+      const { clearCache: clear } = await import("@codesesh/core/runtime/discovery");
       clear();
       appLogger.info("cache.clear");
       console.log("Cache cleared.");

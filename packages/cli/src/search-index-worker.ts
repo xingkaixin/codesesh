@@ -3,21 +3,20 @@ import { randomUUID } from "node:crypto";
 import { parentPort, workerData } from "node:worker_threads";
 import {
   commitDurableSessionPublication,
-  createRegisteredAgents,
   markAgentCacheInitialized,
   sessionDetailVersion,
-  synchronizePricingGeneration,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
   type IdentifiedSessionHead,
   type SearchIndexSyncResult,
   type SearchIndexSyncOptions,
   type SearchIndexPublicationStage,
-  type SessionCacheMeta,
   type PersistedSessionHeadChange,
   type SessionSnapshotCompleteness,
   type DurableSessionPublicationFailureStage,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { createRegisteredAgents, type SessionCacheMeta } from "@codesesh/core/runtime/agents";
+import { synchronizePricingGeneration } from "@codesesh/core/runtime/pricing";
 import { appLogger } from "./logging.js";
 
 export type SearchIndexPersistStage = DurableSessionPublicationFailureStage;

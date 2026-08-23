@@ -25,13 +25,18 @@ vi.mock("./logging.js", () => ({
   },
 }));
 
-vi.mock("@codesesh/core/runtime", () => ({
+vi.mock("@codesesh/core/runtime/agents", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
+}));
+
+vi.mock("@codesesh/core/runtime/diagnostics", () => ({
   classifySessionTags: mocks.classifySessionTags,
   getSmartTagSourceTimestamp: mocks.getSmartTagSourceTimestamp,
-  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
-  // diagnostics-bridge.js (imported by the worker for its side effect) needs this export.
   setCoreDiagnostics: vi.fn(),
+}));
+
+vi.mock("@codesesh/core/runtime/pricing", () => ({
+  synchronizePricingGeneration: mocks.synchronizePricingGeneration,
 }));
 
 async function runWorker() {

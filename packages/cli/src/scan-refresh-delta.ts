@@ -2,10 +2,10 @@ import { isDeepStrictEqual } from "node:util";
 import {
   buildSessionPersistenceDiff,
   type PersistedSessionHeadChange,
-  type SessionCacheMeta,
   type SessionHead,
   type SessionSnapshotCompleteness,
-} from "@codesesh/core/runtime";
+} from "@codesesh/core/runtime/discovery";
+import { type SessionCacheMeta } from "@codesesh/core/runtime/agents";
 
 interface ScanRefreshDeltaInput {
   previousSessions: SessionHead[];

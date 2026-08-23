@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { SAMPLE_SCAN_STATUS_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
 import { toPublicSessionHead } from "@codesesh/core/contract";
-import type { LiveSnapshot } from "@codesesh/core/runtime";
+import type { LiveSnapshot } from "@codesesh/core/runtime/discovery";
 import { createApiRoutes } from "../routes.js";
 import type { ScanResultSource } from "../handlers.js";
 import type { ScanEventSource } from "../../scan-source.js";

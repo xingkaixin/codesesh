@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { IdentifiedSessionHead, SessionCacheMeta } from "@codesesh/core/runtime";
+import type { IdentifiedSessionHead } from "@codesesh/core/runtime/discovery";
+import type { SessionCacheMeta } from "@codesesh/core/runtime/agents";
 import { PendingSearchIndexJobs } from "./pending-search-index-jobs.js";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 

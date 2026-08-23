@@ -6,7 +6,7 @@
  * its first sessions differently from its last. Here it is bounded, cancellable
  * on shutdown, and published only at a point where no scan is running.
  */
-import { publishPendingPricing, refreshPricingCache } from "@codesesh/core/runtime";
+import { publishPendingPricing, refreshPricingCache } from "@codesesh/core/runtime/pricing";
 import { appLogger } from "./logging.js";
 
 /** Long enough for a cold network, short enough not to outlive a --json run. */
