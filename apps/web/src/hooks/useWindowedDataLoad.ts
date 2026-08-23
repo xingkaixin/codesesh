@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 import { type AppConfig, logClientEvent } from "../lib/api";
-import type { SessionStoreSnapshot } from "./useSessionStore";
+import type { SessionReloadResult } from "./useSessionStore";
 
 interface WindowedDataLoadDeps {
   window: AppConfig["window"] | null;
-  reload: (window: AppConfig["window"]) => Promise<SessionStoreSnapshot | null>;
+  reload: (window: AppConfig["window"]) => Promise<SessionReloadResult | null>;
 }
 
 export function useWindowedDataLoad({ window, reload }: WindowedDataLoadDeps) {
@@ -15,12 +15,12 @@ export function useWindowedDataLoad({ window, reload }: WindowedDataLoadDeps) {
     logClientEvent("app.load.start", { path: globalThis.window.location.pathname });
 
     void reload(window)
-      .then((snapshot) => {
-        if (!current || !snapshot) return;
+      .then((result) => {
+        if (!current || !result) return;
         logClientEvent("app.load.done", {
           duration_ms: Math.round(performance.now() - startedAt),
-          agents: snapshot.agents.length,
-          sessions: snapshot.sessions.length,
+          agents: result.agentCount,
+          sessions: result.sessionCount,
         });
       })
       .catch((error) => {

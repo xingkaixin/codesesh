@@ -5,11 +5,11 @@ import {
   type SessionsUpdatedEvent,
   subscribeSessionUpdates,
 } from "../lib/api";
-import type { LiveSessionApplyResult, SessionStoreSnapshot } from "./useSessionStore";
+import type { LiveSessionApplyResult } from "./useSessionStore";
 
 interface LiveSyncDeps {
   applyLiveEvent: (event: SessionsUpdatedEvent) => Promise<LiveSessionApplyResult | null>;
-  resyncLiveState: () => Promise<SessionStoreSnapshot | null>;
+  resyncLiveState: () => Promise<void>;
   setScanStatus: (event: ScanStatusEvent) => void;
 }
 

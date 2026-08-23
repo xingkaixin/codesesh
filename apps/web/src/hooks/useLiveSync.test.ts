@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionsUpdatedEvent } from "../lib/api";
 import * as api from "../lib/api";
 import { useLiveSync } from "./useLiveSync";
-import type { SessionStoreSnapshot } from "./useSessionStore";
 
 let sessionsCallback: ((event: SessionsUpdatedEvent) => void) | undefined;
 let reconnectCallback: (() => void) | undefined;
@@ -29,10 +28,9 @@ vi.mock("../lib/api", () => ({
 function makeDeps(visibleNewSessions = 0) {
   return {
     applyLiveEvent: vi.fn().mockResolvedValue({
-      snapshot: {} as SessionStoreSnapshot,
       visibleNewSessions,
     }),
-    resyncLiveState: vi.fn().mockResolvedValue({}),
+    resyncLiveState: vi.fn().mockResolvedValue(undefined),
     setScanStatus: vi.fn(),
   };
 }
