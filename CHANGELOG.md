@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.0.4] - 2026-08-24
+
+This release adds a Japanese landing page, authenticates the loopback API and tightens trusted-proxy deployment, makes scan publication and cache migrations preserve the last known-good state, and reduces indexing and rendering work on large histories. It also narrows the internal core runtime and contract APIs; consumers of `@codesesh/core` should review the compatibility notes below.
+
+### Features
+
+- Added a complete Japanese product landing page and centralized localized landing-page content. (#485)
+- Exposed scan-pipeline timings and publication stages so long-running refreshes report meaningful progress. (#507)
+
+### Security
+
+- Authenticated loopback API requests, including packaged-artifact smoke checks. (#437)
+- Restricted `--trust-proxy` to a loopback `--host` with an HTTPS `--public-url`, preventing unsafe direct exposure behind a trusted proxy. (#438)
+- Sanitized public session heads before they cross the browser-safe contract. (#515)
+
+### Bug Fixes
+
+- Preserved the last committed scan and refresh baseline across unavailable agents, failed change checks, partial backfills, I/O failures and publication failures; refresh checks are now committed only after publication succeeds. (#426, #427, #428, #433, #460, #462, #473, #477, #496, #508, #528, #533)
+- Made cache schema changes explicit and failure-safe, removed obsolete SQLite tables without backing them up, unified row deletion and separated transient publication payloads from the durable database. (#467, #492, #495, #497, #517, #535, #536)
+- Corrected Codex token accounting, Grok message grouping, Kimi Code head scans and file-operation classification. (#461, #509, #510, #512)
+- Reindexed sessions after project identity changes, unified dashboard date parsing and isolated concurrent pricing-miss capture. (#475, #516, #529)
+- Kept Web aggregates, projects, aliases and bookmarks consistent after concurrent or trailing updates, reused dashboard query data and surfaced resource and project reload failures. (#434, #435, #436, #493, #531, #532)
+- Made the one-shot `--json` path shut down workers and SQLite connections before exiting. (#466)
+
+### Performance
+
+- Reused parsed agent metadata and materialized session data, streamlined search freshness checks, and added a covering SQLite index so unchanged histories no longer reread transcript bodies. (#468, #507)
+- Bounded project identity work, SSE connections, project pagination, timeline rendering and large-content rendering, while indexing child lookups and releasing inactive projections. (#439, #440, #443, #444, #445, #446)
+- Batched session-detail invalidation and derived session requests directly from the active time window, reducing redundant Web queries and refreshes. (#520, #526)
+- Staged publication payloads in SQLite's temporary schema so interrupted publications cannot leave multi-gigabyte durable copies behind. (#467)
+
+### Compatibility
+
+- `--trust-proxy` now requires a loopback `--host` and an HTTPS `--public-url`. (#438)
+- The `@codesesh/core` package root is limited to one-shot scanning, and the former catch-all runtime entry point has been replaced by focused runtime subpaths. (#491, #534)
+- Session identity is exposed through structured references, `SessionsUpdatedEvent` uses `newSessionRefs`, and file-system sources synchronize through `sessionSourceAccess.synchronize`. (#494, #519, #521)
+- `loadCachedSessions` was replaced by `readCachedSessions`, which returns an explicit result that callers must handle. (#496)
+
+### Refactor
+
+- Split agent record conversion, cache schema and search-index responsibilities, scan planning, synchronization finalization, Web session state, timeline behavior and product-demo scenes into focused modules. (#463, #464, #469, #470, #471, #472, #476, #478, #479, #480, #481, #483, #484, #498, #499, #500, #501, #503, #504, #506, #522, #524, #525, #527, #530)
+- Centralized the Agent catalog, session reference keys, smart-tag policy and file-source capabilities, and removed production import cycles. (#457, #458, #459, #482, #502, #503, #518)
+
+### Build
+
+- Upgraded production and development dependencies, centralized shared dependency versions, retained the Node 22 type contract and verified the CLI against Node 22.0.0. (#448, #449, #450, #451, #452, #453, #487, #489, #490)
+
+### Documentation
+
+- Corrected documented repository paths and refreshed the live runtime, scan, cache and SQLite architecture documentation. (#455, #456)
+
 ## [1.0.3] - 2026-08-16
 
 This release attributes dashboard and project usage to the time of each message instead of the whole session, stops scan, cache and CLI failures from silently degrading published state, and removes repeated parsing, query and render work across agents, the cache and the web UI.
