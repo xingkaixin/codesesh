@@ -691,6 +691,46 @@ describe("saveCachedSessions", () => {
     }
   });
 
+  it("drops redundant version 31 cache tables without backing up canonical data", () => {
+    saveCachedSessions("claudecode", [makeSession("canonical")]);
+    setSchemaEnsuredPath(null);
+
+    const db = new Database(getCachePath());
+    try {
+      db.exec(`
+        CREATE TABLE cached_sessions (
+          agent_name TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          session_json TEXT NOT NULL,
+          meta_json TEXT,
+          PRIMARY KEY (agent_name, session_id)
+        );
+        PRAGMA user_version = 31;
+        UPDATE cache_meta SET value = '31' WHERE key = 'version';
+      `);
+    } finally {
+      db.close();
+    }
+
+    expect(
+      readCachedValue("claudecode")?.sessions.map((session) => session.reference.sessionId),
+    ).toEqual(["canonical"]);
+    expect(getMigrationBackups()).toEqual([]);
+
+    const migrated = new Database(getCachePath(), { readonly: true });
+    try {
+      const legacyTableCount = migrated
+        .prepare(
+          "SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = 'cached_sessions'",
+        )
+        .get() as { value?: number };
+      expect(Number(legacyTableCount.value ?? 0)).toBe(0);
+      expect(Number(migrated.pragma("user_version", { simple: true }))).toBe(CACHE_SCHEMA_VERSION);
+    } finally {
+      migrated.close();
+    }
+  });
+
   it("skips destructive migration backup when cache tables are empty", () => {
     mkdirSync(getCacheDir(), { recursive: true });
     const db = new Database(getCachePath());

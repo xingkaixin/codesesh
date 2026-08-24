@@ -901,7 +901,7 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 29, migrate: addSessionUsageSummary },
       { version: 30, destructive: true, migrate: dropDerivedSessionSlug },
       { version: 31, migrate: dropDurablePublicationStaging },
-      { version: 32, destructive: true, migrate: dropLegacyCacheTables },
+      { version: 32, migrate: dropLegacyCacheTables },
     ],
   });
 

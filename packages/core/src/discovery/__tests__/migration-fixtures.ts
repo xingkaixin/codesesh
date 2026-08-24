@@ -32,7 +32,7 @@ export function hasStructuredMessages(fixture: ReleaseCacheFixture): boolean {
 }
 
 export function expectedBackupCount(fixture: ReleaseCacheFixture): number {
-  return [6, 15, 30, 32].filter((version) => version > fixture.version).length;
+  return [6, 15, 30].filter((version) => version > fixture.version).length;
 }
 
 export function createReleaseCacheFixture(
