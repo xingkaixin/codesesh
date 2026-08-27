@@ -1,4 +1,8 @@
-import { applySessionWindowChanges, formatSessionReference } from "@codesesh/core/contract";
+import {
+  applySessionWindowChanges,
+  formatSessionReference,
+  mergeSessionsUpdatedEvents,
+} from "@codesesh/core/contract";
 import {
   hashKey,
   keepPreviousData,
@@ -96,25 +100,48 @@ async function fetchSnapshotAggregates(
   return { agents, dashboard };
 }
 
-function sessionProjectionOptions(queryClient: QueryClient, window: AppConfig["window"]) {
-  return queryOptions({
-    queryKey: queryKeys.sessionProjection(window),
-    staleTime: Infinity,
-    queryFn: async ({ signal }): Promise<SessionProjection> => {
-      const sessionResult = await fetchSessions(
-        { from: window.from, to: window.to },
-        { signal },
-        {
-          onFirstPage(sessions) {
-            if (!signal.aborted) {
-              queryClient.setQueryData(queryKeys.sessionProjection(window), { sessions });
-            }
-          },
-        },
-      );
-      return { sessions: sessionResult.sessions };
-    },
+interface SessionProjectionLoad {
+  window: AppConfig["window"];
+  event: SessionsUpdatedEvent | null;
+}
+
+function applyProjectionEvent(
+  sessions: SessionHead[],
+  event: SessionsUpdatedEvent,
+  window: AppConfig["window"],
+) {
+  return applySessionWindowChanges(sessions, {
+    changedSessionHeads: event.changedSessionHeads,
+    projectionRelatedSessionHeads: event.projectionRelatedSessionHeads,
+    projectionSessionOrder: event.projectionSessionOrder,
+    removedSessionRefs: event.removedSessionRefs,
+    from: window.from,
+    to: window.to,
   });
+}
+
+async function fetchSessionProjection(
+  queryClient: QueryClient,
+  signal: AbortSignal,
+  load: SessionProjectionLoad,
+): Promise<SessionProjection> {
+  const { window } = load;
+  const project = (sessions: SessionHead[]): SessionProjection => ({
+    sessions: load.event ? applyProjectionEvent(sessions, load.event, window).sessions : sessions,
+  });
+  const result = await fetchSessions(
+    { from: window.from, to: window.to },
+    { signal },
+    {
+      onFirstPage(sessions) {
+        if (!signal.aborted) {
+          queryClient.setQueryData(queryKeys.sessionProjection(window), project(sessions));
+        }
+      },
+    },
+  );
+  signal.throwIfAborted();
+  return project(result.sessions);
 }
 
 function removeOtherSessionProjections(
@@ -195,10 +222,21 @@ function sameWindow(
 
 export function useSessionStore(window: AppConfig["window"] | null) {
   const queryClient = useQueryClient();
+  const pendingProjectionLoad = useRef<SessionProjectionLoad | null>(null);
   const liveAggregateWindowRef = useRef<AppConfig["window"] | null>(null);
   const liveAggregateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const projectionQuery = useQuery({
-    ...sessionProjectionOptions(queryClient, window ?? {}),
+    queryKey: queryKeys.sessionProjection(window ?? {}),
+    staleTime: Infinity,
+    queryFn: async ({ signal }): Promise<SessionProjection> => {
+      const load: SessionProjectionLoad = { window: window ?? {}, event: null };
+      pendingProjectionLoad.current = load;
+      try {
+        return await fetchSessionProjection(queryClient, signal, load);
+      } finally {
+        if (pendingProjectionLoad.current === load) pendingProjectionLoad.current = null;
+      }
+    },
     enabled: window !== null,
   });
   const agentsQuery = useQuery({
@@ -262,6 +300,12 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
       if (!window) return null;
       const activeWindow = window;
+      const pendingLoad = pendingProjectionLoad.current;
+      if (pendingLoad && sameWindow(pendingLoad.window, activeWindow)) {
+        pendingLoad.event = pendingLoad.event
+          ? mergeSessionsUpdatedEvents(pendingLoad.event, event)
+          : event;
+      }
       const projectionKey = queryKeys.sessionProjection(activeWindow);
       const agentCatalogKey = queryKeys.agentCatalog(activeWindow);
       const dashboardKey = queryKeys.dashboard(activeWindow, {});
@@ -277,14 +321,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
         return { visibleNewSessions: 0 };
       }
 
-      const projection = applySessionWindowChanges(currentProjection.sessions, {
-        changedSessionHeads: event.changedSessionHeads,
-        projectionRelatedSessionHeads: event.projectionRelatedSessionHeads,
-        projectionSessionOrder: event.projectionSessionOrder,
-        removedSessionRefs: event.removedSessionRefs,
-        from: activeWindow.from,
-        to: activeWindow.to,
-      });
+      const projection = applyProjectionEvent(currentProjection.sessions, event, activeWindow);
       const visibleSessionKeys = new Set(
         projection.sessions.map((session) => formatSessionReference(session.reference)),
       );
