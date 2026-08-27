@@ -278,7 +278,9 @@ describe("App dashboard scope wiring", () => {
 
     renderAppAt("/projects/path/%2Foutside-first-page");
 
-    expect(await screen.findByRole("heading", { name: "outside-first-page" })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "outside-first-page" }),
+    ).toBeTruthy();
     expect(requestedUrls.some((url) => url.includes("projectKey=%2Foutside-first-page"))).toBe(
       true,
     );
