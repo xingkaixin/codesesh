@@ -90,17 +90,6 @@ function agentCatalogOptions(window: AppConfig["window"]) {
   });
 }
 
-async function fetchSnapshotAggregates(
-  queryClient: QueryClient,
-  window: AppConfig["window"],
-): Promise<SnapshotAggregates> {
-  const [agents, dashboard] = await Promise.all([
-    queryClient.fetchQuery(agentCatalogOptions(window)),
-    queryClient.fetchQuery(dashboardQueryOptions(window, {})),
-  ]);
-  return { agents, dashboard };
-}
-
 interface SessionProjectionLoad {
   window: AppConfig["window"];
   event: SessionsUpdatedEvent | null;
@@ -171,21 +160,19 @@ function createSnapshot(
 async function refreshLiveSnapshotAggregates(
   queryClient: QueryClient,
   window: AppConfig["window"],
-): Promise<SnapshotAggregates> {
+): Promise<void> {
   const agentOptions = agentCatalogOptions(window);
   await Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: agentOptions.queryKey,
-      exact: true,
-      refetchType: "none",
-    }),
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.dashboards,
-      refetchType: "none",
-    }),
+    queryClient.invalidateQueries(
+      { queryKey: agentOptions.queryKey, exact: true, refetchType: "active" },
+      { throwOnError: true, cancelRefetch: false },
+    ),
+    queryClient.invalidateQueries(
+      { queryKey: queryKeys.dashboards, refetchType: "active" },
+      { throwOnError: true, cancelRefetch: false },
+    ),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
   ]);
-  return fetchSnapshotAggregates(queryClient, window);
 }
 
 async function refreshLiveProjects(
