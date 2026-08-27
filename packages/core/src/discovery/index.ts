@@ -26,6 +26,7 @@ export type {
 } from "./agent-scan-plan.js";
 export {
   materializeSessionDetail,
+  materializeCachedSessionDetailResponse,
   materializeSessionDetailResponse,
   type SessionDetailResponseResult,
   type SessionDetailResult,

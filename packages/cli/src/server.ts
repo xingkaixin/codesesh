@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import type { ScanResultSource } from "./api/handlers.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { appLogger } from "./logging.js";
+import { ThreadSessionDetailLoader } from "./session-detail-loader.js";
 import {
   createProjectIdentityResolver,
   type ProjectIdentityResolver,
@@ -147,6 +148,7 @@ export async function createServer(
   const shutdownController = new AbortController();
   const projectIdentityResolver =
     options.projectIdentityResolver ?? createProjectIdentityResolver();
+  const sessionDetailLoader = new ThreadSessionDetailLoader();
   let actualPort: number | null = null;
 
   appLogger.info("server.access_policy", {
@@ -255,6 +257,7 @@ export async function createServer(
     defaultSessionDays: options.defaultSessionDays,
     shutdownSignal: shutdownController.signal,
     projectIdentityResolver,
+    loadSessionDetail: sessionDetailLoader.load,
   };
   app.route("/api", createApiRoutes(store, store, routeOptions));
 
@@ -354,6 +357,7 @@ export async function createServer(
       appLogger.info("server.shutdown", { port: actualPort });
       shutdownController.abort();
       try {
+        await sessionDetailLoader.shutdown();
         appLogger.info("server.shutdown.phase", { phase: "http-closing", port: actualPort });
         await closeHttpServer(server, actualPort);
       } finally {

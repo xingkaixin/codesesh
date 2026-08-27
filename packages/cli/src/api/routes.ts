@@ -24,6 +24,7 @@ import {
 import type { ScanEventSource } from "../scan-source.js";
 import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
 import { appLogger } from "../logging.js";
+import type { SessionDetailLoader } from "../session-detail-loader.js";
 import { SseEventBuffer } from "./sse-event-buffer.js";
 
 export const MAX_ACTIVE_SSE_CONNECTIONS = 32;
@@ -34,6 +35,7 @@ export interface ApiRouteOptions {
   defaultSessionDays?: number;
   shutdownSignal?: AbortSignal;
   projectIdentityResolver?: ProjectIdentityResolver;
+  loadSessionDetail?: SessionDetailLoader;
 }
 
 interface SseConnectionBudget {
@@ -165,7 +167,9 @@ export function createApiRoutes(
   api.get("/file-activity", (c) =>
     handleGetFileActivity(c, listDefaults, options.projectIdentityResolver),
   );
-  api.get("/sessions/:agent/:id", (c) => handleGetSessionData(c, scanSource));
+  api.get("/sessions/:agent/:id", (c) =>
+    handleGetSessionData(c, scanSource, options.loadSessionDetail),
+  );
   api.get("/dashboard", (c) => handleGetDashboard(c, scanSource, listDefaults));
   api.get("/bookmarks", (c) => handleGetBookmarks(c, scanSource));
   api.put("/bookmarks", (c) => handlePutBookmark(c));

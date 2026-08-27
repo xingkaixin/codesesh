@@ -269,11 +269,19 @@ function materializeStructuredSessionDetail(
     : null;
   let sourceError: unknown;
   if (!data && head) {
+    const sourceStartedAt = performance.now();
     try {
       data = agent.getSessionData(reference.sessionId);
       if (data) freshness = "fresh";
     } catch (error) {
       sourceError = error;
+    } finally {
+      getCoreDiagnostics()?.info?.("session_detail.source_read", {
+        agent: reference.agentName,
+        session_id: reference.sessionId,
+        duration_ms: Math.round(performance.now() - sourceStartedAt),
+        failed: sourceError != null,
+      });
     }
   }
   if (!data && cacheState === "stale" && cachedEntry) {
@@ -343,11 +351,11 @@ export function materializeSessionDetail(
   return materializeStructuredSessionDetail(context, reference);
 }
 
-export function materializeSessionDetailResponse(
+export function materializeCachedSessionDetailResponse(
   scanResult: LiveSnapshot,
   reference: SessionReference,
   options: SessionDetailResponseOptions = {},
-): SessionDetailResponseResult {
+): SessionDetailResponseResult | null {
   const context = getSessionDetailContext(scanResult, reference);
   if (!context) return { status: "unknown-agent" };
 
@@ -377,10 +385,7 @@ export function materializeSessionDetailResponse(
     cachedEntry.data.smart_tags == null ||
     cachedEntry.data.smart_tags_classifier_revision !== SMART_TAG_CLASSIFIER_REVISION
   ) {
-    const result = materializeStructuredSessionDetail(context, reference, undefined);
-    return result.status === "found"
-      ? { ...result, data: { ...result.data, message_update: "reset" } }
-      : result;
+    return null;
   }
 
   const data = cachedEntry.data;
@@ -388,10 +393,7 @@ export function materializeSessionDetailResponse(
   const projectIdentity = getProjectIdentity(data, context.head);
   const stream = cursorRead?.stream;
   if (!stream) {
-    const result = materializeStructuredSessionDetail(context, reference, undefined);
-    return result.status === "found"
-      ? { ...result, data: { ...result.data, message_update: "reset" } }
-      : result;
+    return null;
   }
   const partsJsonBytes = stream.messageRows.reduce(
     (total, row) => total + Buffer.byteLength(String(row.parts_json)),
@@ -420,4 +422,17 @@ export function materializeSessionDetailResponse(
     messageCount: stream.messageCount,
     sentMessageCount: stream.messageRows.length,
   };
+}
+
+export function materializeSessionDetailResponse(
+  scanResult: LiveSnapshot,
+  reference: SessionReference,
+  options: SessionDetailResponseOptions = {},
+): SessionDetailResponseResult {
+  const cached = materializeCachedSessionDetailResponse(scanResult, reference, options);
+  if (cached) return cached;
+  const result = materializeSessionDetail(scanResult, reference);
+  return result.status === "found"
+    ? { ...result, data: { ...result.data, message_update: "reset" } }
+    : result;
 }
