@@ -560,6 +560,32 @@ describe("useSessionStore", () => {
     expect(client.getQueryState(inactiveAgentCatalogKey)?.isInvalidated).toBe(false);
   });
 
+  it("refreshes the visible scoped dashboard after a live event", async () => {
+    const filters = { project: { kind: "path" as const, key: "p1" }, agent: "claudecode" };
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => ({
+        store: useSessionStore(config.window),
+        scoped: useDashboard(config.window, filters),
+      }),
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(result.current.store.loading).toBe(false));
+    await waitFor(() => expect(result.current.scoped.dashboard).toEqual(SAMPLE_DASHBOARD_DATA));
+    const liveDashboard = {
+      ...SAMPLE_DASHBOARD_DATA,
+      totals: { ...SAMPLE_DASHBOARD_DATA.totals, sessions: 50 },
+    };
+    vi.mocked(api.fetchDashboard).mockImplementation(async (_window, scope) =>
+      scope?.project ? liveDashboard : SAMPLE_DASHBOARD_DATA,
+    );
+
+    await act(() => result.current.store.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+
+    await waitFor(() => expect(result.current.scoped.dashboard).toEqual(liveDashboard));
+    expect(api.fetchDashboard).toHaveBeenCalledTimes(4);
+  });
+
   it("invalidates only session details changed by a live event", async () => {
     const { result, client } = await renderStore();
     await act(() => result.current.reload());
@@ -612,7 +638,10 @@ describe("useSessionStore", () => {
     await act(() => result.current.reload());
     vi.mocked(api.fetchSessions).mockClear();
     const firstAgents = deferred<AgentInfo[]>();
-    vi.mocked(api.fetchAgents).mockReturnValueOnce(firstAgents.promise).mockResolvedValue(agents);
+    vi.mocked(api.fetchAgents)
+      .mockClear()
+      .mockReturnValueOnce(firstAgents.promise)
+      .mockResolvedValue(agents);
 
     let firstUpdate!: ReturnType<typeof result.current.applyLiveEvent>;
     let secondUpdate!: ReturnType<typeof result.current.applyLiveEvent>;
@@ -620,8 +649,10 @@ describe("useSessionStore", () => {
       firstUpdate = result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
       secondUpdate = result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
     });
-    firstAgents.resolve(agents);
     await act(() => Promise.all([firstUpdate, secondUpdate]));
+    expect(api.fetchAgents).toHaveBeenCalledOnce();
+    firstAgents.resolve(agents);
+    await act(async () => firstAgents.promise);
 
     expect(api.fetchSessions).not.toHaveBeenCalled();
     expect(result.current.version).toBeGreaterThan(0);
