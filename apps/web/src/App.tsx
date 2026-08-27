@@ -49,6 +49,8 @@ export default function App() {
     activeAgents,
     agentCatalog,
     sessions,
+    sessionsLoading,
+    sessionsError,
     projects,
     projectPage,
     projectsError,
@@ -61,6 +63,7 @@ export default function App() {
     applyLiveEvent,
     resyncLiveState,
     retryProjects,
+    retrySessions,
   } = sessionStore;
   const loading = appConfig.loading || (!appConfig.error && sessionStore.loading);
   const error = appConfig.error ?? sessionStore.error;
@@ -68,7 +71,7 @@ export default function App() {
   useWindowLoadTelemetry({
     window: timeWindow,
     pending: appConfig.loading || (!appConfig.error && sessionStore.loadPending),
-    error,
+    error: error ?? sessionsError,
     agentCount: sessionStore.agents.length,
     sessionCount: sessionStore.sessions.length,
   });
@@ -552,6 +555,26 @@ export default function App() {
                   ) : null}
                 </div>
                 <ScanStatusNotice visible={viewState.mode === "root"} />
+                {!loading && !error && (sessionsLoading || sessionsError) ? (
+                  <div
+                    role={sessionsError ? "alert" : "status"}
+                    className="console-mono mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] text-[var(--console-warning)]"
+                  >
+                    <span>
+                      {sessionsError ?? "Loading sessions… Results are not yet complete."}
+                    </span>
+                    {sessionsError ? (
+                      <button
+                        type="button"
+                        disabled={sessionsLoading}
+                        onClick={() => void retrySessions()}
+                        className="rounded-sm border border-current px-2 py-1 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:opacity-50"
+                      >
+                        Retry session load
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </section>
 
