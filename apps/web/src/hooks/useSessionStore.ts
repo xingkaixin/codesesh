@@ -15,7 +15,6 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   type AgentInfo,
   type AppConfig,
-  type DashboardData,
   type ApiProjectGroup,
   type ApiProjectPage,
   type SessionHead,
@@ -33,13 +32,6 @@ import {
   invalidateSessionDerivedQueries,
 } from "../lib/session-query-consistency";
 
-interface SessionStoreSnapshot {
-  window: AppConfig["window"];
-  agents: AgentInfo[];
-  sessions: SessionHead[];
-  dashboard: DashboardData;
-}
-
 export interface SessionProjection {
   sessions: SessionHead[];
   complete: boolean;
@@ -47,11 +39,6 @@ export interface SessionProjection {
 
 export interface LiveSessionApplyResult {
   visibleNewSessions: number;
-}
-
-interface SnapshotAggregates {
-  agents: AgentInfo[];
-  dashboard: DashboardData;
 }
 
 const LIVE_AGGREGATE_REFRESH_INTERVAL_MS = DASHBOARD_STALE_TIME_MS;
@@ -67,10 +54,7 @@ const EMPTY_PROJECT_PAGE: ApiProjectPage = {
   },
 };
 
-const EMPTY_AGGREGATES = {
-  agents: [] satisfies AgentInfo[],
-  dashboard: null,
-};
+const EMPTY_AGENTS: AgentInfo[] = [];
 const EMPTY_SESSIONS: SessionHead[] = [];
 
 function projectsOptions(window: AppConfig["window"]) {
@@ -147,14 +131,6 @@ function removeOtherSessionProjections(
     queryKey: queryKeys.sessionProjections,
     predicate: (query) => query.queryHash !== activeProjectionHash,
   });
-}
-
-function createSnapshot(
-  window: AppConfig["window"],
-  aggregates: SnapshotAggregates,
-  sessions: SessionHead[],
-): SessionStoreSnapshot {
-  return { window, agents: aggregates.agents, dashboard: aggregates.dashboard, sessions };
 }
 
 async function refreshLiveSnapshotAggregates(
@@ -248,18 +224,8 @@ export function useSessionStore(window: AppConfig["window"] | null) {
   const refetchAgents = agentsQuery.refetch;
   const refetchDashboard = dashboardQuery.refetch;
   const refetchProjects = projectsQuery.refetch;
-  const dashboard = dashboardQuery.data;
-  const querySnapshot =
-    window !== null &&
-    projectionQuery.data &&
-    agentsQuery.data !== undefined &&
-    dashboard !== undefined
-      ? createSnapshot(
-          window,
-          { agents: agentsQuery.data, dashboard },
-          projectionQuery.data.sessions,
-        )
-      : null;
+  const hasSessionData =
+    window !== null && projectionQuery.data !== undefined && agentsQuery.data !== undefined;
 
   useEffect(() => {
     if (window) removeOtherSessionProjections(queryClient, window);
@@ -300,11 +266,9 @@ export function useSessionStore(window: AppConfig["window"] | null) {
       }
       const projectionKey = queryKeys.sessionProjection(activeWindow);
       const agentCatalogKey = queryKeys.agentCatalog(activeWindow);
-      const dashboardKey = queryKeys.dashboard(activeWindow, {});
       const currentProjection = queryClient.getQueryData<SessionProjection>(projectionKey);
       const currentAgents = queryClient.getQueryData<AgentInfo[]>(agentCatalogKey);
-      const currentDashboard = queryClient.getQueryData<DashboardData>(dashboardKey);
-      if (!currentProjection || currentAgents === undefined || currentDashboard === undefined) {
+      if (!currentProjection || currentAgents === undefined) {
         await reload();
         await Promise.all([
           invalidateLiveSessionDerivedQueries(queryClient, event),
@@ -386,8 +350,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     await refetchProjection({ cancelRefetch: true });
   }, [refetchProjection, window]);
 
-  const displayedSnapshot = querySnapshot;
-  const agents = displayedSnapshot?.agents ?? EMPTY_AGGREGATES.agents;
+  const agents = hasSessionData ? agentsQuery.data : EMPTY_AGENTS;
   const projectPage = projectsQuery.data ?? EMPTY_PROJECT_PAGE;
   const projects = projectPage.projects;
   const projectsLoading = window === null || projectsQuery.isPending;
@@ -408,14 +371,13 @@ export function useSessionStore(window: AppConfig["window"] | null) {
   );
   const loadFailed =
     (projectionQuery.isError && projectionQuery.data === undefined) ||
-    (agentsQuery.isError && agentsQuery.data === undefined) ||
-    (dashboardQuery.isError && dashboardQuery.data === undefined);
+    (agentsQuery.isError && agentsQuery.data === undefined);
   const error = loadFailed ? "Failed to load session data for the selected time window." : null;
 
   return {
-    window: displayedSnapshot?.window ?? null,
+    window: hasSessionData ? window : null,
     agents,
-    sessions: displayedSnapshot?.sessions ?? EMPTY_SESSIONS,
+    sessions: hasSessionData ? projectionQuery.data.sessions : EMPTY_SESSIONS,
     sessionsLoading: projectionQuery.isFetching,
     sessionsError:
       projectionQuery.data !== undefined &&
@@ -426,13 +388,9 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     projectPage,
     projectsError,
     projectsLoading,
-    dashboard: displayedSnapshot?.dashboard ?? EMPTY_AGGREGATES.dashboard,
-    loading: window === null || (!loadFailed && displayedSnapshot === null),
-    loadPending:
-      window === null ||
-      projectionQuery.isFetching ||
-      agentsQuery.isFetching ||
-      dashboardQuery.isFetching,
+    dashboard: window !== null ? (dashboardQuery.data ?? null) : null,
+    loading: window === null || (!loadFailed && !hasSessionData),
+    loadPending: window === null || projectionQuery.isFetching || agentsQuery.isFetching,
     error,
     version: projectionQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,

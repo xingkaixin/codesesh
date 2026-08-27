@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentInfo,
   AppConfig,
+  DashboardData,
   ApiProjectGroup,
   ApiProjectPage,
   SessionHead,
@@ -83,6 +84,58 @@ async function renderStore(window: AppConfig["window"] = config.window) {
 }
 
 describe("useSessionStore", () => {
+  it("makes sessions ready before the initial dashboard request completes", async () => {
+    const dashboard = deferred<DashboardData>();
+    vi.mocked(api.fetchDashboard).mockReturnValueOnce(dashboard.promise);
+    const { result } = await renderStore();
+
+    expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
+    expect(result.current.window).toEqual(config.window);
+    expect(result.current.loadPending).toBe(false);
+    expect(result.current.dashboard).toBeNull();
+
+    const changed = { ...SAMPLE_SESSION_HEAD, title: "Live session before stats" };
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [{ reference: changed.reference, session: changed }],
+      }),
+    );
+    await waitFor(() => expect(result.current.sessions).toEqual([changed]));
+    await act(async () => {
+      dashboard.resolve(SAMPLE_DASHBOARD_DATA);
+    });
+
+    await waitFor(() => expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA));
+    expect(result.current.sessions).toEqual([changed]);
+    expect(api.fetchSessions).toHaveBeenCalledOnce();
+  });
+
+  it("keeps session data available when the initial dashboard request fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(api.fetchDashboard).mockRejectedValue(new Error("dashboard unavailable"));
+    const { result, client } = await renderStore();
+    await waitFor(() =>
+      expect(client.getQueryState(queryKeys.dashboard(config.window, {}))?.status).toBe("error"),
+    );
+
+    expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
+    expect(result.current.agents).toEqual(agents);
+    expect(result.current.error).toBeNull();
+    expect(result.current.loadPending).toBe(false);
+    expect(result.current.dashboard).toBeNull();
+
+    const changed = { ...SAMPLE_SESSION_HEAD, title: "Live session without stats" };
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [{ reference: changed.reference, session: changed }],
+      }),
+    );
+    await waitFor(() => expect(result.current.sessions).toEqual([changed]));
+    expect(api.fetchSessions).toHaveBeenCalledOnce();
+  });
+
   it("exposes a later page failure without hiding already loaded sessions", async () => {
     vi.mocked(api.fetchSessions).mockImplementationOnce(
       async (_options, _fetchOptions, progress) => {
