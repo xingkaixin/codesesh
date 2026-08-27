@@ -8,7 +8,11 @@ import { readCachedSessionCursor, saveCachedSessions } from "../cache/sessions.j
 import { withCacheDb } from "../cache/connection.js";
 import { MESSAGE_CURSOR_VERSION } from "../cache/message-cursor.js";
 import { syncSessionSearchIndex } from "../cache/search.js";
-import { materializeSessionDetail, materializeSessionDetailResponse } from "../session-detail.js";
+import {
+  materializeSessionDetail,
+  materializeSessionDetailResponse,
+  materializeCachedSessionDetailResponse,
+} from "../session-detail.js";
 import type { LiveSnapshot } from "../scanner.js";
 import { getCachePath, setSchemaEnsuredPath } from "../cache/db.js";
 import { setCoreDiagnostics } from "../../utils/diagnostics.js";
@@ -179,6 +183,17 @@ afterEach(() => {
 });
 
 describe("materializeSessionDetail", () => {
+  it("defers cold and stale details without reading their sources", () => {
+    const head = makeHead();
+    const agent = new TestAgent(makeDetail(), new Map([["s1", makeMeta("new")]]));
+    const snapshot = makeScanResult(agent, head);
+    const reference = head.reference;
+    expect(materializeCachedSessionDetailResponse(snapshot, reference)).toBeNull();
+    persistDetail(head, makeDetail(), "old");
+    expect(materializeCachedSessionDetailResponse(snapshot, reference)).toBeNull();
+    expect(agent.reads).toBe(0);
+  });
+
   it("does not treat an old detail as fresh after only its head advances", () => {
     const head = makeHead();
     const detailA = makeDetail("Detail A");

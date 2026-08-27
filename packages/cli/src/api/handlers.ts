@@ -41,6 +41,7 @@ import {
   type DashboardScope,
 } from "@codesesh/core/runtime/analytics";
 import { appLogger } from "../logging.js";
+import { SessionDetailBusyError, type SessionDetailLoader } from "../session-detail-loader.js";
 import {
   ProjectIdentityQueueFullError,
   ProjectIdentityRequestAbortedError,
@@ -537,7 +538,11 @@ export async function handleGetFileActivity(
   });
 }
 
-export async function handleGetSessionData(c: Context, scanSource: ScanResultSource) {
+export async function handleGetSessionData(
+  c: Context,
+  scanSource: ScanResultSource,
+  loadDetail: SessionDetailLoader = materializeSessionDetailResponse,
+) {
   const startedAt = performance.now();
   const agentName = c.req.param("agent");
   const sessionId = c.req.param("id");
@@ -556,10 +561,11 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
       sessionId,
     };
     const messageCursor = optionalQueryValue(c.req.query("messageCursor"));
-    const result = materializeSessionDetailResponse(
+    const result = await loadDetail(
       scanSource.getSnapshot(),
       reference,
       messageCursor ? { messageCursor } : {},
+      c.req.raw.signal,
     );
     if (result.status === "unknown-agent") {
       return c.json({ error: `Unknown agent: ${agentName}` }, 404);
@@ -591,6 +597,10 @@ export async function handleGetSessionData(c: Context, scanSource: ScanResultSou
     }
     return c.json(aliases.decorate(result.data, result.data.reference));
   } catch (err) {
+    if (err instanceof SessionDetailBusyError) {
+      c.header("Retry-After", "1");
+      return c.json({ error: "Session details busy; retry later" }, 503);
+    }
     const message = err instanceof Error ? err.message : "Failed to load session";
     appLogger.error("api.session_data.error", {
       agent: agentName,

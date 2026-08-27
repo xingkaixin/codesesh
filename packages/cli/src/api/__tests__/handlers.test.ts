@@ -132,6 +132,7 @@ import type {
 import type { SearchResult } from "@codesesh/core/contract";
 import { BaseAgent } from "@codesesh/core/runtime/agents";
 import { appLogger } from "../../logging.js";
+import { SessionDetailBusyError } from "../../session-detail-loader.js";
 
 // --- Helpers ---
 
@@ -2078,6 +2079,17 @@ describe("handleGetDashboard", () => {
 });
 
 describe("handleGetSessionData", () => {
+  it("returns a retryable response when detail workers are at capacity", async () => {
+    const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+    const header = vi.fn();
+    Object.assign(c, { header });
+    await handleGetSessionData(c, makeScanSource(), async () => {
+      throw new SessionDetailBusyError();
+    });
+    expect(c.json).toHaveBeenCalledWith({ error: "Session details busy; retry later" }, 503);
+    expect(header).toHaveBeenCalledWith("Retry-After", "1");
+  });
+
   const detail: SessionDetail = {
     reference: { agentName: "claudecode", sessionId: "s1" },
     title: "Test Session",
@@ -2115,6 +2127,7 @@ describe("handleGetSessionData", () => {
         sessionId: "s1",
       },
       {},
+      c.req.raw.signal,
     );
     expect(c.json).toHaveBeenCalledWith(detail);
   });
@@ -2133,6 +2146,7 @@ describe("handleGetSessionData", () => {
       scanSource.getSnapshot(),
       { agentName: "claudecode", sessionId: "s1" },
       { messageCursor: "known-prefix" },
+      c.req.raw.signal,
     );
   });
 

@@ -7,6 +7,7 @@ export default defineConfig({
   entry: [
     "src/index.ts",
     "src/project-identity-worker.ts",
+    "src/session-detail-worker.ts",
     "src/search-index-worker.ts",
     "src/scan-refresh-worker.ts",
     "src/smart-tag-worker.ts",
