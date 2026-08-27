@@ -10,6 +10,8 @@ import { appRouteChildren } from "./lib/app-routes";
 import { createQueryClient } from "./lib/query-client";
 import { ScanStatusProvider } from "./hooks/useScanStatus";
 
+const LAZY_SURFACE_TIMEOUT_MS = 5_000;
+
 const liveSubscription = vi.hoisted(() => ({
   onUpdate: undefined as ((event: SessionsUpdatedEvent) => void) | undefined,
 }));
@@ -143,6 +145,41 @@ function dashboardRequests(): URLSearchParams[] {
 }
 
 describe("App session loading", () => {
+  it("opens session details when dashboard loading fails and retries statistics independently", async () => {
+    responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
+    responses["/api/sessions"] = { sessions: [SAMPLE_SESSION_HEAD] };
+    let dashboardAvailable = false;
+    const defaultFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/dashboard" && !dashboardAvailable) {
+        return new Response("statistics unavailable", { status: 503 });
+      }
+      if (url.pathname === "/api/sessions/claudecode/session-1") {
+        return Response.json({ ...SAMPLE_SESSION_HEAD, messages: [] });
+      }
+      return defaultFetch(input);
+    });
+    const { router } = renderAppAt("/claudecode/session-1");
+
+    await screen.findByTestId("session-detail", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
+    expect(
+      screen.queryByText("Failed to load session data for the selected time window."),
+    ).toBeNull();
+
+    await act(() => router.navigate("/"));
+    await screen.findByText(
+      "Couldn't load the dashboard.",
+      {},
+      { timeout: LAZY_SURFACE_TIMEOUT_MS },
+    );
+    dashboardAvailable = true;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(screen.queryByText("Couldn't load the dashboard.")).toBeNull());
+    expect(screen.getByTestId("dashboard")).toBeTruthy();
+  });
+
   it("shows pagination progress and lets the user retry a failed later page", async () => {
     responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 2 }];
     const finalSession = {
