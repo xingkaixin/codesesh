@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -141,6 +141,47 @@ function dashboardRequests(): URLSearchParams[] {
     .filter((url) => url.startsWith("/api/dashboard"))
     .map((url) => new URLSearchParams(url.split("?")[1] ?? ""));
 }
+
+describe("App session loading", () => {
+  it("shows pagination progress and lets the user retry a failed later page", async () => {
+    responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 2 }];
+    const finalSession = {
+      ...SAMPLE_SESSION_HEAD,
+      ...createSessionIdentity({ agentName: "claudecode", sessionId: "last-page-session" }),
+      title: "Session from the last page",
+    };
+    let failPage!: (response: Response) => void;
+    const secondPage = new Promise<Response>((resolve) => {
+      failPage = resolve;
+    });
+    let retry = false;
+    const defaultFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname !== "/api/sessions") return defaultFetch(input);
+      if (url.searchParams.has("cursor")) return secondPage;
+      return Response.json({
+        sessions: retry ? [SAMPLE_SESSION_HEAD, finalSession] : [SAMPLE_SESSION_HEAD],
+        nextCursor: retry ? undefined : "second-page",
+      });
+    });
+    renderAppAt("/claudecode");
+
+    await screen.findByText("Loading sessions… Results are not yet complete.");
+    await act(async () => {
+      failPage(new Response("second page unavailable", { status: 503 }));
+    });
+    await screen.findByText(/Displayed sessions may be incomplete/);
+    expect(screen.getAllByText(SAMPLE_SESSION_HEAD.title).length).toBeGreaterThan(0);
+
+    retry = true;
+    fireEvent.click(screen.getByRole("button", { name: "Retry session load" }));
+
+    await screen.findByText(finalSession.title);
+    expect(screen.queryByText(/Displayed sessions may be incomplete/)).toBeNull();
+    expect(screen.queryByText("Loading sessions… Results are not yet complete.")).toBeNull();
+  });
+});
 
 describe("App live updates", () => {
   it("preserves keyboard selection when a live update replaces the session list", async () => {

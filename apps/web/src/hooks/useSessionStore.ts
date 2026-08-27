@@ -42,6 +42,7 @@ interface SessionStoreSnapshot {
 
 export interface SessionProjection {
   sessions: SessionHead[];
+  complete: boolean;
 }
 
 export interface LiveSessionApplyResult {
@@ -126,8 +127,9 @@ async function fetchSessionProjection(
   load: SessionProjectionLoad,
 ): Promise<SessionProjection> {
   const { window } = load;
-  const project = (sessions: SessionHead[]): SessionProjection => ({
+  const project = (sessions: SessionHead[], complete: boolean): SessionProjection => ({
     sessions: load.event ? applyProjectionEvent(sessions, load.event, window).sessions : sessions,
+    complete,
   });
   const result = await fetchSessions(
     { from: window.from, to: window.to },
@@ -135,13 +137,16 @@ async function fetchSessionProjection(
     {
       onFirstPage(sessions) {
         if (!signal.aborted) {
-          queryClient.setQueryData(queryKeys.sessionProjection(window), project(sessions));
+          queryClient.setQueryData<SessionProjection>(
+            queryKeys.sessionProjection(window),
+            (previous) => previous ?? project(sessions, false),
+          );
         }
       },
     },
   );
   signal.throwIfAborted();
-  return project(result.sessions);
+  return project(result.sessions, true);
 }
 
 function removeOtherSessionProjections(
@@ -389,6 +394,11 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     }
   }, [reload, window]);
 
+  const retrySessions = useCallback(async (): Promise<void> => {
+    if (!window) return;
+    await refetchProjection({ cancelRefetch: true });
+  }, [refetchProjection, window]);
+
   const displayedSnapshot = querySnapshot;
   const agents = displayedSnapshot?.agents ?? EMPTY_AGGREGATES.agents;
   const projectPage = projectsQuery.data ?? EMPTY_PROJECT_PAGE;
@@ -419,6 +429,12 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     window: displayedSnapshot?.window ?? null,
     agents,
     sessions: displayedSnapshot?.sessions ?? EMPTY_SESSIONS,
+    sessionsLoading: projectionQuery.isFetching,
+    sessionsError:
+      projectionQuery.data !== undefined &&
+      (projectionQuery.isError || (!projectionQuery.data.complete && !projectionQuery.isFetching))
+        ? "Session loading failed. Displayed sessions may be incomplete or out of date."
+        : null,
     projects,
     projectPage,
     projectsError,
@@ -440,6 +456,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     applyLiveEvent,
     resyncLiveState,
     retryLoad,
+    retrySessions,
     retryProjects,
   };
 }

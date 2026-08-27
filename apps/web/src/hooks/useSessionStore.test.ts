@@ -83,6 +83,59 @@ async function renderStore(window: AppConfig["window"] = config.window) {
 }
 
 describe("useSessionStore", () => {
+  it("exposes a later page failure without hiding already loaded sessions", async () => {
+    vi.mocked(api.fetchSessions).mockImplementationOnce(
+      async (_options, _fetchOptions, progress) => {
+        progress?.onFirstPage?.([SAMPLE_SESSION_HEAD]);
+        throw new Error("second page unavailable");
+      },
+    );
+    const { result, client } = await renderStore();
+    await waitFor(() =>
+      expect(client.getQueryState(queryKeys.sessionProjection(config.window))?.status).toBe(
+        "error",
+      ),
+    );
+    expect(result.current.sessionsError).toContain("incomplete");
+    expect(result.current.error).toBeNull();
+    expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
+
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+    await waitFor(() =>
+      expect(result.current.sessions).toEqual(
+        SAMPLE_SESSIONS_UPDATED_EVENT.changedSessionHeads.map(({ session }) => session),
+      ),
+    );
+    await waitFor(() => expect(result.current.sessionsError).toContain("incomplete"));
+
+    await act(() => result.current.retrySessions());
+
+    await waitFor(() => expect(result.current.sessionsError).toBeNull());
+    expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
+  });
+
+  it("retains a complete projection when a refresh fails after its first page", async () => {
+    const secondSession = {
+      ...SAMPLE_SESSION_HEAD,
+      ...createSessionIdentity({ agentName: "claudecode", sessionId: "second-session" }),
+    };
+    const completeSessions = [SAMPLE_SESSION_HEAD, secondSession];
+    vi.mocked(api.fetchSessions).mockResolvedValueOnce({ sessions: completeSessions });
+    const { result } = await renderStore();
+    vi.mocked(api.fetchSessions).mockImplementationOnce(
+      async (_options, _fetchOptions, progress) => {
+        progress?.onFirstPage?.([SAMPLE_SESSION_HEAD]);
+        throw new Error("second page unavailable");
+      },
+    );
+
+    await act(() => result.current.retrySessions());
+
+    await waitFor(() => expect(result.current.sessionsError).not.toBeNull());
+    expect(result.current.sessions).toEqual(completeSessions);
+    expect(result.current.error).toBeNull();
+  });
+
   it("preserves live additions received while the first page is still loading", async () => {
     const response = deferred<{ sessions: SessionHead[] }>();
     let firstPage!: (sessions: SessionHead[]) => void;
@@ -276,6 +329,7 @@ describe("useSessionStore", () => {
 
     await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
     expect(result.current.loading).toBe(false);
+    expect(result.current.sessionsLoading).toBe(true);
     expect(
       client.getQueryData<SessionProjection>(queryKeys.sessionProjection(config.window))?.sessions,
     ).toEqual([SAMPLE_SESSION_HEAD]);
@@ -286,6 +340,7 @@ describe("useSessionStore", () => {
     await waitFor(() =>
       expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD, finalSession]),
     );
+    expect(result.current.sessionsLoading).toBe(false);
   });
 
   it("keeps the latest snapshot when an earlier request finishes late", async () => {
