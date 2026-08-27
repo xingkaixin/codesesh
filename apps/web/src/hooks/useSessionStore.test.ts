@@ -83,6 +83,90 @@ async function renderStore(window: AppConfig["window"] = config.window) {
 }
 
 describe("useSessionStore", () => {
+  it("preserves live additions received while the first page is still loading", async () => {
+    const response = deferred<{ sessions: SessionHead[] }>();
+    let firstPage!: (sessions: SessionHead[]) => void;
+    vi.mocked(api.fetchSessions).mockImplementationOnce((_options, _fetchOptions, progress) => {
+      firstPage = progress!.onFirstPage!;
+      return response.promise;
+    });
+    const { Wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSessionStore(config.window), { wrapper: Wrapper });
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenCalled());
+    const added = {
+      ...SAMPLE_SESSION_HEAD,
+      ...createSessionIdentity({ agentName: "claudecode", sessionId: "live-added" }),
+    };
+    let applied!: ReturnType<typeof result.current.applyLiveEvent>;
+    act(() => {
+      applied = result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        newSessionRefs: [added.reference],
+        changedSessionHeads: [{ reference: added.reference, session: added }],
+        projectionSessionOrder: [SAMPLE_SESSION_HEAD.reference, added.reference],
+      });
+    });
+    act(() => firstPage([SAMPLE_SESSION_HEAD]));
+    await waitFor(() => expect(result.current.sessions).toContainEqual(added));
+    const changed = { ...added, title: "Updated while loading" };
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        newSessionRefs: [],
+        changedSessionHeads: [{ reference: changed.reference, session: changed }],
+        projectionSessionOrder: [SAMPLE_SESSION_HEAD.reference, changed.reference],
+      }),
+    );
+    await act(async () => {
+      response.resolve({ sessions: [SAMPLE_SESSION_HEAD] });
+      await applied;
+    });
+    await waitFor(() => expect(result.current.sessions).toHaveLength(2));
+    expect(result.current.sessions).toContainEqual(changed);
+  });
+
+  it("preserves live changes and removals when an older full response finishes", async () => {
+    const { result } = await renderStore();
+    const response = deferred<{ sessions: SessionHead[] }>();
+    vi.mocked(api.fetchSessions).mockReturnValueOnce(response.promise);
+    let reload!: Promise<void>;
+    act(() => {
+      reload = result.current.reload();
+    });
+    const changed = { ...SAMPLE_SESSION_HEAD, title: "Live title" };
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [{ reference: changed.reference, session: changed }],
+      }),
+    );
+    await act(async () => {
+      response.resolve({ sessions: [SAMPLE_SESSION_HEAD] });
+      await reload;
+    });
+    expect(result.current.sessions[0]?.title).toBe("Live title");
+
+    const removedResponse = deferred<{ sessions: SessionHead[] }>();
+    vi.mocked(api.fetchSessions).mockReturnValueOnce(removedResponse.promise);
+    act(() => {
+      reload = result.current.reload();
+    });
+    await act(() =>
+      result.current.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [],
+        newSessionRefs: [],
+        projectionSessionOrder: [],
+        removedSessionRefs: [changed.reference],
+      }),
+    );
+    await act(async () => {
+      removedResponse.resolve({ sessions: [changed] });
+      await reload;
+    });
+    await waitFor(() => expect(result.current.sessions).toEqual([]));
+  });
+
   it("stays idle until a window is selected", () => {
     const { Wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useSessionStore(null), { wrapper: Wrapper });
@@ -137,7 +221,11 @@ describe("useSessionStore", () => {
     });
 
     expect(liveResult).toEqual({ visibleNewSessions: 0 });
-    await waitFor(() => expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]));
+    await waitFor(() =>
+      expect(result.current.sessions).toEqual(
+        SAMPLE_SESSIONS_UPDATED_EVENT.changedSessionHeads.map(({ session }) => session),
+      ),
+    );
   });
 
   it("keeps projects available alongside the session snapshot", async () => {
