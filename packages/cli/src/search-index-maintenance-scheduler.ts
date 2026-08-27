@@ -15,11 +15,16 @@ const MAINTENANCE_BATCH_SIZE = 4;
 
 type StatusListener = (status: SearchIndexMaintenanceStatus) => void;
 
+interface IndexedSessionCache {
+  sessionsById: Map<string, PersistedSessionHeadChange<IdentifiedSessionHead>>;
+  meta: CachedResult["meta"];
+}
+
 export class SearchIndexMaintenanceScheduler {
   private readonly pendingAgents = new Set<string>();
   private readonly completedAgents = new Set<string>();
   private readonly failedAgents = new Set<string>();
-  private readonly cachedSessionsByAgent = new Map<string, CachedResult>();
+  private readonly cachedSessionsByAgent = new Map<string, IndexedSessionCache>();
   private currentAgent: string | undefined;
   private remaining: number | undefined;
   private pumpPromise: Promise<void> | null = null;
@@ -98,19 +103,21 @@ export class SearchIndexMaintenanceScheduler {
       if (outcome.status === "failed") {
         throw new Error(`Session cache read failed for ${agentName}`);
       }
-      cached = outcome.value ?? undefined;
+      if (!outcome.value) throw new Error(`Session cache is unavailable for ${agentName}`);
+      cached = {
+        sessionsById: new Map(
+          outcome.value.sessions.map((session, sortIndex) => [
+            session.reference.sessionId,
+            { session, sortIndex },
+          ]),
+        ),
+        meta: outcome.value.meta,
+      };
+      this.cachedSessionsByAgent.set(agentName, cached);
     }
-    if (!cached) throw new Error(`Session cache is unavailable for ${agentName}`);
-    this.cachedSessionsByAgent.set(agentName, cached);
-    const sessionsById = new Map(
-      cached.sessions.map((session, sortIndex) => [
-        session.reference.sessionId,
-        { session, sortIndex },
-      ]),
-    );
     const changes = pending.sessionIds.flatMap(
       (sessionId): PersistedSessionHeadChange<IdentifiedSessionHead>[] => {
-        const change = sessionsById.get(sessionId);
+        const change = cached.sessionsById.get(sessionId);
         return change ? [change] : [];
       },
     );
