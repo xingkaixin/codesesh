@@ -28,6 +28,7 @@ test("keeps production analytics out of development", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator('script[src*="cloudflareinsights.com"]')).toHaveCount(0);
+  await expect(page.locator('script[src="https://umami.xingkaixin.me/script.js"]')).toHaveCount(0);
 });
 
 for (const locale of locales) {
