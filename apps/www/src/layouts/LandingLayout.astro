@@ -319,6 +319,17 @@ const jsonLd = {
       set:html={JSON.stringify(jsonLd)}
     />
     {
+      import.meta.env.PROD && (
+        <script
+          is:inline
+          defer
+          src="https://umami.xingkaixin.me/script.js"
+          data-website-id="ef9537a4-c9aa-4f4c-b228-78efa155a203"
+          data-domains={analyticsHost}
+        />
+      )
+    }
+    {
       analyticsEnabled && (
         <script
           is:inline
