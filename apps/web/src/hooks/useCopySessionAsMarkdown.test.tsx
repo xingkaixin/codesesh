@@ -40,8 +40,12 @@ describe("useCopySessionAsMarkdown", () => {
     expect(result.current.sessionCopyNotice).toBe("Couldn’t copy session as Markdown.");
     expect(apiMocks.logClientEvent).toHaveBeenCalledWith(
       "session.markdown_copy.error",
-      expect.objectContaining({ error: "Clipboard write failed" }),
+      expect.objectContaining({ error_name: "Error" }),
     );
+    const errorData = apiMocks.logClientEvent.mock.calls.find(
+      ([event]) => event === "session.markdown_copy.error",
+    )?.[1];
+    expect(JSON.stringify(errorData)).not.toContain("Clipboard write failed");
 
     act(() => vi.advanceTimersByTime(2_500));
     expect(result.current.sessionCopyNotice).toBeNull();

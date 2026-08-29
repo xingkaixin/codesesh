@@ -8,10 +8,23 @@ vi.mock("@codesesh/core/runtime/discovery", () => ({
   materializeCachedSessionDetailResponse: mocks.cached,
 }));
 vi.mock("./logging.js", () => ({
-  appLogger: { info: vi.fn(), consumeWorkerMessage: vi.fn(() => false) },
+  appLogger: {
+    info: vi.fn(),
+    consumeWorkerMessage: vi.fn(() => false),
+    captureContext: vi.fn(() => ({})),
+  },
 }));
 vi.mock("node:worker_threads", () => ({
   Worker: class extends EventEmitter {
+    postMessage = vi.fn((message: { type?: string; requestId?: string }) => {
+      if (message.type !== "codesesh.worker-log-drain") return;
+      queueMicrotask(() => {
+        this.emit("message", {
+          type: "codesesh.worker-log-drained",
+          requestId: message.requestId,
+        });
+      });
+    });
     terminate = vi.fn(async () => {
       this.emit("exit", 0);
       return 0;
@@ -55,6 +68,9 @@ it("returns serialized worker results and retires the worker", async () => {
   const pending = loader.load(snapshot, reference);
   mocks.workers[0].emit("message", { type: "result", result: { status: "not-ready" } });
   await expect(pending).resolves.toEqual({ status: "not-ready" });
+  expect(mocks.workers[0].postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "codesesh.worker-log-drain" }),
+  );
   expect(mocks.workers[0].terminate).toHaveBeenCalledOnce();
 });
 
@@ -78,6 +94,33 @@ it("bounds concurrent parsing and cancels outstanding work on shutdown", async (
   await loader.shutdown();
   await Promise.all([first, second]);
   await expect(loader.load(snapshot, reference)).rejects.toThrow();
+});
+
+it("waits for every worker retirement when one termination fails", async () => {
+  const first = expect(loader.load(snapshot, reference)).rejects.toThrow();
+  const second = expect(loader.load(snapshot, reference)).rejects.toThrow();
+  mocks.workers[0].terminate.mockRejectedValueOnce(new Error("termination failed"));
+  let finishSecond = () => {};
+  mocks.workers[1].terminate.mockImplementationOnce(
+    () =>
+      new Promise<number>((resolve) => {
+        finishSecond = () => {
+          mocks.workers[1].emit("exit", 0);
+          resolve(0);
+        };
+      }),
+  );
+  let shutdownCompleted = false;
+
+  const shutdown = loader.shutdown().then(() => {
+    shutdownCompleted = true;
+  });
+  await vi.waitFor(() => expect(mocks.workers[1].terminate).toHaveBeenCalledOnce());
+  expect(shutdownCompleted).toBe(false);
+
+  finishSecond();
+  await shutdown;
+  await Promise.all([first, second]);
 });
 
 it("cancels a worker when the client aborts", async () => {

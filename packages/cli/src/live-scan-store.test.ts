@@ -75,6 +75,7 @@ const core = vi.hoisted(() => {
 });
 
 const workerThreads = vi.hoisted(() => ({
+  acknowledgeLogDrain: true,
   deferSearchIndexWorkers: false,
   deferScanRefreshWorkers: false,
   workers: [] as Array<{
@@ -82,6 +83,7 @@ const workerThreads = vi.hoisted(() => ({
     workerData: any;
     on: ReturnType<typeof vi.fn>;
     once: ReturnType<typeof vi.fn>;
+    off: ReturnType<typeof vi.fn>;
     postMessage: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
     emitMessage: (message: unknown) => void;
@@ -255,9 +257,35 @@ const workerThreads = vi.hoisted(() => ({
             queueMicrotask(() => handler(0));
           }
         }
+        if (event === "error") errorHandlers.push(handler as (error: Error) => void);
+        return worker;
+      }),
+      off: vi.fn((event: string, handler: (message: unknown) => void) => {
+        const handlers =
+          event === "message" ? messageHandlers : event === "exit" ? exitHandlers : errorHandlers;
+        const index = handlers.indexOf(handler as never);
+        if (index >= 0) handlers.splice(index, 1);
         return worker;
       }),
       postMessage: vi.fn((data: unknown) => {
+        if (
+          data != null &&
+          typeof data === "object" &&
+          "type" in data &&
+          data.type === "codesesh.worker-log-drain" &&
+          "requestId" in data
+        ) {
+          if (!workerThreads.acknowledgeLogDrain) return;
+          queueMicrotask(() => {
+            for (const handler of messageHandlers.slice()) {
+              handler({
+                type: "codesesh.worker-log-drained",
+                requestId: data.requestId,
+              });
+            }
+          });
+          return;
+        }
         if (!workerThreads.deferScanRefreshWorkers) dispatch(data);
       }),
       terminate: vi.fn(async () => {
@@ -328,7 +356,8 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   };
 });
 
-vi.mock("node:worker_threads", () => ({
+vi.mock("node:worker_threads", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:worker_threads")>()),
   Worker: workerThreads.Worker,
 }));
 
@@ -510,6 +539,7 @@ describe("LiveScanStore", () => {
     vi.clearAllMocks();
     fsWatch.watchers.length = 0;
     workerThreads.workers.length = 0;
+    workerThreads.acknowledgeLogDrain = true;
     workerThreads.deferSearchIndexWorkers = false;
     workerThreads.deferScanRefreshWorkers = false;
     fsWatch.watch.mockImplementation(
@@ -938,6 +968,34 @@ describe("LiveScanStore", () => {
     retry.commit();
   });
 
+  it("waits for an errored scan worker to exit during shutdown", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    workerThreads.acknowledgeLogDrain = false;
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+    const refresh = runner
+      .run("codex", {
+        previousSessions: [],
+        operation: { kind: "full-scan" },
+        scanOptions: {},
+        meta: {},
+      })
+      .catch((error: Error) => error);
+    const worker = workerThreads.workers.at(-1)!;
+    worker.emitError(new Error("scan failed"));
+    let shutdownCompleted = false;
+    const shutdown = runner.shutdown().then(() => {
+      shutdownCompleted = true;
+    });
+
+    await Promise.resolve();
+    expect(shutdownCompleted).toBe(false);
+    worker.emitExit(1);
+    await shutdown;
+
+    expect(await refresh).toEqual(new Error("scan failed"));
+    expect(worker.terminate).not.toHaveBeenCalled();
+  });
+
   it("rehydrates an unavailable-agent error from the scan worker", async () => {
     workerThreads.deferScanRefreshWorkers = true;
     const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
@@ -1012,6 +1070,45 @@ describe("LiveScanStore", () => {
     });
     run.commit();
     await runner.shutdown();
+  });
+
+  it("keeps the originating operation context when a staged result commits later", async () => {
+    workerThreads.deferScanRefreshWorkers = true;
+    const runner = new ThreadWorkerRunner(new URL("./scan-refresh-worker.js", import.meta.url));
+    const refresh = appLogger.runWithContext({ operation_id: "scan-operation" }, () =>
+      runner.run("codex", {
+        previousSessions: [],
+        operation: { kind: "full-scan" },
+        scanOptions: {},
+        meta: {},
+      }),
+    );
+    const worker = workerThreads.workers.at(-1)!;
+    worker.emitMessage({
+      type: "done",
+      requestId: worker.workerData.requestId,
+      generation: worker.workerData.generation,
+      changes: [],
+      removedSessionIds: [],
+      meta: {},
+      removedMetaIds: [],
+      sourceFailures: [],
+      completeness: "complete",
+      explicitRemovedSessionIds: [],
+      durationMs: 0,
+    });
+    const staged = await refresh;
+
+    appLogger.runWithContext({ operation_id: "unrelated-operation" }, () => staged.commit());
+
+    expect(worker.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "commit",
+        logContext: { operation_id: "scan-operation" },
+      }),
+    );
+    await runner.shutdown();
+    workerThreads.deferScanRefreshWorkers = false;
   });
 
   it("rejects a scan worker request when its checkpoint cannot commit", async () => {
@@ -1165,6 +1262,8 @@ describe("LiveScanStore", () => {
     });
     const discardedWorker = workerThreads.workers.at(-1)!;
     candidateRun.discard();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(discardedWorker.terminate).toHaveBeenCalledTimes(1);
     const replacementRun = await runner.run("codex", {
@@ -2021,6 +2120,9 @@ describe("LiveScanStore", () => {
       scan_workers: 1,
     });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(worker.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "codesesh.worker-log-drain" }),
+    );
     expect(store.getSnapshot().sessions).toEqual([existing]);
     expect(listener).not.toHaveBeenCalled();
   });
@@ -2184,6 +2286,9 @@ describe("LiveScanStore", () => {
     await Promise.all([runner.shutdown(), runner.shutdown()]);
 
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+    expect(worker.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "codesesh.worker-log-drain" }),
+    );
     expect(await outcome).toBeInstanceOf(Error);
     await expect(runner.enqueue("scan.refresh", [job])).rejects.toThrow(
       "Live scan store shut down",

@@ -12,6 +12,7 @@ const message: WorkerLogMessage = {
   event: "worker.ready",
   pid: 42,
   threadId: 3,
+  context: { operation_id: "scan:codex:1" },
   data: { sessions: 2 },
 };
 
@@ -28,6 +29,8 @@ describe("worker log protocol", () => {
     { ...message, event: "" },
     { ...message, pid: 0 },
     { ...message, threadId: -1 },
+    { ...message, context: { operation_id: "x".repeat(161) } },
+    { ...message, context: { unexpected: "value" } },
     { ...message, data: [] },
   ])("rejects an invalid worker message %#", (candidate) => {
     expect(isWorkerLogMessage(candidate)).toBe(false);

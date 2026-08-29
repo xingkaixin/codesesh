@@ -1,4 +1,4 @@
-import { sessionRoutePath } from "@codesesh/core/contract";
+import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/core/contract";
 import type {
   AgentInfo,
   ApiProjectGroup,
@@ -151,7 +151,14 @@ export function createApiClient(access: RemoteAccess) {
     options?: SessionDetailFetchOptions,
   ): Promise<SessionDetail> {
     const path = `/api/sessions${sessionRoutePath({ agentName: agent, sessionId })}`;
-    const fetchOptions: FetchOptions | undefined = options ? { signal: options.signal } : undefined;
+    const fetchOptions: RequestInit | undefined = options
+      ? {
+          signal: options.signal,
+          ...(options.operationId
+            ? { headers: { [CODESESH_OPERATION_ID_HEADER]: options.operationId } }
+            : {}),
+        }
+      : undefined;
     if (!options?.messageCursor) return fetchJson(path, fetchOptions);
 
     const params = new URLSearchParams({ messageCursor: options.messageCursor });

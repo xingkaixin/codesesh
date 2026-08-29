@@ -91,9 +91,13 @@ describe("useSessionSearch", () => {
     await waitFor(() =>
       expect(api.logClientEvent).toHaveBeenCalledWith(
         "search.error",
-        expect.objectContaining({ error: "Search unavailable" }),
+        expect.objectContaining({ error_name: "Error" }),
       ),
     );
+    const errorData = vi
+      .mocked(api.logClientEvent)
+      .mock.calls.find(([event]) => event === "search.error")?.[1];
+    expect(JSON.stringify(errorData)).not.toContain("Search unavailable");
     expect(result.current.searchState).toEqual({
       status: "failed",
       error: "Search unavailable",

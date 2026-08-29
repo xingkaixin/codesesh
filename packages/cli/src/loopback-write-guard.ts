@@ -57,7 +57,6 @@ export function loopbackWriteGuard(): MiddlewareHandler {
     if (!decision.allowed) {
       appLogger.warn("http.loopback_request.rejected", {
         method: c.req.method,
-        path: url.pathname,
         reason: decision.reason,
       });
       const error =

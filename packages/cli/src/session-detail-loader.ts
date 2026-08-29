@@ -11,6 +11,7 @@ import type {
   SessionDetailWorkerMessage,
   SessionDetailWorkerRequest,
 } from "./session-detail-worker.js";
+import { terminateWorkerAfterLogDrain } from "./worker-log-drain.js";
 
 export type SessionDetailLoader = (
   snapshot: LiveSnapshot,
@@ -55,6 +56,7 @@ export class ThreadSessionDetailLoader {
       meta: meta ? { [reference.sessionId]: meta } : {},
       messageCursor: options.messageCursor,
       pricingGenerationId: getPricingGeneration().id,
+      logContext: appLogger.captureContext(),
     };
     appLogger.info("session_detail.worker.started", {
       agent: reference.agentName,
@@ -92,13 +94,15 @@ export class ThreadSessionDetailLoader {
     } finally {
       clearTimeout(timeout);
       requestSignal.removeEventListener("abort", abort);
-      await worker.terminate();
+      await terminateWorkerAfterLogDrain(worker);
       await exited;
     }
   };
 
   async shutdown(): Promise<void> {
     this.shutdownController.abort();
-    await Promise.all([...this.workers].map((worker) => worker.terminate()));
+    await Promise.allSettled(
+      [...this.workers].map((worker) => terminateWorkerAfterLogDrain(worker)),
+    );
   }
 }

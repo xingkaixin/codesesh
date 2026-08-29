@@ -33,6 +33,7 @@ vi.mock("node:os", async (importOriginal) => {
 // throws (accessing testHomeDir before its own initialization).
 const { closeCacheStorage, syncSessionSearchIndex } =
   await import("@codesesh/core/runtime/discovery");
+const { appLogger } = await import("../../logging.js");
 const { createApiRoutes } = await import("../routes.js");
 
 function getCacheDir(): string {
@@ -96,7 +97,8 @@ beforeAll(() => {
   }));
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await appLogger.flush();
   closeCacheStorage();
   rmSync(getCacheDir(), { recursive: true, force: true });
 });

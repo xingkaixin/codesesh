@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => {
       warn: vi.fn(),
       error: vi.fn(),
       forwardToParent: vi.fn(),
+      restoreContext: vi.fn((_context, operation) => operation()),
+      captureContext: vi.fn(() => ({})),
     },
   };
 });
@@ -203,6 +205,47 @@ describe("scan refresh worker entry", () => {
     expect(mocks.synchronizePricingGeneration.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createRegisteredAgents.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("acknowledges log drain after requests already queued in the worker", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([makeAgent()]);
+    await runWorker();
+    mocks.postMessage.mockClear();
+
+    mocks.workerMessageHandler?.({
+      type: "commit",
+      requestId: 1,
+      generation: 0,
+    });
+    mocks.workerMessageHandler?.({
+      type: "run",
+      requestId: 2,
+      agentName: "codex",
+      generation: 1,
+      pricingGenerationId: 17,
+      operation: { kind: "full-scan" },
+      scanOptions: { fast: true },
+    });
+    mocks.workerMessageHandler?.({
+      type: "codesesh.worker-log-drain",
+      requestId: "drain-1",
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.postMessage).toHaveBeenCalledWith({
+        type: "codesesh.worker-log-drained",
+        requestId: "drain-1",
+      }),
+    );
+    const messages = mocks.postMessage.mock.calls.map(([message]) => message);
+    const doneIndex = messages.findIndex(
+      (message) => message.type === "done" && message.requestId === 2,
+    );
+    const drainIndex = messages.findIndex(
+      (message) => message.type === "codesesh.worker-log-drained",
+    );
+    expect(doneIndex).toBeGreaterThanOrEqual(0);
+    expect(drainIndex).toBeGreaterThan(doneIndex);
   });
 
   it("reports an unknown agent as an error", async () => {

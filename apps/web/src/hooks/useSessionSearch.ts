@@ -81,7 +81,7 @@ export function useSessionSearch(
           console.error("Failed to load search results:", error);
           logClientEvent("search.error", {
             duration_ms: Math.round(performance.now() - startedAt),
-            error: error instanceof Error ? error.message : String(error),
+            error_name: error instanceof Error ? error.name : "UnknownError",
           });
         }
         throw error;

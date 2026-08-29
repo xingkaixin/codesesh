@@ -6,6 +6,7 @@ import { createServer as createNodeServer, type Server as NodeServer } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { CODESESH_OPERATION_ID_HEADER, CODESESH_REQUEST_ID_HEADER } from "@codesesh/core/contract";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/test-fixtures";
 import { appLogger } from "./logging.js";
 import type { ProjectIdentityResolver } from "./project-identity-resolver.js";
@@ -248,6 +249,99 @@ describe("createServer", () => {
     }
   });
 
+  it("correlates a request without logging its concrete session route", async () => {
+    const observed: Array<{
+      event: string;
+      data: Record<string, unknown>;
+      context: ReturnType<typeof appLogger.captureContext>;
+    }> = [];
+    const originalInfo = appLogger.info.bind(appLogger);
+    const logSpy = vi.spyOn(appLogger, "info").mockImplementation((event, data = {}) => {
+      observed.push({ event, data, context: appLogger.captureContext() });
+      originalInfo(event, data);
+    });
+    const app = await createServer(0, createStore());
+    const access = getServerAccess(app.url);
+    const operationId = "11111111-1111-4111-8111-111111111111";
+
+    try {
+      const response = await fetch(
+        `${access.origin}/api/sessions/codex/private-session-identifier?messageCursor=private-cursor&private-key=private-query`,
+        {
+          headers: {
+            ...access.authorization,
+            [CODESESH_OPERATION_ID_HEADER]: operationId,
+          },
+        },
+      );
+      const requestId = response.headers.get(CODESESH_REQUEST_ID_HEADER);
+      const requestLog = observed.findLast(({ event }) => event === "http.request");
+
+      expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(requestLog).toMatchObject({
+        data: {
+          route: "/api/sessions/:agent/:id",
+          query_keys: ["messageCursor"],
+        },
+        context: { request_id: requestId, operation_id: operationId },
+      });
+      expect(JSON.stringify(requestLog)).not.toContain("private-session-identifier");
+      expect(JSON.stringify(requestLog)).not.toContain("private-query");
+
+      const invalidOperation = await fetch(`${access.origin}/api/agents`, {
+        headers: {
+          ...access.authorization,
+          [CODESESH_OPERATION_ID_HEADER]: "private-operation-secret",
+        },
+      });
+      const invalidRequestId = invalidOperation.headers.get(CODESESH_REQUEST_ID_HEADER);
+      const invalidRequestLog = observed.findLast(({ event }) => event === "http.request");
+      expect(invalidRequestLog?.context).toEqual({ request_id: invalidRequestId });
+      expect(JSON.stringify(invalidRequestLog)).not.toContain("private-operation-secret");
+    } finally {
+      await app.shutdown();
+      logSpy.mockRestore();
+    }
+  });
+
+  it("records handler failures caught by Hono without exposing request details", async () => {
+    const handlerError = new Error("handler failed");
+    const store = {
+      ...createStore(),
+      getSnapshot: () => {
+        throw handlerError;
+      },
+    };
+    const observed: Array<{ event: string; data: Record<string, unknown> }> = [];
+    const logSpy = vi.spyOn(appLogger, "info").mockImplementation((event, data = {}) => {
+      observed.push({ event, data });
+    });
+    const app = await createServer(0, store);
+    const access = getServerAccess(app.url);
+
+    try {
+      const response = await fetch(`${access.origin}/api/agents?private-key=private-query`, {
+        headers: access.authorization,
+      });
+      const requestLog = observed.findLast(({ event }) => event === "http.request");
+
+      expect(response.status).toBe(500);
+      expect(requestLog?.data).toMatchObject({
+        method: "GET",
+        route: "/api/agents",
+        query_keys: [],
+        status: 500,
+        error: handlerError,
+      });
+      expect(requestLog?.data).not.toHaveProperty("path");
+      expect(requestLog?.data).not.toHaveProperty("body");
+      expect(JSON.stringify(requestLog?.data)).not.toContain("private-query");
+    } finally {
+      await app.shutdown();
+      logSpy.mockRestore();
+    }
+  });
+
   it("CS-160: enforces loopback authority before API, SSE, and static routes", async () => {
     const webDist = mkdtempSync(join(tmpdir(), "codesesh-authority-web-"));
     writeFileSync(join(webDist, "index.html"), "<html>app shell</html>");
@@ -295,7 +389,7 @@ describe("createServer", () => {
   it("CS-193: rejects unsafe loopback writes without breaking same-origin JSON", async () => {
     const app = await createServer(0, createStore());
     const access = getServerAccess(app.url);
-    const body = JSON.stringify({ event: "csrf-probe" });
+    const body = JSON.stringify({ event: "app.load.start" });
 
     try {
       const textPlain = await fetch(`${access.origin}/api/logs`, {
@@ -479,7 +573,7 @@ describe("createServer", () => {
               "Content-Type": "application/json",
               Origin: requestOrigin,
             },
-            body: JSON.stringify({ event: "same-origin-probe" }),
+            body: JSON.stringify({ event: "app.load.start" }),
           })
         ).status,
       ).toBe(200);

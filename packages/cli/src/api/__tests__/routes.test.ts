@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
-const loggerMocks = vi.hoisted(() => ({ warn: vi.fn() }));
+const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
 
 vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
 import {
@@ -16,7 +16,53 @@ import type { ScanEventSource } from "../../scan-source.js";
 
 describe("createApiRoutes", () => {
   beforeEach(() => {
+    loggerMocks.info.mockClear();
     loggerMocks.warn.mockClear();
+  });
+
+  function infoLogs(event: string): Record<string, unknown>[] {
+    return loggerMocks.info.mock.calls
+      .filter(([loggedEvent]) => loggedEvent === event)
+      .map(([, data]) => data as Record<string, unknown>);
+  }
+
+  it("logs bounded connection lifecycle data with elapsed time", async () => {
+    const eventSource: ScanEventSource = {
+      getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+      subscribe: () => () => {},
+      subscribeScanStatus: () => () => {},
+    };
+    const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      eventSource,
+    );
+
+    try {
+      const response = await app.request("/events");
+      const opened = infoLogs("api.sse.connection.opened");
+      expect(opened).toEqual([
+        {
+          connection_id: expect.any(String),
+          active_connections: 1,
+          connection_limit: MAX_ACTIVE_SSE_CONNECTIONS,
+        },
+      ]);
+
+      now.mockReturnValue(1_375);
+      await response.body?.cancel();
+
+      expect(infoLogs("api.sse.connection.closed")).toEqual([
+        {
+          connection_id: opened[0]!.connection_id,
+          close_reason: "client_cancelled",
+          duration_ms: 375,
+          active_connections: 0,
+        },
+      ]);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("bounds active SSE clients and restores capacity after cancellation", async () => {
@@ -44,6 +90,11 @@ describe("createApiRoutes", () => {
     expect(eventSource.subscribe).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
     expect(eventSource.subscribeScanStatus).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
     expect(loggerMocks.warn).toHaveBeenCalledWith("api.sse.connection_limit_reached", {
+      active_connections: MAX_ACTIVE_SSE_CONNECTIONS,
+      connection_limit: MAX_ACTIVE_SSE_CONNECTIONS,
+    });
+    expect(infoLogs("api.sse.connection.opened").at(-1)).toEqual({
+      connection_id: expect.any(String),
       active_connections: MAX_ACTIVE_SSE_CONNECTIONS,
       connection_limit: MAX_ACTIVE_SSE_CONNECTIONS,
     });
@@ -86,6 +137,18 @@ describe("createApiRoutes", () => {
 
     expect(unsubscribeSessions).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
     expect(unsubscribeScanStatus).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS);
+    expect(infoLogs("api.sse.connection.closed")).toHaveLength(MAX_ACTIVE_SSE_CONNECTIONS);
+    expect(
+      infoLogs("api.sse.connection.closed").every(
+        (data) => data.close_reason === "server_shutdown",
+      ),
+    ).toBe(true);
+    expect(infoLogs("api.sse.connection.closed").at(-1)).toEqual({
+      connection_id: expect.any(String),
+      close_reason: "server_shutdown",
+      duration_ms: expect.any(Number),
+      active_connections: 0,
+    });
     const afterShutdown = await app.request("/events");
     expect(afterShutdown.status).toBe(200);
     const reader = afterShutdown.body!.getReader();
@@ -121,6 +184,12 @@ describe("createApiRoutes", () => {
 
     expect(eventSource.subscribe).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
     expect(unsubscribeSessions).toHaveBeenCalledTimes(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+    expect(infoLogs("api.sse.connection.closed")).toHaveLength(MAX_ACTIVE_SSE_CONNECTIONS + 1);
+    expect(
+      infoLogs("api.sse.connection.closed").every(
+        (data) => data.close_reason === "setup_failed" && data.active_connections === 0,
+      ),
+    ).toBe(true);
   });
 
   it("returns a Hono instance with route handlers", () => {
@@ -168,6 +237,9 @@ describe("createApiRoutes", () => {
 
     expect(unsubscribeSessions).toHaveBeenCalledOnce();
     expect(unsubscribeScanStatus).toHaveBeenCalledOnce();
+    expect(infoLogs("api.sse.connection.closed")).toEqual([
+      expect.objectContaining({ close_reason: "client_cancelled", active_connections: 0 }),
+    ]);
     expect(() => emitSession?.({ type: "sessions-updated" })).not.toThrow();
     expect(() => emitScanStatus?.({ type: "scan-status" })).not.toThrow();
   });
@@ -194,6 +266,9 @@ describe("createApiRoutes", () => {
 
     expect(unsubscribeSessions).toHaveBeenCalledOnce();
     expect(unsubscribeScanStatus).toHaveBeenCalledOnce();
+    expect(infoLogs("api.sse.connection.closed")).toEqual([
+      expect.objectContaining({ close_reason: "client_disconnected", active_connections: 0 }),
+    ]);
   });
 
   it("keeps only the latest numeric status for a slow SSE client", async () => {
@@ -289,6 +364,9 @@ describe("createApiRoutes", () => {
 
     expect(unsubscribeSessions).toHaveBeenCalledOnce();
     expect(unsubscribeScanStatus).toHaveBeenCalledOnce();
+    expect(infoLogs("api.sse.connection.closed")).toEqual([
+      expect.objectContaining({ close_reason: "client_too_slow", active_connections: 0 }),
+    ]);
     await expect(response.body!.getReader().read()).rejects.toThrow("SSE client fell behind");
   });
 });

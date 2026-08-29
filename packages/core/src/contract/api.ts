@@ -1,5 +1,8 @@
 import type { CostSource, ProjectGroup } from "./session.js";
 
+export const CODESESH_REQUEST_ID_HEADER = "X-CodeSesh-Request-ID";
+export const CODESESH_OPERATION_ID_HEADER = "X-CodeSesh-Operation-ID";
+
 export interface AppConfig {
   window: {
     from?: number;

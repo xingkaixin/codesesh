@@ -4,8 +4,6 @@ import { ApiRequestError, fetchSessionData, logClientEvent, type SessionDetail }
 import { queryKeys } from "../lib/query-keys";
 import type { ViewState } from "../lib/view-state";
 
-let nextSessionRequestId = 1;
-
 export type SessionDetailError = { kind: "missing" } | { kind: "load-failed"; message: string };
 
 function getSessionDetailError(error: unknown): SessionDetailError {
@@ -32,6 +30,15 @@ function sessionRoute(viewState: ViewState) {
   };
 }
 
+function createOperationId(): string {
+  const generated = globalThis.crypto?.randomUUID?.();
+  if (generated) return generated;
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (token) => {
+    const value = Math.floor(Math.random() * 16);
+    return (token === "x" ? value : (value & 0x3) | 0x8).toString(16);
+  });
+}
+
 export function useSessionDetail(viewState: ViewState) {
   const queryClient = useQueryClient();
   const route = sessionRoute(viewState);
@@ -42,7 +49,7 @@ export function useSessionDetail(viewState: ViewState) {
     staleTime: Infinity,
     queryFn: async ({ signal }) => {
       if (!route) throw new Error("Session route is required");
-      const requestId = nextSessionRequestId++;
+      const operationId = createOperationId();
       const requestKey = `${route.agent}/${route.sessionId}`;
       const startedAt = performance.now();
       let didLogCancellation = false;
@@ -50,14 +57,14 @@ export function useSessionDetail(viewState: ViewState) {
         if (didLogCancellation) return;
         didLogCancellation = true;
         logClientEvent("session.open.cancel", {
-          request_id: requestId,
+          operation_id: operationId,
           request_key: requestKey,
           reason: "query-cancelled",
         });
       };
       signal.addEventListener("abort", logCancellation, { once: true });
       logClientEvent("session.open.start", {
-        request_id: requestId,
+        operation_id: operationId,
         request_key: requestKey,
         trigger: "route",
         agent: route.agent,
@@ -69,11 +76,12 @@ export function useSessionDetail(viewState: ViewState) {
         const response = await fetchSessionData(route.agent, route.sessionId, {
           signal,
           messageCursor: previous?.message_cursor,
+          operationId,
         });
         const data = mergeSessionDetailUpdate(previous, response);
         if (signal.aborted) throw new DOMException("Aborted", "AbortError");
         logClientEvent("session.open.done", {
-          request_id: requestId,
+          operation_id: operationId,
           request_key: requestKey,
           trigger: "route",
           agent: route.agent,
@@ -88,13 +96,14 @@ export function useSessionDetail(viewState: ViewState) {
           throw error;
         }
         logClientEvent("session.open.error", {
-          request_id: requestId,
+          operation_id: operationId,
           request_key: requestKey,
           trigger: "route",
           agent: route.agent,
           session: route.sessionId,
           duration_ms: Math.round(performance.now() - startedAt),
-          error: error instanceof Error ? error.message : String(error),
+          error_name: error instanceof Error ? error.name : "UnknownError",
+          error_status: error instanceof ApiRequestError ? error.status : undefined,
         });
         throw error;
       } finally {

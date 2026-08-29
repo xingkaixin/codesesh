@@ -22,7 +22,8 @@ import {
   type SessionSourceFailure,
 } from "@codesesh/core/runtime/agents";
 import { synchronizePricingGeneration } from "@codesesh/core/runtime/pricing";
-import { appLogger } from "./logging.js";
+import { appLogger, type LogContext } from "./logging.js";
+import { acknowledgeWorkerLogDrain } from "./worker-log-drain.js";
 import { MonotonicValueSampler } from "./monotonic-value-sampler.js";
 import { buildScanRefreshDelta } from "./scan-refresh-delta.js";
 import {
@@ -95,12 +96,14 @@ export interface ScanRefreshWorkerRunRequest {
   operation: ScanRefreshOperation;
   scanOptions: Pick<ScanOptions, "from" | "to" | "fast">;
   meta?: Record<string, SessionCacheMeta>;
+  logContext?: LogContext;
 }
 
 export interface ScanRefreshWorkerCommitRequest {
   type: "commit";
   requestId: number;
   generation: number;
+  logContext?: LogContext;
 }
 
 export type ScanRefreshWorkerRequest = ScanRefreshWorkerRunRequest | ScanRefreshWorkerCommitRequest;
@@ -601,7 +604,11 @@ function handleCommit(data: ScanRefreshWorkerCommitRequest): void {
 
 function enqueueRequest(data: ScanRefreshWorkerRequest): void {
   requestTail = requestTail
-    .then(() => (data.type === "commit" ? handleCommit(data) : handleRequest(data)))
+    .then(() =>
+      appLogger.restoreContext(data.logContext ?? {}, () =>
+        data.type === "commit" ? handleCommit(data) : handleRequest(data),
+      ),
+    )
     .catch((error) => {
       appLogger.error("scan.refresh_worker.request_error", {
         request_id: data.requestId,
@@ -624,6 +631,8 @@ if (
   enqueueRequest(initialRequest as ScanRefreshWorkerRunRequest);
 }
 
-parentPort?.on("message", (message: ScanRefreshWorkerRequest) => {
-  enqueueRequest(message);
+const workerPort = parentPort;
+workerPort?.on("message", (message: unknown) => {
+  if (acknowledgeWorkerLogDrain(workerPort, message, requestTail)) return;
+  enqueueRequest(message as ScanRefreshWorkerRequest);
 });

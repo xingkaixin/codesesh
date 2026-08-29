@@ -116,7 +116,15 @@ export function RenderProfiler({
     pushProfileEntry(entry);
 
     if (entry.actualDuration >= PROFILER_SLOW_COMMIT_MS && shouldLogRenderProfilerEntries()) {
-      logClientEvent("react.profiler.commit", { ...entry });
+      logClientEvent("react.profiler.commit", {
+        profiler_id: entry.id,
+        source: entry.source,
+        phase: entry.phase,
+        actual_duration_ms: entry.actualDuration,
+        base_duration_ms: entry.baseDuration,
+        start_time_ms: entry.startTime,
+        commit_time_ms: entry.commitTime,
+      });
     }
   };
 

@@ -57,6 +57,7 @@ function renderSessionDetail(view: ViewState = sessionView) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("useSessionDetail", () => {
@@ -71,6 +72,35 @@ describe("useSessionDetail", () => {
       "claudecode/abc",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("creates a compatible operation identifier without randomUUID", async () => {
+    vi.stubGlobal("crypto", {});
+    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
+    renderSessionDetail();
+
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.fetchSessionData).mock.calls[0]?.[2]?.operationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("does not include a failed session URL in client telemetry", async () => {
+    vi.mocked(api.fetchSessionData).mockRejectedValue(
+      new api.ApiRequestError("GET /api/sessions/codex/private-session failed", 500),
+    );
+    renderSessionDetail();
+
+    await waitFor(() =>
+      expect(api.logClientEvent).toHaveBeenCalledWith(
+        "session.open.error",
+        expect.objectContaining({ error_name: "Error", error_status: 500 }),
+      ),
+    );
+    const errorCall = vi
+      .mocked(api.logClientEvent)
+      .mock.calls.find(([event]) => event === "session.open.error");
+    expect(JSON.stringify(errorCall?.[1])).not.toContain("private-session");
   });
 
   it("classifies a confirmed 404 as a missing session", async () => {

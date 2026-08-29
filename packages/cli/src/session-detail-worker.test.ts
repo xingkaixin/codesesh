@@ -5,10 +5,12 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   restore: vi.fn(),
   close: vi.fn(),
+  on: vi.fn(),
 }));
 vi.mock("./diagnostics-bridge.js", () => ({}));
-vi.mock("node:worker_threads", () => ({
-  parentPort: { postMessage: mocks.post },
+vi.mock("node:worker_threads", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:worker_threads")>()),
+  parentPort: { postMessage: mocks.post, on: mocks.on },
   workerData: {
     reference: { agentName: "codex", sessionId: "s1" },
     meta: {},
@@ -44,6 +46,9 @@ it("serializes source messages inside the worker", async () => {
     }),
   });
   expect(mocks.close).toHaveBeenCalledOnce();
+  expect(mocks.close.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.post.mock.invocationCallOrder[0]!,
+  );
 });
 
 it("materializes cached message iterators before crossing threads", async () => {
@@ -74,4 +79,7 @@ it("reports parsing errors and closes storage", async () => {
   await import("./session-detail-worker.js");
   expect(mocks.post).toHaveBeenCalledWith({ type: "error", error: "parse failed" });
   expect(mocks.close).toHaveBeenCalledOnce();
+  expect(mocks.close.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.post.mock.invocationCallOrder[0]!,
+  );
 });

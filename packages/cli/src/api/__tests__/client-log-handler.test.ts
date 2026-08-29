@@ -4,7 +4,7 @@ import { loggerMocks, makeContext } from "./state-handler-test-fixtures.js";
 const { handlePostClientLog } = await import("../client-log-handler.js");
 
 describe("client logging handler", () => {
-  it("rejects malformed and blank log events", async () => {
+  it("rejects malformed, blank, and unknown log events", async () => {
     const malformed = makeContext({ rejectBody: true });
     await handlePostClientLog(malformed as never);
     expect(malformed.json).toHaveBeenCalledWith({ ok: false }, 400);
@@ -12,43 +12,73 @@ describe("client logging handler", () => {
     const blank = makeContext({ body: { event: "   " } });
     await handlePostClientLog(blank as never);
     expect(blank.json).toHaveBeenCalledWith({ ok: false }, 400);
+
+    const unknown = makeContext({ body: { event: "private arbitrary text" } });
+    await handlePostClientLog(unknown as never);
+    expect(unknown.json).toHaveBeenCalledWith({ ok: false }, 400);
     expect(loggerMocks.info).not.toHaveBeenCalled();
   });
 
-  it("sanitizes event names and bounds structured log data", async () => {
+  it("keeps only known low-risk scalar log data", async () => {
     const data = {
-      text: "x".repeat(400),
-      count: 2,
-      enabled: true,
-      empty: null,
+      agent: "codex",
+      session: null,
+      duration_ms: 42,
+      error_name: "TypeError",
+      error_status: 500,
+      operation_id: "123e4567-e89b-42d3-a456-426614174000",
+      request_key: "x".repeat(400),
+      error: "/Users/private/session.jsonl",
+      path: "/Users/private",
+      detail: { prompt: "private prompt" },
       nested: { value: 1 },
-      ...Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`extra${index}`, index])),
+      enabled: true,
     };
     const c = makeContext({
-      body: { event: ` feature launch!?${"z".repeat(140)}`, data },
+      body: { event: " session.open.error ", data },
     });
 
     await handlePostClientLog(c as never);
 
     const [event, loggedData] = loggerMocks.info.mock.calls[0]!;
-    expect(event).toMatch(/^client\.feature_launch__/);
-    expect(event).toHaveLength(127);
-    expect(loggedData).toMatchObject({
-      text: "x".repeat(300),
-      count: 2,
-      enabled: true,
-      empty: null,
-      nested: "[object Object]",
+    expect(event).toBe("client.session.open.error");
+    expect(loggedData).toEqual({
+      agent: "codex",
+      session: null,
+      duration_ms: 42,
+      error_name: "TypeError",
+      error_status: 500,
+      operation_id: "123e4567-e89b-42d3-a456-426614174000",
+      request_key: "x".repeat(300),
     });
-    expect(Object.keys(loggedData)).toHaveLength(30);
+    expect(JSON.stringify(loggedData)).not.toContain("private");
     expect(c.json).toHaveBeenCalledWith({ ok: true });
   });
 
-  it("drops non-record log data", async () => {
-    const c = makeContext({ body: { event: "ready", data: "not-an-object" } });
+  it("drops invalid values for allowed fields", async () => {
+    const c = makeContext({
+      body: {
+        event: "app.load.done",
+        data: {
+          agent: { name: "codex" },
+          duration_ms: Number.POSITIVE_INFINITY,
+          messages: -1,
+          error_status: "500",
+          operation_id: "123e4567-e89b-02d3-7456-426614174000",
+        },
+      },
+    });
 
     await handlePostClientLog(c as never);
 
-    expect(loggerMocks.info).toHaveBeenCalledWith("client.ready", {});
+    expect(loggerMocks.info).toHaveBeenCalledWith("client.app.load.done", {});
+  });
+
+  it("drops non-record log data", async () => {
+    const c = makeContext({ body: { event: "app.load.start", data: "not-an-object" } });
+
+    await handlePostClientLog(c as never);
+
+    expect(loggerMocks.info).toHaveBeenCalledWith("client.app.load.start", {});
   });
 });

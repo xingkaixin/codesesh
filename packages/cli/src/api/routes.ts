@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 import {
   handleGetAgents,
   handleGetConfig,
@@ -26,6 +27,13 @@ import type { SessionDetailLoader } from "../session-detail-loader.js";
 import { SseEventBuffer } from "./sse-event-buffer.js";
 
 export const MAX_ACTIVE_SSE_CONNECTIONS = 32;
+
+type SseConnectionCloseReason =
+  | "client_cancelled"
+  | "client_disconnected"
+  | "client_too_slow"
+  | "server_shutdown"
+  | "setup_failed";
 
 export interface ApiRouteOptions {
   defaultSessionFrom?: number;
@@ -62,8 +70,9 @@ function createSseConnectionBudget(maxConnections: number): SseConnectionBudget 
 
 function createSseResponse(
   eventSource: ScanEventSource,
-  signal: AbortSignal,
-  releaseConnection: () => void,
+  requestSignal: AbortSignal,
+  shutdownSignal: AbortSignal | undefined,
+  closeConnection: (reason: SseConnectionCloseReason) => void,
 ): Response {
   let cancelStream = () => {};
   let drainStream = () => {};
@@ -74,26 +83,31 @@ function createSseResponse(
         let isClosed = false;
         let unsubscribeSessions = () => {};
         let unsubscribeScanStatus = () => {};
-        let abortStream = () => {};
+        let disconnectStream = () => {};
+        let shutdownStream = () => {};
         let heartbeat: ReturnType<typeof setInterval> | undefined;
         let buffer: SseEventBuffer | undefined;
 
-        const cleanup = () => {
+        const cleanup = (reason: SseConnectionCloseReason) => {
           if (isClosed) return false;
           isClosed = true;
           buffer?.close();
           if (heartbeat) clearInterval(heartbeat);
           unsubscribeSessions();
           unsubscribeScanStatus();
-          signal.removeEventListener("abort", abortStream);
-          releaseConnection();
+          requestSignal.removeEventListener("abort", disconnectStream);
+          shutdownSignal?.removeEventListener("abort", shutdownStream);
+          closeConnection(reason);
           return true;
         };
-        abortStream = () => {
-          if (cleanup()) controller.close();
+        disconnectStream = () => {
+          if (cleanup("client_disconnected")) controller.close();
+        };
+        shutdownStream = () => {
+          if (cleanup("server_shutdown")) controller.close();
         };
         buffer = new SseEventBuffer(controller, () => {
-          if (cleanup()) controller.error(new Error("SSE client fell behind"));
+          if (cleanup("client_too_slow")) controller.error(new Error("SSE client fell behind"));
         });
         drainStream = () => buffer.drain();
 
@@ -110,13 +124,17 @@ function createSseResponse(
 
           heartbeat = setInterval(() => buffer?.enqueueHeartbeat(), 15000);
           cancelStream = () => {
-            cleanup();
+            cleanup("client_cancelled");
           };
 
-          if (signal.aborted) abortStream();
-          else signal.addEventListener("abort", abortStream, { once: true });
+          if (shutdownSignal?.aborted) shutdownStream();
+          else if (requestSignal.aborted) disconnectStream();
+          else {
+            requestSignal.addEventListener("abort", disconnectStream, { once: true });
+            shutdownSignal?.addEventListener("abort", shutdownStream, { once: true });
+          }
         } catch (error) {
-          cleanup();
+          cleanup("setup_failed");
           throw error;
         }
       },
@@ -187,13 +205,34 @@ export function createApiRoutes(
         c.header("Retry-After", "1");
         return c.json({ error: "Too many active event streams" }, 429);
       }
-      const signal = options.shutdownSignal
-        ? AbortSignal.any([c.req.raw.signal, options.shutdownSignal])
-        : c.req.raw.signal;
-      try {
-        return createSseResponse(eventSource, signal, releaseConnection);
-      } catch (error) {
+      const connectionId = randomUUID();
+      const connectedAt = performance.now();
+      let isClosed = false;
+      appLogger.info("api.sse.connection.opened", {
+        connection_id: connectionId,
+        active_connections: sseConnections.activeCount(),
+        connection_limit: MAX_ACTIVE_SSE_CONNECTIONS,
+      });
+      const closeConnection = (reason: SseConnectionCloseReason) => {
+        if (isClosed) return;
+        isClosed = true;
         releaseConnection();
+        appLogger.info("api.sse.connection.closed", {
+          connection_id: connectionId,
+          close_reason: reason,
+          duration_ms: Math.max(0, Math.round(performance.now() - connectedAt)),
+          active_connections: sseConnections.activeCount(),
+        });
+      };
+      try {
+        return createSseResponse(
+          eventSource,
+          c.req.raw.signal,
+          options.shutdownSignal,
+          closeConnection,
+        );
+      } catch (error) {
+        closeConnection("setup_failed");
         throw error;
       }
     });
