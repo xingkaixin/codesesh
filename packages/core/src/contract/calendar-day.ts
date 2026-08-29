@@ -18,6 +18,27 @@ export function addCalendarDays(timestamp: number, days: number): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days).getTime();
 }
 
+/**
+ * Parses a date-only value at its local calendar boundary. `undefined` means
+ * the input is not date-only; `null` means it has the right shape but is not a
+ * real calendar date.
+ */
+export function parseCalendarDayBoundary(
+  value: string,
+  boundary: "start" | "end",
+): number | null | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const start = new Date(year, month, day);
+  if (start.getFullYear() !== year || start.getMonth() !== month || start.getDate() !== day) {
+    return null;
+  }
+  return boundary === "start" ? start.getTime() : addCalendarDays(start.getTime(), 1) - 1;
+}
+
 /** Days since the epoch for a local calendar date, counted on a fixed-length UTC grid. */
 function toCalendarDayNumber(timestamp: number): number {
   const date = new Date(timestamp);

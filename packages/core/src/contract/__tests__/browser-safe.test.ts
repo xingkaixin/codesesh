@@ -64,6 +64,7 @@ describe("contract browser-safety", () => {
         "mergeSortedSessions",
         "normalizeMessageParts",
         "normalizeSessionReference",
+        "parseCalendarDayBoundary",
         "parseSessionReference",
         "sessionRoutePath",
         "sortSessionsByActivity",

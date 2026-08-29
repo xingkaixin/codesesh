@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { addCalendarDays, startOfCalendarDay } from "@codesesh/core/contract";
 import {
   buildCliRuntimePlan,
   parseSessionUri,
@@ -8,14 +9,14 @@ import {
 } from "./runtime-plan.js";
 
 const NOW = new Date("2026-07-17T08:00:00.000Z").getTime();
-const DAY_MS = 24 * 60 * 60 * 1000;
 const ENVIRONMENT = {
   currentWorkingDirectory: "/workspace/project",
   now: NOW,
 };
 
 describe("CLI runtime plan", () => {
-  it("builds the default rolling scan plan", () => {
+  it("builds the default calendar-day scan plan", () => {
+    const from = addCalendarDays(startOfCalendarDay(NOW), -6);
     expect(
       buildCliRuntimePlan(
         {
@@ -27,9 +28,9 @@ describe("CLI runtime plan", () => {
         ENVIRONMENT,
       ),
     ).toEqual({
-      listWindow: { from: NOW - 7 * DAY_MS, to: undefined, days: 7 },
+      listWindow: { from, to: undefined, days: 7 },
       scanOptions: { agents: undefined, cwd: undefined, useCache: true },
-      startupScanOptions: { from: NOW - 7 * DAY_MS, to: undefined },
+      startupScanOptions: { from, to: undefined },
     });
   });
 
@@ -83,8 +84,8 @@ describe("CLI runtime plan", () => {
     );
 
     expect(plan.listWindow).toEqual({
-      from: new Date("2026-07-01").getTime(),
-      to: new Date("2026-07-10").getTime(),
+      from: new Date(2026, 6, 1).getTime(),
+      to: new Date(2026, 6, 11).getTime() - 1,
     });
     expect(plan.startupScanOptions).toEqual({});
   });

@@ -1,4 +1,10 @@
-import { addCalendarDays, startOfCalendarDay, toCalendarDayKey } from "@codesesh/core/contract";
+import {
+  addCalendarDays,
+  countCalendarDays,
+  parseCalendarDayBoundary,
+  startOfCalendarDay,
+  toCalendarDayKey,
+} from "@codesesh/core/contract";
 import type { AppConfig } from "./api";
 
 export type TimeWindow = AppConfig["window"];
@@ -22,27 +28,12 @@ function endOfLocalDay(timestamp: number): number {
   return addCalendarDays(timestamp, 1) - 1;
 }
 
-function parseLocalDate(value: string, endOfDay: boolean): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const date = endOfDay ? new Date(year, month, day + 1, 0, 0, 0, -1) : new Date(year, month, day);
-  const validation = new Date(year, month, day);
-  if (
-    validation.getFullYear() !== year ||
-    validation.getMonth() !== month ||
-    validation.getDate() !== day
-  ) {
-    return null;
-  }
-  return date.getTime();
-}
-
-function presetFromDefault(window: TimeWindow): TimeWindowPreset {
+function presetFromDefault(window: TimeWindow, now: number): TimeWindowPreset {
   if (window.days === 0 || window.from == null) return "all";
-  if (window.days === 7 || window.days === 14 || window.days === 30 || window.days === 90) {
+  if (
+    (window.days === 7 || window.days === 14 || window.days === 30 || window.days === 90) &&
+    countCalendarDays(window.from, window.to ?? now) === window.days
+  ) {
     return `${window.days}d`;
   }
   return "custom";
@@ -71,13 +62,13 @@ export function resolveTimeWindow(
   if (range === "custom") {
     const customFrom = params.get("from") ?? "";
     const customTo = params.get("to") ?? "";
-    const from = parseLocalDate(customFrom, false);
-    const to = parseLocalDate(customTo, true);
+    const from = parseCalendarDayBoundary(customFrom, "start");
+    const to = parseCalendarDayBoundary(customTo, "end");
     if (from != null && to != null && from <= to) {
       return { preset: range, window: { from, to }, customFrom, customTo };
     }
   }
-  const fallbackPreset = presetFromDefault(fallback);
+  const fallbackPreset = presetFromDefault(fallback, now);
   if (fallbackPreset !== "custom") {
     return { preset: fallbackPreset, window: presetWindow(fallbackPreset, now) };
   }

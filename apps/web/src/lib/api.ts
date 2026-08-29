@@ -292,8 +292,14 @@ export async function fetchDashboard(
   options?: FetchOptions,
 ): Promise<DashboardData> {
   const params = new URLSearchParams();
-  if (window?.days !== 0) appendTimeWindow(params, window);
-  if (window?.days != null) params.set("days", String(window.days));
+  if (window?.days === 0) {
+    params.set("days", "0");
+  } else if (window?.from != null) {
+    appendTimeWindow(params, window);
+  } else {
+    if (window?.to != null) params.set("to", String(window.to));
+    if (window?.days != null) params.set("days", String(window.days));
+  }
   if (filters.project) {
     params.set("projectKind", filters.project.kind);
     params.set("projectKey", filters.project.key);

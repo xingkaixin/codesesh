@@ -173,6 +173,20 @@ describe("fetchDashboard", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0");
   });
 
+  it("sends exact bounds without a redundant days value", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchDashboard({ from: 10, to: 20, days: 7 }, {});
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/dashboard?from=1970-01-01T00%3A00%3A00.010Z&to=1970-01-01T00%3A00%3A00.020Z",
+    );
+  });
+
   it.each<[string, DashboardFilters, string]>([
     ["unfiltered", {}, "/api/dashboard?days=7"],
     [

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   addCalendarDays,
   countCalendarDays,
+  parseCalendarDayBoundary,
   startOfCalendarDay,
   toCalendarDayKey,
 } from "../calendar-day.js";
@@ -95,5 +96,14 @@ describe("CS-133: calendar days across DST transitions", () => {
     const noon = new Date(2026, 2, 8, 12).getTime();
 
     expect(countCalendarDays(startOfCalendarDay(noon), noon)).toBe(1);
+  });
+
+  it("parses an inclusive date-only range across a DST transition", () => {
+    useTimeZone("America/New_York");
+
+    expect(parseCalendarDayBoundary("2026-03-07", "start")).toBe(new Date(2026, 2, 7).getTime());
+    expect(parseCalendarDayBoundary("2026-03-09", "end")).toBe(new Date(2026, 2, 10).getTime() - 1);
+    expect(parseCalendarDayBoundary("2026-02-31", "start")).toBeNull();
+    expect(parseCalendarDayBoundary("2026-03-07T12:00:00Z", "start")).toBeUndefined();
   });
 });

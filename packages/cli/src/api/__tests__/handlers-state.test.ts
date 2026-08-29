@@ -811,6 +811,7 @@ describe("query boundary handlers", () => {
       query: {
         from: "2026-01-01T00:00:00.000Z",
         to: "2026-01-03T00:00:00.000Z",
+        days: "1",
       },
     });
     handleGetDashboard(custom as never, scanSource);
