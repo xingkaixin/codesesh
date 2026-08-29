@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import type { LiveSnapshot, SessionHead } from "@codesesh/core/runtime/discovery";
-import type { ScanResultSource } from "../handlers.js";
+import type { ScanResultSource } from "../scan-sources.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-search-transport-"));
 

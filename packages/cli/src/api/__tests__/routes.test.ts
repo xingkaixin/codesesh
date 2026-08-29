@@ -11,7 +11,7 @@ import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contr
 import { createApiRoutes, MAX_ACTIVE_SSE_CONNECTIONS } from "../routes.js";
 import { MAX_PENDING_CRITICAL_SSE_FRAMES } from "../sse-event-buffer.js";
 import type { LiveSnapshot } from "@codesesh/core/runtime/discovery";
-import type { ScanResultSource } from "../handlers.js";
+import type { ScanResultSource } from "../scan-sources.js";
 import type { ScanEventSource } from "../../scan-source.js";
 
 describe("createApiRoutes", () => {

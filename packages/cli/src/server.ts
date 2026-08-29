@@ -10,7 +10,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ScanResultSource } from "./api/handlers.js";
+import type { ScanResultSource } from "./api/scan-sources.js";
 import { createApiRoutes, type ApiRouteOptions } from "./api/routes.js";
 import { appLogger } from "./logging.js";
 import { ThreadSessionDetailLoader } from "./session-detail-loader.js";

@@ -3,7 +3,7 @@ import { SAMPLE_SCAN_STATUS_EVENT, SAMPLE_SESSION_HEAD } from "@codesesh/core/te
 import { toPublicSessionHead } from "@codesesh/core/contract";
 import type { LiveSnapshot } from "@codesesh/core/runtime/discovery";
 import { createApiRoutes } from "../routes.js";
-import type { ScanResultSource } from "../handlers.js";
+import type { ScanResultSource } from "../scan-sources.js";
 import type { ScanEventSource } from "../../scan-source.js";
 
 function makeScanSource(): ScanResultSource {
