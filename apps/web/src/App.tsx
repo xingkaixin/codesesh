@@ -23,7 +23,7 @@ import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { SearchControlsHandle } from "./components/app/SearchControls";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
-import { AppRouteContent } from "./components/app/AppRouteContent";
+import { AppRouteContent, type AppRouteModel } from "./components/app/AppRouteContent";
 import { AppToolbar } from "./components/app/AppToolbar";
 import { AppPageHeader } from "./components/app/AppPageHeader";
 import { AppMainContent } from "./components/app/AppMainContent";
@@ -255,50 +255,107 @@ export default function App() {
     selectedProject: selectedProjectNavigation?.project ?? null,
   });
 
+  const overview = {
+    window: loadedWindow,
+    rangePreset: timeWindowController.preset ?? "all",
+    onRangeChange: timeWindowController.selectPreset,
+    onSelectCustom: timeWindowController.selectCustom,
+  };
+  const bookmarkActions = {
+    isBookmarked: bookmarks.isSessionBookmarked,
+    toggleSessionBookmark: bookmarks.toggleSessionBookmark,
+  };
+  let routeContent: AppRouteModel;
+  switch (viewState.mode) {
+    case "root":
+      routeContent = {
+        ...viewState,
+        agentCatalog,
+        projectCount: projectPage.summary.projects,
+        overview,
+      };
+      break;
+    case "projects":
+      routeContent = {
+        ...viewState,
+        agentCatalog,
+        projectPage,
+        projectsLoad: {
+          loading: projectsLoading,
+          error: projectsError,
+          retry: () => void retryProjects(),
+        },
+        window: loadedWindow,
+      };
+      break;
+    case "project":
+      routeContent = {
+        ...viewState,
+        agentCatalog,
+        project: activeProject?.project ?? null,
+        projectLoad: {
+          loading: projectLookup.loading,
+          error: projectLookup.error,
+          retry: () => void projectLookup.retry(),
+        },
+        sessions: activeProjectSessions,
+        agentFilter: {
+          selectedAgent: selectedProjectAgent,
+          onChangeAgent: selectProjectAgent,
+        },
+        overview,
+      };
+      break;
+    case "agent":
+      routeContent = {
+        ...viewState,
+        agents: activeAgents,
+        agentCatalog,
+        sessions: sessionIndexes.byLandingAgent.get(viewState.activeAgentKey) ?? [],
+        bookmarks: bookmarkActions,
+      };
+      break;
+    case "session":
+      routeContent = {
+        ...viewState,
+        agents: activeAgents,
+        agentCatalog,
+        sessions: sessionIndexes.byLandingAgent.get(viewState.activeAgentKey) ?? [],
+        bookmarks: bookmarkActions,
+        detail: {
+          session: sessionDetail.session,
+          loading: sessionDetail.sessionLoading,
+          error: sessionDetail.sessionError,
+          retry: () => void sessionDetail.refresh(),
+        },
+        detailHighlightQuery,
+        childSessionsByParentRouteKey: sessionIndexes.childrenByParentRouteKey,
+      };
+      break;
+    case "missingAgent":
+      routeContent = {
+        ...viewState,
+        agents: activeAgents,
+        agentCatalog,
+        sessions: sessionIndexes.landingSessions,
+        bookmarks: bookmarkActions,
+      };
+      break;
+    case "invalidRoute":
+      routeContent = viewState;
+      break;
+  }
+
   const content = (
     <AppRouteContent
-      loading={loading}
-      error={error}
-      onRetry={() => void retryLoad()}
-      viewState={viewState}
-      detailHighlightQuery={detailHighlightQuery}
-      agents={activeAgents}
-      agentCatalog={agentCatalog}
-      agentNameMap={agentNameMap}
-      projectPage={projectPage}
-      projectsError={projectsError}
-      projectsLoading={projectsLoading}
-      onRetryProjects={() => void retryProjects()}
-      landingSessions={sessionIndexes.landingSessions}
-      childSessionsByParentRouteKey={sessionIndexes.childrenByParentRouteKey}
-      sessionsByAgent={sessionIndexes.byLandingAgent}
-      activeProject={activeProject?.project ?? null}
-      activeProjectLoading={projectLookup.loading}
-      activeProjectError={projectLookup.error}
-      onRetryActiveProject={() => void projectLookup.retry()}
-      activeProjectSessions={activeProjectSessions}
-      overview={{
-        window: loadedWindow,
-        // `preset` is null only until the config resolves, and until then the
-        // shell renders its loading skeleton instead of the overview.
-        rangePreset: timeWindowController.preset ?? "all",
-        onRangeChange: timeWindowController.selectPreset,
-        onSelectCustom: timeWindowController.selectCustom,
-      }}
-      sessionDetail={{
-        session: sessionDetail.session,
-        loading: sessionDetail.sessionLoading,
-        error: sessionDetail.sessionError,
-        retry: () => void sessionDetail.refresh(),
-      }}
-      projectAgentFilter={{
-        selectedAgent: selectedProjectAgent,
-        onChangeAgent: selectProjectAgent,
-      }}
+      load={{ loading, error, retry: () => void retryLoad() }}
+      route={routeContent}
       search={{
         active: search.searchMode,
         query: search.activeSearchQuery,
         state: search.searchState,
+        agentNameMap,
+        agents: activeAgents,
         projectOptions: search.projectOptions,
         filters: search.searchFilters,
         onChangeFilters: search.setSearchFilters,
@@ -306,10 +363,6 @@ export default function App() {
         onRetry: search.retrySearch,
         selectedIndex: search.selectedSearchIndex,
         registerResultRef: search.registerResultRef,
-      }}
-      bookmarks={{
-        isBookmarked: bookmarks.isSessionBookmarked,
-        toggleSessionBookmark: bookmarks.toggleSessionBookmark,
       }}
     />
   );

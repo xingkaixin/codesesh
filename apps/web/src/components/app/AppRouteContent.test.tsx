@@ -5,7 +5,7 @@ import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import { createQueryWrapper } from "../../test/query-wrapper";
-import { AppRouteContent } from "./AppRouteContent";
+import { AppRouteContent, type AppRouteModel } from "./AppRouteContent";
 
 const sessionDetailRender = vi.hoisted(() => vi.fn());
 
@@ -47,54 +47,23 @@ const routeAgents = [
 ] satisfies AgentInfo[];
 
 function makeProps(): Parameters<typeof AppRouteContent>[0] {
+  const agentCatalog = createAgentCatalog([]);
   return {
-    loading: false,
-    error: null,
-    onRetry: vi.fn(),
-    viewState: {
+    load: { loading: false, error: null, retry: vi.fn() },
+    route: {
       mode: "root",
       activeAgentKey: null,
       activeSessionId: null,
+      agentCatalog,
+      projectCount: 1,
+      overview: makeOverview(),
     },
-    detailHighlightQuery: "",
-    agents: [],
-    agentCatalog: createAgentCatalog([]),
-    agentNameMap: new Map(),
-    projectPage: {
-      projects: [project],
-      summary: {
-        projects: 1,
-        sessions: 0,
-        tokens: 0,
-        cost: 0,
-        latestActivity: null,
-      },
-    },
-    projectsError: null,
-    projectsLoading: false,
-    onRetryProjects: vi.fn(),
-    landingSessions: [],
-    childSessionsByParentRouteKey: new Map(),
-    sessionsByAgent: new Map(),
-    activeProject: null,
-    activeProjectLoading: false,
-    activeProjectError: null,
-    onRetryActiveProject: vi.fn(),
-    activeProjectSessions: [],
-    // A null window keeps the overview's dashboard query idle, so these
-    // assertions never depend on the network.
-    overview: {
-      window: null,
-      rangePreset: "30d",
-      onRangeChange: vi.fn(),
-      onSelectCustom: vi.fn(),
-    },
-    sessionDetail: { session: null, loading: false, error: null, retry: vi.fn() },
-    projectAgentFilter: { onChangeAgent: vi.fn() },
     search: {
       active: false,
       query: "",
       state: { status: "idle" },
+      agentNameMap: agentCatalog.displayNameByKey,
+      agents: [],
       projectOptions: [],
       filters: {},
       onChangeFilters: vi.fn(),
@@ -103,10 +72,54 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
       selectedIndex: 0,
       registerResultRef: vi.fn(),
     },
-    bookmarks: {
-      isBookmarked: vi.fn(() => false),
-      toggleSessionBookmark: vi.fn(),
+  };
+}
+
+function makeOverview() {
+  return {
+    window: null,
+    rangePreset: "30d" as const,
+    onRangeChange: vi.fn(),
+    onSelectCustom: vi.fn(),
+  };
+}
+
+function makeProjectPage(projects = [project]) {
+  return {
+    projects,
+    summary: {
+      projects: projects.length,
+      sessions: 0,
+      tokens: 0,
+      cost: 0,
+      latestActivity: null,
     },
+  };
+}
+
+function makeBookmarks() {
+  return {
+    isBookmarked: vi.fn(() => false),
+    toggleSessionBookmark: vi.fn(),
+  };
+}
+
+function makeSessionRoute(
+  activeSessionId: string,
+  detail: Extract<AppRouteModel, { mode: "session" }>["detail"],
+  sessions: IndexedSession[] = [],
+): Extract<AppRouteModel, { mode: "session" }> {
+  return {
+    mode: "session",
+    activeAgentKey: "claudecode",
+    activeSessionId,
+    agents: routeAgents,
+    agentCatalog: createAgentCatalog(routeAgents),
+    sessions,
+    bookmarks: makeBookmarks(),
+    detail,
+    detailHighlightQuery: "",
+    childSessionsByParentRouteKey: new Map(),
   };
 }
 
@@ -142,12 +155,6 @@ function makeLandingSession(agentKey: string, sessionId: string, title: string):
   };
 }
 
-function addRouteAgents(props: ReturnType<typeof makeProps>): void {
-  props.agents = routeAgents;
-  props.agentCatalog = createAgentCatalog(routeAgents);
-  props.agentNameMap = props.agentCatalog.displayNameByKey;
-}
-
 afterEach(() => {
   cleanup();
   sessionDetailRender.mockClear();
@@ -167,13 +174,13 @@ function renderContent(props: Parameters<typeof AppRouteContent>[0]) {
 describe("AppRouteContent", () => {
   it("offers a retry action when the initial load fails", () => {
     const props = makeProps();
-    props.error = "Failed to load configuration.";
+    props.load.error = "Failed to load configuration.";
 
     renderContent(props);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(screen.getByRole("alert").textContent).toContain(props.error);
-    expect(props.onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert").textContent).toContain(props.load.error);
+    expect(props.load.retry).toHaveBeenCalledTimes(1);
   });
 
   it("renders the overview on the root route", async () => {
@@ -187,18 +194,20 @@ describe("AppRouteContent", () => {
 
   it("shows a retryable project failure instead of an empty state", async () => {
     const props = makeProps();
-    props.viewState = { mode: "projects", activeAgentKey: null, activeSessionId: null };
-    props.projectPage = {
-      projects: [],
-      summary: {
-        projects: 0,
-        sessions: 0,
-        tokens: 0,
-        cost: 0,
-        latestActivity: null,
+    const retry = vi.fn();
+    props.route = {
+      mode: "projects",
+      activeAgentKey: null,
+      activeSessionId: null,
+      agentCatalog: createAgentCatalog([]),
+      projectPage: makeProjectPage([]),
+      projectsLoad: {
+        loading: false,
+        error: "projects unavailable",
+        retry,
       },
+      window: null,
     };
-    props.projectsError = "projects unavailable";
     renderContent(props);
 
     const alert = await screen.findByRole("alert", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
@@ -206,7 +215,7 @@ describe("AppRouteContent", () => {
     expect(alert.textContent).toContain("projects unavailable");
     expect(screen.queryByText("No projects found")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(props.onRetryProjects).toHaveBeenCalledOnce();
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   // The route surfaces load on demand, so these assertions wait for the chunk.
@@ -217,14 +226,19 @@ describe("AppRouteContent", () => {
       ...project,
       agentStats: [{ name: "claudecode", sessions: 1, messages: 2, tokens: 3, cost: 0.1 }],
     } satisfies ApiProjectGroup;
-    props.viewState = {
+    props.route = {
       mode: "project",
       activeAgentKey: null,
       activeSessionId: null,
       activeProjectKind: "git_remote",
       activeProjectKey: project.identityKey,
+      agentCatalog: createAgentCatalog([]),
+      project: activeProject,
+      projectLoad: { loading: false, error: null, retry: vi.fn() },
+      sessions: [],
+      agentFilter: { onChangeAgent: vi.fn() },
+      overview: makeOverview(),
     };
-    props.activeProject = activeProject;
 
     renderContent(props);
 
@@ -255,12 +269,12 @@ describe("AppRouteContent", () => {
 
   it("remounts session-scoped UI when the route changes to another session", async () => {
     const props = makeProps();
-    props.viewState = {
-      mode: "session",
-      activeAgentKey: "claudecode",
-      activeSessionId: "session-a",
-    };
-    props.sessionDetail.session = makeSession("session-a");
+    props.route = makeSessionRoute("session-a", {
+      session: makeSession("session-a"),
+      loading: false,
+      error: null,
+      retry: vi.fn(),
+    });
     const view = render(
       <MemoryRouter>
         <AppRouteContent {...props} />
@@ -272,12 +286,12 @@ describe("AppRouteContent", () => {
       { timeout: LAZY_SURFACE_TIMEOUT_MS },
     );
 
-    props.viewState = {
-      mode: "session",
-      activeAgentKey: "claudecode",
-      activeSessionId: "session-b",
-    };
-    props.sessionDetail.session = makeSession("session-b");
+    props.route = makeSessionRoute("session-b", {
+      session: makeSession("session-b"),
+      loading: false,
+      error: null,
+      retry: vi.fn(),
+    });
     view.rerender(
       <MemoryRouter>
         <AppRouteContent {...props} />
@@ -294,15 +308,16 @@ describe("AppRouteContent", () => {
       ...makeSession("child"),
       parent_reference: parent.reference,
     };
-    props.viewState = {
-      mode: "session",
-      activeAgentKey: "claudecode",
-      activeSessionId: parent.reference.sessionId,
-    };
-    props.sessionDetail.session = parent;
-    props.childSessionsByParentRouteKey = new Map([
+    const route = makeSessionRoute(parent.reference.sessionId, {
+      session: parent,
+      loading: false,
+      error: null,
+      retry: vi.fn(),
+    });
+    route.childSessionsByParentRouteKey = new Map([
       [getSessionRouteKey("claudecode", "parent"), [child]],
     ]);
+    props.route = route;
     const view = render(
       <MemoryRouter>
         <AppRouteContent {...props} />
@@ -311,7 +326,7 @@ describe("AppRouteContent", () => {
     await screen.findByTestId("session-detail", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
     const firstChildren = sessionDetailRender.mock.calls.at(-1)?.[0].childSessions;
 
-    props.detailHighlightQuery = "unrelated";
+    route.detailHighlightQuery = "unrelated";
     view.rerender(
       <MemoryRouter>
         <AppRouteContent {...props} />
@@ -323,19 +338,18 @@ describe("AppRouteContent", () => {
 
   it("renders an agent landing with encoded session links and full-reference bookmark actions", () => {
     const props = makeProps();
-    addRouteAgents(props);
+    const bookmarks = makeBookmarks();
     const sessionId = "shared/id?x#y%";
     const claudeSession = makeLandingSession("claudecode", sessionId, "Claude opaque session");
-    const codexSession = makeLandingSession("codex", sessionId, "Codex twin session");
-    props.viewState = {
+    props.route = {
       mode: "agent",
       activeAgentKey: "claudecode",
       activeSessionId: null,
+      agents: routeAgents,
+      agentCatalog: createAgentCatalog(routeAgents),
+      sessions: [claudeSession],
+      bookmarks,
     };
-    props.sessionsByAgent = new Map([
-      ["claudecode", [claudeSession]],
-      ["codex", [codexSession]],
-    ]);
 
     renderContent(props);
 
@@ -343,15 +357,14 @@ describe("AppRouteContent", () => {
     const sessionLink = screen.getByRole("link", { name: /Claude opaque session/ });
     expect(sessionLink.getAttribute("href")).toBe("/claudecode/shared%2Fid%3Fx%23y%25");
     expect(screen.queryByText("Codex twin session")).toBeNull();
-    expect(props.bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", sessionId);
+    expect(bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", sessionId);
 
     fireEvent.click(screen.getByRole("button", { name: "Add bookmark" }));
-    expect(props.bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
+    expect(bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
   });
 
   it("renders a missing session with agent-scoped recovery links", () => {
     const props = makeProps();
-    addRouteAgents(props);
     const attemptedSessionId = "missing/id?#%";
     const recoverySessionId = "recovery/id?#%";
     const claudeSession = makeLandingSession(
@@ -359,22 +372,14 @@ describe("AppRouteContent", () => {
       recoverySessionId,
       "Claude recovery session",
     );
-    const codexSession = makeLandingSession("codex", recoverySessionId, "Codex recovery session");
-    props.viewState = {
-      mode: "session",
-      activeAgentKey: "claudecode",
-      activeSessionId: attemptedSessionId,
-    };
-    props.sessionDetail = {
+    const route = makeSessionRoute(attemptedSessionId, {
       session: null,
       loading: false,
       error: { kind: "missing" },
       retry: vi.fn(),
-    };
-    props.sessionsByAgent = new Map([
-      ["claudecode", [claudeSession]],
-      ["codex", [codexSession]],
-    ]);
+    });
+    route.sessions = [claudeSession];
+    props.route = route;
 
     renderContent(props);
 
@@ -383,27 +388,21 @@ describe("AppRouteContent", () => {
     const recoveryLink = screen.getByRole("link", { name: /Claude recovery session/ });
     expect(recoveryLink.getAttribute("href")).toBe("/claudecode/recovery%2Fid%3F%23%25");
     expect(screen.queryByText("Codex recovery session")).toBeNull();
-    expect(props.bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", recoverySessionId);
+    expect(route.bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", recoverySessionId);
 
     fireEvent.click(screen.getByRole("button", { name: "Add bookmark" }));
-    expect(props.bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
+    expect(route.bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
   });
 
   it("renders a retryable load failure instead of a missing session", () => {
     const props = makeProps();
-    addRouteAgents(props);
     const retry = vi.fn();
-    props.viewState = {
-      mode: "session",
-      activeAgentKey: "claudecode",
-      activeSessionId: "unavailable-session",
-    };
-    props.sessionDetail = {
+    props.route = makeSessionRoute("unavailable-session", {
       session: null,
       loading: false,
       error: { kind: "load-failed", message: "server unavailable" },
       retry,
-    };
+    });
 
     renderContent(props);
 
@@ -416,12 +415,15 @@ describe("AppRouteContent", () => {
 
   it("renders a missing agent with diagnostics and canonical recovery links", () => {
     const props = makeProps();
-    addRouteAgents(props);
-    props.viewState = {
+    props.route = {
       mode: "missingAgent",
       activeAgentKey: null,
       activeSessionId: null,
       attemptedKey: "ghost-agent",
+      agents: routeAgents,
+      agentCatalog: createAgentCatalog(routeAgents),
+      sessions: [],
+      bookmarks: makeBookmarks(),
     };
 
     renderContent(props);
