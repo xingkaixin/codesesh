@@ -276,6 +276,7 @@ function patchShadowEventRetargeting() {
 
 function renderSessionTreeSidebar(sessions = [makeSession({ sessionId: "s1" })]) {
   const session = sessions[0]!;
+  const onCopySessionAsMarkdown = vi.fn();
   const onToggleBookmark = vi.fn();
   const onRenameSession = vi.fn();
   render(
@@ -285,6 +286,7 @@ function renderSessionTreeSidebar(sessions = [makeSession({ sessionId: "s1" })])
       selectedSessionReference={getSessionReferenceKey(session)}
       onSelectSession={() => {}}
       bookmarkedSessionReferences={new Set()}
+      onCopySessionAsMarkdown={onCopySessionAsMarkdown}
       onToggleBookmark={onToggleBookmark}
       onRenameSession={onRenameSession}
     />,
@@ -292,7 +294,15 @@ function renderSessionTreeSidebar(sessions = [makeSession({ sessionId: "s1" })])
   const shadowRoot = document.querySelector("file-tree-container")!.shadowRoot!;
   const item = shadowRoot.querySelector<HTMLElement>('[data-item-type="file"]')!;
   const decoration = item.querySelector<HTMLElement>('[data-item-section="decoration"] > span')!;
-  return { session, onToggleBookmark, onRenameSession, shadowRoot, item, decoration };
+  return {
+    session,
+    onCopySessionAsMarkdown,
+    onToggleBookmark,
+    onRenameSession,
+    shadowRoot,
+    item,
+    decoration,
+  };
 }
 
 function dispatch(target: HTMLElement, type: string, init: EventInit & { key?: string } = {}) {
@@ -360,6 +370,7 @@ describe("SessionTreeSidebar selection state", () => {
         selectedSessionReference={selectedSessionReference}
         onSelectSession={onSelectSession}
         bookmarkedSessionReferences={new Set()}
+        onCopySessionAsMarkdown={() => {}}
         onToggleBookmark={() => {}}
         onRenameSession={() => {}}
         groupByProject={false}
@@ -409,6 +420,16 @@ describe("SessionTreeSidebar session options menu", () => {
     expect(onToggleBookmark).toHaveBeenCalledWith(session);
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
+  });
+
+  it("copies the session selected by the context menu", async () => {
+    const { session, onCopySessionAsMarkdown, decoration } = renderSessionTreeSidebar();
+
+    dispatch(decoration, "click");
+    const copyItem = await screen.findByRole("menuitem", { name: "Copy as Markdown" });
+    dispatch(copyItem, "click");
+
+    expect(onCopySessionAsMarkdown).toHaveBeenCalledWith(session);
   });
 
   it("scrolls an overflowing title once while hovered", async () => {
@@ -529,10 +550,13 @@ describe("SessionTreeSidebar session options menu", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
 
     const renameItem = await screen.findByRole("menuitem", { name: "Rename" });
+    const copyItem = screen.getByRole("menuitem", { name: "Copy as Markdown" });
     const bookmarkItem = screen.getByRole("menuitem", { name: "Add bookmark" });
     await waitFor(() => expect(document.activeElement).toBe(renameItem));
 
     dispatch(renameItem, "keydown", { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(copyItem));
+    dispatch(copyItem, "keydown", { key: "ArrowDown" });
     await waitFor(() => expect(document.activeElement).toBe(bookmarkItem));
 
     dispatch(bookmarkItem, "keydown", { key: "Enter" });

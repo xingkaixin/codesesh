@@ -110,6 +110,7 @@ export interface AppSidebarActions {
   onMobileNavigationOpenChange: (open: boolean) => void;
   onToggleBookmark: (session: BookmarkView) => void;
   onSelectFlatSidebarSession: (session: SessionHead) => void;
+  onCopySessionAsMarkdown: (session: SessionHead) => void;
   onToggleSidebarSessionBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
   onRenameBookmarkedSession: (session: BookmarkView) => void;
@@ -191,6 +192,7 @@ export function AppSidebar({
     onMobileNavigationOpenChange,
     onToggleBookmark,
     onSelectFlatSidebarSession,
+    onCopySessionAsMarkdown,
     onToggleSidebarSessionBookmark,
     onRenameSession,
     onRenameBookmarkedSession,
@@ -371,6 +373,9 @@ export function AppSidebar({
                       )}
                       <SessionActionsMenu
                         bookmarked
+                        onCopyAsMarkdown={
+                          available ? () => onCopySessionAsMarkdown(bookmark.session) : undefined
+                        }
                         onRename={() => onRenameBookmarkedSession(bookmark)}
                         onToggleBookmark={() => onToggleBookmark(bookmark)}
                       />
@@ -403,6 +408,7 @@ export function AppSidebar({
                   selectedSessionReference={selectedSessionReference}
                   onSelectSession={handleSelectSession}
                   bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
+                  onCopySessionAsMarkdown={onCopySessionAsMarkdown}
                   onToggleBookmark={onToggleSidebarSessionBookmark}
                   onRenameSession={onRenameSession}
                   groupByProject={false}
