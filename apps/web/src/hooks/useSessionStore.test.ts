@@ -239,6 +239,7 @@ describe("useSessionStore", () => {
     act(() => {
       reload = result.current.reload();
     });
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenCalledTimes(2));
     const changed = { ...SAMPLE_SESSION_HEAD, title: "Live title" };
     await act(() =>
       result.current.applyLiveEvent({
@@ -257,6 +258,7 @@ describe("useSessionStore", () => {
     act(() => {
       reload = result.current.reload();
     });
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenCalledTimes(3));
     await act(() =>
       result.current.applyLiveEvent({
         ...SAMPLE_SESSIONS_UPDATED_EVENT,

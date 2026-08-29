@@ -1,12 +1,9 @@
-import {
-  applySessionWindowChanges,
-  formatSessionReference,
-  mergeSessionsUpdatedEvents,
-} from "@codesesh/core/contract";
+import { applySessionWindowChanges, formatSessionReference } from "@codesesh/core/contract";
 import {
   hashKey,
   keepPreviousData,
   queryOptions,
+  replaceEqualDeep,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -30,6 +27,7 @@ import {
   invalidateLiveSessionCollections,
   invalidateLiveSessionDerivedQueries,
   invalidateSessionDerivedQueries,
+  PendingSessionProjectionLoads,
 } from "../lib/session-query-consistency";
 
 export interface SessionProjection {
@@ -74,9 +72,9 @@ function agentCatalogOptions(window: AppConfig["window"]) {
   });
 }
 
-interface SessionProjectionLoad {
+interface LoadedSessionProjection extends SessionProjection {
+  loadId: number;
   window: AppConfig["window"];
-  event: SessionsUpdatedEvent | null;
 }
 
 function applyProjectionEvent(
@@ -97,29 +95,59 @@ function applyProjectionEvent(
 async function fetchSessionProjection(
   queryClient: QueryClient,
   signal: AbortSignal,
-  load: SessionProjectionLoad,
-): Promise<SessionProjection> {
-  const { window } = load;
-  const project = (sessions: SessionHead[], complete: boolean): SessionProjection => ({
-    sessions: load.event ? applyProjectionEvent(sessions, load.event, window).sessions : sessions,
-    complete,
-  });
-  const result = await fetchSessions(
-    { from: window.from, to: window.to },
-    { signal },
-    {
-      onFirstPage(sessions) {
-        if (!signal.aborted) {
-          queryClient.setQueryData<SessionProjection>(
-            queryKeys.sessionProjection(window),
-            (previous) => previous ?? project(sessions, false),
-          );
-        }
+  window: AppConfig["window"],
+  pendingLoads: PendingSessionProjectionLoads,
+): Promise<LoadedSessionProjection> {
+  const loadId = pendingLoads.begin();
+  let readyToCommit = false;
+  const project = (sessions: SessionHead[], complete: boolean): SessionProjection => {
+    const event = pendingLoads.read(loadId);
+    return {
+      sessions: event ? applyProjectionEvent(sessions, event, window).sessions : sessions,
+      complete,
+    };
+  };
+  try {
+    const result = await fetchSessions(
+      { from: window.from, to: window.to },
+      { signal },
+      {
+        onFirstPage(sessions) {
+          if (!signal.aborted) {
+            queryClient.setQueryData<SessionProjection>(
+              queryKeys.sessionProjection(window),
+              (previous) => previous ?? project(sessions, false),
+            );
+          }
+        },
       },
-    },
-  );
-  signal.throwIfAborted();
-  return project(result.sessions, true);
+    );
+    signal.throwIfAborted();
+    readyToCommit = true;
+    return {
+      sessions: result.sessions,
+      complete: true,
+      loadId,
+      window,
+    };
+  } finally {
+    if (!readyToCommit) pendingLoads.cancel(loadId);
+  }
+}
+
+function commitSessionProjection(
+  projection: SessionProjection,
+  pendingLoads: PendingSessionProjectionLoads,
+): SessionProjection {
+  if (!("loadId" in projection) || !("window" in projection)) return projection;
+  const loaded = projection as LoadedSessionProjection;
+  const event = pendingLoads.complete(loaded.loadId);
+  return {
+    sessions: event
+      ? applyProjectionEvent(loaded.sessions, event, loaded.window).sessions
+      : loaded.sessions,
+    complete: loaded.complete,
+  };
 }
 
 function removeOtherSessionProjections(
@@ -190,21 +218,19 @@ function sameWindow(
 
 export function useSessionStore(window: AppConfig["window"] | null) {
   const queryClient = useQueryClient();
-  const pendingProjectionLoad = useRef<SessionProjectionLoad | null>(null);
+  const pendingProjectionLoads = useRef(new PendingSessionProjectionLoads()).current;
   const liveAggregateWindowRef = useRef<AppConfig["window"] | null>(null);
   const liveAggregateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const projectionQuery = useQuery({
+  const projectionQuery = useQuery<SessionProjection>({
     queryKey: queryKeys.sessionProjection(window ?? {}),
     staleTime: Infinity,
-    queryFn: async ({ signal }): Promise<SessionProjection> => {
-      const load: SessionProjectionLoad = { window: window ?? {}, event: null };
-      pendingProjectionLoad.current = load;
-      try {
-        return await fetchSessionProjection(queryClient, signal, load);
-      } finally {
-        if (pendingProjectionLoad.current === load) pendingProjectionLoad.current = null;
-      }
-    },
+    structuralSharing: (_previous, next) =>
+      replaceEqualDeep(
+        _previous,
+        commitSessionProjection(next as SessionProjection, pendingProjectionLoads),
+      ),
+    queryFn: ({ signal }): Promise<SessionProjection> =>
+      fetchSessionProjection(queryClient, signal, window ?? {}, pendingProjectionLoads),
     enabled: window !== null,
   });
   const agentsQuery = useQuery({
@@ -258,12 +284,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
       if (!window) return null;
       const activeWindow = window;
-      const pendingLoad = pendingProjectionLoad.current;
-      if (pendingLoad && sameWindow(pendingLoad.window, activeWindow)) {
-        pendingLoad.event = pendingLoad.event
-          ? mergeSessionsUpdatedEvents(pendingLoad.event, event)
-          : event;
-      }
+      pendingProjectionLoads.record(event);
       const projectionKey = queryKeys.sessionProjection(activeWindow);
       const agentCatalogKey = queryKeys.agentCatalog(activeWindow);
       const currentProjection = queryClient.getQueryData<SessionProjection>(projectionKey);
@@ -326,7 +347,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
       }
       return { visibleNewSessions };
     },
-    [queryClient, reload, window],
+    [pendingProjectionLoads, queryClient, reload, window],
   );
 
   const resyncLiveState = useCallback(async (): Promise<void> => {
