@@ -3,7 +3,10 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionsUpdatedEvent } from "./api";
 import { queryKeys } from "./query-keys";
-import { invalidateLiveSessionDerivedQueries } from "./session-query-consistency";
+import {
+  invalidateLiveSessionDerivedQueries,
+  PendingSessionProjectionLoads,
+} from "./session-query-consistency";
 
 let client: QueryClient | null = null;
 
@@ -72,5 +75,50 @@ describe("live session detail invalidation", () => {
     });
 
     expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+});
+
+describe("pending session projection loads", () => {
+  it("keeps every live event until each older load commits", () => {
+    const loads = new PendingSessionProjectionLoads();
+    const firstLoad = loads.begin();
+    const secondLoad = loads.begin();
+    const changed = changedHead("Codex", "changed");
+    const removed = { agentName: "Codex", sessionId: "removed" };
+
+    loads.record({
+      ...SAMPLE_SESSIONS_UPDATED_EVENT,
+      changedSessionHeads: [changed],
+      removedSessionRefs: [],
+    });
+    loads.record({
+      ...SAMPLE_SESSIONS_UPDATED_EVENT,
+      changedSessionHeads: [],
+      removedSessionRefs: [removed],
+    });
+
+    expect(loads.complete(firstLoad)).toMatchObject({
+      changedSessionHeads: [changed],
+      removedSessionRefs: [removed],
+    });
+    expect(loads.read(secondLoad)).toMatchObject({
+      changedSessionHeads: [changed],
+      removedSessionRefs: [removed],
+    });
+    expect(loads.complete(secondLoad)).toMatchObject({
+      changedSessionHeads: [changed],
+      removedSessionRefs: [removed],
+    });
+    expect(loads.read(secondLoad)).toBeNull();
+  });
+
+  it("drops events owned by a cancelled load", () => {
+    const loads = new PendingSessionProjectionLoads();
+    const load = loads.begin();
+    loads.record(SAMPLE_SESSIONS_UPDATED_EVENT);
+
+    loads.cancel(load);
+
+    expect(loads.complete(load)).toBeNull();
   });
 });

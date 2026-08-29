@@ -1,6 +1,38 @@
+import { mergeSessionsUpdatedEvents } from "@codesesh/core/contract";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SessionsUpdatedEvent } from "./api";
 import { queryKeys } from "./query-keys";
+
+export class PendingSessionProjectionLoads {
+  private nextId = 0;
+  private readonly events = new Map<number, SessionsUpdatedEvent | null>();
+
+  begin(): number {
+    const id = this.nextId++;
+    this.events.set(id, null);
+    return id;
+  }
+
+  record(event: SessionsUpdatedEvent): void {
+    for (const [id, current] of this.events) {
+      this.events.set(id, current ? mergeSessionsUpdatedEvents(current, event) : event);
+    }
+  }
+
+  read(id: number): SessionsUpdatedEvent | null {
+    return this.events.get(id) ?? null;
+  }
+
+  complete(id: number): SessionsUpdatedEvent | null {
+    const event = this.read(id);
+    this.events.delete(id);
+    return event;
+  }
+
+  cancel(id: number): void {
+    this.events.delete(id);
+  }
+}
 
 function invalidateSessionCollections(queryClient: QueryClient) {
   return [
