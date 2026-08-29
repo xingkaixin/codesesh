@@ -1,5 +1,6 @@
 import "./diagnostics-bridge.js";
 import { defineCommand, runMain } from "citty";
+import { closeLoggerBeforeTermination } from "./cli-exit.js";
 import { createServer, getServerStartupErrorMessage } from "./server.js";
 import { LiveScanStore } from "./live-scan.js";
 import { printScanResults } from "./output.js";
@@ -36,8 +37,26 @@ import { startPricingRefresh } from "./pricing-refresh.js";
 // touching the app log; record it first, then let the crash proceed.
 process.on("unhandledRejection", (reason) => {
   appLogger.error("process.unhandled_rejection", { error: reason });
+  appLogger.flushSync();
   throw reason;
 });
+process.on("uncaughtExceptionMonitor", (error, origin) => {
+  appLogger.error("process.uncaught_exception", { error, exception_origin: origin });
+  appLogger.flushSync();
+});
+
+const closeApplicationLog = (exitCode: string | number) =>
+  closeLoggerBeforeTermination(() => appLogger.close(), exitCode);
+
+let shutdownOnSignal: (signal: NodeJS.Signals) => void = (signal) => {
+  appLogger.info("cli.shutdown", { signal, phase: "startup" });
+  appLogger.flushSync();
+  process.exit(0);
+};
+const dispatchSignal = (signal: NodeJS.Signals) => shutdownOnSignal(signal);
+process.once("SIGINT", dispatchSignal);
+process.once("SIGTERM", dispatchSignal);
+process.once("SIGHUP", dispatchSignal);
 
 const main = defineCommand({
   meta: {
@@ -206,6 +225,7 @@ const main = defineCommand({
       targetSession = parseSessionUri(args.session as string);
       if (!targetSession) {
         console.error(`Invalid session format: ${args.session}. Expected: agent://session-id`);
+        await closeApplicationLog(1);
         process.exit(1);
       }
     }
@@ -269,6 +289,7 @@ const main = defineCommand({
       // Worker threads and the SQLite connections hold the event loop open;
       // without this the one-shot process prints its output and never exits.
       await store.shutdown();
+      await closeApplicationLog(process.exitCode ?? 0);
       return;
     }
 
@@ -291,6 +312,7 @@ const main = defineCommand({
       });
     } catch (error) {
       console.error(getServerStartupErrorMessage(error, port));
+      await closeApplicationLog(1);
       process.exit(1);
     }
 
@@ -307,18 +329,18 @@ const main = defineCommand({
       appLogger.info("cli.shutdown", { signal });
       await pricingRefresh.cancel();
       await app.shutdown();
+      await closeApplicationLog(0);
       process.exit(0);
     };
     // If shutdown rejects, process.exit(0) inside it never runs; log and
     // exit non-zero instead of leaving an unhandled rejection behind.
-    const shutdownOnSignal = (signal: NodeJS.Signals) => {
-      shutdown(signal).catch((error) => {
+    shutdownOnSignal = (signal: NodeJS.Signals) => {
+      shutdown(signal).catch(async (error) => {
         appLogger.error("cli.shutdown_failed", { signal, error });
+        await closeApplicationLog(1);
         process.exit(1);
       });
     };
-    process.once("SIGINT", shutdownOnSignal);
-    process.once("SIGTERM", shutdownOnSignal);
 
     console.log(`  ${url}`);
     console.log("");
@@ -336,6 +358,18 @@ const main = defineCommand({
     }
   },
 });
+
+const runCliCommand = main.run;
+if (!runCliCommand) throw new Error("CLI command is missing its runner");
+main.run = async (context) => {
+  try {
+    return await runCliCommand(context);
+  } catch (error) {
+    appLogger.error("cli.fatal", { error });
+    await closeApplicationLog(1);
+    throw error;
+  }
+};
 
 if (process.argv.slice(2).includes("-v")) {
   console.log(VERSION);
