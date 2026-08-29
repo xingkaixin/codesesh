@@ -28,7 +28,6 @@ export interface SessionPublication {
 }
 
 export interface SessionPublicationResult {
-  durableCommitted: true;
   event: SessionsUpdatedEvent | null;
   diffDuration: number;
 }
@@ -77,7 +76,7 @@ export class SessionPublicationCoordinator {
       publication.candidateChangedIds,
     );
     const diffDuration = performance.now() - diffStartedAt;
-    const result: SessionPublicationResult = { durableCommitted: true, event, diffDuration };
+    const result: SessionPublicationResult = { event, diffDuration };
     this.runPostCommit(publication, "worker_commit", () => publication.stagedRun?.commit());
     this.runPostCommit(publication, "callback", () => publication.onCommitted?.(result));
     this.runPostCommit(publication, "notification", () =>
