@@ -87,7 +87,7 @@ const main = defineCommand({
     days: {
       type: "string",
       alias: "d",
-      description: "Only include sessions active in the last N days (0 = all time)",
+      description: "Only include sessions active in the last N local calendar days (0 = all time)",
       default: "7",
     },
     cwd: {
@@ -96,11 +96,11 @@ const main = defineCommand({
     },
     from: {
       type: "string",
-      description: "Sessions active after this date, YYYY-MM-DD (overrides --days)",
+      description: "Sessions active on or after this date, YYYY-MM-DD (overrides --days)",
     },
     to: {
       type: "string",
-      description: "Sessions active before this date (YYYY-MM-DD)",
+      description: "Sessions active on or before this date (YYYY-MM-DD)",
     },
     session: {
       type: "string",

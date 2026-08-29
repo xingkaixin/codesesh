@@ -6,7 +6,6 @@ import type {
 } from "@codesesh/core/runtime/discovery";
 import {
   addCalendarDays,
-  countCalendarDays,
   type SessionTree,
   type AppConfig,
   type SessionReference,
@@ -655,10 +654,7 @@ export function handleGetDashboard(
     projectKey: projectIdentity?.key,
   };
 
-  const compare =
-    from == null
-      ? undefined
-      : { from: addCalendarDays(from, -(days ?? countCalendarDays(from, to))), to: from - 1 };
+  const compare = from == null ? undefined : { from: addCalendarDays(from, -days), to: from - 1 };
 
   const fixedTo = dateWindow.to;
   const cacheTo = fixedTo ?? startOfCalendarDay(to);

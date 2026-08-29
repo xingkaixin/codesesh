@@ -1930,42 +1930,42 @@ describe("handleGetDashboard", () => {
     expect(todayBucket?.messages).toBe(7);
   });
 
-  it("uses the server default rolling window for dashboard totals", () => {
+  it("normalizes the server default to calendar-day dashboard totals", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-05-02T12:00:00Z"));
+    vi.setSystemTime(new Date(2026, 4, 2, 12));
 
     const now = Date.now();
-    const yesterdayInRollingWindow = makeSession("yesterday-active", {
-      time_created: new Date("2026-05-01T18:00:00Z").getTime(),
-      time_updated: new Date("2026-05-01T18:00:00Z").getTime(),
+    const yesterdayActive = makeSession("yesterday-active", {
+      time_created: new Date(2026, 4, 1, 18).getTime(),
+      time_updated: new Date(2026, 4, 1, 18).getTime(),
     });
     const todayActive = makeSession("today-active", {
-      time_created: new Date("2026-05-02T08:00:00Z").getTime(),
-      time_updated: new Date("2026-05-02T08:00:00Z").getTime(),
+      time_created: new Date(2026, 4, 2, 8).getTime(),
+      time_updated: new Date(2026, 4, 2, 8).getTime(),
     });
     const stale = makeSession("stale", {
-      time_created: new Date("2026-05-01T08:00:00Z").getTime(),
-      time_updated: new Date("2026-05-01T08:00:00Z").getTime(),
+      time_created: new Date(2026, 4, 1, 8).getTime(),
+      time_updated: new Date(2026, 4, 1, 8).getTime(),
     });
 
     const c = makeMockContext();
     handleGetDashboard(
       c,
       makeScanSource({
-        sessions: [yesterdayInRollingWindow, todayActive, stale],
-        byAgent: { claudecode: [yesterdayInRollingWindow, todayActive, stale] },
+        sessions: [yesterdayActive, todayActive, stale],
+        byAgent: { claudecode: [yesterdayActive, todayActive, stale] },
       }),
       { from: now - 86400000, days: 1 },
     );
 
     const response = c.json.mock.calls[0]![0];
-    expect(response.totals.sessions).toBe(2);
+    expect(response.totals.sessions).toBe(1);
     expect(
       response.dailyActivity.reduce(
         (sum: number, bucket: { sessions: number }) => sum + bucket.sessions,
         0,
       ),
-    ).toBe(2);
+    ).toBe(1);
   });
 
   it("reports the preceding equal-length window as the compare baseline", () => {
@@ -2016,14 +2016,14 @@ describe("handleGetDashboard", () => {
     });
   });
 
-  it("keys the aggregate cache on the compare window", () => {
+  it("does not fragment the aggregate cache on redundant days", () => {
     const source = makeScanSource();
     const to = "2026-07-26T12:00:00.000Z";
 
     handleGetDashboard(makeMockContext({ query: { from: "2026-07-20", to } }), source);
     handleGetDashboard(makeMockContext({ query: { from: "2026-07-20", to, days: "3" } }), source);
 
-    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(2);
+    expect(coreMocks.buildDashboard).toHaveBeenCalledTimes(1);
   });
 
   it("reuses storage aggregations until the analytics revision changes", () => {

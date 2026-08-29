@@ -127,13 +127,13 @@ npx codesesh --no-open
 ### Filter by Time
 
 ```bash
-# Only show sessions active in the last 3 days
+# Only show sessions active in the last 3 local calendar days
 npx codesesh --days 3
 
 # Show all sessions (no time limit)
 npx codesesh --days 0
 
-# Show sessions active after a specific date (overrides --days)
+# Show sessions active on or after a specific date (overrides --days)
 npx codesesh --from 2025-01-01
 
 # Show sessions within a date range
@@ -195,11 +195,11 @@ agent's own data directory.
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert` |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS |
 | `--public-url` | — | — | Public HTTPS origin used with `--trust-proxy` for startup links |
-| `--days` | `-d` | `7` | Only include sessions active in the last N days (`0` = all time) |
+| `--days` | `-d` | `7` | Only include sessions active in the last N local calendar days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
-| `--from` | — | — | Sessions active after this date `YYYY-MM-DD` (overrides `--days`) |
-| `--to` | — | — | Sessions active before this date `YYYY-MM-DD` |
+| `--from` | — | — | Sessions active on or after this date `YYYY-MM-DD` (overrides `--days`) |
+| `--to` | — | — | Sessions active on or before this date `YYYY-MM-DD` |
 | `--session` | `-s` | — | Directly open a session (`agent://session-id`) |
 | `--json` | `-j` | `false` | Print the session index as JSON and exit (metadata only, no messages) |
 | `--no-open` | — | `false` | Don't auto-open the browser |

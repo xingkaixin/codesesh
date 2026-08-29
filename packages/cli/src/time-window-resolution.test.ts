@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { addCalendarDays, startOfCalendarDay } from "@codesesh/core/contract";
 import { resolveTimeWindow } from "./time-window-resolution.js";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date("2026-07-17T08:00:00.000Z").getTime();
 
 describe("resolveTimeWindow", () => {
@@ -15,9 +14,9 @@ describe("resolveTimeWindow", () => {
     });
   });
 
-  it("resolves positive CLI days as a rolling window", () => {
+  it("resolves positive CLI days as inclusive local calendar days", () => {
     expect(resolveTimeWindow({ mode: "cli", days: "7", now: NOW })).toEqual({
-      from: NOW - 7 * DAY_MS,
+      from: addCalendarDays(startOfCalendarDay(NOW), -6),
       to: undefined,
       days: 7,
     });
@@ -46,8 +45,8 @@ describe("resolveTimeWindow", () => {
     ).toEqual({ from, to, days: 4 });
   });
 
-  it("keeps the CLI default from value ahead of dashboard query days", () => {
-    const defaultFrom = NOW - 7 * DAY_MS;
+  it("lets dashboard query days override inherited CLI bounds", () => {
+    const defaultFrom = addCalendarDays(startOfCalendarDay(NOW), -6);
 
     expect(
       resolveTimeWindow({
@@ -57,14 +56,14 @@ describe("resolveTimeWindow", () => {
         defaultDays: 7,
         now: NOW,
       }),
-    ).toEqual({ from: defaultFrom, to: NOW, days: 3 });
+    ).toEqual({ from: addCalendarDays(startOfCalendarDay(NOW), -2), to: NOW, days: 3 });
   });
 
   it("supports explicit all-time dashboard windows", () => {
     expect(
       resolveTimeWindow({
         mode: "dashboard",
-        window: { from: NOW - 7 * DAY_MS, hasExplicitFrom: false },
+        window: { from: addCalendarDays(startOfCalendarDay(NOW), -6), hasExplicitFrom: false },
         days: "0",
         defaultDays: 7,
         now: NOW,
@@ -86,8 +85,8 @@ describe("resolveTimeWindow", () => {
     });
   });
 
-  it("uses validated dashboard defaults without parsing dates again", () => {
-    const defaultFrom = NOW - 5 * DAY_MS;
+  it("normalizes relative dashboard defaults to their calendar range", () => {
+    const defaultFrom = NOW - 5 * 24 * 60 * 60 * 1000;
 
     expect(
       resolveTimeWindow({
@@ -95,7 +94,18 @@ describe("resolveTimeWindow", () => {
         window: { from: defaultFrom, to: NOW, hasExplicitFrom: false },
         defaultDays: 5,
       }),
-    ).toEqual({ from: defaultFrom, to: NOW, days: 5 });
+    ).toEqual({ from: addCalendarDays(startOfCalendarDay(NOW), -4), to: NOW, days: 5 });
+  });
+
+  it("derives the day count from exact inherited bounds", () => {
+    const from = addCalendarDays(startOfCalendarDay(NOW), -4);
+
+    expect(
+      resolveTimeWindow({
+        mode: "dashboard",
+        window: { from, to: NOW, hasExplicitFrom: false },
+      }),
+    ).toEqual({ from, to: NOW, days: 5 });
   });
 });
 
@@ -124,6 +134,15 @@ describe("CS-133: dashboard windows are calendar ranges", () => {
 
     expect(resolved.from).toBe(webPresetFrom);
     expect(new Date(resolved.from!).getHours()).toBe(0);
+  });
+
+  it("treats CLI date-only bounds as inclusive local calendar dates", () => {
+    vi.stubEnv("TZ", "America/New_York");
+
+    expect(resolveTimeWindow({ mode: "cli", from: "2026-03-07", to: "2026-03-09" })).toEqual({
+      from: new Date(2026, 2, 7).getTime(),
+      to: new Date(2026, 2, 10).getTime() - 1,
+    });
   });
 
   it("reports elapsed days as calendar days across a transition", () => {

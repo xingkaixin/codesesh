@@ -67,7 +67,7 @@ npx codesesh
 # Choose a custom starting port
 npx codesesh --port 8080
 
-# Only show sessions active in the last 3 days
+# Only show sessions active in the last 3 local calendar days
 npx codesesh --days 3
 
 # Jump directly to a session
@@ -97,11 +97,11 @@ npx codesesh --trace
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert`                          |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS                    |
 | `--public-url` | — | — | Public HTTPS origin used with `--trust-proxy` for startup links       |
-| `--days`    | `-d`  | `7`     | Only include sessions active in the last N days (`0` = all time) |
+| `--days`    | `-d`  | `7`     | Only include sessions active in the last N local calendar days (`0` = all time) |
 | `--cwd`     | —     | —       | Filter to sessions from a project directory                 |
 | `--agent`   | `-a`  | all     | Filter to specific agent(s), comma-separated                |
-| `--from`    | —     | —       | Sessions active after this date `YYYY-MM-DD`                |
-| `--to`      | —     | —       | Sessions active before this date `YYYY-MM-DD`               |
+| `--from`    | —     | —       | Sessions active on or after this date `YYYY-MM-DD`          |
+| `--to`      | —     | —       | Sessions active on or before this date `YYYY-MM-DD`         |
 | `--session` | `-s`  | —       | Directly open a session (`agent://session-id`)              |
 | `--json`    | `-j`  | `false` | Print the session index as JSON and exit (metadata only)    |
 | `--no-open` | —     | `false` | Don't auto-open the browser                                 |

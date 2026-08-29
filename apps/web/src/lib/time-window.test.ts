@@ -47,7 +47,15 @@ describe("time window URL state", () => {
   });
 
   it("re-resolves a preset fallback at the current local day", () => {
-    const result = resolveTimeWindow(new URLSearchParams(), { from: 10, to: 20, days: 7 }, now);
+    const result = resolveTimeWindow(
+      new URLSearchParams(),
+      {
+        from: new Date(2026, 6, 8).getTime(),
+        to: new Date(2026, 6, 15).getTime() - 1,
+        days: 7,
+      },
+      now,
+    );
 
     expect(result).toEqual({
       preset: "7d",
@@ -56,6 +64,21 @@ describe("time window URL state", () => {
         to: new Date(2026, 6, 15).getTime() - 1,
         days: 7,
       },
+    });
+  });
+
+  it("does not treat contradictory fallback bounds as a preset", () => {
+    const fallback = {
+      from: new Date(2026, 6, 1).getTime(),
+      to: new Date(2026, 6, 15).getTime() - 1,
+      days: 7,
+    };
+
+    expect(resolveTimeWindow(new URLSearchParams(), fallback, now)).toEqual({
+      preset: "custom",
+      window: fallback,
+      customFrom: "2026-07-01",
+      customTo: "2026-07-14",
     });
   });
 
