@@ -180,8 +180,8 @@ class FakeSyncAgent extends FileSystemSessionSource {
     return [];
   }
 
-  scanSessionSource() {
-    return null;
+  protected scanSessionSourceResult() {
+    return { status: "skipped" as const, reason: "empty test source" };
   }
 
   getSessionData() {

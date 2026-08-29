@@ -123,7 +123,7 @@ class FailingFileAgent extends FileSystemSessionSource {
     return [{ sessionId: "cached", sourcePath: "/cached.jsonl", fingerprint: "new" }];
   }
 
-  scanSessionSource(): SessionHead | null {
+  protected scanSessionSourceResult(): never {
     throw new SyntaxError("Unexpected end of JSON input");
   }
 

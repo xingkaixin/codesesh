@@ -419,10 +419,6 @@ export class KimiAgent extends FileSystemSessionSource<SessionMeta> {
     return refs;
   }
 
-  scanSessionSource(sourcePath: string): SessionHead | null {
-    return getParsedSession(this.parseSessionHeadResult(sourcePath));
-  }
-
   protected override scanSessionSourceResult(
     source: SessionSourceRef,
   ): ParseSessionResult<SessionHead> {

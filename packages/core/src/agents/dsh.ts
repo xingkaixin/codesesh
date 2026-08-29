@@ -14,7 +14,6 @@ import {
   FileSystemSessionSource,
   SessionScanError,
   filteredSession,
-  getParsedSession,
   matchesScanWindow,
   parsedSession,
 } from "./base.js";
@@ -153,12 +152,6 @@ export class DshAgent extends FileSystemSessionSource<DshSessionMeta> {
   }
 
   /** The scan window is applied during enumeration, so parsing needs no options. */
-  scanSessionSource(sourcePath: string): SessionHead | null {
-    return getParsedSession(
-      this.scanSessionSourceResult({ sessionId: "", sourcePath, fingerprint: "" }),
-    );
-  }
-
   protected override scanSessionSourceResult(
     source: SessionSourceRef,
   ): ParseSessionResult<SessionHead> {
