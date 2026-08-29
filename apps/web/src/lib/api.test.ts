@@ -14,9 +14,12 @@ import {
   fetchSearchResults,
   fetchSessionData,
   fetchSessions,
-  initializeRemoteAccess,
   subscribeSessionUpdates,
 } from "./api";
+import { createApiClient } from "./api-client";
+import { createClientTelemetry } from "./client-telemetry";
+import { resolveRemoteAccess } from "./remote-access";
+import { createSessionUpdateSubscriber } from "./session-updates";
 
 describe("abortable list requests", () => {
   afterEach(() => {
@@ -105,26 +108,25 @@ describe("remote access", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     window.history.replaceState(null, "", "/");
-    initializeRemoteAccess();
+    FakeEventSource.instances = [];
   });
 
   afterEach(() => {
     window.sessionStorage.clear();
     window.history.replaceState(null, "", "/");
-    initializeRemoteAccess();
     vi.unstubAllGlobals();
   });
 
   it("stores the startup token, removes it from the URL, and authorizes fetch", async () => {
     window.history.replaceState(null, "", "/?access_token=remote-secret");
-    initializeRemoteAccess();
+    const client = createApiClient(resolveRemoteAccess());
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await fetchDashboard(undefined, {});
+    await client.fetchDashboard(undefined, {});
 
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.getItem("codesesh:remote-access-token")).toBe("remote-secret");
@@ -135,12 +137,47 @@ describe("remote access", () => {
   it("adds the startup token to the EventSource URL", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     window.history.replaceState(null, "", "/?access_token=remote-secret");
-    initializeRemoteAccess();
+    const subscribe = createSessionUpdateSubscriber(resolveRemoteAccess());
 
-    const unsubscribe = subscribeSessionUpdates(() => {});
+    const unsubscribe = subscribe(() => {});
 
     expect(FakeEventSource.instances.at(-1)?.url).toBe("/api/events?access_token=remote-secret");
     unsubscribe();
+  });
+
+  it("authorizes telemetry without using the beacon path", () => {
+    window.history.replaceState(null, "", "/?access_token=remote-secret");
+    const telemetry = createClientTelemetry(resolveRemoteAccess());
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const sendBeacon = vi.fn();
+    vi.stubGlobal("navigator", { sendBeacon });
+    vi.stubGlobal("fetch", fetchMock);
+
+    telemetry.logClientEvent("app.ready");
+
+    expect(sendBeacon).not.toHaveBeenCalled();
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer remote-secret");
+  });
+
+  it("keeps each client bound to its startup credentials", async () => {
+    window.history.replaceState(null, "", "/?access_token=first-secret");
+    const firstClient = createApiClient(resolveRemoteAccess());
+    window.history.replaceState(null, "", "/?access_token=second-secret");
+    const secondClient = createApiClient(resolveRemoteAccess());
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firstClient.fetchDashboard(undefined, {});
+    await secondClient.fetchDashboard(undefined, {});
+
+    const headers = fetchMock.mock.calls.map(([, init]) =>
+      new Headers((init as RequestInit).headers).get("Authorization"),
+    );
+    expect(headers).toEqual(["Bearer first-secret", "Bearer second-secret"]);
   });
 });
 

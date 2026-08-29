@@ -11,10 +11,12 @@ describe("RenderProfiler", () => {
     vi.resetModules();
     const { isRenderProfilerEnabled } = await import("./RenderProfiler");
     const readsAfterLoad = getItem.mock.calls.length;
+    const profilerReads = () =>
+      getItem.mock.calls.filter(([key]) => key === "codeseshProfiler").length;
 
     expect(isRenderProfilerEnabled()).toBe(false);
     expect(isRenderProfilerEnabled()).toBe(false);
     expect(getItem).toHaveBeenCalledTimes(readsAfterLoad);
-    expect(readsAfterLoad).toBe(1);
+    expect(profilerReads()).toBe(1);
   });
 });
