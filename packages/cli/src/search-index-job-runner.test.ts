@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchIndexWorkerJob } from "./search-index-worker.js";
 
 const workerMocks = vi.hoisted(() => {
-  type Handler = (arg: never) => void;
+  type Handler = (arg: unknown) => void;
   class FakeWorker {
-    private handlers = new Map<string, Handler>();
+    private handlers = new Map<string, Handler[]>();
     readonly workerData: Record<string, unknown>;
     readonly postedMessages: unknown[] = [];
 
@@ -14,20 +14,65 @@ const workerMocks = vi.hoisted(() => {
     }
 
     on(event: string, handler: Handler): this {
-      this.handlers.set(event, handler);
+      const handlers = this.handlers.get(event) ?? [];
+      handlers.push(handler);
+      this.handlers.set(event, handlers);
+      return this;
+    }
+
+    once(event: string, handler: Handler): this {
+      const wrapped = (arg: unknown) => {
+        this.off(event, wrapped);
+        handler(arg);
+      };
+      return this.on(event, wrapped);
+    }
+
+    off(event: string, handler: Handler): this {
+      const handlers = this.handlers.get(event);
+      if (handlers)
+        this.handlers.set(
+          event,
+          handlers.filter((item) => item !== handler),
+        );
       return this;
     }
 
     postMessage(message: unknown): void {
       this.postedMessages.push(message);
+      if (
+        message != null &&
+        typeof message === "object" &&
+        "type" in message &&
+        message.type === "codesesh.worker-log-drain" &&
+        "requestId" in message
+      ) {
+        queueMicrotask(() => {
+          this.post({
+            type: "codesesh.worker-log-drained",
+            requestId: message.requestId,
+          });
+        });
+      }
     }
 
     async terminate(): Promise<number> {
+      this.emit("exit", 0);
       return 0;
     }
 
     post(message: unknown): void {
-      (this.handlers.get("message") as ((arg: unknown) => void) | undefined)?.(message);
+      this.emit("message", message);
+    }
+
+    exit(code: number): void {
+      this.emit("exit", code);
+    }
+
+    private emit(event: string, arg: unknown): void {
+      const handlers = this.handlers.get(event);
+      if (!handlers) return;
+      for (const handler of handlers.slice()) handler(arg);
     }
   }
   const workers: FakeWorker[] = [];
@@ -35,7 +80,9 @@ const workerMocks = vi.hoisted(() => {
     workers,
     FakeWorker,
     workerExists: true,
+    context: {} as Record<string, string>,
     consumeWorkerMessage: vi.fn((_message: unknown) => false),
+    restoreContext: vi.fn((_context: unknown, operation: () => unknown) => operation()),
   };
 });
 
@@ -51,6 +98,8 @@ vi.mock("./logging.js", () => ({
     warn: vi.fn(),
     error: vi.fn(),
     consumeWorkerMessage: workerMocks.consumeWorkerMessage,
+    captureContext: vi.fn(() => ({ ...workerMocks.context })),
+    restoreContext: workerMocks.restoreContext,
   },
   logSearchIndexSync: vi.fn(),
 }));
@@ -88,6 +137,7 @@ function startedWorker() {
 beforeEach(() => {
   workerMocks.workers.length = 0;
   workerMocks.workerExists = true;
+  workerMocks.context = {};
   vi.clearAllMocks();
   workerMocks.consumeWorkerMessage.mockReturnValue(false);
 });
@@ -164,8 +214,10 @@ describe("SearchIndexJobRunner", () => {
 
   it("reuses one worker for consecutive batches", async () => {
     const runner = new SearchIndexJobRunner();
+    workerMocks.context = { operation_id: "first-operation" };
     const first = runner.enqueue("scan.refresh", [makeJob()]);
     const worker = startedWorker();
+    expect(worker.workerData.logContext).toEqual({ operation_id: "first-operation" });
     worker.post({
       type: "done",
       context: "scan.refresh",
@@ -175,11 +227,16 @@ describe("SearchIndexJobRunner", () => {
     });
     await first;
 
+    workerMocks.context = { operation_id: "second-operation" };
     const second = runner.enqueue("scan.refresh", [makeJob()]);
 
     expect(workerMocks.workers).toEqual([worker]);
     expect(worker.postedMessages).toEqual([
-      expect.objectContaining({ context: "scan.refresh", pricingGenerationId: 17 }),
+      expect.objectContaining({
+        context: "scan.refresh",
+        pricingGenerationId: 17,
+        logContext: { operation_id: "second-operation" },
+      }),
     ]);
     worker.post({
       type: "done",
@@ -189,6 +246,26 @@ describe("SearchIndexJobRunner", () => {
       failedAgents: [],
     });
     await second;
+  });
+
+  it("does not attribute an idle worker exit to its first operation", async () => {
+    const runner = new SearchIndexJobRunner();
+    workerMocks.context = { operation_id: "finished-operation" };
+    const completion = runner.enqueue("scan.refresh", [makeJob()]);
+    const worker = startedWorker();
+    worker.post({
+      type: "done",
+      context: "scan.refresh",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
+    await completion;
+    workerMocks.restoreContext.mockClear();
+
+    worker.exit(0);
+
+    expect(workerMocks.restoreContext).toHaveBeenCalledWith({}, expect.any(Function));
   });
 
   it("dispatches a queued batch after the active batch completes", async () => {
@@ -221,6 +298,38 @@ describe("SearchIndexJobRunner", () => {
       failedAgents: [],
     });
     await second;
+  });
+
+  it("does not attribute a merged batch to only its last operation", async () => {
+    const runner = new SearchIndexJobRunner();
+    workerMocks.context = { operation_id: "active-operation" };
+    const active = runner.enqueue("active", [makeJob()]);
+    const worker = startedWorker();
+
+    workerMocks.context = { operation_id: "queued-operation-a" };
+    const queuedA = runner.enqueue("queued-a", [makeJob()]);
+    workerMocks.context = { operation_id: "queued-operation-b" };
+    const queuedB = runner.enqueue("queued-b", [makeJob()]);
+    worker.post({
+      type: "done",
+      context: "active",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
+    await active;
+
+    expect(worker.postedMessages.at(-1)).toEqual(
+      expect.objectContaining({ context: "queued-b", logContext: {} }),
+    );
+    worker.post({
+      type: "done",
+      context: "queued-b",
+      durationMs: 1,
+      sessions: 1,
+      failedAgents: [],
+    });
+    await Promise.all([queuedA, queuedB]);
   });
 
   it("runs foreground publications before the next maintenance batch", async () => {

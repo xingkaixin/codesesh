@@ -16,6 +16,7 @@ interface AgentOperationLifecycle {
   agentName: string;
   kind: AgentOperationKind;
   generation: number;
+  operationId: string;
   startedAt: number;
 }
 
@@ -99,14 +100,17 @@ export class AgentOperationScheduler {
     const run = previous.then(async () => {
       if (this.isStopped) return "skipped";
       const lifecycle = this.beginOperation(agentName, kind);
-      try {
-        const result = await operation();
-        this.completeOperation(lifecycle, result);
-        return result;
-      } catch (error) {
-        this.completeOperation(lifecycle, "failed");
-        throw error;
-      }
+      return appLogger.runWithContext({ operation_id: lifecycle.operationId }, async () => {
+        this.logOperationStarted(lifecycle);
+        try {
+          const result = await operation();
+          this.completeOperation(lifecycle, result);
+          return result;
+        } catch (error) {
+          this.completeOperation(lifecycle, "failed");
+          throw error;
+        }
+      });
     });
     const tail = run.then(
       () => undefined,
@@ -171,13 +175,22 @@ export class AgentOperationScheduler {
     const generation = (this.operationGenerations.get(agentName) ?? 0) + 1;
     const startedAt = Date.now();
     this.operationGenerations.set(agentName, generation);
-    appLogger.info("scan.agent_operation.started", {
-      agent: agentName,
-      operation: kind,
+    return {
+      agentName,
+      kind,
       generation,
-      started_at: startedAt,
+      operationId: `${agentName}:${generation}`,
+      startedAt,
+    };
+  }
+
+  private logOperationStarted(lifecycle: AgentOperationLifecycle): void {
+    appLogger.info("scan.agent_operation.started", {
+      agent: lifecycle.agentName,
+      operation: lifecycle.kind,
+      generation: lifecycle.generation,
+      started_at: lifecycle.startedAt,
     });
-    return { agentName, kind, generation, startedAt };
   }
 
   private completeOperation(

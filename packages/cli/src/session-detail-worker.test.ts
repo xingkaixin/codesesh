@@ -46,6 +46,9 @@ it("serializes source messages inside the worker", async () => {
     }),
   });
   expect(mocks.close).toHaveBeenCalledOnce();
+  expect(mocks.close.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.post.mock.invocationCallOrder[0]!,
+  );
 });
 
 it("materializes cached message iterators before crossing threads", async () => {
@@ -76,4 +79,7 @@ it("reports parsing errors and closes storage", async () => {
   await import("./session-detail-worker.js");
   expect(mocks.post).toHaveBeenCalledWith({ type: "error", error: "parse failed" });
   expect(mocks.close).toHaveBeenCalledOnce();
+  expect(mocks.close.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.post.mock.invocationCallOrder[0]!,
+  );
 });

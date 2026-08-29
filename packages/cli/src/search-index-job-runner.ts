@@ -11,6 +11,7 @@ import type {
   SearchIndexPublicationProgress,
   SearchIndexWorkerRunRequest,
 } from "./search-index-worker.js";
+import { terminateWorkerAfterLogDrain } from "./worker-log-drain.js";
 
 const SHUTDOWN_ERROR_MESSAGE = "Live scan store shut down";
 
@@ -30,6 +31,7 @@ export class SearchIndexJobRunner {
   private pendingJobs = new PendingSearchIndexJobs();
   private pendingMaintenanceJobs = new PendingSearchIndexJobs();
   private isShuttingDown = false;
+  private retirements = new Set<Promise<number>>();
 
   enqueue(
     context: string,
@@ -55,7 +57,14 @@ export class SearchIndexJobRunner {
     if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
 
     const batchId = this.nextBatchId++;
-    const completion = queue.enqueue(batchId, context, jobs, onStarted, onProgress);
+    const completion = queue.enqueue(
+      batchId,
+      context,
+      jobs,
+      onStarted,
+      onProgress,
+      appLogger.captureContext(),
+    );
     if (this.activeBatch) {
       const snapshot = this.snapshot();
       appLogger.debug("search_index.worker_queued", {
@@ -94,7 +103,13 @@ export class SearchIndexJobRunner {
     if (activeBatch) this.settle(activeBatch, shutdownError);
     this.pendingJobs.rejectAll(shutdownError);
     this.pendingMaintenanceJobs.rejectAll(shutdownError);
-    if (worker) await worker.terminate();
+    const activeRetirement = worker ? this.retireWorker(worker) : null;
+    const retirements = [...this.retirements];
+    try {
+      if (activeRetirement) await activeRetirement;
+    } finally {
+      await Promise.allSettled(retirements);
+    }
   }
 
   private startNextBatch(): void {
@@ -102,19 +117,21 @@ export class SearchIndexJobRunner {
     const batch = this.pendingJobs.take() ?? this.pendingMaintenanceJobs.take();
     if (!batch) return;
 
-    appLogger.info("search_index.worker_dequeued", {
-      batch_id: batch.id,
-      context: batch.context,
-      pending_batches: this.pendingJobs.batchCount,
-    });
-    batch.start((error) => {
-      appLogger.error("search_index.worker_start_listener_failed", {
+    appLogger.restoreContext(batch.logContext, () => {
+      appLogger.info("search_index.worker_dequeued", {
         batch_id: batch.id,
         context: batch.context,
-        error: toError(error),
+        pending_batches: this.pendingJobs.batchCount,
       });
+      batch.start((error) => {
+        appLogger.error("search_index.worker_start_listener_failed", {
+          batch_id: batch.id,
+          context: batch.context,
+          error: toError(error),
+        });
+      });
+      this.startBatch(batch);
     });
-    this.startBatch(batch);
   }
 
   private startBatch(batch: SearchIndexJobBatch): void {
@@ -127,6 +144,7 @@ export class SearchIndexJobRunner {
       type: "run",
       pricingGenerationId: getPricingGeneration().id,
       context: batch.context,
+      logContext: batch.logContext,
       jobs: batch.jobs,
     };
     const existingWorker = this.worker;
@@ -169,65 +187,82 @@ export class SearchIndexJobRunner {
       if (this.worker !== worker) return;
       const activeBatch = this.activeBatch;
       if (!activeBatch) return;
-      if (message.type === "publication-progress") {
-        const { agentName, stage } = message;
-        activeBatch.progress({ agentName, stage }, (error) => {
-          appLogger.error("search_index.worker_progress_listener_failed", {
-            batch_id: activeBatch.id,
-            context: activeBatch.context,
-            error: toError(error),
-          });
-        });
-        return;
-      }
-      if (message.type === "sync-result") {
-        logSearchIndexSync(message.context, message.result);
-        return;
-      }
-      if (message.type === "persist-failed") {
-        appLogger.error("search_index.persist_failed", {
-          batch_id: activeBatch.id,
-          context: message.context,
-          stage: message.stage,
-          publication_id: message.publicationId,
-          agent: message.agentName,
-          sessions: message.sessions,
-        });
-        // Non-fatal failures keep the batch running: the worker continues
-        // with the remaining agents and reports them in the done message.
-        if (message.fatal) {
-          this.finishBatch(
-            activeBatch,
-            new Error(
-              `Search index worker failed to persist ${message.stage} for ${message.agentName}`,
-            ),
-          );
-        }
-        return;
-      }
-      if (message.type !== "done") return;
-
-      if (message.failedAgents.length > 0) {
-        appLogger.warn("search_index.batch_partial", {
-          batch_id: activeBatch.id,
-          context: message.context,
-          failed_agents: message.failedAgents,
-        });
-      }
-      appLogger.info(`${message.context}.done`, {
-        duration_ms: Math.round(message.durationMs),
-        sessions: message.sessions,
+      appLogger.restoreContext(activeBatch.logContext, () => {
+        this.handleWorkerMessage(activeBatch, message);
       });
-      this.finishBatch(activeBatch);
     });
     worker.on("error", (error) => {
-      appLogger.error("search_index.worker_error", {
-        context: this.activeBatch?.context ?? batch.context,
-        error,
+      const activeBatch = this.worker === worker ? this.activeBatch : null;
+      appLogger.restoreContext(activeBatch?.logContext ?? {}, () => {
+        appLogger.error("search_index.worker_error", {
+          context: activeBatch?.context,
+          error,
+        });
+        this.invalidateWorker(worker, toError(error));
       });
-      this.invalidateWorker(worker, toError(error));
     });
-    worker.on("exit", (code) => this.finishWorker(worker, code));
+    worker.on("exit", (code) => {
+      const activeBatch = this.worker === worker ? this.activeBatch : null;
+      appLogger.restoreContext(activeBatch?.logContext ?? {}, () =>
+        this.finishWorker(worker, code),
+      );
+    });
+  }
+
+  private handleWorkerMessage(
+    activeBatch: SearchIndexJobBatch,
+    message: SearchIndexWorkerMessage,
+  ): void {
+    if (message.type === "publication-progress") {
+      const { agentName, stage } = message;
+      activeBatch.progress({ agentName, stage }, (error) => {
+        appLogger.error("search_index.worker_progress_listener_failed", {
+          batch_id: activeBatch.id,
+          context: activeBatch.context,
+          error: toError(error),
+        });
+      });
+      return;
+    }
+    if (message.type === "sync-result") {
+      logSearchIndexSync(message.context, message.result);
+      return;
+    }
+    if (message.type === "persist-failed") {
+      appLogger.error("search_index.persist_failed", {
+        batch_id: activeBatch.id,
+        context: message.context,
+        stage: message.stage,
+        publication_id: message.publicationId,
+        agent: message.agentName,
+        sessions: message.sessions,
+      });
+      // Non-fatal failures keep the batch running: the worker continues
+      // with the remaining agents and reports them in the done message.
+      if (message.fatal) {
+        this.finishBatch(
+          activeBatch,
+          new Error(
+            `Search index worker failed to persist ${message.stage} for ${message.agentName}`,
+          ),
+        );
+      }
+      return;
+    }
+    if (message.type !== "done") return;
+
+    if (message.failedAgents.length > 0) {
+      appLogger.warn("search_index.batch_partial", {
+        batch_id: activeBatch.id,
+        context: message.context,
+        failed_agents: message.failedAgents,
+      });
+    }
+    appLogger.info(`${message.context}.done`, {
+      duration_ms: Math.round(message.durationMs),
+      sessions: message.sessions,
+    });
+    this.finishBatch(activeBatch);
   }
 
   private finishBatch(batch: SearchIndexJobBatch, error?: Error): void {
@@ -243,7 +278,7 @@ export class SearchIndexJobRunner {
     const batch = this.activeBatch;
     this.activeBatch = null;
     if (batch) this.settle(batch, error);
-    void worker.terminate();
+    void this.retireWorker(worker);
     this.startNextBatch();
   }
 
@@ -273,17 +308,26 @@ export class SearchIndexJobRunner {
   }
 
   private settle(batch: SearchIndexJobBatch, error?: Error): void {
-    if (
-      !this.pendingJobs.settle(batch, error) &&
-      !this.pendingMaintenanceJobs.settle(batch, error)
-    ) {
-      return;
-    }
-    appLogger.info("search_index.worker_settled", {
-      batch_id: batch.id,
-      context: batch.context,
-      result: error ? "rejected" : "resolved",
+    appLogger.restoreContext(batch.logContext, () => {
+      if (
+        !this.pendingJobs.settle(batch, error) &&
+        !this.pendingMaintenanceJobs.settle(batch, error)
+      ) {
+        return;
+      }
+      appLogger.info("search_index.worker_settled", {
+        batch_id: batch.id,
+        context: batch.context,
+        result: error ? "rejected" : "resolved",
+      });
     });
+  }
+
+  private retireWorker(worker: Worker): Promise<number> {
+    const retirement = terminateWorkerAfterLogDrain(worker);
+    this.retirements.add(retirement);
+    void retirement.finally(() => this.retirements.delete(retirement)).catch(() => undefined);
+    return retirement;
   }
 
   private workerUrl(): URL | null {

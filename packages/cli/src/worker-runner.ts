@@ -11,7 +11,7 @@ import {
   type PersistedSessionHeadChange,
   type SessionSnapshotCompleteness,
 } from "@codesesh/core/runtime/discovery";
-import { appLogger } from "./logging.js";
+import { appLogger, type LogContext } from "./logging.js";
 import type {
   ScanRefreshWorkerCommitRequest,
   ScanRefreshWorkerCheckpoint,
@@ -24,6 +24,7 @@ import {
   AgentUnavailableDuringScanError,
 } from "./scan-refresh-error.js";
 import { toError } from "./errors.js";
+import { terminateWorkerAfterLogDrain } from "./worker-log-drain.js";
 
 export interface WorkerPayload {
   previousSessions: SessionHead[];
@@ -61,6 +62,7 @@ interface PendingRequest {
   reject: (error: Error) => void;
   payload: WorkerPayload;
   generation: number;
+  logContext: LogContext;
   onProgress?: (progress: AgentScanProgress) => void;
   onCheckpoint?: (checkpoint: ScanRefreshWorkerCheckpoint) => void;
 }
@@ -70,7 +72,7 @@ interface WorkerSlot {
   worker: Worker;
   pending: Map<number, PendingRequest>;
   generation: number;
-  awaitingCommit: { requestId: number; generation: number } | null;
+  awaitingCommit: { requestId: number; generation: number; logContext: LogContext } | null;
   closed: boolean;
 }
 
@@ -122,6 +124,7 @@ function applyMetaChanges(
 
 export class ThreadWorkerRunner implements WorkerRunner {
   private workers = new Map<string, WorkerSlot>();
+  private retirements = new Set<Promise<number>>();
   private nextRequestId = 1;
   private isShuttingDown = false;
 
@@ -151,6 +154,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       pricingGenerationId: getPricingGeneration().id,
       operation: payload.operation,
       scanOptions: payload.scanOptions,
+      logContext: appLogger.captureContext(),
       ...(existingSlot ? {} : { previousSessions: payload.previousSessions, meta: payload.meta }),
     };
 
@@ -171,6 +175,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
         reject,
         payload,
         generation,
+        logContext: request.logContext ?? {},
         onProgress: payload.onProgress,
         onCheckpoint: payload.onCheckpoint,
       });
@@ -202,7 +207,8 @@ export class ThreadWorkerRunner implements WorkerRunner {
       for (const pending of slot.pending.values()) pending.reject(shutdownError);
       slot.pending.clear();
     }
-    await Promise.allSettled(slots.map((slot) => slot.worker.terminate()));
+    for (const slot of slots) this.retireWorker(slot.worker);
+    await Promise.allSettled(this.retirements);
   }
 
   private createWorker(agentName: string, request: ScanRefreshWorkerRunRequest): WorkerSlot {
@@ -221,15 +227,20 @@ export class ThreadWorkerRunner implements WorkerRunner {
       this.handleMessage(slot, message as ScanRefreshWorkerMessage);
     });
     worker.on("error", (error) => {
-      this.closeWorker(agentName, slot, toError(error));
+      appLogger.restoreContext(this.slotLogContext(slot), () => {
+        this.closeWorker(agentName, slot, toError(error));
+        void this.retireWorker(worker);
+      });
     });
     worker.on("exit", (code) => {
-      if (slot.closed) return;
-      const error = new Error(`Scan refresh worker exited before completing (code ${code})`);
-      if (slot.pending.size > 0) {
-        appLogger.warn("scan.refresh_worker.exit_before_done", { agent: agentName, code });
-      }
-      this.closeWorker(agentName, slot, error);
+      appLogger.restoreContext(this.slotLogContext(slot), () => {
+        if (slot.closed) return;
+        const error = new Error(`Scan refresh worker exited before completing (code ${code})`);
+        if (slot.pending.size > 0) {
+          appLogger.warn("scan.refresh_worker.exit_before_done", { agent: agentName, code });
+        }
+        this.closeWorker(agentName, slot, error);
+      });
     });
     return slot;
   }
@@ -237,6 +248,16 @@ export class ThreadWorkerRunner implements WorkerRunner {
   private handleMessage(slot: WorkerSlot, message: ScanRefreshWorkerMessage): void {
     const pending = slot.pending.get(message.requestId);
     if (!pending) return;
+    appLogger.restoreContext(pending.logContext, () => {
+      this.handlePendingMessage(slot, message, pending);
+    });
+  }
+
+  private handlePendingMessage(
+    slot: WorkerSlot,
+    message: ScanRefreshWorkerMessage,
+    pending: PendingRequest,
+  ): void {
     if (message.generation !== pending.generation) {
       const error = new Error(
         `Scan refresh generation mismatch: expected ${pending.generation}, received ${message.generation}`,
@@ -290,6 +311,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       slot.awaitingCommit = {
         requestId: message.requestId,
         generation: message.generation,
+        logContext: pending.logContext,
       };
       pending.resolve(this.createStagedRun(slot, message.requestId, message.generation, result));
     } catch (error) {
@@ -333,6 +355,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
       type: "commit",
       requestId,
       generation,
+      logContext: awaiting.logContext,
     };
     try {
       slot.worker.postMessage(request);
@@ -363,12 +386,24 @@ export class ThreadWorkerRunner implements WorkerRunner {
     slot.awaitingCommit = null;
   }
 
+  private slotLogContext(slot: WorkerSlot): LogContext {
+    for (const pending of slot.pending.values()) return pending.logContext;
+    return slot.awaitingCommit?.logContext ?? {};
+  }
+
   private invalidateWorker(agentName: string, slot: WorkerSlot): void {
     this.closeWorker(
       agentName,
       slot,
       new Error(`Scan refresh worker state discarded for ${agentName}`),
     );
-    void slot.worker.terminate().catch(() => undefined);
+    void this.retireWorker(slot.worker);
+  }
+
+  private retireWorker(worker: Worker): Promise<number> {
+    const retirement = terminateWorkerAfterLogDrain(worker);
+    this.retirements.add(retirement);
+    void retirement.finally(() => this.retirements.delete(retirement)).catch(() => undefined);
+    return retirement;
   }
 }

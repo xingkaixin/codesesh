@@ -17,7 +17,8 @@ import {
 } from "@codesesh/core/runtime/discovery";
 import { createRegisteredAgents, type SessionCacheMeta } from "@codesesh/core/runtime/agents";
 import { synchronizePricingGeneration } from "@codesesh/core/runtime/pricing";
-import { appLogger } from "./logging.js";
+import { appLogger, type LogContext } from "./logging.js";
+import { acknowledgeWorkerLogDrain } from "./worker-log-drain.js";
 
 export type SearchIndexPersistStage = DurableSessionPublicationFailureStage;
 
@@ -89,6 +90,7 @@ export type SearchIndexWorkerJob =
 export interface SearchIndexWorkerRunRequest {
   type: "run";
   pricingGenerationId: number;
+  logContext?: LogContext;
   jobs?: SearchIndexWorkerJob[];
   context: string;
   agentNames?: string[];
@@ -305,7 +307,12 @@ function runBatch(request: SearchIndexWorkerRunRequest): void {
   } satisfies SearchIndexWorkerMessage);
 }
 
-parentPort?.on("message", (message: SearchIndexWorkerRunRequest) => {
-  if (message.type === "run") runBatch(message);
+const workerPort = parentPort;
+workerPort?.on("message", (message: SearchIndexWorkerRunRequest) => {
+  if (acknowledgeWorkerLogDrain(workerPort, message)) return;
+  if (message.type === "run") {
+    appLogger.restoreContext(message.logContext ?? {}, () => runBatch(message));
+  }
 });
-runBatch(workerData as SearchIndexWorkerRunRequest);
+const initialRequest = workerData as SearchIndexWorkerRunRequest;
+appLogger.restoreContext(initialRequest.logContext ?? {}, () => runBatch(initialRequest));

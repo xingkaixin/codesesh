@@ -8,11 +8,22 @@ import type {
   SearchIndexWorkerJob,
   SearchIndexWorkerOptions,
 } from "./search-index-worker.js";
+import type { LogContext } from "./logging.js";
 
 type FullSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "full" }>;
 type ChangesSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "changes" }>;
 type MaintenanceSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "maintenance" }>;
 type IncrementalSearchIndexJob = ChangesSearchIndexJob | MaintenanceSearchIndexJob;
+
+const LOG_CONTEXT_KEYS = ["request_id", "operation_id", "publication_id"] as const;
+
+function commonLogContext(left: LogContext, right: LogContext): LogContext {
+  const common: LogContext = {};
+  for (const key of LOG_CONTEXT_KEYS) {
+    if (left[key] !== undefined && left[key] === right[key]) common[key] = left[key];
+  }
+  return common;
+}
 
 interface JobWaiter {
   resolve: () => void;
@@ -41,6 +52,7 @@ interface PendingAgentJobs {
 export interface SearchIndexJobBatch {
   readonly id: number;
   readonly context: string;
+  readonly logContext: LogContext;
   readonly jobs: SearchIndexWorkerJob[];
   start(onError: (error: unknown) => void): void;
   progress(progress: SearchIndexPublicationProgress, onError: (error: unknown) => void): void;
@@ -48,6 +60,7 @@ export interface SearchIndexJobBatch {
 
 class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
   context: string;
+  logContext: LogContext;
   private readonly jobsByAgent = new Map<string, PendingAgentJobs>();
   private readonly waiters: JobWaiter[] = [];
   private settled = false;
@@ -58,9 +71,11 @@ class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
     context: string,
     jobs: SearchIndexWorkerJob[],
     waiter: JobWaiter,
+    logContext: LogContext,
   ) {
     this.context = context;
-    this.merge(context, jobs, waiter);
+    this.logContext = logContext;
+    this.merge(context, jobs, waiter, logContext);
   }
 
   get jobs(): SearchIndexWorkerJob[] {
@@ -104,8 +119,14 @@ class PendingSearchIndexJobBatch implements SearchIndexJobBatch {
     }
   }
 
-  merge(context: string, jobs: SearchIndexWorkerJob[], waiter: JobWaiter): void {
+  merge(
+    context: string,
+    jobs: SearchIndexWorkerJob[],
+    waiter: JobWaiter,
+    logContext: LogContext,
+  ): void {
     this.context = context;
+    this.logContext = commonLogContext(this.logContext, logContext);
     this.waiters.push(waiter);
     for (const job of jobs) this.mergeJob(job);
   }
@@ -158,6 +179,7 @@ export class PendingSearchIndexJobs {
     jobs: SearchIndexWorkerJob[],
     onStarted?: () => void,
     onProgress?: (progress: SearchIndexPublicationProgress) => void,
+    logContext: LogContext = {},
   ): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
 
@@ -170,9 +192,9 @@ export class PendingSearchIndexJobs {
         agentNames: new Set(jobs.map((job) => job.agentName)),
       };
       if (this.pendingBatch) {
-        this.pendingBatch.merge(context, jobs, waiter);
+        this.pendingBatch.merge(context, jobs, waiter, logContext);
       } else {
-        this.pendingBatch = new PendingSearchIndexJobBatch(id, context, jobs, waiter);
+        this.pendingBatch = new PendingSearchIndexJobBatch(id, context, jobs, waiter, logContext);
         this.batches.add(this.pendingBatch);
       }
     });

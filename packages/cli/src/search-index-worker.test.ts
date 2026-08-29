@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   appLoggerInfo: vi.fn(),
   appLoggerWarn: vi.fn(),
   appLoggerError: vi.fn(),
+  restoreContext: vi.fn((_context: unknown, operation: () => unknown) => operation()),
   messageHandler: undefined as ((message: Record<string, unknown>) => void) | undefined,
 }));
 
@@ -54,6 +55,7 @@ vi.mock("./logging.js", () => ({
     info: mocks.appLoggerInfo,
     warn: mocks.appLoggerWarn,
     error: mocks.appLoggerError,
+    restoreContext: mocks.restoreContext,
   },
 }));
 
@@ -105,14 +107,35 @@ describe("search index worker", () => {
     );
   });
 
+  it("acknowledges log drain without starting another batch", async () => {
+    mocks.createRegisteredAgents.mockReturnValue([]);
+    await runWorker();
+    mocks.createRegisteredAgents.mockClear();
+    mocks.postMessage.mockClear();
+
+    mocks.messageHandler?.({
+      type: "codesesh.worker-log-drain",
+      requestId: "drain-1",
+    });
+    await Promise.resolve();
+
+    expect(mocks.postMessage).toHaveBeenCalledWith({
+      type: "codesesh.worker-log-drained",
+      requestId: "drain-1",
+    });
+    expect(mocks.createRegisteredAgents).not.toHaveBeenCalled();
+  });
+
   it("reuses module initialization while isolating agents between batches", async () => {
     mocks.createRegisteredAgents.mockReturnValue([]);
+    mocks.workerData.logContext = { operation_id: "first-operation" };
 
     await runWorker();
     mocks.messageHandler?.({
       type: "run",
       pricingGenerationId: 17,
       context: "second-refresh",
+      logContext: { operation_id: "second-operation" },
       jobs: [],
       agentNames: [],
       sessionsByAgent: {},
@@ -121,6 +144,16 @@ describe("search index worker", () => {
 
     expect(mocks.synchronizePricingGeneration).toHaveBeenCalledOnce();
     expect(mocks.createRegisteredAgents).toHaveBeenCalledTimes(2);
+    expect(mocks.restoreContext).toHaveBeenNthCalledWith(
+      1,
+      { operation_id: "first-operation" },
+      expect.any(Function),
+    );
+    expect(mocks.restoreContext).toHaveBeenNthCalledWith(
+      2,
+      { operation_id: "second-operation" },
+      expect.any(Function),
+    );
     expect(mocks.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ type: "done", context: "second-refresh" }),
     );
