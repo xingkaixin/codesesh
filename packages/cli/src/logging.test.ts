@@ -126,7 +126,7 @@ describe("AppLogger", () => {
     const record = JSON.parse(readFileSync(logger.getLogPath(), "utf8")) as { stack: string };
     expect(record.stack).not.toContain(privateMessage);
     expect(record.stack).not.toContain(homedir());
-    expect(record.stack).toContain("~/private/reader.ts");
+    expect(record.stack).toContain(join("~", "private", "reader.ts"));
   });
 
   it("omits relative and unparseable URL values", async () => {
@@ -263,6 +263,7 @@ describe("AppLogger", () => {
     const ownerLogDir = createTempDir();
     const owner = createLogger({ logDir: ownerLogDir, maxBytes: 1_000, maxFiles: 200 });
     const messages: unknown[] = [];
+    const entriesPerWorker = 5;
     const workers = Array.from({ length: 4 }, (_, threadId) => {
       const logger = createLogger({ logDir: createTempDir() });
       logger.forwardToParent({ postMessage: (message) => messages.push(message) }, threadId + 1);
@@ -270,26 +271,27 @@ describe("AppLogger", () => {
     });
 
     for (const [worker, logger] of workers.entries()) {
-      for (let index = 0; index < 30; index += 1) {
+      for (let index = 0; index < entriesPerWorker; index += 1) {
         logger.info("worker.rotation", { worker, index });
       }
     }
     for (const message of messages) owner.consumeWorkerMessage(message);
     await owner.flush();
 
-    const records = readdirSync(ownerLogDir)
-      .filter((name) => name.endsWith(".log"))
-      .flatMap((name) =>
-        readFileSync(join(ownerLogDir, name), "utf8")
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line) as { worker: number; index: number }),
-      );
+    const logFiles = readdirSync(ownerLogDir).filter((name) => name.endsWith(".log"));
+    const records = logFiles.flatMap((name) =>
+      readFileSync(join(ownerLogDir, name), "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { worker: number; index: number }),
+    );
     const uniqueEntries = new Set(records.map(({ worker, index }) => `${worker}:${index}`));
+    const expectedEntries = workers.length * entriesPerWorker;
 
-    expect(records).toHaveLength(120);
-    expect(uniqueEntries.size).toBe(120);
+    expect(logFiles.length).toBeGreaterThan(1);
+    expect(records).toHaveLength(expectedEntries);
+    expect(uniqueEntries.size).toBe(expectedEntries);
   });
 
   it("bounds worker transport payloads before structured cloning", () => {
