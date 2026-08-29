@@ -156,6 +156,11 @@ type CommittableAgentRefresh = Extract<
   { kind: "recompute-derived" | "full-scan" | "incremental-scan" }
 >;
 
+export interface AgentRefreshTransaction {
+  selection: AgentRefreshSelection;
+  commit(): void;
+}
+
 export function planAgentScan(
   source: SessionSourceCapability,
   intent: "reload" | "backfill",
@@ -240,6 +245,29 @@ export async function selectAgentRefresh(
         };
   }
   return { ...inspection, availabilityDurationMs };
+}
+
+export async function beginAgentRefresh(
+  agent: Pick<BaseAgent, "isAvailable" | "sessionSourceAccess">,
+  options: {
+    initialized: boolean;
+    sinceTimestamp: number;
+    cachedSessions: SessionHead[];
+  },
+): Promise<AgentRefreshTransaction> {
+  const selection = await selectAgentRefresh(agent, options);
+  return {
+    selection,
+    commit: () => {
+      if (
+        selection.kind === "recompute-derived" ||
+        selection.kind === "full-scan" ||
+        selection.kind === "incremental-scan"
+      ) {
+        commitAgentRefreshCheck(selection);
+      }
+    },
+  };
 }
 
 export function commitAgentRefreshCheck(refresh: CommittableAgentRefresh): void {

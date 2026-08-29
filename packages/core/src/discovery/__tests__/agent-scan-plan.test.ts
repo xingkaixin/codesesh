@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  commitAgentRefreshCheck,
+  beginAgentRefresh,
   executeAgentScanPlan,
   inspectAgentRefresh,
   planAgentScan,
@@ -183,14 +183,15 @@ describe("selectAgentRefresh", () => {
       commitChangeCheck,
       checkForChanges: () => ({ hasChanges: false, timestamp: 11 }),
     };
-    const selection = await selectAgentRefresh(agent(source), {
+    const transaction = await beginAgentRefresh(agent(source), {
       initialized: true,
       sinceTimestamp: 10,
       cachedSessions: [],
     });
+    const selection = transaction.selection;
     if (selection.kind !== "recompute-derived") throw new Error("Expected derived refresh");
 
-    commitAgentRefreshCheck(selection);
+    transaction.commit();
 
     expect(commitChangeCheck).toHaveBeenCalledOnce();
   });

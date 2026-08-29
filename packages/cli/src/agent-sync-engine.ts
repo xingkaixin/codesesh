@@ -1,8 +1,8 @@
 import {
   attachMissingProjectIdentities,
+  beginAgentRefresh,
   buildAgentCacheMeta,
   buildSessionPersistenceDiff,
-  commitAgentRefreshCheck,
   getAgentFullSyncCursor,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
@@ -10,7 +10,7 @@ import {
   readCachedSessions,
   readAgentCacheInitialization,
   resolveSessionSnapshotCompleteness,
-  selectAgentRefresh,
+  type AgentRefreshTransaction,
   type AgentRefreshSelection,
   type CachedResult,
   type IdentifiedSessionHead,
@@ -75,15 +75,10 @@ interface RefreshResult {
   completion: ScanCompletion;
 }
 
-type CommittableAgentRefresh = Extract<
-  AgentRefreshSelection,
-  { kind: "recompute-derived" | "full-scan" | "incremental-scan" }
->;
-
 interface PendingAgentState {
   meta: CachedSessions["meta"];
   refreshedAt?: number;
-  changeCheck?: CommittableAgentRefresh;
+  refreshTransaction?: AgentRefreshTransaction;
 }
 
 function countSessionUpdates(event: SessionsUpdatedEvent | null): {
@@ -333,7 +328,7 @@ export class AgentSyncEngine {
       return;
     }
     try {
-      if (state.changeCheck) commitAgentRefreshCheck(state.changeCheck);
+      state.refreshTransaction?.commit();
     } catch (error) {
       this.reportPostCommitError(operation, agent.name, error);
     }
@@ -428,11 +423,12 @@ export class AgentSyncEngine {
       return { result: "unchanged", completion: { completeness: "complete" } };
     }
     const isInitialized = initialization.value;
-    const refresh = await selectAgentRefresh(agent, {
+    const refreshTransaction = await beginAgentRefresh(agent, {
       initialized: isInitialized,
       sinceTimestamp: cacheTimestamp,
       cachedSessions: refreshBaseline,
     });
+    const refresh = refreshTransaction.selection;
     const availabilityDuration = refresh.availabilityDurationMs;
     let strategyResult: RefreshStrategyResult;
     try {
@@ -450,7 +446,13 @@ export class AgentSyncEngine {
           startedAt,
         );
       } else {
-        strategyResult = await this.refreshChangedAgent(agent, refresh, refreshBaseline, startedAt);
+        strategyResult = await this.refreshChangedAgent(
+          agent,
+          refresh,
+          refreshTransaction,
+          refreshBaseline,
+          startedAt,
+        );
       }
     } finally {
       agent.restoreSessionCacheMeta(durableMeta);
@@ -705,6 +707,7 @@ export class AgentSyncEngine {
   private async refreshChangedAgent(
     agent: BaseAgent,
     refresh: Exclude<AgentRefreshSelection, { kind: "unavailable" | "initialize" | "synchronize" }>,
+    refreshTransaction: AgentRefreshTransaction,
     baseline: IdentifiedSessionHead[],
     refreshStartedAt: number,
   ): Promise<RefreshStrategyResult> {
@@ -739,7 +742,7 @@ export class AgentSyncEngine {
         const pendingAgentState = {
           meta: result.meta,
           refreshedAt: checkResult.timestamp,
-          changeCheck: refresh,
+          refreshTransaction,
         };
         const persistenceDiff = buildSessionPersistenceDiff(baseline, sessions);
         if (
@@ -798,7 +801,7 @@ export class AgentSyncEngine {
             pendingAgentState: {
               meta: result.meta,
               refreshedAt: checkResult.timestamp,
-              changeCheck: refresh,
+              refreshTransaction,
             },
           }),
           status: "continue",
@@ -837,7 +840,7 @@ export class AgentSyncEngine {
         pendingAgentState: {
           meta: agent.snapshotSessionCacheMeta(),
           refreshedAt: checkResult.timestamp,
-          changeCheck: refresh,
+          refreshTransaction,
         },
       }),
       status: "continue",
