@@ -1,16 +1,9 @@
-declare const __APP_VERSION__: string;
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelLeftOpen } from "./components/ui/icons";
-import { Link, useLocation, useMatches, useNavigate } from "react-router-dom";
-import type { BookmarkView, SessionHead } from "./lib/api";
+import { useLocation, useMatches, useNavigate } from "react-router-dom";
+import type { SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
 import { getSessionRoutePath } from "./lib/session-indexes";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import { CopyResumeButton } from "./components/CopyResumeButton";
-import { SessionAliasDialog, type SessionAliasTarget } from "./components/SessionAliasDialog";
-import { TimeWindowControl } from "./components/TimeWindowControl";
-import { RenderProfiler } from "./components/RenderProfiler";
+import { SessionAliasDialog } from "./components/SessionAliasDialog";
 import { viewStateFromRouteMatches } from "./lib/view-state";
 import { useScanStatusPublisher } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
@@ -20,7 +13,6 @@ import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useSessionStore } from "./hooks/useSessionStore";
 import { useAppConfig } from "./hooks/useAppConfig";
 import { useProjectLookup } from "./hooks/useProjects";
-import { useSessionAliasMutations } from "./hooks/useSessionAliasMutations";
 import { useWindowLoadTelemetry } from "./hooks/useWindowLoadTelemetry";
 import { useLiveSync } from "./hooks/useLiveSync";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
@@ -29,16 +21,18 @@ import { useUiPreferences } from "./hooks/useUiPreferences";
 import { ResolvedThemeContext, useTheme } from "./hooks/useTheme";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
-import { SearchControls, type SearchControlsHandle } from "./components/app/SearchControls";
+import type { SearchControlsHandle } from "./components/app/SearchControls";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
-import { ThemeToggle } from "./components/app/ThemeToggle";
 import { AppRouteContent } from "./components/app/AppRouteContent";
-import { ScanStatusNotice } from "./components/app/ScanStatusNotice";
+import { AppToolbar } from "./components/app/AppToolbar";
+import { AppPageHeader } from "./components/app/AppPageHeader";
+import { AppMainContent } from "./components/app/AppMainContent";
 import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey } from "./lib/projects";
 import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
+import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 
 export default function App() {
   const navigate = useNavigate();
@@ -95,7 +89,6 @@ export default function App() {
     setTheme,
   } = useUiPreferences();
   const resolvedTheme = useTheme(theme);
-  const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
   const { copySessionAsMarkdown, sessionCopyNotice } = useCopySessionAsMarkdown();
 
   const routeMatches = useMatches();
@@ -230,30 +223,6 @@ export default function App() {
     [toggleSessionBookmark],
   );
 
-  const handleRenameSession = useCallback((sessionItem: SessionHead) => {
-    setAliasTarget({
-      agentKey: getSessionAgentKey(sessionItem),
-      sessionId: sessionItem.reference.sessionId,
-      title: sessionItem.title,
-      displayTitle: sessionItem.display_title,
-    });
-  }, []);
-
-  const handleRenameBookmarkedSession = useCallback((bookmark: BookmarkView) => {
-    setAliasTarget({
-      agentKey: bookmark.reference.agentName,
-      sessionId: bookmark.reference.sessionId,
-      title:
-        bookmark.availability === "available"
-          ? bookmark.session.title
-          : bookmark.reference.sessionId,
-      displayTitle:
-        bookmark.availability === "available"
-          ? bookmark.session.display_title
-          : bookmark.display_title,
-    });
-  }, []);
-
   const { liveNotice } = useLiveSync({
     applyLiveEvent,
     resyncLiveState,
@@ -263,20 +232,7 @@ export default function App() {
   const refreshAliasViews = useCallback(async () => {
     await Promise.all([reload(), refreshBookmarks()]);
   }, [refreshBookmarks, reload]);
-  const { saveAlias, removeAlias } = useSessionAliasMutations(refreshAliasViews);
-
-  const saveSessionAlias = useCallback(
-    async (alias: string) => {
-      if (!aliasTarget) return;
-      await saveAlias(aliasTarget, alias);
-    },
-    [aliasTarget, saveAlias],
-  );
-
-  const removeSessionAlias = useCallback(async () => {
-    if (!aliasTarget) return;
-    await removeAlias(aliasTarget);
-  }, [aliasTarget, removeAlias]);
+  const sessionAliases = useSessionAliasDialog(refreshAliasViews);
 
   const searchSubtitle =
     searchState.status === "failed"
@@ -375,6 +331,25 @@ export default function App() {
     closeSearch,
   });
 
+  const showShortcutHelp = useCallback(() => {
+    setShortcutHelpOpen(true);
+    dismissShortcutHint();
+  }, [dismissShortcutHint]);
+  const sessionRouteActive = !isSearchMode && viewState.mode === "session";
+  const resumeSession =
+    sessionRouteActive && session
+      ? {
+          resumeCommandPrefix:
+            findAgent(agentCatalog, viewState.activeAgentKey)?.resumeCommandPrefix ?? null,
+          sessionId: session.reference.sessionId,
+          directory: session.directory,
+        }
+      : null;
+  const sessionLoadNotice =
+    !loading && !error && (sessionsLoading || sessionsError)
+      ? { loading: sessionsLoading, error: sessionsError }
+      : null;
+
   return (
     <ResolvedThemeContext.Provider value={resolvedTheme}>
       <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
@@ -384,46 +359,25 @@ export default function App() {
         >
           Skip to content
         </a>
-        <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
-          <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
-            <div className="flex items-center gap-2">
-              <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
-                <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
-                <span className="console-display text-sm font-semibold uppercase tracking-[0.05em]">
-                  CodeSesh
-                </span>
-              </Link>
-            </div>
-            <SearchControls ref={searchControlsRef} onSubmit={submitSearch} />
-            <div className="flex items-center justify-end gap-2">
-              <ThemeToggle theme={theme} onChange={setTheme} />
-              <button
-                type="button"
-                onClick={() => {
-                  setShortcutHelpOpen(true);
-                  dismissShortcutHint();
-                }}
-                className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-                title="Show keyboard shortcuts"
-              >
-                ?<span className="hidden sm:inline"> Shortcuts</span>
-              </button>
-              {timeWindow && timeWindowController.preset ? (
-                <TimeWindowControl
-                  window={timeWindow}
-                  preset={timeWindowController.preset}
-                  customFrom={timeWindowController.customFrom}
-                  customTo={timeWindowController.customTo}
-                  onSelectPreset={timeWindowController.selectPreset}
-                  onSelectCustom={timeWindowController.selectCustom}
-                />
-              ) : null}
-              <span className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-muted)] sm:inline-flex">
-                v{__APP_VERSION__}
-              </span>
-            </div>
-          </div>
-        </header>
+        <AppToolbar
+          searchControlsRef={searchControlsRef}
+          onSubmitSearch={submitSearch}
+          theme={theme}
+          onChangeTheme={setTheme}
+          onShowShortcuts={showShortcutHelp}
+          timeWindow={
+            timeWindow && timeWindowController.preset
+              ? {
+                  value: timeWindow,
+                  preset: timeWindowController.preset,
+                  customFrom: timeWindowController.customFrom,
+                  customTo: timeWindowController.customTo,
+                  onSelectPreset: timeWindowController.selectPreset,
+                  onSelectCustom: timeWindowController.selectCustom,
+                }
+              : null
+          }
+        />
 
         <div className="flex min-h-0 flex-1">
           <AppSidebar
@@ -454,160 +408,50 @@ export default function App() {
               onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
               onCopySessionAsMarkdown: (sessionHead) => void copySessionAsMarkdown(sessionHead),
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
-              onRenameSession: handleRenameSession,
-              onRenameBookmarkedSession: handleRenameBookmarkedSession,
+              onRenameSession: sessionAliases.openSession,
+              onRenameBookmarkedSession: sessionAliases.openBookmark,
               onRetryProjects: () => void retryProjects(),
               onRetryBookmarks: () => void refreshBookmarks(),
             }}
           />
 
           <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-            <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
-              <button
-                type="button"
-                aria-expanded={mobileNavigationOpen}
-                aria-label="Open navigation"
-                title="Open navigation"
-                onClick={() => setMobileNavigationOpen(true)}
-                className="mt-0.5 inline-flex shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:hidden"
-              >
-                <PanelLeftOpen className="size-4" />
-              </button>
-              {sidebarCollapsed ? (
-                <button
-                  type="button"
-                  aria-expanded="false"
-                  aria-label="Expand sidebar"
-                  title="Expand sidebar"
-                  onClick={() => setSidebarCollapsed(false)}
-                  className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:inline-flex"
-                >
-                  <PanelLeftOpen className="size-4" />
-                </button>
-              ) : null}
-              <div className="min-w-0 flex-1">
-                <nav
-                  aria-label="Breadcrumb"
-                  className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
-                >
-                  {routeHeader.breadcrumbs.map((item, index) => (
-                    <span key={`${item.label}-${index}`} className="flex items-center gap-1">
-                      {item.to ? (
-                        <Link
-                          to={item.to}
-                          className="motion-hover hover:text-[var(--console-text)]"
-                        >
-                          {item.label}
-                        </Link>
-                      ) : (
-                        <span className="text-[var(--console-text)]">{item.label}</span>
-                      )}
-                      {index < routeHeader.breadcrumbs.length - 1 ? <span>/</span> : null}
-                    </span>
-                  ))}
-                </nav>
-                <div className="flex items-center gap-2">
-                  <span className="console-eyebrow rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5">
-                    {routeHeader.contextLabel}
-                  </span>
-                  <h1 className="console-display text-2xl font-semibold text-[var(--console-text)]">
-                    {routeHeader.title}
-                  </h1>
-                </div>
-                <div className="console-mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--console-muted)]">
-                  {routeHeader.subtitle}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {!shortcutHintDismissed ? (
-                    <div className="console-mono inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-                      <span>Keyboard navigation available</span>
-                      <span className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1">
-                        ?
-                      </span>
-                      <button
-                        type="button"
-                        onClick={dismissShortcutHint}
-                        className="text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)]"
-                        aria-label="Dismiss keyboard shortcuts hint"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : null}
-                  {!isSearchMode && viewState.mode === "session" ? (
-                    <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                      Esc back
-                    </span>
-                  ) : null}
-                  {!isSearchMode && viewState.mode === "session" && session ? (
-                    <CopyResumeButton
-                      resumeCommandPrefix={
-                        findAgent(agentCatalog, viewState.activeAgentKey)?.resumeCommandPrefix ??
-                        null
-                      }
-                      sessionId={session.reference.sessionId}
-                      directory={session.directory}
-                    />
-                  ) : null}
-                </div>
-                <div aria-live="polite">
-                  {sessionCopyNotice ? (
-                    <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-                      {sessionCopyNotice}
-                    </p>
-                  ) : null}
-                  {liveNotice ? (
-                    <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-                      {liveNotice}
-                    </p>
-                  ) : null}
-                </div>
-                <ScanStatusNotice visible={viewState.mode === "root"} />
-                {!loading && !error && (sessionsLoading || sessionsError) ? (
-                  <div
-                    role={sessionsError ? "alert" : "status"}
-                    className="console-mono mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] text-[var(--console-warning)]"
-                  >
-                    <span>
-                      {sessionsError ?? "Loading sessions… Results are not yet complete."}
-                    </span>
-                    {sessionsError ? (
-                      <button
-                        type="button"
-                        disabled={sessionsLoading}
-                        onClick={() => void retrySessions()}
-                        className="rounded-sm border border-current px-2 py-1 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:opacity-50"
-                      >
-                        Retry session load
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="console-scrollbar bg-grid min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
-              <ErrorBoundary key={location.pathname}>
-                <RenderProfiler
-                  id="MainContent"
-                  detail={{
-                    mode: viewState.mode,
-                    search: isSearchMode,
-                    sessions: sessions.length,
-                  }}
-                >
-                  {content}
-                </RenderProfiler>
-              </ErrorBoundary>
-            </section>
+            <AppPageHeader
+              model={{
+                mobileNavigationOpen,
+                sidebarCollapsed,
+                route: routeHeader,
+                shortcutHintVisible: !shortcutHintDismissed,
+                sessionBackHintVisible: sessionRouteActive,
+                resumeSession,
+                sessionCopyNotice,
+                liveNotice,
+                scanStatusVisible: viewState.mode === "root",
+                sessionLoadNotice,
+              }}
+              actions={{
+                onOpenMobileNavigation: () => setMobileNavigationOpen(true),
+                onExpandSidebar: () => setSidebarCollapsed(false),
+                onDismissShortcutHint: dismissShortcutHint,
+                onRetrySessionLoad: () => void retrySessions(),
+              }}
+            />
+            <AppMainContent
+              locationPath={location.pathname}
+              mode={viewState.mode}
+              searchActive={isSearchMode}
+              sessionCount={sessions.length}
+            >
+              {content}
+            </AppMainContent>
           </main>
         </div>
         <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
         <SessionAliasDialog
-          target={aliasTarget}
-          onClose={() => setAliasTarget(null)}
-          onSave={saveSessionAlias}
-          onRemove={removeSessionAlias}
+          target={sessionAliases.target}
+          onClose={sessionAliases.close}
+          onSave={sessionAliases.save}
+          onRemove={sessionAliases.remove}
         />
       </div>
     </ResolvedThemeContext.Provider>

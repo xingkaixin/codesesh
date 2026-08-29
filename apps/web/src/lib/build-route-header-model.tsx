@@ -31,12 +31,14 @@ interface RouteHeaderInput {
   selectedProject: ApiProjectGroup | null;
 }
 
-export function buildRouteHeaderModel(input: RouteHeaderInput): {
+export interface RouteHeaderModel {
   contextLabel: string;
   title: string;
   subtitle: ReactNode;
   breadcrumbs: BreadcrumbItem[];
-} {
+}
+
+export function buildRouteHeaderModel(input: RouteHeaderInput): RouteHeaderModel {
   const titleAndSubtitle = routeTitleAndSubtitle(input);
   return {
     contextLabel: routeContextLabel(input),
