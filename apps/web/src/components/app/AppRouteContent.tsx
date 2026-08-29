@@ -8,30 +8,41 @@ import {
   type SetStateAction,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
+import type { SessionDetailError } from "../../hooks/useSessionDetail";
+import type { AgentCatalog } from "../../lib/agents";
+import type {
+  AgentInfo,
+  AppConfig,
+  ApiProjectGroup,
+  ApiProjectPage,
+  SessionDetail,
+  SessionHead,
+} from "../../lib/api";
+import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
+import type { TimeWindowPreset } from "../../lib/time-window";
+import type { ViewState } from "../../lib/view-state";
 import { DetailLanding, type LandingAgentItem } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
+import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 
-// Each surface owns its heavy dependencies — markdown, syntax highlighting and
-// the receipt reach the browser when their route does, not on first paint.
 const OverviewScreen = lazy(() =>
-  import("../overview/OverviewScreen").then((m) => ({ default: m.OverviewScreen })),
+  import("../overview/OverviewScreen").then((module) => ({ default: module.OverviewScreen })),
 );
 const ProjectsOverview = lazy(() =>
-  import("../Projects").then((m) => ({ default: m.ProjectsOverview })),
+  import("../Projects").then((module) => ({ default: module.ProjectsOverview })),
 );
 const ProjectDashboardView = lazy(() =>
-  import("../Projects").then((m) => ({ default: m.ProjectDashboardView })),
+  import("../Projects").then((module) => ({ default: module.ProjectDashboardView })),
 );
-const SessionDetail = lazy(() =>
-  import("../SessionDetail").then((m) => ({ default: m.SessionDetail })),
+const SessionDetailView = lazy(() =>
+  import("../SessionDetail").then((module) => ({ default: module.SessionDetail })),
 );
 const SearchResultsPanel = lazy(() =>
-  import("./SearchResultsPanel").then((m) => ({ default: m.SearchResultsPanel })),
+  import("./SearchResultsPanel").then((module) => ({ default: module.SearchResultsPanel })),
 );
 
-/** Keeps a failed chunk load contained to the surface that needed it. */
 function LazySurface({ children }: { children: ReactNode }) {
   const location = useLocation();
   return (
@@ -40,30 +51,20 @@ function LazySurface({ children }: { children: ReactNode }) {
     </ErrorBoundary>
   );
 }
-import type {
-  AgentInfo,
-  AppConfig,
-  ApiProjectGroup,
-  ApiProjectPage,
-  SessionHead,
-} from "../../lib/api";
-import type * as Api from "../../lib/api";
-import type { SessionDetailError } from "../../hooks/useSessionDetail";
-import type { AgentCatalog } from "../../lib/agents";
-import type { TimeWindowPreset } from "../../lib/time-window";
-import type { ViewState } from "../../lib/view-state";
-import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
-import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
+
+interface LoadModel {
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+}
 
 interface SessionDetailModel {
-  session: Api.SessionDetail | null;
+  session: SessionDetail | null;
   loading: boolean;
   error: SessionDetailError | null;
   retry: () => void;
 }
 
-/** The overview owns its scope and its own request; the shell only lends it the
- *  loaded window and the app-wide time-window presets. */
 interface OverviewModel {
   window: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
@@ -80,6 +81,8 @@ interface SearchContentModel {
   active: boolean;
   query: string;
   state: SearchLoadState;
+  agentNameMap: ReadonlyMap<string, string>;
+  agents: AgentInfo[];
   projectOptions: SearchProjectOption[];
   filters: SearchFilterState;
   onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
@@ -94,257 +97,276 @@ interface BookmarkContentModel {
   toggleSessionBookmark: (session: SessionHead, agentKey: string) => void;
 }
 
-interface AppRouteContentProps {
-  loading: boolean;
-  error: string | null;
-  onRetry: () => void;
-  viewState: ViewState;
-  detailHighlightQuery: string;
+interface LandingRouteModel {
   agents: AgentInfo[];
   agentCatalog: AgentCatalog;
-  agentNameMap: ReadonlyMap<string, string>;
-  projectPage: ApiProjectPage;
-  projectsError: string | null;
-  projectsLoading: boolean;
-  onRetryProjects: () => void;
-  landingSessions: IndexedSession[];
-  childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
-  sessionsByAgent: Map<string, IndexedSession[]>;
-  activeProject: ApiProjectGroup | null;
-  activeProjectLoading: boolean;
-  activeProjectError: string | null;
-  onRetryActiveProject: () => void;
-  activeProjectSessions: IndexedSession[];
-  overview: OverviewModel;
-  sessionDetail: SessionDetailModel;
-  projectAgentFilter: ProjectAgentFilterModel;
-  search: SearchContentModel;
+  sessions: IndexedSession[];
   bookmarks: BookmarkContentModel;
 }
 
-export function AppRouteContent({
-  loading,
-  error,
-  onRetry,
-  viewState,
-  detailHighlightQuery,
-  agents,
-  agentCatalog,
-  agentNameMap,
-  projectPage,
-  projectsError,
-  projectsLoading,
-  onRetryProjects,
-  landingSessions,
-  childSessionsByParentRouteKey,
-  sessionsByAgent,
-  activeProject,
-  activeProjectLoading,
-  activeProjectError,
-  onRetryActiveProject,
-  activeProjectSessions,
-  overview,
-  sessionDetail,
-  projectAgentFilter,
-  search,
-  bookmarks,
-}: AppRouteContentProps) {
-  const landingAgentItems = useMemo<LandingAgentItem[]>(
-    () =>
-      agents.map((agent) => ({
-        key: agent.name.toLowerCase(),
-        name: agent.displayName,
-        icon: agent.icon,
-        iconColored: agent.iconColored,
-        count: agent.count,
-      })),
-    [agents],
+type RootRouteModel = Extract<ViewState, { mode: "root" }> & {
+  agentCatalog: AgentCatalog;
+  projectCount: number;
+  overview: OverviewModel;
+};
+
+type ProjectsRouteModel = Extract<ViewState, { mode: "projects" }> & {
+  agentCatalog: AgentCatalog;
+  projectPage: ApiProjectPage;
+  projectsLoad: LoadModel;
+  window: AppConfig["window"] | null;
+};
+
+type ProjectRouteModel = Extract<ViewState, { mode: "project" }> & {
+  agentCatalog: AgentCatalog;
+  project: ApiProjectGroup | null;
+  projectLoad: LoadModel;
+  sessions: IndexedSession[];
+  agentFilter: ProjectAgentFilterModel;
+  overview: OverviewModel;
+};
+
+type AgentRouteModel = Extract<ViewState, { mode: "agent" }> & LandingRouteModel;
+
+type SessionRouteModel = Extract<ViewState, { mode: "session" }> &
+  LandingRouteModel & {
+    detail: SessionDetailModel;
+    detailHighlightQuery: string;
+    childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
+  };
+
+type MissingAgentRouteModel = Extract<ViewState, { mode: "missingAgent" }> & LandingRouteModel;
+
+export type AppRouteModel =
+  | RootRouteModel
+  | ProjectsRouteModel
+  | ProjectRouteModel
+  | AgentRouteModel
+  | SessionRouteModel
+  | MissingAgentRouteModel
+  | Extract<ViewState, { mode: "invalidRoute" }>;
+
+interface AppRouteContentProps {
+  load: LoadModel;
+  search: SearchContentModel;
+  route: AppRouteModel;
+}
+
+function landingAgentItems(agents: AgentInfo[]): LandingAgentItem[] {
+  return agents.map((agent) => ({
+    key: agent.name.toLowerCase(),
+    name: agent.displayName,
+    icon: agent.icon,
+    iconColored: agent.iconColored,
+    count: agent.count,
+  }));
+}
+
+function SearchRouteContent({ search }: { search: SearchContentModel }) {
+  const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
+  return (
+    <RenderProfiler
+      id="SearchResultsPanel"
+      detail={{ results: resultCount, loading: search.state.status === "loading" }}
+    >
+      <LazySurface>
+        <SearchResultsPanel
+          query={search.query}
+          state={search.state}
+          agentNameMap={search.agentNameMap}
+          agents={search.agents}
+          projects={search.projectOptions}
+          filters={search.filters}
+          onChangeFilters={search.onChangeFilters}
+          onOpenResult={search.onClose}
+          onRetry={search.onRetry}
+          selectedIndex={search.selectedIndex}
+          registerResultRef={search.registerResultRef}
+        />
+      </LazySurface>
+    </RenderProfiler>
   );
-  const currentSession = viewState.mode === "session" ? sessionDetail.session : null;
+}
+
+function LoadError({ load }: { load: LoadModel }) {
+  return (
+    <div
+      role="alert"
+      className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]"
+    >
+      <p>{load.error}</p>
+      <button
+        type="button"
+        onClick={load.retry}
+        className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] px-3 py-1.5 text-xs motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
+function RootRouteContent({ route }: { route: RootRouteModel }) {
+  return (
+    <RenderProfiler id="OverviewScreen" detail={{ projects: route.projectCount }}>
+      <LazySurface>
+        <OverviewScreen
+          window={route.overview.window}
+          agentCatalog={route.agentCatalog}
+          rangePreset={route.overview.rangePreset}
+          onRangeChange={route.overview.onRangeChange}
+          onSelectCustom={route.overview.onSelectCustom}
+        />
+      </LazySurface>
+    </RenderProfiler>
+  );
+}
+
+function ProjectsRouteContent({ route }: { route: ProjectsRouteModel }) {
+  return (
+    <LazySurface>
+      <ProjectsOverview
+        initialPage={route.projectPage}
+        window={route.window}
+        agentCatalog={route.agentCatalog}
+        loading={route.projectsLoad.loading}
+        error={route.projectsLoad.error}
+        onRetry={route.projectsLoad.retry}
+      />
+    </LazySurface>
+  );
+}
+
+function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
+  return (
+    <LazySurface>
+      <ProjectDashboardView
+        project={route.project}
+        loading={route.projectLoad.loading}
+        error={route.projectLoad.error}
+        onRetry={route.projectLoad.retry}
+        agentCatalog={route.agentCatalog}
+        projectKey={route.activeProjectKey}
+        sessions={route.sessions}
+        activeAgent={route.agentFilter.selectedAgent}
+        onChangeAgent={route.agentFilter.onChangeAgent}
+        timeWindow={route.overview.window}
+        rangePreset={route.overview.rangePreset}
+        onRangeChange={route.overview.onRangeChange}
+        onSelectCustom={route.overview.onSelectCustom}
+      />
+    </LazySurface>
+  );
+}
+
+function AgentRouteContent({ route }: { route: AgentRouteModel }) {
+  const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
+  const toggleSessionBookmark = route.bookmarks.toggleSessionBookmark;
+  const toggleBookmark = useCallback(
+    (session: IndexedSession) => toggleSessionBookmark(session, session.reference.agentName),
+    [toggleSessionBookmark],
+  );
+  return (
+    <DetailLanding
+      type="agent"
+      agentCatalog={route.agentCatalog}
+      sessions={route.sessions}
+      agentItems={agentItems}
+      activeAgentKey={route.activeAgentKey}
+      isBookmarked={route.bookmarks.isBookmarked}
+      onToggleBookmark={toggleBookmark}
+    />
+  );
+}
+
+function SessionRouteContent({ route }: { route: SessionRouteModel }) {
+  const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
+  const currentSession = route.detail.session;
   const currentSessionAgentName = currentSession?.reference.agentName;
   const currentSessionId = currentSession?.reference.sessionId;
   const childSessions = useMemo(() => {
     if (!currentSessionAgentName || !currentSessionId) return [];
-    const parentRouteKey = getSessionRouteKey(currentSessionAgentName, currentSessionId);
-    return childSessionsByParentRouteKey.get(parentRouteKey) ?? [];
-  }, [childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId]);
-  const toggleSessionBookmark = bookmarks.toggleSessionBookmark;
-  const toggleLandingBookmark = useCallback(
+    return (
+      route.childSessionsByParentRouteKey.get(
+        getSessionRouteKey(currentSessionAgentName, currentSessionId),
+      ) ?? []
+    );
+  }, [route.childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId]);
+  const toggleSessionBookmark = route.bookmarks.toggleSessionBookmark;
+  const toggleBookmark = useCallback(
     (session: IndexedSession) => toggleSessionBookmark(session, session.reference.agentName),
     [toggleSessionBookmark],
   );
-  if (loading) return <SessionDetailSkeleton />;
-  if (search.active) {
-    const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
-    return (
-      <RenderProfiler
-        id="SearchResultsPanel"
-        detail={{ results: resultCount, loading: search.state.status === "loading" }}
-      >
-        <LazySurface>
-          <SearchResultsPanel
-            query={search.query}
-            state={search.state}
-            agentNameMap={agentNameMap}
-            agents={agents}
-            projects={search.projectOptions}
-            filters={search.filters}
-            onChangeFilters={search.onChangeFilters}
-            onOpenResult={search.onClose}
-            onRetry={search.onRetry}
-            selectedIndex={search.selectedIndex}
-            registerResultRef={search.registerResultRef}
-          />
-        </LazySurface>
-      </RenderProfiler>
-    );
-  }
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]"
-      >
-        <p>{error}</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] px-3 py-1.5 text-xs motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-  if (viewState.mode === "root") {
-    return (
-      <RenderProfiler id="OverviewScreen" detail={{ projects: projectPage.summary.projects }}>
-        <LazySurface>
-          <OverviewScreen
-            window={overview.window}
-            agentCatalog={agentCatalog}
-            rangePreset={overview.rangePreset}
-            onRangeChange={overview.onRangeChange}
-            onSelectCustom={overview.onSelectCustom}
-          />
-        </LazySurface>
-      </RenderProfiler>
-    );
-  }
-  if (viewState.mode === "projects") {
-    return (
-      <LazySurface>
-        <ProjectsOverview
-          initialPage={projectPage}
-          window={overview.window}
-          agentCatalog={agentCatalog}
-          loading={projectsLoading}
-          error={projectsError}
-          onRetry={onRetryProjects}
-        />
-      </LazySurface>
-    );
-  }
-  if (viewState.mode === "project") {
-    return (
-      <LazySurface>
-        <ProjectDashboardView
-          project={activeProject}
-          loading={activeProjectLoading}
-          error={activeProjectError}
-          onRetry={onRetryActiveProject}
-          agentCatalog={agentCatalog}
-          projectKey={viewState.activeProjectKey}
-          sessions={activeProjectSessions}
-          activeAgent={projectAgentFilter.selectedAgent}
-          onChangeAgent={projectAgentFilter.onChangeAgent}
-          timeWindow={overview.window}
-          rangePreset={overview.rangePreset}
-          onRangeChange={overview.onRangeChange}
-          onSelectCustom={overview.onSelectCustom}
-        />
-      </LazySurface>
-    );
-  }
-  if (viewState.mode === "agent") {
+
+  if (route.detail.loading) return <SessionDetailSkeleton />;
+  if (route.detail.error?.kind === "missing") {
     return (
       <DetailLanding
-        type="agent"
-        agentCatalog={agentCatalog}
-        sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
-        agentItems={landingAgentItems}
-        activeAgentKey={viewState.activeAgentKey}
-        isBookmarked={bookmarks.isBookmarked}
-        onToggleBookmark={toggleLandingBookmark}
+        type="missing-session"
+        agentCatalog={route.agentCatalog}
+        sessions={route.sessions}
+        agentItems={agentItems}
+        activeAgentKey={route.activeAgentKey}
+        attemptedSessionId={route.activeSessionId}
+        isBookmarked={route.bookmarks.isBookmarked}
+        onToggleBookmark={toggleBookmark}
       />
     );
   }
-  if (viewState.mode === "session") {
-    if (sessionDetail.loading) return <SessionDetailSkeleton />;
-    if (sessionDetail.error?.kind === "missing") {
-      return (
-        <DetailLanding
-          type="missing-session"
-          agentCatalog={agentCatalog}
-          sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
-          agentItems={landingAgentItems}
-          activeAgentKey={viewState.activeAgentKey}
-          attemptedSessionId={viewState.activeSessionId}
-          isBookmarked={bookmarks.isBookmarked}
-          onToggleBookmark={toggleLandingBookmark}
-        />
-      );
-    }
-    if (sessionDetail.error?.kind === "load-failed") {
-      return (
-        <DetailLanding
-          type="load-failed"
-          agentCatalog={agentCatalog}
-          sessions={sessionsByAgent.get(viewState.activeAgentKey) ?? []}
-          agentItems={landingAgentItems}
-          loadFailureMessage={sessionDetail.error.message}
-          isBookmarked={bookmarks.isBookmarked}
-          onToggleBookmark={toggleLandingBookmark}
-          onRetry={sessionDetail.retry}
-        />
-      );
-    }
-    if (!currentSession) return <SessionDetailSkeleton />;
-    return (
-      <RenderProfiler
-        id="SessionDetail"
-        detail={{
-          messages: currentSession.messages.length,
-          session: currentSession.reference.sessionId,
-        }}
-      >
-        <LazySurface>
-          <SessionDetail
-            key={`${currentSession.reference.agentName}/${currentSession.reference.sessionId}`}
-            session={currentSession}
-            agentCatalog={agentCatalog}
-            highlightQuery={detailHighlightQuery}
-            childSessions={childSessions}
-          />
-        </LazySurface>
-      </RenderProfiler>
-    );
-  }
-  if (viewState.mode === "missingAgent") {
+  if (route.detail.error?.kind === "load-failed") {
     return (
       <DetailLanding
-        type="missing-agent"
-        agentCatalog={agentCatalog}
-        sessions={landingSessions}
-        agentItems={landingAgentItems}
-        attemptedAgentKey={viewState.attemptedKey}
-        isBookmarked={bookmarks.isBookmarked}
-        onToggleBookmark={(session) =>
-          bookmarks.toggleSessionBookmark(session, session.reference.agentName)
-        }
+        type="load-failed"
+        agentCatalog={route.agentCatalog}
+        sessions={route.sessions}
+        agentItems={agentItems}
+        loadFailureMessage={route.detail.error.message}
+        isBookmarked={route.bookmarks.isBookmarked}
+        onToggleBookmark={toggleBookmark}
+        onRetry={route.detail.retry}
       />
     );
   }
+  if (!currentSession) return <SessionDetailSkeleton />;
+  return (
+    <RenderProfiler
+      id="SessionDetail"
+      detail={{
+        messages: currentSession.messages.length,
+        session: currentSession.reference.sessionId,
+      }}
+    >
+      <LazySurface>
+        <SessionDetailView
+          key={`${currentSession.reference.agentName}/${currentSession.reference.sessionId}`}
+          session={currentSession}
+          agentCatalog={route.agentCatalog}
+          highlightQuery={route.detailHighlightQuery}
+          childSessions={childSessions}
+        />
+      </LazySurface>
+    </RenderProfiler>
+  );
+}
+
+function MissingAgentRouteContent({ route }: { route: MissingAgentRouteModel }) {
+  const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
+  return (
+    <DetailLanding
+      type="missing-agent"
+      agentCatalog={route.agentCatalog}
+      sessions={route.sessions}
+      agentItems={agentItems}
+      attemptedAgentKey={route.attemptedKey}
+      isBookmarked={route.bookmarks.isBookmarked}
+      onToggleBookmark={(session) =>
+        route.bookmarks.toggleSessionBookmark(session, session.reference.agentName)
+      }
+    />
+  );
+}
+
+function InvalidRouteContent() {
   return (
     <div
       role="alert"
@@ -364,4 +386,30 @@ export function AppRouteContent({
       </Link>
     </div>
   );
+}
+
+function RouteContent({ route }: { route: AppRouteModel }) {
+  switch (route.mode) {
+    case "root":
+      return <RootRouteContent route={route} />;
+    case "projects":
+      return <ProjectsRouteContent route={route} />;
+    case "project":
+      return <ProjectRouteContent route={route} />;
+    case "agent":
+      return <AgentRouteContent route={route} />;
+    case "session":
+      return <SessionRouteContent route={route} />;
+    case "missingAgent":
+      return <MissingAgentRouteContent route={route} />;
+    case "invalidRoute":
+      return <InvalidRouteContent />;
+  }
+}
+
+export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
+  if (load.loading) return <SessionDetailSkeleton />;
+  if (search.active) return <SearchRouteContent search={search} />;
+  if (load.error) return <LoadError load={load} />;
+  return <RouteContent route={route} />;
 }
