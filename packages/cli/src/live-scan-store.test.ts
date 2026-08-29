@@ -472,13 +472,14 @@ function makeFileSystemAgent(
   name: string,
   overrides: {
     listSessionSources?: (options?: AgentScanOptions) => SessionSourceRef[];
-    scanSessionSource?: (sourcePath: string) => SessionHead | null;
+    scanSessionSource?: (sourcePath: string, options?: AgentScanOptions) => SessionHead | null;
     getSessionCacheMeta?: (sessionId: string) => SessionCacheMeta | undefined;
     snapshotSessionCacheMeta?: () => Record<string, SessionCacheMeta>;
     restoreSessionCacheMeta?: (meta: Readonly<Record<string, SessionCacheMeta>>) => void;
     removeSessionCacheMeta?: (sessionIds: Iterable<string>) => void;
   } = {},
 ) {
+  const parseSource = overrides.scanSessionSource ?? vi.fn(() => null);
   const agent = Reflect.construct(FileSystemSessionSource, []) as InstanceType<
     typeof FileSystemSessionSource
   >;
@@ -489,7 +490,14 @@ function makeFileSystemAgent(
   agent.getSessionData = vi.fn(() => ({}) as SessionDetail);
   agent.getSessionWatchPlan = vi.fn(() => watchPlanFor(name));
   agent.listSessionSources = overrides.listSessionSources ?? vi.fn(() => []);
-  agent.scanSessionSource = overrides.scanSessionSource ?? vi.fn(() => null);
+  Object.defineProperty(agent, "scanSessionSourceResult", {
+    value: (source: SessionSourceRef, options?: AgentScanOptions) => {
+      const session = parseSource(source.sourcePath, options);
+      return session
+        ? { status: "parsed" as const, data: session }
+        : { status: "skipped" as const, reason: "empty test source" };
+    },
+  });
   agent.getSessionCacheMeta = overrides.getSessionCacheMeta ?? vi.fn();
   agent.snapshotSessionCacheMeta = overrides.snapshotSessionCacheMeta ?? vi.fn(() => ({}));
   agent.restoreSessionCacheMeta = overrides.restoreSessionCacheMeta ?? vi.fn();

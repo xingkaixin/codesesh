@@ -4,7 +4,6 @@ import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import {
   FileSystemSessionSource,
   filteredSession,
-  getParsedSession,
   matchesScanWindow,
   parsedSession,
   skippedSession,
@@ -876,10 +875,6 @@ export class GrokAgent extends FileSystemSessionSource<GrokSessionMeta> {
         },
       ];
     });
-  }
-
-  scanSessionSource(sourcePath: string): SessionHead | null {
-    return getParsedSession(this.parseSessionHeadResult(sourcePath));
   }
 
   protected override scanSessionSourceResult(

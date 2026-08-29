@@ -300,11 +300,9 @@ export abstract class BaseAgent<TMeta extends SessionCacheMeta = SessionCacheMet
  *
  * 子类只需实现两个必需的文件级原语：
  *   - listSessionSources(): 枚举所有源 + 计算指纹
- *   - scanSessionSource(): 解析单个源（同时写入 metaMap）
+ *   - scanSessionSourceResult(): 解析单个源（同时写入 metaMap）
  *
- * scanSessionSourceResult() 是可选的富结果扩展点：默认将 scanSessionSource()
- * 的会话或 null 转成 parsed/skipped 结果；需要保留 filtered 等结果时可覆写，
- * 例如 KimiAgent。
+ * scanSessionSource() 是兼容旧调用方的公开入口，由富结果统一派生。
  *
  * 源同步与 metaMap 管理由本基类统一提供：
  *   同步流程用 listSessionSources 的指纹与缓存 metaMap 比对，
@@ -333,15 +331,16 @@ export abstract class FileSystemSessionSource<
   abstract listSessionSources(options?: AgentScanOptions): SessionSourceRef[];
 
   /** 解析单个源并写入 metaMap，返回会话 head（解析失败/不可见返回 null）。 */
-  abstract scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null;
+  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+    return getParsedSession(
+      this.scanSessionSourceResult({ sessionId: "", sourcePath, fingerprint: "" }, options),
+    );
+  }
 
-  protected scanSessionSourceResult(
+  protected abstract scanSessionSourceResult(
     source: SessionSourceRef,
     options?: AgentScanOptions,
-  ): ParseSessionResult<SessionHead> {
-    const session = this.scanSessionSource(source.sourcePath, options);
-    return session ? parsedSession(session) : skippedSession("source produced no session");
-  }
+  ): ParseSessionResult<SessionHead>;
 
   scanSessionSourceOutcome(
     source: SessionSourceRef,
@@ -503,10 +502,6 @@ export abstract class SingleFileSessionSource<
       );
     }
     return result;
-  }
-
-  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
-    return getParsedSession(this.parseSessionSource(sourcePath, options));
   }
 
   protected override scanSessionSourceResult(

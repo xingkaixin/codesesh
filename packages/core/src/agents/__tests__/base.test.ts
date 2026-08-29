@@ -8,7 +8,9 @@ import {
   diffSessionSources,
   FileSystemSessionSource,
   filteredSession,
+  parsedSession,
   SingleFileSessionSource,
+  skippedSession,
 } from "../base.js";
 import type {
   AgentScanOptions,
@@ -80,24 +82,19 @@ class FakeFileSystemSource extends FileSystemSessionSource {
     }));
   }
 
-  scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+  protected override scanSessionSourceResult(ref: SessionSourceRef, options?: AgentScanOptions) {
     this.lastScanOptions = options;
-    const found = this.sources.find((s) => s.sourcePath === sourcePath);
+    const found = this.sources.find((s) => s.sourcePath === ref.sourcePath);
     if (found?.error) throw found.error;
     if (found?.throws) throw new Error("parse failed");
-    if (!found || !found.head) return null;
+    if (found?.filtered) return filteredSession<SessionHead>("no visible messages");
+    if (!found || !found.head) return skippedSession<SessionHead>("source produced no session");
     this.sessionMetaMap.set(found.sessionId, {
       id: found.sessionId,
       sourcePath: found.sourcePath,
       sourceFingerprint: found.fingerprint,
     });
-    return found.head;
-  }
-
-  protected override scanSessionSourceResult(ref: SessionSourceRef, options?: AgentScanOptions) {
-    const found = this.sources.find((item) => item.sourcePath === ref.sourcePath);
-    if (found?.filtered) return filteredSession<SessionHead>("no visible messages");
-    return super.scanSessionSourceResult(ref, options);
+    return parsedSession(found.head);
   }
 }
 
@@ -305,9 +302,9 @@ describe("FileSystemSessionSource.scan", () => {
 
 describe("FileSystemSessionSource pricing miss capture", () => {
   class UnpricedModelSource extends FakeFileSystemSource {
-    override scanSessionSource(sourcePath: string, options?: AgentScanOptions): SessionHead | null {
+    protected override scanSessionSourceResult(ref: SessionSourceRef, options?: AgentScanOptions) {
       estimateTokenCost("vendor/nonexistent-model", { input: 10, output: 10 });
-      return super.scanSessionSource(sourcePath, options);
+      return super.scanSessionSourceResult(ref, options);
     }
   }
 

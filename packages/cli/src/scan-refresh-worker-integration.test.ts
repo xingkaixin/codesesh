@@ -1,5 +1,6 @@
 import { PRICING_CAPTURE_EPOCH } from "@codesesh/core/runtime/pricing";
 import {
+  type AgentScanOptions,
   type BaseAgent,
   type SessionCacheMeta,
   type SessionSourceRef,
@@ -110,13 +111,17 @@ function currentPricingMeta(meta: SessionCacheMeta): SessionCacheMeta {
 
 function makeAgent(overrides: Record<string, unknown> = {}) {
   let sessionMeta: Record<string, SessionCacheMeta> = {};
+  const parseSource =
+    (overrides.scanSessionSource as
+      | ((sourcePath: string, options?: AgentScanOptions) => SessionHead | null)
+      | undefined) ?? vi.fn(() => null);
+  const { scanSessionSource: _scanSessionSource, ...agentOverrides } = overrides;
   const agent = Object.assign(new mocks.FileSystemSessionSource(), {
     name: "codex",
     isAvailable: vi.fn(() => true),
     scan: vi.fn(() => []),
     incrementalScan: vi.fn(() => []),
     listSessionSources: vi.fn(() => []),
-    scanSessionSource: vi.fn(() => null),
     expandChangedSessionIds: vi.fn((changedIds: string[]) => changedIds),
     filterCachedSessions: vi.fn((sessions: SessionHead[]) => sessions),
     getSessionData: vi.fn(),
@@ -128,7 +133,15 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
     removeSessionCacheMeta: vi.fn((sessionIds: Iterable<string>) => {
       for (const sessionId of sessionIds) delete sessionMeta[sessionId];
     }),
-    ...overrides,
+    ...agentOverrides,
+  });
+  Object.defineProperty(agent, "scanSessionSourceResult", {
+    value: (source: SessionSourceRef, options?: AgentScanOptions) => {
+      const session = parseSource(source.sourcePath, options);
+      return session
+        ? { status: "parsed" as const, data: session }
+        : { status: "skipped" as const, reason: "empty test source" };
+    },
   });
   return agent;
 }
