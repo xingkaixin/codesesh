@@ -32,11 +32,10 @@ import {
   buildSessionPersistenceDiff,
 } from "./orchestrate.js";
 import {
+  beginAgentRefresh,
   executeAgentScanPlan,
-  commitAgentRefreshCheck,
   planAgentScan,
   resolveSessionSnapshotCompleteness,
-  selectAgentRefresh,
 } from "./agent-scan-plan.js";
 import { ensureSessionTags } from "./session-tags.js";
 
@@ -450,11 +449,12 @@ async function scanAgentSmart(
         });
       }
 
-      const refresh = await selectAgentRefresh(agent, {
+      const refreshTransaction = await beginAgentRefresh(agent, {
         initialized: true,
         sinceTimestamp: cached.timestamp,
         cachedSessions: cached.sessions,
       });
+      const refresh = refreshTransaction.selection;
       if (refresh.kind === "unavailable") {
         return finalizeAgentScanFailure(
           agent,
@@ -555,7 +555,7 @@ async function scanAgentSmart(
           ),
           onProgress,
         });
-        if (result.cachePersistence === "persisted") commitAgentRefreshCheck(refresh);
+        if (result.cachePersistence === "persisted") refreshTransaction.commit();
         return result;
       }
 
@@ -567,7 +567,7 @@ async function scanAgentSmart(
         completeness: "complete",
         onProgress,
       });
-      commitAgentRefreshCheck(refresh);
+      refreshTransaction.commit();
       return result;
     }
   }

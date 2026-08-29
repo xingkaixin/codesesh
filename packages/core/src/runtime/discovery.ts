@@ -9,6 +9,7 @@ export type {
 } from "../types/index.js";
 export {
   attachMissingProjectIdentities,
+  beginAgentRefresh,
   buildAgentCacheMeta,
   buildSessionPersistenceDiff,
   clearCache,
@@ -57,6 +58,7 @@ export type {
   AgentCacheFailure,
   AgentRefreshInspection,
   AgentRefreshSelection,
+  AgentRefreshTransaction,
   AgentScanIntent,
   AgentScanPlan,
   CacheReadOutcome,
