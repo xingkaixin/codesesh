@@ -3,6 +3,8 @@ export {
   ensurePrivateDirectory,
   getSmartTagSourceTimestamp,
   isWorkerLogMessage,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   perf,
   restrictExistingPrivateFiles,
   restrictPrivateFile,
@@ -10,5 +12,6 @@ export {
   SMART_TAG_CLASSIFIER_REVISION,
   WORKER_LOG_MESSAGE_TYPE,
   type WorkerLogLevel,
+  type WorkerLogContext,
   type WorkerLogMessage,
 } from "../utils/index.js";

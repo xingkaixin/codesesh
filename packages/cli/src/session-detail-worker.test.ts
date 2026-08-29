@@ -5,10 +5,12 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   restore: vi.fn(),
   close: vi.fn(),
+  on: vi.fn(),
 }));
 vi.mock("./diagnostics-bridge.js", () => ({}));
-vi.mock("node:worker_threads", () => ({
-  parentPort: { postMessage: mocks.post },
+vi.mock("node:worker_threads", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:worker_threads")>()),
+  parentPort: { postMessage: mocks.post, on: mocks.on },
   workerData: {
     reference: { agentName: "codex", sessionId: "s1" },
     meta: {},

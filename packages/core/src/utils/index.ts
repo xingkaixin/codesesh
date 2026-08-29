@@ -22,6 +22,7 @@ export { estimateTokenCost } from "./cost.js";
 export {
   WORKER_LOG_MESSAGE_TYPE,
   isWorkerLogMessage,
+  type WorkerLogContext,
   type WorkerLogLevel,
   type WorkerLogMessage,
 } from "./worker-log.js";
