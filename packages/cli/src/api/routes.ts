@@ -2,17 +2,15 @@ import { Hono } from "hono";
 import {
   handleGetAgents,
   handleGetConfig,
-  handleGetDashboard,
-  handleGetFileActivity,
   handleGetProjects,
   handleGetScanStatus,
-  handlePostClientLog,
-  handleSearchSessions,
-  handleGetSessions,
-  handleGetSessionData,
-  type ScanResultSource,
-  type SessionListDefaults,
-} from "./handlers.js";
+} from "./catalog-handlers.js";
+import { handleGetDashboard } from "./dashboard-handler.js";
+import { handleGetFileActivity, handleSearchSessions } from "./search-handlers.js";
+import { handleGetSessions, handleGetSessionData } from "./session-handlers.js";
+import { handlePostClientLog } from "./client-log-handler.js";
+import type { ScanResultSource } from "./scan-sources.js";
+import type { SessionListDefaults } from "./query-params.js";
 import {
   handleDeleteBookmark,
   handleDeleteSessionAlias,

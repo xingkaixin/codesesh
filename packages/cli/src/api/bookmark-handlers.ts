@@ -13,7 +13,7 @@ import {
   upsertSessionAlias,
 } from "@codesesh/core/runtime/state";
 import { loadCachedSessionHeads } from "@codesesh/core/runtime/discovery";
-import { KNOWN_AGENT_NAME_SET } from "./handlers.js";
+import { KNOWN_AGENT_NAME_SET } from "./handler-support.js";
 import { parseBookmarkImport, parseBookmarkReference } from "./request-payloads.js";
 import { getSnapshotAggregation } from "./snapshot-aggregation.js";
 import type { ScanResultSource } from "./scan-sources.js";
