@@ -1,4 +1,5 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { matchedRoutes } from "hono/route";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { secureHeaders } from "hono/secure-headers";
@@ -6,6 +7,7 @@ import { serve } from "@hono/node-server";
 import type { HttpBindings, ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { resolve, dirname } from "node:path";
@@ -31,9 +33,33 @@ import {
   type RemoteTransport,
 } from "./remote-access.js";
 import type { ScanEventSource } from "./scan-source.js";
+import { CODESESH_OPERATION_ID_HEADER, CODESESH_REQUEST_ID_HEADER } from "@codesesh/core/contract";
 
 const MAX_API_REQUEST_BYTES = 1024 * 1024;
 const SERVER_CLOSE_GRACE_MS = 1_000;
+const OPERATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const OBSERVABLE_QUERY_KEYS = new Set([
+  "agent",
+  "costMax",
+  "costMin",
+  "cursor",
+  "cwd",
+  "days",
+  "fileActivity",
+  "from",
+  "kind",
+  "limit",
+  "messageCursor",
+  "path",
+  "project",
+  "projectKey",
+  "projectKind",
+  "q",
+  "sessionId",
+  "tag",
+  "to",
+  "tool",
+]);
 
 export interface CreateServerOptions {
   defaultSessionFrom?: number;
@@ -107,6 +133,42 @@ function isAddressInUse(error: unknown): boolean {
 function getListeningPort(server: ServerType, fallback: number): number {
   const address = server.address();
   return typeof address === "object" && address !== null ? (address as AddressInfo).port : fallback;
+}
+
+function optionalOperationId(value: string | undefined): string | undefined {
+  return value && OPERATION_ID_PATTERN.test(value) ? value : undefined;
+}
+
+function errorStatus(error: unknown): number {
+  try {
+    if (typeof error !== "object" || error === null) return 500;
+    const status = Reflect.get(error, "status");
+    if (typeof status === "number" && status >= 400 && status <= 599) return status;
+  } catch {}
+  return 500;
+}
+
+function matchedRoute(context: Context): string {
+  try {
+    return (
+      matchedRoutes(context)
+        .map((route) => route.path)
+        .filter((path) => !path.includes("*"))
+        .at(-1) ?? "<unmatched>"
+    );
+  } catch {
+    return "<unmatched>";
+  }
+}
+
+function queryKeys(url: string): string[] {
+  try {
+    return [...new Set(new URL(url).searchParams.keys())]
+      .filter((key) => OBSERVABLE_QUERY_KEYS.has(key))
+      .toSorted();
+  } catch {
+    return [];
+  }
 }
 
 async function closeHttpServer(server: ServerType | null, port: number | null): Promise<void> {
@@ -194,43 +256,53 @@ export async function createServer(
     }),
   );
 
+  app.use("*", async (c, next) => {
+    const startedAt = performance.now();
+    const requestId = randomUUID();
+    const actualPath = c.req.path;
+    const operationId = optionalOperationId(c.req.header(CODESESH_OPERATION_ID_HEADER));
+    const context =
+      actualPath === "/api/events"
+        ? {}
+        : { request_id: requestId, ...(operationId ? { operation_id: operationId } : {}) };
+    c.header(CODESESH_REQUEST_ID_HEADER, requestId);
+
+    return appLogger.restoreContext(context, async () => {
+      let thrown: unknown;
+      try {
+        await next();
+      } catch (error) {
+        thrown = error;
+        throw error;
+      } finally {
+        const requestError = thrown ?? c.error;
+        appLogger.info("http.request", {
+          method: c.req.method,
+          route: matchedRoute(c),
+          query_keys: queryKeys(c.req.url),
+          status: requestError == null ? c.res.status : errorStatus(requestError),
+          duration_ms: Math.round(performance.now() - startedAt),
+          ...(requestError == null ? {} : { error: requestError }),
+        });
+      }
+    });
+  });
+
   if (loopbackAuthorityEnabled) {
     app.use("*", async (c, next) => {
       const decision = validateLoopbackAuthority(c.env.incoming.rawHeaders, hostname, actualPort);
       if (!decision.allowed) {
         appLogger.warn("http.loopback_authority.rejected", {
           method: c.req.method,
-          path: new URL(c.req.url).pathname,
+          route: "<rejected>",
           reason: decision.reason,
-          authority: decision.authority,
+          authority_present: Boolean(decision.authority),
         });
         return c.json({ error: "Loopback request authority rejected" }, 403);
       }
       await next();
     });
   }
-
-  app.use("*", async (c, next) => {
-    const startedAt = performance.now();
-    let thrown: unknown;
-
-    try {
-      await next();
-    } catch (error) {
-      thrown = error;
-      throw error;
-    } finally {
-      const url = new URL(c.req.url);
-      appLogger.info("http.request", {
-        method: c.req.method,
-        path: url.pathname,
-        query_keys: [...url.searchParams.keys()].toSorted(),
-        status: c.res.status,
-        duration_ms: Math.round(performance.now() - startedAt),
-        error: thrown instanceof Error ? thrown.message : undefined,
-      });
-    }
-  });
 
   // Ordered before authentication: a request that bypassed the proxy must be
   // refused outright, not given a chance to present a token in the clear.

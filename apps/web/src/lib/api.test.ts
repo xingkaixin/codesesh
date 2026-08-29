@@ -289,6 +289,21 @@ describe("fetchSessionData", () => {
     );
   });
 
+  it("sends the session-detail operation identifier as a request header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSessionData("codex", "session", { operationId: "detail-operation" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/codex/session", {
+      signal: undefined,
+      headers: { "X-CodeSesh-Operation-ID": "detail-operation" },
+    });
+  });
+
   it("exposes failed response status through ApiRequestError", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

@@ -76,6 +76,7 @@ export interface FetchOptions {
 
 export interface SessionDetailFetchOptions extends FetchOptions {
   messageCursor?: string;
+  operationId?: string;
 }
 
 export interface ProjectPageOptions extends FetchOptions {

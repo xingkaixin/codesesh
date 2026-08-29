@@ -35,7 +35,7 @@ export function useCopySessionAsMarkdown() {
         logClientEvent("session.markdown_copy.error", {
           agent: agentName,
           session: sessionId,
-          error: error instanceof Error ? error.message : String(error),
+          error_name: error instanceof Error ? error.name : "UnknownError",
         });
       }
     },

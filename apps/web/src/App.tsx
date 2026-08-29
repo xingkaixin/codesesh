@@ -102,7 +102,6 @@ export default function App() {
 
   useEffect(() => {
     logClientEvent("route.change", {
-      path: location.pathname,
       mode: viewState.mode,
       agent: viewState.activeAgentKey,
       session: viewState.activeSessionId,

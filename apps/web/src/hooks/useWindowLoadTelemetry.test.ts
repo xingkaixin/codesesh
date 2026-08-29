@@ -42,6 +42,7 @@ describe("useWindowLoadTelemetry", () => {
 
     rerender({ window, pending: false, error: null, agentCount: 2, sessionCount: 10 });
 
+    expect(api.logClientEvent).toHaveBeenCalledWith("app.load.start");
     await waitFor(() =>
       expect(api.logClientEvent).toHaveBeenCalledWith("app.load.done", {
         duration_ms: expect.any(Number),
@@ -68,9 +69,12 @@ describe("useWindowLoadTelemetry", () => {
     await waitFor(() =>
       expect(api.logClientEvent).toHaveBeenCalledWith("app.load.error", {
         duration_ms: expect.any(Number),
-        error: "reload failed",
       }),
     );
+    const errorData = vi
+      .mocked(api.logClientEvent)
+      .mock.calls.find(([event]) => event === "app.load.error")?.[1];
+    expect(JSON.stringify(errorData)).not.toContain("reload failed");
     expect(console.error).toHaveBeenCalledWith("Failed to load data:", "reload failed");
   });
 });

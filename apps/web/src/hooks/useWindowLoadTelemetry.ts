@@ -20,7 +20,7 @@ export function useWindowLoadTelemetry({
 
   useEffect(() => {
     startedAtRef.current = window ? performance.now() : null;
-    if (window) logClientEvent("app.load.start", { path: globalThis.window.location.pathname });
+    if (window) logClientEvent("app.load.start");
   }, [window]);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export function useWindowLoadTelemetry({
     startedAtRef.current = null;
     if (error) {
       console.error("Failed to load data:", error);
-      logClientEvent("app.load.error", { duration_ms, error });
+      logClientEvent("app.load.error", { duration_ms });
       return;
     }
     logClientEvent("app.load.done", {

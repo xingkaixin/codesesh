@@ -15,6 +15,9 @@ const LAZY_SURFACE_TIMEOUT_MS = 5_000;
 const liveSubscription = vi.hoisted(() => ({
   onUpdate: undefined as ((event: SessionsUpdatedEvent) => void) | undefined,
 }));
+const clientTelemetry = vi.hoisted(() => ({
+  logClientEvent: vi.fn<(event: string, data?: Record<string, unknown>) => void>(),
+}));
 
 vi.mock("./lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/api")>()),
@@ -22,7 +25,7 @@ vi.mock("./lib/api", async (importOriginal) => ({
     liveSubscription.onUpdate = onUpdate;
     return () => undefined;
   },
-  logClientEvent: () => undefined,
+  logClientEvent: clientTelemetry.logClientEvent,
 }));
 
 const emptyDashboard: DashboardData = {
@@ -99,6 +102,7 @@ beforeEach(() => {
   requestedUrls = [];
   projectDetailResponse = null;
   liveSubscription.onUpdate = undefined;
+  clientTelemetry.logClientEvent.mockClear();
   responses["/api/agents"] = [];
   responses["/api/projects"] = workspaceProjectPage;
   responses["/api/sessions"] = { sessions: [] };
@@ -144,6 +148,10 @@ function dashboardRequests(): URLSearchParams[] {
   return requestedUrls
     .filter((url) => url.startsWith("/api/dashboard"))
     .map((url) => new URLSearchParams(url.split("?")[1] ?? ""));
+}
+
+function routeChangeCalls() {
+  return clientTelemetry.logClientEvent.mock.calls.filter(([event]) => event === "route.change");
 }
 
 describe("App session loading", () => {
@@ -345,5 +353,24 @@ describe("App dashboard scope wiring", () => {
 
     await waitFor(() => expect(dashboardRequests().length).toBeGreaterThan(0));
     expect(dashboardRequests().every((params) => params.get("projectKey") === null)).toBe(true);
+  });
+});
+
+describe("App route telemetry", () => {
+  it("records concrete route changes within the same view without exposing route identity", async () => {
+    const { router } = renderAppAt("/projects/path/%2Fworkspace");
+
+    await waitFor(() => expect(routeChangeCalls()).toHaveLength(1));
+    await act(async () => {
+      await router.navigate("/projects/path/%2Fanother-workspace");
+    });
+    await waitFor(() => expect(routeChangeCalls()).toHaveLength(2));
+
+    const [event, payload] = routeChangeCalls()[1] ?? [];
+    expect(event).toBe("route.change");
+    expect(payload).toMatchObject({ mode: "project" });
+    expect(payload).not.toHaveProperty("path");
+    expect(payload).not.toHaveProperty("project");
+    expect(payload).not.toHaveProperty("projectKey");
   });
 });

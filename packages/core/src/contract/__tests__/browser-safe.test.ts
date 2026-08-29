@@ -29,6 +29,8 @@ describe("contract browser-safety", () => {
     expect(Object.keys(contract).sort()).toEqual(
       [
         "AGENT_CATALOG",
+        "CODESESH_OPERATION_ID_HEADER",
+        "CODESESH_REQUEST_ID_HEADER",
         "PROJECT_IDENTITY_KINDS",
         "SMART_TAGS",
         "UNKNOWN_AGENT_NAME",
