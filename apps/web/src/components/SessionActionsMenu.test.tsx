@@ -55,6 +55,25 @@ describe("SessionActionsMenu", () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
+  it("offers Markdown copy when the session content is available", async () => {
+    const onCopyAsMarkdown = vi.fn();
+    render(
+      <SessionActionsMenu
+        bookmarked={false}
+        onCopyAsMarkdown={onCopyAsMarkdown}
+        onRename={vi.fn()}
+        onToggleBookmark={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Session options" }));
+    const copyItem = await screen.findByRole("menuitem", { name: "Copy as Markdown" });
+    expect(copyItem.querySelector("svg")).not.toBeNull();
+    fireEvent.click(copyItem);
+
+    expect(onCopyAsMarkdown).toHaveBeenCalledOnce();
+  });
+
   it("returns focus to the trigger when an outside pointer closes the menu", async () => {
     render(
       <>

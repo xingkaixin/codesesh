@@ -1,13 +1,15 @@
 import { Menu } from "@base-ui/react/menu";
-import { MoreHorizontal, Pencil, Star } from "./ui/icons";
+import { Copy, MoreHorizontal, Pencil, Star } from "./ui/icons";
 import { useRef } from "react";
 
 export function SessionActionMenuItems({
   bookmarked,
+  onCopyAsMarkdown,
   onRename,
   onToggleBookmark,
 }: {
   bookmarked: boolean;
+  onCopyAsMarkdown?: () => void;
   onRename: () => void;
   onToggleBookmark: () => void;
 }) {
@@ -20,6 +22,15 @@ export function SessionActionMenuItems({
         <Pencil className="size-3" aria-hidden="true" />
         Rename
       </Menu.Item>
+      {onCopyAsMarkdown ? (
+        <Menu.Item
+          onClick={onCopyAsMarkdown}
+          className="motion-hover motion-press flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+        >
+          <Copy className="size-3" aria-hidden="true" />
+          Copy as Markdown
+        </Menu.Item>
+      ) : null}
       <Menu.Item
         onClick={onToggleBookmark}
         className="motion-hover motion-press flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
@@ -33,10 +44,12 @@ export function SessionActionMenuItems({
 
 export function SessionActionsMenu({
   bookmarked,
+  onCopyAsMarkdown,
   onRename,
   onToggleBookmark,
 }: {
   bookmarked: boolean;
+  onCopyAsMarkdown?: () => void;
   onRename: () => void;
   onToggleBookmark: () => void;
 }) {
@@ -60,6 +73,7 @@ export function SessionActionsMenu({
           >
             <SessionActionMenuItems
               bookmarked={bookmarked}
+              onCopyAsMarkdown={onCopyAsMarkdown}
               onRename={onRename}
               onToggleBookmark={onToggleBookmark}
             />

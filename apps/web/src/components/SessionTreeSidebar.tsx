@@ -31,6 +31,7 @@ interface SessionTreeSidebarProps {
   selectedSessionReference: string | null;
   onSelectSession: (session: SessionHead) => void;
   bookmarkedSessionReferences: Set<string>;
+  onCopySessionAsMarkdown: (session: SessionHead) => void;
   onToggleBookmark: (session: SessionHead) => void;
   onRenameSession: (session: SessionHead) => void;
   /** False when the listing already covers one project. */
@@ -309,6 +310,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   selectedSessionReference,
   onSelectSession,
   bookmarkedSessionReferences,
+  onCopySessionAsMarkdown,
   onToggleBookmark,
   onRenameSession,
   groupByProject = true,
@@ -328,6 +330,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
   const sessionByPathRef = useRef(modelData.sessionByPath);
   const onSelectSessionRef = useRef(onSelectSession);
+  const onCopySessionAsMarkdownRef = useRef(onCopySessionAsMarkdown);
   const onToggleBookmarkRef = useRef(onToggleBookmark);
   const onRenameSessionRef = useRef(onRenameSession);
   const syncingActiveSelectionRef = useRef(false);
@@ -381,6 +384,10 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   useEffect(() => {
     onSelectSessionRef.current = onSelectSession;
   }, [onSelectSession]);
+
+  useEffect(() => {
+    onCopySessionAsMarkdownRef.current = onCopySessionAsMarkdown;
+  }, [onCopySessionAsMarkdown]);
 
   useEffect(() => {
     onToggleBookmarkRef.current = onToggleBookmark;
@@ -503,6 +510,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
                   // Read the prop directly: a ref read during render lags one
                   // update behind, leaving an open menu with a stale label.
                   bookmarked={bookmarkedSessionReferences.has(getSessionReferenceKey(menuSession))}
+                  onCopyAsMarkdown={() => onCopySessionAsMarkdownRef.current(menuSession)}
                   onRename={() => onRenameSessionRef.current(menuSession)}
                   onToggleBookmark={() => onToggleBookmarkRef.current(menuSession)}
                 />

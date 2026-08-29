@@ -27,6 +27,7 @@ function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarAc
     onMobileNavigationOpenChange: vi.fn(),
     onToggleBookmark: vi.fn(),
     onSelectFlatSidebarSession: vi.fn(),
+    onCopySessionAsMarkdown: vi.fn(),
     onToggleSidebarSessionBookmark: vi.fn(),
     onRenameSession: vi.fn(),
     onRenameBookmarkedSession: vi.fn(),

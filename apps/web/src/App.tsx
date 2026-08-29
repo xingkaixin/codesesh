@@ -38,6 +38,7 @@ import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey } from "./lib/projects";
 import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
+import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 
 export default function App() {
   const navigate = useNavigate();
@@ -95,6 +96,7 @@ export default function App() {
   } = useUiPreferences();
   const resolvedTheme = useTheme(theme);
   const [aliasTarget, setAliasTarget] = useState<SessionAliasTarget | null>(null);
+  const { copySessionAsMarkdown, sessionCopyNotice } = useCopySessionAsMarkdown();
 
   const routeMatches = useMatches();
   const viewState = useMemo(
@@ -450,6 +452,7 @@ export default function App() {
               onMobileNavigationOpenChange: setMobileNavigationOpen,
               onToggleBookmark: toggleBookmark,
               onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
+              onCopySessionAsMarkdown: (sessionHead) => void copySessionAsMarkdown(sessionHead),
               onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
               onRenameSession: handleRenameSession,
               onRenameBookmarkedSession: handleRenameBookmarkedSession,
@@ -548,6 +551,11 @@ export default function App() {
                   ) : null}
                 </div>
                 <div aria-live="polite">
+                  {sessionCopyNotice ? (
+                    <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
+                      {sessionCopyNotice}
+                    </p>
+                  ) : null}
                   {liveNotice ? (
                     <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
                       {liveNotice}

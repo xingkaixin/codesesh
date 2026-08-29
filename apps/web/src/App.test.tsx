@@ -102,6 +102,8 @@ beforeEach(() => {
   responses["/api/agents"] = [];
   responses["/api/projects"] = workspaceProjectPage;
   responses["/api/sessions"] = { sessions: [] };
+  responses["/api/bookmarks"] = { bookmarks: [] };
+  delete responses["/api/sessions/claudecode/session-1"];
   vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -145,6 +147,45 @@ function dashboardRequests(): URLSearchParams[] {
 }
 
 describe("App session loading", () => {
+  it("loads and copies an available bookmarked session as Markdown", async () => {
+    const sessionDetail = {
+      ...SAMPLE_SESSION_HEAD,
+      messages: [
+        {
+          id: "message-1",
+          role: "user",
+          time_created: 1,
+          parts: [{ type: "text", text: "Copy this conversation" }],
+        },
+      ],
+    };
+    responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
+    responses["/api/bookmarks"] = {
+      bookmarks: [
+        {
+          reference: SAMPLE_SESSION_HEAD.reference,
+          bookmarkedAt: 1,
+          availability: "available",
+          session: SAMPLE_SESSION_HEAD,
+        },
+      ],
+    };
+    responses["/api/sessions/claudecode/session-1"] = sessionDetail;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    renderAppAt("/");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Session options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy as Markdown" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0]?.[0]).toContain("## User\n\nCopy this conversation");
+    expect(await screen.findByText("Session copied as Markdown.")).toBeTruthy();
+  });
+
   it("opens session details when dashboard loading fails and retries statistics independently", async () => {
     responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
     responses["/api/sessions"] = { sessions: [SAMPLE_SESSION_HEAD] };
