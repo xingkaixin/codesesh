@@ -1003,10 +1003,15 @@ describe("AgentSyncEngine", () => {
     );
   });
 
-  it("restores durable metadata and retries the same publication after a commit failure", async () => {
+  it("keeps candidate metadata private until publication commits", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     core.isAgentCacheInitialized.mockReturnValue(false);
-    searchIndex.enqueue.mockRejectedValueOnce(new Error("atomic publication failed"));
+    let rejectPublication!: (error: Error) => void;
+    searchIndex.enqueue.mockReturnValueOnce(
+      new Promise<undefined>((_resolve, reject) => {
+        rejectPublication = reject;
+      }),
+    );
     const previous = makeSession("head", "before");
     const head = makeSession("head", "after");
     const oldMeta = { head: { id: "head", sourcePath: "/old" } };
@@ -1029,7 +1034,18 @@ describe("AgentSyncEngine", () => {
     const sessionChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
 
-    await engine.refresh("codex");
+    const failedRefresh = engine.refresh("codex");
+    await vi.waitFor(() => expect(searchIndex.enqueue).toHaveBeenCalledOnce());
+
+    expect(currentMeta).toEqual(oldMeta);
+    expect(searchIndex.enqueue).toHaveBeenCalledWith(
+      "scan.refresh",
+      [expect.objectContaining({ kind: "full", meta: nextMeta })],
+      expect.any(Function),
+    );
+
+    rejectPublication(new Error("atomic publication failed"));
+    await failedRefresh;
 
     expect(engine.snapshot().sessions).toEqual([previous]);
     expect(currentMeta).toEqual(oldMeta);
