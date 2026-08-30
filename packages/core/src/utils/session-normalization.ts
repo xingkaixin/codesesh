@@ -57,7 +57,9 @@ export function cleanMessageParts(parts: MessagePart[]): MessagePart[] {
 
 export function cleanParsedMessage(message: Message): Message | null {
   const parts = cleanMessageParts(message.parts);
-  if (parts.length === 0) return null;
+  const hasUsage =
+    (message.cost ?? 0) > 0 || Object.values(message.tokens ?? {}).some((value) => value > 0);
+  if (parts.length === 0 && !hasUsage) return null;
   return { ...message, parts };
 }
 

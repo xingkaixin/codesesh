@@ -3,6 +3,19 @@ import { cleanParsedMessages, firstUserMessageTitle } from "../session-normaliza
 import type { Message } from "../../types/index.js";
 
 describe("session normalization", () => {
+  it("retains usage facts when the provider omits visible content", () => {
+    const message: Message = {
+      id: "usage",
+      role: "assistant",
+      time_created: 1,
+      tokens: { input: 100, output: 20 },
+      parts: [{ type: "reasoning", text: "" }],
+    };
+    expect(cleanParsedMessages([message])).toEqual([{ ...message, parts: [] }]);
+    expect(cleanParsedMessages([{ ...message, tokens: undefined, cost: 0.01 }])).toHaveLength(1);
+    expect(cleanParsedMessages([{ ...message, tokens: { input: 0, output: 0 } }])).toEqual([]);
+  });
+
   it("removes internal-only parts and deeply cleans tool payloads", () => {
     const messages: Message[] = [
       {
