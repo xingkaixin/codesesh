@@ -6,8 +6,9 @@ import { cleanInternalText } from "../utils/session-normalization.js";
 import { parseAgentTimestamp } from "../utils/timestamp.js";
 import { TranscriptBuilder, type TranscriptMessageInput } from "./transcript-builder.js";
 
-interface ClaudeUsage {
+export interface ClaudeUsage {
   key: string;
+  model: string | undefined;
   input: number;
   output: number;
   cacheRead: number;
@@ -50,6 +51,7 @@ export function extractClaudeUsage(
 
   return {
     key,
+    model: asString(msg["model"])?.trim() || undefined,
     input: readUsageNumber(usage, "input_tokens"),
     output: readUsageNumber(usage, "output_tokens"),
     cacheRead: readUsageNumber(usage, "cache_read_input_tokens"),
@@ -64,7 +66,7 @@ export class ClaudeRecordConverter {
     data: Record<string, unknown>,
     builder: TranscriptBuilder,
     assistantUuidToToolCalls: Map<string, string[]>,
-    countedUsageKeys: Set<string>,
+    requestMessages: Map<string, Message>,
     childSessionIdByToolUseId: ReadonlyMap<string, string>,
   ): void {
     if (data["isMeta"] === true) return;
@@ -77,7 +79,7 @@ export class ClaudeRecordConverter {
         data,
         builder,
         assistantUuidToToolCalls,
-        countedUsageKeys,
+        requestMessages,
         childSessionIdByToolUseId,
       );
     } else if (msgType === "user") {
@@ -91,13 +93,18 @@ export class ClaudeRecordConverter {
     data: Record<string, unknown>,
     builder: TranscriptBuilder,
     assistantUuidToToolCalls: Map<string, string[]>,
-    countedUsageKeys: Set<string>,
+    requestMessages: Map<string, Message>,
     childSessionIdByToolUseId: ReadonlyMap<string, string>,
   ): void {
     const msg = asRecord(data["message"]) ?? {};
     const timestampMs = parseClaudeTimestampMs(data);
+    const model = asString(msg["model"])?.trim();
     const rawContent = asArray(msg["content"]) ?? [];
     const uuid = String(data["uuid"] ?? "");
+    const usage = extractClaudeUsage(data, msg);
+    let usageMessage = usage ? requestMessages.get(usage.key) : undefined;
+    // A distinct request must not inherit another request's model or usage.
+    if (usage && !usageMessage) builder.beginTurn();
 
     const toolCallIds: string[] = [];
     for (const item of rawContent) {
@@ -110,10 +117,10 @@ export class ClaudeRecordConverter {
         if (text) {
           const message = builder.appendAssistantPart(
             this.buildReasoningPart(text, timestampMs),
-            { id: uuid, timestampMs, agent: "claude" },
+            { id: uuid, timestampMs, agent: "claude", model },
             { deduplicateTail: true },
           );
-          this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
+          usageMessage ??= message;
         }
         continue;
       }
@@ -127,10 +134,11 @@ export class ClaudeRecordConverter {
               id: uuid,
               timestampMs,
               agent: "claude",
+              model,
             },
             { deduplicateTail: true },
           );
-          this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
+          usageMessage ??= message;
         }
         continue;
       }
@@ -143,11 +151,11 @@ export class ClaudeRecordConverter {
       const toolPart = this.buildToolPart(part, timestampMs);
       const message = builder.appendToolCall(
         toolPart,
-        { id: uuid, timestampMs, agent: "claude", subagentId },
+        { id: uuid, timestampMs, agent: "claude", subagentId, model },
         { modeOnCreate: "tool" },
       );
       if (subagentId) message.subagent_id = subagentId;
-      this.applyAssistantMetadata(message, data, msg, countedUsageKeys);
+      usageMessage ??= message;
       if (toolCallId) {
         toolCallIds.push(toolCallId);
       }
@@ -155,6 +163,26 @@ export class ClaudeRecordConverter {
 
     if (toolCallIds.length > 0) {
       assistantUuidToToolCalls.set(uuid, toolCallIds);
+    }
+    if (usage) {
+      usageMessage ??= builder.appendMessage({
+        id: uuid,
+        role: "assistant",
+        timestampMs,
+        agent: "claude",
+        model,
+      });
+      requestMessages.set(usage.key, usageMessage);
+      usageMessage.model = usage.model;
+      usageMessage.tokens = {
+        input: usage.input + usage.cacheCreate + usage.cacheRead,
+        output: usage.output,
+        cache_read: usage.cacheRead,
+        cache_create: usage.cacheCreate,
+      };
+      usageMessage.time_completed = timestampMs;
+      usageMessage.cost = estimateTokenCost(usage.model, usageMessage.tokens) ?? 0;
+      usageMessage.cost_source = usageMessage.cost > 0 ? "estimated" : undefined;
     }
   }
 
@@ -252,33 +280,6 @@ export class ClaudeRecordConverter {
       },
       time_created: timestampMs,
     };
-  }
-
-  private applyAssistantMetadata(
-    message: Message,
-    data: Record<string, unknown>,
-    msg: Record<string, unknown>,
-    countedUsageKeys: Set<string>,
-  ): void {
-    const model = msg["model"];
-    if (model && typeof model === "string" && !message.model) {
-      message.model = model;
-    }
-    const usage = extractClaudeUsage(data, msg);
-    if (usage && !message.tokens && !countedUsageKeys.has(usage.key)) {
-      countedUsageKeys.add(usage.key);
-      message.tokens = {
-        input: usage.input + usage.cacheCreate + usage.cacheRead,
-        output: usage.output,
-        cache_read: usage.cacheRead,
-        cache_create: usage.cacheCreate,
-      };
-      const cost = estimateTokenCost(message.model, message.tokens);
-      if (cost !== null) {
-        message.cost = cost;
-        message.cost_source = "estimated";
-      }
-    }
   }
 
   // --- User content normalization ---

@@ -3,7 +3,7 @@ import { join, basename, dirname } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import { SingleFileSessionSource, filteredSession, parsedSession, skippedSession } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
-import type { SessionHead, SessionDetail } from "../types/index.js";
+import type { Message, SessionHead, SessionDetail } from "../types/index.js";
 import { firstExisting, resolveHomePath } from "../discovery/paths.js";
 import { readJsonlFile, readJsonlFileLines } from "../utils/jsonl.js";
 import { basenameTitle, normalizeTitleText, resolveSessionTitle } from "../utils/title-fallback.js";
@@ -22,11 +22,12 @@ import {
   ClaudeRecordConverter,
   extractClaudeUsage,
   parseClaudeTimestampMs,
+  type ClaudeUsage,
 } from "./claudecode-record-converter.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 
-// v7: unified timestamp parsing changes head times for numeric timestamps.
-const HEAD_INDEX_VERSION = "claudecode-head-v7";
+// v8: request usage uses the final snapshot, shared by heads and message costs.
+const HEAD_INDEX_VERSION = "claudecode-head-v8";
 
 export function resolveClaudeCodeDataRoot(): string {
   return resolveHomePath("CLAUDE_CONFIG_DIR", ".claude");
@@ -241,14 +242,14 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     this.ensureChildIndex();
     const builder = new TranscriptBuilder();
     const assistantUuidToToolCalls = new Map<string, string[]>();
-    const countedUsageKeys = new Set<string>();
+    const requestMessages = new Map<string, Message>();
     for (const record of readJsonlFile(meta.sourcePath)) {
       try {
         CLAUDE_RECORD_CONVERTER.convertRecord(
           record,
           builder,
           assistantUuidToToolCalls,
-          countedUsageKeys,
+          requestMessages,
           this.childSessionIdByToolUseId,
         );
       } catch {
@@ -524,7 +525,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     let totalCacheCreateTokens = 0;
     let totalCost = 0;
     const modelUsageMap: Record<string, number> = {};
-    const countedUsageKeys = new Set<string>();
+    const usageByRequest = new Map<string, ClaudeUsage>();
     let messageTitle: string | null = null;
 
     for (const line of readJsonlFileLines(filePath)) {
@@ -580,32 +581,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
           }
           if (role === "assistant") {
             const usage = extractClaudeUsage(data, msg);
-            if (usage && !countedUsageKeys.has(usage.key)) {
-              countedUsageKeys.add(usage.key);
-              const inputTokens = usage.input;
-              const cacheRead = usage.cacheRead;
-              const cacheCreate = usage.cacheCreate;
-              const outputTokens = usage.output;
-
-              totalInputTokens += inputTokens + cacheRead + cacheCreate;
-              totalOutputTokens += outputTokens;
-              totalCacheReadTokens += cacheRead;
-              totalCacheCreateTokens += cacheCreate;
-
-              const m = asString(msg["model"]);
-              if (m?.trim()) {
-                const name = m.trim();
-                const msgTotal = inputTokens + cacheRead + cacheCreate + outputTokens;
-                modelUsageMap[name] = (modelUsageMap[name] ?? 0) + msgTotal;
-                const cost = estimateTokenCost(name, {
-                  input: inputTokens + cacheRead + cacheCreate,
-                  output: outputTokens,
-                  cache_read: cacheRead,
-                  cache_create: cacheCreate,
-                });
-                if (cost !== null) totalCost += cost;
-              }
-            }
+            if (usage) usageByRequest.set(usage.key, usage);
           }
         }
       } catch {
@@ -614,6 +590,23 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     }
 
     if (lineIndex === 0) return skippedSession("empty file");
+
+    for (const usage of usageByRequest.values()) {
+      const input = usage.input + usage.cacheRead + usage.cacheCreate;
+      totalInputTokens += input;
+      totalOutputTokens += usage.output;
+      totalCacheReadTokens += usage.cacheRead;
+      totalCacheCreateTokens += usage.cacheCreate;
+      if (!usage.model) continue;
+      modelUsageMap[usage.model] = (modelUsageMap[usage.model] ?? 0) + input + usage.output;
+      totalCost +=
+        estimateTokenCost(usage.model, {
+          input,
+          output: usage.output,
+          cache_read: usage.cacheRead,
+          cache_create: usage.cacheCreate,
+        }) ?? 0;
+    }
 
     const directory = cwd ?? projectDir;
     const directoryTitle = basenameTitle(directory) || basenameTitle(projectDir);

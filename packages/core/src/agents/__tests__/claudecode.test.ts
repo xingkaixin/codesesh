@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClaudeCodeAgent } from "../claudecode.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
+import { sessionDetailVersion } from "../../discovery/cache/detail-version.js";
 
 // Spies on statSync while delegating to the real implementation, so the
 // single-stat regression test can count per-file calls during a live scan.
@@ -72,6 +73,36 @@ afterEach(() => {
 });
 
 describe("ClaudeCodeAgent cache refresh", () => {
+  it("rebuilds heads and invalidates details from the first-usage parser", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-parser-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    mkdirSync(projectDir);
+    writeMinimalClaudeSession(join(projectDir, "session-1.jsonl"));
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
+    const sessions = agent.scan();
+    const meta = agent.snapshotSessionCacheMeta();
+    const oldMeta = meta["session-1"]!;
+    oldMeta.sourceFingerprint = String(oldMeta.sourceFingerprint).replace(
+      "claudecode-head-v8",
+      "claudecode-head-v7",
+    );
+    oldMeta.headIndexVersion = "claudecode-head-v7";
+    const oldDetailVersion = sessionDetailVersion(oldMeta);
+
+    const refreshed = agent.sessionSourceAccess.synchronize(
+      { sessions, meta },
+      { kind: "refresh" },
+    );
+
+    expect(refreshed.detectedSessionIds).toEqual(["session-1"]);
+    expect(refreshed.sourceOutcomes[0]?.status).toBe("parsed");
+    expect(sessionDetailVersion(refreshed.meta["session-1"])).not.toBe(oldDetailVersion);
+    expect(
+      agent.sessionSourceAccess.synchronize(refreshed, { kind: "refresh" }).detectedSessionIds,
+    ).toEqual([]);
+  });
+
   it("detects sessions-index changes via fingerprint comparison", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-cache-"));
     tempDirs.push(basePath);
@@ -386,7 +417,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
         sessionId: "session-1",
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "claudecode-head-v7",
+          "claudecode-head-v8",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           indexTime.getTime(),
@@ -773,6 +804,110 @@ describe("ClaudeCodeAgent cache refresh", () => {
       total_cost: 0.00062175,
     });
     expect(data.messages.filter((message: Message) => (message.cost ?? 0) > 0)).toHaveLength(1);
+  });
+
+  it.each(["Visible reasoning", ""])("uses final request usage with reasoning %j", (thinking) => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-final-usage-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    mkdirSync(projectDir);
+    const sessionId = "streamed";
+    const record = (uuid: string, output: number, content: unknown[], timestamp: string) => ({
+      type: "assistant",
+      uuid,
+      requestId: "request-1",
+      timestamp,
+      message: {
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 10,
+          cache_creation_input_tokens: 5,
+          output_tokens: output,
+        },
+        content,
+      },
+    });
+    writeFileSync(
+      join(projectDir, `${sessionId}.jsonl`),
+      [
+        record("thinking", 3, [{ type: "thinking", thinking }], "2026-04-20T10:00:00Z"),
+        record(
+          "tool",
+          20,
+          [{ type: "tool_use", id: "read-1", name: "Read", input: {} }],
+          "2026-04-20T10:00:01Z",
+        ),
+        record("text", 30, [{ type: "text", text: "Done" }], "2026-04-20T10:00:02Z"),
+        record("final", 40, [], "2026-04-20T10:00:03Z"),
+        record("repeated", 40, [], "2026-04-20T10:00:03Z"),
+      ]
+        .map((value) => JSON.stringify(value))
+        .join("\n"),
+    );
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
+    const [head] = agent.scan();
+    const detail = agent.getSessionData(sessionId);
+
+    const expected = {
+      total_input_tokens: 115,
+      total_output_tokens: 40,
+      total_cache_read_tokens: 10,
+      total_cache_create_tokens: 5,
+      total_cost: 0.00092175,
+    };
+    expect(head?.stats).toMatchObject(expected);
+    expect(detail.stats).toMatchObject(expected);
+    expect(head?.model_usage).toEqual({ "claude-sonnet-4-5-20250929": 155 });
+    const charged = detail.messages.filter((message) => (message.cost ?? 0) > 0);
+    expect(charged).toHaveLength(1);
+    expect(charged[0]?.time_completed).toBe(Date.parse("2026-04-20T10:00:03Z"));
+  });
+
+  it("keeps consecutive requests and content-free usage attributed to their own models", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-requests-"));
+    tempDirs.push(basePath);
+    const projectDir = join(basePath, "project");
+    mkdirSync(projectDir);
+    const models = [
+      "claude-sonnet-4-5-20250929",
+      "claude-sonnet-4-5-20250929",
+      "claude-opus-4-6",
+      "claude-opus-4-6",
+    ];
+    writeFileSync(
+      join(projectDir, "requests.jsonl"),
+      models
+        .map((model, index) =>
+          JSON.stringify({
+            type: "assistant",
+            uuid: `message-${index}`,
+            requestId: `request-${index}`,
+            timestamp: "2026-04-20T10:00:00Z",
+            message: {
+              role: "assistant",
+              model,
+              usage: { input_tokens: 100, output_tokens: 20 },
+              content:
+                index === 3
+                  ? [{ type: "thinking", thinking: "" }]
+                  : [{ type: "text", text: "Response" }],
+            },
+          }),
+        )
+        .join("\n"),
+    );
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
+    const [head] = agent.scan();
+    const detail = agent.getSessionData("requests");
+
+    expect(detail.messages.map((message) => message.model)).toEqual(models);
+    expect(detail.messages.map((message) => message.cost)).toEqual([0.0006, 0.0006, 0.001, 0.001]);
+    expect(detail.messages[3]?.parts).toEqual([]);
+    expect(detail.stats.total_cost).toBeCloseTo(head!.stats.total_cost, 10);
+    expect(detail.stats.total_input_tokens).toBe(400);
+    expect(detail.stats.total_output_tokens).toBe(80);
   });
 
   it("filters internal-only sessions", () => {
