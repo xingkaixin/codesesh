@@ -179,17 +179,16 @@ async function refreshLiveSnapshotAggregates(
   ]);
 }
 
-async function refreshLiveProjects(
+async function refreshProjectQueries(
   queryClient: QueryClient,
   window: AppConfig["window"],
 ): Promise<void> {
-  const options = projectsOptions(window);
-  await queryClient.invalidateQueries({
-    queryKey: options.queryKey,
-    exact: true,
-    refetchType: "none",
-  });
-  await queryClient.fetchQuery(options);
+  await queryClient.invalidateQueries(
+    { queryKey: queryKeys.projectWindow(window), refetchType: "active" },
+    { cancelRefetch: false },
+  );
+  const error = queryClient.getQueryState(queryKeys.projectPage(window))?.error;
+  if (error) throw error;
 }
 
 function liveAggregateRefreshDelay(queryClient: QueryClient, window: AppConfig["window"]): number {
@@ -269,16 +268,15 @@ export function useSessionStore(window: AppConfig["window"] | null) {
 
   const reload = useCallback(async (): Promise<void> => {
     if (!window) return;
-    const [agentsResult, projectionResult, dashboardResult, projectsResult] = await Promise.all([
+    const [agentsResult, projectionResult, dashboardResult] = await Promise.all([
       refetchAgents({ cancelRefetch: true }),
       refetchProjection({ cancelRefetch: true }),
       refetchDashboard({ cancelRefetch: true }),
-      refetchProjects({ cancelRefetch: true }),
+      refreshProjectQueries(queryClient, window),
     ]);
-    const failure =
-      agentsResult.error ?? projectionResult.error ?? dashboardResult.error ?? projectsResult.error;
+    const failure = agentsResult.error ?? projectionResult.error ?? dashboardResult.error;
     if (failure) throw failure;
-  }, [refetchAgents, refetchDashboard, refetchProjection, refetchProjects, window]);
+  }, [queryClient, refetchAgents, refetchDashboard, refetchProjection, window]);
 
   const applyLiveEvent = useCallback(
     async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
@@ -331,7 +329,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
         liveAggregateRefreshTimerRef.current = null;
         void Promise.all([
           refreshLiveSnapshotAggregates(queryClient, activeWindow),
-          refreshLiveProjects(queryClient, activeWindow),
+          refreshProjectQueries(queryClient, activeWindow),
         ])
           .then(() => {
             liveAggregateWindowRef.current = activeWindow;

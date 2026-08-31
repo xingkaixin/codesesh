@@ -26,10 +26,11 @@ export const queryKeys = {
   agentCatalogs: ["agent-catalog"] as const,
   agentCatalog: (window: TimeWindow) => ["agent-catalog", normalizeWindow(window)] as const,
   projects: ["projects"] as const,
+  projectWindow: (window: TimeWindow) => ["projects", normalizeWindow(window)] as const,
   projectPage: (window: TimeWindow, cursor?: string) =>
-    ["projects", "page", normalizeWindow(window), cursor ?? null] as const,
+    ["projects", normalizeWindow(window), "page", cursor ?? null] as const,
   projectDetail: (window: TimeWindow, project: ProjectIdentityRef) =>
-    ["projects", "detail", normalizeWindow(window), project] as const,
+    ["projects", normalizeWindow(window), "detail", project] as const,
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
   searches: ["search"] as const,
   sessionDetails: ["session-detail"] as const,
