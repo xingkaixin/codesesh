@@ -1,9 +1,8 @@
 /**
  * Binds `filter-state.ts` to React state for one session.
  *
- * The filter set is rebuilt on `sessionKey` change only. Keying it on the toc
- * would reset it on every live-sync rebuild (`toc.filterIds` is a fresh Set
- * each time), which silently threw away the reader's filters.
+ * User exclusions reset only when the session changes. Live toc updates do
+ * not change those decisions and provide the current targets for bulk actions.
  */
 import { useMemo, useState } from "react";
 
@@ -34,7 +33,7 @@ export function useSessionFilters(
   toc: SessionDetailToc,
   sessionKey: string,
 ): { state: SessionFilterState; actions: SessionFilterActions } {
-  const [state, setState] = useState(() => createFilterState(toc));
+  const [state, setState] = useState(createFilterState);
   const [renderedSessionKey, setRenderedSessionKey] = useState(sessionKey);
 
   // React's "adjust state during render" pattern: cheaper and flash-free
@@ -42,7 +41,7 @@ export function useSessionFilters(
   // the previous session's filter set.
   if (renderedSessionKey !== sessionKey) {
     setRenderedSessionKey(sessionKey);
-    setState(createFilterState(toc));
+    setState(createFilterState());
   }
 
   const actions = useMemo<SessionFilterActions>(
@@ -53,7 +52,7 @@ export function useSessionFilters(
       selectWriteToolsOnly: () => setState((s) => selectWriteToolsOnly(s, toc)),
       setToolQuery: (query) => setState((s) => setToolQuery(s, query)),
       toggleToolsExpanded: () => setState((s) => toggleToolsExpanded(s)),
-      resetAll: () => setState((s) => resetAll(s, toc)),
+      resetAll: () => setState(resetAll),
     }),
     [toc],
   );

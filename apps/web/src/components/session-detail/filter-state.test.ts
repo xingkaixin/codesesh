@@ -5,6 +5,7 @@ import {
   deriveActiveChips,
   deriveHiddenCount,
   deriveHiddenTools,
+  deriveSelectedFilters,
   deriveToolsParentState,
   deriveVisibleTools,
   resetAll,
@@ -46,14 +47,14 @@ function createToc(): SessionDetailToc {
 const toc = createToc();
 
 function selectedIds(state: SessionFilterState) {
-  return [...state.selected].toSorted();
+  return [...deriveSelectedFilters(toc, state.excluded)].toSorted();
 }
 
 describe("createFilterState", () => {
   it("starts with every filter on, no query and the tool group open", () => {
-    const state = createFilterState(toc);
+    const state = createFilterState();
     expect(selectedIds(state)).toEqual([...toc.filterIds].toSorted());
-    expect(state.selected.has("tools_all")).toBe(false);
+    expect(deriveSelectedFilters(toc, state.excluded).has("tools_all")).toBe(false);
     expect(state.toolQuery).toBe("");
     expect(state.toolsExpanded).toBe(true);
   });
@@ -61,27 +62,27 @@ describe("createFilterState", () => {
 
 describe("reducers", () => {
   it("toggles a content kind off and back on without touching tools", () => {
-    const off = toggleContentKind(createFilterState(toc), "thinking");
-    expect(off.selected.has("thinking")).toBe(false);
+    const off = toggleContentKind(createFilterState(), "thinking");
+    expect(selectedIds(off)).not.toContain("thinking");
     expect(countSelectedTools(toc, off)).toBe(TOOLS.length);
-    expect(toggleContentKind(off, "thinking").selected.has("thinking")).toBe(true);
+    expect(selectedIds(toggleContentKind(off, "thinking"))).toContain("thinking");
   });
 
   it("toggles a single tool", () => {
-    const off = toggleTool(createFilterState(toc), "tool:grep");
-    expect(off.selected.has("tool:grep")).toBe(false);
-    expect(toggleTool(off, "tool:grep").selected.has("tool:grep")).toBe(true);
+    const off = toggleTool(createFilterState(), "tool:grep");
+    expect(selectedIds(off)).not.toContain("tool:grep");
+    expect(selectedIds(toggleTool(off, "tool:grep"))).toContain("tool:grep");
   });
 
   it("scopes select-all / clear-all to the queried tool subset", () => {
-    const none = setAllTools(createFilterState(toc), toc, false);
+    const none = setAllTools(createFilterState(), toc, false);
     expect(countSelectedTools(toc, none)).toBe(0);
 
     const queried = setToolQuery(none, "re");
     expect(deriveVisibleTools(toc, queried).map((tool) => tool.label)).toEqual(["Grep", "Read"]);
 
     const some = setAllTools(queried, toc, true);
-    expect([...some.selected].filter((id) => id.startsWith("tool:")).toSorted()).toEqual([
+    expect(selectedIds(some).filter((id) => id.startsWith("tool:"))).toEqual([
       "tool:grep",
       "tool:read",
     ]);
@@ -91,34 +92,46 @@ describe("reducers", () => {
   });
 
   it("applies select-all to every tool when the query is empty", () => {
-    const none = setAllTools(createFilterState(toc), toc, false);
+    const none = setAllTools(createFilterState(), toc, false);
     expect(countSelectedTools(toc, setAllTools(none, toc, true))).toBe(TOOLS.length);
   });
 
   it("selects exactly the write tools and leaves content kinds alone", () => {
-    const state = selectWriteToolsOnly(toggleContentKind(createFilterState(toc), "user"), toc);
-    expect([...state.selected].filter((id) => id.startsWith("tool:")).toSorted()).toEqual([
+    const state = selectWriteToolsOnly(toggleContentKind(createFilterState(), "user"), toc);
+    expect(selectedIds(state).filter((id) => id.startsWith("tool:"))).toEqual([
       "tool:edit",
       "tool:write",
     ]);
-    expect(state.selected.has("agent_message")).toBe(true);
-    expect(state.selected.has("user")).toBe(false);
+    expect(selectedIds(state)).toContain("agent_message");
+    expect(selectedIds(state)).not.toContain("user");
+  });
+
+  it.each([
+    { action: "clear all", apply: (state: SessionFilterState) => setAllTools(state, toc, false) },
+    {
+      action: "writes only",
+      apply: (state: SessionFilterState) => selectWriteToolsOnly(state, toc),
+    },
+  ])("keeps $action limited to tools present when invoked", ({ apply }) => {
+    const state = apply(createFilterState());
+    const updatedToc = { ...toc, filterIds: new Set([...toc.filterIds, "tool:search"]) };
+    const selected = deriveSelectedFilters(updatedToc, state.excluded);
+
+    expect(selected.has("tool:read")).toBe(false);
+    expect(selected.has("tool:search")).toBe(true);
   });
 
   it("stores the tool query and the group collapse flag", () => {
-    const queried = setToolQuery(createFilterState(toc), "Ba");
+    const queried = setToolQuery(createFilterState(), "Ba");
     expect(queried.toolQuery).toBe("Ba");
     expect(toggleToolsExpanded(queried).toolsExpanded).toBe(false);
   });
 
   it("resets every filter and the query while keeping the group open state", () => {
     const messy = toggleToolsExpanded(
-      setToolQuery(
-        selectWriteToolsOnly(toggleContentKind(createFilterState(toc), "plan"), toc),
-        "x",
-      ),
+      setToolQuery(selectWriteToolsOnly(toggleContentKind(createFilterState(), "plan"), toc), "x"),
     );
-    const reset = resetAll(messy, toc);
+    const reset = resetAll(messy);
     expect(selectedIds(reset)).toEqual([...toc.filterIds].toSorted());
     expect(reset.toolQuery).toBe("");
     expect(reset.toolsExpanded).toBe(false);
@@ -127,7 +140,7 @@ describe("reducers", () => {
 
 describe("deriveToolsParentState", () => {
   it("covers the tri-state truth table", () => {
-    const all = createFilterState(toc);
+    const all = createFilterState();
     expect(deriveToolsParentState(toc, all)).toBe("all");
     expect(deriveToolsParentState(toc, toggleTool(all, "tool:grep"))).toBe("partial");
     expect(deriveToolsParentState(toc, setAllTools(all, toc, false))).toBe("none");
@@ -135,13 +148,13 @@ describe("deriveToolsParentState", () => {
 
   it("reports none when the session used no tools", () => {
     const toolless: SessionDetailToc = { ...toc, tools: [], maxToolCount: 0 };
-    expect(deriveToolsParentState(toolless, createFilterState(toolless))).toBe("none");
+    expect(deriveToolsParentState(toolless, createFilterState())).toBe("none");
   });
 });
 
 describe("deriveVisibleTools", () => {
   it("matches case-insensitively and returns every tool for a blank query", () => {
-    const state = createFilterState(toc);
+    const state = createFilterState();
     expect(deriveVisibleTools(toc, state)).toBe(toc.tools);
     expect(deriveVisibleTools(toc, setToolQuery(state, "  ")).length).toBe(TOOLS.length);
     expect(deriveVisibleTools(toc, setToolQuery(state, "wRi")).map((t) => t.label)).toEqual([
@@ -152,7 +165,7 @@ describe("deriveVisibleTools", () => {
 
 describe("deriveActiveChips", () => {
   it("is empty while every tool is on, and lists the survivors otherwise", () => {
-    const all = createFilterState(toc);
+    const all = createFilterState();
     expect(deriveActiveChips(toc, all)).toEqual([]);
 
     const withoutGrep = toggleTool(all, "tool:grep");
@@ -170,7 +183,7 @@ describe("deriveActiveChips", () => {
 
 describe("hidden derivations", () => {
   it("lists the unselected tools with their counts", () => {
-    const state = toggleTool(toggleTool(createFilterState(toc), "tool:grep"), "tool:bash");
+    const state = toggleTool(toggleTool(createFilterState(), "tool:grep"), "tool:bash");
     expect(deriveHiddenTools(toc, state)).toEqual([
       { label: "Bash", count: 4 },
       { label: "Grep", count: 9 },
@@ -178,7 +191,7 @@ describe("hidden derivations", () => {
   });
 
   it("counts hidden units across content kinds and tools", () => {
-    const all = createFilterState(toc);
+    const all = createFilterState();
     expect(deriveHiddenCount(toc, all)).toBe(0);
     expect(deriveHiddenCount(toc, toggleContentKind(all, "thinking"))).toBe(toc.counts.thinking);
     expect(deriveHiddenCount(toc, toggleTool(all, "tool:grep"))).toBe(9);

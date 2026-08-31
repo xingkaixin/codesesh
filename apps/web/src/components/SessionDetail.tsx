@@ -13,7 +13,11 @@ import {
 import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
 import { SessionFilterAside } from "./session-detail/filter-panel";
 import { SessionFilterChips } from "./session-detail/filter-chips";
-import { deriveHiddenCount, deriveHiddenTools } from "./session-detail/filter-state";
+import {
+  deriveHiddenCount,
+  deriveHiddenTools,
+  deriveSelectedFilters,
+} from "./session-detail/filter-state";
 import { HiddenToolsFooter } from "./session-detail/hidden-tools-footer";
 import { useSessionFilters } from "./session-detail/use-session-filters";
 import {
@@ -138,9 +142,9 @@ export function SessionDetail({
   const selection = useMemo(
     () =>
       measureSessionDetailWork("SessionDetail:selectDisplayModel", () =>
-        displayModel.select(filterState.selected),
+        displayModel.select(deriveSelectedFilters(toc, filterState.excluded)),
       ),
-    [displayModel, filterState.selected],
+    [displayModel, toc, filterState.excluded],
   );
   const { messages: filteredMessages, timelineEntries, visibleUnitCount } = selection;
   const childSessionById = useMemo(

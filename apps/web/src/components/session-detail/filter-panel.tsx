@@ -70,7 +70,7 @@ export function SessionFilterPanel({
               <TriStateCheckbox
                 size={15}
                 label={CONTENT_LABEL[id]}
-                state={state.selected.has(id) ? "checked" : "unchecked"}
+                state={state.excluded.has(id) ? "unchecked" : "checked"}
                 onToggle={() => actions.toggleContentKind(id)}
               />
               <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--console-text)]">
@@ -151,7 +151,7 @@ function ToolGroup({
               <TriStateCheckbox
                 size={14}
                 label={tool.label}
-                state={state.selected.has(tool.id) ? "checked" : "unchecked"}
+                state={state.excluded.has(tool.id) ? "unchecked" : "checked"}
                 onToggle={() => actions.toggleTool(tool.id)}
               />
               <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
