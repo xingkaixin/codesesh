@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import { createElement, createRef, Profiler, useImperativeHandle, type ReactNode } from "react";
-import { flushSync } from "react-dom";
 import type { ScanStatusEvent } from "../lib/api";
 import * as api from "../lib/api";
 import { ScanStatusProvider, useScanStatus, useScanStatusPublisher } from "./useScanStatus";
@@ -144,7 +143,7 @@ describe("useScanStatus", () => {
     const publish = publisherRef.current?.publish;
     if (!publish) throw new Error("Scan status publisher is not mounted");
     for (let index = 1; index <= 10_000; index += 1) {
-      flushSync(() => publish({ ...sample, updatedAt: sample.updatedAt + index }));
+      act(() => publish({ ...sample, updatedAt: sample.updatedAt + index }));
     }
 
     expect(statusRender).toHaveBeenCalledTimes(10_001);

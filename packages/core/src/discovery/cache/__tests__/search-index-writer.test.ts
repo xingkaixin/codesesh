@@ -8,6 +8,7 @@ import {
   readPendingSearchIndexMaintenance,
   syncSessionSearchIndex,
   syncSessionSearchIndexChanges,
+  type SearchIndexSyncOptions,
 } from "../search-index-writer.js";
 import { setSchemaEnsuredPath } from "../db.js";
 import { commitDurableSessionPublication } from "../publication.js";
@@ -465,6 +466,129 @@ describe("search index writer", () => {
       syncSessionSearchIndexChanges("codex", [], ["one", "one"], () => makeSessionData("one")),
     ).toMatchObject({ deleted: 1, indexed: 0 });
     expect(searchSessions("visible")).toEqual([]);
+  });
+
+  it.each([null, "codex", "claudecode"])(
+    "only automatically rebuilds an empty global index (existing agent: %s)",
+    (existingAgent) => {
+      if (existingAgent) {
+        const existing = makeSessionHead("existing", {
+          reference: { agentName: existingAgent, sessionId: "existing" },
+        });
+        syncSessionSearchIndex(existingAgent, [existing], () => ({
+          ...makeSessionData("existing", "preserved content"),
+          ...existing,
+        }));
+      }
+      const sessions = Array.from({ length: 100 }, (_, index) =>
+        makeSessionHead(`initial-${index}`),
+      );
+
+      const publication = commitDurableSessionPublication(
+        {
+          kind: "snapshot",
+          agentName: "codex",
+          sessions,
+          meta: {},
+          completeness: "partial",
+          removedSessionIds: [],
+        },
+        (sessionId) => makeSessionData(sessionId, `published ${sessionId}`),
+      );
+
+      expect(publication).toMatchObject({
+        status: "committed",
+        searchIndex: {
+          mode: existingAgent ? "incremental" : "bulk",
+          changed: 100,
+          indexed: 100,
+          rebuildDurationMs: existingAgent ? undefined : expect.any(Number),
+        },
+      });
+      expect(searchSessions("published initial-42")).toHaveLength(1);
+      if (existingAgent) expect(searchSessions("preserved content")).toHaveLength(1);
+    },
+  );
+
+  it("incrementally publishes large updates and deletions without retaining old content", () => {
+    const sessions = Array.from({ length: 101 }, (_, index) => makeSessionHead(`updated-${index}`));
+    syncSessionSearchIndex("codex", sessions, (sessionId) =>
+      makeSessionData(sessionId, `outdated ${sessionId}`),
+    );
+    const changes = sessions.slice(0, 100).map((session, sortIndex) => ({
+      session: { ...session, title: `Published ${sortIndex}` },
+      sortIndex,
+    }));
+
+    const publication = commitDurableSessionPublication(
+      {
+        kind: "changes",
+        agentName: "codex",
+        changes,
+        removedSessionIds: ["updated-100"],
+        meta: {},
+      },
+      (sessionId) => makeSessionData(sessionId, `current ${sessionId}`),
+    );
+
+    expect(publication).toMatchObject({
+      status: "committed",
+      searchIndex: {
+        mode: "incremental",
+        changed: 100,
+        deleted: 1,
+        indexed: 100,
+        rebuildDurationMs: undefined,
+      },
+    });
+    expect(searchSessions("outdated")).toEqual([]);
+    expect(searchSessions("current updated-42")).toHaveLength(1);
+    expect(searchSessions("updated-100")).toEqual([]);
+
+    expect(
+      syncSessionSearchIndexChanges(
+        "codex",
+        [],
+        changes.map(({ session }) => session.reference.sessionId),
+        () => {
+          throw new Error("deletions must not load session details");
+        },
+      ),
+    ).toMatchObject({
+      mode: "incremental",
+      deleted: 100,
+      indexed: 0,
+      rebuildDurationMs: undefined,
+    });
+    expect(searchSessions("current")).toEqual([]);
+  });
+
+  it.each<{ options: SearchIndexSyncOptions; mode: "bulk" | "incremental" }>([
+    { options: { isBulk: true, bulkThreshold: 0 }, mode: "bulk" },
+    { options: { isBulk: false, bulkThreshold: 1 }, mode: "incremental" },
+    { options: { bulkThreshold: 1 }, mode: "bulk" },
+    { options: { bulkThreshold: 2 }, mode: "incremental" },
+    { options: { bulkThreshold: 0 }, mode: "incremental" },
+  ])("preserves explicit bulk options: $options", ({ options, mode }) => {
+    const session = makeSessionHead("one");
+    syncSessionSearchIndex("codex", [session], () => makeSessionData("one", "outdated content"));
+    const updated = { ...session, title: "Updated head" };
+
+    const result = syncSessionSearchIndexChanges(
+      "codex",
+      [{ session: updated, sortIndex: 0 }],
+      [],
+      () => makeSessionData("one", "current content"),
+      options,
+    );
+
+    expect(result).toMatchObject({
+      mode,
+      indexed: 1,
+      rebuildDurationMs: mode === "bulk" ? expect.any(Number) : undefined,
+    });
+    expect(searchSessions("outdated")).toEqual([]);
+    expect(searchSessions("current")).toHaveLength(1);
   });
 
   it("plans direct and durable changes with the same rules", () => {

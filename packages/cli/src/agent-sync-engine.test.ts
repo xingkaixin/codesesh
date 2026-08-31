@@ -636,7 +636,7 @@ describe("AgentSyncEngine", () => {
     expect(checkForChanges).toHaveBeenCalledTimes(1);
   });
 
-  it("marks search index work as bulk after many pending signals", async () => {
+  it("does not force a search index rebuild after many pending signals", async () => {
     vi.useFakeTimers();
     const previous = makeSession("session", "before");
     const updated = makeSession("session", "after");
@@ -658,11 +658,12 @@ describe("AgentSyncEngine", () => {
       [
         expect.objectContaining({
           kind: "changes",
-          searchIndexOptions: { isBulk: true },
         }),
       ],
       expect.any(Function),
     );
+    const jobs = searchIndex.enqueue.mock.calls[0]?.[1] as Array<Record<string, unknown>>;
+    expect(jobs[0]).not.toHaveProperty("searchIndexOptions");
     await engine.shutdown();
   });
 
