@@ -183,4 +183,89 @@ describe("useProjectPagination", () => {
     expect(result.current.pageNumber).toBe(2);
     expect(requestCursors).toEqual(["old-cursor", "old-cursor"]);
   });
+
+  it("does not let an older window's recovery reset the current window's page", async () => {
+    const firstWindow = { from: 1, to: 2 };
+    const secondWindow = { from: 3, to: 4 };
+    const secondWindowFirstPage = { ...firstPage, nextCursor: "second-window-cursor" };
+    const secondWindowSecondPage = {
+      ...firstPage,
+      projects: [{ ...project, identityKey: "/second-window-page-two", displayName: "second" }],
+      nextCursor: undefined,
+    };
+    let finishRecovery!: (response: Response) => void;
+    const recoveryResponse = new Promise<Response>((resolve) => {
+      finishRecovery = resolve;
+    });
+    let expired = false;
+    let recoveryStarted = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const params = new URL(url, "http://localhost").searchParams;
+        const cursor = params.get("cursor");
+        if (cursor === "old-cursor") {
+          return Promise.resolve(
+            expired
+              ? jsonResponse({ error: "snapshot changed" }, 409)
+              : jsonResponse({ ...firstPage, nextCursor: undefined }),
+          );
+        }
+        if (cursor === "second-window-cursor") {
+          return Promise.resolve(jsonResponse(secondWindowSecondPage));
+        }
+        if (params.get("from") === new Date(firstWindow.from).toISOString()) {
+          recoveryStarted = true;
+          return recoveryResponse;
+        }
+        return Promise.resolve(jsonResponse(secondWindowFirstPage));
+      }),
+    );
+    const { client, Wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ window }) => {
+        useQuery({
+          queryKey: queryKeys.projectPage(firstWindow),
+          queryFn: ({ signal }) => fetchProjects(firstWindow, { signal }),
+          initialData: firstPage,
+          staleTime: Infinity,
+        });
+        return useProjectPagination(
+          window,
+          window === firstWindow ? firstPage : secondWindowFirstPage,
+        );
+      },
+      { initialProps: { window: firstWindow }, wrapper: Wrapper },
+    );
+
+    act(() => result.current.next());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.pageNumber).toBe(2);
+    expired = true;
+    await act(() =>
+      client.invalidateQueries({
+        queryKey: queryKeys.projectPage(firstWindow, "old-cursor"),
+        exact: true,
+      }),
+    );
+    await waitFor(() => expect(recoveryStarted).toBe(true));
+
+    rerender({ window: secondWindow });
+    act(() => result.current.next());
+    await waitFor(() =>
+      expect(result.current.page?.projects).toEqual(secondWindowSecondPage.projects),
+    );
+    expect(result.current.pageNumber).toBe(2);
+
+    await act(async () =>
+      finishRecovery(jsonResponse({ ...firstPage, nextCursor: "fresh-cursor" })),
+    );
+    await waitFor(() =>
+      expect(
+        client.getQueryData<ApiProjectPage>(queryKeys.projectPage(firstWindow))?.nextCursor,
+      ).toBe("fresh-cursor"),
+    );
+    expect(result.current.pageNumber).toBe(2);
+    expect(result.current.page?.projects).toEqual(secondWindowSecondPage.projects);
+  });
 });

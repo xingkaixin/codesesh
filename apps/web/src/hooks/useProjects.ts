@@ -45,8 +45,12 @@ export function useProjectPagination(
         { queryKey: queryKeys.projectPage(window ?? {}), exact: true },
         { cancelRefetch: true },
       )
-      .then(() => setNavigation({ key, cursors: [] }));
-  }, [key, queryClient, staleCursor, window]);
+      .then(() =>
+        setNavigation((current) =>
+          current.key === key && current.cursors.at(-1) === cursor ? { key, cursors: [] } : current,
+        ),
+      );
+  }, [cursor, key, queryClient, staleCursor, window]);
 
   const next = useCallback(() => {
     const nextCursor = query.data?.nextCursor;
