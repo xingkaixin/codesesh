@@ -26,8 +26,7 @@ import {
 } from "./claudecode-record-converter.js";
 import { TranscriptBuilder } from "./transcript-builder.js";
 
-// v8: request usage uses the final snapshot, shared by heads and message costs.
-const HEAD_INDEX_VERSION = "claudecode-head-v8";
+const HEAD_INDEX_VERSION = "claudecode-head-v9";
 
 export function resolveClaudeCodeDataRoot(): string {
   return resolveHomePath("CLAUDE_CONFIG_DIR", ".claude");
@@ -124,7 +123,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     const allSources = this.walkFiles(projectDirs, (entry) => entry.name.endsWith(".jsonl"), {
       recursive: true,
     });
-    this.indexChildContexts(allSources, projectDirs);
+    this.indexChildContexts(allSources);
     const indexedSources = allSources.flatMap((source) => {
       const child = this.childContextsBySource.get(source.file);
       if (!child && !projectDirSet.has(dirname(source.file))) return [];
@@ -142,6 +141,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
 
     if (options?.from != null || options?.to != null) {
       type IndexedSource = (typeof indexedSources)[number];
+      const knownSessionIds = new Set(indexedSources.map(({ sessionId }) => sessionId));
       const childrenByParent = new Map<string, IndexedSource[]>();
       for (const indexed of indexedSources) {
         const parentId = indexed.child?.parentSessionId;
@@ -164,7 +164,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
         const indexed = windowSelectedById.get(sessionId);
         if (!indexed) return false;
         const parentId = indexed.child?.parentSessionId;
-        if (!parentId) {
+        if (!parentId || !knownSessionIds.has(parentId)) {
           acceptedIds.add(sessionId);
           return true;
         }
@@ -184,7 +184,9 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
 
       if (options?.includeRelatedSessions !== false) {
         const pending = [...connectedSelected.values()]
-          .filter(({ child }) => !child?.parentSessionId)
+          .filter(
+            ({ child }) => !child?.parentSessionId || !knownSessionIds.has(child.parentSessionId),
+          )
           .map(({ sessionId }) => sessionId);
         while (pending.length > 0) {
           const parentId = pending.pop()!;
@@ -321,42 +323,19 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
       this.walkFiles(projectDirs, (entry) => entry.name.endsWith(".jsonl"), {
         recursive: true,
       }),
-      projectDirs,
     );
   }
 
-  private indexChildContexts(
-    sources: readonly SessionSourceFile[],
-    projectDirs: readonly string[],
-  ): void {
+  private indexChildContexts(sources: readonly SessionSourceFile[]): void {
     this.childContextsBySource.clear();
     this.childSessionIdByToolUseId.clear();
-    const projectDirSet = new Set(projectDirs);
-    const contexts = new Map<string, ClaudeChildContext>();
-    const knownSessionIds = new Set<string>();
 
     for (const source of sources) {
       const child = this.readChildContext(source.file);
-      if (!child) {
-        if (projectDirSet.has(dirname(source.file))) {
-          knownSessionIds.add(basename(source.file, ".jsonl"));
-        }
-        continue;
-      }
-      contexts.set(source.file, child);
-      knownSessionIds.add(child.sessionId);
-    }
-
-    for (const [sourcePath, child] of contexts) {
-      const parentSessionId =
-        child.parentSessionId && knownSessionIds.has(child.parentSessionId)
-          ? child.parentSessionId
-          : null;
-      const normalized =
-        parentSessionId === child.parentSessionId ? child : { ...child, parentSessionId };
-      this.childContextsBySource.set(sourcePath, normalized);
+      if (!child) continue;
+      this.childContextsBySource.set(source.file, child);
       if (child.toolUseId) {
-        this.childSessionIdByToolUseId.set(child.toolUseId, normalized.sessionId);
+        this.childSessionIdByToolUseId.set(child.toolUseId, child.sessionId);
       }
     }
 
@@ -402,11 +381,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     if (!sessionId) return null;
 
     const parentAgentId = asString(metadata?.["parentAgentId"])?.trim();
-    const candidateParentId = parentAgentId || basename(parentDir) || null;
-    const parentSessionId =
-      candidateParentId && this.hasChildParent(sourcePath, projectDir, candidateParentId)
-        ? candidateParentId
-        : null;
+    const parentSessionId = parentAgentId || basename(parentDir) || null;
     const name = asString(metadata?.["name"])?.trim();
     const description = asString(metadata?.["description"])?.trim();
 
@@ -420,15 +395,6 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
     };
     this.childContextCache.set(sourcePath, { metaMtimeMs, context });
     return context;
-  }
-
-  private hasChildParent(sourcePath: string, projectDir: string, parentSessionId: string): boolean {
-    const subagentsDir = dirname(sourcePath);
-    return [
-      join(projectDir, parentSessionId + ".jsonl"),
-      join(subagentsDir, "agent-" + parentSessionId + ".jsonl"),
-      join(subagentsDir, parentSessionId + ".jsonl"),
-    ].some((path) => existsSync(path));
   }
 
   protected createFileSessionMeta(head: SessionHead, source: SessionSourceFile): SessionMeta {
