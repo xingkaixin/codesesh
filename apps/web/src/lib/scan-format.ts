@@ -54,7 +54,11 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
     const pending = status.backfill.pendingAgents.length;
     const progress = status.backfill.progress;
     const progressLabel =
-      progress?.total && progress.processed != null
+      (progress?.phase == null ||
+        progress.phase === "scanning" ||
+        progress.phase === "finalizing") &&
+      progress?.total &&
+      progress.processed != null
         ? ` · ${progress.processed}/${progress.total}`
         : "";
     const stageLabel =
@@ -88,7 +92,9 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
     const current = status.scanningAgents[0];
     const currentStatus = current ? status.agentStatuses[current] : null;
     const itemProgress =
-      currentStatus?.total && currentStatus.processed != null
+      (currentStatus?.status === "scanning" || currentStatus?.status === "finalizing") &&
+      currentStatus.total &&
+      currentStatus.processed != null
         ? ` · ${currentStatus.processed}/${currentStatus.total}`
         : "";
     const agentProgress =
