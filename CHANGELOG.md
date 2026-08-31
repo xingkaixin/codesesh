@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.0.5] - 2026-08-31
+
+This release adds copying sessions as Markdown from action menus and Umami analytics on the landing page, avoids full search-index rebuilds during refresh, loads cold session details in background workers, correlates and protects local diagnostic logs, and improves live session and project state consistency across reloads.
+
+### Features
+
+- Added copying sessions as formatted Markdown from the session actions menu and sidebar. (#547)
+- Added Umami analytics integration to the product landing page. (#546)
+
+### Performance
+
+- Incremental scan refreshes now update only changed documents rather than rebuilding the full text search index, keeping publication progress counts accurate. (#566)
+- Moved cold session detail loading into dedicated background workers to avoid blocking the main thread. (#540)
+- Reused session lookups within the search index maintenance scheduler, removing duplicate queries. (#544)
+
+### Diagnostics & Logging
+
+- Hardened local diagnostic logging with bounded memory and disk allocations, process exit flushing, request correlation, and worker context retention with full log draining. (#557)
+
+### Bug Fixes
+
+- Preserved parent session references for Claude Code child sessions. (#565)
+- Coordinated live project queries during concurrent updates and bounded recovery to the active time window. (#564)
+- Read cached session details from a single snapshot to prevent inconsistent concurrent reads. (#563)
+- Preserved visibility for newly created session content under active filter changes. (#562)
+- Preserved instance query scopes across search, session filtering, and file activity queries. (#561)
+- Preserved pricing snapshot identity across refresh generations. (#560)
+- Reconciled final Claude Code request usage and tokens even when no visible content was emitted. (#559)
+- Published refresh state only after persistence succeeds, preventing live status from diverging from storage. (#548)
+- Aligned calendar day range semantics and boundary calculations across the CLI and Web interface. (#549)
+- Preserved live session and project updates during reloads and initial fetch phases. (#541, #550)
+- Surfaced incomplete session load states explicitly in the Web UI. (#542)
+- Refreshed active dashboard scopes on live events. (#543)
+- Decoupled session readiness from statistics calculation so aggregate metrics do not delay session interaction. (#545)
+
+### Refactor
+
+- Split CLI API handlers by resource domain into modular endpoints (session, dashboard, catalog, search, bookmark, and client logs). (#552)
+- Unified session source parsing logic in the agent base class, removing duplicate child implementations. (#555)
+- Centralized refresh commit planning and state finalization in discovery scanning. (#553)
+- Split Web shell rendering responsibilities and scoped models and state by route. (#551, #554)
+- Bound API clients to access context and telemetry. (#556)
+
+### Build
+
+- Dropped unused PostCSS dependencies from the Web application. (#558)
+- Upgraded production dependencies `@hugeicons/react` to 1.1.10 and `@tanstack/react-query` to 5.102.1. (#538)
+- Upgraded development dependency `eslint` to 10.9.0. (#539)
+
 ## [1.0.4] - 2026-08-24
 
 This release adds a Japanese landing page, authenticates the loopback API and tightens trusted-proxy deployment, makes scan publication and cache migrations preserve the last known-good state, and reduces indexing and rendering work on large histories. It also narrows the internal core runtime and contract APIs; consumers of `@codesesh/core` should review the compatibility notes below.
