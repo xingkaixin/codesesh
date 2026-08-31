@@ -157,13 +157,23 @@ function createSearchIndexLoadTiming(): SearchIndexLoadTiming {
   return { calls: 0, reused: 0, getSessionDataMs: 0, materializationMs: 0 };
 }
 
-function shouldBulkSyncSearchIndex(options: SearchIndexSyncOptions, changedCount: number): boolean {
+function shouldBulkSyncSearchIndex(
+  db: SQLiteDatabase,
+  options: SearchIndexSyncOptions,
+  changedCount: number,
+): boolean {
   if (options.isBulk != null) {
     return options.isBulk;
   }
 
   const threshold = options.bulkThreshold ?? SEARCH_INDEX_BULK_SYNC_THRESHOLD;
-  return threshold > 0 && changedCount >= threshold;
+  if (!(threshold > 0 && changedCount >= threshold)) return false;
+
+  // Automatic rebuilds must not retokenize previously indexed sessions from any agent.
+  return (
+    options.bulkThreshold != null ||
+    db.prepare("SELECT 1 FROM session_documents LIMIT 1").get() === undefined
+  );
 }
 
 function loadSearchIndexEntry(
@@ -507,7 +517,13 @@ function readSearchIndexPlanInput(
   };
 }
 
-function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
+function planSearchIndexWrite(
+  db: SQLiteDatabase,
+  agentName: string,
+  request: SearchIndexPlanRequest,
+  options: SearchIndexSyncOptions,
+): SearchIndexPlan {
+  const input = readSearchIndexPlanInput(db, agentName, request, options);
   const changes = input.candidates.filter(({ session }) =>
     searchIndexEntryNeedsUpdate(input.state, session, input.options),
   );
@@ -538,7 +554,7 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
     }),
   );
   const changedCount = input.removedSessionIds.length + changes.length;
-  const isBulk = shouldBulkSyncSearchIndex(input.options, changedCount);
+  const isBulk = shouldBulkSyncSearchIndex(db, input.options, changedCount);
 
   return {
     agentName: input.agentName,
@@ -551,15 +567,6 @@ function createSearchIndexPlan(input: SearchIndexPlanInput): SearchIndexPlan {
     needsRebuild: isBulk && changedCount > 0,
     startedAt: input.startedAt,
   };
-}
-
-function planSearchIndexWrite(
-  db: SQLiteDatabase,
-  agentName: string,
-  request: SearchIndexPlanRequest,
-  options: SearchIndexSyncOptions,
-): SearchIndexPlan {
-  return createSearchIndexPlan(readSearchIndexPlanInput(db, agentName, request, options));
 }
 
 function detailVersionForPlan(plan: SearchIndexPlan, sessionId: string): string {

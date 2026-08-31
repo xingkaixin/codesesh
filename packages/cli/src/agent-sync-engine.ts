@@ -123,7 +123,6 @@ type RefreshStrategyResult =
 
 const REFRESH_DEBOUNCE_MS = 200;
 const EMPTY_AGENT_REFRESH_DEBOUNCE_MS = 30_000;
-const SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD = 100;
 // SSE carries one compact summary; logs retain the complete failure list.
 const SOURCE_FAILURE_SUMMARY_MAX_LENGTH = 160;
 
@@ -469,8 +468,6 @@ export class AgentSyncEngine {
     }
 
     const nextSessions = attachMissingProjectIdentities(strategyResult.nextSessions);
-    const searchIndexOptions =
-      pendingPathCount >= SEARCH_INDEX_BULK_PENDING_PATH_THRESHOLD ? { isBulk: true } : undefined;
     const persistenceDiff =
       strategyResult.publication.kind === "changes" ? strategyResult.publication.diff : null;
     const publicationSessions =
@@ -515,7 +512,6 @@ export class AgentSyncEngine {
           changes: persistenceDiff.changedSessions,
           removedSessionIds: persistenceDiff.removedSessionIds,
           meta: selectCacheMeta(pendingMeta, changedSessionIds),
-          ...(searchIndexOptions ? { searchIndexOptions } : {}),
         }
       : {
           kind: "full",
@@ -526,7 +522,6 @@ export class AgentSyncEngine {
           completeness: strategyResult.completeness,
           removedSessionIds: explicitRemovedSessionIds,
           saveCache: true,
-          ...(searchIndexOptions ? { searchIndexOptions } : {}),
         };
     const completion = buildScanCompletion(
       strategyResult.completeness,

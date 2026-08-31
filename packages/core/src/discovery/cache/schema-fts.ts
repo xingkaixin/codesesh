@@ -28,8 +28,12 @@ export function runSearchIndexWrite<T>(
 
     if (rebuild) {
       const rebuildStartedAt = performance.now();
+      getCoreDiagnostics()?.info?.("search_index.fts_rebuild.started");
       rebuildSearchIndex(db);
       rebuildDurationMs = performance.now() - rebuildStartedAt;
+      getCoreDiagnostics()?.info?.("search_index.fts_rebuild.completed", {
+        duration_ms: Math.round(rebuildDurationMs),
+      });
       createSearchTriggers(db);
     }
 

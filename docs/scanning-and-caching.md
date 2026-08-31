@@ -166,8 +166,10 @@ saveCachedSessionChanges()
 完整初始化/backfill 使用 `saveCachedSessions()` 和 `syncSessionSearchIndex()`。增量路径
 只加载需要重新索引的会话详情；未变化会话不会再次调用 `getSessionData()`。
 
-当变化量达到 `SEARCH_INDEX_BULK_SYNC_THRESHOLD` 时，FTS 使用批量重建；小批量变化由
-触发器增量维护。
+已有会话索引时，FTS 默认由触发器增量维护；只有全局索引为空且变化量达到
+`SEARCH_INDEX_BULK_SYNC_THRESHOLD` 时才自动批量重建。会话全文索引由所有 Agent 共用，
+不能仅凭单个 Agent 的变化量或文件事件数量触发全局重建。程序化调用仍可通过
+`isBulk` 或 `bulkThreshold` 显式指定重建策略。
 
 ## 详情一致性
 
