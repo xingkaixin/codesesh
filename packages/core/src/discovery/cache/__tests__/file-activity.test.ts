@@ -41,8 +41,8 @@ describe("cached file activity", () => {
     });
 
     expect(result.where).toContain("s.project_identity_kind = ? AND s.project_identity_key = ?");
-    expect(result.where).toContain("REPLACE(LOWER(s.directory), char(92), '/')");
-    expect(result.where).toContain("instr(?, REPLACE(LOWER(s.directory), char(92), '/') || '/')");
+    expect(result.where).toContain("codesesh_project_scope_path(s.directory)");
+    expect(result.where).toContain("instr(?, codesesh_project_scope_path(s.directory) || '/')");
     expect(result.params).toEqual([
       "git_remote",
       "github.com/acme/app",
@@ -63,9 +63,9 @@ describe("cached file activity", () => {
     expect(result.params).toEqual([
       "path",
       "C:/workspace/app",
-      "c:/workspace/app",
-      "c:/workspace/app",
-      "c:/workspace/app",
+      "C:/workspace/app",
+      "C:/workspace/app",
+      "C:/workspace/app",
     ]);
   });
 

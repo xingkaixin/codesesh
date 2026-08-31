@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import { openDb, type DatabaseRow, type SQLiteDatabase } from "../../utils/sqlite.js";
 import type { SessionHead } from "../../types/index.js";
+import { normalizeProjectScopePath } from "../../projects/scope.js";
 
 const CACHE_FILENAME = "codesesh.db";
 const LEGACY_CACHE_FILENAME = "scan-cache.json";
@@ -44,6 +45,9 @@ export function getCacheConnection(path: string): CacheConnection | null {
 
   const db = openDb(path);
   if (!db) return null;
+  db.function("codesesh_project_scope_path", { deterministic: true }, (directory) =>
+    normalizeProjectScopePath(String(directory ?? "")),
+  );
 
   const connection = { db, ftsReady: false, publicationStagingCleaned: false };
   cacheConnections.set(path, connection);

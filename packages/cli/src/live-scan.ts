@@ -5,8 +5,10 @@ import {
   scanSessions,
   type LiveSnapshot,
   type ScanOptions,
+  type SessionQueryScope,
 } from "@codesesh/core/runtime/discovery";
 import { createRegisteredAgents } from "@codesesh/core/runtime/agents";
+import { createProjectScopeMatcher } from "@codesesh/core/runtime/projects";
 import type {
   AgentScanStatus,
   BackfillStatus,
@@ -42,6 +44,7 @@ export interface LiveScanStoreOptions {
 const NEW_SESSION_EVENT_WINDOW_MS = 250;
 
 export class LiveScanStore {
+  readonly queryScope: SessionQueryScope;
   private readonly watchEnabled: boolean;
   private readonly scanOptions: ScanOptions;
   private readonly startupScanOptions: Pick<ScanOptions, "from" | "to">;
@@ -57,6 +60,14 @@ export class LiveScanStore {
   constructor(options: LiveScanStoreOptions = {}) {
     this.watchEnabled = options.watchEnabled ?? true;
     this.scanOptions = options.scanOptions ?? {};
+    this.queryScope = {
+      ...(this.scanOptions.agents?.length
+        ? { agents: this.scanOptions.agents.map((agent) => agent.toLowerCase()) }
+        : {}),
+      ...(this.scanOptions.cwd
+        ? { projectScope: createProjectScopeMatcher(this.scanOptions.cwd) }
+        : {}),
+    };
     this.startupScanOptions = options.startupScanOptions ?? {};
     this.deferInitialRefresh = options.deferInitialRefresh === true;
     const workerRunner =
@@ -81,8 +92,9 @@ export class LiveScanStore {
       startup_to: this.startupScanOptions.to,
       deferred: this.deferInitialRefresh || undefined,
     });
+    const { cwd: _cwd, ...scanOptions } = this.scanOptions;
     const initialResult = await scanSessions({
-      ...this.scanOptions,
+      ...scanOptions,
       useCache: this.scanOptions.useCache ?? true,
       cacheOnly: this.deferInitialRefresh,
       writeCache: this.deferInitialRefresh ? false : this.scanOptions.writeCache,
@@ -92,7 +104,7 @@ export class LiveScanStore {
     this.syncEngine.initialize(initialResult, {
       cacheTimestamps: initialResult.cacheTimestamps,
       registeredAgents: createRegisteredAgents(),
-      allowedAgents: this.getAllowedAgents(),
+      queryScope: this.queryScope,
     });
     const snapshot = this.getSnapshot();
     const indexStartedAt = performance.now();
@@ -226,10 +238,5 @@ export class LiveScanStore {
     const workerUrl = new URL("./smart-tag-worker.js", import.meta.url);
     if (workerUrl.protocol === "file:" && !existsSync(fileURLToPath(workerUrl))) return null;
     return workerUrl;
-  }
-
-  private getAllowedAgents(): Set<string> | null {
-    if (!this.scanOptions.agents?.length) return null;
-    return new Set(this.scanOptions.agents.map((agent) => agent.toLowerCase()));
   }
 }

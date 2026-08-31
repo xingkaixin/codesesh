@@ -153,5 +153,6 @@ export function findAliasSearchResults(
   return filterSessionSearchCandidates(results, search.options, {
     sessionSnapshot: scanResult.sessions,
     sessionTree: context.sessionTree,
+    queryScope: context.queryScope,
   }).sort((a, b) => getSessionActivityTime(b.session) - getSessionActivityTime(a.session));
 }

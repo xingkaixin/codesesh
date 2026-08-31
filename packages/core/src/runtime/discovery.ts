@@ -34,6 +34,7 @@ export {
   markAgentFullSyncCompleted,
   markAgentFullSyncProgress,
   markAgentFullSyncStarted,
+  matchesSessionQueryScope,
   materializeCachedSessionDetailResponse,
   materializeSessionDetailResponse,
   mergeSearchQueryOptions,
@@ -81,6 +82,7 @@ export type {
   SessionDetailResponseResult,
   SessionPersistenceDiff,
   SessionPersistenceDiffOptions,
+  SessionQueryScope,
   SessionSnapshotCompleteness,
   SessionTagTiming,
 } from "../discovery/index.js";

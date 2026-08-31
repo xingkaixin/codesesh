@@ -7,6 +7,7 @@ export {
   inheritSessionTags,
 } from "./session-tags.js";
 export type { AgentCacheFailure, LiveSnapshot, ScanOptions } from "./scanner.js";
+export { matchesSessionQueryScope, type SessionQueryScope } from "./session-scope.js";
 export type { SessionTagTiming } from "./session-tags.js";
 export {
   beginAgentRefresh,

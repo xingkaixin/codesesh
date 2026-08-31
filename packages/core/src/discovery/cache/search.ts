@@ -15,12 +15,14 @@ import {
   type SearchMatchType,
   type SearchResult,
 } from "../../contract/index.js";
-import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
+import type { ProjectScopeMatcher } from "../../projects/scope.js";
+import type { SessionQueryScope } from "../session-scope.js";
 import { getCoreDiagnostics } from "../../utils/diagnostics.js";
 import type { DatabaseRow, SQLiteDatabase } from "../../utils/sqlite.js";
 import { escapeRegExp, filePathFtsQuery, hasCacheStorage, likePattern } from "./db.js";
 import { normalizeToolName, sessionFromRow, type SessionRow } from "./messages.js";
 import { withSearchDb } from "./connection.js";
+import { buildSessionQueryScopeFilters } from "./session-scope.js";
 import {
   parseSearchQuery,
   splitSearchTokens,
@@ -190,12 +192,14 @@ export function sessionMatchesSearchCost(
   return true;
 }
 
-export function buildSessionSearchFilters(options: SearchOptions): {
+export function buildSessionSearchFilters(
+  options: SearchOptions,
+  queryScope?: SessionQueryScope,
+): {
   where: string;
   params: unknown[];
 } {
-  const clauses: string[] = [];
-  const params: unknown[] = [];
+  const { clauses, params } = buildSessionQueryScopeFilters(queryScope);
 
   if (options.agent) {
     clauses.push("s.agent_name = ?");
@@ -210,18 +214,9 @@ export function buildSessionSearchFilters(options: SearchOptions): {
     }
   }
   if (options.projectScope) {
-    const scopePath = normalizeProjectScopePath(options.projectScope.path).toLowerCase();
-    const normalizedDirectory = "REPLACE(LOWER(s.directory), char(92), '/')";
-    clauses.push(
-      `((s.project_identity_kind = ? AND s.project_identity_key = ?) OR ${normalizedDirectory} = ? OR instr(${normalizedDirectory}, ? || '/') = 1 OR instr(?, ${normalizedDirectory} || '/') = 1)`,
-    );
-    params.push(
-      options.projectScope.identity.kind,
-      options.projectScope.identity.key,
-      scopePath,
-      scopePath,
-      scopePath,
-    );
+    const project = buildSessionQueryScopeFilters({ projectScope: options.projectScope });
+    clauses.push(...project.clauses);
+    params.push(...project.params);
   }
   if (options.project) {
     clauses.push(
@@ -599,7 +594,11 @@ function rowsToSearchResults(
   });
 }
 
-export function searchSessions(query: string, options: SearchOptions = {}): SearchResult[] {
+export function searchSessions(
+  query: string,
+  options: SearchOptions = {},
+  queryScope?: SessionQueryScope,
+): SearchResult[] {
   const search = mergeSearchQueryOptions(query, options);
   const normalizedQuery = search.text.trim();
   if (!hasCacheStorage()) {
@@ -607,7 +606,7 @@ export function searchSessions(query: string, options: SearchOptions = {}): Sear
   }
 
   const results = withSearchDb((db) => {
-    const filters = buildSessionSearchFilters(search.options);
+    const filters = buildSessionSearchFilters(search.options, queryScope);
 
     if (!normalizedQuery) {
       const rows = db

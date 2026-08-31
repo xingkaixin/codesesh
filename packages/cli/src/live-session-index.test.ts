@@ -133,7 +133,7 @@ describe("LiveSessionIndex", () => {
 
     index.initialize(snapshot([codex], { codex: [older, newer] }), {
       registeredAgents: [codex, kimi, cursor],
-      allowedAgents: new Set(["codex", "kimi"]),
+      queryScope: { agents: ["codex", "kimi"] },
     });
 
     expect(index.snapshot()).toEqual({
@@ -186,6 +186,48 @@ describe("LiveSessionIndex", () => {
       ],
       removedSessionRefs: [],
     });
+  });
+
+  it("keeps the complete baseline while publishing sessions that enter or leave the project scope", () => {
+    const codex = makeAgent("codex");
+    const inside = {
+      ...makeSession("moving", 1),
+      directory: "/projects/inside",
+      project_identity: { kind: "path" as const, key: "/projects/inside", displayName: "inside" },
+    };
+    const outside = {
+      ...inside,
+      directory: "/projects/outside",
+      project_identity: { kind: "path" as const, key: "/projects/outside", displayName: "outside" },
+    };
+    const index = new LiveSessionIndex();
+    index.initialize(snapshot([codex], { codex: [inside] }), {
+      queryScope: {
+        projectScope: {
+          identity: { kind: "path", key: "/projects/inside" },
+          path: "/projects/inside",
+        },
+      },
+    });
+    const initialSessions = index.snapshot().sessions;
+    expect(index.snapshot().sessions).toBe(initialSessions);
+
+    const removed = index.commitAgentSessions("codex", [outside]);
+    expect(removed?.removedSessionRefs).toEqual([inside.reference]);
+    expect(index.snapshot().sessions).toEqual([]);
+    expect(index.agentSessions("codex")).toEqual([outside]);
+
+    const added = index.commitAgentSessions("codex", [inside]);
+    expect(added?.newSessionRefs).toEqual([inside.reference]);
+    expect(index.snapshot().sessions).toEqual([inside]);
+    const visibleSessions = index.snapshot().sessions;
+    const visibleAgentSessions = index.snapshot().byAgent.codex;
+    const outsideOnly = { ...outside, reference: { agentName: "codex", sessionId: "outside" } };
+
+    expect(index.commitAgentSessions("codex", [inside, outsideOnly])).toBeNull();
+    expect(index.agentSessions("codex")).toEqual([inside, outsideOnly]);
+    expect(index.snapshot().sessions).toBe(visibleSessions);
+    expect(index.snapshot().byAgent.codex).toBe(visibleAgentSessions);
   });
 
   it("omits internal metadata from published session heads", () => {
@@ -252,7 +294,7 @@ describe("LiveSessionIndex", () => {
     ]);
   });
 
-  it("updates the snapshot even when no event is needed", () => {
+  it("updates the canonical baseline without replacing an unchanged query projection", () => {
     const codex = makeAgent("codex");
     const original = makeSession("session", 1);
     const equivalent = { ...original };
@@ -260,7 +302,8 @@ describe("LiveSessionIndex", () => {
     index.initialize(snapshot([codex], { codex: [original] }));
 
     expect(index.commitAgentSessions("codex", [equivalent])).toBeNull();
-    expect(index.snapshot().sessions[0]).toBe(equivalent);
+    expect(index.snapshot().sessions[0]).toBe(original);
+    expect(index.agentSessions("codex")[0]).toBe(equivalent);
   });
 
   it("resets signature lineage when a new snapshot is initialized", () => {

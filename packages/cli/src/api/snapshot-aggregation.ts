@@ -105,14 +105,17 @@ export function getDashboardStorageAggregation(
   analyticsRevision: string | null,
 ): DashboardStorageAggregation {
   const build = (): DashboardStorageAggregation => ({
-    recentFileActivities: listFileActivity({
-      agent: scope.agent,
-      projectKind: scope.projectKind,
-      projectKey: scope.projectKey,
-      from,
-      to,
-      limit: 12,
-    }),
+    recentFileActivities: listFileActivity(
+      {
+        agent: scope.agent,
+        projectKind: scope.projectKind,
+        projectKey: scope.projectKey,
+        from,
+        to,
+        limit: 12,
+      },
+      source.queryScope,
+    ),
   });
   const startedAt = performance.now();
   const log = (cache: SnapshotAggregationCacheState | "unavailable") => {

@@ -364,7 +364,7 @@ vi.mock("node:worker_threads", async (importOriginal) => ({
 import { LiveScanStore, type SessionsUpdatedEvent } from "./live-scan.js";
 import { appLogger } from "./logging.js";
 import { SearchIndexJobRunner } from "./search-index-job-runner.js";
-import { ThreadWorkerRunner } from "./worker-runner.js";
+import { ThreadWorkerRunner, type WorkerRunner } from "./worker-runner.js";
 
 let restoreRuntime: (() => void) | null = null;
 
@@ -579,6 +579,55 @@ describe("LiveScanStore", () => {
     restoreRuntime = null;
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("preserves a project scope through refresh and backfill without narrowing uncached index inputs", async () => {
+    const inside = makeSession("inside");
+    const outside = makeSession("outside", {
+      directory: `${FIXTURE_DIR}-outside`,
+      project_identity: { kind: "path", key: `${FIXTURE_DIR}-outside`, displayName: "outside" },
+    });
+    const sessions = [inside, outside];
+    const codex = makeAgent("codex");
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      agents: [codex],
+      byAgent: { codex: sessions },
+      sessions,
+    });
+    core.isAgentCacheInitialized.mockReturnValue(false);
+    core.getAgentLastFullSyncAt.mockReturnValue(0);
+    const run = vi.fn<WorkerRunner["run"]>(async () => ({
+      result: { sessions, meta: {}, completeness: "complete", explicitRemovedSessionIds: [] },
+      commit: () => {},
+      discard: () => {},
+    }));
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      scanOptions: { cwd: FIXTURE_DIR, writeCache: false },
+      startupScanOptions: { from: 1 },
+      workerRunner: { activeCount: 0, run, reset: () => {}, shutdown: async () => {} },
+    });
+
+    await store.initialize();
+    expect(core.scanSessions.mock.calls[0]![0]).not.toHaveProperty("cwd");
+    expect(core.scanSessions.mock.calls[0]![0].writeCache).toBe(false);
+    expect(store.getSnapshot().sessions).toEqual([inside]);
+    expect(workerThreads.workers[0]?.workerData.jobs[0].sessions).toEqual(sessions);
+
+    store.startBackgroundRefresh();
+    await vi.waitFor(() =>
+      expect(store.getScanStatus().backfill.completedAgents).toEqual(["codex"]),
+    );
+
+    expect(run.mock.calls.map(([, payload]) => payload.operation.kind)).toEqual([
+      "full-scan",
+      "backfill",
+    ]);
+    for (const [, payload] of run.mock.calls) expect(payload.previousSessions).toEqual(sessions);
+    expect(store.getSnapshot().sessions).toEqual([inside]);
+    expect(store.getSnapshot().sessions).toBe(store.getSnapshot().sessions);
+    await store.shutdown();
   });
 
   it("initializes a sorted snapshot for allowed registered agents", async () => {

@@ -181,7 +181,7 @@ export function createApiRoutes(
     handleSearchSessions(c, scanSource, listDefaults, options.projectIdentityResolver),
   );
   api.get("/file-activity", (c) =>
-    handleGetFileActivity(c, listDefaults, options.projectIdentityResolver),
+    handleGetFileActivity(c, scanSource, listDefaults, options.projectIdentityResolver),
   );
   api.get("/sessions/:agent/:id", (c) =>
     handleGetSessionData(c, scanSource, options.loadSessionDetail),

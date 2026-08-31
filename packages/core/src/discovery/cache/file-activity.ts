@@ -8,10 +8,12 @@ import type {
   SessionFileActivity,
 } from "../../types/index.js";
 import type { FileActivityResult, SearchHighlightRange } from "../../contract/index.js";
-import { normalizeProjectScopePath, type ProjectScopeMatcher } from "../../projects/scope.js";
+import type { ProjectScopeMatcher } from "../../projects/scope.js";
+import type { SessionQueryScope } from "../session-scope.js";
 import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import { filePathFtsQuery, hasCacheStorage, likePattern, normalizeFilePathSearch } from "./db.js";
 import { withCacheDb, withCacheDbReadOnly } from "./connection.js";
+import { buildSessionQueryScopeFilters } from "./session-scope.js";
 import {
   buildSessionSearchFilters,
   mergeSearchQueryOptions,
@@ -49,21 +51,14 @@ export function fileActivityFilters(options: FileActivityOptions): {
   projectKind: ProjectIdentityKind | null;
   projectKey: string | null;
   projectLike: string | null;
-  scopeKind: ProjectIdentityKind | null;
-  scopeKey: string | null;
-  scopePath: string | null;
   path: string;
   pathLike: string | null;
 } {
   const path = options.path ? normalizeFilePathSearch(options.path) : "";
-  const scope = options.projectScope;
   return {
     projectKind: options.projectKind ?? null,
     projectKey: options.projectKey ?? null,
     projectLike: options.project ? likePattern(options.project) : null,
-    scopeKind: scope?.identity.kind ?? null,
-    scopeKey: scope?.identity.key ?? null,
-    scopePath: scope ? normalizeProjectScopePath(scope.path).toLowerCase() : null,
     path,
     pathLike: path ? likePattern(path) : null,
   };
@@ -83,13 +78,15 @@ export function fileActivityFromRow(row: FileActivityRow): SessionFileActivity {
   };
 }
 
-export function buildFileActivityWhere(options: FileActivityOptions): {
+export function buildFileActivityWhere(
+  options: FileActivityOptions,
+  queryScope?: SessionQueryScope,
+): {
   where: string;
   params: unknown[];
 } {
   const filters = fileActivityFilters(options);
-  const clauses: string[] = [];
-  const params: unknown[] = [];
+  const { clauses, params } = buildSessionQueryScopeFilters(queryScope);
 
   if (options.agent != null) {
     clauses.push("fa.agent_name = ?");
@@ -113,18 +110,10 @@ export function buildFileActivityWhere(options: FileActivityOptions): {
     );
     params.push(filters.projectLike, filters.projectLike, filters.projectLike);
   }
-  if (filters.scopeKey != null && filters.scopePath != null) {
-    const normalizedDirectory = "REPLACE(LOWER(s.directory), char(92), '/')";
-    clauses.push(
-      `((s.project_identity_kind = ? AND s.project_identity_key = ?) OR ${normalizedDirectory} = ? OR instr(${normalizedDirectory}, ? || '/') = 1 OR instr(?, ${normalizedDirectory} || '/') = 1)`,
-    );
-    params.push(
-      filters.scopeKind,
-      filters.scopeKey,
-      filters.scopePath,
-      filters.scopePath,
-      filters.scopePath,
-    );
+  if (options.projectScope) {
+    const project = buildSessionQueryScopeFilters({ projectScope: options.projectScope });
+    clauses.push(...project.clauses);
+    params.push(...project.params);
   }
   if (filters.pathLike != null) {
     const pathQuery = filePathFtsQuery(filters.path);
@@ -195,19 +184,23 @@ const FILE_ACTIVITY_JOIN = `
 /** Most recent first, then busiest, then path — the tie-break every caller relies on. */
 const FILE_ACTIVITY_ORDER = "fa.latest_time DESC, fa.count DESC, fa.path";
 
-export function listFileActivity(options: FileActivityOptions = {}): FileActivityResult[] {
-  return queryFileActivity(options);
+export function listFileActivity(
+  options: FileActivityOptions = {},
+  queryScope?: SessionQueryScope,
+): FileActivityResult[] {
+  return queryFileActivity({ options, queryScope });
 }
 
 interface FileActivityQuery {
   options: FileActivityOptions;
+  queryScope?: SessionQueryScope;
   sessionSearchOptions?: SearchOptions;
   /** Keep only each session's top-ranked row, so the limit counts sessions. */
   onePerSession?: boolean;
 }
 
 function fileActivityWhere(query: FileActivityQuery): { where: string; params: unknown[] } {
-  const filters = buildFileActivityWhere(query.options);
+  const filters = buildFileActivityWhere(query.options, query.queryScope);
   const sessionFilters = query.sessionSearchOptions
     ? buildSessionSearchFilters(query.sessionSearchOptions)
     : { where: "", params: [] };
@@ -255,16 +248,12 @@ function fileActivitySql(query: FileActivityQuery, where: string): string {
   `;
 }
 
-function queryFileActivity(
-  options: FileActivityOptions,
-  sessionSearchOptions?: SearchOptions,
-  onePerSession = false,
-): FileActivityResult[] {
+function queryFileActivity(query: FileActivityQuery): FileActivityResult[] {
   if (!hasCacheStorage()) {
     return [];
   }
 
-  const query: FileActivityQuery = { options, sessionSearchOptions, onePerSession };
+  const { options } = query;
   const { where, params } = fileActivityWhere(query);
   const sql = fileActivitySql(query, where);
   const queryRows = (db: SQLiteDatabase) =>
@@ -301,20 +290,22 @@ export function findFilePathHighlightRanges(path: string, query: string): Search
 export function searchFileActivitySessions(
   query: string,
   options: SearchOptions = {},
+  queryScope?: SessionQueryScope,
 ): SearchResult[] {
   const search = mergeSearchQueryOptions(query, options);
   const path = normalizeFilePathSearch(search.options.file ?? search.text);
   if (!path) return [];
 
-  const rows = queryFileActivity(
-    {
+  const rows = queryFileActivity({
+    options: {
       path,
       kind: search.options.fileKind,
       limit: search.options.limit ?? 50,
     },
-    search.options,
-    true,
-  );
+    sessionSearchOptions: search.options,
+    onePerSession: true,
+    queryScope,
+  });
 
   return rows.map((row) => {
     const prefix = `${row.kind} `;

@@ -20,9 +20,9 @@ describe("cache search", () => {
     expect(result.params).toEqual([
       "path",
       "C:/workspace/app",
-      "c:/workspace/app",
-      "c:/workspace/app",
-      "c:/workspace/app",
+      "C:/workspace/app",
+      "C:/workspace/app",
+      "C:/workspace/app",
     ]);
   });
 

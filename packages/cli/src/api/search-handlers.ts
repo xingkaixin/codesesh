@@ -91,13 +91,18 @@ export async function handleSearchSessions(
   const getSessionTree = () =>
     (sessionTree ??= getSnapshotSessionTree(scanSource, scanResult.sessions));
   const effectiveSearchOptions = mergeSearchQueryOptions(query, resolvedSearchOptions).options;
-  const searchContext =
-    effectiveSearchOptions.costMin != null || effectiveSearchOptions.costMax != null
+  const searchContext = {
+    queryScope: scanSource.queryScope,
+    ...(effectiveSearchOptions.costMin != null || effectiveSearchOptions.costMax != null
       ? { sessionTree: getSessionTree() }
-      : undefined;
-  const searchResults = searchContext
-    ? executeSessionSearch(query, resolvedSearchOptions, scanResult, searchContext)
-    : executeSessionSearch(query, resolvedSearchOptions, scanResult);
+      : {}),
+  };
+  const searchResults = executeSessionSearch(
+    query,
+    resolvedSearchOptions,
+    scanResult,
+    searchContext,
+  );
   const results = searchResults.map((result) => ({
     ...result,
     session: aliases.decorate(result.session, result.reference),
@@ -123,6 +128,7 @@ export async function handleSearchSessions(
 
 export async function handleGetFileActivity(
   c: Context,
+  scanSource: ScanResultSource,
   defaults: SessionListDefaults = {},
   resolver?: ProjectIdentityResolver,
 ) {
@@ -161,18 +167,21 @@ export async function handleGetFileActivity(
 
   const aliases = loadAliasView();
   return c.json({
-    activity: listFileActivity({
-      agent: sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : undefined,
-      sessionId: optionalQueryValue(c.req.query("sessionId")),
-      projectKind: projectIdentity?.kind,
-      projectKey: projectIdentity?.key,
-      project: optionalQueryValue(c.req.query("project")),
-      projectScope,
-      path: optionalQueryValue(c.req.query("path")),
-      kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),
-      from: window.from,
-      to: window.to,
-      limit: sessionQuery.limit.value,
-    }).map((activity) => toPublicReferencedSessionHead(decorateFileActivity(activity, aliases))),
+    activity: listFileActivity(
+      {
+        agent: sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : undefined,
+        sessionId: optionalQueryValue(c.req.query("sessionId")),
+        projectKind: projectIdentity?.kind,
+        projectKey: projectIdentity?.key,
+        project: optionalQueryValue(c.req.query("project")),
+        projectScope,
+        path: optionalQueryValue(c.req.query("path")),
+        kind: parseFileActivityKind(optionalQueryValue(c.req.query("kind"))),
+        from: window.from,
+        to: window.to,
+        limit: sessionQuery.limit.value,
+      },
+      scanSource.queryScope,
+    ).map((activity) => toPublicReferencedSessionHead(decorateFileActivity(activity, aliases))),
   });
 }
