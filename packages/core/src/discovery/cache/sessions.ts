@@ -493,12 +493,14 @@ export function loadCachedSessionRawEntry(
 ): CachedSessionRawEntry | null {
   if (!hasCacheStorage()) return null;
 
-  const outcome = withCacheDbReadOnly((db) => {
-    const entry = loadCachedSessionEntryBase(db, agentName, sessionId);
-    return entry
-      ? { ...entry, messageRows: readCachedSessionMessageRows(db, agentName, sessionId, 0) }
-      : null;
-  });
+  const outcome = withCacheDbReadOnly((db) =>
+    db.transaction(() => {
+      const entry = loadCachedSessionEntryBase(db, agentName, sessionId);
+      return entry
+        ? { ...entry, messageRows: readCachedSessionMessageRows(db, agentName, sessionId, 0) }
+        : null;
+    })(),
+  );
   return outcome.status === "success" ? outcome.value : null;
 }
 
