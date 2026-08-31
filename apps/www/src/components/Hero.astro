@@ -2,6 +2,7 @@
 import { agents, copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
 import InstallCommand from "./InstallCommand.astro";
+import SectionBackground from "./SectionBackground.astro";
 
 interface Props {
   locale: Locale;
@@ -11,7 +12,11 @@ const { locale } = Astro.props;
 const t = copy[locale].hero;
 ---
 
-<section class="px-4 sm:px-6 lg:px-7" aria-labelledby="hero-heading">
+<section
+  class="landing-background px-4 sm:px-6 lg:px-7"
+  aria-labelledby="hero-heading"
+>
+  <SectionBackground variant="hero" />
   <div class="mx-auto max-w-[1180px] pb-20 pt-20 sm:pb-24 sm:pt-24">
     <div class="hero-copy max-w-[54rem]">
       <p class="console-eyebrow mb-5">{t.eyebrow}</p>

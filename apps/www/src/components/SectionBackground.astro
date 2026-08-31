@@ -1,0 +1,96 @@
+---
+import hero from "../assets/backgrounds/hero-convergence.webp";
+import projects from "../assets/backgrounds/projects-archive.webp";
+import replay from "../assets/backgrounds/replay-time.webp";
+
+interface Props {
+  variant: "hero" | "projects" | "replay" | "cta";
+}
+
+const { variant } = Astro.props;
+const artwork = { hero, projects, replay, cta: hero }[variant];
+---
+
+<img
+  src={artwork.src}
+  width={artwork.width}
+  height={artwork.height}
+  alt=""
+  aria-hidden="true"
+  class:list={["section-background", `section-background--${variant}`]}
+  loading={variant === "hero" ? "eager" : "lazy"}
+  fetchpriority={variant === "hero" ? "high" : "auto"}
+  decoding="async"
+/>
+
+<style>
+  .section-background {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+    object-position: center;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    opacity: 0.9;
+    mask-image: linear-gradient(transparent, #000 10%, #000 85%, transparent);
+  }
+
+  .section-background--hero {
+    object-position: right center;
+    mask-image: linear-gradient(transparent, #000 8%, #000 83%, transparent);
+  }
+
+  .section-background--projects {
+    object-position: center bottom;
+    opacity: 0.62;
+  }
+
+  .section-background--replay {
+    object-fit: contain;
+    opacity: 0.65;
+  }
+
+  .section-background--cta {
+    object-position: right center;
+    mask-image: linear-gradient(100deg, transparent 30%, #000);
+  }
+
+  :global(.dark) .section-background {
+    filter: invert(1) hue-rotate(180deg);
+    mix-blend-mode: screen;
+    opacity: 0.42;
+  }
+
+  :global(.dark) .section-background--cta {
+    opacity: 0.2;
+  }
+
+  @media (max-width: 767px) {
+    .section-background--hero {
+      object-position: 62% center;
+      opacity: 0.18;
+    }
+
+    :global(.dark) .section-background--hero {
+      opacity: 0.15;
+    }
+
+    .section-background--projects,
+    .section-background--replay {
+      top: auto;
+      height: 500px;
+      object-fit: cover;
+      opacity: 0.3;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .section-background {
+      display: none;
+    }
+  }
+</style>
