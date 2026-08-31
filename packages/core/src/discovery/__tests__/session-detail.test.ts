@@ -4,8 +4,13 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BaseAgent, type ChangeCheckResult, type SessionCacheMeta } from "../../agents/base.js";
 import type { IdentifiedSessionHead, SessionDetail, SessionHead } from "../../types/index.js";
-import { readCachedSessionCursor, saveCachedSessions } from "../cache/sessions.js";
+import {
+  loadCachedSessionRawEntry,
+  readCachedSessionCursor,
+  saveCachedSessions,
+} from "../cache/sessions.js";
 import { withCacheDb } from "../cache/connection.js";
+import { sessionDetailVersion } from "../cache/detail-version.js";
 import { MESSAGE_CURSOR_VERSION } from "../cache/message-cursor.js";
 import { syncSessionSearchIndex } from "../cache/search.js";
 import {
@@ -708,6 +713,63 @@ describe("materializeSessionDetail", () => {
       messageCount: 0,
       sentMessageCount: 0,
     });
+  });
+
+  it("reads structured metadata and messages from one committed cache snapshot", () => {
+    const head = makeHead();
+    persistDetail(head, makeDetail("Cached Session"), "before");
+    const before = loadCachedSessionRawEntry("test", "s1");
+    expect(before).not.toBeNull();
+
+    const nextMeta = makeMeta("after");
+    const nextVersion = sessionDetailVersion(nextMeta);
+    const nextPartsJson = JSON.stringify([{ type: "text", text: "Updated body" }]);
+    const nextPath = "/workspace/project/src/updated.ts";
+    const writer = new Database(getCachePath());
+    const originalPrepare = Database.prototype.prepare;
+    let published = false;
+    const prepareSpy = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+      this: Database.Database,
+      source: string,
+    ) {
+      if (this !== writer && !published && source.includes("SELECT 1 FROM pending_reindex")) {
+        published = true;
+        writer.transaction(() => {
+          writer
+            .prepare(
+              "UPDATE sessions SET title = ?, meta_json = ? WHERE agent_name = ? AND session_id = ?",
+            )
+            .run("Updated Session", JSON.stringify(nextMeta), "test", "s1");
+          writer
+            .prepare(
+              "UPDATE session_documents SET detail_version = ? WHERE agent_name = ? AND session_id = ?",
+            )
+            .run(nextVersion, "test", "s1");
+          writer
+            .prepare(
+              "UPDATE session_file_activity SET path = ? WHERE agent_name = ? AND session_id = ?",
+            )
+            .run(nextPath, "test", "s1");
+          writer
+            .prepare("UPDATE messages SET parts_json = ? WHERE agent_name = ? AND session_id = ?")
+            .run(nextPartsJson, "test", "s1");
+        })();
+      }
+      return originalPrepare.call(this, source);
+    });
+
+    try {
+      expect(loadCachedSessionRawEntry("test", "s1")).toEqual(before);
+      expect(loadCachedSessionRawEntry("test", "s1")).toMatchObject({
+        data: { title: "Updated Session", file_activity: [{ path: nextPath }] },
+        meta: nextMeta,
+        detailVersion: nextVersion,
+        messageRows: [{ parts_json: nextPartsJson }],
+      });
+    } finally {
+      prepareSpy.mockRestore();
+      writer.close();
+    }
   });
 
   it("reads cursor metadata and message ranges from one cache snapshot", () => {
