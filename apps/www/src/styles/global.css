@@ -123,6 +123,11 @@
 }
 
 @layer utilities {
+  .landing-background {
+    position: relative;
+    isolation: isolate;
+  }
+
   .console-ui {
     font-family: var(--font-sans);
   }

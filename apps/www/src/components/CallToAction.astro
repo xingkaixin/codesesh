@@ -2,6 +2,7 @@
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
 import InstallCommand from "./InstallCommand.astro";
+import SectionBackground from "./SectionBackground.astro";
 
 interface Props {
   locale: Locale;
@@ -16,8 +17,9 @@ const t = copy[locale].cta;
   aria-labelledby="cta-heading"
 >
   <div
-    class="mx-auto flex max-w-[1180px] flex-col gap-8 rounded-xl border border-[var(--console-border)] bg-[var(--console-surface)] px-6 py-8 shadow-[var(--shadow-raised)] sm:px-9 sm:py-10 lg:flex-row lg:items-center lg:justify-between"
+    class="landing-background mx-auto flex max-w-[1180px] flex-col gap-8 rounded-xl border border-[var(--console-border)] bg-[var(--console-surface)] px-6 py-8 shadow-[var(--shadow-raised)] sm:px-9 sm:py-10 lg:flex-row lg:items-center lg:justify-between"
   >
+    <SectionBackground variant="cta" />
     <div class="max-w-xl">
       <h2
         id="cta-heading"

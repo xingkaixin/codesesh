@@ -1,6 +1,7 @@
 ---
 import { copy, type Locale } from "../data/landing";
 import ProductDemo from "./ProductDemo.astro";
+import SectionBackground from "./SectionBackground.astro";
 
 interface Props {
   locale: Locale;
@@ -34,10 +35,14 @@ const scenes = sceneMetadata.map((meta, index) => ({
       return (
         <section
           id={sectionId}
-          class="showcase-section"
+          class:list={[
+            "showcase-section landing-background",
+            { "showcase-section--overview": scene === "overview" },
+          ]}
           aria-labelledby={headingId}
           aria-describedby={descriptionId}
         >
+          {scene !== "overview" && <SectionBackground variant={scene} />}
           <div class="showcase-inner">
             <header class="showcase-meta">
               <span>{meta.number}</span>
@@ -86,6 +91,15 @@ const scenes = sceneMetadata.map((meta, index) => ({
 
   .showcase-section:last-child {
     padding-bottom: 6.75rem;
+  }
+
+  .showcase-section--overview {
+    background: var(--console-surface-sunken);
+  }
+
+  .showcase-section--overview .showcase-meta small,
+  .showcase-section--overview .showcase-hint {
+    color: var(--console-text-secondary);
   }
 
   .showcase-inner {
