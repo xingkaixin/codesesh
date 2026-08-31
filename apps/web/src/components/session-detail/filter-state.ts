@@ -2,9 +2,8 @@
  * Pure reducers and derivations behind the reader's two-level content filter.
  * No React: the hook in `use-session-filters.ts` only binds these to state.
  *
- * `selected` holds content-kind ids and `tool:<key>` ids. It NEVER holds
- * `tools_all` — the tool group's tri-state is derived from the tool subset,
- * so the two can no longer drift apart.
+ * Only explicit exclusions are stored. New content kinds and tools remain
+ * visible when a live session grows; selection is derived from its current toc.
  */
 import {
   TOC_CONTENT_FILTER_IDS,
@@ -14,21 +13,28 @@ import {
 } from "./toc";
 
 export interface SessionFilterState {
-  selected: Set<string>;
+  excluded: Set<string>;
   toolQuery: string;
   toolsExpanded: boolean;
 }
 
 export type ToolsParentState = "all" | "none" | "partial";
 
-export function createFilterState(toc: SessionDetailToc): SessionFilterState {
-  return { selected: new Set(toc.filterIds), toolQuery: "", toolsExpanded: true };
+export function createFilterState(): SessionFilterState {
+  return { excluded: new Set(), toolQuery: "", toolsExpanded: true };
+}
+
+export function deriveSelectedFilters(
+  toc: SessionDetailToc,
+  excluded: ReadonlySet<string>,
+): Set<string> {
+  return new Set([...toc.filterIds].filter((id) => !excluded.has(id)));
 }
 
 function toggleId(state: SessionFilterState, id: string): SessionFilterState {
-  const selected = new Set(state.selected);
-  if (!selected.delete(id)) selected.add(id);
-  return { ...state, selected };
+  const excluded = new Set(state.excluded);
+  if (!excluded.delete(id)) excluded.add(id);
+  return { ...state, excluded };
 }
 
 export function toggleContentKind(
@@ -47,24 +53,24 @@ export function setAllTools(
   toc: SessionDetailToc,
   checked: boolean,
 ): SessionFilterState {
-  const selected = new Set(state.selected);
+  const excluded = new Set(state.excluded);
   for (const tool of deriveVisibleTools(toc, state)) {
-    if (checked) selected.add(tool.id);
-    else selected.delete(tool.id);
+    if (checked) excluded.delete(tool.id);
+    else excluded.add(tool.id);
   }
-  return { ...state, selected };
+  return { ...state, excluded };
 }
 
 export function selectWriteToolsOnly(
   state: SessionFilterState,
   toc: SessionDetailToc,
 ): SessionFilterState {
-  const selected = new Set(state.selected);
+  const excluded = new Set(state.excluded);
   for (const tool of toc.tools) {
-    if (tool.kind === "write") selected.add(tool.id);
-    else selected.delete(tool.id);
+    if (tool.kind === "write") excluded.delete(tool.id);
+    else excluded.add(tool.id);
   }
-  return { ...state, selected };
+  return { ...state, excluded };
 }
 
 export function setToolQuery(state: SessionFilterState, toolQuery: string): SessionFilterState {
@@ -75,12 +81,12 @@ export function toggleToolsExpanded(state: SessionFilterState): SessionFilterSta
   return { ...state, toolsExpanded: !state.toolsExpanded };
 }
 
-export function resetAll(state: SessionFilterState, toc: SessionDetailToc): SessionFilterState {
-  return { ...state, selected: new Set(toc.filterIds), toolQuery: "" };
+export function resetAll(state: SessionFilterState): SessionFilterState {
+  return { ...state, excluded: new Set(), toolQuery: "" };
 }
 
 export function countSelectedTools(toc: SessionDetailToc, state: SessionFilterState): number {
-  return toc.tools.reduce((total, tool) => total + (state.selected.has(tool.id) ? 1 : 0), 0);
+  return toc.tools.reduce((total, tool) => total + (state.excluded.has(tool.id) ? 0 : 1), 0);
 }
 
 export function deriveToolsParentState(
@@ -109,7 +115,7 @@ export function deriveActiveChips(
 ): Array<{ id: `tool:${string}`; label: string }> {
   if (deriveToolsParentState(toc, state) === "all") return [];
   return toc.tools
-    .filter((tool) => state.selected.has(tool.id))
+    .filter((tool) => !state.excluded.has(tool.id))
     .map((tool) => ({ id: tool.id, label: tool.label }));
 }
 
@@ -118,17 +124,17 @@ export function deriveHiddenTools(
   state: SessionFilterState,
 ): Array<{ label: string; count: number }> {
   return toc.tools
-    .filter((tool) => !state.selected.has(tool.id))
+    .filter((tool) => state.excluded.has(tool.id))
     .map((tool) => ({ label: tool.label, count: tool.count }));
 }
 
 export function deriveHiddenCount(toc: SessionDetailToc, state: SessionFilterState): number {
   let hidden = 0;
   for (const id of TOC_CONTENT_FILTER_IDS) {
-    if (!state.selected.has(id)) hidden += toc.counts[id];
+    if (state.excluded.has(id)) hidden += toc.counts[id];
   }
   for (const tool of toc.tools) {
-    if (!state.selected.has(tool.id)) hidden += tool.count;
+    if (state.excluded.has(tool.id)) hidden += tool.count;
   }
   return hidden;
 }

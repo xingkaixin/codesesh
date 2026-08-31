@@ -1,8 +1,16 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import type { Message } from "../../lib/api";
+import { buildSessionDetailDisplayModel } from "./display-model";
 import { SessionFilterPanel } from "./filter-panel";
+import { deriveSelectedFilters } from "./filter-state";
 import { useSessionFilters } from "./use-session-filters";
-import type { SessionDetailToc, ToolFilterItem } from "./toc";
+import {
+  buildSessionDetailToc,
+  filterSessionMessages,
+  type SessionDetailToc,
+  type ToolFilterItem,
+} from "./toc";
 
 const TOOLS: ToolFilterItem[] = [
   { id: "tool:bash", toolKey: "bash", label: "Bash", count: 4, kind: "execute" },
@@ -150,5 +158,78 @@ describe("SessionFilterPanel", () => {
 
     rerender(<Harness sessionId="s2" />);
     expect(checkbox("Grep").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows new replies, content kinds and tools as the same session grows", () => {
+    const initial: Message[] = [
+      { id: "question", role: "user", time_created: 1, parts: [{ type: "text", text: "Help" }] },
+    ];
+    const next: Message[] = [
+      ...initial,
+      {
+        id: "reply",
+        role: "assistant",
+        time_created: 2,
+        parts: [
+          { type: "text", text: "Answer" },
+          { type: "reasoning", text: "Thinking" },
+          { type: "plan", text: "Plan", approval_status: "success" },
+          { type: "tool", tool: "Read", state: { status: "completed", input: { path: "a.ts" } } },
+        ],
+      },
+    ];
+    const models = buildSessionDetailDisplayModel({
+      messages: next,
+      agentName: "claudecode",
+    }).messages;
+    const nextToc = buildSessionDetailToc(models);
+    const { result, rerender } = renderHook(
+      ({ messages }) => {
+        const display = buildSessionDetailDisplayModel({ messages, agentName: "claudecode" });
+        return useSessionFilters(buildSessionDetailToc(display.messages), "same-session");
+      },
+      { initialProps: { messages: initial } },
+    );
+
+    rerender({ messages: next });
+
+    const visible = filterSessionMessages(
+      models,
+      deriveSelectedFilters(nextToc, result.current.state.excluded),
+    );
+    expect(visible.messages.map(({ msg }) => msg.id)).toEqual(["question", "reply"]);
+    expect(visible.visibleUnitCount).toBe(nextToc.totalUnitCount);
+    expect(visible.visibleUnitCount).toBe(5);
+  });
+
+  it("preserves explicit exclusions while new categories appear and old ones return", () => {
+    const initialToc: SessionDetailToc = {
+      ...toc,
+      filterIds: new Set(["user", "tool:read"]),
+      counts: { user: 1, agent_message: 0, thinking: 0, plan: 0, tools_all: 1 },
+      tools: TOOLS.filter(({ toolKey }) => toolKey === "read"),
+      totalUnitCount: 2,
+    };
+    const { result, rerender } = renderHook(
+      ({ currentToc }) => useSessionFilters(currentToc, "same-session"),
+      {
+        initialProps: { currentToc: initialToc },
+      },
+    );
+    act(() => {
+      result.current.actions.toggleContentKind("user");
+      result.current.actions.toggleTool("tool:read");
+    });
+
+    rerender({ currentToc: buildSessionDetailToc([]) });
+    rerender({ currentToc: toc });
+
+    const selected = deriveSelectedFilters(toc, result.current.state.excluded);
+    expect(selected.has("user")).toBe(false);
+    expect(selected.has("tool:read")).toBe(false);
+    expect(selected.has("agent_message")).toBe(true);
+    expect(selected.has("tool:write")).toBe(true);
+    act(() => result.current.actions.resetAll());
+    expect(deriveSelectedFilters(toc, result.current.state.excluded)).toEqual(toc.filterIds);
   });
 });

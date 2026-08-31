@@ -31,7 +31,7 @@ export function SessionFilterChips({
   if (chips.length === 0) return null;
 
   const contentSummary = TOC_CONTENT_FILTER_IDS.filter(
-    (id) => toc.counts[id] > 0 && state.selected.has(id),
+    (id) => toc.counts[id] > 0 && !state.excluded.has(id),
   ).map((id) => CONTENT_SHORT_LABEL[id]);
 
   return (
