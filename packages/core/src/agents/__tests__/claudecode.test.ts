@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClaudeCodeAgent } from "../claudecode.js";
+import { buildSessionTree } from "../../contract/session-tree.js";
 import type { Message, MessagePart, SessionHead } from "../../types/index.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
 import { sessionDetailVersion } from "../../discovery/cache/detail-version.js";
@@ -73,21 +74,23 @@ afterEach(() => {
 });
 
 describe("ClaudeCodeAgent cache refresh", () => {
-  it("rebuilds heads and invalidates details from the first-usage parser", () => {
+  it("rebuilds heads and invalidates details with outdated parent references", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-parser-"));
     tempDirs.push(basePath);
     const projectDir = join(basePath, "project");
-    mkdirSync(projectDir);
-    writeMinimalClaudeSession(join(projectDir, "session-1.jsonl"));
+    const childDir = join(projectDir, "missing-parent", "subagents");
+    mkdirSync(childDir, { recursive: true });
+    writeMinimalClaudeSession(join(childDir, "agent-child.jsonl"));
     const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
-    const sessions = agent.scan();
+    const sessions = agent.scan().map((session) => ({ ...session, parent_reference: undefined }));
     const meta = agent.snapshotSessionCacheMeta();
-    const oldMeta = meta["session-1"]!;
+    const oldMeta = meta["child"]!;
     oldMeta.sourceFingerprint = String(oldMeta.sourceFingerprint).replace(
+      String(oldMeta.headIndexVersion),
       "claudecode-head-v8",
-      "claudecode-head-v7",
     );
-    oldMeta.headIndexVersion = "claudecode-head-v7";
+    oldMeta.headIndexVersion = "claudecode-head-v8";
+    oldMeta.parentSessionId = null;
     const oldDetailVersion = sessionDetailVersion(oldMeta);
 
     const refreshed = agent.sessionSourceAccess.synchronize(
@@ -95,9 +98,16 @@ describe("ClaudeCodeAgent cache refresh", () => {
       { kind: "refresh" },
     );
 
-    expect(refreshed.detectedSessionIds).toEqual(["session-1"]);
+    expect(refreshed.detectedSessionIds).toEqual(["child"]);
     expect(refreshed.sourceOutcomes[0]?.status).toBe("parsed");
-    expect(sessionDetailVersion(refreshed.meta["session-1"])).not.toBe(oldDetailVersion);
+    expect(refreshed.sessions[0]?.parent_reference).toEqual({
+      agentName: "claudecode",
+      sessionId: "missing-parent",
+    });
+    expect(agent.getSessionData("child").parent_reference).toEqual(
+      refreshed.sessions[0]?.parent_reference,
+    );
+    expect(sessionDetailVersion(refreshed.meta["child"])).not.toBe(oldDetailVersion);
     expect(
       agent.sessionSourceAccess.synchronize(refreshed, { kind: "refresh" }).detectedSessionIds,
     ).toEqual([]);
@@ -360,6 +370,39 @@ describe("ClaudeCodeAgent cache refresh", () => {
     ).toEqual([]);
   });
 
+  it("keeps an in-window orphan and its related child sources", () => {
+    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-orphan-related-"));
+    tempDirs.push(basePath);
+    const childDir = join(basePath, "project", "missing-parent", "subagents");
+    mkdirSync(childDir, { recursive: true });
+    const orphanFile = join(childDir, "agent-orphan.jsonl");
+    const childFile = join(childDir, "agent-child.jsonl");
+    writeMinimalClaudeSession(orphanFile);
+    writeMinimalClaudeSession(childFile);
+    writeFileSync(
+      join(childDir, "agent-child.meta.json"),
+      JSON.stringify({ parentAgentId: "orphan" }),
+    );
+    const orphanTime = new Date(1_700_000_100_000);
+    const childTime = new Date(1_600_000_100_000);
+    utimesSync(orphanFile, orphanTime, orphanTime);
+    utimesSync(childFile, childTime, childTime);
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
+    const from = orphanTime.getTime() - 1;
+
+    expect(
+      agent
+        .listSessionSources({ from })
+        .map(({ sessionId }) => sessionId)
+        .sort(),
+    ).toEqual(["child", "orphan"]);
+    expect(
+      agent
+        .listSessionSources({ from, includeRelatedSessions: false })
+        .map(({ sessionId }) => sessionId),
+    ).toEqual(["orphan"]);
+  });
+
   it("stats each session file once during a scan", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-stat-"));
     tempDirs.push(basePath);
@@ -417,7 +460,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
         sessionId: "session-1",
         sourcePath: sessionFile,
         fingerprint: JSON.stringify([
-          "claudecode-head-v8",
+          "claudecode-head-v9",
           sessionTime.getTime(),
           statSync(sessionFile).size,
           indexTime.getTime(),
@@ -1155,33 +1198,48 @@ describe("ClaudeCodeAgent head parsing", () => {
     expect(writeSession(["", "   ", ""]).agent.scan()).toEqual([]);
   });
 
-  it("treats a child with missing metadata and parent as a root", () => {
-    const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-orphan-"));
-    tempDirs.push(basePath);
-    const projectDir = join(basePath, "project");
-    const childDir = join(projectDir, "missing-parent", "subagents");
-    const childId = "orphan-child";
-    mkdirSync(childDir, { recursive: true });
-    writeFileSync(
-      join(childDir, "agent-" + childId + ".jsonl"),
-      JSON.stringify({
-        type: "user",
-        timestamp: "2026-04-20T10:00:00Z",
-        cwd: "/tmp/project",
-        message: { role: "user", content: "Orphan child" },
-      }),
-    );
+  it.each([undefined, "declared-parent"])(
+    "preserves parent references before and after a parent appears (%s)",
+    (parentAgentId) => {
+      const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-orphan-"));
+      tempDirs.push(basePath);
+      const projectDir = join(basePath, "project");
+      const childDir = join(projectDir, "missing-parent", "subagents");
+      const childId = "orphan-child";
+      const parentId = parentAgentId ?? "missing-parent";
+      mkdirSync(childDir, { recursive: true });
+      writeMinimalClaudeSession(join(childDir, "agent-" + childId + ".jsonl"));
+      if (parentAgentId) {
+        writeFileSync(
+          join(childDir, "agent-" + childId + ".meta.json"),
+          JSON.stringify({ parentAgentId }),
+        );
+      }
+      const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
+      const initial = agent.scan();
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+      expect(initial).toMatchObject([
+        {
+          reference: { agentName: "claudecode", sessionId: childId },
+          parent_reference: { agentName: "claudecode", sessionId: parentId },
+        },
+      ]);
+      expect(buildSessionTree(initial).mountStateOf(initial[0]!)).toBe("orphan");
 
-    expect(agent.scan()).toMatchObject([
-      {
-        reference: { agentName: "claudecode", sessionId: childId },
-        title: "Orphan child",
-        parent_reference: undefined,
-      },
-    ]);
-  });
+      const parentFile = join(projectDir, parentId + ".jsonl");
+      writeMinimalClaudeSession(parentFile);
+      const added = refresh(agent, initial);
+      const child = added.sessions.find((session) => session.reference.sessionId === childId)!;
+      expect(added.detectedSessionIds).toEqual([parentId]);
+      expect(buildSessionTree(added.sessions).mountStateOf(child)).toBe("mounted-child");
+      expect(agent.getSessionData(childId).parent_reference).toEqual(child.parent_reference);
+
+      rmSync(parentFile);
+      const removed = refresh(agent, added.sessions);
+      expect(buildSessionTree(removed.sessions).mountStateOf(child)).toBe("orphan");
+      expect(removed.sessions[0]?.parent_reference).toEqual(child.parent_reference);
+    },
+  );
 
   it("skips a file whose first record is malformed", () => {
     expect(writeSession(["not json", userLine("Visible")]).agent.scan()).toEqual([]);
