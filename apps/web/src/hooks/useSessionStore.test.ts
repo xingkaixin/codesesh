@@ -23,13 +23,19 @@ import {
   type SessionProjection,
 } from "./useSessionStore";
 import { useDashboard } from "./useDashboard";
+import { useProjectLookup, useProjectPagination } from "./useProjects";
 
-vi.mock("../lib/api", () => ({
-  fetchAgents: vi.fn(),
-  fetchDashboard: vi.fn(),
-  fetchProjects: vi.fn(),
-  fetchSessions: vi.fn(),
-}));
+vi.mock("../lib/api", async (importOriginal) => {
+  const { ApiRequestError } = await importOriginal<typeof import("../lib/api")>();
+  return {
+    ApiRequestError,
+    fetchAgents: vi.fn(),
+    fetchDashboard: vi.fn(),
+    fetchProjects: vi.fn(),
+    fetchProject: vi.fn(),
+    fetchSessions: vi.fn(),
+  };
+});
 
 const config = {
   window: { from: 1_700_000_000_000, to: 1_700_004_000_000, days: 7 },
@@ -84,6 +90,95 @@ async function renderStore(window: AppConfig["window"] = config.window) {
 }
 
 describe("useSessionStore", () => {
+  it("resynchronizes when an active project page rejects its old cursor", async () => {
+    const firstPage = { ...projectPage, nextCursor: "old-cursor" };
+    const nextFirstPage = { ...projectPage, nextCursor: "new-cursor" };
+    let expired = false;
+    vi.mocked(api.fetchProjects).mockImplementation(async (_window, options) => {
+      if (options?.cursor) {
+        if (expired) throw new api.ApiRequestError("Project cursor expired", 409);
+        return projectPage;
+      }
+      return expired ? nextFirstPage : firstPage;
+    });
+    const { client, Wrapper } = createQueryWrapper();
+    client.setQueryData(queryKeys.projectPage(config.window), firstPage);
+    const { result } = renderHook(
+      () => ({
+        store: useSessionStore(config.window),
+        pagination: useProjectPagination(config.window, firstPage),
+      }),
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(result.current.store.loading).toBe(false));
+    act(() => result.current.pagination.next());
+    await waitFor(() => expect(result.current.pagination.pageNumber).toBe(2));
+    await waitFor(() => expect(result.current.pagination.loading).toBe(false));
+
+    expired = true;
+    await act(async () => {
+      await expect(result.current.store.resyncLiveState()).resolves.toBeUndefined();
+    });
+
+    await waitFor(() => expect(result.current.pagination.pageNumber).toBe(1));
+    await waitFor(() => expect(result.current.pagination.page?.nextCursor).toBe("new-cursor"));
+    expect(result.current.pagination.error).toBeNull();
+  });
+
+  it.each(["live", "resync"] as const)(
+    "refreshes project details and invalidates inactive pages in the current window on %s",
+    async (refresh) => {
+      const outsideProject: ApiProjectGroup = {
+        identityKind: "path",
+        identityKey: "/outside-first-page",
+        displayName: "Outside",
+        sources: ["codex"],
+        sessionCount: 2,
+        lastActivity: 1,
+        messages: 2,
+        tokens: 2,
+        cost: 0,
+        agentStats: [],
+      };
+      const identity = { kind: "path", key: outsideProject.identityKey } as const;
+      vi.mocked(api.fetchProject).mockResolvedValue(outsideProject);
+      const { client, Wrapper } = createQueryWrapper();
+      const inactivePageKey = queryKeys.projectPage(config.window, "inactive-cursor");
+      const otherWindowKey = queryKeys.projectDetail({ from: 1, to: 2 }, identity);
+      client.setQueryData(inactivePageKey, projectPage);
+      client.setQueryData(otherWindowKey, outsideProject);
+      const { result } = renderHook(
+        () => {
+          const store = useSessionStore(config.window);
+          const lookup = useProjectLookup(config.window, identity, store.projects);
+          return { store, lookup };
+        },
+        { wrapper: Wrapper },
+      );
+      await waitFor(() => expect(result.current.store.loading).toBe(false));
+      await waitFor(() => expect(result.current.lookup.project?.sessionCount).toBe(2));
+      vi.mocked(api.fetchProject).mockResolvedValue({ ...outsideProject, sessionCount: 1 });
+
+      await act(async () => {
+        if (refresh === "resync") await result.current.store.resyncLiveState();
+        else
+          await result.current.store.applyLiveEvent({
+            ...SAMPLE_SESSIONS_UPDATED_EVENT,
+            newSessionRefs: [],
+            changedSessionHeads: [],
+            removedSessionRefs: [SAMPLE_SESSION_HEAD.reference],
+            projectionSessionOrder: [],
+          });
+      });
+
+      await waitFor(() => expect(result.current.lookup.project?.sessionCount).toBe(1));
+      expect(api.fetchProject).toHaveBeenCalledTimes(2);
+      expect(api.fetchProjects).toHaveBeenCalledTimes(2);
+      expect(client.getQueryState(inactivePageKey)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(otherWindowKey)?.isInvalidated).toBe(false);
+    },
+  );
+
   it("makes sessions ready before the initial dashboard request completes", async () => {
     const dashboard = deferred<DashboardData>();
     vi.mocked(api.fetchDashboard).mockReturnValueOnce(dashboard.promise);

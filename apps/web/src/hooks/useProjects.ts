@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApiProjectGroup, ApiProjectPage, AppConfig } from "../lib/api";
 import { ApiRequestError, fetchProject, fetchProjects } from "../lib/api";
 import { getProjectIdentityKey, type ProjectRouteIdentity } from "../lib/projects";
@@ -35,6 +35,18 @@ export function useProjectPagination(
     retry: false,
   });
   const page = query.data ?? (cursor ? null : initialPage);
+  const staleCursor =
+    Boolean(cursor) && query.error instanceof ApiRequestError && query.error.status === 409;
+
+  useEffect(() => {
+    if (!staleCursor) return;
+    void queryClient
+      .invalidateQueries(
+        { queryKey: queryKeys.projectPage(window ?? {}), exact: true },
+        { cancelRefetch: true },
+      )
+      .then(() => setNavigation({ key, cursors: [] }));
+  }, [key, queryClient, staleCursor, window]);
 
   const next = useCallback(() => {
     const nextCursor = query.data?.nextCursor;
@@ -47,29 +59,22 @@ export function useProjectPagination(
   }, [cursors, key]);
 
   const retry = useCallback(async () => {
-    if (cursor && query.error instanceof ApiRequestError && query.error.status === 409) {
-      setNavigation({ key, cursors: [] });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.projectPage(window ?? {}),
-        exact: true,
-      });
-      return;
-    }
     await query.refetch();
-  }, [cursor, key, query, queryClient, window]);
+  }, [query]);
 
   return {
     page,
     pageNumber: cursors.length + 1,
-    loading: query.isPending || query.isPlaceholderData,
-    error:
-      query.isError && query.error instanceof Error
+    loading: staleCursor || query.isPending || query.isPlaceholderData,
+    error: staleCursor
+      ? null
+      : query.isError && query.error instanceof Error
         ? query.error.message
         : query.isError
           ? "Unable to load projects."
           : null,
-    canPrevious: cursors.length > 0 && !query.isPlaceholderData,
-    canNext: Boolean(query.data?.nextCursor) && !query.isPlaceholderData,
+    canPrevious: cursors.length > 0 && !staleCursor && !query.isPlaceholderData,
+    canNext: Boolean(query.data?.nextCursor) && !staleCursor && !query.isPlaceholderData,
     next,
     previous,
     retry,
