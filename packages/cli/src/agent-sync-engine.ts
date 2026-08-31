@@ -180,6 +180,7 @@ export class AgentSyncEngine {
     this.indexPublisher = new SearchIndexPublisher({
       jobs: this.searchIndexJobs,
       snapshot: () => this.sessionIndex.snapshot(),
+      agentSessions: (agentName) => this.sessionIndex.agentSessions(agentName),
       readCachedSessions: (agentName) => this.readCachedSessionsOrWarn("search.index", agentName),
     });
     this.sessionPublication = new SessionPublicationCoordinator(
@@ -409,7 +410,7 @@ export class AgentSyncEngine {
       appLogger.warn("scan.refresh.missing_agent", { agent: agentName });
       return { result: "skipped", completion: { completeness: "complete" } };
     }
-    const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
+    const previousSessions = this.sessionIndex.agentSessions(agentName);
     const refreshBaseline = cached?.sessions ?? previousSessions;
     const cacheTimestamp = cached?.timestamp ?? this.lastRefreshAtByAgent.get(agentName) ?? 0;
     if (cached) agent.restoreSessionCacheMeta(cached.meta);
@@ -596,7 +597,7 @@ export class AgentSyncEngine {
    * empty database.
    */
   private refreshUnavailableAgent(agentName: string): RefreshStrategyResult {
-    const previousSessions = this.sessionIndex.snapshot().byAgent[agentName] ?? [];
+    const previousSessions = this.sessionIndex.agentSessions(agentName);
     if (previousSessions.length > 0) {
       appLogger.warn("scan.refresh.agent_unavailable", {
         agent: agentName,
@@ -945,9 +946,8 @@ export class AgentSyncEngine {
     const startedAt = performance.now();
     const agent = this.findAgent(agentName);
     if (!agent || !agent.isAvailable()) return "skipped";
-    const snapshot = this.sessionIndex.snapshot();
     const cached = this.readCachedSessionsOrWarn("scan.backfill", agentName);
-    const baseline = cached?.sessions ?? snapshot.byAgent[agentName] ?? [];
+    const baseline = cached?.sessions ?? this.sessionIndex.agentSessions(agentName);
     const meta = cached?.meta ?? buildAgentCacheMeta(agent);
     const backfillCursor = getAgentFullSyncCursor(agentName);
     if (cached) agent.restoreSessionCacheMeta(cached.meta);

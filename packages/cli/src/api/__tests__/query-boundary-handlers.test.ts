@@ -23,7 +23,10 @@ describe("query boundary handlers", () => {
     { endpoint: "projects", invoke: (context) => handleGetProjects(context as never, scanSource) },
     { endpoint: "sessions", invoke: (context) => handleGetSessions(context as never, scanSource) },
     { endpoint: "search", invoke: (context) => handleSearchSessions(context as never, scanSource) },
-    { endpoint: "file-activity", invoke: (context) => handleGetFileActivity(context as never) },
+    {
+      endpoint: "file-activity",
+      invoke: (context) => handleGetFileActivity(context as never, scanSource),
+    },
     {
       endpoint: "dashboard",
       invoke: (context) => handleGetDashboard(context as never, scanSource),
@@ -54,7 +57,7 @@ describe("query boundary handlers", () => {
     const sessions = makeContext({ query: { agent: "nonexistent" } });
     handleGetSessions(sessions as never, scanSource);
     const files = makeContext({ query: { limit: "1.5" } });
-    handleGetFileActivity(files as never);
+    handleGetFileActivity(files as never, scanSource);
 
     expect(loggerMocks.warn).toHaveBeenCalledWith("api.query_parameter.invalid", {
       endpoint: "sessions",
@@ -79,7 +82,7 @@ describe("query boundary handlers", () => {
     );
 
     const files = makeContext({ query: { projectKind: "invalid", projectKey: "/repo" } });
-    handleGetFileActivity(files as never);
+    handleGetFileActivity(files as never, scanSource);
     expect(files.json).toHaveBeenCalledWith(
       { error: "projectKind and projectKey must form a valid project identity" },
       400,
@@ -111,24 +114,27 @@ describe("query boundary handlers", () => {
     });
 
     const resolver = makeProjectIdentityResolver();
-    await handleGetFileActivity(c as never, {}, resolver);
+    await handleGetFileActivity(c as never, scanSource, {}, resolver);
 
-    expect(coreMocks.listFileActivity).toHaveBeenCalledWith({
-      agent: "codex",
-      sessionId: "s1",
-      projectKind: "path",
-      projectKey: "/repo",
-      project: "repo",
-      projectScope: {
-        identity: { kind: "path", key: "/repo" },
-        path: "/repo",
+    expect(coreMocks.listFileActivity).toHaveBeenCalledWith(
+      {
+        agent: "codex",
+        sessionId: "s1",
+        projectKind: "path",
+        projectKey: "/repo",
+        project: "repo",
+        projectScope: {
+          identity: { kind: "path", key: "/repo" },
+          path: "/repo",
+        },
+        path: "src/index.ts",
+        kind: "edit",
+        from: new Date("2026-01-01T00:00:00.000Z").getTime(),
+        to: new Date("2026-01-02T00:00:00.000Z").getTime(),
+        limit: 200,
       },
-      path: "src/index.ts",
-      kind: "edit",
-      from: new Date("2026-01-01T00:00:00.000Z").getTime(),
-      to: new Date("2026-01-02T00:00:00.000Z").getTime(),
-      limit: 200,
-    });
+      undefined,
+    );
     expect(resolver.resolve).toHaveBeenCalledWith("/repo", expect.any(AbortSignal));
   });
 
@@ -137,7 +143,7 @@ describe("query boundary handlers", () => {
     (limit) => {
       const c = makeContext({ query: { kind: "execute", limit } });
 
-      handleGetFileActivity(c as never);
+      handleGetFileActivity(c as never, scanSource);
 
       expect(c.json).toHaveBeenCalledWith({ error: "limit must be a positive integer" }, 400);
       expect(coreMocks.listFileActivity).not.toHaveBeenCalled();
@@ -147,7 +153,7 @@ describe("query boundary handlers", () => {
   it("returns an empty file activity result for an unknown agent without querying storage", () => {
     const c = makeContext({ query: { agent: "nonexistent" } });
 
-    handleGetFileActivity(c as never);
+    handleGetFileActivity(c as never, scanSource);
 
     expect(c.json).toHaveBeenCalledWith({ activity: [] });
     expect(coreMocks.listFileActivity).not.toHaveBeenCalled();

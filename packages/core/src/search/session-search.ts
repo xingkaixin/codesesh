@@ -23,6 +23,7 @@ import { searchFileActivitySessions } from "../discovery/cache/file-activity.js"
 import { matchesProjectScope, type ProjectScopeMatcher } from "../projects/scope.js";
 import { matchesProjectIdentity } from "../projects/identity.js";
 import { getSessionActivityTime } from "../analytics/dashboard.js";
+import { matchesSessionQueryScope, type SessionQueryScope } from "../discovery/session-scope.js";
 
 export interface SessionSearchSnapshot {
   /** Globally sorted by activity descending; ties preserve the canonical live-index order. */
@@ -33,6 +34,7 @@ export interface SessionSearchSnapshot {
 
 export interface SessionSearchContext {
   sessionTree?: SessionTree;
+  queryScope?: SessionQueryScope;
 }
 
 export interface SessionSearchFilterContext extends SessionSearchContext {
@@ -51,7 +53,13 @@ export function executeSessionSearch(
     return searchRecentSessions(snapshot, merged.options, context);
   }
 
-  return searchIndexedSessions(query, merged.text, merged.parsed, merged.options);
+  return searchIndexedSessions(
+    query,
+    merged.text,
+    merged.parsed,
+    merged.options,
+    context.queryScope,
+  );
 }
 
 // Qualifiers alone (tag:/cost:/agent:/project:) do not force the indexed
@@ -124,14 +132,16 @@ export function filterSessionSearchCandidates(
   const sessionSnapshot =
     context.sessionSnapshot ?? candidates.map((candidate) => candidate.session);
   const inclusiveCosts = buildInclusiveCostLookup(sessionSnapshot, options, context.sessionTree);
-  const headMatches = candidates.filter((candidate) =>
-    matchesSessionSearchFilters(
-      candidate.reference.agentName,
-      candidate.session,
-      options,
-      projectScope,
-      inclusiveCostFor(candidate.reference.agentName, candidate.session, inclusiveCosts),
-    ),
+  const headMatches = candidates.filter(
+    (candidate) =>
+      matchesSessionQueryScope(candidate.session, context.queryScope) &&
+      matchesSessionSearchFilters(
+        candidate.reference.agentName,
+        candidate.session,
+        options,
+        projectScope,
+        inclusiveCostFor(candidate.reference.agentName, candidate.session, inclusiveCosts),
+      ),
   );
   if (!options.file && !options.fileKind && !options.tools?.length) return headMatches;
 
@@ -167,6 +177,7 @@ function searchRecentSessions(
   for (const session of sessions) {
     const agentName = options.agent ?? session.reference.agentName;
     if (
+      !matchesSessionQueryScope(session, context.queryScope) ||
       !matchesSessionSearchFilters(
         agentName,
         session,
@@ -248,12 +259,13 @@ function searchIndexedSessions(
   textQuery: string,
   parsed: ParsedSearchQuery,
   options: SearchOptions,
+  queryScope?: SessionQueryScope,
 ): SearchResult[] {
   const fileQuery = deriveFileQuery(query, parsed, options);
-  const fileResults = fileQuery ? searchFileActivitySessions(fileQuery, options) : [];
+  const fileResults = fileQuery ? searchFileActivitySessions(fileQuery, options, queryScope) : [];
   const sessionResults = canSkipSessionsSearch(fileQuery, textQuery)
     ? []
-    : searchSessions(query, options);
+    : searchSessions(query, options, queryScope);
   const textMatchReferences =
     textQuery && options.file
       ? new Set(sessionResults.map((result) => getSessionReferenceKey(result.reference)))

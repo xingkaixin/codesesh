@@ -46,6 +46,7 @@ describe("handleSearchSessions", () => {
         projectKey: "github.com/acme/app",
       }),
       scanSource.getSnapshot(),
+      { queryScope: undefined },
     );
     expect(c.json).toHaveBeenCalledWith({ results: sentinelResults });
   });
@@ -67,6 +68,7 @@ describe("handleSearchSessions", () => {
         },
       }),
       scanSource.getSnapshot(),
+      { queryScope: undefined },
     );
   });
 
@@ -175,6 +177,7 @@ describe("handleSearchSessions", () => {
       "needle",
       expect.objectContaining({ limit: 100 }),
       expect.anything(),
+      { queryScope: undefined },
     );
   });
 
@@ -223,6 +226,7 @@ describe("handleSearchSessions", () => {
       "agent:claudecode custom cache",
       expect.anything(),
       expect.anything(),
+      { queryScope: undefined },
     );
     const results = c.json.mock.calls[0]![0].results;
     expect(results).toHaveLength(1);
@@ -249,6 +253,7 @@ describe("handleSearchSessions", () => {
       "old alias",
       expect.objectContaining({ limit: 50 }),
       expect.anything(),
+      { queryScope: undefined },
     );
     expect(c.json.mock.calls[0]![0].results[0].session.reference.sessionId).toBe("s1000");
   });
@@ -455,7 +460,7 @@ describe("handleGetFileActivity", () => {
     ]);
     const c = makeMockContext();
 
-    handleGetFileActivity(c);
+    handleGetFileActivity(c, makeScanSource());
 
     const responseSession = c.json.mock.calls[0]![0].activity[0].session;
     expect(responseSession.display_title).toBe("Activity alias");

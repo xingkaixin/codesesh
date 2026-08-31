@@ -1,6 +1,7 @@
 export type { ProjectIdentityRef } from "../types/index.js";
 export {
   computeIdentityProjection,
+  createProjectScopeMatcher,
   createProjectScopeMatcherFromIdentity,
   isProjectIdentityKind,
   matchesProjectIdentity,

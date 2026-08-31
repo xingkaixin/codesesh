@@ -2,6 +2,7 @@ import {
   buildAgentCacheMeta,
   type CachedResult,
   type LiveSnapshot,
+  type IdentifiedSessionHead,
 } from "@codesesh/core/runtime/discovery";
 import { appLogger } from "./logging.js";
 import type { SearchIndexJobRunner } from "./search-index-job-runner.js";
@@ -13,6 +14,7 @@ import type {
 export interface SearchIndexPublisherOptions {
   jobs: SearchIndexJobRunner;
   snapshot(): LiveSnapshot;
+  agentSessions(agentName: string): IdentifiedSessionHead[];
   readCachedSessions(agentName: string): CachedResult | null;
 }
 
@@ -46,7 +48,7 @@ export class SearchIndexPublisher {
               kind: "full",
               context,
               agentName: agent.name,
-              sessions: snapshot.byAgent[agent.name] ?? [],
+              sessions: this.options.agentSessions(agent.name),
               meta: buildAgentCacheMeta(agent),
               completeness: "partial",
               removedSessionIds: [],
