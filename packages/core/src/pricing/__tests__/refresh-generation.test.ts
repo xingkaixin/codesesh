@@ -108,6 +108,61 @@ describe("CS-148: pricing generations", () => {
     expect(workerPricing.getPricingGeneration()).toEqual(publishedGeneration);
   });
 
+  it.each([
+    [
+      "zero input or output prices",
+      {
+        "input-only": { input_cost_per_token: 0.000001, output_cost_per_token: 0 },
+        "output-only": { input_cost_per_token: 0, output_cost_per_token: 0.000002 },
+        free: { input_cost_per_token: 0, output_cost_per_token: 0 },
+      },
+    ],
+    [
+      "nested provider prefixes",
+      {
+        "provider/vendor/chat-model": {
+          input_cost_per_token: 0.000001,
+          output_cost_per_token: 0.000002,
+        },
+      },
+    ],
+    [
+      "invalid optional prices",
+      {
+        "fallback-prices": {
+          input_cost_per_token: 0.000001,
+          output_cost_per_token: 0.000002,
+          cache_creation_input_token_cost: Infinity,
+          cache_read_input_token_cost: NaN,
+          output_reasoning_cost_per_token: -1,
+          web_search_cost_per_request: Infinity,
+        },
+      },
+    ],
+  ])("preserves the complete published generation with %s", async (_name, data) => {
+    vi.resetModules();
+    const parentPricing = await import("../fetcher.js");
+    vi.resetModules();
+    const existingWorkerPricing = await import("../fetcher.js");
+    stubFetch(async () => ({ ok: true, json: async () => data }));
+
+    expect(await parentPricing.refreshPricingCache()).toBe(true);
+    expect(parentPricing.publishPendingPricing()).toBe(true);
+    const publishedGeneration = parentPricing.getPricingGeneration();
+    for (const [name, entry] of Object.entries(data)) {
+      expect(publishedGeneration.pricing.get(name)).toMatchObject({
+        inputCostPerToken: entry.input_cost_per_token,
+        outputCostPerToken: entry.output_cost_per_token,
+      });
+    }
+    existingWorkerPricing.synchronizePricingGeneration(publishedGeneration.id);
+    expect(existingWorkerPricing.getPricingGeneration()).toEqual(publishedGeneration);
+
+    vi.resetModules();
+    const newWorkerPricing = await import("../fetcher.js");
+    expect(newWorkerPricing.getPricingGeneration()).toEqual(publishedGeneration);
+  });
+
   it("does not change live prices until the refresh is published", async () => {
     const before = estimateTokenCost(MODEL, MILLION_INPUT);
     const generationBefore = getPricingGeneration().id;

@@ -70,8 +70,8 @@ function createPricingGeneration(pricing: Map<string, ModelPricing>): PricingGen
   };
 }
 
-function costNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function costNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function getCacheDir() {
@@ -100,35 +100,29 @@ function loadSnapshot(): Map<string, ModelPricing> {
 }
 
 function parseLiteLLMEntry(entry: LiteLLMEntry): ModelPricing | null {
-  const input = entry.input_cost_per_token;
-  const output = entry.output_cost_per_token;
-  if (typeof input !== "number" || typeof output !== "number") return null;
-
-  return {
-    inputCostPerToken: input,
-    outputCostPerToken: output,
-    cacheCreateCostPerToken: entry.cache_creation_input_token_cost ?? input * 1.25,
-    cacheReadCostPerToken: entry.cache_read_input_token_cost ?? input * 0.1,
-    reasoningCostPerToken: entry.output_reasoning_cost_per_token ?? output,
-    webSearchCostPerRequest: costNumber(
+  return normalizePricing({
+    inputCostPerToken: entry.input_cost_per_token,
+    outputCostPerToken: entry.output_cost_per_token,
+    cacheCreateCostPerToken: entry.cache_creation_input_token_cost,
+    cacheReadCostPerToken: entry.cache_read_input_token_cost,
+    reasoningCostPerToken: entry.output_reasoning_cost_per_token,
+    webSearchCostPerRequest:
       entry.web_search_cost_per_request ?? entry.search_context_cost_per_query,
-      WEB_SEARCH_COST,
-    ),
-  };
+  });
 }
 
-function normalizeCachedPricing(raw: Record<string, unknown>): ModelPricing | null {
-  const input = costNumber(raw["inputCostPerToken"], 0);
-  const output = costNumber(raw["outputCostPerToken"], 0);
-  if (input <= 0 || output <= 0) return null;
+function normalizePricing(raw: Record<string, unknown>): ModelPricing | null {
+  const input = costNumber(raw["inputCostPerToken"]);
+  const output = costNumber(raw["outputCostPerToken"]);
+  if (input === undefined || output === undefined) return null;
 
   return {
     inputCostPerToken: input,
     outputCostPerToken: output,
-    cacheCreateCostPerToken: costNumber(raw["cacheCreateCostPerToken"], input * 1.25),
-    cacheReadCostPerToken: costNumber(raw["cacheReadCostPerToken"], input * 0.1),
-    reasoningCostPerToken: costNumber(raw["reasoningCostPerToken"], output),
-    webSearchCostPerRequest: costNumber(raw["webSearchCostPerRequest"], WEB_SEARCH_COST),
+    cacheCreateCostPerToken: costNumber(raw["cacheCreateCostPerToken"]) ?? input * 1.25,
+    cacheReadCostPerToken: costNumber(raw["cacheReadCostPerToken"]) ?? input * 0.1,
+    reasoningCostPerToken: costNumber(raw["reasoningCostPerToken"]) ?? output,
+    webSearchCostPerRequest: costNumber(raw["webSearchCostPerRequest"]) ?? WEB_SEARCH_COST,
   };
 }
 
@@ -170,9 +164,9 @@ function readDiskCache(): PricingGeneration | null {
 
     const next = loadSnapshot();
     for (const [name, rawPricing] of Object.entries(cached.data)) {
-      const pricing = normalizeCachedPricing(rawPricing);
+      const pricing = normalizePricing(rawPricing);
       if (!pricing) continue;
-      indexPricing(next, name, pricing);
+      next.set(normalizeModelKey(name), pricing);
     }
     return createPricingGeneration(next);
   } catch {
