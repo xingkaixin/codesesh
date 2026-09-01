@@ -7,6 +7,9 @@
 - [English landing page](https://codesesh.xingkaixin.me/)
 - [Chinese landing page](https://codesesh.xingkaixin.me/zh/)
 - [Japanese landing page](https://codesesh.xingkaixin.me/ja/)
+- [English product changelog](https://codesesh.xingkaixin.me/changelog/)
+- [Chinese product changelog](https://codesesh.xingkaixin.me/zh/changelog/)
+- [Japanese product changelog](https://codesesh.xingkaixin.me/ja/changelog/)
 - [Markdown landing page](https://codesesh.xingkaixin.me/index.md)
 - [Full product knowledge](https://codesesh.xingkaixin.me/llms-full.txt)
 - [GitHub repository](https://github.com/xingkaixin/codesesh)
@@ -37,6 +40,10 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 - Organize: project identity, nested session trees, smart tags, aliases, and bookmarks.
 - Recover: structured search, file activity lookup, and keyboard navigation.
 - Replay: ordered messages and tool calls, token and cost visibility, and a local SQLite index.
+
+## Product Changelog
+
+The product changelog explains user-visible improvements, why each release matters, and the direction behind the work. It is written for CodeSesh users and visitors rather than as a copy of repository commits.
 
 ## Install
 

@@ -52,6 +52,7 @@ interface LandingCopy {
     tour: string;
     capabilities: string;
     agents: string;
+    changelog: string;
     faq: string;
     github: string;
     languageLabel: string;
@@ -111,6 +112,7 @@ interface LandingCopy {
   };
   footer: {
     note: string;
+    changelog: string;
     docs: string;
     issues: string;
   };
@@ -180,6 +182,7 @@ export const copy = {
       tour: "产品导览",
       capabilities: "能力",
       agents: "支持的 Agent",
+      changelog: "更新日志",
       faq: "FAQ",
       github: "GitHub",
       languageLabel: "语言",
@@ -363,6 +366,7 @@ export const copy = {
     },
     footer: {
       note: "MIT 许可，会话数据与索引保留在本机",
+      changelog: "更新日志",
       docs: "文档",
       issues: "问题反馈",
     },
@@ -376,6 +380,7 @@ export const copy = {
       tour: "Tour",
       capabilities: "Capabilities",
       agents: "Agents",
+      changelog: "Changelog",
       faq: "FAQ",
       github: "GitHub",
       languageLabel: "Language",
@@ -563,6 +568,7 @@ export const copy = {
     },
     footer: {
       note: "MIT licensed, with session data and indexes kept local",
+      changelog: "Changelog",
       docs: "Docs",
       issues: "Issues",
     },
@@ -576,6 +582,7 @@ export const copy = {
       tour: "製品ツアー",
       capabilities: "機能",
       agents: "対応エージェント",
+      changelog: "更新履歴",
       faq: "FAQ",
       github: "GitHub",
       languageLabel: "言語",
@@ -773,6 +780,7 @@ export const copy = {
     },
     footer: {
       note: "MITライセンス。セッションデータとインデックスはローカルに保持",
+      changelog: "更新履歴",
       docs: "ドキュメント",
       issues: "問題を報告",
     },

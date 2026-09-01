@@ -7,6 +7,7 @@ import Features from "./Features.astro";
 import Footer from "./Footer.astro";
 import Header from "./Header.astro";
 import Hero from "./Hero.astro";
+import LatestUpdate from "./LatestUpdate.astro";
 import ProductShowcase from "./ProductShowcase.astro";
 
 interface Props {
@@ -25,6 +26,7 @@ const { locale } = Astro.props;
     <ProductShowcase locale={locale} />
     <Features locale={locale} />
     <Agents locale={locale} />
+    <LatestUpdate locale={locale} />
     <FAQ locale={locale} />
     <CallToAction locale={locale} />
   </main>

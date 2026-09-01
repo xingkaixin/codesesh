@@ -1,5 +1,6 @@
 ---
 import { copy, localeConfig, type Locale } from "../data/landing";
+import { changelogRoutes } from "../data/changelog";
 
 interface Props {
   locale: Locale;
@@ -38,6 +39,7 @@ const t = copy[locale].footer;
       <a class="footer-link" href="https://github.com/xingkaixin/codesesh"
         >GitHub</a
       >
+      <a class="footer-link" href={changelogRoutes[locale]}>{t.changelog}</a>
       <a
         class="footer-link"
         href="https://github.com/xingkaixin/codesesh#readme">{t.docs}</a

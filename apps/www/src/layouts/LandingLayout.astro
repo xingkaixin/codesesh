@@ -12,18 +12,40 @@ import {
 import analyticsLoader from "../scripts/analytics-loader.js?raw";
 import "../styles/global.css";
 
-interface Props {
-  locale: Locale;
+interface PageConfig {
+  title: string;
+  description: string;
+  route: string;
+  alternateRoutes: Record<Locale, string>;
+  schema: Record<string, unknown>[];
+  markdownUrl?: string;
 }
 
-const { locale } = Astro.props;
+interface Props {
+  locale: Locale;
+  page?: PageConfig;
+}
+
+const { locale, page } = Astro.props;
 const t = copy[locale];
 const currentLocale = localeConfig[locale];
-const canonicalUrl = new URL(currentLocale.route, siteUrl).toString();
+const pageTitle = page?.title ?? t.meta.title;
+const pageDescription = page?.description ?? t.meta.description;
+const canonicalUrl = new URL(
+  page?.route ?? currentLocale.route,
+  siteUrl,
+).toString();
 const alternateLocales = locales.map((key) => ({
   ...localeConfig[key],
-  url: new URL(localeConfig[key].route, siteUrl).toString(),
+  url: new URL(
+    page?.alternateRoutes[key] ?? localeConfig[key].route,
+    siteUrl,
+  ).toString(),
 }));
+const defaultLocaleUrl = new URL(
+  page?.alternateRoutes.en ?? localeConfig.en.route,
+  siteUrl,
+).toString();
 const ogLocaleAlternates = alternateLocales.filter(
   (alternate) => alternate.ogLocale !== currentLocale.ogLocale,
 );
@@ -42,99 +64,102 @@ const websiteId = `${siteUrl}/#website`;
 const softwareId = `${siteUrl}/#software`;
 const webpageId = `${canonicalUrl}#webpage`;
 const faqId = `${canonicalUrl}#faq`;
+const commonSchema = [
+  {
+    "@type": "Organization",
+    "@id": `${siteUrl}/#organization`,
+    name: "CodeSesh",
+    url: siteUrl,
+    logo: `${siteUrl}/logo.svg`,
+    sameAs: [
+      "https://github.com/xingkaixin/codesesh",
+      "https://www.npmjs.com/package/codesesh",
+    ],
+  },
+  {
+    "@type": "WebSite",
+    "@id": websiteId,
+    name: "CodeSesh",
+    url: siteUrl,
+    publisher: {
+      "@id": `${siteUrl}/#organization`,
+    },
+    inLanguage: alternateLocales.map(({ language }) => language),
+  },
+  {
+    "@type": "ImageObject",
+    "@id": `${siteUrl}/#primaryimage`,
+    url: ogImageUrl,
+    contentUrl: ogImageUrl,
+    width: 1200,
+    height: 630,
+    caption: pageTitle,
+  },
+];
+const landingSchema = [
+  {
+    "@type": "WebPage",
+    "@id": webpageId,
+    url: canonicalUrl,
+    name: pageTitle,
+    description: pageDescription,
+    inLanguage: currentLocale.language,
+    isPartOf: {
+      "@id": websiteId,
+    },
+    about: {
+      "@id": softwareId,
+    },
+    primaryImageOfPage: {
+      "@id": `${siteUrl}/#primaryimage`,
+    },
+    mainEntity: [{ "@id": softwareId }, { "@id": faqId }],
+  },
+  {
+    "@type": "SoftwareApplication",
+    "@id": softwareId,
+    name: "CodeSesh",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Windows, macOS, Linux",
+    description: pageDescription,
+    url: canonicalUrl,
+    codeRepository: "https://github.com/xingkaixin/codesesh",
+    installUrl: "https://www.npmjs.com/package/codesesh",
+    downloadUrl: "https://www.npmjs.com/package/codesesh",
+    license: "https://opensource.org/license/mit",
+    isAccessibleForFree: true,
+    author: {
+      "@id": `${siteUrl}/#organization`,
+    },
+    publisher: {
+      "@id": `${siteUrl}/#organization`,
+    },
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+    },
+    featureList,
+  },
+  {
+    "@type": "FAQPage",
+    "@id": faqId,
+    isPartOf: {
+      "@id": webpageId,
+    },
+    mainEntity: t.faq.items.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.answer,
+      },
+    })),
+  },
+];
 const jsonLd = {
   "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "Organization",
-      "@id": `${siteUrl}/#organization`,
-      name: "CodeSesh",
-      url: siteUrl,
-      logo: `${siteUrl}/logo.svg`,
-      sameAs: [
-        "https://github.com/xingkaixin/codesesh",
-        "https://www.npmjs.com/package/codesesh",
-      ],
-    },
-    {
-      "@type": "WebSite",
-      "@id": websiteId,
-      name: "CodeSesh",
-      url: siteUrl,
-      publisher: {
-        "@id": `${siteUrl}/#organization`,
-      },
-      inLanguage: alternateLocales.map(({ language }) => language),
-    },
-    {
-      "@type": "ImageObject",
-      "@id": `${siteUrl}/#primaryimage`,
-      url: ogImageUrl,
-      contentUrl: ogImageUrl,
-      width: 1200,
-      height: 630,
-      caption: t.meta.title,
-    },
-    {
-      "@type": "WebPage",
-      "@id": webpageId,
-      url: canonicalUrl,
-      name: t.meta.title,
-      description: t.meta.description,
-      inLanguage: currentLocale.language,
-      isPartOf: {
-        "@id": websiteId,
-      },
-      about: {
-        "@id": softwareId,
-      },
-      primaryImageOfPage: {
-        "@id": `${siteUrl}/#primaryimage`,
-      },
-      mainEntity: [{ "@id": softwareId }, { "@id": faqId }],
-    },
-    {
-      "@type": "SoftwareApplication",
-      "@id": softwareId,
-      name: "CodeSesh",
-      applicationCategory: "DeveloperApplication",
-      operatingSystem: "Windows, macOS, Linux",
-      description: t.meta.description,
-      url: canonicalUrl,
-      codeRepository: "https://github.com/xingkaixin/codesesh",
-      installUrl: "https://www.npmjs.com/package/codesesh",
-      downloadUrl: "https://www.npmjs.com/package/codesesh",
-      license: "https://opensource.org/license/mit",
-      isAccessibleForFree: true,
-      author: {
-        "@id": `${siteUrl}/#organization`,
-      },
-      publisher: {
-        "@id": `${siteUrl}/#organization`,
-      },
-      offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
-      },
-      featureList,
-    },
-    {
-      "@type": "FAQPage",
-      "@id": faqId,
-      isPartOf: {
-        "@id": webpageId,
-      },
-      mainEntity: t.faq.items.map((item) => ({
-        "@type": "Question",
-        name: item.question,
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: item.answer,
-        },
-      })),
-    },
-  ],
+  "@graph": [...commonSchema, ...(page?.schema ?? landingSchema)],
 };
 ---
 
@@ -245,7 +270,7 @@ const jsonLd = {
       </style>
     </noscript>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content={t.meta.description} />
+    <meta name="description" content={pageDescription} />
     <meta name="author" content="XingKaiXin" />
     <meta
       name="robots"
@@ -263,12 +288,16 @@ const jsonLd = {
         ))
       }
     </Fragment>
-    <link
-      rel="alternate"
-      hreflang="x-default"
-      href={new URL(localeConfig.en.route, siteUrl).toString()}
-    />
-    <link rel="alternate" type="text/markdown" href="/index.md" />
+    <link rel="alternate" hreflang="x-default" href={defaultLocaleUrl} />
+    {
+      (!page || page.markdownUrl) && (
+        <link
+          rel="alternate"
+          type="text/markdown"
+          href={page?.markdownUrl ?? "/index.md"}
+        />
+      )
+    }
     <link
       rel="alternate"
       type="text/plain"
@@ -284,14 +313,14 @@ const jsonLd = {
 
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonicalUrl} />
-    <meta property="og:title" content={t.meta.title} />
-    <meta property="og:description" content={t.meta.description} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
     <meta property="og:image" content={ogImageUrl} />
     <meta property="og:image:secure_url" content={ogImageUrl} />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content={t.meta.title} />
+    <meta property="og:image:alt" content={pageTitle} />
     <meta property="og:site_name" content="CodeSesh" />
     <meta property="og:locale" content={currentLocale.ogLocale} />
     <Fragment>
@@ -303,16 +332,16 @@ const jsonLd = {
     </Fragment>
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={t.meta.title} />
-    <meta name="twitter:description" content={t.meta.description} />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
-    <meta name="twitter:image:alt" content={t.meta.title} />
+    <meta name="twitter:image:alt" content={pageTitle} />
 
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=2" />
     <link rel="apple-touch-icon" href="/logo.svg?v=2" />
     <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 
-    <title>{t.meta.title}</title>
+    <title>{pageTitle}</title>
     <script
       is:inline
       type="application/ld+json"

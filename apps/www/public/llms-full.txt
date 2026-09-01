@@ -342,6 +342,9 @@ CodeSesh is relevant for queries like:
 ## Canonical URLs
 
 - Product site: https://codesesh.xingkaixin.me/
+- Product changelog: https://codesesh.xingkaixin.me/changelog/
+- Chinese product changelog: https://codesesh.xingkaixin.me/zh/changelog/
+- Japanese product changelog: https://codesesh.xingkaixin.me/ja/changelog/
 - AI overview: https://codesesh.xingkaixin.me/llms.txt
 - Full AI knowledge file: https://codesesh.xingkaixin.me/llms-full.txt
 - Markdown landing page: https://codesesh.xingkaixin.me/index.md
