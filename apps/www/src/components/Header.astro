@@ -1,13 +1,17 @@
 ---
 import { copy, localeConfig, locales, type Locale } from "../data/landing";
+import { changelogRoutes } from "../data/changelog";
 import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
+  page?: "landing" | "changelog";
 }
 
-const { locale } = Astro.props;
+const { locale, page = "landing" } = Astro.props;
 const t = copy[locale].header;
+const homeRoute = localeConfig[locale].route;
+const languageRoutes = page === "changelog" ? changelogRoutes : undefined;
 
 const themes = [
   { key: "light", icon: "sun", label: t.themeLight },
@@ -38,10 +42,18 @@ const themes = [
       class="ml-8 hidden items-center gap-6 md:flex"
       aria-label={localeConfig[locale].primaryNavigationLabel}
     >
-      <a class="landing-nav-link" href="#tour">{t.tour}</a>
-      <a class="landing-nav-link" href="#capabilities">{t.capabilities}</a>
-      <a class="landing-nav-link" href="#agents">{t.agents}</a>
-      <a class="landing-nav-link" href="#faq">{t.faq}</a>
+      <a class="landing-nav-link" href={`${homeRoute}#tour`}>{t.tour}</a>
+      <a class="landing-nav-link" href={`${homeRoute}#capabilities`}
+        >{t.capabilities}</a
+      >
+      <a class="landing-nav-link" href={`${homeRoute}#agents`}>{t.agents}</a>
+      <a
+        class="landing-nav-link hidden lg:inline"
+        href={changelogRoutes[locale]}
+        aria-current={page === "changelog" ? "page" : undefined}
+        >{t.changelog}</a
+      >
+      <a class="landing-nav-link" href={`${homeRoute}#faq`}>{t.faq}</a>
     </nav>
 
     <nav
@@ -56,7 +68,7 @@ const themes = [
         {
           locales.map((item) => (
             <a
-              href={localeConfig[item].route}
+              href={languageRoutes?.[item] ?? localeConfig[item].route}
               class:list={[
                 "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
                 locale === item

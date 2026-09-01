@@ -1,0 +1,11 @@
+---
+import ChangelogPage from "../../components/ChangelogPage.astro";
+import { createChangelogPageConfig } from "../../data/changelog";
+import LandingLayout from "../../layouts/LandingLayout.astro";
+
+const locale = "en";
+---
+
+<LandingLayout locale={locale} page={createChangelogPageConfig(locale)}>
+  <ChangelogPage locale={locale} />
+</LandingLayout>

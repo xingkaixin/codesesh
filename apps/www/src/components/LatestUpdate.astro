@@ -1,0 +1,87 @@
+---
+import {
+  changelogCopy,
+  changelogRoutes,
+  formatReleaseDate,
+} from "../data/changelog";
+import type { Locale } from "../data/landing";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = changelogCopy[locale];
+const release = t.releases[0]!;
+---
+
+<section
+  id="updates"
+  class="scroll-mt-20 px-4 pt-24 sm:px-6 lg:px-7"
+  aria-labelledby="updates-heading"
+>
+  <div
+    class="mx-auto grid max-w-[1180px] gap-9 border-t border-[var(--console-border)] pt-10 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-[72px]"
+  >
+    <div>
+      <p class="console-eyebrow mb-4">{t.latest.label}</p>
+      <h2
+        id="updates-heading"
+        class="console-display landing-heading text-3xl font-semibold leading-[1.15] text-[var(--console-text)] sm:text-4xl"
+      >
+        {t.latest.title}
+      </h2>
+      <p
+        class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]"
+      >
+        {t.latest.body}
+      </p>
+    </div>
+
+    <article aria-labelledby={`release-${release.version}`}>
+      <div
+        class="console-mono flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[var(--console-muted)]"
+      >
+        <span>CodeSesh {release.version}</span>
+        <time datetime={release.date}
+          >{formatReleaseDate(locale, release.date)}</time
+        >
+      </div>
+      <h3
+        id={`release-${release.version}`}
+        class="console-display landing-heading mt-4 max-w-3xl text-2xl font-semibold leading-[1.2] text-[var(--console-text)] sm:text-3xl"
+      >
+        {release.title}
+      </h3>
+      <p
+        class="mt-4 max-w-[70ch] text-[15px] leading-7 text-[var(--console-text-secondary)]"
+      >
+        {release.summary}
+      </p>
+
+      <ul class="mt-7 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+        {
+          release.highlights.map((item) => (
+            <li>
+              <p class="text-sm font-semibold text-[var(--console-text)]">
+                {item.title}
+              </p>
+              <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
+                {item.description}
+              </p>
+            </li>
+          ))
+        }
+      </ul>
+
+      <a
+        href={changelogRoutes[locale]}
+        class="motion-hover mt-8 inline-flex min-h-11 items-center gap-2 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-4 text-sm font-semibold text-[var(--console-text)] hover:border-[var(--brand-line)] hover:text-[var(--brand-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+      >
+        {t.latest.link}
+        <Icon name="chevron-right" class="size-4" />
+      </a>
+    </article>
+  </div>
+</section>

@@ -1,0 +1,125 @@
+---
+import { changelogCopy, formatReleaseDate } from "../data/changelog";
+import type { Locale } from "../data/landing";
+import Footer from "./Footer.astro";
+import Header from "./Header.astro";
+import Icon from "./Icon.astro";
+import SectionBackground from "./SectionBackground.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = changelogCopy[locale];
+---
+
+<div
+  class="console-ui min-h-dvh bg-[var(--console-bg)] text-[var(--console-text)]"
+>
+  <Header locale={locale} page="changelog" />
+  <main>
+    <section
+      class="landing-background overflow-hidden px-4 pb-16 pt-20 sm:px-6 sm:pb-20 lg:px-7"
+    >
+      <SectionBackground variant="hero" />
+      <div class="mx-auto max-w-[1180px]">
+        <h1
+          class="console-display landing-heading max-w-[820px] text-4xl font-semibold leading-[1.08] tracking-[-0.035em] text-[var(--console-text)] sm:text-5xl lg:text-6xl"
+        >
+          {t.hero.title}
+        </h1>
+        <p
+          class="mt-6 max-w-[68ch] text-base leading-8 text-[var(--console-text-secondary)] sm:text-lg"
+        >
+          {t.hero.body}
+        </p>
+      </div>
+    </section>
+
+    <section
+      class="px-4 pb-10 sm:px-6 lg:px-7"
+      aria-labelledby="release-history-heading"
+    >
+      <div class="mx-auto max-w-[1180px]">
+        <h2
+          id="release-history-heading"
+          class="console-mono border-b border-[var(--console-border)] pb-5 text-xs font-medium text-[var(--console-muted)]"
+        >
+          {t.release.historyLabel}
+        </h2>
+
+        {
+          t.releases.map((release) => (
+            <article
+              id={`v${release.version.replaceAll(".", "-")}`}
+              class="scroll-mt-24 grid gap-8 border-b border-[var(--console-border)] py-14 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)] lg:gap-[72px] lg:py-20"
+              aria-labelledby={`release-heading-${release.version}`}
+            >
+              <div class="lg:pt-1">
+                <p class="console-mono text-sm font-semibold text-[var(--console-text)]">
+                  CodeSesh {release.version}
+                </p>
+                <time
+                  datetime={release.date}
+                  class="console-mono mt-2 block text-[11px] text-[var(--console-muted)]"
+                >
+                  {formatReleaseDate(locale, release.date)}
+                </time>
+                <a
+                  href={`https://github.com/xingkaixin/codesesh/releases/tag/v${release.version}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="footer-link mt-6 inline-flex min-h-11 items-center gap-1.5"
+                >
+                  {t.release.details}
+                  <Icon name="chevron-right" class="size-3.5" />
+                </a>
+              </div>
+
+              <div>
+                <h3
+                  id={`release-heading-${release.version}`}
+                  class="console-display landing-heading max-w-3xl text-3xl font-semibold leading-[1.15] text-[var(--console-text)] sm:text-4xl"
+                >
+                  {release.title}
+                </h3>
+                <p class="mt-5 max-w-[72ch] text-[15px] leading-8 text-[var(--console-text-secondary)]">
+                  {release.summary}
+                </p>
+
+                <div class="mt-10">
+                  <h4 class="text-sm font-semibold text-[var(--console-text)]">
+                    {t.release.changed}
+                  </h4>
+                  <ul class="mt-5 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+                    {release.highlights.map((item) => (
+                      <li>
+                        <p class="text-sm font-semibold text-[var(--console-text)]">
+                          {item.title}
+                        </p>
+                        <p class="mt-1.5 text-sm leading-7 text-[var(--console-muted)]">
+                          {item.description}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div class="mt-10 border-l-2 border-[var(--brand)] pl-5 sm:pl-6">
+                  <h4 class="text-sm font-semibold text-[var(--console-text)]">
+                    {t.release.direction}
+                  </h4>
+                  <p class="mt-2 max-w-[68ch] text-sm leading-7 text-[var(--console-text-secondary)]">
+                    {release.direction}
+                  </p>
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+  </main>
+  <Footer locale={locale} />
+</div>

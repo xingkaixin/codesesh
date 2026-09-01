@@ -97,6 +97,9 @@ The initial scan persists backfill progress. Later starts restore from the SQLit
 - Chinese product site: https://codesesh.xingkaixin.me/zh/
 - AI overview: https://codesesh.xingkaixin.me/llms.txt
 - Full AI knowledge file: https://codesesh.xingkaixin.me/llms-full.txt
+- Product changelog: https://codesesh.xingkaixin.me/changelog/
+- Chinese product changelog: https://codesesh.xingkaixin.me/zh/changelog/
+- Japanese product changelog: https://codesesh.xingkaixin.me/ja/changelog/
 - GitHub: https://github.com/xingkaixin/codesesh
 - npm: https://www.npmjs.com/package/codesesh
 
