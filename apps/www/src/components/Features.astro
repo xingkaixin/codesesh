@@ -1,6 +1,7 @@
 ---
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -12,43 +13,31 @@ const t = copy[locale].features;
 
 <section
   id="capabilities"
-  class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 sm:pt-28 lg:px-7"
+  class="features"
   aria-labelledby="capabilities-heading"
 >
-  <div class="mx-auto max-w-[1180px]">
-    <h2
-      id="capabilities-heading"
-      class="console-display landing-heading max-w-[20em] text-3xl font-semibold leading-[1.16] text-[var(--console-text)] sm:text-[2.15rem]"
-    >
-      <HeadingText value={t.title} />
-    </h2>
-    <p
-      class="mt-4 max-w-2xl text-sm leading-7 text-[var(--console-text-secondary)]"
-    >
-      {t.body}
-    </p>
+  <div class="features__inner">
+    <header class="features__header">
+      <h2 id="capabilities-heading" class="console-display landing-heading">
+        <HeadingText value={t.title} />
+      </h2>
+      <p>{t.body}</p>
+    </header>
 
-    <div
-      class="mt-9 grid gap-px overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-border)] sm:grid-cols-2 lg:grid-cols-4"
-    >
+    <div class="features__grid">
       {
-        t.groups.map((group) => (
-          <article class="bg-[var(--console-bg)] px-5 py-6 sm:px-6">
-            <h3 class="console-display text-xl font-semibold text-[var(--console-text)]">
-              {group.title}
-            </h3>
-            <p class="mt-2 min-h-12 text-xs leading-5 text-[var(--console-muted)]">
-              {group.description}
-            </p>
-            <ul class="mt-5 space-y-4">
+        t.groups.map((group, index) => (
+          <article class={`feature-card feature-card--${index + 1}`}>
+            <h3 class="console-display">{group.title}</h3>
+            <p class="feature-card__description">{group.description}</p>
+            <ul>
               {group.items.map((item) => (
                 <li>
-                  <p class="text-[13px] font-semibold text-[var(--console-text)]">
-                    {item.title}
-                  </p>
-                  <p class="mt-1 text-xs leading-5 text-[var(--console-text-secondary)]">
-                    {item.description}
-                  </p>
+                  <Icon name={item.icon} class="size-4" />
+                  <div>
+                    <p>{item.title}</p>
+                    <span>{item.description}</span>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -58,3 +47,151 @@ const t = copy[locale].features;
     </div>
   </div>
 </section>
+
+<style>
+  .features {
+    scroll-margin-top: 5rem;
+    padding: 8.5rem 1rem 1rem;
+  }
+
+  .features__inner {
+    max-width: 73.75rem;
+    margin: 0 auto;
+  }
+
+  .features__header h2 {
+    max-width: 20em;
+    margin: 0;
+    color: var(--console-text);
+    font-size: clamp(2.15rem, 4.6vw, 4.2rem);
+    font-weight: 570;
+    letter-spacing: -0.05em;
+    line-height: 1.02;
+  }
+
+  .features__header > p {
+    max-width: 42rem;
+    margin: 1.2rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.75;
+  }
+
+  .features__grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 3rem;
+  }
+
+  .feature-card {
+    grid-column: span 5;
+    min-height: 19rem;
+    padding: clamp(1.5rem, 3vw, 2.3rem);
+    overflow: hidden;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-xl);
+    background: var(--console-surface);
+    box-shadow: var(--elevation-raised);
+  }
+
+  .feature-card--1,
+  .feature-card--4 {
+    grid-column: span 7;
+  }
+
+  .feature-card--1 {
+    background:
+      radial-gradient(circle at 85% 10%, var(--brand-line), transparent 34%),
+      var(--console-surface);
+  }
+
+  .feature-card--3 {
+    background:
+      linear-gradient(145deg, transparent 35%, var(--brand-soft)),
+      var(--console-surface);
+  }
+
+  .feature-card h3 {
+    margin: 0;
+    color: var(--console-text);
+    font-size: clamp(1.45rem, 2.5vw, 2.2rem);
+    font-weight: 570;
+    letter-spacing: -0.035em;
+  }
+
+  .feature-card__description {
+    max-width: 36rem;
+    margin: 0.65rem 0 0;
+    color: var(--console-muted);
+    font-size: 0.8rem;
+    line-height: 1.65;
+  }
+
+  .feature-card ul {
+    display: grid;
+    gap: 1.4rem;
+    margin: 2.2rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .feature-card li {
+    display: grid;
+    grid-template-columns: 1.25rem minmax(0, 1fr);
+    gap: 0.85rem;
+    align-items: start;
+  }
+
+  .feature-card li :global(svg) {
+    margin-top: 0.15rem;
+    color: var(--brand-text);
+  }
+
+  .feature-card li p {
+    margin: 0;
+    color: var(--console-text);
+    font-size: 0.84rem;
+    font-weight: 650;
+  }
+
+  .feature-card li span {
+    display: block;
+    max-width: 45ch;
+    margin-top: 0.3rem;
+    color: var(--console-text-secondary);
+    font-size: 0.78rem;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 820px) {
+    .features {
+      padding-top: 6rem;
+    }
+
+    .features__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .feature-card,
+    .feature-card--1,
+    .feature-card--4 {
+      grid-column: auto;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .features {
+      padding-top: 4.75rem;
+    }
+
+    .features__grid {
+      grid-template-columns: minmax(0, 1fr);
+      margin-top: 2rem;
+    }
+
+    .feature-card {
+      min-height: 0;
+    }
+  }
+</style>

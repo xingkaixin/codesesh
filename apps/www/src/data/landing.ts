@@ -195,7 +195,7 @@ export const copy = {
     hero: {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
       title: ["你和 AI 写过的", "每一次对话，都还在。"],
-      body: `CodeSesh 扫描 ${agentCount} 种 AI 编码 Agent 的本地会话，把分散的历史收进同一个索引：按项目组织、结构化搜索、逐条回放。`,
+      body: `CodeSesh 把 ${agentCount} 种 Agent 的本地会话按项目归档，随时搜索、回放，数据始终留在本机。`,
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
@@ -362,7 +362,7 @@ export const copy = {
     cta: {
       title: "现在就把历史找回来",
       body: "开源、免费，会话数据留在本机。一条命令即可开始建立可搜索的 AI 编码工程记忆。",
-      github: "在 GitHub 上查看",
+      github: "GitHub",
     },
     footer: {
       note: "MIT 许可，会话数据与索引保留在本机",
@@ -392,8 +392,8 @@ export const copy = {
     },
     hero: {
       eyebrow: `Local / Zero config / ${agentCount} agents`,
-      title: ["Every AI coding session", "is still here."],
-      body: `CodeSesh scans local histories from ${agentCount} AI coding agents and puts them in one index: organized by project, structurally searchable, and replayable message by message.`,
+      title: ["Every AI session.", "Still here."],
+      body: `Search and replay local sessions from ${agentCount} AI coding agents, organized by project and kept on your machine.`,
       privacy:
         "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
       command: "npx codesesh",
@@ -564,7 +564,7 @@ export const copy = {
     cta: {
       title: "Bring your coding history back",
       body: "Open source and free, with session data kept locally. One command starts a searchable engineering memory for your AI coding work.",
-      github: "View on GitHub",
+      github: "GitHub",
     },
     footer: {
       note: "MIT licensed, with session data and indexes kept local",
@@ -595,7 +595,7 @@ export const copy = {
     hero: {
       eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
       title: ["AIとの開発履歴を、", "すべてここに。"],
-      body: `CodeSeshは${agentCount}種類のAIコーディングエージェントのローカル履歴をスキャンし、1つのインデックスに集約します。プロジェクト別に整理し、構造化検索とメッセージ単位の再生を可能にします。`,
+      body: `CodeSeshは${agentCount}種類のエージェント履歴をプロジェクト別に整理し、ローカルのまま検索・再生できます。`,
       privacy:
         "セッション内容とインデックスはローカルに保持されます。アカウント、クラウド同期、セッションのテレメトリは不要です。",
       command: "npx codesesh",
@@ -776,7 +776,7 @@ export const copy = {
     cta: {
       title: "コーディング履歴を、今すぐ取り戻そう",
       body: "オープンソースで無料。セッションデータはローカルに保持されます。コマンド1つで、AIとの開発履歴を検索できるようになります。",
-      github: "GitHubで見る",
+      github: "GitHub",
     },
     footer: {
       note: "MITライセンス。セッションデータとインデックスはローカルに保持",
