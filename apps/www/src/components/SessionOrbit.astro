@@ -1,0 +1,1726 @@
+---
+import earthMap from "../assets/backgrounds/earth-map.webp";
+---
+
+<div class="session-orbit-wrap" data-earth-texture={earthMap.src}>
+  <canvas class="session-orbit" data-session-orbit aria-hidden="true"></canvas>
+  <div class="session-orbit__badge" data-orbit-badge>
+    <span class="badge__dot" data-badge-dot></span>
+    <span class="badge__text" data-badge-text
+      >SOLAR SYSTEM · DRAG &amp; CLICK</span
+    >
+  </div>
+</div>
+
+<style>
+  .session-orbit-wrap {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .session-orbit {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    pointer-events: none;
+    touch-action: none;
+  }
+
+  .session-orbit:active {
+    cursor: grabbing;
+  }
+
+  @media (pointer: fine) {
+    .session-orbit {
+      pointer-events: auto;
+    }
+  }
+
+  .session-orbit__badge {
+    position: absolute;
+    bottom: 1.15rem;
+    right: 1.15rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.32rem 0.72rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid
+      color-mix(in srgb, var(--console-border-strong), transparent 45%);
+    background: color-mix(in srgb, var(--console-surface), transparent 35%);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    color: var(--console-muted);
+    box-shadow: 0 4px 18px
+      color-mix(in srgb, var(--console-text), transparent 90%);
+    pointer-events: none;
+    user-select: none;
+    transition:
+      border-color 0.25s,
+      background-color 0.25s,
+      box-shadow 0.25s;
+    z-index: 2;
+  }
+
+  .badge__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--brand);
+    box-shadow: 0 0 8px var(--brand);
+    transition:
+      background-color 0.2s,
+      box-shadow 0.2s,
+      transform 0.2s;
+  }
+
+  .badge__dot:global(.active) {
+    background: var(--success-text, #27633f);
+    box-shadow: 0 0 12px var(--success-text, #27633f);
+    transform: scale(1.35);
+  }
+
+  :global(.dark) .session-orbit__badge {
+    background: color-mix(in srgb, var(--console-surface), transparent 28%);
+    border-color: color-mix(
+      in srgb,
+      var(--console-border-strong),
+      transparent 32%
+    );
+  }
+
+  @media (max-width: 767px) {
+    .session-orbit__badge {
+      display: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .session-orbit-wrap {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  type Mesh = {
+    position: WebGLBuffer;
+    normal: WebGLBuffer;
+    uv: WebGLBuffer;
+    index: WebGLBuffer;
+    count: number;
+  };
+
+  type ParticleBuffer = {
+    position: WebGLBuffer;
+    params: WebGLBuffer;
+    count: number;
+  };
+
+  type SparkBuffer = {
+    velocity: WebGLBuffer;
+    params: WebGLBuffer;
+    count: number;
+  };
+
+  interface Planet {
+    name: string;
+    label: string;
+    kind: number;
+    orbitRadius: number;
+    orbitSpeed: number;
+    orbitPhase: number;
+    tiltMatrix: Float32Array;
+    baseScale: number;
+    currentPos: [number, number, number];
+    hoverWeight: number;
+    hasRing?: boolean;
+    hasMoon?: boolean;
+  }
+
+  const meshVertexShaderSource = `
+    attribute vec3 aPosition;
+    attribute vec3 aNormal;
+    attribute vec2 aTexCoord;
+
+    uniform mat4 uProjection;
+    uniform mat4 uView;
+    uniform mat4 uModel;
+    uniform mat3 uNormalMatrix;
+
+    uniform vec4 uShockwave;
+    uniform float uShockwavePower;
+
+    varying vec3 vNormal;
+    varying vec3 vWorld;
+    varying vec3 vObject;
+    varying vec2 vUv;
+    varying float vShockwaveWave;
+
+    void main() {
+      vObject = aPosition;
+      vUv = aTexCoord;
+      vec3 normal = normalize(uNormalMatrix * aNormal);
+      vNormal = normal;
+
+      vec4 world = uModel * vec4(aPosition, 1.0);
+
+      float dist = length(world.xyz - uShockwave.xyz);
+      float waveDiff = abs(dist - uShockwave.w);
+      float waveFront = exp(-waveDiff * waveDiff * 14.0) * uShockwavePower;
+      vShockwaveWave = waveFront;
+
+      world.xyz += normal * (waveFront * 0.12);
+
+      vWorld = world.xyz;
+      gl_Position = uProjection * uView * world;
+    }
+  `;
+
+  const meshFragmentShaderSource = `
+    precision highp float;
+
+    uniform vec3 uAccent;
+    uniform vec3 uSurface;
+    uniform vec3 uHighlight;
+    uniform float uTime;
+    uniform float uKind;
+    uniform float uHover;
+
+    uniform sampler2D uEarthTex;
+    uniform float uHasEarthTex;
+
+    varying vec3 vNormal;
+    varying vec3 vWorld;
+    varying vec3 vObject;
+    varying vec2 vUv;
+    varying float vShockwaveWave;
+
+    void main() {
+      vec3 normal = normalize(vNormal);
+      vec3 viewDir = normalize(vec3(0.0, 0.0, 7.8) - vWorld);
+
+      vec3 keyLight = normalize(vec3(-0.45, 0.85, 0.65));
+      vec3 fillLight = normalize(vec3(0.8, -0.3, 0.5));
+      vec3 keyHalf = normalize(keyLight + viewDir);
+      vec3 fillHalf = normalize(fillLight + viewDir);
+
+      float diffuseKey = max(dot(normal, keyLight), 0.0);
+      float diffuseFill = max(dot(normal, fillLight), 0.0);
+      float specKey = pow(max(dot(normal, keyHalf), 0.0), 48.0);
+      float specFill = pow(max(dot(normal, fillHalf), 0.0), 24.0);
+      float fresnel = pow(1.0 - abs(dot(normal, viewDir)), 2.8);
+
+      vec3 color = vec3(0.0);
+      float alpha = 1.0;
+
+      if (uKind < 0.5) {
+        // === KIND 0: ORBIT PATHS ===
+        float angle = atan(vObject.z, vObject.x);
+        float packet = pow(max(0.0, sin(angle * 2.0 - uTime * 2.6)), 16.0);
+        float dash = 0.88 + 0.12 * sin(angle * 36.0);
+
+        color = mix(uSurface, uAccent, 0.36) * dash;
+        color *= 0.55 + diffuseKey * 0.35;
+        color += uHighlight * (specKey * 0.85 + fresnel * 0.45 + packet * 0.75);
+        alpha = 0.18 + fresnel * 0.38 + packet * 0.32;
+      } else if (uKind < 1.5) {
+        // === KIND 1: THE SUN (SOL) ===
+        float s1 = sin(vObject.x * 9.0 + uTime * 1.5) * cos(vObject.y * 8.0 - uTime * 1.2);
+        float s2 = sin(vObject.z * 11.0 - uTime * 1.4) * cos(vObject.x * 7.0 + uTime * 0.9);
+        float plasma = (s1 + s2) * 0.25 + 0.5;
+
+        vec3 sunCore = mix(vec3(1.0, 0.56, 0.16), vec3(1.0, 0.86, 0.40), plasma);
+        vec3 sunCorona = mix(vec3(1.0, 0.36, 0.08), vec3(1.0, 0.74, 0.24), plasma);
+        float coronaGlow = pow(1.0 - abs(dot(normal, viewDir)), 1.7);
+
+        color = mix(sunCore, sunCorona, coronaGlow * 0.7) + vec3(1.0, 0.96, 0.82) * (coronaGlow * 0.85);
+        color += uHighlight * (uHover * 0.35);
+        alpha = 0.94 + coronaGlow * 0.06;
+      } else if (uKind < 2.5) {
+        // === KIND 2: REAL EARTH (NASA BLUE MARBLE + ATMOSPHERE) ===
+        vec3 groundColor;
+        float isOcean = 0.0;
+
+        if (uHasEarthTex > 0.5) {
+          vec4 texColor = texture2D(uEarthTex, vUv);
+          groundColor = texColor.rgb;
+          // Ocean identification: high blue, low red
+          isOcean = smoothstep(0.35, 0.12, texColor.r) * smoothstep(0.12, 0.26, texColor.b);
+        } else {
+          float continentNoise = sin(vObject.x * 6.5) * cos(vObject.y * 5.5 + vObject.z * 4.0);
+          isOcean = 1.0 - smoothstep(0.12, 0.24, continentNoise);
+          vec3 ocean = vec3(0.10, 0.32, 0.65);
+          vec3 land = vec3(0.24, 0.54, 0.32);
+          groundColor = mix(land, ocean, isOcean);
+        }
+
+        // Dynamic atmospheric cloud swirls drifting over continents
+        float cloudU = vUv.x - uTime * 0.025;
+        float cloudNoise1 = sin(cloudU * 22.0 + sin(vUv.y * 14.0) * 1.6) * cos(vUv.y * 16.0);
+        float cloudNoise2 = sin(cloudU * 36.0 + uTime * 0.015) * sin(vUv.y * 22.0);
+        float clouds = smoothstep(0.38, 0.72, cloudNoise1 * 0.6 + cloudNoise2 * 0.4);
+
+        // Soft cloud shadow on ground
+        groundColor *= 1.0 - clouds * 0.32;
+        // Blend bright white cloud tops
+        vec3 surfaceWithClouds = mix(groundColor, vec3(0.96, 0.98, 1.0), clouds * 0.82);
+
+        // Diffuse illumination
+        color = surfaceWithClouds * (0.52 + diffuseKey * 0.48);
+
+        // Only oceans reflect the sun's glare!
+        float oceanSpecular = specKey * isOcean * (1.0 - clouds * 0.85);
+        color += vec3(0.95, 0.98, 1.0) * (oceanSpecular * 1.15);
+
+        // Thin electric-blue Rayleigh atmospheric limb scattering
+        float atmosphere = pow(1.0 - abs(dot(normal, viewDir)), 2.8);
+        color += vec3(0.2, 0.6, 1.0) * (atmosphere * 0.95);
+
+        color += uHighlight * (uHover * 0.35);
+        alpha = 1.0;
+      } else if (uKind < 3.5) {
+        // === KIND 3: MOON ===
+        float craters = sin(vObject.x * 24.0) * cos(vObject.y * 22.0) * 0.15;
+        vec3 moonColor = vec3(0.72, 0.74, 0.76) + craters;
+        color = moonColor * (0.5 + diffuseKey * 0.5);
+        alpha = 1.0;
+      } else if (uKind < 4.5) {
+        // === KIND 4: MARS ===
+        float polar = smoothstep(0.78, 0.92, abs(vObject.y));
+        float terrain = sin(vObject.x * 8.0 + vObject.z * 7.0) * cos(vObject.y * 9.0) * 0.18;
+        vec3 rust = mix(vec3(0.78, 0.34, 0.18), vec3(0.62, 0.26, 0.14), terrain + 0.5);
+        vec3 marsColor = mix(rust, vec3(0.94, 0.94, 0.96), polar);
+        color = marsColor * (0.55 + diffuseKey * 0.45) + vec3(0.85, 0.55, 0.35) * (fresnel * 0.35);
+        color += uHighlight * (uHover * 0.4);
+        alpha = 1.0;
+      } else if (uKind < 5.5) {
+        // === KIND 5: JUPITER ===
+        float wave = sin(vObject.x * 6.0 + uTime * 0.3) * 1.2;
+        float bandVal = sin(vObject.y * 32.0 + wave);
+        vec3 band1 = vec3(0.82, 0.68, 0.52);
+        vec3 band2 = vec3(0.64, 0.42, 0.28);
+        vec3 band3 = vec3(0.92, 0.84, 0.72);
+        vec3 jupColor = mix(band1, band2, smoothstep(-0.4, 0.4, bandVal));
+        jupColor = mix(jupColor, band3, smoothstep(0.3, 0.8, sin(vObject.y * 18.0 - wave * 0.5)));
+
+        vec2 spotCoord = vec2((vObject.x - 0.45) * 1.8, vObject.y + 0.32);
+        float inSpot = smoothstep(0.22, 0.08, length(spotCoord));
+        jupColor = mix(jupColor, vec3(0.78, 0.28, 0.20), inSpot * 0.85);
+
+        color = jupColor * (0.55 + diffuseKey * 0.45) + vec3(0.85, 0.78, 0.65) * (fresnel * 0.35);
+        color += uHighlight * (uHover * 0.4);
+        alpha = 1.0;
+      } else if (uKind < 6.5) {
+        // === KIND 6: SATURN BODY ===
+        float satBand = sin(vObject.y * 28.0);
+        vec3 sat1 = vec3(0.88, 0.80, 0.62);
+        vec3 sat2 = vec3(0.76, 0.68, 0.50);
+        vec3 satColor = mix(sat1, sat2, smoothstep(-0.5, 0.5, satBand));
+        color = satColor * (0.55 + diffuseKey * 0.45) + vec3(0.88, 0.82, 0.70) * (fresnel * 0.35);
+        color += uHighlight * (uHover * 0.4);
+        alpha = 1.0;
+      } else if (uKind < 7.5) {
+        // === KIND 7: SATURN RING ===
+        float r = length(vObject.xz);
+        float normR = clamp((r - 1.35) / (2.45 - 1.35), 0.0, 1.0);
+        float cassini = 1.0 - smoothstep(0.018, 0.0, abs(normR - 0.62));
+        float fineBands = 0.75 + 0.25 * sin(normR * 55.0);
+
+        vec3 ringTint = mix(vec3(0.84, 0.76, 0.60), vec3(0.70, 0.62, 0.48), normR) * fineBands;
+        ringTint += uHighlight * (specKey * 0.6);
+        float edgeFade = smoothstep(0.0, 0.08, normR) * smoothstep(1.0, 0.92, normR);
+        alpha = (0.55 + 0.32 * fineBands) * cassini * edgeFade;
+        color = ringTint;
+      } else if (uKind < 8.5) {
+        // === KIND 8: NEPTUNE ===
+        float storms = sin(vObject.y * 18.0 + sin(vObject.x * 5.0 + uTime * 0.4)) * 0.15;
+        vec3 deepBlue = vec3(0.12, 0.28, 0.78);
+        vec3 brightAzure = vec3(0.24, 0.52, 0.94);
+        vec3 nepColor = mix(deepBlue, brightAzure, storms + 0.5);
+
+        float nepAtmosphere = pow(1.0 - abs(dot(normal, viewDir)), 2.4);
+        color = nepColor * (0.55 + diffuseKey * 0.45) + vec3(0.45, 0.82, 1.0) * (nepAtmosphere * 0.85);
+        color += vec3(0.75, 0.92, 1.0) * (specKey * 0.55);
+        color += uHighlight * (uHover * 0.4);
+        alpha = 1.0;
+      } else {
+        // === KIND 9: TELEMETRY BEAM ===
+        float beamTravel = sin(vObject.y * 14.0 - uTime * 6.5) * 0.5 + 0.5;
+        color = mix(uAccent, uHighlight, 0.6 + beamTravel * 0.4);
+        color += uSurface * (fresnel * 0.55);
+        alpha = (0.28 + beamTravel * 0.38 + uHover * 0.34) * (1.0 - abs(vObject.y - 0.5) * 0.5);
+      }
+
+      color += uHighlight * (vShockwaveWave * 1.35);
+      alpha = min(1.0, alpha + vShockwaveWave * 0.5);
+
+      gl_FragColor = vec4(color, alpha);
+    }
+  `;
+
+  const particleVertexShaderSource = `
+    attribute vec3 aPosition;
+    attribute vec3 aVelocity;
+    attribute vec2 aParams;
+
+    uniform mat4 uProjection;
+    uniform mat4 uView;
+    uniform mat4 uSceneRotation;
+    uniform float uTime;
+    uniform float uMode;
+    uniform float uSparkAge;
+    uniform vec3 uSparkOrigin;
+    uniform vec4 uShockwave;
+    uniform float uShockwavePower;
+
+    varying float vAlpha;
+
+    void main() {
+      vec3 pos = aPosition;
+
+      if (uMode < 0.5) {
+        pos.y += sin(uTime * 0.8 + aParams.y) * 0.14;
+        pos.x += cos(uTime * 0.6 + aParams.y) * 0.12;
+        pos.z += sin(uTime * 0.5 + aParams.y * 1.4) * 0.12;
+
+        vec4 world = uSceneRotation * vec4(pos, 1.0);
+
+        float dist = length(world.xyz - uShockwave.xyz);
+        float waveDiff = abs(dist - uShockwave.w);
+        float waveFront = exp(-waveDiff * waveDiff * 16.0) * uShockwavePower;
+
+        gl_Position = uProjection * uView * world;
+        gl_PointSize = (aParams.x * 24.0 + waveFront * 28.0) * (2.8 / -gl_Position.z);
+        vAlpha = (0.26 + sin(uTime * 1.5 + aParams.y) * 0.15 + waveFront * 0.65);
+      } else {
+        float age = clamp(uSparkAge, 0.0, 1.0);
+        float travel = (1.0 - exp(-age * 4.2)) * 2.3;
+        pos = uSparkOrigin + aVelocity * travel;
+
+        vec4 world = uSceneRotation * vec4(pos, 1.0);
+        gl_Position = uProjection * uView * world;
+        float pointSize = aParams.x * 34.0 * (1.0 - age * 0.5) * (2.8 / -gl_Position.z);
+        gl_PointSize = max(1.0, pointSize);
+
+        vAlpha = (1.0 - age) * smoothstep(0.0, 0.06, age);
+      }
+    }
+  `;
+
+  const particleFragmentShaderSource = `
+    precision highp float;
+
+    uniform vec3 uAccent;
+    uniform vec3 uHighlight;
+    uniform vec3 uSurface;
+
+    varying float vAlpha;
+
+    void main() {
+      vec2 coord = gl_PointCoord - vec2(0.5);
+      float r2 = dot(coord, coord);
+      if (r2 > 0.25) discard;
+
+      float glow = exp(-r2 * 14.0);
+      float core = exp(-r2 * 45.0);
+
+      vec3 color = mix(uAccent, uHighlight, 0.6) * glow + uSurface * core * 0.8;
+      float alpha = vAlpha * (glow * 0.85 + core * 0.4);
+
+      gl_FragColor = vec4(color, alpha);
+    }
+  `;
+
+  const identity = () => {
+    const matrix = new Float32Array(16);
+    matrix[0] = 1;
+    matrix[5] = 1;
+    matrix[10] = 1;
+    matrix[15] = 1;
+    return matrix;
+  };
+
+  function multiply(left: Float32Array, right: Float32Array) {
+    const output = new Float32Array(16);
+    for (let column = 0; column < 4; column += 1) {
+      for (let row = 0; row < 4; row += 1) {
+        output[column * 4 + row] =
+          (left[row] ?? 0) * (right[column * 4] ?? 0) +
+          (left[4 + row] ?? 0) * (right[column * 4 + 1] ?? 0) +
+          (left[8 + row] ?? 0) * (right[column * 4 + 2] ?? 0) +
+          (left[12 + row] ?? 0) * (right[column * 4 + 3] ?? 0);
+      }
+    }
+    return output;
+  }
+
+  function translation(x: number, y: number, z: number) {
+    const matrix = identity();
+    matrix[12] = x;
+    matrix[13] = y;
+    matrix[14] = z;
+    return matrix;
+  }
+
+  function scale(x: number, y: number, z: number) {
+    const matrix = identity();
+    matrix[0] = x;
+    matrix[5] = y;
+    matrix[10] = z;
+    return matrix;
+  }
+
+  function normalMatrix(matrix: Float32Array) {
+    const a00 = matrix[0] ?? 0;
+    const a01 = matrix[4] ?? 0;
+    const a02 = matrix[8] ?? 0;
+    const a10 = matrix[1] ?? 0;
+    const a11 = matrix[5] ?? 0;
+    const a12 = matrix[9] ?? 0;
+    const a20 = matrix[2] ?? 0;
+    const a21 = matrix[6] ?? 0;
+    const a22 = matrix[10] ?? 0;
+    const c00 = a11 * a22 - a12 * a21;
+    const c01 = a12 * a20 - a10 * a22;
+    const c02 = a10 * a21 - a11 * a20;
+    const c10 = a02 * a21 - a01 * a22;
+    const c11 = a00 * a22 - a02 * a20;
+    const c12 = a01 * a20 - a00 * a21;
+    const c20 = a01 * a12 - a02 * a11;
+    const c21 = a02 * a10 - a00 * a12;
+    const c22 = a00 * a11 - a01 * a10;
+    const determinant = a00 * c00 + a01 * c01 + a02 * c02;
+    const inverseDeterminant = determinant === 0 ? 1 : 1 / determinant;
+
+    return new Float32Array([
+      c00 * inverseDeterminant,
+      c10 * inverseDeterminant,
+      c20 * inverseDeterminant,
+      c01 * inverseDeterminant,
+      c11 * inverseDeterminant,
+      c21 * inverseDeterminant,
+      c02 * inverseDeterminant,
+      c12 * inverseDeterminant,
+      c22 * inverseDeterminant,
+    ]);
+  }
+
+  function rotationX(angle: number) {
+    const matrix = identity();
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    matrix[5] = cosine;
+    matrix[6] = sine;
+    matrix[9] = -sine;
+    matrix[10] = cosine;
+    return matrix;
+  }
+
+  function rotationY(angle: number) {
+    const matrix = identity();
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    matrix[0] = cosine;
+    matrix[2] = -sine;
+    matrix[8] = sine;
+    matrix[10] = cosine;
+    return matrix;
+  }
+
+  function rotationZ(angle: number) {
+    const matrix = identity();
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    matrix[0] = cosine;
+    matrix[1] = sine;
+    matrix[4] = -sine;
+    matrix[5] = cosine;
+    return matrix;
+  }
+
+  function rotationAxis(axis: [number, number, number], angle: number) {
+    const matrix = identity();
+    let [x, y, z] = axis;
+    const len = Math.hypot(x, y, z);
+    if (len > 0.0001) {
+      x /= len;
+      y /= len;
+      z /= len;
+    }
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const t = 1 - c;
+
+    matrix[0] = t * x * x + c;
+    matrix[1] = t * x * y + s * z;
+    matrix[2] = t * x * z - s * y;
+
+    matrix[4] = t * x * y - s * z;
+    matrix[5] = t * y * y + c;
+    matrix[6] = t * y * z + s * x;
+
+    matrix[8] = t * x * z + s * y;
+    matrix[9] = t * y * z - s * x;
+    matrix[10] = t * z * z + c;
+
+    return matrix;
+  }
+
+  function transformPoint(
+    matrix: Float32Array,
+    point: [number, number, number],
+  ): [number, number, number] {
+    const [x, y, z] = point;
+    const rx =
+      (matrix[0] ?? 0) * x +
+      (matrix[4] ?? 0) * y +
+      (matrix[8] ?? 0) * z +
+      (matrix[12] ?? 0);
+    const ry =
+      (matrix[1] ?? 0) * x +
+      (matrix[5] ?? 0) * y +
+      (matrix[9] ?? 0) * z +
+      (matrix[13] ?? 0);
+    const rz =
+      (matrix[2] ?? 0) * x +
+      (matrix[6] ?? 0) * y +
+      (matrix[10] ?? 0) * z +
+      (matrix[14] ?? 0);
+    const rw =
+      (matrix[3] ?? 0) * x +
+      (matrix[7] ?? 0) * y +
+      (matrix[11] ?? 0) * z +
+      (matrix[15] ?? 0);
+    const w = rw === 0 ? 1 : rw;
+    return [rx / w, ry / w, rz / w];
+  }
+
+  function perspective(
+    fieldOfView: number,
+    aspect: number,
+    near: number,
+    far: number,
+  ) {
+    const matrix = new Float32Array(16);
+    const focalLength = 1 / Math.tan(fieldOfView / 2);
+    matrix[0] = focalLength / aspect;
+    matrix[5] = focalLength;
+    matrix[10] = (far + near) / (near - far);
+    matrix[11] = -1;
+    matrix[14] = (2 * far * near) / (near - far);
+    return matrix;
+  }
+
+  function compileShader(
+    gl: WebGLRenderingContext,
+    type: number,
+    source: string,
+  ) {
+    const shader = gl.createShader(type);
+    if (!shader) return null;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      gl.deleteShader(shader);
+      return null;
+    }
+    return shader;
+  }
+
+  function createProgram(
+    gl: WebGLRenderingContext,
+    vSource: string,
+    fSource: string,
+  ) {
+    const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vSource);
+    const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fSource);
+    if (!vertexShader || !fragmentShader) return null;
+
+    const program = gl.createProgram();
+    if (!program) return null;
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    return program;
+  }
+
+  function createSphere(latitudeBands = 28, longitudeBands = 36) {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let latitude = 0; latitude <= latitudeBands; latitude += 1) {
+      const theta = (latitude * Math.PI) / latitudeBands;
+      const v = latitude / latitudeBands;
+      const sineTheta = Math.sin(theta);
+      const cosineTheta = Math.cos(theta);
+      for (let longitude = 0; longitude <= longitudeBands; longitude += 1) {
+        const phi = (longitude * Math.PI * 2) / longitudeBands;
+        const u = 1.0 - longitude / longitudeBands;
+        const x = Math.cos(phi) * sineTheta;
+        const y = cosineTheta;
+        const z = Math.sin(phi) * sineTheta;
+        positions.push(x, y, z);
+        normals.push(x, y, z);
+        uvs.push(u, v);
+      }
+    }
+
+    for (let latitude = 0; latitude < latitudeBands; latitude += 1) {
+      for (let longitude = 0; longitude < longitudeBands; longitude += 1) {
+        const first = latitude * (longitudeBands + 1) + longitude;
+        const second = first + longitudeBands + 1;
+        indices.push(first, second, first + 1, second, second + 1, first + 1);
+      }
+    }
+    return { positions, normals, uvs, indices };
+  }
+
+  function createTorus(
+    majorRadius = 1,
+    tubeRadius = 0.012,
+    segments = 110,
+    sides = 10,
+  ) {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let segment = 0; segment <= segments; segment += 1) {
+      const u = (segment / segments) * Math.PI * 2;
+      const cosineU = Math.cos(u);
+      const sineU = Math.sin(u);
+      for (let side = 0; side <= sides; side += 1) {
+        const v = (side / sides) * Math.PI * 2;
+        const cosineV = Math.cos(v);
+        const sineV = Math.sin(v);
+        const radius = majorRadius + tubeRadius * cosineV;
+        positions.push(radius * cosineU, tubeRadius * sineV, radius * sineU);
+        normals.push(cosineV * cosineU, sineV, cosineV * sineU);
+        uvs.push(segment / segments, side / sides);
+      }
+    }
+
+    for (let segment = 0; segment < segments; segment += 1) {
+      for (let side = 0; side < sides; side += 1) {
+        const first = segment * (sides + 1) + side;
+        const second = first + sides + 1;
+        indices.push(first, second, first + 1, second, second + 1, first + 1);
+      }
+    }
+    return { positions, normals, uvs, indices };
+  }
+
+  function createFlatRing(
+    innerRadius = 1.35,
+    outerRadius = 2.45,
+    segments = 64,
+  ) {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let i = 0; i <= segments; i += 1) {
+      const theta = (i / segments) * Math.PI * 2;
+      const cos = Math.cos(theta);
+      const sin = Math.sin(theta);
+
+      positions.push(innerRadius * cos, 0, innerRadius * sin);
+      normals.push(0, 1, 0);
+      uvs.push(i / segments, 0);
+
+      positions.push(outerRadius * cos, 0, outerRadius * sin);
+      normals.push(0, 1, 0);
+      uvs.push(i / segments, 1);
+    }
+
+    for (let i = 0; i < segments; i += 1) {
+      const i0 = i * 2;
+      const i1 = i * 2 + 1;
+      const i2 = (i + 1) * 2;
+      const i3 = (i + 1) * 2 + 1;
+
+      indices.push(i0, i1, i2, i1, i3, i2);
+      indices.push(i0, i2, i1, i1, i2, i3);
+    }
+
+    return { positions, normals, uvs, indices };
+  }
+
+  function createCylinder(radius = 0.007, segments = 8) {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+
+    for (let i = 0; i <= segments; i += 1) {
+      const angle = (i / segments) * Math.PI * 2;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      positions.push(cosA * radius, 0, sinA * radius);
+      normals.push(cosA, 0, sinA);
+      uvs.push(i / segments, 0);
+
+      positions.push(cosA * radius, 1, sinA * radius);
+      normals.push(cosA, 0, sinA);
+      uvs.push(i / segments, 1);
+    }
+
+    for (let i = 0; i < segments; i += 1) {
+      const first = i * 2;
+      const second = first + 1;
+      const third = first + 2;
+      const fourth = first + 3;
+      indices.push(first, second, third, second, fourth, third);
+    }
+
+    return { positions, normals, uvs, indices };
+  }
+
+  function createParticles(count = 140) {
+    const positions: number[] = [];
+    const params: number[] = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0);
+      const r = 1.1 + Math.random() * 3.6;
+
+      const sinPhi = Math.sin(phi);
+      positions.push(
+        r * sinPhi * Math.cos(theta),
+        r * Math.cos(phi) * 0.75,
+        r * sinPhi * Math.sin(theta),
+      );
+
+      const size = 0.65 + Math.random() * 0.75;
+      const phase = Math.random() * Math.PI * 2;
+      params.push(size, phase);
+    }
+
+    return { positions, params, count };
+  }
+
+  function createSparks(count = 48) {
+    const velocities: number[] = [];
+    const params: number[] = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * 2.0 * Math.PI;
+      const phi = Math.acos(2.0 * v - 1.0);
+      const speed = 0.9 + Math.random() * 1.6;
+
+      const sinPhi = Math.sin(phi);
+      velocities.push(
+        sinPhi * Math.cos(theta) * speed,
+        Math.cos(phi) * speed,
+        sinPhi * Math.sin(theta) * speed,
+      );
+
+      const size = 0.8 + Math.random() * 0.9;
+      const seed = Math.random();
+      params.push(size, seed);
+    }
+
+    return { velocities, params, count };
+  }
+
+  function uploadMesh(
+    gl: WebGLRenderingContext,
+    geometry: {
+      positions: number[];
+      normals: number[];
+      uvs: number[];
+      indices: number[];
+    },
+  ): Mesh | null {
+    const position = gl.createBuffer();
+    const normal = gl.createBuffer();
+    const uv = gl.createBuffer();
+    const index = gl.createBuffer();
+    if (!position || !normal || !uv || !index) return null;
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, position);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(geometry.positions),
+      gl.STATIC_DRAW,
+    );
+    gl.bindBuffer(gl.ARRAY_BUFFER, normal);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(geometry.normals),
+      gl.STATIC_DRAW,
+    );
+    gl.bindBuffer(gl.ARRAY_BUFFER, uv);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(geometry.uvs),
+      gl.STATIC_DRAW,
+    );
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, index);
+    gl.bufferData(
+      gl.ELEMENT_ARRAY_BUFFER,
+      new Uint16Array(geometry.indices),
+      gl.STATIC_DRAW,
+    );
+    return { position, normal, uv, index, count: geometry.indices.length };
+  }
+
+  function uploadParticles(
+    gl: WebGLRenderingContext,
+    data: ReturnType<typeof createParticles>,
+  ): ParticleBuffer | null {
+    const position = gl.createBuffer();
+    const params = gl.createBuffer();
+    if (!position || !params) return null;
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, position);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(data.positions),
+      gl.STATIC_DRAW,
+    );
+    gl.bindBuffer(gl.ARRAY_BUFFER, params);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(data.params),
+      gl.STATIC_DRAW,
+    );
+    return { position, params, count: data.count };
+  }
+
+  function uploadSparks(
+    gl: WebGLRenderingContext,
+    data: ReturnType<typeof createSparks>,
+  ): SparkBuffer | null {
+    const velocity = gl.createBuffer();
+    const params = gl.createBuffer();
+    if (!velocity || !params) return null;
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocity);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(data.velocities),
+      gl.STATIC_DRAW,
+    );
+    gl.bindBuffer(gl.ARRAY_BUFFER, params);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(data.params),
+      gl.STATIC_DRAW,
+    );
+    return { velocity, params, count: data.count };
+  }
+
+  function setupOrbit(container: HTMLElement) {
+    const canvas = container.querySelector<HTMLCanvasElement>(
+      "[data-session-orbit]",
+    );
+    if (!canvas) return;
+    const activeCanvas = canvas;
+
+    const badgeDot = container.querySelector<HTMLElement>("[data-badge-dot]");
+    const badgeText = container.querySelector<HTMLElement>("[data-badge-text]");
+
+    const context = activeCanvas.getContext("webgl", {
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: false,
+      powerPreference: "high-performance",
+    });
+    if (!context) return;
+    const gl: WebGLRenderingContext = context;
+
+    const candidateMeshProg = createProgram(
+      gl,
+      meshVertexShaderSource,
+      meshFragmentShaderSource,
+    );
+    const candidateParticleProg = createProgram(
+      gl,
+      particleVertexShaderSource,
+      particleFragmentShaderSource,
+    );
+
+    const candidateSphereMesh = uploadMesh(gl, createSphere());
+    const candidateTorusMesh = uploadMesh(gl, createTorus());
+    const candidateFlatRingMesh = uploadMesh(gl, createFlatRing());
+    const candidateBeamMesh = uploadMesh(gl, createCylinder());
+    const candidateParticles = uploadParticles(gl, createParticles(140));
+    const candidateSparks = uploadSparks(gl, createSparks(48));
+
+    if (
+      !candidateMeshProg ||
+      !candidateParticleProg ||
+      !candidateSphereMesh ||
+      !candidateTorusMesh ||
+      !candidateFlatRingMesh ||
+      !candidateBeamMesh ||
+      !candidateParticles ||
+      !candidateSparks
+    ) {
+      return;
+    }
+
+    const meshProg: WebGLProgram = candidateMeshProg;
+    const particleProg: WebGLProgram = candidateParticleProg;
+    const sphereMesh: Mesh = candidateSphereMesh;
+    const torusMesh: Mesh = candidateTorusMesh;
+    const flatRingMesh: Mesh = candidateFlatRingMesh;
+    const beamMesh: Mesh = candidateBeamMesh;
+    const particles: ParticleBuffer = candidateParticles;
+    const sparks: SparkBuffer = candidateSparks;
+
+    const meshAttrs = {
+      position: gl.getAttribLocation(meshProg, "aPosition"),
+      normal: gl.getAttribLocation(meshProg, "aNormal"),
+      uv: gl.getAttribLocation(meshProg, "aTexCoord"),
+    };
+    const meshUniforms = {
+      projection: gl.getUniformLocation(meshProg, "uProjection"),
+      view: gl.getUniformLocation(meshProg, "uView"),
+      model: gl.getUniformLocation(meshProg, "uModel"),
+      normalMatrix: gl.getUniformLocation(meshProg, "uNormalMatrix"),
+      time: gl.getUniformLocation(meshProg, "uTime"),
+      kind: gl.getUniformLocation(meshProg, "uKind"),
+      hover: gl.getUniformLocation(meshProg, "uHover"),
+      accent: gl.getUniformLocation(meshProg, "uAccent"),
+      surface: gl.getUniformLocation(meshProg, "uSurface"),
+      highlight: gl.getUniformLocation(meshProg, "uHighlight"),
+      shockwave: gl.getUniformLocation(meshProg, "uShockwave"),
+      shockwavePower: gl.getUniformLocation(meshProg, "uShockwavePower"),
+      earthTex: gl.getUniformLocation(meshProg, "uEarthTex"),
+      hasEarthTex: gl.getUniformLocation(meshProg, "uHasEarthTex"),
+    };
+
+    const partAttrs = {
+      position: gl.getAttribLocation(particleProg, "aPosition"),
+      velocity: gl.getAttribLocation(particleProg, "aVelocity"),
+      params: gl.getAttribLocation(particleProg, "aParams"),
+    };
+    const partUniforms = {
+      projection: gl.getUniformLocation(particleProg, "uProjection"),
+      view: gl.getUniformLocation(particleProg, "uView"),
+      sceneRotation: gl.getUniformLocation(particleProg, "uSceneRotation"),
+      time: gl.getUniformLocation(particleProg, "uTime"),
+      mode: gl.getUniformLocation(particleProg, "uMode"),
+      sparkAge: gl.getUniformLocation(particleProg, "uSparkAge"),
+      sparkOrigin: gl.getUniformLocation(particleProg, "uSparkOrigin"),
+      accent: gl.getUniformLocation(particleProg, "uAccent"),
+      surface: gl.getUniformLocation(particleProg, "uSurface"),
+      highlight: gl.getUniformLocation(particleProg, "uHighlight"),
+      shockwave: gl.getUniformLocation(particleProg, "uShockwave"),
+      shockwavePower: gl.getUniformLocation(particleProg, "uShockwavePower"),
+    };
+
+    // Initialize Earth texture map
+    const earthTexture = gl.createTexture();
+    let hasEarthTexture = false;
+
+    if (earthTexture) {
+      gl.bindTexture(gl.TEXTURE_2D, earthTexture);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        1,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array([20, 60, 140, 255]),
+      );
+
+      const earthImg = new Image();
+      earthImg.src = container.dataset.earthTexture ?? "";
+      earthImg.onload = () => {
+        gl.bindTexture(gl.TEXTURE_2D, earthTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          earthImg,
+        );
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MIN_FILTER,
+          gl.LINEAR_MIPMAP_LINEAR,
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        hasEarthTexture = true;
+        start();
+      };
+    }
+
+    const planets: Planet[] = [
+      {
+        name: "Mars",
+        label: "PLANET · MARS · OLYMPUS MONS",
+        kind: 4.0,
+        orbitRadius: 1.35,
+        orbitSpeed: 0.65,
+        orbitPhase: 0.4,
+        tiltMatrix: multiply(rotationZ(0.12), rotationX(0.28)),
+        baseScale: 0.052,
+        currentPos: [0, 0, 0],
+        hoverWeight: 0,
+      },
+      {
+        name: "Earth",
+        label: "PLANET · EARTH · 1.00 AU · HABITABLE ZONE",
+        kind: 2.0,
+        orbitRadius: 1.95,
+        orbitSpeed: 0.5,
+        orbitPhase: 2.2,
+        tiltMatrix: multiply(rotationZ(-0.25), rotationX(0.18)),
+        baseScale: 0.072,
+        currentPos: [0, 0, 0],
+        hoverWeight: 0,
+        hasMoon: true,
+      },
+      {
+        name: "Jupiter",
+        label: "PLANET · JUPITER · GREAT RED SPOT",
+        kind: 5.0,
+        orbitRadius: 2.65,
+        orbitSpeed: 0.34,
+        orbitPhase: 4.1,
+        tiltMatrix: multiply(rotationZ(0.32), rotationY(0.42)),
+        baseScale: 0.115,
+        currentPos: [0, 0, 0],
+        hoverWeight: 0,
+      },
+      {
+        name: "Saturn",
+        label: "PLANET · SATURN · RING SYSTEM",
+        kind: 6.0,
+        orbitRadius: 3.35,
+        orbitSpeed: 0.24,
+        orbitPhase: 1.1,
+        tiltMatrix: multiply(rotationX(-0.35), rotationY(-0.25)),
+        baseScale: 0.092,
+        currentPos: [0, 0, 0],
+        hoverWeight: 0,
+        hasRing: true,
+      },
+      {
+        name: "Neptune",
+        label: "PLANET · NEPTUNE · ICE GIANT",
+        kind: 8.0,
+        orbitRadius: 4.05,
+        orbitSpeed: 0.17,
+        orbitPhase: 5.2,
+        tiltMatrix: multiply(rotationZ(0.48), rotationX(-0.2)),
+        baseScale: 0.076,
+        currentPos: [0, 0, 0],
+        hoverWeight: 0,
+      },
+    ];
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let animationFrame = 0;
+    let visible = true;
+
+    let pointerX = 0;
+    let pointerY = 0;
+    let isHovering = false;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let lastDragX = 0;
+    let lastDragY = 0;
+    let dragStartTime = 0;
+
+    let userRotationX = 0.2;
+    let userRotationY = -0.3;
+    let spinVelocityX = 0;
+    let spinVelocityY = 0;
+
+    let tiltX = 0;
+    let tiltY = 0;
+
+    let hoveredPlanetIndex = -1;
+    let sunHoverWeight = 0;
+    let speedFactor = 1.0;
+    let targetSpeedFactor = 1.0;
+
+    let shockwaveStartTime = -9999;
+    let shockwaveOrigin: [number, number, number] = [0, 0, 0];
+    let shockwaveRadius = 0;
+    let shockwavePower = 0;
+
+    let sparkActive = false;
+    let sparkStartTime = -9999;
+    let sparkOrigin: [number, number, number] = [0, 0, 0];
+
+    let badgeTimer = 0;
+
+    function flashBadge(text: string, active = true) {
+      if (badgeDot && active) {
+        badgeDot.classList.add("active");
+        clearTimeout(badgeTimer);
+        badgeTimer = window.setTimeout(() => {
+          badgeDot.classList.remove("active");
+        }, 600);
+      }
+      if (badgeText) {
+        badgeText.textContent = text;
+      }
+    }
+
+    function resize() {
+      const pixelRatio = Math.min(window.devicePixelRatio, 1.75);
+      const width = Math.max(
+        1,
+        Math.round(activeCanvas.clientWidth * pixelRatio),
+      );
+      const height = Math.max(
+        1,
+        Math.round(activeCanvas.clientHeight * pixelRatio),
+      );
+      if (activeCanvas.width !== width || activeCanvas.height !== height) {
+        activeCanvas.width = width;
+        activeCanvas.height = height;
+      }
+      gl.viewport(0, 0, width, height);
+    }
+
+    function themeColors() {
+      const dark = document.documentElement.classList.contains("dark");
+      return dark
+        ? {
+            accent: [0.55, 0.73, 0.58],
+            surface: [0.92, 0.96, 0.94],
+            highlight: [0.82, 0.98, 0.88],
+          }
+        : {
+            accent: [0.26, 0.42, 0.29],
+            surface: [0.15, 0.22, 0.17],
+            highlight: [0.38, 0.68, 0.46],
+          };
+    }
+
+    function drawMesh(
+      mesh: Mesh,
+      model: Float32Array,
+      kind: number,
+      hover = 0,
+    ) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
+      gl.enableVertexAttribArray(meshAttrs.position);
+      gl.vertexAttribPointer(meshAttrs.position, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.normal);
+      gl.enableVertexAttribArray(meshAttrs.normal);
+      gl.vertexAttribPointer(meshAttrs.normal, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.uv);
+      gl.enableVertexAttribArray(meshAttrs.uv);
+      gl.vertexAttribPointer(meshAttrs.uv, 2, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
+      gl.uniformMatrix4fv(meshUniforms.model, false, model);
+      gl.uniformMatrix3fv(
+        meshUniforms.normalMatrix,
+        false,
+        normalMatrix(model),
+      );
+      gl.uniform1f(meshUniforms.kind, kind);
+      gl.uniform1f(meshUniforms.hover, hover);
+      gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+    }
+
+    function drawBeam(
+      from: [number, number, number],
+      to: [number, number, number],
+      hover = 0,
+    ) {
+      const dx = to[0] - from[0];
+      const dy = to[1] - from[1];
+      const dz = to[2] - from[2];
+      const length = Math.hypot(dx, dy, dz);
+      if (length < 0.001) return;
+
+      const dirX = dx / length;
+      const dirY = dy / length;
+      const dirZ = dz / length;
+
+      const angle = Math.acos(Math.max(-1, Math.min(1, dirY)));
+      let axisRot = identity();
+      if (angle > 0.0001 && angle < Math.PI - 0.0001) {
+        axisRot = rotationAxis([dirZ, 0, -dirX], angle);
+      } else if (angle >= Math.PI - 0.0001) {
+        axisRot = rotationX(Math.PI);
+      }
+
+      const beamModel = multiply(
+        translation(from[0], from[1], from[2]),
+        multiply(axisRot, scale(1, length, 1)),
+      );
+
+      drawMesh(beamMesh, beamModel, 9.0, hover);
+    }
+
+    function triggerClickAction(
+      origin: [number, number, number],
+      label?: string,
+    ) {
+      shockwaveStartTime = performance.now();
+      shockwaveOrigin = origin;
+      shockwaveRadius = 0;
+      shockwavePower = 1.0;
+
+      sparkActive = true;
+      sparkStartTime = performance.now();
+      sparkOrigin = origin;
+
+      spinVelocityY += Math.random() > 0.5 ? 0.04 : -0.04;
+      spinVelocityX += 0.02;
+      speedFactor = 2.8;
+
+      flashBadge(label ?? "GRAVITATIONAL WAVE PULSE");
+    }
+
+    function render(timestamp: number) {
+      resize();
+
+      if (isDragging) {
+        spinVelocityX = 0;
+        spinVelocityY = 0;
+      } else {
+        userRotationY += spinVelocityY;
+        userRotationX += spinVelocityX;
+        spinVelocityY *= 0.92;
+        spinVelocityX *= 0.92;
+      }
+
+      const targetTiltY = isHovering ? pointerX * 0.38 : 0;
+      const targetTiltX = isHovering ? pointerY * 0.28 : 0;
+      tiltY += (targetTiltY - tiltY) * 0.08;
+      tiltX += (targetTiltX - tiltX) * 0.08;
+
+      speedFactor += (targetSpeedFactor - speedFactor) * 0.05;
+      const time = reducedMotion.matches ? 0 : timestamp * 0.001 * speedFactor;
+
+      const shockElapsed = (timestamp - shockwaveStartTime) * 0.001;
+      if (shockElapsed < 1.35) {
+        shockwaveRadius = shockElapsed * 4.2;
+        shockwavePower = Math.max(0, 1.0 - shockElapsed / 1.2);
+      } else {
+        shockwavePower = 0;
+      }
+
+      const aspect = activeCanvas.width / activeCanvas.height;
+      const projection = perspective(Math.PI / 4.0, aspect, 0.1, 40);
+      const view = translation(0, 0, -8.2);
+
+      const ambientYaw = time * 0.025;
+      const ambientPitch = Math.sin(time * 0.015) * 0.04;
+
+      const sceneRotation = multiply(
+        rotationY(userRotationY + ambientYaw + tiltY),
+        rotationX(userRotationX + ambientPitch - tiltX),
+      );
+
+      const colors = themeColors();
+
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+      gl.useProgram(meshProg);
+      gl.uniformMatrix4fv(meshUniforms.projection, false, projection);
+      gl.uniformMatrix4fv(meshUniforms.view, false, view);
+      gl.uniform1f(meshUniforms.time, time);
+      gl.uniform3fv(meshUniforms.accent, colors.accent);
+      gl.uniform3fv(meshUniforms.surface, colors.surface);
+      gl.uniform3fv(meshUniforms.highlight, colors.highlight);
+      gl.uniform4f(
+        meshUniforms.shockwave,
+        shockwaveOrigin[0],
+        shockwaveOrigin[1],
+        shockwaveOrigin[2],
+        shockwaveRadius,
+      );
+      gl.uniform1f(meshUniforms.shockwavePower, shockwavePower);
+
+      // Bind Earth texture unit 0
+      if (earthTexture) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, earthTexture);
+        gl.uniform1i(meshUniforms.earthTex, 0);
+      }
+      gl.uniform1f(meshUniforms.hasEarthTex, hasEarthTexture ? 1.0 : 0.0);
+
+      const viewProjection = multiply(projection, view);
+
+      // --- 1. Central Star (The Sun) ---
+      const sunWorldPos = transformPoint(sceneRotation, [0, 0, 0]);
+      const sunClipPos = transformPoint(viewProjection, sunWorldPos);
+      const sunScreenDist = Math.hypot(
+        sunClipPos[0] - pointerX,
+        sunClipPos[1] - pointerY,
+      );
+      const isSunHovered = isHovering && sunScreenDist < 0.16;
+      sunHoverWeight += ((isSunHovered ? 1.0 : 0.0) - sunHoverWeight) * 0.15;
+
+      const sunPulse =
+        0.46 + Math.sin(time * 2.8) * 0.015 + sunHoverWeight * 0.06;
+      const sunModel = multiply(
+        sceneRotation,
+        scale(sunPulse, sunPulse, sunPulse),
+      );
+      drawMesh(sphereMesh, sunModel, 1.0, sunHoverWeight);
+
+      // --- 2. Planet Orbits & Real-time Positions ---
+      let closestPlanetIdx = -1;
+      let minDistance = 0.22;
+
+      planets.forEach((planet, idx) => {
+        // Draw orbital torus path
+        const orbitModel = multiply(
+          sceneRotation,
+          multiply(
+            planet.tiltMatrix,
+            scale(planet.orbitRadius, 1, planet.orbitRadius),
+          ),
+        );
+        drawMesh(torusMesh, orbitModel, 0.0);
+
+        // Compute 3D planet world position
+        const angle = planet.orbitPhase + time * planet.orbitSpeed;
+        const localX = Math.cos(angle) * planet.orbitRadius;
+        const localZ = Math.sin(angle) * planet.orbitRadius;
+
+        const worldMatrix = multiply(
+          sceneRotation,
+          multiply(planet.tiltMatrix, translation(localX, 0, localZ)),
+        );
+
+        const worldPos = transformPoint(worldMatrix, [0, 0, 0]);
+        planet.currentPos = worldPos;
+
+        const clipPos = transformPoint(viewProjection, worldPos);
+        const screenDist = Math.hypot(
+          clipPos[0] - pointerX,
+          clipPos[1] - pointerY,
+        );
+
+        if (isHovering && !isSunHovered && screenDist < minDistance) {
+          minDistance = screenDist;
+          closestPlanetIdx = idx;
+        }
+      });
+
+      hoveredPlanetIndex = closestPlanetIdx;
+      if (isHovering && !isDragging) {
+        activeCanvas.style.cursor =
+          hoveredPlanetIndex >= 0 || isSunHovered ? "pointer" : "grab";
+      }
+
+      // --- 3. Draw Planets, Moons & Saturn Rings ---
+      planets.forEach((planet, idx) => {
+        const isHovered = idx === hoveredPlanetIndex;
+        const targetWeight = isHovered ? 1.0 : 0.0;
+        planet.hoverWeight += (targetWeight - planet.hoverWeight) * 0.15;
+
+        const scaleFactor =
+          planet.baseScale * (1.0 + planet.hoverWeight * 0.55);
+
+        // Specific rotation matrices
+        let planetRotation = rotationY(time * 1.8);
+        if (planet.kind === 2.0) {
+          // Earth: tilted 23.4 degrees on axis and rotating
+          const earthTilt = rotationZ(0.409);
+          const earthSpin = rotationY(time * 0.9);
+          planetRotation = multiply(earthTilt, earthSpin);
+        }
+
+        // Slight oblate planetary flattening for Jupiter
+        const yScale = planet.kind === 5.0 ? scaleFactor * 0.93 : scaleFactor;
+
+        const planetModel = multiply(
+          translation(
+            planet.currentPos[0],
+            planet.currentPos[1],
+            planet.currentPos[2],
+          ),
+          multiply(planetRotation, scale(scaleFactor, yScale, scaleFactor)),
+        );
+        drawMesh(sphereMesh, planetModel, planet.kind, planet.hoverWeight);
+
+        // Saturn's Ring System
+        if (planet.hasRing) {
+          const ringTilt = rotationX(0.46);
+          const ringScale = scaleFactor * 1.35;
+          const ringModel = multiply(
+            translation(
+              planet.currentPos[0],
+              planet.currentPos[1],
+              planet.currentPos[2],
+            ),
+            multiply(ringTilt, scale(ringScale, ringScale, ringScale)),
+          );
+          drawMesh(flatRingMesh, ringModel, 7.0, planet.hoverWeight);
+        }
+
+        // Earth's Moon
+        if (planet.hasMoon) {
+          const moonAngle = time * 2.8;
+          const moonDist = scaleFactor * 2.5;
+          const moonX = planet.currentPos[0] + Math.cos(moonAngle) * moonDist;
+          const moonY =
+            planet.currentPos[1] +
+            Math.sin(moonAngle * 0.6) * (moonDist * 0.25);
+          const moonZ = planet.currentPos[2] + Math.sin(moonAngle) * moonDist;
+          const moonScale = planet.baseScale * 0.27;
+
+          const moonModel = multiply(
+            translation(moonX, moonY, moonZ),
+            scale(moonScale, moonScale, moonScale),
+          );
+          drawMesh(sphereMesh, moonModel, 3.0, planet.hoverWeight);
+        }
+
+        // Telemetry beam & targeting halo when hovered
+        if (planet.hoverWeight > 0.05) {
+          drawBeam([0, 0, 0], planet.currentPos, planet.hoverWeight);
+
+          const haloScale = scaleFactor * 2.2;
+          const haloModel = multiply(
+            translation(
+              planet.currentPos[0],
+              planet.currentPos[1],
+              planet.currentPos[2],
+            ),
+            scale(haloScale, haloScale, haloScale),
+          );
+          drawMesh(torusMesh, haloModel, 0.0, planet.hoverWeight);
+        }
+      });
+
+      // --- 4. Deep Space Particle Constellation ---
+      gl.useProgram(particleProg);
+      gl.uniformMatrix4fv(partUniforms.projection, false, projection);
+      gl.uniformMatrix4fv(partUniforms.view, false, view);
+      gl.uniformMatrix4fv(partUniforms.sceneRotation, false, sceneRotation);
+      gl.uniform1f(partUniforms.time, time);
+      gl.uniform3fv(partUniforms.accent, colors.accent);
+      gl.uniform3fv(partUniforms.surface, colors.surface);
+      gl.uniform3fv(partUniforms.highlight, colors.highlight);
+      gl.uniform4f(
+        partUniforms.shockwave,
+        shockwaveOrigin[0],
+        shockwaveOrigin[1],
+        shockwaveOrigin[2],
+        shockwaveRadius,
+      );
+      gl.uniform1f(partUniforms.shockwavePower, shockwavePower);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, particles.position);
+      gl.enableVertexAttribArray(partAttrs.position);
+      gl.vertexAttribPointer(partAttrs.position, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, particles.params);
+      gl.enableVertexAttribArray(partAttrs.params);
+      gl.vertexAttribPointer(partAttrs.params, 2, gl.FLOAT, false, 0, 0);
+
+      gl.uniform1f(partUniforms.mode, 0.0);
+      gl.drawArrays(gl.POINTS, 0, particles.count);
+
+      // --- 5. Click Spark Explosions ---
+      if (sparkActive) {
+        const sparkElapsed = (timestamp - sparkStartTime) * 0.001;
+        const sparkAge = sparkElapsed / 0.9;
+        if (sparkAge <= 1.0) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, sparks.velocity);
+          gl.enableVertexAttribArray(partAttrs.velocity);
+          gl.vertexAttribPointer(partAttrs.velocity, 3, gl.FLOAT, false, 0, 0);
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, sparks.params);
+          gl.enableVertexAttribArray(partAttrs.params);
+          gl.vertexAttribPointer(partAttrs.params, 2, gl.FLOAT, false, 0, 0);
+
+          gl.uniform1f(partUniforms.mode, 1.0);
+          gl.uniform1f(partUniforms.sparkAge, sparkAge);
+          gl.uniform3fv(partUniforms.sparkOrigin, sparkOrigin);
+          gl.drawArrays(gl.POINTS, 0, sparks.count);
+        } else {
+          sparkActive = false;
+        }
+      }
+
+      if (visible && !reducedMotion.matches) {
+        animationFrame = window.requestAnimationFrame(render);
+      }
+    }
+
+    function start() {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(render);
+    }
+
+    function updatePointer(e: PointerEvent) {
+      const bounds = activeCanvas.getBoundingClientRect();
+      pointerX = ((e.clientX - bounds.left) / bounds.width) * 2 - 1;
+      pointerY = -(((e.clientY - bounds.top) / bounds.height) * 2 - 1);
+    }
+
+    function handlePointerDown(e: PointerEvent) {
+      activeCanvas.setPointerCapture(e.pointerId);
+      updatePointer(e);
+      isDragging = true;
+      dragStartX = pointerX;
+      dragStartY = pointerY;
+      lastDragX = pointerX;
+      lastDragY = pointerY;
+      dragStartTime = performance.now();
+      activeCanvas.style.cursor = "grabbing";
+    }
+
+    function handlePointerMove(e: PointerEvent) {
+      updatePointer(e);
+      isHovering = true;
+      targetSpeedFactor = 1.45;
+
+      if (isDragging) {
+        const dx = pointerX - lastDragX;
+        const dy = pointerY - lastDragY;
+        userRotationY += dx * 2.6;
+        userRotationX -= dy * 2.2;
+        userRotationX = Math.max(-1.3, Math.min(1.3, userRotationX));
+
+        spinVelocityY = dx * 0.4;
+        spinVelocityX = -dy * 0.4;
+
+        lastDragX = pointerX;
+        lastDragY = pointerY;
+        flashBadge("ROTATING SOLAR SYSTEM", false);
+      } else if (hoveredPlanetIndex >= 0) {
+        const planet = planets[hoveredPlanetIndex];
+        if (planet) {
+          flashBadge(planet.label);
+        }
+      } else if (sunHoverWeight > 0.4) {
+        flashBadge("STAR · SOL · SOLAR SYSTEM CORE");
+      }
+    }
+
+    function handlePointerUp(e: PointerEvent) {
+      if (activeCanvas.hasPointerCapture(e.pointerId)) {
+        activeCanvas.releasePointerCapture(e.pointerId);
+      }
+      isDragging = false;
+      activeCanvas.style.cursor =
+        hoveredPlanetIndex >= 0 || sunHoverWeight > 0.4 ? "pointer" : "grab";
+
+      const dist = Math.hypot(pointerX - dragStartX, pointerY - dragStartY);
+      const elapsed = performance.now() - dragStartTime;
+
+      if (dist < 0.05 && elapsed < 350) {
+        if (hoveredPlanetIndex >= 0) {
+          const planet = planets[hoveredPlanetIndex];
+          if (planet) {
+            triggerClickAction(
+              planet.currentPos,
+              `TELEMETRY · ${planet.name.toUpperCase()}`,
+            );
+          }
+        } else if (sunHoverWeight > 0.4) {
+          triggerClickAction([0, 0, 0], "SOLAR FLARE · CME BURST");
+        } else {
+          triggerClickAction([0, 0, 0], "GRAVITATIONAL WAVE PULSE");
+        }
+      }
+    }
+
+    function handlePointerLeave() {
+      isHovering = false;
+      targetSpeedFactor = 1.0;
+      hoveredPlanetIndex = -1;
+      sunHoverWeight = 0;
+      activeCanvas.style.cursor = "grab";
+      flashBadge("SOLAR SYSTEM · DRAG & CLICK", false);
+    }
+
+    const resizeObserver = new ResizeObserver(start);
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? false;
+      if (visible) start();
+      else window.cancelAnimationFrame(animationFrame);
+    });
+    const themeObserver = new MutationObserver(start);
+
+    resizeObserver.observe(activeCanvas);
+    intersectionObserver.observe(activeCanvas);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    activeCanvas.addEventListener("pointerdown", handlePointerDown);
+    activeCanvas.addEventListener("pointermove", handlePointerMove);
+    activeCanvas.addEventListener("pointerup", handlePointerUp);
+    activeCanvas.addEventListener("pointercancel", handlePointerUp);
+    activeCanvas.addEventListener("pointerleave", handlePointerLeave);
+    reducedMotion.addEventListener("change", start);
+
+    start();
+
+    document.addEventListener(
+      "astro:before-swap",
+      () => {
+        window.cancelAnimationFrame(animationFrame);
+        resizeObserver.disconnect();
+        intersectionObserver.disconnect();
+        themeObserver.disconnect();
+        if (earthTexture) {
+          gl.deleteTexture(earthTexture);
+        }
+        activeCanvas.removeEventListener("pointerdown", handlePointerDown);
+        activeCanvas.removeEventListener("pointermove", handlePointerMove);
+        activeCanvas.removeEventListener("pointerup", handlePointerUp);
+        activeCanvas.removeEventListener("pointercancel", handlePointerUp);
+        activeCanvas.removeEventListener("pointerleave", handlePointerLeave);
+        reducedMotion.removeEventListener("change", start);
+      },
+      { once: true },
+    );
+  }
+
+  document
+    .querySelectorAll<HTMLElement>(".session-orbit-wrap")
+    .forEach(setupOrbit);
+</script>

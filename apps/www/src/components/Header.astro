@@ -21,10 +21,10 @@ const themes = [
 ---
 
 <header
-  class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/88 backdrop-blur-md"
+  class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/84 backdrop-blur-xl"
 >
   <div
-    class="mx-auto flex h-[60px] max-w-[1180px] items-center px-4 sm:px-6 lg:px-7"
+    class="mx-auto flex h-[60px] max-w-[86rem] items-center px-4 sm:px-6 lg:px-7"
   >
     <a
       href={localeConfig[locale].route}
@@ -114,7 +114,7 @@ const themes = [
         rel="noopener noreferrer"
         class="pressable console-mono inline-flex min-h-9 items-center rounded-sm border border-[var(--console-text)] bg-[var(--console-text)] px-3 text-[10px] font-semibold text-[var(--console-bg)] hover:bg-[var(--console-text-secondary)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
       >
-        <span aria-hidden="true">★&nbsp;</span>{t.github}
+        {t.github}
       </a>
     </nav>
   </div>
