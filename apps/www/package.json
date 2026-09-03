@@ -27,14 +27,14 @@
     "@hugeicons/core-free-icons": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
-    "eslint": "10.9.0",
+    "eslint": "10.9.1",
     "eslint-plugin-astro": "3.1.0",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "prettier": "3.9.6",
     "prettier-plugin-astro": "0.14.1",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "typescript-eslint": "8.67.0",
+    "typescript-eslint": "8.68.0",
     "vite": "catalog:"
   }
 }
