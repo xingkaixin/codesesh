@@ -19,7 +19,7 @@
     "@fontsource-variable/ibm-plex-sans": "catalog:",
     "@fontsource-variable/jetbrains-mono": "catalog:",
     "@fontsource-variable/space-grotesk": "catalog:",
-    "astro": "^7.2.4"
+    "astro": "^7.2.9"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
