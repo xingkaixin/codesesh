@@ -33,7 +33,7 @@ describe("SessionActionsMenu", () => {
     await waitFor(() => expect(document.activeElement).toBe(renameItem));
     fireEvent.keyDown(renameItem, { key: "Escape" });
 
-    expect(screen.queryByRole("menu")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
@@ -51,7 +51,7 @@ describe("SessionActionsMenu", () => {
     fireEvent.click(renameItem);
 
     expect(onRename).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("menu")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
@@ -90,7 +90,7 @@ describe("SessionActionsMenu", () => {
     );
     fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
 
-    expect(screen.queryByRole("menu")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 });
