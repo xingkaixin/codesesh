@@ -228,10 +228,7 @@ export default function App() {
     setScanStatus,
   });
 
-  const refreshAliasViews = useCallback(async () => {
-    await Promise.all([reload(), refreshBookmarks()]);
-  }, [refreshBookmarks, reload]);
-  const sessionAliases = useSessionAliasDialog(refreshAliasViews);
+  const sessionAliases = useSessionAliasDialog(reload);
 
   const searchSubtitle =
     searchState.status === "failed"

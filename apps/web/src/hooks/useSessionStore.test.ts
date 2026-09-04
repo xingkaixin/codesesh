@@ -4,6 +4,7 @@ import {
   SAMPLE_SESSIONS_UPDATED_EVENT,
 } from "@codesesh/core/test-fixtures";
 import { createSessionIdentity } from "@codesesh/core/contract";
+import { useQuery } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -13,6 +14,7 @@ import type {
   ApiProjectGroup,
   ApiProjectPage,
   SessionHead,
+  BookmarkView,
 } from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
@@ -90,6 +92,41 @@ async function renderStore(window: AppConfig["window"] = config.window) {
 }
 
 describe("useSessionStore", () => {
+  it.each(["live", "resync"] as const)(
+    "refreshes materialized bookmark views on %s",
+    async (refresh) => {
+      const initial: BookmarkView = {
+        reference: SAMPLE_SESSION_HEAD.reference,
+        bookmarkedAt: 1,
+        availability: "session-unavailable",
+      };
+      const updated: BookmarkView = {
+        ...initial,
+        availability: "available",
+        session: { ...SAMPLE_SESSION_HEAD, title: "Updated title" },
+      };
+      const fetchBookmarks = vi.fn().mockResolvedValue({ bookmarks: [initial] });
+      const { Wrapper } = createQueryWrapper();
+      const { result } = renderHook(
+        () => ({
+          store: useSessionStore(config.window),
+          bookmarks: useQuery({ queryKey: queryKeys.bookmarks, queryFn: fetchBookmarks }),
+        }),
+        { wrapper: Wrapper },
+      );
+      await waitFor(() => expect(result.current.store.loading).toBe(false));
+      await waitFor(() => expect(result.current.bookmarks.data?.bookmarks).toEqual([initial]));
+      fetchBookmarks.mockResolvedValue({ bookmarks: [updated] });
+
+      await act(async () => {
+        if (refresh === "resync") await result.current.store.resyncLiveState();
+        else await result.current.store.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT);
+      });
+
+      await waitFor(() => expect(result.current.bookmarks.data?.bookmarks).toEqual([updated]));
+    },
+  );
+
   it("resynchronizes when an active project page rejects its old cursor", async () => {
     const firstPage = { ...projectPage, nextCursor: "old-cursor" };
     const nextFirstPage = { ...projectPage, nextCursor: "new-cursor" };

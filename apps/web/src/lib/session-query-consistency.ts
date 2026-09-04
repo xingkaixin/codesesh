@@ -53,6 +53,7 @@ export async function invalidateSessionDerivedQueries(queryClient: QueryClient):
   await Promise.all([
     ...invalidateSessionCollections(queryClient),
     queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks }),
   ]);
 }
 
@@ -79,6 +80,7 @@ export async function invalidateLiveSessionDerivedQueries(
 
   await queryClient.invalidateQueries({
     predicate: ({ queryKey }) => {
+      if (queryKey.length === 1 && queryKey[0] === queryKeys.bookmarks[0]) return true;
       if (
         queryKey.length !== 3 ||
         queryKey[0] !== queryKeys.sessionDetails[0] ||
