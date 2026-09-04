@@ -107,13 +107,23 @@ export function useBookmarks() {
         await deleteBookmark(bookmark.reference);
         return;
       }
-      await upsertBookmark(bookmark.reference);
+      return upsertBookmark(bookmark.reference);
     },
     onMutate: ({ bookmark, isBookmarked }) => {
       logClientEvent(isBookmarked ? "bookmark.delete" : "bookmark.add", {
         agent: bookmark.reference.agentName,
         session: bookmark.reference.sessionId,
       });
+    },
+    onSuccess: async (data, { bookmark, isBookmarked }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.bookmarks });
+      queryClient.setQueryData<{ bookmarks: BookmarkView[] }>(queryKeys.bookmarks, (previous) => ({
+        bookmarks: toggledBookmarks(
+          previous?.bookmarks ?? EMPTY_BOOKMARKS,
+          data ? { ...bookmark, ...data.bookmark } : bookmark,
+          isBookmarked,
+        ),
+      }));
     },
     onError: (error) => {
       console.error("Failed to toggle bookmark:", error);

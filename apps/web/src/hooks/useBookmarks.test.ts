@@ -252,6 +252,51 @@ describe("useBookmarks", () => {
     expect(result.current.isSessionBookmarked("cc", "racy")).toBe(false);
   });
 
+  it("keeps successful bookmarks confirmed while another write is pending", async () => {
+    const firstRequest = deferred<void>();
+    const secondRequest = deferred<void>();
+    let serverBookmarks: BookmarkView[] = [];
+    vi.mocked(api.fetchBookmarks).mockImplementation(async () => ({ bookmarks: serverBookmarks }));
+    vi.mocked(api.upsertBookmark)
+      .mockImplementationOnce(async () => {
+        await firstRequest.promise;
+        serverBookmarks = [available("first")];
+        return { bookmark: fact("first") };
+      })
+      .mockImplementationOnce(async () => {
+        await secondRequest.promise;
+        serverBookmarks = [available("second"), ...serverBookmarks];
+        return { bookmark: fact("second") };
+      });
+    vi.mocked(api.deleteBookmark).mockImplementationOnce(async () => {
+      serverBookmarks = serverBookmarks.filter(({ reference }) => reference.sessionId !== "first");
+    });
+    const { result } = renderBookmarks();
+    await waitFor(() => expect(api.fetchBookmarks).toHaveBeenCalledOnce());
+
+    act(() => result.current.toggleBookmark(available("first")));
+    act(() => result.current.toggleBookmark(available("second")));
+    await waitFor(() => expect(api.upsertBookmark).toHaveBeenCalledTimes(1));
+
+    firstRequest.resolve();
+    await waitFor(() => expect(api.upsertBookmark).toHaveBeenCalledTimes(2));
+    expect(result.current.isSessionBookmarked("cc", "first")).toBe(true);
+    expect(result.current.isSessionBookmarked("cc", "second")).toBe(true);
+
+    act(() => result.current.toggleBookmark(available("first")));
+    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "first")).toBe(false));
+    secondRequest.resolve();
+
+    await waitFor(() =>
+      expect(api.deleteBookmark).toHaveBeenCalledWith({
+        agentName: "cc",
+        sessionId: "first",
+      }),
+    );
+    await waitFor(() => expect(result.current.bookmarkedSessions).toEqual([available("second")]));
+    expect(api.upsertBookmark).toHaveBeenCalledTimes(2);
+  });
+
   it("rolls back only the failed bookmark while another toggle is pending", async () => {
     const failedRequest = deferred<void>();
     const successfulRequest = deferred<void>();
