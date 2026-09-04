@@ -32,7 +32,7 @@ function changedHead(
 }
 
 describe("live session detail invalidation", () => {
-  it("invalidates every changed detail with one cache scan request", async () => {
+  it("invalidates changed details and bookmark views with one cache scan request", async () => {
     const active = makeClient();
     const changedKey = queryKeys.sessionDetail("codex", "changed");
     const removedKey = queryKeys.sessionDetail("codex", "removed");
@@ -42,6 +42,7 @@ describe("live session detail invalidation", () => {
     active.setQueryData(removedKey, { id: "removed" });
     active.setQueryData(unchangedKey, { id: "unchanged" });
     active.setQueryData(descendantKey, { id: "changed-messages" });
+    active.setQueryData(queryKeys.bookmarks, { bookmarks: [] });
     const invalidateQueries = vi.spyOn(active, "invalidateQueries");
     const event = {
       ...SAMPLE_SESSIONS_UPDATED_EVENT,
@@ -62,6 +63,7 @@ describe("live session detail invalidation", () => {
     expect(active.getQueryState(removedKey)?.isInvalidated).toBe(true);
     expect(active.getQueryState(unchangedKey)?.isInvalidated).toBe(false);
     expect(active.getQueryState(descendantKey)?.isInvalidated).toBe(false);
+    expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(true);
   });
 
   it("does not scan the cache when no detail changed", async () => {
