@@ -3,8 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 interface CursorPayload {
   version: 1;
   snapshot: string;
-  view: string;
-  query: string;
   offset: number;
 }
 
@@ -12,24 +10,25 @@ interface PaginationRequest {
   cursor?: string;
   limit: number;
   query: URLSearchParams;
-  snapshotIdentity: object;
-  viewIdentity: object;
 }
 
-export type PaginationResult<T> =
-  | { kind: "page"; items: T[]; nextCursor?: string }
+interface PaginationSnapshot<T, View> {
+  items: readonly T[];
+  view: View;
+}
+
+interface RetainedSnapshot<T, View> extends PaginationSnapshot<T, View> {
+  query: string;
+  expiresAt: number;
+}
+
+type PaginationResult<T, View> =
+  | { kind: "page"; items: T[]; view: View; nextCursor?: string }
   | { kind: "invalid_cursor" }
   | { kind: "stale_snapshot" };
 
-const identityVersions = new WeakMap<object, string>();
-
-function identityVersion(identity: object): string {
-  const existing = identityVersions.get(identity);
-  if (existing) return existing;
-  const version = randomUUID();
-  identityVersions.set(identity, version);
-  return version;
-}
+const SNAPSHOT_TTL_MS = 60_000;
+const SNAPSHOT_LIMIT = 32;
 
 function queryFingerprint(params: URLSearchParams): string {
   const canonical = new URLSearchParams(params);
@@ -53,8 +52,6 @@ function decodeCursor(cursor: string): CursorPayload | null {
     if (
       value.version !== 1 ||
       typeof value.snapshot !== "string" ||
-      typeof value.view !== "string" ||
-      typeof value.query !== "string" ||
       !Number.isSafeInteger(value.offset) ||
       value.offset! <= 0
     ) {
@@ -66,31 +63,56 @@ function decodeCursor(cursor: string): CursorPayload | null {
   }
 }
 
-/** Keeps every page on the same immutable scan and derived-view versions. */
-export function paginateSnapshot<T>(items: T[], request: PaginationRequest): PaginationResult<T> {
-  const snapshot = identityVersion(request.snapshotIdentity);
-  const view = identityVersion(request.viewIdentity);
-  const query = queryFingerprint(request.query);
-  let offset = 0;
+export function createSnapshotPaginator<T, View>() {
+  const snapshotsBySource = new WeakMap<object, Map<string, RetainedSnapshot<T, View>>>();
 
-  if (request.cursor) {
-    const cursor = decodeCursor(request.cursor);
-    if (!cursor || cursor.query !== query) return { kind: "invalid_cursor" };
-    if (cursor.snapshot !== snapshot || cursor.view !== view) {
-      return { kind: "stale_snapshot" };
+  return function paginateSnapshot(
+    source: object,
+    request: PaginationRequest,
+    load: () => PaginationSnapshot<T, View>,
+  ): PaginationResult<T, View> {
+    const snapshots = snapshotsBySource.get(source) ?? new Map<string, RetainedSnapshot<T, View>>();
+    const now = Date.now();
+    for (const [id, snapshot] of snapshots) {
+      if (snapshot.expiresAt <= now) snapshots.delete(id);
     }
-    if (cursor.offset >= items.length) return { kind: "invalid_cursor" };
-    offset = cursor.offset;
-  }
+    const query = queryFingerprint(request.query);
+    let snapshot: RetainedSnapshot<T, View>;
+    let snapshotId: string;
+    let offset = 0;
 
-  const end = Math.min(offset + request.limit, items.length);
-  const nextCursor =
-    end < items.length
-      ? encodeCursor({ version: 1, snapshot, view, query, offset: end })
-      : undefined;
-  return {
-    kind: "page",
-    items: items.slice(offset, end),
-    ...(nextCursor ? { nextCursor } : {}),
+    if (request.cursor) {
+      const cursor = decodeCursor(request.cursor);
+      if (!cursor) return { kind: "invalid_cursor" };
+      const retained = snapshots.get(cursor.snapshot);
+      if (!retained) return { kind: "stale_snapshot" };
+      if (retained.query !== query || cursor.offset >= retained.items.length) {
+        return { kind: "invalid_cursor" };
+      }
+      snapshot = retained;
+      snapshotId = cursor.snapshot;
+      offset = cursor.offset;
+    } else {
+      const loaded = load();
+      snapshot = { ...loaded, items: [...loaded.items], query, expiresAt: now + SNAPSHOT_TTL_MS };
+      snapshotId = randomUUID();
+    }
+
+    const end = Math.min(offset + request.limit, snapshot.items.length);
+    const nextCursor =
+      end < snapshot.items.length
+        ? encodeCursor({ version: 1, snapshot: snapshotId, offset: end })
+        : undefined;
+    if (!request.cursor && nextCursor) {
+      if (snapshots.size >= SNAPSHOT_LIMIT) snapshots.delete(snapshots.keys().next().value!);
+      snapshots.set(snapshotId, snapshot);
+      snapshotsBySource.set(source, snapshots);
+    }
+    return {
+      kind: "page",
+      items: snapshot.items.slice(offset, end),
+      view: snapshot.view,
+      ...(nextCursor ? { nextCursor } : {}),
+    };
   };
 }

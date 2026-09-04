@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AGENT_CATALOG } from "@codesesh/core/contract";
 import type { ScanResultSource } from "../scan-sources.js";
 import {
@@ -140,7 +140,8 @@ describe("handleGetProjects", () => {
     });
   });
 
-  it("rejects a project cursor after the scan snapshot changes", () => {
+  it("keeps project pages and totals on their original snapshot", () => {
+    vi.useFakeTimers();
     const initialSessions = [
       makeSession("one", {
         project_identity: { kind: "path", key: "/workspace/one", displayName: "one" },
@@ -172,8 +173,20 @@ describe("handleGetProjects", () => {
 
     handleGetProjects(nextContext, source);
 
-    expect(nextContext.json).toHaveBeenCalledWith(
-      { error: "project snapshot changed; restart pagination" },
+    expect(nextContext.json).toHaveBeenCalledWith({
+      projects: [expect.objectContaining({ identityKey: "/workspace/two" })],
+      summary: expect.objectContaining({ projects: 2, sessions: 2 }),
+    });
+
+    const freshContext = makeMockContext({ query: { limit: "1" } });
+    handleGetProjects(freshContext, source);
+    expect(freshContext.json.mock.calls[0]![0].summary).toMatchObject({ projects: 3, sessions: 3 });
+
+    vi.advanceTimersByTime(60_000);
+    const expired = makeMockContext({ query: { limit: "1", cursor } });
+    handleGetProjects(expired, source);
+    expect(expired.json).toHaveBeenCalledWith(
+      { error: "project snapshot expired; restart pagination" },
       409,
     );
   });
