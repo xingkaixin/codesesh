@@ -373,5 +373,10 @@ describe("useBookmarks", () => {
     await act(() => result.current.refresh());
     await waitFor(() => expect(result.current.error).toBeNull());
     expect(result.current.isSessionBookmarked("cc", "recovered")).toBe(true);
+
+    vi.mocked(api.fetchBookmarks).mockRejectedValueOnce(error);
+    await act(() => result.current.refresh());
+    await waitFor(() => expect(result.current.error).toBe("offline"));
+    expect(result.current.bookmarkedSessions).toEqual([available("recovered")]);
   });
 });

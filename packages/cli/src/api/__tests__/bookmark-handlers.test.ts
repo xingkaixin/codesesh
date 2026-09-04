@@ -119,7 +119,10 @@ describe("bookmark handlers", () => {
     });
     const unavailable = makeContext();
     handleGetBookmarks(unavailable as never, bookmarkScanSource);
-    expect(unavailable.json).toHaveBeenCalledWith({ bookmarks: [], storageAvailable: false });
+    expect(unavailable.json).toHaveBeenCalledWith(
+      { error: "Bookmark storage is unavailable" },
+      503,
+    );
 
     coreMocks.listBookmarks.mockImplementationOnce(() => {
       throw new Error("unexpected");

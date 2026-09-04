@@ -76,7 +76,7 @@ export function handleGetBookmarks(c: Context, scanSource: ScanResultSource) {
         storageAvailable: true,
       });
     },
-    () => c.json({ bookmarks: [], storageAvailable: false }),
+    () => c.json({ error: "Bookmark storage is unavailable" }, 503),
   );
 }
 
