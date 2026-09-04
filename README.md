@@ -80,7 +80,7 @@ More agents coming soon. See the [extension checklist](#extending).
 
 <!-- repo-fact:pnpm-version:start -->
 
-- pnpm 11.20.0 for building from source
+- pnpm 11.25.0 for building from source
 
 <!-- repo-fact:pnpm-version:end -->
 

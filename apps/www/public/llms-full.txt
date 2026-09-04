@@ -107,7 +107,7 @@ Published CLI runtime and source build toolchain:
 Source build package manager:
 
 <!-- repo-fact:pnpm-version:start -->
-- pnpm 11.20.0
+- pnpm 11.25.0
 <!-- repo-fact:pnpm-version:end -->
 
 ## Key Questions
@@ -133,7 +133,7 @@ The published CLI supports Node.js 22+. Source development uses the Node 24 tool
 <!-- repo-fact:node-version:end -->
 
 <!-- repo-fact:pnpm-version:start -->
-Source development uses pnpm 11.20.0.
+Source development uses pnpm 11.25.0.
 <!-- repo-fact:pnpm-version:end -->
 
 ## Common CLI Usage
