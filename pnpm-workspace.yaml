@@ -21,6 +21,11 @@ allowBuilds:
   esbuild: true
   sharp: true
 minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - "@vitest/coverage-v8@5.0.0"
+  - "@vitest/mocker@5.0.0"
+  - "@vitest/spy@5.0.0"
+  - "vitest@5.0.0"
 
 # eslint-plugin-astro 3 requires ESLint 10 while its jsx-a11y peer has not yet
 # widened its compatible peer range. Keep the exception scoped to that edge.
