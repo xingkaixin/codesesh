@@ -1,4 +1,4 @@
-import type { AppConfig } from "@codesesh/core/contract";
+import type { AppConfig, ApiProjectGroup, ApiProjectPage } from "@codesesh/core/contract";
 import { getAgentInfoMap } from "@codesesh/core/runtime/agents";
 import {
   getAnalyticsRevision,
@@ -17,8 +17,10 @@ import {
   type SessionListDefaults,
 } from "./query-params.js";
 import type { ScanResultSource, ScanStatusSource } from "./scan-sources.js";
-import { paginateSnapshot } from "./snapshot-pagination.js";
+import { createSnapshotPaginator } from "./snapshot-pagination.js";
 import { getSnapshotAggregation, getSnapshotSessionTree } from "./snapshot-aggregation.js";
+
+const paginateProjects = createSnapshotPaginator<ApiProjectGroup, ApiProjectPage["summary"]>();
 
 export function handleGetConfig(c: Context, defaults: SessionListDefaults) {
   const payload: AppConfig = {
@@ -83,54 +85,62 @@ export function handleGetProjects(
   const window = parseDateWindowRequest(c, "projects", defaults);
   if (window.kind === "rejected") return window.response;
   const { from, to } = window;
-  const analyticsRevision = getAnalyticsRevision();
-  const catalog = getSnapshotAggregation(
+  const loadSnapshot = () => {
+    const analyticsRevision = getAnalyticsRevision();
+    const catalog = getSnapshotAggregation(
+      scanSource,
+      scanResult.sessions,
+      ["projects", from, to, analyticsRevision],
+      () => {
+        const tree = getSnapshotSessionTree(scanSource, scanResult.sessions);
+        const costFacts = listDashboardCostFacts({ from, to, includeModelCosts: false });
+        const projects = attachProjectMetricsFromTree(
+          listCachedProjectGroups(scanResult.sessions),
+          tree,
+          from,
+          to,
+          costFacts,
+        ).filter(
+          (project) =>
+            project.sessionCount > 0 ||
+            project.messages > 0 ||
+            project.tokens > 0 ||
+            project.cost > 0,
+        );
+        return { projects, summary: summarizeProjects(projects) };
+      },
+    );
+    const projects = projectIdentity
+      ? catalog.projects.filter(
+          (project) =>
+            project.identityKind === projectIdentity.kind &&
+            project.identityKey === projectIdentity.key,
+        )
+      : catalog.projects;
+    return {
+      items: projects,
+      view: projectIdentity ? summarizeProjects(projects) : catalog.summary,
+    };
+  };
+  const page = paginateProjects(
     scanSource,
-    scanResult.sessions,
-    ["projects", from, to, analyticsRevision],
-    () => {
-      const tree = getSnapshotSessionTree(scanSource, scanResult.sessions);
-      const costFacts = listDashboardCostFacts({ from, to, includeModelCosts: false });
-      const projects = attachProjectMetricsFromTree(
-        listCachedProjectGroups(scanResult.sessions),
-        tree,
-        from,
-        to,
-        costFacts,
-      ).filter(
-        (project) =>
-          project.sessionCount > 0 ||
-          project.messages > 0 ||
-          project.tokens > 0 ||
-          project.cost > 0,
-      );
-      return { projects, summary: summarizeProjects(projects) };
+    {
+      cursor: params.get("cursor") ?? undefined,
+      limit: limit.value,
+      query: params,
     },
+    loadSnapshot,
   );
-  const projects = projectIdentity
-    ? catalog.projects.filter(
-        (project) =>
-          project.identityKind === projectIdentity.kind &&
-          project.identityKey === projectIdentity.key,
-      )
-    : catalog.projects;
-  const page = paginateSnapshot(projects, {
-    cursor: params.get("cursor") ?? undefined,
-    limit: limit.value,
-    query: params,
-    snapshotIdentity: scanResult.sessions,
-    viewIdentity: catalog.projects,
-  });
   if (page.kind === "invalid_cursor") {
     reportInvalidQueryParameter("projects", "cursor", "rejected");
     return c.json({ error: "cursor is invalid for this request" }, 400);
   }
   if (page.kind === "stale_snapshot") {
-    return c.json({ error: "project snapshot changed; restart pagination" }, 409);
+    return c.json({ error: "project snapshot expired; restart pagination" }, 409);
   }
   return c.json({
     projects: page.items,
-    summary: projectIdentity ? summarizeProjects(projects) : catalog.summary,
+    summary: page.view,
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
   });
 }

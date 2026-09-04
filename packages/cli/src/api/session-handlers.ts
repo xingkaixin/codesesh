@@ -31,9 +31,11 @@ import {
 } from "./query-params.js";
 import type { ScanResultSource } from "./scan-sources.js";
 import { createSessionDetailJsonResponse } from "./session-detail-stream.js";
-import { loadAliasView } from "./session-aliases-view.js";
-import { paginateSnapshot } from "./snapshot-pagination.js";
+import { loadAliasView, type AliasView } from "./session-aliases-view.js";
+import { createSnapshotPaginator } from "./snapshot-pagination.js";
 import { getSnapshotAggregation } from "./snapshot-aggregation.js";
+
+const paginateSessions = createSnapshotPaginator<SessionHead, AliasView>();
 
 function getSessionHeadReference(session: SessionHead): SessionReference {
   return session.reference;
@@ -85,76 +87,84 @@ export async function handleGetSessions(
     reportInvalidQueryParameter("sessions", "agent", "empty_result");
   }
 
-  const agentFilter =
-    sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : sessionQuery.agent.kind;
-  let sessions = getSnapshotAggregation(
-    scanSource,
-    scanResult.sessions,
-    [
-      "sessions",
-      agentFilter,
-      projectIdentity?.kind,
-      projectIdentity?.key,
-      projectScope?.identity.kind,
-      projectScope?.identity.key,
-      projectScope?.path,
-      tag,
-      from,
-      to,
-    ],
-    () => {
-      let filtered =
-        sessionQuery.agent.kind === "all"
-          ? scanResult.sessions
-          : sessionQuery.agent.kind === "known"
-            ? (scanResult.byAgent[sessionQuery.agent.agentName] ?? [])
-            : [];
+  const loadSnapshot = () => {
+    const agentFilter =
+      sessionQuery.agent.kind === "known" ? sessionQuery.agent.agentName : sessionQuery.agent.kind;
+    let sessions = getSnapshotAggregation(
+      scanSource,
+      scanResult.sessions,
+      [
+        "sessions",
+        agentFilter,
+        projectIdentity?.kind,
+        projectIdentity?.key,
+        projectScope?.identity.kind,
+        projectScope?.identity.key,
+        projectScope?.path,
+        tag,
+        from,
+        to,
+      ],
+      () => {
+        let filtered =
+          sessionQuery.agent.kind === "all"
+            ? scanResult.sessions
+            : sessionQuery.agent.kind === "known"
+              ? (scanResult.byAgent[sessionQuery.agent.agentName] ?? [])
+              : [];
 
-      if (projectIdentity) {
-        filtered = filtered.filter((session) =>
-          matchesProjectIdentity(session.project_identity, projectIdentity),
-        );
-      } else if (projectScope) {
-        filtered = filtered.filter((session) => sessionMatchesProjectScope(session, projectScope));
-      }
-      filtered = filterSessionsByActivityWindow(filtered, from, to);
-      return tag
-        ? filtered.filter((session) => session.smart_tags?.includes(tag as SmartTag))
-        : filtered;
-    },
-  );
+        if (projectIdentity) {
+          filtered = filtered.filter((session) =>
+            matchesProjectIdentity(session.project_identity, projectIdentity),
+          );
+        } else if (projectScope) {
+          filtered = filtered.filter((session) =>
+            sessionMatchesProjectScope(session, projectScope),
+          );
+        }
+        filtered = filterSessionsByActivityWindow(filtered, from, to);
+        return tag
+          ? filtered.filter((session) => session.smart_tags?.includes(tag as SmartTag))
+          : filtered;
+      },
+    );
 
-  const aliases = loadAliasView();
-  if (q) {
-    sessions = sessions.filter((session) => {
-      const alias = aliases.get(getSessionHeadReference(session));
-      return session.title.toLowerCase().includes(q) || alias?.toLowerCase().includes(q);
-    });
-  }
+    const aliases = loadAliasView();
+    if (q) {
+      sessions = sessions.filter((session) => {
+        const alias = aliases.get(getSessionHeadReference(session));
+        return session.title.toLowerCase().includes(q) || alias?.toLowerCase().includes(q);
+      });
+    }
+    return { items: sessions, view: aliases };
+  };
 
   if (paginationRequested) {
-    const page = paginateSnapshot(sessions, {
-      cursor: params.get("cursor") ?? undefined,
-      limit: sessionQuery.limit.value,
-      query: params,
-      snapshotIdentity: scanResult.sessions,
-      viewIdentity: aliases,
-    });
+    const page = paginateSessions(
+      scanSource,
+      {
+        cursor: params.get("cursor") ?? undefined,
+        limit: sessionQuery.limit.value,
+        query: params,
+      },
+      loadSnapshot,
+    );
     if (page.kind === "invalid_cursor") {
       reportInvalidQueryParameter("sessions", "cursor", "rejected");
       return c.json({ error: "cursor is invalid for this request" }, 400);
     }
     if (page.kind === "stale_snapshot") {
-      return c.json({ error: "session snapshot changed; restart pagination" }, 409);
+      return c.json({ error: "session snapshot expired; restart pagination" }, 409);
     }
     return c.json({
       sessions: page.items.map((session) =>
-        toPublicSessionHead(aliases.decorate(session, getSessionHeadReference(session))),
+        toPublicSessionHead(page.view.decorate(session, getSessionHeadReference(session))),
       ),
       ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     });
   }
 
+  const { items: sessions, view: aliases } = loadSnapshot();
   return c.json({
     sessions: sessions.map((session) =>
       toPublicSessionHead(aliases.decorate(session, getSessionHeadReference(session))),

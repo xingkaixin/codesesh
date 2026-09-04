@@ -17,6 +17,7 @@ import {
 } from "./handler-test-fixtures.js";
 
 const { handleGetSessionData, handleGetSessions } = await import("../session-handlers.js");
+const { invalidateAliasView } = await import("../session-aliases-view.js");
 
 describe("handleGetSessions", () => {
   it("returns all sessions without filters", () => {
@@ -77,7 +78,8 @@ describe("handleGetSessions", () => {
     expect(legacyContext.json.mock.calls[0]![0].sessions).toHaveLength(3);
   });
 
-  it("rejects a cursor after the scan snapshot changes", () => {
+  it("finishes the original session snapshot while new scans are published", () => {
+    vi.useFakeTimers();
     const initialSessions = [makeSession("first"), makeSession("second")];
     let snapshot = makeScanResult({
       sessions: initialSessions,
@@ -96,10 +98,43 @@ describe("handleGetSessions", () => {
     const nextContext = makeMockContext({ query: { limit: "1", cursor } });
     handleGetSessions(nextContext, source);
 
-    expect(nextContext.json).toHaveBeenCalledWith(
-      { error: "session snapshot changed; restart pagination" },
+    expect(nextContext.json).toHaveBeenCalledWith({ sessions: [initialSessions[1]] });
+
+    const freshContext = makeMockContext({ query: { limit: "1" } });
+    handleGetSessions(freshContext, source);
+    expect(freshContext.json.mock.calls[0]![0].sessions).toEqual([updatedSessions[0]]);
+
+    vi.advanceTimersByTime(60_000);
+    const expired = makeMockContext({ query: { limit: "1", cursor } });
+    handleGetSessions(expired, source);
+    expect(expired.json).toHaveBeenCalledWith(
+      { error: "session snapshot expired; restart pagination" },
       409,
     );
+  });
+
+  it("keeps alias-filtered pages on their original alias view", () => {
+    const sessions = [makeSession("first"), makeSession("second")];
+    const source = makeScanSource({ sessions, byAgent: { claudecode: sessions } });
+    coreMocks.listSessionAliases.mockReturnValue(
+      sessions.map((session) => ({ reference: session.reference, alias: "Saved", updatedAt: 1 })),
+    );
+    const first = makeMockContext({ query: { limit: "1", q: "saved" } });
+    handleGetSessions(first, source);
+
+    coreMocks.listSessionAliases.mockReturnValue([]);
+    invalidateAliasView();
+    const next = makeMockContext({
+      query: { limit: "1", q: "saved", cursor: first.json.mock.calls[0]![0].nextCursor },
+    });
+    handleGetSessions(next, source);
+
+    expect(next.json).toHaveBeenCalledWith({
+      sessions: [{ ...sessions[1], display_title: "Saved" }],
+    });
+    const fresh = makeMockContext({ query: { limit: "1", q: "saved" } });
+    handleGetSessions(fresh, source);
+    expect(fresh.json).toHaveBeenCalledWith({ sessions: [] });
   });
 
   it("rejects invalid pagination parameters", () => {
