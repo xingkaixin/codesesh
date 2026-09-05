@@ -134,6 +134,7 @@ describe("registered agent session watch plans", () => {
         {
           root: roots.cursor,
           path: join("/tmp/cursor-home", "workspaceStorage"),
+          ignoredFileNames: ["state.vscdb-shm"],
         },
       ],
     });

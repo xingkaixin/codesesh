@@ -9,7 +9,7 @@
  * are all internal details.
  */
 import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SessionWatchPlan } from "@codesesh/core/runtime/agents";
 import { appLogger } from "./logging.js";
 
@@ -24,6 +24,7 @@ export interface SessionWatchSource {
 interface WatchScope {
   agentName: string;
   targetPath: string;
+  ignoredFileNames?: readonly string[];
 }
 
 interface WatchRegistration {
@@ -189,7 +190,11 @@ export class SessionWatcher {
         if (
           !scopes.some((scope) => scope.agentName === agent.name && scope.targetPath === targetPath)
         ) {
-          scopes.push({ agentName: agent.name, targetPath });
+          scopes.push({
+            agentName: agent.name,
+            targetPath,
+            ignoredFileNames: target.ignoredFileNames,
+          });
         }
         scopesByRoot.set(rootPath, scopes);
       }
@@ -337,7 +342,15 @@ export class SessionWatcher {
     const changedPath = resolveWatchEventPath(watchPath, filename);
     const agentNames = new Set(
       scopes
-        .filter((scope) => isRelatedPath(changedPath, scope.targetPath))
+        .filter(
+          (scope) =>
+            isRelatedPath(changedPath, scope.targetPath) &&
+            !(
+              scope.ignoredFileNames?.includes(basename(changedPath)) &&
+              changedPath !== scope.targetPath &&
+              isSameOrChildPath(scope.targetPath, changedPath)
+            ),
+        )
         .map((scope) => scope.agentName),
     );
 

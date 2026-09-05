@@ -117,7 +117,12 @@ export class CursorAgent extends DatabaseSessionSource {
               root: dataPath,
               path: join(dataPath, "globalStorage", "state.vscdb"),
             },
-            { root: dataPath, path: join(dataPath, "workspaceStorage") },
+            {
+              root: dataPath,
+              path: join(dataPath, "workspaceStorage"),
+              // Read-only SQLite opens can rewrite shared memory without changing sessions.
+              ignoredFileNames: ["state.vscdb-shm"],
+            },
           ]
         : [],
     };
