@@ -788,31 +788,35 @@ export class AgentSyncEngine {
       try {
         const { result } = workerRun;
         const sessions = attachMissingProjectIdentities(result.sessions);
-        return {
-          ...this.refreshStrategyBase(sessions, result.completeness, scope, {
-            checkDuration,
-            scanDuration: performance.now() - scanStartedAt,
-            sourceFailures: result.sourceFailures ?? [],
-            workerRun,
-            pendingAgentState: {
-              meta: result.meta,
-              refreshedAt: checkResult.timestamp,
-              refreshTransaction,
-            },
-          }),
-          status: "continue",
-          publication: {
-            kind: "changes",
-            // Meta-only changes (e.g. a pricing capture epoch bump) leave the head
-            // signature intact; without the worker-reported ids they would never
-            // persist and checkForChanges would rescan on every startup.
-            diff: buildSessionPersistenceDiff(baseline, sessions, {
-              candidateChangedIds: result.changedIds ?? [],
-              completeness: result.completeness,
-              explicitRemovedSessionIds: result.explicitRemovedSessionIds,
-            }),
-            candidateChangedIds: [],
+        const persistenceDiff = buildSessionPersistenceDiff(baseline, sessions, {
+          // Worker-reported IDs also preserve metadata-only pricing repairs.
+          candidateChangedIds: result.changedIds ?? [],
+          completeness: result.completeness,
+          explicitRemovedSessionIds: result.explicitRemovedSessionIds,
+        });
+        const strategy = this.refreshStrategyBase(sessions, result.completeness, scope, {
+          checkDuration,
+          scanDuration: performance.now() - scanStartedAt,
+          sourceFailures: result.sourceFailures ?? [],
+          workerRun,
+          pendingAgentState: {
+            meta: result.meta,
+            refreshedAt: checkResult.timestamp,
+            refreshTransaction,
           },
+        });
+        if (
+          persistenceDiff.changedSessions.length === 0 &&
+          persistenceDiff.removedSessionIds.length === 0 &&
+          (result.sourceFailures?.length ?? 0) === 0
+        ) {
+          this.logUnchangedRefresh(agent.name, refreshStartedAt);
+          return { ...strategy, status: "unchanged" };
+        }
+        return {
+          ...strategy,
+          status: "continue",
+          publication: { kind: "changes", diff: persistenceDiff, candidateChangedIds: [] },
         };
       } catch (error) {
         workerRun.discard();

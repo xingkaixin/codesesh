@@ -1235,6 +1235,102 @@ describe("AgentSyncEngine", () => {
     );
   });
 
+  it.each(["complete", "partial"] as const)(
+    "skips publication for repeated unchanged %s full scans",
+    async (completeness) => {
+      const steady = makeSession("steady");
+      const meta = { steady: { id: "steady", sourcePath: "/database" } };
+      const commitChangeCheck = vi.fn();
+      const workerRunner: WorkerRunner = {
+        activeCount: 0,
+        run: vi.fn(async () =>
+          workerResult(
+            {
+              sessions: [steady],
+              meta,
+              changedIds: [],
+            },
+            completeness,
+          ),
+        ),
+        reset: vi.fn(),
+        shutdown: vi.fn(async () => undefined),
+      };
+      const agent = makeAgent({
+        checkForChanges: () => ({ hasChanges: true, timestamp: 2 }),
+        commitChangeCheck,
+      });
+      const { engine } = makeEngine(agent, [steady], workerRunner);
+      const sessionChanges = vi.fn();
+      engine.subscribeSessionsChanged(sessionChanges);
+
+      for (let i = 0; i < 21; i++) await engine.refresh("codex");
+
+      expect(workerRunner.run).toHaveBeenCalledTimes(21);
+      expect(workerRunner.run).toHaveBeenCalledWith(
+        "codex",
+        expect.objectContaining({
+          operation: { kind: "full-scan" },
+        }),
+      );
+      expect(searchIndex.enqueue).not.toHaveBeenCalled();
+      expect(sessionChanges).not.toHaveBeenCalled();
+      expect(workerLifecycle.commit).toHaveBeenCalledTimes(21);
+      expect(workerLifecycle.discard).not.toHaveBeenCalled();
+      expect(commitChangeCheck).toHaveBeenCalledTimes(21);
+      expect(agent.snapshotSessionCacheMeta()).toEqual(meta);
+      expect(engine.snapshot().sessions).toEqual([steady]);
+      await engine.shutdown();
+    },
+  );
+
+  it("preserves failure reporting for a full scan with unchanged sessions", async () => {
+    const steady = makeSession("steady");
+    const workerRunner: WorkerRunner = {
+      activeCount: 0,
+      run: vi.fn(async () =>
+        workerResult(
+          {
+            sessions: [steady],
+            meta: {},
+            changedIds: [],
+            sourceFailures: [
+              {
+                sessionId: "steady",
+                sourcePath: "/database",
+                stage: "parsing",
+                errorClass: "SyntaxError",
+                message: "Invalid session",
+              },
+            ],
+          },
+          "partial",
+        ),
+      ),
+      reset: vi.fn(),
+      shutdown: vi.fn(async () => undefined),
+    };
+    const { engine } = makeEngine(
+      makeAgent({
+        checkForChanges: () => ({ hasChanges: true, timestamp: 2 }),
+      }),
+      [steady],
+      workerRunner,
+    );
+
+    await engine.refresh("codex");
+
+    expect(searchIndex.enqueue).toHaveBeenCalledOnce();
+    expect(engine.status().agentStatuses.codex).toEqual(
+      expect.objectContaining({
+        completeness: "partial",
+        sourceFailureCount: 1,
+        sourceFailureSummary: "SyntaxError: Invalid session",
+      }),
+    );
+    await engine.shutdown();
+  });
+
   it("persists meta-only changes reported by a full rescan", async () => {
     // Regression test for the zcode/opencode startup loop: checkForChanges kept
     // reporting stale cache meta (missing pricingCaptureEpoch), the full rescan
