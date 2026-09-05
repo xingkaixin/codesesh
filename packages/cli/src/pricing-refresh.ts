@@ -1,11 +1,3 @@
-/**
- * Lifecycle owner for the background price refresh.
- *
- * The refresh used to be fired and forgotten: no timeout, no cancellation, and
- * it replaced the live prices the moment it returned — so one scan could price
- * its first sessions differently from its last. Here it is bounded, cancellable
- * on shutdown, and published only at a point where no scan is running.
- */
 import { publishPendingPricing, refreshPricingCache } from "@codesesh/core/runtime/pricing";
 import { appLogger } from "./logging.js";
 
@@ -13,8 +5,8 @@ import { appLogger } from "./logging.js";
 const REFRESH_TIMEOUT_MS = 10_000;
 
 export interface PricingRefresh {
-  /** Makes a completed refresh current. Safe to call more than once. */
-  publish(): void;
+  /** Waits for the bounded refresh and publishes prices before scanning. */
+  ready(): Promise<void>;
   /** Cancels an in-flight refresh and waits for it to settle. */
   cancel(): Promise<void>;
 }
@@ -29,7 +21,8 @@ export function startPricingRefresh(timeoutMs = REFRESH_TIMEOUT_MS): PricingRefr
   );
 
   return {
-    publish() {
+    async ready() {
+      await completion;
       if (publishPendingPricing()) appLogger.info("pricing.refresh.published", {});
     },
     async cancel() {

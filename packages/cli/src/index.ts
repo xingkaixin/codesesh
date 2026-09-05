@@ -245,6 +245,8 @@ const main = defineCommand({
     );
     const { from: listDefaultFrom, to: listDefaultTo, days: listDefaultDays } = listWindow;
 
+    await pricingRefresh.ready();
+
     const store = new LiveScanStore({
       watchEnabled: !jsonOnly,
       scanOptions,
@@ -268,7 +270,6 @@ const main = defineCommand({
     }
 
     if (jsonOnly) {
-      // Nothing will consume a later generation, so stop waiting for it.
       await pricingRefresh.cancel();
       const scanFailureDiagnostics = formatScanFailureDiagnostics(result);
       if (scanFailureDiagnostics.length > 0) {
@@ -318,8 +319,6 @@ const main = defineCommand({
 
     const { url } = app;
     if (!jsonOnly) {
-      // The startup scan has finished and background scans have not begun.
-      pricingRefresh.publish();
       store.startBackgroundRefresh();
     }
     let shuttingDown = false;
