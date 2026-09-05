@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * 统计总览 (screen 3a). One component tree, one dashboard request: project and
  * agent are independent filters on that request, so the global view and a
@@ -44,6 +46,8 @@ export function OverviewScreen({
   onRangeChange: (preset: TimeWindowPreset) => void;
   onSelectCustom: (from: string, to: string) => void;
 }) {
+  useLocale();
+
   const [ownAgent, setOwnAgent] = useState<string | undefined>(undefined);
   const agent = onAgentChange ? controlledAgent : ownAgent;
 
@@ -65,7 +69,7 @@ export function OverviewScreen({
 
       {error ? (
         <ResourceLoadFailure
-          title="Couldn't load the dashboard."
+          title={t("Couldn't load the dashboard.")}
           message={error}
           onRetry={() => void retry()}
         />

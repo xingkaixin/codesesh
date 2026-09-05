@@ -1,3 +1,4 @@
+import { t } from "../../i18n/translate";
 import type { TaskListItem, ToolOutputContent, ToolOutputLanguage } from "../tool-output/types";
 
 export interface ToolDetailItem {
@@ -67,7 +68,7 @@ function truncateText(text: string, maxLength = 88) {
 }
 
 function buildQuestionSummary(headers: string[], questionCount: number) {
-  const parts = [`${questionCount} questions`, ...headers.filter(Boolean).slice(0, 2)];
+  const parts = [t("{0} questions", [questionCount]), ...headers.filter(Boolean).slice(0, 2)];
   return truncateText(parts.join(" · "), 96);
 }
 
@@ -340,10 +341,10 @@ export function buildCodexExecCommandDisplay(
   const displayCommand = formatTextForDisplay(command);
 
   const details: ToolDetailItem[] = [];
-  appendDetail(details, "Command", displayCommand);
-  appendDetail(details, "Workdir", formatPathForDisplay(workdir));
-  appendDetail(details, "Escalation", escalation);
-  appendDetail(details, "Justification", justification);
+  appendDetail(details, t("Command"), displayCommand);
+  appendDetail(details, t("Workdir"), formatPathForDisplay(workdir));
+  appendDetail(details, t("Escalation"), escalation);
+  appendDetail(details, t("Justification"), justification);
 
   const commandPreview = truncateText(displayCommand);
   const secondaryText = justification
@@ -369,14 +370,14 @@ export function buildCodexWriteStdinDisplay(
   const mode = chars ? "stdin" : "poll";
 
   const details: ToolDetailItem[] = [];
-  appendDetail(details, "Session", sessionId);
+  appendDetail(details, t("Session"), sessionId);
   details.push({
-    label: "Chars",
+    label: t("Chars"),
     value: chars || "(empty)",
   });
 
   return {
-    secondaryText: sessionId ? `session #${sessionId} · ${mode}` : mode,
+    secondaryText: sessionId ? t("session #{0} · {1}", [sessionId, mode]) : mode,
     details,
     outputAnalysis: analyzeCodexBashOutput("", outputText, detectLanguageByFilePath),
   };
@@ -489,7 +490,7 @@ export function buildCodexUpdatePlanDisplay(inputValue: unknown) {
     const step = toPlainText(item.step) || toPlainText(item.content);
     counts.set(status, (counts.get(status) ?? 0) + 1);
     return {
-      label: step || "(empty step)",
+      label: step || t("(empty step)"),
       status: (status === "completed" || status === "in_progress" || status === "error"
         ? status
         : "pending") as TaskListItem["status"],
@@ -523,19 +524,19 @@ export function buildCodexWebRunDisplay(inputValue: unknown) {
 
   if (Array.isArray(input.search_query)) {
     return {
-      title: "web search",
+      title: t("web search"),
       secondaryText: summarizeWebRunItems(input.search_query, "q") || undefined,
     };
   }
   if (Array.isArray(input.open)) {
     return {
-      title: "web open",
+      title: t("web open"),
       secondaryText: summarizeWebRunItems(input.open, "ref_id") || undefined,
     };
   }
 
   const action = Object.keys(input)[0] || "run";
-  return { title: `web ${action}`, secondaryText: undefined };
+  return { title: t("web {0}", [action]), secondaryText: undefined };
 }
 
 export function buildCodexViewImageDisplay(
@@ -548,8 +549,8 @@ export function buildCodexViewImageDisplay(
   const displayPath = path ? formatPathForDisplay(path) : "";
 
   const details: ToolDetailItem[] = [];
-  appendDetail(details, "Image", displayPath);
-  appendDetail(details, "Detail", detail);
+  appendDetail(details, t("Image"), displayPath);
+  appendDetail(details, t("Detail"), detail);
 
   return { secondaryText: displayPath || undefined, details };
 }

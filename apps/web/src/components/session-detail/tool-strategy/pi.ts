@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * Pi tool display strategy — todo/read/write/edit/agent/bash rendering.
  *
@@ -49,10 +50,10 @@ export function getPiTodoStatusChange(state: NormalizedToolState) {
 export function buildPiSubagentResultDetails(text: string): ToolDetailItem[] {
   const firstLine = text.split("\n")[0] ?? "";
   const agentMatch = firstLine.match(/^Agent:\s*(.+)$/i);
-  const summaryLine = text.split("\n").find((line) => line.includes("Status:"));
+  const summaryLine = text.split("\n").find((line) => line.includes(t("Status:")));
   const details: ToolDetailItem[] = [];
-  if (agentMatch?.[1]) details.push({ label: "Agent", value: agentMatch[1].trim() });
-  if (summaryLine) details.push({ label: "Summary", value: summaryLine.trim() });
+  if (agentMatch?.[1]) details.push({ label: t("Agent"), value: agentMatch[1].trim() });
+  if (summaryLine) details.push({ label: t("Summary"), value: summaryLine.trim() });
   return details;
 }
 
@@ -85,13 +86,14 @@ export function buildPiToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ListTodo,
-      title: action === "create" ? "todo create" : action === "update" ? "todo update" : "todo",
+      title:
+        action === "create" ? t("todo create") : action === "update" ? t("todo update") : "todo",
       secondaryText: secondaryParts.join(" · ") || undefined,
       details: [
         taskId ? { label: "ID", value: `#${taskId}` } : null,
-        subject ? { label: "Subject", value: subject } : null,
-        status ? { label: "Status", value: status } : null,
-        statusChange ? { label: "Change", value: statusChange } : null,
+        subject ? { label: t("Subject"), value: subject } : null,
+        status ? { label: t("Status"), value: status } : null,
+        statusChange ? { label: t("Change"), value: statusChange } : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
       outputContent: {
@@ -126,7 +128,7 @@ export function buildPiToolStrategy(
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      details: firstChangedLine ? [{ label: "Line", value: firstChangedLine }] : [],
+      details: firstChangedLine ? [{ label: t("Line"), value: firstChangedLine }] : [],
       outputContent:
         diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
@@ -142,12 +144,12 @@ export function buildPiToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Bot,
-      title: subagentType ? `agent · ${subagentType}` : "agent",
+      title: subagentType ? t("agent · {0}", [subagentType]) : "agent",
       secondaryText: [agentId ? `#${agentId}` : "", description].filter(Boolean).join(" · "),
       details: [
-        agentId ? { label: "Agent", value: agentId } : null,
-        subagentType ? { label: "Type", value: subagentType } : null,
-        status ? { label: "Status", value: status } : null,
+        agentId ? { label: t("Agent"), value: agentId } : null,
+        subagentType ? { label: t("Type"), value: subagentType } : null,
+        status ? { label: t("Status"), value: status } : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
       outputContent: {
@@ -165,7 +167,7 @@ export function buildPiToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Bot,
-      title: "subagent result",
+      title: t("subagent result"),
       secondaryText: agentId ? `#${agentId}` : undefined,
       details: buildPiSubagentResultDetails(outputText),
       showInputPreview: false,
@@ -186,14 +188,14 @@ export function buildPiToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ImageIcon,
-      title: "analyze image",
+      title: t("analyze image"),
       secondaryText: images.map((image) => getDisplayPath(image, baseDirectory)).join(", "),
       details: [
         ...images.map((image, index) => ({
-          label: index === 0 ? "Image" : `Image ${index + 1}`,
+          label: index === 0 ? t("Image") : t("Image {0}", [index + 1]),
           value: getDisplayPath(image, baseDirectory),
         })),
-        question ? { label: "Question", value: question } : null,
+        question ? { label: t("Question"), value: question } : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
       outputContent: {

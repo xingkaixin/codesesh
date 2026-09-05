@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * Agent share of the current scope, as one bar per agent. Cost is the ranking
  * metric only when some agent actually has one — printing $0.00 five times says
@@ -19,32 +21,42 @@ const BAR_LAYOUT = { barRatio: 0.52, barMax: 34, bandGap: 0, minBand: 4 };
 const BAR_COLORS = ["var(--brand)"];
 
 export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAgentStat[] }) {
+  const locale = useLocale();
+
   const [hover, setHover] = useState<BarHover | null>(null);
 
-  const { byCost, visible, values, axisMax, itemLabels } = useMemo(() => {
-    const byCost = perAgent.some((agent) => agent.cost > 0);
-    const weightOf = (agent: DashboardAgentStat) => (byCost ? agent.cost : agent.sessions);
-    const visible = [...perAgent].sort((a, b) => weightOf(b) - weightOf(a)).slice(0, AGENT_LIMIT);
-    const values = visible.map((agent) => [weightOf(agent)]);
-    const itemLabels = visible.map((agent) =>
-      byCost
-        ? `${agent.displayName}: ${formatUsd(agent.cost)}, ${formatInt(agent.sessions)} sessions`
-        : `${agent.displayName}: ${formatInt(agent.sessions)} sessions`,
-    );
-    // The leader touches the top: with the figures printed under every bar
-    // there is no axis to round to, and rounded headroom would just be blank.
-    return { byCost, visible, values, axisMax: Math.max(...values.flat(), 0), itemLabels };
-  }, [perAgent]);
+  const { byCost, visible, values, axisMax, itemLabels } = useMemo(
+    () => {
+      const byCost = perAgent.some((agent) => agent.cost > 0);
+      const weightOf = (agent: DashboardAgentStat) => (byCost ? agent.cost : agent.sessions);
+      const visible = [...perAgent].sort((a, b) => weightOf(b) - weightOf(a)).slice(0, AGENT_LIMIT);
+      const values = visible.map((agent) => [weightOf(agent)]);
+      const itemLabels = visible.map((agent) =>
+        byCost
+          ? t("{0}: {1}, {2} sessions", [
+              agent.displayName,
+              formatUsd(agent.cost),
+              formatInt(agent.sessions),
+            ])
+          : t("{0}: {1} sessions", [agent.displayName, formatInt(agent.sessions)]),
+      );
+      // The leader touches the top: with the figures printed under every bar
+      // there is no axis to round to, and rounded headroom would just be blank.
+      return { byCost, visible, values, axisMax: Math.max(...values.flat(), 0), itemLabels };
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, perAgent],
+  );
 
   return (
-    <Panel role="region" aria-label="Agents" className="p-4">
+    <Panel role="region" aria-label={t("Agents")} className="p-4">
       <PanelHeader
-        title="Agents"
-        meta={`${byCost ? "by cost" : "by sessions"} · ${perAgent.length} total`}
+        title={t("Agents")}
+        meta={t("{0} · {1} total", [byCost ? t("by cost") : t("by sessions"), perAgent.length])}
       />
 
       {visible.length === 0 ? (
-        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">No data</p>
+        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">{t("No data")}</p>
       ) : (
         <div className="mt-[14px]">
           <TileBarPlot
@@ -55,7 +67,7 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
             onHover={setHover}
             layout={BAR_LAYOUT}
             height={CHART_HEIGHT}
-            ariaLabel="Agent distribution chart"
+            ariaLabel={t("Agent distribution chart")}
             itemLabels={itemLabels}
           />
           <div
@@ -102,7 +114,7 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
 
       {perAgent.length > AGENT_LIMIT ? (
         <p className="console-mono mt-3 text-[10.5px] text-[var(--console-muted)]">
-          + {perAgent.length - AGENT_LIMIT} more
+          + {perAgent.length - AGENT_LIMIT} {t("more")}
         </p>
       ) : null}
     </Panel>

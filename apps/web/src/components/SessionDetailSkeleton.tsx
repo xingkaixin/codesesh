@@ -1,3 +1,4 @@
+import { useLocale } from "../hooks/useLocale";
 /**
  * Mirrors the reader's real two-column grid (288px filter aside + stream) so
  * loading → ready does not shift the page.
@@ -18,10 +19,14 @@ const SKELETON_MESSAGES = [
 const SKELETON_FILTER_ROWS = ["w-8/12", "w-7/12", "w-9/12", "w-6/12", "w-10/12", "w-7/12"];
 
 function SkeletonBlock({ className }: { className: string }) {
+  useLocale();
+
   return <div className={`skeleton-shimmer rounded-sm ${className}`} />;
 }
 
 export function SessionDetailSkeleton() {
+  useLocale();
+
   return (
     <div className="mx-auto grid min-h-full w-full max-w-[1440px] gap-6 px-2 md:px-4 min-[1025px]:grid-cols-[288px_minmax(0,1fr)] min-[1025px]:items-start">
       <div className="hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3 min-[1025px]:block">

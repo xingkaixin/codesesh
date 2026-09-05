@@ -1,3 +1,5 @@
+import { t } from "../i18n/translate";
+import { useLocale } from "../hooks/useLocale";
 import type { CSSProperties } from "react";
 import { SMART_TAGS, type SmartTag } from "../lib/api";
 
@@ -40,6 +42,8 @@ export function SmartTagChips({
   limit?: number;
   className?: string;
 }) {
+  useLocale();
+
   if (!tags || tags.length === 0) return null;
 
   const visible = tags.slice(0, limit);
@@ -49,11 +53,11 @@ export function SmartTagChips({
     <div className={`flex flex-wrap gap-1 ${className}`}>
       {visible.map((tag) => (
         <span
-          key={tag}
+          key={t(tag)}
           className="console-mono rounded-sm border px-1.5 py-0.5 text-[10px] font-medium"
           style={getSmartTagChipStyle(tag)}
         >
-          {tag}
+          {t(tag)}
         </span>
       ))}
       {remaining > 0 ? (

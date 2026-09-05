@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import type { ReactNode } from "react";
 import type { AgentInfo, DashboardData, ApiProjectGroup, SessionDetail } from "../lib/api";
 import { formatInt, formatRelativeTime } from "../lib/format";
@@ -5,10 +6,6 @@ import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";
 import type { ViewState } from "../lib/view-state";
 import { SmartTagChips } from "../components/SmartTagChips";
-
-function Count({ value }: { value: number }) {
-  return <span className="console-mono">{formatInt(value)}</span>;
-}
 
 export interface BreadcrumbItem {
   label: string;
@@ -48,19 +45,19 @@ export function buildRouteHeaderModel(input: RouteHeaderInput): RouteHeaderModel
 }
 
 function routeContextLabel(input: RouteHeaderInput): string {
-  if (input.isSearchMode) return "Search";
+  if (input.isSearchMode) return t("Search");
 
   switch (input.viewState.mode) {
     case "session":
-      return "Session";
+      return t("Session");
     case "root":
-      return "Dashboard";
+      return t("Dashboard");
     case "projects":
-      return "Projects";
+      return t("Projects");
     case "project":
-      return "Project";
+      return t("Project");
     default:
-      return "Landing";
+      return t("Landing");
   }
 }
 
@@ -69,28 +66,32 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
   subtitle: ReactNode;
 } {
   const { viewState } = input;
-  if (input.isSearchMode) return { title: "Search", subtitle: input.searchSubtitle };
+  if (input.isSearchMode) return { title: t("Search"), subtitle: input.searchSubtitle };
   if (viewState.mode === "root") {
     const dashboard = input.dashboard;
     return {
-      title: "Dashboard",
+      title: t("Dashboard"),
       subtitle: dashboard ? (
         <span>
-          <Count value={dashboard.totals.sessions} /> total sessions across{" "}
-          <Count value={dashboard.perAgent.length} /> agents
+          {t("{0} total sessions across {1} agents", [
+            formatInt(dashboard.totals.sessions),
+            formatInt(dashboard.perAgent.length),
+          ])}
         </span>
       ) : (
-        "Aggregated view across all agents"
+        t("Aggregated view across all agents")
       ),
     };
   }
   if (viewState.mode === "projects") {
     return {
-      title: "Projects",
+      title: t("Projects"),
       subtitle: (
         <span>
-          <Count value={input.projectCount} /> projects across <Count value={input.sessionCount} />{" "}
-          sessions
+          {t("{0} projects across {1} sessions", [
+            formatInt(input.projectCount),
+            formatInt(input.sessionCount),
+          ])}
         </span>
       ),
     };
@@ -98,11 +99,13 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
   if (viewState.mode === "project") {
     const activeProject = input.activeProject;
     return {
-      title: activeProject?.displayName ?? "Project",
+      title: activeProject?.displayName ?? t("Project"),
       subtitle: activeProject ? (
         <span>
-          <Count value={activeProject.sessionCount} /> sessions ·{" "}
-          <Count value={activeProject.agentStats.length} /> agents
+          {t("{0} sessions · {1} agents", [
+            formatInt(activeProject.sessionCount),
+            formatInt(activeProject.agentStats.length),
+          ])}
         </span>
       ) : (
         viewState.activeProjectKey
@@ -112,31 +115,29 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
   if (viewState.mode === "agent") {
     return {
       title: input.activeAgent?.displayName ?? viewState.activeAgentKey,
-      subtitle: (
-        <span>
-          <Count value={input.sidebarSessionCount} /> sessions
-        </span>
-      ),
+      subtitle: <span>{t("{0} sessions", [formatInt(input.sidebarSessionCount)])}</span>,
     };
   }
   if (viewState.mode === "session") {
     if (input.sessionError) {
       return {
-        title: input.sessionError === "missing" ? "Session Not Found" : "Session Load Failed",
-        subtitle: `Requested /${viewState.activeAgentKey}/${viewState.activeSessionId}`,
+        title: input.sessionError === "missing" ? t("Session Not Found") : t("Session Load Failed"),
+        subtitle: t("Requested /{0}/{1}", [viewState.activeAgentKey, viewState.activeSessionId]),
       };
     }
     if (input.session) {
       const updated = input.session.time_updated ?? input.session.time_created;
       return {
-        title: getSessionDisplayTitle(input.session) || "Session",
+        title: getSessionDisplayTitle(input.session) || t("Session"),
         subtitle: (
           <>
             <span className="console-mono">
               ID: #{input.session.reference.sessionId.slice(0, 8)}
             </span>
             <span>·</span>
-            <span className="console-mono">Updated {formatRelativeTime(updated)}</span>
+            <span className="console-mono">
+              {t("Updated")} {formatRelativeTime(updated)}
+            </span>
             <SmartTagChips tags={input.session.smart_tags} limit={9} className="inline-flex" />
           </>
         ),
@@ -144,32 +145,32 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
     }
   }
   if (viewState.mode === "missingAgent") {
-    return { title: "Agent Not Found", subtitle: `Requested /${viewState.attemptedKey}` };
+    return { title: t("Agent Not Found"), subtitle: t("Requested /{0}", [viewState.attemptedKey]) };
   }
-  return { title: "CodeSesh", subtitle: "Select an agent to browse sessions" };
+  return { title: "CodeSesh", subtitle: t("Select an agent to browse sessions") };
 }
 
 function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
   const { viewState } = input;
-  if (input.isSearchMode) return [{ label: "Search" }];
+  if (input.isSearchMode) return [{ label: t("Search") }];
 
   const dashboard: BreadcrumbItem = {
-    label: "Dashboard",
+    label: t("Dashboard"),
     to: viewState.mode === "root" ? undefined : "/",
   };
-  if (viewState.mode === "root") return [{ label: "Dashboard" }];
-  if (viewState.mode === "projects") return [dashboard, { label: "Projects" }];
+  if (viewState.mode === "root") return [{ label: t("Dashboard") }];
+  if (viewState.mode === "projects") return [dashboard, { label: t("Projects") }];
   if (viewState.mode === "project") {
     return [
       dashboard,
-      { label: "Projects", to: "/projects" },
+      { label: t("Projects"), to: "/projects" },
       { label: input.activeProject?.displayName ?? viewState.activeProjectKey },
     ];
   }
   if (viewState.mode === "session" && input.selectedProjectIdentity) {
     return [
       dashboard,
-      { label: "Projects", to: "/projects" },
+      { label: t("Projects"), to: "/projects" },
       {
         label: input.selectedProject?.displayName ?? input.selectedProjectIdentity.key,
         to: getProjectPath(input.selectedProjectIdentity),
@@ -177,7 +178,7 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
       {
         label: input.session
           ? getSessionDisplayTitle(input.session)
-          : viewState.activeSessionId || "Session",
+          : viewState.activeSessionId || t("Session"),
       },
     ];
   }
@@ -185,7 +186,8 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
     return [dashboard, { label: viewState.attemptedKey }];
   }
 
-  const agentLabel = input.activeAgent?.displayName ?? viewState.activeAgentKey ?? "Unknown Agent";
+  const agentLabel =
+    input.activeAgent?.displayName ?? viewState.activeAgentKey ?? t("Unknown Agent");
   const agent: BreadcrumbItem = {
     label: agentLabel,
     to: viewState.mode === "session" ? `/${viewState.activeAgentKey}` : undefined,
@@ -198,9 +200,9 @@ function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
       {
         label: input.session
           ? getSessionDisplayTitle(input.session)
-          : viewState.activeSessionId || "Session",
+          : viewState.activeSessionId || t("Session"),
       },
     ];
   }
-  return [dashboard, { label: "Invalid Route" }];
+  return [dashboard, { label: t("Invalid Route") }];
 }

@@ -1,3 +1,4 @@
+import { t } from "../../i18n/translate";
 import type { MessagePart, ToolPart } from "../../lib/api";
 import { classifyToolOperation } from "./file-change";
 import { normalizeToolLabel } from "./tool-normalize";
@@ -84,7 +85,7 @@ export function buildSessionTimelineEntries(
         kind: "user",
         anchorId,
         messageIndex,
-        tooltip: `User · ${summary || "Message"}`,
+        tooltip: t("User · {0}", [summary || t("Message")]),
       });
       continue;
     }
@@ -100,7 +101,7 @@ export function buildSessionTimelineEntries(
             kind,
             anchorId,
             messageIndex,
-            tooltip: `${TOOL_KIND_LABEL[kind]} · ${normalizeToolLabel(part)}`,
+            tooltip: `${t(TOOL_KIND_LABEL[kind])} · ${normalizeToolLabel(part)}`,
           });
         });
         return;
@@ -113,7 +114,7 @@ export function buildSessionTimelineEntries(
         kind: "agent",
         anchorId,
         messageIndex,
-        tooltip: `Agent · ${summary || "Response"}`,
+        tooltip: t("Agent · {0}", [summary || t("Response")]),
       });
     });
   }

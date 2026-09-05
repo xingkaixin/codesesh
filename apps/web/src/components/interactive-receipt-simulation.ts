@@ -1,3 +1,5 @@
+import { getLocale } from "../i18n/language";
+import { t } from "../i18n/translate";
 import {
   isReceiptSettled,
   nextReceiptReleaseFrame,
@@ -109,7 +111,7 @@ function readReceiptMonoFamily(root: HTMLElement): string {
 }
 
 function formatCount(value?: number) {
-  return Math.round(value ?? 0).toLocaleString("en-US");
+  return Math.round(value ?? 0).toLocaleString(getLocale());
 }
 
 function formatMoney(value?: number) {
@@ -117,7 +119,7 @@ function formatMoney(value?: number) {
 }
 
 function formatDate(value: number) {
-  return new Date(value).toLocaleString("en-US", {
+  return new Date(value).toLocaleString(getLocale(), {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -248,9 +250,9 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
   ctx.textAlign = "left";
   ctx.fillStyle = palette.ink;
   ctx.font = font("11px");
-  drawMonoLine(ctx, "Agent", payload.agent, 88, RECEIPT_WIDTH);
-  drawMonoLine(ctx, "Updated", formatDate(payload.updatedAt), 104, RECEIPT_WIDTH);
-  drawMonoLine(ctx, "Session", `#${payload.id.slice(0, 8)}`, 120, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("Agent"), payload.agent, 88, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("Updated"), formatDate(payload.updatedAt), 104, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("Session"), `#${payload.id.slice(0, 8)}`, 120, RECEIPT_WIDTH);
 
   ctx.setLineDash([2, 3]);
   ctx.beginPath();
@@ -260,7 +262,7 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
   ctx.setLineDash([]);
 
   ctx.font = font("700 12px");
-  ctx.fillText("SESSION TOC RECEIPT LIST", 18, 163);
+  ctx.fillText(t("SESSION TOC RECEIPT LIST"), 18, 163);
   ctx.font = font("11px");
 
   let y = 185;
@@ -279,15 +281,15 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
   ctx.stroke();
 
   y += 26;
-  drawMonoLine(ctx, "Input tokens", formatCount(payload.inputTokens), y, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("Input tokens"), formatCount(payload.inputTokens), y, RECEIPT_WIDTH);
   y += 16;
-  drawMonoLine(ctx, "Output tokens", formatCount(payload.outputTokens), y, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("Output tokens"), formatCount(payload.outputTokens), y, RECEIPT_WIDTH);
   y += 16;
-  drawMonoLine(ctx, "Messages", formatCount(payload.messageCount), y, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("Messages"), formatCount(payload.messageCount), y, RECEIPT_WIDTH);
   y += 22;
 
   ctx.font = font("700 13px");
-  drawMonoLine(ctx, "TOTAL COST", formatMoney(payload.totalCost), y, RECEIPT_WIDTH);
+  drawMonoLine(ctx, t("TOTAL COST"), formatMoney(payload.totalCost), y, RECEIPT_WIDTH);
 
   ctx.strokeStyle = palette.line;
   ctx.setLineDash([4, 4]);

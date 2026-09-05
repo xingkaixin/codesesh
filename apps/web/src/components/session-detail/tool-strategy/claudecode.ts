@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * Claude Code tool display strategy — read/edit/write rendering.
  *
@@ -48,7 +49,7 @@ function summarizeTasks(items: unknown[]) {
         : "pending";
     counts.set(status, (counts.get(status) ?? 0) + 1);
     return {
-      label: toStringValue(item.content) || toStringValue(item.subject) || "Untitled task",
+      label: toStringValue(item.content) || toStringValue(item.subject) || t("Untitled task"),
       status,
       detail: toStringValue(item.activeForm) || toStringValue(item.description) || undefined,
     };
@@ -108,10 +109,10 @@ function buildSendMessageOutput(input: Record<string, unknown>, state: Normalize
   const result = toRecord(parseInputCandidate(resultText));
   const delivery = toStringValue(result.message) || resultText;
   const items = [
-    { label: "Recipient", value: toStringValue(input.recipient) || toStringValue(input.to) },
-    { label: "Summary", value: toStringValue(input.summary) },
-    { label: "Message", value: toStringValue(input.message) || toStringValue(input.content) },
-    { label: "Delivery", value: delivery },
+    { label: t("Recipient"), value: toStringValue(input.recipient) || toStringValue(input.to) },
+    { label: t("Summary"), value: toStringValue(input.summary) },
+    { label: t("Message"), value: toStringValue(input.message) || toStringValue(input.content) },
+    { label: t("Delivery"), value: delivery },
   ];
   return items.filter((item) => item.value && item.value !== "No output captured.");
 }
@@ -171,10 +172,10 @@ export function buildClaudeToolStrategy(
       title: toolKey === "workflow" ? "workflow" : "bash",
       secondaryText: description || compactText(displayCommand).slice(0, 120) || undefined,
       details: command
-        ? [{ label: toolKey === "workflow" ? "Script" : "Command", value: displayCommand }]
+        ? [{ label: toolKey === "workflow" ? t("Script") : t("Command"), value: displayCommand }]
         : [],
       showInputPreview: false,
-      contentLabel: state.status === "error" ? "Error" : "Terminal output",
+      contentLabel: state.status === "error" ? t("Error") : t("Terminal output"),
       outputContent: {
         kind: "plain",
         text: getOutputOrErrorText(state),
@@ -191,11 +192,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ListTodo,
-      title: toolKey === "todowrite" ? "tasks" : "create task",
+      title: toolKey === "todowrite" ? "tasks" : t("create task"),
       secondaryText: taskDisplay.summary || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Task state",
+      contentLabel: t("Task state"),
       outputContent: { kind: "task-list", items: taskDisplay.tasks },
     };
   }
@@ -207,11 +208,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ListTodo,
-      title: toolKey === "taskupdate" ? "update task" : "list tasks",
+      title: toolKey === "taskupdate" ? t("update task") : t("list tasks"),
       secondaryText: toStringValue(input.taskId) || toStringValue(input.status) || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Task state",
+      contentLabel: t("Task state"),
       outputContent: structured ?? {
         kind: "plain",
         text: getOutputOrErrorText(state),
@@ -227,14 +228,16 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Bot,
-      title: agentType ? `agent · ${agentType}` : "agent",
+      title: agentType ? t("agent · {0}", [agentType]) : "agent",
       secondaryText: description || undefined,
       details: [
-        toStringValue(input.model) ? { label: "Model", value: toStringValue(input.model) } : null,
-        input.run_in_background === true ? { label: "Mode", value: "Background" } : null,
+        toStringValue(input.model)
+          ? { label: t("Model"), value: toStringValue(input.model) }
+          : null,
+        input.run_in_background === true ? { label: t("Mode"), value: t("Background") } : null,
       ].filter((item): item is { label: string; value: string } => item != null),
       showInputPreview: false,
-      contentLabel: "Agent result",
+      contentLabel: t("Agent result"),
       outputContent: {
         kind: "plain",
         text: getOutputOrErrorText(state),
@@ -251,11 +254,11 @@ export function buildClaudeToolStrategy(
       Icon: CircleHelp,
       title: "ask",
       secondaryText: questions.length
-        ? `${questions.length} question${questions.length === 1 ? "" : "s"}`
+        ? t("{0} question{1}", [questions.length, questions.length === 1 ? "" : "s"])
         : undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Questions",
+      contentLabel: t("Questions"),
       outputContent: questions.length
         ? { kind: "question-list", questions }
         : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
@@ -268,11 +271,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: FileSearch,
-      title: toolKey === "websearch" ? "web search" : "web fetch",
+      title: toolKey === "websearch" ? t("web search") : t("web fetch"),
       secondaryText: query || url || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Results",
+      contentLabel: t("Results"),
       outputContent: {
         kind: "plain",
         text: getOutputOrErrorText(state),
@@ -286,11 +289,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Search,
-      title: "find tools",
+      title: t("find tools"),
       secondaryText: toStringValue(input.query) || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Matches",
+      contentLabel: t("Matches"),
     };
   }
 
@@ -302,7 +305,7 @@ export function buildClaudeToolStrategy(
       secondaryText: toStringValue(input.skill) || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Result",
+      contentLabel: t("Result"),
     };
   }
 
@@ -310,11 +313,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ListTodo,
-      title: toolKey === "reportfindings" ? "report findings" : "structured output",
-      secondaryText: `${Object.keys(input).length} fields`,
+      title: toolKey === "reportfindings" ? t("report findings") : t("structured output"),
+      secondaryText: t("{0} fields", [Object.keys(input).length]),
       details: [],
       showInputPreview: false,
-      contentLabel: "Submitted fields",
+      contentLabel: t("Submitted fields"),
       outputContent: {
         kind: "property-list",
         items: Object.entries(input).map(([label, value]) => ({ label, value })),
@@ -330,11 +333,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: PanelsTopLeft,
-      title: `browser · ${action}`,
+      title: t("browser · {0}", [action]),
       secondaryText: url || interaction || undefined,
-      details: tabId ? [{ label: "Tab", value: tabId }] : [],
+      details: tabId ? [{ label: t("Tab"), value: tabId }] : [],
       showInputPreview: false,
-      contentLabel: "Browser result",
+      contentLabel: t("Browser result"),
     };
   }
 
@@ -343,11 +346,11 @@ export function buildClaudeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: MessageSquareMore,
-      title: "send message",
+      title: t("send message"),
       secondaryText: recipient || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Message details",
+      contentLabel: t("Message details"),
       outputContent: {
         kind: "property-list",
         items: buildSendMessageOutput(input, state),

@@ -1,3 +1,4 @@
+import { t } from "../../i18n/translate";
 import type { ToolPart } from "../../lib/api";
 import type { FilteredSessionMessage, MessageDisplayModel } from "./display-model-types";
 import type { MessageBlock } from "./blocks";
@@ -39,7 +40,7 @@ export type { FilteredSessionMessage } from "./display-model-types";
 type ToolMessageBlock = Extract<MessageBlock, { type: "tool" }>;
 
 function buildToolLabel(part: ToolPart) {
-  if (isNodeReplBrowserTool(part)) return "Browser";
+  if (isNodeReplBrowserTool(part)) return t("Browser");
   if (part.title?.trim()) {
     return cleanToolLabel(part.title);
   }

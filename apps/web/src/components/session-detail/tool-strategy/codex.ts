@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * Codex tool display strategy — exec_command/write_stdin/request_user_input/
  * patch/subagent/js(node_repl)/skill rendering, plus its exec-command helpers.
@@ -103,7 +104,7 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: SquareTerminal,
-      title: "Browser",
+      title: t("Browser"),
       secondaryText: title || undefined,
       details: [],
       showInputPreview: false,
@@ -202,11 +203,11 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ListTodo,
-      title: "update plan",
+      title: t("update plan"),
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
-      contentLabel: "Plan",
+      contentLabel: t("Plan"),
       outputContent: { kind: "task-list", items: display.items },
     };
   }
@@ -234,7 +235,7 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ImageIcon,
-      title: "view image",
+      title: t("view image"),
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
@@ -261,9 +262,9 @@ export function buildCodexToolStrategy(
       title: taskName || getToolTitle(tool, "subagent"),
       secondaryText: undefined,
       details: [
-        model ? { label: "Model", value: isPriority ? `${model} · Fast` : model } : null,
-        reasoningEffort ? { label: "Effort", value: reasoningEffort } : null,
-        forkTurns ? { label: "Fork", value: forkTurns } : null,
+        model ? { label: t("Model"), value: isPriority ? t("{0} · Fast", [model]) : model } : null,
+        reasoningEffort ? { label: t("Effort"), value: reasoningEffort } : null,
+        forkTurns ? { label: t("Fork"), value: forkTurns } : null,
       ].filter((d): d is NonNullable<typeof d> => d !== null),
       showInputPreview: false,
       outputContent: {
@@ -282,16 +283,16 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: MessageSquareMore,
-      title: toolKey.endsWith("followup_task") ? "follow up with agent" : "message agent",
+      title: toolKey.endsWith("followup_task") ? t("follow up with agent") : t("message agent"),
       secondaryText: target || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Message",
+      contentLabel: t("Message"),
       outputContent: {
         kind: "property-list",
         items: [
-          target ? { label: "Recipient", value: target } : null,
-          message ? { label: "Message", value: message } : null,
+          target ? { label: t("Recipient"), value: target } : null,
+          message ? { label: t("Message"), value: message } : null,
         ].filter((item): item is { label: string; value: string } => item != null),
       },
     };
@@ -303,12 +304,12 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Clock3,
-      title: "wait for agents",
+      title: t("wait for agents"),
       secondaryText:
-        typeof timeout === "number" ? `${Math.round(timeout / 1000)}s timeout` : undefined,
+        typeof timeout === "number" ? t("{0}s timeout", [Math.round(timeout / 1000)]) : undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Agent updates",
+      contentLabel: t("Agent updates"),
     };
   }
 
@@ -316,11 +317,11 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Users,
-      title: "list agents",
+      title: t("list agents"),
       secondaryText: undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Agent tree",
+      contentLabel: t("Agent tree"),
     };
   }
 
@@ -329,11 +330,11 @@ export function buildCodexToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Users,
-      title: "interrupt agent",
+      title: t("interrupt agent"),
       secondaryText: target || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Result",
+      contentLabel: t("Result"),
     };
   }
 
@@ -346,7 +347,7 @@ export function buildCodexToolStrategy(
       secondaryText: toPlainText(input.objective) || toPlainText(input.status) || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: "Goal state",
+      contentLabel: t("Goal state"),
     };
   }
 
@@ -362,7 +363,7 @@ export function buildCodexToolStrategy(
       secondaryText: firstSummaryValue(input) || undefined,
       details: [],
       showInputPreview: false,
-      contentLabel: semanticOutput ? "Result" : "Request",
+      contentLabel: semanticOutput ? t("Result") : t("Request"),
       outputContent:
         semanticOutput ??
         (semanticInput.length > 0

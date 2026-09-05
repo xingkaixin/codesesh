@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApiProjectGroup, ApiProjectPage, AppConfig } from "../lib/api";
@@ -75,7 +76,7 @@ export function useProjectPagination(
       : query.isError && query.error instanceof Error
         ? query.error.message
         : query.isError
-          ? "Unable to load projects."
+          ? t("Unable to load projects.")
           : null,
     canPrevious: cursors.length > 0 && !staleCursor && !query.isPlaceholderData,
     canNext: Boolean(query.data?.nextCursor) && !staleCursor && !query.isPlaceholderData,
@@ -117,7 +118,7 @@ export function useProjectLookup(
       query.isError && query.error instanceof Error
         ? query.error.message
         : query.isError
-          ? "Unable to load project."
+          ? t("Unable to load project.")
           : null,
     retry: query.refetch,
   };

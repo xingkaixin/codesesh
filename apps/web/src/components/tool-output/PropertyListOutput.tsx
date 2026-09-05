@@ -1,8 +1,10 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import type { PropertyItem } from "./types";
 
 function displayScalar(value: unknown) {
   if (value == null || value === "") return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "boolean") return value ? t("Yes") : t("No");
   if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
     return String(value);
   }
@@ -10,13 +12,20 @@ function displayScalar(value: unknown) {
 }
 
 function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
+  useLocale();
+
   const scalar = displayScalar(value);
   if (scalar != null) {
     return <span className="whitespace-pre-wrap break-words">{scalar}</span>;
   }
 
   if (Array.isArray(value)) {
-    if (depth >= 2) return <span>{value.length} items</span>;
+    if (depth >= 2)
+      return (
+        <span>
+          {value.length} {t("items")}
+        </span>
+      );
     return (
       <div className="flex flex-wrap gap-1.5">
         {value.map((item, index) => (
@@ -32,7 +41,12 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
   }
 
   if (typeof value === "object") {
-    if (depth >= 2) return <span>{Object.keys(value as object).length} fields</span>;
+    if (depth >= 2)
+      return (
+        <span>
+          {Object.keys(value as object).length} {t("fields")}
+        </span>
+      );
     return (
       <dl className="space-y-1.5">
         {Object.entries(value as Record<string, unknown>).map(([key, nested]) => (
@@ -51,6 +65,8 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
 }
 
 export function PropertyListOutput({ items }: { items: PropertyItem[] }) {
+  useLocale();
+
   return (
     <dl className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
       {items.map((item) => (

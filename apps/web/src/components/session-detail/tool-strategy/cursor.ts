@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * Cursor tool display strategy — read/edit/grep/glob/bash rendering.
  *
@@ -38,7 +39,7 @@ export function extractCursorReadContent(rawOutput: unknown) {
   const output = getCursorOutputRecord(rawOutput);
   const contents = toStringValue(output.contents);
   if (contents) return normalizeEscapedNewlines(contents);
-  return "No output captured.";
+  return t("No output captured.");
 }
 
 export function formatCursorSearchOutput(rawOutput: unknown) {
@@ -59,7 +60,7 @@ export function formatCursorSearchOutput(rawOutput: unknown) {
     return [directoryPath, ...fileLines.map((file) => `  ${file}`)].filter(Boolean);
   });
 
-  return lines.length > 0 ? lines.join("\n") : "No output captured.";
+  return lines.length > 0 ? lines.join("\n") : t("No output captured.");
 }
 
 export function buildCursorToolStrategy(
@@ -85,7 +86,7 @@ export function buildCursorToolStrategy(
         content === "No output captured."
           ? [
               {
-                label: "Lines",
+                label: t("Lines"),
                 value: toPlainText(getCursorOutputRecord(state.outputValue).totalLinesInFile),
               },
             ]

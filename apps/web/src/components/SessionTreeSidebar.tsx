@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { Menu } from "@base-ui/react/menu";
 import { buildSessionTree, type SessionTreeNode } from "@codesesh/core/contract";
 import type { FileTreeSortEntry } from "@pierre/trees";
@@ -169,7 +171,7 @@ export function buildSessionTreeModel(
       })
     : [{ label: null, nodes: tree.roots }];
   if (tree.orphans.length > 0) {
-    orderedGroups.push({ label: UNMOUNTED_GROUP_LABEL, nodes: tree.orphans });
+    orderedGroups.push({ label: t(UNMOUNTED_GROUP_LABEL), nodes: tree.orphans });
   }
 
   let order = 0;
@@ -257,7 +259,7 @@ export function buildSessionTreeModel(
         continue;
       }
 
-      const overflowBasePath = allocateSessionPath(`${sessionPath}${DEEP_SESSION_GROUP_LABEL}`);
+      const overflowBasePath = allocateSessionPath(`${sessionPath}${t(DEEP_SESSION_GROUP_LABEL)}`);
       const overflowPath = `${overflowBasePath}/`;
       sortOrderByPath.set(overflowBasePath, order);
       sortOrderByPath.set(overflowPath, order);
@@ -315,6 +317,8 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   onRenameSession,
   groupByProject = true,
 }: SessionTreeSidebarProps) {
+  const locale = useLocale();
+
   const [menuSession, setMenuSession] = useState<SessionHead | null>(null);
   const menuAnchorRef = useRef<HTMLElement | null>(null);
   const menuTriggerRef = useRef<HTMLElement | null>(null);
@@ -324,7 +328,9 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
         buildSessionTreeModel(sessions, { groupByProject }),
       ),
-    [sessions, groupByProject],
+
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, sessions, groupByProject],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);
@@ -366,10 +372,10 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     renderRowDecoration({ item }) {
       const session = sessionByPathRef.current.get(item.path);
       if (session) {
-        return { text: "⋯", title: "Session options" };
+        return { text: "⋯", title: t("Session options") };
       }
       return groupCountByPathRef.current.get(item.path)
-        ? { text: groupCountByPathRef.current.get(item.path)!, title: "Sessions" }
+        ? { text: groupCountByPathRef.current.get(item.path)!, title: t("Sessions") }
         : null;
     },
   });
@@ -485,7 +491,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       onClickCapture={handleTreeClickCapture}
       onKeyDownCapture={handleTreeKeyDownCapture}
     >
-      <FileTree model={model} style={{ height: "100%" }} aria-label="Sessions" />
+      <FileTree model={model} style={{ height: "100%" }} aria-label={t("Sessions")} />
       <Menu.Root modal={false}>
         <Menu.Trigger
           ref={menuProxyTriggerRef}

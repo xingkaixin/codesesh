@@ -1,3 +1,4 @@
+import { useLocale } from "../../hooks/useLocale";
 import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { CODE_METRICS } from "./code-metrics";
@@ -17,6 +18,8 @@ const PrismHighlighter = lazy(() =>
 );
 
 function PlainCode({ text }: { text: string }) {
+  useLocale();
+
   return (
     <pre
       className="console-mono m-0 overflow-x-auto whitespace-pre-wrap break-words p-3 text-[var(--code-fg)]"
@@ -28,6 +31,8 @@ function PlainCode({ text }: { text: string }) {
 }
 
 export function CodeHighlighter({ language, text }: CodeHighlighterProps) {
+  useLocale();
+
   return (
     <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.code}>
       {(visibleText) => (

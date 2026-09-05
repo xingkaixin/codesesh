@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { formatSessionReference } from "@codesesh/core/contract";
 import { FileText, Funnel } from "../ui/icons";
@@ -19,6 +21,8 @@ const InteractiveReceipt = lazy(() =>
 );
 
 function ReceiptPlaceholder() {
+  useLocale();
+
   return (
     <div className="h-[calc(100dvh-5.5rem)] min-h-[420px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]" />
   );
@@ -31,6 +35,8 @@ export function DeferredInteractiveReceipt({
   session: SessionDetail;
   toc: SessionDetailToc;
 }) {
+  useLocale();
+
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -62,14 +68,14 @@ export function DeferredInteractiveReceipt({
       <button
         type="button"
         aria-expanded={open}
-        aria-label="Open session receipt"
+        aria-label={t("Open session receipt")}
         onClick={() => {
           setReady(false);
           setOpen(true);
         }}
         className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[var(--shadow-overlay)] motion-hover hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
       >
-        <span className="[writing-mode:vertical-rl]">Receipt</span>
+        <span className="[writing-mode:vertical-rl]">{t("Receipt")}</span>
       </button>
       <DrawerDialog
         open={open}
@@ -77,7 +83,7 @@ export function DeferredInteractiveReceipt({
           setOpen(nextOpen);
           if (!nextOpen) setReady(false);
         }}
-        title="Session Receipt"
+        title={t("Session Receipt")}
         variant="desktop"
       >
         {ready ? (
@@ -116,6 +122,8 @@ export function SessionDetailAuxControls({
   fileChangeSummary: FileChangeSummary;
   onOpen: (panel: "toc" | "files") => void;
 }) {
+  useLocale();
+
   const fileCount = getFileTrackerItemCount(fileChangeSummary);
   const chipCount = countActiveFilterChips(toc, state);
 
@@ -123,12 +131,11 @@ export function SessionDetailAuxControls({
     <div className="flex flex-wrap gap-2 min-[1025px]:hidden">
       <button type="button" onClick={() => onOpen("toc")} className={AUX_BUTTON_CLASS}>
         <Funnel className="size-3.5 text-[var(--brand)]" />
-        {chipCount > 0 ? `${chipCount} filters` : "Content filters"}
+        {chipCount > 0 ? t("{0} filters", [chipCount]) : t("Content filters")}
       </button>
       {fileCount > 0 ? (
         <button type="button" onClick={() => onOpen("files")} className={AUX_BUTTON_CLASS}>
-          <FileText className="size-3.5 text-[var(--console-accent)]" />
-          Files
+          <FileText className="size-3.5 text-[var(--console-accent)]" /> {t("Files")}{" "}
           <span className="text-[var(--console-muted)]">{fileCount}</span>
         </button>
       ) : null}
@@ -150,6 +157,8 @@ export function SessionDetailAuxOverlay({
   onClose: () => void;
   onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
+  useLocale();
+
   useEffect(() => {
     if (!openPanel) return;
     const desktopQuery = window.matchMedia("(min-width: 1025px)");
@@ -169,7 +178,7 @@ export function SessionDetailAuxOverlay({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={openPanel === "files" ? "File Tracker" : "Content filters"}
+      title={openPanel === "files" ? t("File Tracker") : t("Content filters")}
       variant="mobile"
     >
       {openPanel ? (

@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import {
   lazy,
   Suspense,
@@ -44,6 +46,8 @@ const SearchResultsPanel = lazy(() =>
 );
 
 function LazySurface({ children }: { children: ReactNode }) {
+  useLocale();
+
   const location = useLocation();
   return (
     <ErrorBoundary key={location.pathname}>
@@ -163,6 +167,8 @@ function landingAgentItems(agents: AgentInfo[]): LandingAgentItem[] {
 }
 
 function SearchRouteContent({ search }: { search: SearchContentModel }) {
+  useLocale();
+
   const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
   return (
     <RenderProfiler
@@ -189,6 +195,8 @@ function SearchRouteContent({ search }: { search: SearchContentModel }) {
 }
 
 function LoadError({ load }: { load: LoadModel }) {
+  useLocale();
+
   return (
     <div
       role="alert"
@@ -200,13 +208,15 @@ function LoadError({ load }: { load: LoadModel }) {
         onClick={load.retry}
         className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] px-3 py-1.5 text-xs motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
       >
-        Retry
+        {t("Retry")}
       </button>
     </div>
   );
 }
 
 function RootRouteContent({ route }: { route: RootRouteModel }) {
+  useLocale();
+
   return (
     <RenderProfiler id="OverviewScreen" detail={{ projects: route.projectCount }}>
       <LazySurface>
@@ -223,6 +233,8 @@ function RootRouteContent({ route }: { route: RootRouteModel }) {
 }
 
 function ProjectsRouteContent({ route }: { route: ProjectsRouteModel }) {
+  useLocale();
+
   return (
     <LazySurface>
       <ProjectsOverview
@@ -238,6 +250,8 @@ function ProjectsRouteContent({ route }: { route: ProjectsRouteModel }) {
 }
 
 function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
+  useLocale();
+
   return (
     <LazySurface>
       <ProjectDashboardView
@@ -260,6 +274,8 @@ function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
 }
 
 function AgentRouteContent({ route }: { route: AgentRouteModel }) {
+  useLocale();
+
   const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
   const toggleSessionBookmark = route.bookmarks.toggleSessionBookmark;
   const toggleBookmark = useCallback(
@@ -280,18 +296,24 @@ function AgentRouteContent({ route }: { route: AgentRouteModel }) {
 }
 
 function SessionRouteContent({ route }: { route: SessionRouteModel }) {
+  const locale = useLocale();
+
   const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
   const currentSession = route.detail.session;
   const currentSessionAgentName = currentSession?.reference.agentName;
   const currentSessionId = currentSession?.reference.sessionId;
-  const childSessions = useMemo(() => {
-    if (!currentSessionAgentName || !currentSessionId) return [];
-    return (
-      route.childSessionsByParentRouteKey.get(
-        getSessionRouteKey(currentSessionAgentName, currentSessionId),
-      ) ?? []
-    );
-  }, [route.childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId]);
+  const childSessions = useMemo(
+    () => {
+      if (!currentSessionAgentName || !currentSessionId) return [];
+      return (
+        route.childSessionsByParentRouteKey.get(
+          getSessionRouteKey(currentSessionAgentName, currentSessionId),
+        ) ?? []
+      );
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, route.childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId],
+  );
   const toggleSessionBookmark = route.bookmarks.toggleSessionBookmark;
   const toggleBookmark = useCallback(
     (session: IndexedSession) => toggleSessionBookmark(session, session.reference.agentName),
@@ -350,6 +372,8 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
 }
 
 function MissingAgentRouteContent({ route }: { route: MissingAgentRouteModel }) {
+  useLocale();
+
   const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
   return (
     <DetailLanding
@@ -367,28 +391,32 @@ function MissingAgentRouteContent({ route }: { route: MissingAgentRouteModel }) 
 }
 
 function InvalidRouteContent() {
+  useLocale();
+
   return (
     <div
       role="alert"
       className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-6"
     >
       <h3 className="console-mono mb-2 text-sm font-semibold text-[var(--console-text)]">
-        Page not found
+        {t("Page not found")}
       </h3>
       <p className="console-mono mb-3 text-xs text-[var(--console-text-secondary)]">
-        This address does not match any dashboard, agent, or session route.
+        {t("This address does not match any dashboard, agent, or session route.")}
       </p>
       <Link
         to="/"
         className="console-mono text-xs text-[var(--console-accent)] underline underline-offset-2"
       >
-        Back to dashboard
+        {t("Back to dashboard")}
       </Link>
     </div>
   );
 }
 
 function RouteContent({ route }: { route: AppRouteModel }) {
+  useLocale();
+
   switch (route.mode) {
     case "root":
       return <RootRouteContent route={route} />;
@@ -408,6 +436,8 @@ function RouteContent({ route }: { route: AppRouteModel }) {
 }
 
 export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
+  useLocale();
+
   if (load.loading) return <SessionDetailSkeleton />;
   if (search.active) return <SearchRouteContent search={search} />;
   if (load.error) return <LoadError load={load} />;

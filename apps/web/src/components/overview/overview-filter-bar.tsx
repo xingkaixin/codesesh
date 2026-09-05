@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * Agent filter + range pills for 统计总览.
  *
@@ -34,6 +36,8 @@ export function OverviewFilterBar({
   onRangeChange: (preset: TimeWindowPreset) => void;
   onSelectCustom: (from: string, to: string) => void;
 }) {
+  useLocale();
+
   const [customOpen, setCustomOpen] = useState(false);
 
   return (
@@ -41,14 +45,14 @@ export function OverviewFilterBar({
       <div className="flex flex-wrap items-center gap-3">
         {onAgentChange ? (
           <select
-            aria-label="Filter by agent"
+            aria-label={t("Filter by agent")}
             value={agent ?? ALL_AGENTS}
             onChange={(event) =>
               onAgentChange(event.target.value === ALL_AGENTS ? undefined : event.target.value)
             }
             className="console-mono max-w-[220px] rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1.5 text-xs text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           >
-            <option value={ALL_AGENTS}>All agents</option>
+            <option value={ALL_AGENTS}>{t("All agents")}</option>
             {agentCatalog.active.map((entry) => (
               <option key={entry.name} value={entry.name.toLowerCase()}>
                 {entry.displayName}
@@ -59,7 +63,7 @@ export function OverviewFilterBar({
 
         {scopeCounts ? (
           <span className="console-mono text-[11px] text-[var(--console-muted)]">
-            {scopeCounts.projects} projects · {scopeCounts.agents} agents in scope
+            {t("{0} projects · {1} agents in scope", [scopeCounts.projects, scopeCounts.agents])}
           </span>
         ) : null}
 
@@ -82,7 +86,7 @@ export function OverviewFilterBar({
                     : "border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)]",
                 )}
               >
-                {preset.label}
+                {t(preset.label)}
               </button>
             );
           })}

@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import type { AgentInfo, SearchResult } from "../../lib/api";
@@ -59,6 +61,8 @@ export function SearchResultsPanel({
   selectedIndex: number;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
+  useLocale();
+
   const results = state.status === "loaded" ? state.results : [];
   const filterBar = (
     <SearchFilterBar
@@ -74,7 +78,7 @@ export function SearchResultsPanel({
       <div className="flex flex-col gap-3">
         {filterBar}
         <p className="sr-only" aria-live="polite">
-          Searching…
+          {t("Searching…")}
         </p>
         <div className="grid gap-3">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -103,17 +107,18 @@ export function SearchResultsPanel({
           aria-live="polite"
         >
           <h2 className="console-display text-[15px] font-semibold text-[var(--console-error)]">
-            Search Failed
+            {t("Search Failed")}
           </h2>
           <p className="console-mono mt-2 break-words text-xs text-[var(--console-error)]">
-            {state.error}. Check the server connection, then try again.
+            {state.error}
+            {t(". Check the server connection, then try again.")}
           </p>
           <button
             type="button"
             onClick={onRetry}
             className="console-mono motion-hover motion-press mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
           >
-            Retry Search
+            {t("Retry Search")}
           </button>
         </div>
       </div>
@@ -126,10 +131,12 @@ export function SearchResultsPanel({
         {filterBar}
         <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 shadow-[var(--shadow-raised)]">
           <h2 className="console-display text-[15px] font-semibold text-[var(--console-text)]">
-            {query ? "No matches" : "No recent sessions"}
+            {query ? t("No matches") : t("No recent sessions")}
           </h2>
           {query ? (
-            <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">Query: {query}</p>
+            <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">
+              {t("Query:")} {query}
+            </p>
           ) : null}
         </div>
       </div>
@@ -140,7 +147,7 @@ export function SearchResultsPanel({
     <div className="grid gap-3">
       {filterBar}
       <div className="console-mono text-[11px] text-[var(--console-muted)]">
-        Navigate j k · Open Enter · Exit Esc
+        {t("Navigate j k · Open Enter · Exit Esc")}
       </div>
       {results.map((result, index) => {
         const agentKey = result.reference.agentName.toLowerCase();
@@ -166,11 +173,11 @@ export function SearchResultsPanel({
                 {agentLabel}
               </span>
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
-                {SEARCH_MATCH_LABELS[result.matchType]}
+                {t(SEARCH_MATCH_LABELS[result.matchType])}
               </span>
               {isUnmountedChild ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border-strong)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                  Unmounted
+                  {t("Unmounted")}
                 </span>
               ) : null}
               <span className="console-mono text-[11px] text-[var(--console-muted)]">

@@ -1,3 +1,5 @@
+import { t } from "../../i18n/translate";
+import { useLocale } from "../../hooks/useLocale";
 import { Check, Circle, CircleDashed, X } from "../ui/icons";
 import type { TaskListItem } from "./types";
 
@@ -13,6 +15,8 @@ const STATUS_META = {
 } as const;
 
 export function TaskListOutput({ items }: { items: TaskListItem[] }) {
+  useLocale();
+
   return (
     <ol className="overflow-hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]">
       {items.map((item, index) => {
@@ -31,7 +35,7 @@ export function TaskListOutput({ items }: { items: TaskListItem[] }) {
                 <span
                   className={`console-mono text-[10px] uppercase tracking-wide ${meta.className}`}
                 >
-                  {meta.label}
+                  {t(meta.label)}
                 </span>
               </div>
               {item.detail ? (

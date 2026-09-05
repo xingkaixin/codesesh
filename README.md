@@ -26,6 +26,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
 - **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
+- **UI languages** — English, Simplified Chinese, and Japanese. Follows your browser language by default; use the language selector in the top toolbar to switch and save your preference. Session content and code stay in their original language.
 - **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model usage, smart tags, and cost at a glance
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
 - **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent

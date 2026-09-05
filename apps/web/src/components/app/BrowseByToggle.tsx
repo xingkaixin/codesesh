@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import type { BrowseBy } from "./types";
 
 export function BrowseByToggle({
@@ -9,13 +11,15 @@ export function BrowseByToggle({
   onChange: (value: BrowseBy) => void;
   projectsDisabled?: boolean;
 }) {
+  useLocale();
+
   const options: Array<{ value: BrowseBy; label: string }> = [
-    { value: "projects", label: "Projects" },
-    { value: "agents", label: "Agents" },
+    { value: "projects", label: t("Projects") },
+    { value: "agents", label: t("Agents") },
   ];
 
   return (
-    <div role="radiogroup" aria-label="Browse by" className="grid gap-1.5">
+    <div role="radiogroup" aria-label={t("Browse by")} className="grid gap-1.5">
       {options.map((option) => {
         const active = value === option.value;
         const disabled = option.value === "projects" && projectsDisabled;
@@ -35,7 +39,9 @@ export function BrowseByToggle({
                   : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
             }`}
             title={
-              disabled ? "Project grouping is available after the current scan finishes" : undefined
+              disabled
+                ? t("Project grouping is available after the current scan finishes")
+                : undefined
             }
           >
             <span

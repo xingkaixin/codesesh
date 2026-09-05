@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { fetchSessionData, logClientEvent, type SessionHead } from "../lib/api";
@@ -42,5 +43,5 @@ export function useCopySessionAsMarkdown() {
     [queryClient],
   );
 
-  return { copySessionAsMarkdown, sessionCopyNotice: notice?.message ?? null };
+  return { copySessionAsMarkdown, sessionCopyNotice: notice ? t(notice.message) : null };
 }

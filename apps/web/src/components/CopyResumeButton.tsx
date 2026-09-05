@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { Check, Copy } from "./ui/icons";
 import { useEffect, useState } from "react";
 import { buildResumeCommand } from "../lib/build-resume-command";
@@ -25,6 +27,8 @@ export function CopyResumeButton({
   directory,
   className = "",
 }: CopyResumeButtonProps) {
+  useLocale();
+
   const [copied, setCopied] = useState(false);
   const command = buildResumeCommand({ resumeCommandPrefix, sessionId, directory });
 
@@ -46,8 +50,12 @@ export function CopyResumeButton({
           if (ok) setCopied(true);
         });
       }}
-      aria-label={copied ? `Resume command copied: ${command}` : `Copy resume command: ${command}`}
-      title={copied ? `Copied: ${command}` : `Copy: ${command}`}
+      aria-label={
+        copied
+          ? t("Resume command copied: {0}", [command])
+          : t("Copy resume command: {0}", [command])
+      }
+      title={copied ? t("Copied: {0}", [command]) : t("Copy: {0}", [command])}
       className={`console-mono motion-hover motion-press inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${className} ${
         copied
           ? "border-[var(--positive)] bg-[var(--positive-soft)] text-[var(--positive)]"
@@ -59,9 +67,9 @@ export function CopyResumeButton({
       ) : (
         <Copy className="size-3" strokeWidth={1.8} />
       )}
-      <span>{copied ? "Copied" : "Copy resume"}</span>
+      <span>{copied ? t("Copied") : t("Copy resume")}</span>
       <span className="sr-only" aria-live="polite">
-        {copied ? "Resume command copied" : ""}
+        {copied ? t("Resume command copied") : ""}
       </span>
     </button>
   );

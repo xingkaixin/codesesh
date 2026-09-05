@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { useQuery } from "@tanstack/react-query";
 import {
   useCallback,
@@ -98,7 +99,7 @@ export function useSessionSearch(
         error:
           serverSearchQuery.error instanceof Error
             ? serverSearchQuery.error.message
-            : "Search request failed",
+            : t("Search request failed"),
       };
     }
     return { status: "loaded", results: serverSearchQuery.data };

@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { forwardRef, useImperativeHandle, useRef, useState, type FormEvent } from "react";
 import { RenderProfiler } from "../RenderProfiler";
 
@@ -10,6 +12,8 @@ export const SearchControls = forwardRef<
   SearchControlsHandle,
   { onSubmit: (query: string) => void }
 >(function SearchControls({ onSubmit }, ref) {
+  useLocale();
+
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,7 +43,7 @@ export const SearchControls = forwardRef<
         onSubmit={submit}
       >
         <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--brand-line)] focus-within:ring-2 focus-within:ring-[var(--brand)]">
-          <span className="sr-only">Search Sessions</span>
+          <span className="sr-only">{t("Search Sessions")}</span>
           <input
             ref={inputRef}
             type="search"
@@ -47,7 +51,7 @@ export const SearchControls = forwardRef<
             autoComplete="off"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search sessions…  /"
+            placeholder={t("Search sessions…  /")}
             className="console-mono w-full min-w-0 bg-transparent text-xs text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
           />
         </label>
@@ -55,7 +59,7 @@ export const SearchControls = forwardRef<
           type="submit"
           className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          Search
+          {t("Search")}
         </button>
       </form>
     </RenderProfiler>

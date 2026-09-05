@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * Grok tool display strategy — read_file/run_terminal_command/web_fetch rendering.
  *
@@ -65,13 +66,13 @@ function buildReadDetails(
   const totalPages = integerValue(pdfContent.total_pages);
 
   if (totalLines !== null && totalLines >= 0) {
-    details.push({ label: "Lines", value: String(totalLines) });
+    details.push({ label: t("Lines"), value: String(totalLines) });
   }
-  if (offset !== null && offset >= 0) details.push({ label: "Offset", value: String(offset) });
-  if (limit !== null && limit >= 0) details.push({ label: "Limit", value: String(limit) });
-  if (mimeType) details.push({ label: "Format", value: mimeType });
+  if (offset !== null && offset >= 0) details.push({ label: t("Offset"), value: String(offset) });
+  if (limit !== null && limit >= 0) details.push({ label: t("Limit"), value: String(limit) });
+  if (mimeType) details.push({ label: t("Format"), value: mimeType });
   if (totalPages !== null && totalPages >= 0) {
-    details.push({ label: "Pages", value: String(totalPages) });
+    details.push({ label: t("Pages"), value: String(totalPages) });
   }
   return details;
 }
@@ -138,8 +139,8 @@ function buildGrokReadStrategy(
         kind: "plain",
         text:
           Object.keys(pdfContent).length > 0
-            ? "PDF preview unavailable."
-            : "Image preview unavailable.",
+            ? t("PDF preview unavailable.")
+            : t("Image preview unavailable."),
         language: "text",
         isCode: false,
       },
@@ -148,7 +149,7 @@ function buildGrokReadStrategy(
 
   if (Object.keys(fileContent).length > 0) {
     const rawText = toStringValue(fileContent.raw_output);
-    const content = rawText || toStringValue(fileContent.content) || "File is empty.";
+    const content = rawText || toStringValue(fileContent.content) || t("File is empty.");
     return buildFileReadStrategy({
       defaultStrategy,
       state,
@@ -203,14 +204,14 @@ function buildGrokBashStrategy(
   const signal = toPlainText(payload.signal);
   const details: ToolDetailItem[] = [];
 
-  if (displayCommand) details.push({ label: "Command", value: displayCommand });
-  if (currentDirectory) details.push({ label: "Workdir", value: currentDirectory });
-  if (exitCode !== null) details.push({ label: "Exit code", value: String(exitCode) });
-  if (signal) details.push({ label: "Signal", value: signal });
-  if (payload.timed_out === true) details.push({ label: "Timed out", value: "Yes" });
+  if (displayCommand) details.push({ label: t("Command"), value: displayCommand });
+  if (currentDirectory) details.push({ label: t("Workdir"), value: currentDirectory });
+  if (exitCode !== null) details.push({ label: t("Exit code"), value: String(exitCode) });
+  if (signal) details.push({ label: t("Signal"), value: signal });
+  if (payload.timed_out === true) details.push({ label: t("Timed out"), value: t("Yes") });
   if (payload.truncated === true) {
-    details.push({ label: "Output", value: "Truncated" });
-    if (outputFile) details.push({ label: "Full output", value: outputFile });
+    details.push({ label: t("Output"), value: t("Truncated") });
+    if (outputFile) details.push({ label: t("Full output"), value: outputFile });
   }
 
   const outputText = decodeTerminalOutput(payload) || messageFromPayload(payload);
@@ -222,10 +223,10 @@ function buildGrokBashStrategy(
     secondaryText: description || compactText(displayCommand).slice(0, 120) || undefined,
     details,
     showInputPreview: false,
-    contentLabel: failed ? "Error" : "Terminal output",
+    contentLabel: failed ? t("Error") : t("Terminal output"),
     outputContent: {
       kind: "plain",
-      text: outputText || "No output captured.",
+      text: outputText || t("No output captured."),
       language: "text",
       isCode: false,
     },
@@ -252,13 +253,13 @@ function buildGrokWebFetchStrategy(
   const details: ToolDetailItem[] = [];
 
   if (statusCode !== null && statusCode >= 0) {
-    details.push({ label: "Status", value: String(statusCode) });
+    details.push({ label: t("Status"), value: String(statusCode) });
   }
-  if (contentType) details.push({ label: "Content type", value: contentType });
+  if (contentType) details.push({ label: t("Content type"), value: contentType });
   if (sizeBytes !== null && sizeBytes >= 0) {
-    details.push({ label: "Size", value: `${sizeBytes} bytes` });
+    details.push({ label: t("Size"), value: t("{0} bytes", [sizeBytes]) });
   }
-  if (errorType) details.push({ label: "Type", value: errorType });
+  if (errorType) details.push({ label: t("Type"), value: errorType });
 
   const savedPath = getDisplayPath(toPlainText(outputLocation.filePath), baseDirectory);
   const redirectUrl = toPlainText(redirect.redirect_url);
@@ -268,23 +269,26 @@ function buildGrokWebFetchStrategy(
   const errorText =
     messageFromPayload(payload) ||
     (redirectUrl
-      ? `Cross-host redirect from ${redirectHost || "the original host"} to ${redirectUrl}.`
+      ? t("Cross-host redirect from {0} to {1}.", [
+          redirectHost || t("the original host"),
+          redirectUrl,
+        ])
       : "") ||
-    (domain ? `Domain not allowed: ${domain}` : "");
+    (domain ? t("Domain not allowed: {0}", [domain]) : "");
   const outputText =
     contentText ||
     errorText ||
-    (savedPath ? `Full content saved to ${savedPath}` : "") ||
+    (savedPath ? t("Full content saved to {0}", [savedPath]) : "") ||
     getOutputOrErrorText(state);
 
   return {
     ...defaultStrategy,
     Icon: FileSearch,
-    title: "web fetch",
+    title: t("web fetch"),
     secondaryText: url || undefined,
     details,
     showInputPreview: false,
-    contentLabel: state.status === "error" ? "Error" : "Page content",
+    contentLabel: state.status === "error" ? t("Error") : t("Page content"),
     outputContent: { kind: "plain", text: outputText, language: "markdown", isCode: false },
   };
 }

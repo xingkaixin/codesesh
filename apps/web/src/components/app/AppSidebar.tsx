@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { useCallback, useEffect, type ReactNode } from "react";
 import type { BookmarkView, ApiProjectGroup, SessionHead } from "../../lib/api";
 import { useScanStatus } from "../../hooks/useScanStatus";
@@ -32,6 +34,8 @@ function navItemClass(isSelected: boolean): string {
 }
 
 function ScanAwareEmptyState({ scanning, empty }: { scanning: string; empty: string }) {
+  useLocale();
+
   const scanStatus = useScanStatus();
   return (
     <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
@@ -47,6 +51,8 @@ function ProjectNavList({
   projects: ApiProjectGroup[];
   selectedProjectNavigationId: string | null;
 }) {
+  useLocale();
+
   const visibleProjects = projects.slice(0, SIDEBAR_PROJECT_LIMIT);
   const selectedProject = selectedProjectNavigationId
     ? projects.find((project) => {
@@ -129,6 +135,8 @@ function SidebarFrame({
   onMobileOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
+  useLocale();
+
   useEffect(() => {
     if (!mobileOpen || typeof window.matchMedia !== "function") return;
     const desktop = window.matchMedia("(min-width: 1025px)");
@@ -145,7 +153,7 @@ function SidebarFrame({
       <DrawerDialog
         open
         onOpenChange={onMobileOpenChange}
-        title="Navigation"
+        title={t("Navigation")}
         variant="mobile"
         side="left"
       >
@@ -156,7 +164,7 @@ function SidebarFrame({
 
   return (
     <aside
-      aria-label="Primary navigation"
+      aria-label={t("Primary navigation")}
       className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
         collapsed ? "hidden" : "hidden min-[1025px]:flex"
       }`}
@@ -203,6 +211,8 @@ export function AppSidebar({
   model: AppSidebarViewModel;
   actions: AppSidebarActions;
 }) {
+  useLocale();
+
   const activeSessionReference =
     viewState.mode === "session"
       ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
@@ -241,15 +251,15 @@ export function AppSidebar({
                 data-active={isOverviewSelected ? "true" : undefined}
                 className={`min-w-0 flex-1 ${navItemClass(isOverviewSelected)}`}
               >
-                <img src="/logo.svg?v=3" alt="Dashboard" className="size-3.5 rounded-[2px]" />
-                <span className="console-mono line-clamp-1 flex-1 text-xs">Dashboard</span>
+                <img src="/logo.svg?v=3" alt={t("Dashboard")} className="size-3.5 rounded-[2px]" />
+                <span className="console-mono line-clamp-1 flex-1 text-xs">{t("Dashboard")}</span>
               </Link>
               {!mobileNavigationOpen ? (
                 <button
                   type="button"
                   aria-expanded="true"
-                  aria-label="Collapse sidebar"
-                  title="Collapse sidebar"
+                  aria-label={t("Collapse sidebar")}
+                  title={t("Collapse sidebar")}
                   onClick={onCollapse}
                   className="shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
                 >
@@ -263,7 +273,9 @@ export function AppSidebar({
                 data-active={isProjectsSelected ? "true" : undefined}
                 className={navItemClass(isProjectsSelected)}
               >
-                <span className="console-mono min-w-0 flex-1 truncate text-xs">Projects</span>
+                <span className="console-mono min-w-0 flex-1 truncate text-xs">
+                  {t("Projects")}
+                </span>
                 <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
                   {projectCount}
                 </span>
@@ -276,7 +288,7 @@ export function AppSidebar({
             {projectsError ? (
               <li>
                 <ResourceLoadFailure
-                  title="Couldn't load projects."
+                  title={t("Couldn't load projects.")}
                   message={projectsError}
                   onRetry={onRetryProjects}
                   className="px-3 py-2"
@@ -284,17 +296,20 @@ export function AppSidebar({
               </li>
             ) : projects.length === 0 && !projectsLoading ? (
               <li>
-                <ScanAwareEmptyState scanning="Scanning projects..." empty="No projects found" />
+                <ScanAwareEmptyState
+                  scanning={t("Scanning projects...")}
+                  empty={t("No projects found")}
+                />
               </li>
             ) : null}
           </ul>
         </section>
 
         <section>
-          <h3 className="console-eyebrow mb-3">BOOKMARKS</h3>
+          <h3 className="console-eyebrow mb-3">{t("BOOKMARKS")}</h3>
           {bookmarksError ? (
             <ResourceLoadFailure
-              title="Couldn't load bookmarks."
+              title={t("Couldn't load bookmarks.")}
               message={bookmarksError}
               onRetry={onRetryBookmarks}
               className="mb-2 px-3 py-2"
@@ -302,11 +317,11 @@ export function AppSidebar({
           ) : null}
           {bookmarkedSessions.length === 0 && bookmarksLoading ? (
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-              Loading bookmarks...
+              {t("Loading bookmarks...")}
             </span>
           ) : bookmarkedSessions.length === 0 && !bookmarksError ? (
             <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
-              No bookmarks yet
+              {t("No bookmarks yet")}
             </span>
           ) : (
             <ul className="space-y-1">
@@ -321,8 +336,8 @@ export function AppSidebar({
                 const unavailableTitle = available ? undefined : bookmark.display_title;
                 const availabilityLabel =
                   bookmark.availability === "agent-unavailable"
-                    ? "Agent unavailable"
-                    : "Session unavailable";
+                    ? t("Agent unavailable")
+                    : t("Session unavailable");
                 const title = available
                   ? getSessionDisplayTitle(bookmark.session)
                   : (unavailableTitle ?? reference.sessionId);
@@ -391,15 +406,18 @@ export function AppSidebar({
         {selectedProjectNavigationId ? (
           <section>
             <h3 className="console-eyebrow mb-3">
-              SESSIONS
+              {t("SESSIONS")}{" "}
               {sidebarSessions.length > 0 ? (
                 <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
-                  Navigate j k · Open Enter
+                  {t("Navigate j k · Open Enter")}
                 </span>
               ) : null}
             </h3>
             {sidebarSessions.length === 0 ? (
-              <ScanAwareEmptyState scanning="Scanning sessions..." empty="No sessions yet" />
+              <ScanAwareEmptyState
+                scanning={t("Scanning sessions...")}
+                empty={t("No sessions yet")}
+              />
             ) : (
               <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
                 <SessionTreeSidebar

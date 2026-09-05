@@ -1,3 +1,5 @@
+import { useLocale } from "./hooks/useLocale";
+import { t } from "./i18n/translate";
 import {
   createBrowserRouter,
   isRouteErrorResponse,
@@ -9,10 +11,11 @@ import App from "./App";
 import { appRouteChildren, validateRouteEncoding } from "./lib/app-routes";
 
 export function RouteErrorFallback() {
+  useLocale();
   const error = useRouteError();
   const message = isRouteErrorResponse(error)
     ? `${error.status} ${error.statusText}`
-    : "The application route failed to render.";
+    : t("The application route failed to render.");
   return <div role="alert">{message}</div>;
 }
 

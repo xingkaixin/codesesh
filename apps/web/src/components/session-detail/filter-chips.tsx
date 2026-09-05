@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * The active-filter row above the message stream. Chips are the deviation from
  * "everything on", so the row disappears once no tool is filtered out.
@@ -27,12 +29,14 @@ export function SessionFilterChips({
   state: SessionFilterState;
   actions: SessionFilterActions;
 }) {
+  useLocale();
+
   const chips = deriveActiveChips(toc, state);
   if (chips.length === 0) return null;
 
   const contentSummary = TOC_CONTENT_FILTER_IDS.filter(
     (id) => toc.counts[id] > 0 && !state.excluded.has(id),
-  ).map((id) => CONTENT_SHORT_LABEL[id]);
+  ).map((id) => t(CONTENT_SHORT_LABEL[id]));
 
   return (
     <div className="hidden flex-wrap items-center gap-1.5 min-[1025px]:flex">
@@ -41,10 +45,10 @@ export function SessionFilterChips({
           key={chip.id}
           className="console-mono inline-flex items-center gap-1 rounded-full bg-[var(--brand)] px-2.5 py-[3px] text-[10.5px] text-[var(--brand-fg)]"
         >
-          Tool · {chip.label}
+          {t("Tool ·")} {chip.label}
           <button
             type="button"
-            aria-label={`Remove filter ${chip.label}`}
+            aria-label={t("Remove filter {0}", [chip.label])}
             onClick={() => actions.toggleTool(chip.id)}
             className="motion-hover -mr-1 rounded-full p-0.5 opacity-80 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--brand-fg)] focus-visible:outline-none"
           >

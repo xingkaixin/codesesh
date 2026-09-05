@@ -1,3 +1,5 @@
+import { useLocale } from "./hooks/useLocale";
+import { t } from "./i18n/translate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { SessionHead } from "./lib/api";
@@ -35,6 +37,8 @@ import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 
 export default function App() {
+  useLocale();
+
   const navigate = useNavigate();
   const appConfig = useAppConfig();
   const timeWindowController = useTimeWindow(appConfig.config?.window);
@@ -232,7 +236,7 @@ export default function App() {
 
   const searchSubtitle =
     searchState.status === "failed"
-      ? `Search failed for "${activeSearchQuery}"`
+      ? t('Search failed for "{0}"', [activeSearchQuery])
       : formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length);
 
   const routeHeader = buildRouteHeaderModel({
@@ -406,7 +410,7 @@ export default function App() {
           href="#main"
           className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
         >
-          Skip to content
+          {t("Skip to content")}
         </a>
         <AppToolbar
           searchControlsRef={searchControlsRef}
