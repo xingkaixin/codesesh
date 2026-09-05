@@ -37,9 +37,18 @@ describe("OverviewAgentDistribution", () => {
 
     fireEvent.focus(options[0]!);
     expect(liveSummary.textContent).toBe("Codex: $4.00, 3 sessions");
+    expect(screen.getByRole("tooltip").textContent).toBe(
+      "Codex3.0k tok · $4.003 sessions · 30 messages",
+    );
 
     fireEvent.keyDown(options[0]!, { key: "ArrowRight" });
     expect(document.activeElement).toBe(options[1]);
     expect(liveSummary.textContent).toBe("Claude Code: $2.00, 2 sessions");
+    expect(screen.getByRole("tooltip").textContent).toBe(
+      "Claude Code2.0k tok · $2.002 sessions · 20 messages",
+    );
+
+    fireEvent.keyDown(options[1]!, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

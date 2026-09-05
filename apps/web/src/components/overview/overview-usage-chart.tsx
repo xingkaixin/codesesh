@@ -12,7 +12,7 @@ import type { BarHover } from "../../hooks/useBarField";
 import type { DashboardDailyBucket } from "../../lib/api";
 import { niceMax } from "../../lib/chart-shading";
 import { formatCompact, formatInt, formatMonthDay, formatUsd } from "../../lib/format";
-import { cn } from "../../lib/utils";
+import { ChartTooltip } from "../ui/chart-tooltip";
 import { Panel, PanelHeader } from "../ui/panel";
 import { TileAreaPlot } from "../ui/tile-area-plot";
 import { TILE_AXIS_WIDTH, TileBarPlot } from "../ui/tile-bar-plot";
@@ -108,13 +108,7 @@ function DayTooltip({
   useLocale();
 
   return (
-    <div
-      className={cn(
-        "console-mono pointer-events-none absolute top-2 z-10 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-[10.5px] whitespace-nowrap text-[var(--console-text)] shadow-[var(--shadow-overlay)]",
-        index >= count * 0.75 ? "-translate-x-full" : "-translate-x-1/2",
-      )}
-      style={{ left: `${((index + 0.5) / count) * 100}%` }}
-    >
+    <ChartTooltip index={index} count={count}>
       <div>{formatMonthDay(bucket.date)}</div>
       <div>
         {formatCompact(bucketTokens(bucket))} {t("tok ·")}{" "}
@@ -128,7 +122,7 @@ function DayTooltip({
         {t("· Read")} {formatCompact(bucket.cache_read)} {t("· Write")}{" "}
         {formatCompact(bucket.cache_create)}
       </div>
-    </div>
+    </ChartTooltip>
   );
 }
 
