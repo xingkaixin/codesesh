@@ -328,6 +328,54 @@ describe("session tree window filtering", () => {
     ).toEqual(["child", "grandchild"]);
   });
 
+  it.each([false, true])(
+    "collects shared ancestors independently of descendant visits (reverse=%s)",
+    (reverse) => {
+      const sessions = [
+        makeSession("root", 1),
+        makeSession("trunk", 2, { parent: "root" }),
+        makeSession("branch", 3, { parent: "trunk" }),
+        makeSession("leaf", 4, { parent: "branch" }),
+        makeSession("sibling", 5, { parent: "trunk" }),
+        makeSession("unrelated", 6),
+      ];
+      const changed = [sessions[2]!, sessions[3]!];
+      if (reverse) changed.reverse();
+      const context = createSessionProjectionContext(
+        sessions,
+        sessions,
+        changed.map(referenced),
+        [],
+      );
+      expect(context.relatedSessionHeads.map(({ session }) => session.reference.sessionId)).toEqual(
+        ["root", "trunk"],
+      );
+      expect(context.sessionOrder).toEqual(
+        sessions.slice(0, 4).map((session) => session.reference),
+      );
+    },
+  );
+
+  it("collects shared cyclic ancestors without including unrelated sibling subtrees", () => {
+    const sessions = [
+      makeSession("a", 1, { parent: "b" }),
+      makeSession("b", 2, { parent: "a" }),
+      makeSession("leaf-a", 3, { parent: "a" }),
+      makeSession("leaf-b", 4, { parent: "b" }),
+      makeSession("sibling", 5, { parent: "a" }),
+    ];
+    const context = createSessionProjectionContext(
+      sessions,
+      sessions,
+      sessions.slice(2, 4).map(referenced),
+      [],
+    );
+    expect(context.relatedSessionHeads.map(({ session }) => session.reference.sessionId)).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
   it("does not copy unaffected sibling subtrees into a projection event", () => {
     const root = makeSession("root", 100);
     const child = makeSession("child", 1, { parent: "root" });
