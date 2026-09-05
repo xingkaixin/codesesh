@@ -40,7 +40,7 @@ describe("formatScanStatusLabel", () => {
     expect(formatScanStatusLabel({ active: false } as ScanStatusEvent)).toBeNull();
   });
 
-  it("returns a publishing message for the publishing phase", () => {
+  it("keeps routine publication quiet", () => {
     expect(
       formatScanStatusLabel({
         active: true,
@@ -50,10 +50,10 @@ describe("formatScanStatusLabel", () => {
         totalAgents: 0,
         agentStatuses: {},
       } as unknown as ScanStatusEvent),
-    ).toBe("Publishing session updates");
+    ).toBeNull();
   });
 
-  it("maps the legacy indexing phase to publishing", () => {
+  it("keeps legacy indexing quiet", () => {
     expect(
       formatScanStatusLabel({
         active: true,
@@ -63,7 +63,7 @@ describe("formatScanStatusLabel", () => {
         totalAgents: 0,
         agentStatuses: {},
       } as unknown as ScanStatusEvent),
-    ).toBe("Publishing session updates");
+    ).toBeNull();
   });
 
   it("surfaces an inactive refresh failure", () => {
@@ -174,53 +174,38 @@ describe("formatScanStatusLabel", () => {
     ).toBe("Finalizing full-history metadata · codex · 68/2107");
   });
 
-  it.each([
-    ["scanning", "Checking for new or changed sessions"],
-    ["finalizing", "Finalizing session metadata"],
-  ] as const)("shows current item counts while %s", (phase, label) => {
-    expect(
-      formatScanStatusLabel({
-        active: true,
-        phase: phase === "scanning" ? "scanning" : "publishing",
-        completedAgents: ["claudecode"],
-        scanningAgents: ["codex"],
-        totalAgents: 2,
-        agentStatuses: {
-          codex: {
-            agentName: "codex",
-            status: phase,
-            total: 2108,
-            processed: 17,
-            updatedAt: 1,
+  it.each(["scanning", "finalizing", "publish-queued", "publishing", "indexing"] as const)(
+    "keeps routine %s progress quiet",
+    (phase) => {
+      expect(
+        formatScanStatusLabel({
+          active: true,
+          phase: phase === "scanning" ? "scanning" : "publishing",
+          completedAgents: [],
+          scanningAgents: ["codex"],
+          totalAgents: 1,
+          agentStatuses: {
+            codex: { agentName: "codex", status: phase, total: 1, processed: 0, updatedAt: 1 },
           },
-        },
-      } as unknown as ScanStatusEvent),
-    ).toBe(`${label} · codex · 17/2108 · 1/2 agents ready`);
+        } as unknown as ScanStatusEvent),
+      ).toBeNull();
+    },
+  );
+
+  it("keeps initialization visible", () => {
+    expect(formatScanStatusLabel({ active: true, phase: "initializing" } as ScanStatusEvent)).toBe(
+      "Initializing recent sessions",
+    );
   });
 
-  it.each([
-    ["publish-queued", "Session publication queued"],
-    ["publishing", "Publishing session updates"],
-    ["indexing", "Publishing session updates"],
-  ] as const)("does not reuse completed scan counts while %s", (phase, label) => {
+  it("does not hide failures while another agent refreshes", () => {
     expect(
       formatScanStatusLabel({
         active: true,
-        phase: "publishing",
-        completedAgents: ["claudecode"],
-        scanningAgents: ["codex"],
-        totalAgents: 2,
-        agentStatuses: {
-          codex: {
-            agentName: "codex",
-            status: phase,
-            total: 119,
-            processed: 119,
-            updatedAt: 1,
-          },
-        },
+        phase: "scanning",
+        agentStatuses: { codex: { agentName: "codex", status: "failed", error: "read failed" } },
       } as unknown as ScanStatusEvent),
-    ).toBe(`${label} · codex · 1/2 agents ready`);
+    ).toBe("Session refresh failed · codex · read failed");
   });
 
   it("does not reuse full-history scan counts while preparing publication", () => {
@@ -273,7 +258,7 @@ describe("formatScanStatusLabel", () => {
     ).toBe("Full-history publication queued · zcode");
   });
 
-  it("labels search maintenance as non-blocking background work", () => {
+  it("keeps routine search maintenance quiet", () => {
     expect(
       formatScanStatusLabel({
         active: false,
@@ -288,7 +273,7 @@ describe("formatScanStatusLabel", () => {
           failedAgents: [],
         },
       } as unknown as ScanStatusEvent),
-    ).toBe("Updating search index in background · codex · 2199 remaining");
+    ).toBeNull();
   });
 });
 

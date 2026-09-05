@@ -19,9 +19,12 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
     : null;
   return (
     <>
-      <div>
+      <div className={visible ? "flow-root h-9" : undefined}>
         {visible && label ? (
-          <p className="console-mono mt-2 inline-flex max-w-4xl rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]">
+          <p
+            title={label}
+            className="console-mono mt-2 w-fit max-w-full truncate rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]"
+          >
             {label}
           </p>
         ) : null}
