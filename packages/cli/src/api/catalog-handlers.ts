@@ -18,7 +18,11 @@ import {
 } from "./query-params.js";
 import type { ScanResultSource, ScanStatusSource } from "./scan-sources.js";
 import { createSnapshotPaginator } from "./snapshot-pagination.js";
-import { getSnapshotAggregation, getSnapshotSessionTree } from "./snapshot-aggregation.js";
+import {
+  getSnapshotAggregation,
+  getSnapshotCostFacts,
+  getSnapshotSessionTree,
+} from "./snapshot-aggregation.js";
 
 const paginateProjects = createSnapshotPaginator<ApiProjectGroup, ApiProjectPage["summary"]>();
 
@@ -93,7 +97,10 @@ export function handleGetProjects(
       ["projects", from, to, analyticsRevision],
       () => {
         const tree = getSnapshotSessionTree(scanSource, scanResult.sessions);
-        const costFacts = listDashboardCostFacts({ from, to, includeModelCosts: false });
+        const costFacts =
+          (from == null || from === 0) && to == null
+            ? getSnapshotCostFacts(scanSource, scanResult.sessions, from, to, to, analyticsRevision)
+            : listDashboardCostFacts({ from, to, includeModelCosts: false });
         const projects = attachProjectMetricsFromTree(
           listCachedProjectGroups(scanResult.sessions),
           tree,

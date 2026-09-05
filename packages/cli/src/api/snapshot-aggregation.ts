@@ -76,7 +76,7 @@ export function getSnapshotSessionTree(
 
 type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities">;
 
-export function getDashboardCostFacts(
+export function getSnapshotCostFacts(
   source: ScanResultSource,
   sessions: SessionHead[],
   from: number | undefined,
@@ -84,13 +84,15 @@ export function getDashboardCostFacts(
   cacheTo: number | undefined,
   analyticsRevision: string | null,
 ): DashboardCostFacts | null {
-  const build = () => listDashboardCostFacts({ from, to });
+  // Effective message timestamps are positive; the UI uses epoch zero for All time.
+  const costFrom = from === 0 ? undefined : from;
+  const build = () => listDashboardCostFacts({ from: costFrom, to });
   if (analyticsRevision === null) return build();
 
   return getSnapshotAggregation(
     source,
     sessions,
-    ["dashboard-cost-facts", from, cacheTo, analyticsRevision],
+    ["cost-facts", costFrom, cacheTo, analyticsRevision],
     build,
   );
 }

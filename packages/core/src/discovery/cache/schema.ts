@@ -36,6 +36,7 @@ import {
   createFileActivityPathSearchTables,
   createFileActivityTables,
   createMessageToolTables,
+  createMessageUsageIndex,
   createLegacyProjectTables,
   createSearchStateIndex,
   createSearchTables,
@@ -902,6 +903,13 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
       { version: 30, destructive: true, migrate: dropDerivedSessionSlug },
       { version: 31, migrate: dropDurablePublicationStaging },
       { version: 32, migrate: dropLegacyCacheTables },
+      {
+        version: 33,
+        migrate(db) {
+          db.exec("DROP INDEX IF EXISTS idx_messages_usage_time");
+          createMessageUsageIndex(db);
+        },
+      },
     ],
   });
 

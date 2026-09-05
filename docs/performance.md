@@ -121,3 +121,87 @@ node scripts/benchmark-session-window.mjs
 有边界调用返回新数组的行为。需要实际筛选时继续使用原有树规则，保留命中父节点的全部
 子会话；调用方显式提供树时，也继续使用该树。All time 优化主要减少分配和计算常数，
 其渐进复杂度仍为 O(N)。上述数据仅衡量过滤函数，不代表页面或扫描整体耗时。
+
+## Share All time cost facts between API handlers
+
+Dashboard and Projects previously loaded the same message cost facts independently
+when the UI switched to All time. They now share the snapshot's unbounded cost
+facts. Dashboard still applies its current-time upper bound during aggregation;
+explicit date ranges retain their bounded reads. Snapshot replacement and analytics
+revision changes invalidate the shared facts.
+
+On a local cache with 4,553 sessions and 270,155 timed messages, three warmed
+iterations with fresh snapshot caches gave these median handler times:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Dashboard | 1,213.65 ms | 1,226.99 ms |
+| Projects | 1,120.63 ms | 239.83 ms |
+| Combined | 2,306.59 ms | 1,456.90 ms |
+
+The combined time decreased about 37%. Both routes still perform their own
+aggregation. This removes one O(M) database read and conversion per snapshot,
+where M is the number of timed messages; total complexity remains O(M). The
+existing snapshot cache bounds retention. This is a backend measurement, not a
+browser load or rendering measurement.
+
+Reproduce against an existing local CodeSesh cache after building Core:
+
+```bash
+node scripts/benchmark-all-time-aggregation.mjs 1788571200000
+```
+
+Use the same timestamp and unchanged cache when comparing revisions. The script
+builds the two current API handlers together, reads local cached sessions, and
+reports five fresh-snapshot timings. It prints a response digest without session
+content, excluding the per-request pagination cursor. Before/after responses on
+the measured cache matched exactly after excluding that cursor. OS cache warmth,
+background indexing, and concurrent workloads affect timings.
+
+## Cover message usage reads with the time index
+
+Schema 33 extends the existing usage-time index with `message_index`, `model`,
+`tokens_json`, `cost`, and `cost_source`. The cost-fact query can read these values
+from the index instead of revisiting transcript-bearing message rows. Including
+`message_index` also covers the complete requested ordering. No cost attribution,
+time-window, or response contract changes are needed.
+
+On an isolated copy of a local cache (4,553 sessions, 270,342 timed messages),
+three cost-fact reads gave these median timings:
+
+| Phase | Before | After |
+| --- | ---: | ---: |
+| Message SQL read | 822.22 ms | 424.35 ms |
+| Full cost-fact load | 881.61 ms | 478.02 ms |
+
+All three before/after cost-fact response digests matched. The copied cache's
+migration took 982 ms including opening the cache and reading cached heads.
+The usage index grew from 16,683,008 bytes to 36,913,152 bytes (about 19.3 MiB
+additional storage). Writes must maintain the larger index; this is a read/write
+tradeoff, not an asymptotic complexity change.
+
+A production-build browser comparison used Chromium 151, a 1440×1000 viewport,
+no throttling, and the same copied cache with background scanning enabled. Each
+run waited for startup scanning to become inactive, then performed five 7-day
+to All time switches. Completion required client data loading to finish, the
+Dashboard skeleton and session-loading notice to disappear, and two additional
+animation frames. This approximates presentation completion rather than measuring
+physical display output.
+
+| Browser measurement | Before | After |
+| --- | ---: | ---: |
+| First switch in this run | 7.22 s | 1.30 s |
+| Median of subsequent four switches | 1.86 s | 1.28 s |
+| Range of subsequent four switches | 1.79–2.58 s | 1.23–1.38 s |
+
+Repeated-switch median improved about 31% over the shared-cost-facts change.
+Neither run recorded a frontend task longer than 50 ms during the switches.
+The index was migrated and profiled before the second browser run, so its first
+switch is **not** a matched cold-cache comparison; the first-switch numbers do
+not establish a guaranteed cold-start speedup. Migration timing is separate.
+The original local cache remained at schema 32 throughout this experiment.
+
+To measure the current handlers with `scripts/benchmark-all-time-aggregation.mjs`,
+first start the current CLI against the intended cache so its schema migration
+has completed. Compare unchanged data and the same timestamp; do not compare an
+old index against a new build without checking the actual cache schema.
