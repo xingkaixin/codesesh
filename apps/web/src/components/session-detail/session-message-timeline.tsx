@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { memo, useCallback, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "../ui/icons";
 import type { SessionAnchorScrollBehavior } from "./scroll-behavior";
@@ -61,6 +63,8 @@ const TimelineSegment = memo(function TimelineSegment({
   onShowTooltip,
   onHideTooltip,
 }: TimelineSegmentProps) {
+  useLocale();
+
   const tooltipId = `timeline-tooltip-${entry.id}`;
   return (
     <span
@@ -73,7 +77,7 @@ const TimelineSegment = memo(function TimelineSegment({
         data-timeline-kind={entry.kind}
         aria-current={isActive ? "location" : undefined}
         aria-describedby={isTooltipVisible ? tooltipId : undefined}
-        aria-label={`Go to ${entry.tooltip}`}
+        aria-label={t("Go to {0}", [entry.tooltip])}
         className={`t-tt-trigger session-timeline-segment h-full w-full rounded-[2px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] ${KIND_CLASS[entry.kind]}`}
         onPointerEnter={(event) => onShowTooltip(entry, event.currentTarget, "pointer")}
         onPointerLeave={() => onHideTooltip(entry.id)}
@@ -89,6 +93,8 @@ export function SessionMessageTimeline({
   anchorRegistry,
   onNavigate,
 }: SessionMessageTimelineProps) {
+  useLocale();
+
   const rootRef = useRef<HTMLDivElement | null>(null);
   const activeIndex = useActiveTimelineIndex({ rootRef, entries, anchorRegistry });
   const trackLayout = getTrackLayout(entries.length);
@@ -152,7 +158,7 @@ export function SessionMessageTimeline({
             ref={scrollRef}
             id="session-timeline-viewport"
             role="navigation"
-            aria-label="Session message timeline"
+            aria-label={t("Session message timeline")}
             tabIndex={0}
             className="session-timeline-viewport overflow-x-auto overflow-y-hidden overscroll-x-contain py-1"
             onScroll={handleTimelineScroll}
@@ -195,7 +201,7 @@ export function SessionMessageTimeline({
           {scrollAvailability.left && (
             <button
               type="button"
-              aria-label="Scroll timeline left"
+              aria-label={t("Scroll timeline left")}
               className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-[linear-gradient(to_right,var(--console-surface)_55%,transparent)] pl-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
               onClick={() => scrollByPage(-1)}
             >
@@ -205,7 +211,7 @@ export function SessionMessageTimeline({
           {scrollAvailability.right && (
             <button
               type="button"
-              aria-label="Scroll timeline right"
+              aria-label={t("Scroll timeline right")}
               className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-[linear-gradient(to_left,var(--console-surface)_55%,transparent)] pr-0.5 text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--brand)]"
               onClick={() => scrollByPage(1)}
             >

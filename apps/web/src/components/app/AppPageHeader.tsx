@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { Link } from "react-router-dom";
 import type { RouteHeaderModel } from "../../lib/build-route-header-model";
 import { CopyResumeButton } from "../CopyResumeButton";
@@ -53,13 +55,15 @@ export function AppPageHeader({
   model: AppPageHeaderModel;
   actions: AppPageHeaderActions;
 }) {
+  useLocale();
+
   return (
     <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
       <button
         type="button"
         aria-expanded={mobileNavigationOpen}
-        aria-label="Open navigation"
-        title="Open navigation"
+        aria-label={t("Open navigation")}
+        title={t("Open navigation")}
         onClick={onOpenMobileNavigation}
         className="mt-0.5 inline-flex shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:hidden"
       >
@@ -69,8 +73,8 @@ export function AppPageHeader({
         <button
           type="button"
           aria-expanded="false"
-          aria-label="Expand sidebar"
-          title="Expand sidebar"
+          aria-label={t("Expand sidebar")}
+          title={t("Expand sidebar")}
           onClick={onExpandSidebar}
           className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:inline-flex"
         >
@@ -79,7 +83,7 @@ export function AppPageHeader({
       ) : null}
       <div className="min-w-0 flex-1">
         <nav
-          aria-label="Breadcrumb"
+          aria-label={t("Breadcrumb")}
           className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
         >
           {route.breadcrumbs.map((item, index) => (
@@ -109,7 +113,7 @@ export function AppPageHeader({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {shortcutHintVisible ? (
             <div className="console-mono inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-              <span>Keyboard navigation available</span>
+              <span>{t("Keyboard navigation available")}</span>
               <span className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1">
                 ?
               </span>
@@ -117,7 +121,7 @@ export function AppPageHeader({
                 type="button"
                 onClick={onDismissShortcutHint}
                 className="text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)]"
-                aria-label="Dismiss keyboard shortcuts hint"
+                aria-label={t("Dismiss keyboard shortcuts hint")}
               >
                 ×
               </button>
@@ -125,7 +129,7 @@ export function AppPageHeader({
           ) : null}
           {sessionBackHintVisible ? (
             <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-              Esc back
+              {t("Esc back")}
             </span>
           ) : null}
           {resumeSession ? <CopyResumeButton {...resumeSession} /> : null}
@@ -149,7 +153,7 @@ export function AppPageHeader({
             className="console-mono mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] text-[var(--console-warning)]"
           >
             <span>
-              {sessionLoadNotice.error ?? "Loading sessions… Results are not yet complete."}
+              {sessionLoadNotice.error ?? t("Loading sessions… Results are not yet complete.")}
             </span>
             {sessionLoadNotice.error ? (
               <button
@@ -158,7 +162,7 @@ export function AppPageHeader({
                 onClick={onRetrySessionLoad}
                 className="rounded-sm border border-current px-2 py-1 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:opacity-50"
               >
-                Retry session load
+                {t("Retry session load")}
               </button>
             ) : null}
           </div>

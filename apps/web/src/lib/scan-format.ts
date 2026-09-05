@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 /**
  * Scan-status and time-window formatting helpers.
  * Pure display logic consumed by the app shell and sidebar.
@@ -11,7 +12,8 @@ function formatPartialCompletion(
   >,
 ): string {
   const count = completion.sourceFailureCount;
-  const countLabel = count == null ? null : `${count} source${count === 1 ? "" : "s"} failed`;
+  const countLabel =
+    count == null ? null : t("{0} source{1} failed", [count, count === 1 ? "" : "s"]);
   return [countLabel, completion.sourceFailureSummary].filter((value) => value != null).join(" · ");
 }
 
@@ -35,16 +37,16 @@ export function formatIsoDate(ts: number): string {
 export function formatWindowLabel(config: AppConfig | null): string | null {
   if (!config) return null;
   const { from, to, days } = config.window;
-  if (days === 0 || from == null) return "All time";
+  if (days === 0 || from == null) return t("All time");
   const fromStr = formatIsoDate(from);
   const toStr = formatIsoDate(to ?? Date.now());
-  if (days) return `Last ${days}d · ${fromStr} → ${toStr}`;
+  if (days) return t("Last {0}d · {1} → {2}", [days, fromStr, toStr]);
   return `${fromStr} → ${toStr}`;
 }
 
 export function formatSearchSubtitle(query: string, loading: boolean, count: number) {
-  if (loading) return query ? `Searching for "${query}"` : "Loading recent sessions";
-  return query ? `${count} matches for "${query}"` : `${count} recent sessions`;
+  if (loading) return query ? t('Searching for "{0}"', [query]) : t("Loading recent sessions");
+  return query ? t('{0} matches for "{1}"', [count, query]) : t("{0} recent sessions", [count]);
 }
 
 export function formatScanStatusLabel(status: ScanStatusEvent | null): string | null {
@@ -63,31 +65,34 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
         : "";
     const stageLabel =
       progress?.phase === "publish-queued"
-        ? "Full-history publication queued"
+        ? t("Full-history publication queued")
         : progress?.phase === "committing"
-          ? "Committing full-history publication"
+          ? t("Committing full-history publication")
           : progress?.phase === "indexing"
-            ? "Writing full-history search index"
+            ? t("Writing full-history search index")
             : progress?.phase === "publishing"
-              ? "Preparing full-history publication"
+              ? t("Preparing full-history publication")
               : progress?.phase === "finalizing"
-                ? "Finalizing full-history metadata"
-                : "Scanning full session history";
+                ? t("Finalizing full-history metadata")
+                : t("Scanning full session history");
     return current
-      ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? ` · ${pending} history scan queued` : ""}`
+      ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? t(" · {0} history scan queued", [pending]) : ""}`
       : `${stageLabel}${progressLabel}`;
   }
   if (status.backfill?.failedAgents.length) {
-    return `Full-history refresh failed · ${status.backfill.failedAgents.join(", ")}`;
+    return t("Full-history refresh failed · {0}", [status.backfill.failedAgents.join(", ")]);
   }
   const failedAgent = Object.values(status.agentStatuses ?? {}).find(
     (agentStatus) => agentStatus.status === "failed",
   );
   if (failedAgent) {
-    return `Session refresh failed · ${failedAgent.agentName}${failedAgent.error ? ` · ${failedAgent.error}` : ""}`;
+    return t("Session refresh failed · {0}{1}", [
+      failedAgent.agentName,
+      failedAgent.error ? ` · ${failedAgent.error}` : "",
+    ]);
   }
   if (status.active && status.phase === "initializing") {
-    return "Initializing recent sessions";
+    return t("Initializing recent sessions");
   }
 
   const partialBackfill = Object.entries(status.backfill?.partialAgents ?? {}).find(
@@ -96,7 +101,10 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (partialBackfill) {
     const [agentName, completion] = partialBackfill;
     const detail = formatPartialCompletion(completion);
-    return `Full-history refresh completed with partial data · ${agentName}${detail ? ` · ${detail}` : ""}`;
+    return t("Full-history refresh completed with partial data · {0}{1}", [
+      agentName,
+      detail ? ` · ${detail}` : "",
+    ]);
   }
   const partialAgent = Object.values(status.agentStatuses ?? {}).find(
     (agentStatus) =>
@@ -106,11 +114,16 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   );
   if (partialAgent) {
     const detail = formatPartialCompletion(partialAgent);
-    return `Session refresh completed with partial data · ${partialAgent.agentName}${detail ? ` · ${detail}` : ""}`;
+    return t("Session refresh completed with partial data · {0}{1}", [
+      partialAgent.agentName,
+      detail ? ` · ${detail}` : "",
+    ]);
   }
 
   if (status.searchIndexMaintenance?.failedAgents.length) {
-    return `Background search index maintenance paused · ${status.searchIndexMaintenance.failedAgents.join(", ")}`;
+    return t("Background search index maintenance paused · {0}", [
+      status.searchIndexMaintenance.failedAgents.join(", "),
+    ]);
   }
   return null;
 }
@@ -121,19 +134,19 @@ export function formatAgentScanProgress(
 ): string | null {
   const agentStatus = status?.agentStatuses[agentName];
   if (!agentStatus || agentStatus.status === "complete") return null;
-  if (agentStatus.status === "failed") return "Failed";
+  if (agentStatus.status === "failed") return t("Failed");
   if (agentStatus.status === "finalizing") {
     if (agentStatus.total && agentStatus.processed != null) {
       return `${agentStatus.processed}/${agentStatus.total}`;
     }
-    return "Finalizing";
+    return t("Finalizing");
   }
   if (agentStatus.status === "publishing" || agentStatus.status === "indexing") {
-    return "Publishing";
+    return t("Publishing");
   }
-  if (agentStatus.status === "publish-queued") return "Queued to publish";
+  if (agentStatus.status === "publish-queued") return t("Queued to publish");
   if (agentStatus.total && agentStatus.processed != null) {
     return `${agentStatus.processed}/${agentStatus.total}`;
   }
-  return agentStatus.status === "scanning" ? "Scanning" : "Pending";
+  return agentStatus.status === "scanning" ? t("Scanning") : t("Pending");
 }

@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * Model composition, as a ring whose centre carries the total. Real per-model
  * cost only exists when the message cache is available; without it the card
@@ -43,7 +45,7 @@ function costEntries(modelCost: ModelCostEntry[], totalCost: number): BreakdownE
   if (totalCost > 0 && remainder > totalCost * REMAINDER_THRESHOLD) {
     entries.push({
       key: "__remainder",
-      label: "Other",
+      label: t("Other"),
       value: remainder,
       color: "var(--console-border-strong)",
       display: formatUsdCompact(remainder),
@@ -74,15 +76,21 @@ export function OverviewCostBreakdown({
   modelDistribution: ModelDistributionEntry[];
   totals: DashboardTotals;
 }) {
+  const locale = useLocale();
+
   const [hovered, setHovered] = useState<number | null>(null);
 
-  const { byCost, entries } = useMemo(() => {
-    const byCost = hasCost(modelCost);
-    return {
-      byCost,
-      entries: byCost ? costEntries(modelCost, totals.cost) : tokenEntries(modelDistribution),
-    };
-  }, [modelCost, modelDistribution, totals.cost]);
+  const { byCost, entries } = useMemo(
+    () => {
+      const byCost = hasCost(modelCost);
+      return {
+        byCost,
+        entries: byCost ? costEntries(modelCost, totals.cost) : tokenEntries(modelDistribution),
+      };
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, modelCost, modelDistribution, totals.cost],
+  );
   // Shares are of the ring, so they always add up to it; the centre reports the
   // scope total the KPI row already shows, which the ring covers in full once
   // the per-model rows agree with it.
@@ -92,7 +100,7 @@ export function OverviewCostBreakdown({
     [entries, ringTotal],
   );
 
-  const title = byCost ? "Cost by Model" : "Models";
+  const title = byCost ? t("Cost by Model") : t("Models");
   const itemLabels = entries.map(
     (entry) =>
       `${entry.label}: ${formatPercent(ringTotal > 0 ? entry.value / ringTotal : 0)}, ${entry.display}`,
@@ -100,10 +108,12 @@ export function OverviewCostBreakdown({
 
   return (
     <Panel role="region" aria-label={title} className="p-4">
-      <PanelHeader title={title} meta={byCost ? "by cost" : "by tokens"} />
+      <PanelHeader title={title} meta={byCost ? t("by cost") : t("by tokens")} />
 
       {entries.length === 0 ? (
-        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">No model data</p>
+        <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">
+          {t("No model data")}
+        </p>
       ) : (
         <div className="mt-[14px] flex items-center gap-[18px]">
           <TileDonut
@@ -112,14 +122,14 @@ export function OverviewCostBreakdown({
             hovered={hovered}
             onHover={setHovered}
             size={DONUT_SIZE}
-            ariaLabel={`${title} chart`}
+            ariaLabel={t("{0} chart", [title])}
             itemLabels={itemLabels}
           >
             <span className="console-mono text-[16px] font-semibold text-[var(--console-text)]">
               {byCost ? formatUsdCompact(totals.cost) : formatCompact(totals.tokens)}
             </span>
             <span className="console-mono mt-0.5 text-[9px] text-[var(--console-muted)]">
-              {byCost ? "total cost" : "total tokens"}
+              {byCost ? t("total cost") : t("total tokens")}
             </span>
           </TileDonut>
 
@@ -158,13 +168,15 @@ export function OverviewCostBreakdown({
         {byCost ? (
           <>
             <span className="mr-1.5 rounded-sm bg-[var(--brand-soft)] px-1.5 py-0.5 text-[var(--brand)]">
-              Estimated
+              {t("Estimated")}
             </span>
-            {formatUsd(totals.costEstimated)} from model unit price,{" "}
-            {formatUsd(totals.costRecorded)} from agent records
+            {formatUsd(totals.costEstimated)} {t("from model unit price,")}{" "}
+            {formatUsd(totals.costRecorded)} {t("from agent records")}
           </>
         ) : (
-          "Per-model cost needs the message cache, which is unavailable here; showing token share instead."
+          t(
+            "Per-model cost needs the message cache, which is unavailable here; showing token share instead.",
+          )
         )}
       </p>
     </Panel>

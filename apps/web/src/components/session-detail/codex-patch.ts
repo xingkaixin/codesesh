@@ -1,3 +1,4 @@
+import { t } from "../../i18n/translate";
 import type { ToolOutputContent, ToolOutputLanguage, FileSectionItem } from "../tool-output/types";
 
 export interface CodexPatchEntry {
@@ -116,7 +117,7 @@ function buildCodexPatchSections(
         operation: "edit",
         language: "text",
         isCode: false,
-        text: "File deleted.",
+        text: t("File deleted."),
       });
       return sections;
     }
@@ -129,10 +130,13 @@ function buildCodexPatchSections(
         isCode: false,
         text:
           entry.targetPath && entry.path
-            ? `Moved from ${formatPathForDisplay(entry.path)} to ${formatPathForDisplay(entry.targetPath)}`
+            ? t("Moved from {0} to {1}", [
+                formatPathForDisplay(entry.path),
+                formatPathForDisplay(entry.targetPath),
+              ])
             : entry.oldPath
-              ? `Moved from ${formatPathForDisplay(entry.oldPath)}`
-              : "File moved.",
+              ? t("Moved from {0}", [formatPathForDisplay(entry.oldPath)])
+              : t("File moved."),
       });
     }
 

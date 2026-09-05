@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { useState } from "react";
 import {
   ChevronDown,
@@ -31,11 +33,13 @@ export function FileChangeTracker({
   baseDirectory: string;
   onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
+  useLocale();
+
   const sections = [
-    { key: "read" as const, label: "Read", Icon: FileSearch, items: summary.read },
-    { key: "edit" as const, label: "Edit", Icon: FilePenLine, items: summary.edit },
-    { key: "write" as const, label: "Write", Icon: NotebookPen, items: summary.write },
-    { key: "delete" as const, label: "Delete", Icon: XCircle, items: summary.delete },
+    { key: "read" as const, label: t("Read"), Icon: FileSearch, items: summary.read },
+    { key: "edit" as const, label: t("Edit"), Icon: FilePenLine, items: summary.edit },
+    { key: "write" as const, label: t("Write"), Icon: NotebookPen, items: summary.write },
+    { key: "delete" as const, label: t("Delete"), Icon: XCircle, items: summary.delete },
   ].filter((section) => section.items.length > 0) satisfies Array<{
     key: FileChangeKind;
     label: string;
@@ -50,7 +54,7 @@ export function FileChangeTracker({
       <div className="flex items-center gap-2 border-b border-[var(--console-border)] px-4 py-3">
         <FileText className="size-3.5 text-[var(--console-accent)]" />
         <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
-          File Tracker
+          {t("File Tracker")}
         </span>
       </div>
       <div className="space-y-3 p-3">
@@ -82,6 +86,8 @@ function FileTrackerSection({
   baseDirectory: string;
   onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
+  useLocale();
+
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -130,6 +136,8 @@ function FileTrackerItem({
   baseDirectory: string;
   onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
+  useLocale();
+
   const [currentIndex, setCurrentIndex] = useState(0);
 
   function jumpToIndex(nextIndex: number, behavior: SessionAnchorScrollBehavior) {
@@ -159,7 +167,7 @@ function FileTrackerItem({
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            aria-label={`Previous ${item.path}`}
+            aria-label={t("Previous {0}", [item.path])}
             onClick={(event) =>
               jumpToIndex(currentIndex - 1, getActivationScrollBehavior(event.detail))
             }
@@ -172,7 +180,7 @@ function FileTrackerItem({
           </span>
           <button
             type="button"
-            aria-label={`Next ${item.path}`}
+            aria-label={t("Next {0}", [item.path])}
             onClick={(event) =>
               jumpToIndex(currentIndex + 1, getActivationScrollBehavior(event.detail))
             }
@@ -184,7 +192,7 @@ function FileTrackerItem({
       ) : (
         <button
           type="button"
-          title="Jump to tool call"
+          title={t("Jump to tool call")}
           onClick={(event) => jumpToIndex(0, getActivationScrollBehavior(event.detail))}
           className="console-mono shrink-0 text-[10px] text-[var(--console-muted)]"
         >

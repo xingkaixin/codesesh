@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import type { Dispatch, SetStateAction } from "react";
 import { SMART_TAGS, type AgentInfo, type FileActivityKind } from "../../lib/api";
 import { getProjectIdentityKey } from "../../lib/projects";
@@ -34,6 +36,8 @@ export function SearchFilterBar({
   filters: SearchFilterState;
   onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
 }) {
+  useLocale();
+
   const hasActiveFilters = Object.values(filters).some(Boolean);
   const selectedProjectKey = filters.project ? getProjectIdentityKey(filters.project) : undefined;
   const setFilter = <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) => {
@@ -46,10 +50,10 @@ export function SearchFilterBar({
   return (
     <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-3 shadow-[var(--shadow-raised)]">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">Scope</span>
+        <span className="console-eyebrow">{t("Scope")}</span>
         <FilterChip
           active={!filters.project}
-          label="All"
+          label={t("All")}
           onClick={() => onChangeFilters((current) => ({ ...current, project: undefined }))}
         />
         {projects.map((project) => (
@@ -73,10 +77,10 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">Agent</span>
+        <span className="console-eyebrow">{t("Agent")}</span>
         <FilterChip
           active={!filters.agent}
-          label="All Agents"
+          label={t("All Agents")}
           onClick={() => onChangeFilters((current) => ({ ...current, agent: undefined }))}
         />
         {agents.map((agent) => (
@@ -90,19 +94,19 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">Tag</span>
+        <span className="console-eyebrow">{t("Tag")}</span>
         {SMART_TAGS.map((tag) => (
           <FilterChip
             key={tag}
             active={filters.tag === tag}
-            label={tag}
+            label={t(tag)}
             onClick={() => setFilter("tag", tag)}
           />
         ))}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">Signal</span>
+        <span className="console-eyebrow">{t("Signal")}</span>
         {SEARCH_TOOL_OPTIONS.map((tool) => (
           <FilterChip
             key={tool}
@@ -114,29 +118,29 @@ export function SearchFilterBar({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">File Activity</span>
+        <span className="console-eyebrow">{t("File Activity")}</span>
         {FILE_ACTIVITY_OPTIONS.map((option) => (
           <FilterChip
             key={option.kind}
             active={filters.fileKind === option.kind}
-            label={option.label}
+            label={t(option.label)}
             onClick={() => setFilter("fileKind", option.kind)}
           />
         ))}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">Cost Range</span>
+        <span className="console-eyebrow">{t("Cost Range")}</span>
         <FilterChip
           active={!filters.costRange}
-          label="Any Cost"
+          label={t("Any Cost")}
           onClick={() => onChangeFilters((current) => ({ ...current, costRange: undefined }))}
         />
         {COST_RANGE_OPTIONS.map((option) => (
           <FilterChip
             key={option.id}
             active={filters.costRange === option.id}
-            label={option.label}
+            label={t(option.label)}
             onClick={() => setFilter("costRange", option.id)}
           />
         ))}
@@ -146,7 +150,7 @@ export function SearchFilterBar({
             onClick={() => onChangeFilters({})}
             className="console-mono ml-auto rounded-full border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 py-1 text-[10px] text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           >
-            Clear
+            {t("Clear")}
           </button>
         ) : null}
       </div>

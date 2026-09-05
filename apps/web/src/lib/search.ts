@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { buildSessionTree } from "@codesesh/core/contract";
 import { type SearchRequestOptions, type SearchResult } from "./api";
 import { type SessionIndexes, getSessionAgentKey, getSessionRouteKey } from "./session-indexes";
@@ -70,7 +71,7 @@ export function buildLocalRecentResults(
     results.push({
       reference: sessionItem.reference,
       session: sessionItem,
-      snippet: `Recent session · ${sessionItem.directory}`,
+      snippet: t("Recent session · {0}", [sessionItem.directory]),
       snippetHighlights: [],
       matchType: "recent" as const,
     });

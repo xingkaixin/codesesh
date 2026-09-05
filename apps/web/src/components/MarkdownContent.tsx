@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components, Options } from "react-markdown";
@@ -13,7 +15,8 @@ const markdownComponents: Components = {
     if (!safeSrc) {
       return (
         <span className="console-mono inline-block rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-          Remote image not loaded{alt ? `: ${alt}` : ""}
+          {t("Remote image not loaded")}
+          {alt ? `: ${alt}` : ""}
         </span>
       );
     }
@@ -115,6 +118,8 @@ export const MarkdownContent = memo(function MarkdownContent({
   text,
   highlightQuery,
 }: MarkdownContentProps) {
+  useLocale();
+
   const rehypePlugins = useMemo<Options["rehypePlugins"]>(() => {
     const pattern = buildHighlightPattern(highlightQuery);
     return pattern ? [[rehypeHighlightTerms, pattern]] : undefined;

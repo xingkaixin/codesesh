@@ -1,3 +1,4 @@
+import { t } from "../../i18n/translate";
 import type { PlanPart } from "../../lib/api";
 
 export type CodexPlanApprovalStatus = "success" | "fail";
@@ -7,7 +8,7 @@ export interface CodexPlanDisplay {
   secondaryText?: undefined;
   approvalStatus: CodexPlanApprovalStatus;
   expandable: boolean;
-  contentLabel: "Plan" | "Rejected";
+  contentLabel: string;
   contentMarkdown: string;
 }
 
@@ -21,7 +22,7 @@ export function buildCodexPlanDisplay(part: PlanPart): CodexPlanDisplay {
     secondaryText: undefined,
     approvalStatus,
     expandable: Boolean(contentMarkdown),
-    contentLabel: approvalStatus === "fail" ? "Rejected" : "Plan",
+    contentLabel: approvalStatus === "fail" ? t("Rejected") : t("Plan"),
     contentMarkdown,
   };
 }

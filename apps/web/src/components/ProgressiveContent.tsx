@@ -1,3 +1,6 @@
+import { formatNumber } from "../lib/format";
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, Copy } from "./ui/icons";
 import { writeToClipboard } from "../lib/clipboard";
@@ -24,6 +27,8 @@ export function ContentRenderControls({
   total,
   unit,
 }: ContentRenderControlsProps) {
+  useLocale();
+
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -35,15 +40,15 @@ export function ContentRenderControls({
   return (
     <div className="console-mono mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 py-2 text-[11px] text-[var(--console-muted)]">
       <span>
-        Showing {rendered.toLocaleString()} of {total.toLocaleString()} {unit}
+        {t("Showing {0} of {1}", [formatNumber(rendered), formatNumber(total)])} {t(unit)}
       </span>
       <button
         type="button"
         onClick={onRenderMore}
-        aria-label="Render more content"
+        aria-label={t("Render more content")}
         className="motion-hover motion-press rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 font-semibold text-[var(--console-text)] hover:border-[var(--console-border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
       >
-        Render more
+        {t("Render more")}
       </button>
       <button
         type="button"
@@ -53,14 +58,14 @@ export function ContentRenderControls({
             if (ok) setCopied(true);
           });
         }}
-        aria-label={copied ? "Full content copied" : "Copy full content"}
+        aria-label={copied ? t("Full content copied") : t("Copy full content")}
         className="motion-hover motion-press inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 font-semibold text-[var(--console-text)] hover:border-[var(--console-border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-        {copied ? "Copied" : "Copy full"}
+        {copied ? t("Copied") : t("Copy full")}
       </button>
       <span className="sr-only" aria-live="polite">
-        {copied ? "Full content copied" : ""}
+        {copied ? t("Full content copied") : ""}
       </span>
     </div>
   );
@@ -103,6 +108,8 @@ export function useProgressiveRenderBudget(
 }
 
 export function ProgressiveText({ text, initialBudget, children }: ProgressiveTextProps) {
+  useLocale();
+
   const { budget, renderMore } = useProgressiveRenderBudget(text, initialBudget, {
     characters: text.length,
     lines: text.length + 1,

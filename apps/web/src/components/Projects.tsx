@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { Link, useNavigate } from "react-router-dom";
 import type { ApiProjectAgentStat, ApiProjectGroup, ApiProjectPage, AppConfig } from "../lib/api";
 import { useProjectPagination } from "../hooks/useProjects";
@@ -13,6 +15,8 @@ import { ResourceLoadFailure } from "./ResourceLoadFailure";
 import { Panel } from "./ui/panel";
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  useLocale();
+
   return (
     <Panel className="p-[14px_16px]">
       <p className="console-eyebrow">{label}</p>
@@ -33,6 +37,8 @@ function AgentPills({
   agents: ApiProjectAgentStat[];
   agentCatalog: AgentCatalog;
 }) {
+  useLocale();
+
   if (agents.length === 0) return null;
 
   return (
@@ -67,6 +73,8 @@ function ProjectListItem({
   project: ApiProjectGroup;
   agentCatalog: AgentCatalog;
 }) {
+  useLocale();
+
   return (
     <li>
       <Link
@@ -83,8 +91,12 @@ function ProjectListItem({
             </p>
           </div>
           <div className="console-mono flex shrink-0 flex-wrap gap-2 text-[11px] text-[var(--console-text-secondary)]">
-            <span>{formatNumber(project.sessionCount)} sessions</span>
-            <span>{formatCompact(project.tokens)} tokens</span>
+            <span>
+              {formatNumber(project.sessionCount)} {t("sessions")}
+            </span>
+            <span>
+              {formatCompact(project.tokens)} {t("tokens")}
+            </span>
             <span className="text-[var(--brand)]">{formatMoney(project.cost)}</span>
             <span className="text-[var(--console-muted)]">
               {formatRelativeTime(project.lastActivity)}
@@ -115,6 +127,8 @@ export function ProjectsOverview({
   error: string | null;
   onRetry: () => void;
 }) {
+  useLocale();
+
   const pagination = useProjectPagination(window, initialPage);
   const page = pagination.page ?? initialPage;
   const projects = page.projects.slice(0, 250);
@@ -126,7 +140,7 @@ export function ProjectsOverview({
       return (
         <div className="mx-auto max-w-6xl">
           <ResourceLoadFailure
-            title="Couldn't load projects."
+            title={t("Couldn't load projects.")}
             message={currentError}
             onRetry={retry}
           />
@@ -136,13 +150,13 @@ export function ProjectsOverview({
     if (loading || pagination.loading) {
       return (
         <Panel className="mx-auto max-w-6xl p-6 text-sm text-[var(--console-muted)]">
-          Loading projects...
+          {t("Loading projects...")}
         </Panel>
       );
     }
     return (
       <Panel className="mx-auto max-w-6xl p-6 text-sm text-[var(--console-muted)]">
-        No projects found
+        {t("No projects found")}
       </Panel>
     );
   }
@@ -151,21 +165,21 @@ export function ProjectsOverview({
     <div className="mx-auto max-w-6xl space-y-4">
       {currentError ? (
         <ResourceLoadFailure
-          title="Couldn't refresh projects."
+          title={t("Couldn't refresh projects.")}
           message={currentError}
           onRetry={retry}
         />
       ) : null}
       <div className="grid gap-3 md:grid-cols-4">
-        <StatCard label="Projects" value={formatNumber(page.summary.projects)} />
-        <StatCard label="Sessions" value={formatNumber(page.summary.sessions)} />
-        <StatCard label="Tokens" value={formatCompact(page.summary.tokens)} />
+        <StatCard label={t("Projects")} value={formatNumber(page.summary.projects)} />
+        <StatCard label={t("Sessions")} value={formatNumber(page.summary.sessions)} />
+        <StatCard label={t("Tokens")} value={formatCompact(page.summary.tokens)} />
         <StatCard
-          label="Total Cost"
+          label={t("Total Cost")}
           value={formatMoney(page.summary.cost)}
           hint={
             page.summary.latestActivity
-              ? `Latest ${formatRelativeTime(page.summary.latestActivity)}`
+              ? t("Latest {0}", [formatRelativeTime(page.summary.latestActivity)])
               : undefined
           }
         />
@@ -173,7 +187,7 @@ export function ProjectsOverview({
 
       <div className="console-mono flex items-center justify-between gap-3 text-[11px] text-[var(--console-muted)]">
         <span>
-          Page {pagination.pageNumber} · {formatNumber(projects.length)} shown
+          {t("Page {0} · {1} shown", [pagination.pageNumber, formatNumber(projects.length)])}
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -182,7 +196,7 @@ export function ProjectsOverview({
             onClick={pagination.previous}
             className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Previous
+            {t("Previous")}
           </button>
           <button
             type="button"
@@ -190,7 +204,7 @@ export function ProjectsOverview({
             onClick={pagination.next}
             className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Next
+            {t("Next")}
           </button>
         </div>
       </div>
@@ -219,6 +233,8 @@ function ProjectAgentFilter({
   activeAgent?: string;
   onChange: (agent?: string) => void;
 }) {
+  useLocale();
+
   const pillClass = (active: boolean) =>
     `console-mono inline-flex items-center gap-1 rounded-full border px-[13px] py-[5px] text-[11px] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
       active
@@ -229,13 +245,13 @@ function ProjectAgentFilter({
   return (
     <Panel className="p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">Agent</span>
+        <span className="console-eyebrow">{t("Agent")}</span>
         <button
           type="button"
           onClick={() => onChange(undefined)}
           className={pillClass(!activeAgent)}
         >
-          All Agents
+          {t("All Agents")}
         </button>
         {agents.map((agent) => {
           const agentInfo = findAgent(agentCatalog, agent.name);
@@ -265,6 +281,8 @@ function ProjectAgentFilter({
 }
 
 function ProjectHeader({ project }: { project: ApiProjectGroup }) {
+  useLocale();
+
   return (
     <Panel className="p-4">
       <h2 className="console-display text-[19px] font-semibold text-[var(--console-text)]">
@@ -306,12 +324,14 @@ export function ProjectDashboardView({
   onRangeChange: (preset: TimeWindowPreset) => void;
   onSelectCustom: (from: string, to: string) => void;
 }) {
+  useLocale();
+
   const navigate = useNavigate();
 
   if (loading) {
     return (
       <Panel className="mx-auto max-w-4xl p-6 text-sm text-[var(--console-muted)]">
-        Loading project...
+        {t("Loading project...")}
       </Panel>
     );
   }
@@ -319,7 +339,11 @@ export function ProjectDashboardView({
   if (error) {
     return (
       <div className="mx-auto max-w-4xl">
-        <ResourceLoadFailure title="Couldn't load project." message={error} onRetry={onRetry} />
+        <ResourceLoadFailure
+          title={t("Couldn't load project.")}
+          message={error}
+          onRetry={onRetry}
+        />
       </div>
     );
   }
@@ -328,7 +352,7 @@ export function ProjectDashboardView({
     return (
       <Panel className="mx-auto max-w-4xl p-6">
         <h2 className="console-display text-[15px] font-semibold text-[var(--console-text)]">
-          Project Not Found
+          {t("Project Not Found")}
         </h2>
         <p className="console-mono mt-2 break-all text-xs text-[var(--console-muted)]">
           {projectKey}
@@ -337,7 +361,7 @@ export function ProjectDashboardView({
           to="/projects"
           className="console-mono mt-4 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          Back to Projects
+          {t("Back to Projects")}
         </Link>
       </Panel>
     );

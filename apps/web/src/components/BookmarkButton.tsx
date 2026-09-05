@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { Star } from "./ui/icons";
 
 interface BookmarkButtonProps {
@@ -7,6 +9,8 @@ interface BookmarkButtonProps {
 }
 
 export function BookmarkButton({ active, onToggle, className = "" }: BookmarkButtonProps) {
+  useLocale();
+
   return (
     <button
       type="button"
@@ -15,8 +19,8 @@ export function BookmarkButton({ active, onToggle, className = "" }: BookmarkBut
         event.stopPropagation();
         onToggle();
       }}
-      aria-label={active ? "Remove bookmark" : "Add bookmark"}
-      title={active ? "Remove bookmark" : "Add bookmark"}
+      aria-label={active ? t("Remove bookmark") : t("Add bookmark")}
+      title={active ? t("Remove bookmark") : t("Add bookmark")}
       className={`motion-hover motion-press inline-flex size-6 shrink-0 items-center justify-center rounded-sm border focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${className} ${
         active
           ? "border-[var(--brand-line)] bg-[var(--brand-soft)] text-[var(--brand)]"

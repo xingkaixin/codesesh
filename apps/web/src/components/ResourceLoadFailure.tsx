@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 export function ResourceLoadFailure({
   title,
   message,
@@ -9,6 +11,8 @@ export function ResourceLoadFailure({
   onRetry: () => void;
   className?: string;
 }) {
+  useLocale();
+
   return (
     <div
       role="alert"
@@ -21,7 +25,7 @@ export function ResourceLoadFailure({
         onClick={onRetry}
         className="console-mono mt-3 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-2.5 py-1 text-[11px] font-semibold motion-hover hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
       >
-        Retry
+        {t("Retry")}
       </button>
     </div>
   );

@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { mergeSessionsUpdatedEvents } from "@codesesh/core/contract";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
@@ -16,8 +17,8 @@ interface LiveSyncDeps {
 const LIVE_UPDATE_WINDOW_MS = 500;
 
 export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: LiveSyncDeps) {
-  const [liveNotice, setLiveNotice] = useState<string | null>(null);
-  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
+  const [newSessionCount, setNewSessionCount] = useState<number | null>(null);
+  const [disconnected, setDisconnected] = useState(false);
   const pendingEventRef = useRef<SessionsUpdatedEvent | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const updateChainRef = useRef(Promise.resolve());
@@ -26,9 +27,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     try {
       const result = await applyLiveEvent(event);
       if (result && result.visibleNewSessions > 0) {
-        setLiveNotice(
-          `${result.visibleNewSessions} new sessions found; the list refreshed automatically`,
-        );
+        setNewSessionCount(result.visibleNewSessions);
       }
     } catch (error) {
       console.error("Failed to sync live session update:", error);
@@ -52,7 +51,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
 
   const handleReconnect = useEffectEvent(async () => {
     clearPendingLiveUpdate();
-    setConnectionNotice(null);
+    setDisconnected(false);
     try {
       await updateChainRef.current;
       await resyncLiveState();
@@ -75,7 +74,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
       setScanStatus,
       () => void handleReconnect(),
       () => {
-        setConnectionNotice("Live updates disconnected; reconnecting…");
+        setDisconnected(true);
       },
     );
   }, [setScanStatus]);
@@ -83,10 +82,16 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
   useEffect(() => () => clearPendingLiveUpdate(), []);
 
   useEffect(() => {
-    if (!liveNotice) return;
-    const timer = window.setTimeout(() => setLiveNotice(null), 3500);
+    if (!newSessionCount) return;
+    const timer = window.setTimeout(() => setNewSessionCount(null), 3500);
     return () => window.clearTimeout(timer);
-  }, [liveNotice]);
+  }, [newSessionCount]);
 
-  return { liveNotice: connectionNotice ?? liveNotice };
+  return {
+    liveNotice: disconnected
+      ? t("Live updates disconnected; reconnecting…")
+      : newSessionCount == null
+        ? null
+        : t("{0} new sessions found; the list refreshed automatically", [newSessionCount]),
+  };
 }

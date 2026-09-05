@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * The reader's content-filter aside: four content kinds, a collapsible tool
  * group with a name filter and quick actions, and a live 当前视图 summary.
@@ -45,21 +47,23 @@ export function SessionFilterPanel({
   actions,
   visibleUnitCount,
 }: SessionFilterPanelProps) {
+  useLocale();
+
   const hiddenTools = deriveHiddenTools(toc, state);
 
   return (
     <section
-      aria-label="Content filters"
+      aria-label={t("Content filters")}
       className="flex flex-col rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)]"
     >
       <div className="flex items-center gap-3 border-b border-[var(--console-border)] px-3 py-2.5">
-        <span className="console-eyebrow">Content filters</span>
+        <span className="console-eyebrow">{t("Content filters")}</span>
         <button
           type="button"
           onClick={actions.resetAll}
           className="console-mono motion-hover ml-auto rounded-sm px-1 text-[10.5px] text-[var(--brand)] hover:text-[var(--brand-hover)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          Reset
+          {t("Reset")}
         </button>
       </div>
 
@@ -69,12 +73,12 @@ export function SessionFilterPanel({
             <div key={id} className="flex items-center gap-2.5 rounded-sm px-1 py-1">
               <TriStateCheckbox
                 size={15}
-                label={CONTENT_LABEL[id]}
+                label={t(CONTENT_LABEL[id])}
                 state={state.excluded.has(id) ? "unchecked" : "checked"}
                 onToggle={() => actions.toggleContentKind(id)}
               />
               <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--console-text)]">
-                {CONTENT_LABEL[id]}
+                {t(CONTENT_LABEL[id])}
               </span>
               <span className="console-mono shrink-0 text-[10.5px] text-[var(--console-muted)]">
                 {toc.counts[id]}
@@ -86,12 +90,13 @@ export function SessionFilterPanel({
         {toc.tools.length > 0 ? <ToolGroup toc={toc} state={state} actions={actions} /> : null}
 
         <div className="mt-auto rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-2.5">
-          <span className="console-eyebrow">Current view</span>
+          <span className="console-eyebrow">{t("Current view")}</span>
           <p className="mt-1 text-[11px] leading-relaxed text-[var(--console-text-secondary)]">
-            Showing <b className="console-mono text-[var(--console-text)]">{visibleUnitCount}</b> /{" "}
+            {t("Showing")}{" "}
+            <b className="console-mono text-[var(--console-text)]">{visibleUnitCount}</b> /{" "}
             <span className="console-mono">{toc.totalUnitCount}</span>
             {hiddenTools.length > 0
-              ? ` · hiding ${hiddenTools.map((tool) => tool.label).join(", ")}`
+              ? t(" · hiding {0}", [hiddenTools.map((tool) => tool.label).join(", ")])
               : null}
           </p>
         </div>
@@ -109,6 +114,8 @@ function ToolGroup({
   state: SessionFilterState;
   actions: SessionFilterActions;
 }) {
+  useLocale();
+
   const parentState = deriveToolsParentState(toc, state);
   const visibleTools = deriveVisibleTools(toc, state);
   const Caret = state.toolsExpanded ? ChevronDown : ChevronRight;
@@ -118,7 +125,7 @@ function ToolGroup({
       <div className="flex items-center gap-2.5 bg-[var(--brand-soft)] px-2.5 py-2">
         <TriStateCheckbox
           size={15}
-          label="All tools"
+          label={t("All tools")}
           state={PARENT_CHECK_STATE[parentState]}
           onToggle={() => actions.setAllTools(parentState !== "all")}
         />
@@ -128,9 +135,9 @@ function ToolGroup({
           onClick={actions.toggleToolsExpanded}
           className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          <span className="text-[13px] text-[var(--console-text)]">Tools</span>
+          <span className="text-[13px] text-[var(--console-text)]">{t("Tools")}</span>
           <span className="console-mono ml-auto text-[10.5px] text-[var(--console-muted)]">
-            {countSelectedTools(toc, state)} / {toc.tools.length} selected
+            {countSelectedTools(toc, state)} / {toc.tools.length} {t("selected")}
           </span>
           <Caret className="size-3.5 shrink-0 text-[var(--console-muted)]" />
         </button>
@@ -141,8 +148,8 @@ function ToolGroup({
           <input
             type="search"
             value={state.toolQuery}
-            aria-label="Filter tool names"
-            placeholder="Filter tools…"
+            aria-label={t("Filter tool names")}
+            placeholder={t("Filter tools…")}
             onChange={(event) => actions.setToolQuery(event.target.value)}
             className="console-mono w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           />
@@ -173,12 +180,14 @@ function ToolGroup({
           ))}
           <div className="flex flex-wrap gap-1.5 pt-0.5">
             <QuickAction onClick={() => actions.setAllTools(true)}>
-              Select all ({visibleTools.length})
+              {t("Select all (")}
+              {visibleTools.length})
             </QuickAction>
             <QuickAction onClick={() => actions.setAllTools(false)}>
-              Clear all ({visibleTools.length})
+              {t("Clear all (")}
+              {visibleTools.length})
             </QuickAction>
-            <QuickAction onClick={actions.selectWriteToolsOnly}>Writes only</QuickAction>
+            <QuickAction onClick={actions.selectWriteToolsOnly}>{t("Writes only")}</QuickAction>
           </div>
         </div>
       ) : null}
@@ -187,6 +196,8 @@ function ToolGroup({
 }
 
 function QuickAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  useLocale();
+
   return (
     <button
       type="button"
@@ -208,6 +219,8 @@ export function SessionFilterAside({
   baseDirectory: string;
   onJumpToAnchor: SessionAnchorScrollHandler;
 }) {
+  useLocale();
+
   return (
     <aside className="console-scrollbar hidden min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:block min-[1025px]:max-h-[calc(100dvh-14rem)] min-[1025px]:overflow-y-auto min-[1025px]:overscroll-contain">
       <div className="space-y-4">

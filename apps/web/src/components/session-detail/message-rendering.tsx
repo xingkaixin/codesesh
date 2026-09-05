@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { memo, useMemo, useState } from "react";
 import {
   Bot,
@@ -74,6 +76,8 @@ function renderHighlightedText(text: string, query?: string) {
 }
 
 function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuery?: string }) {
+  useLocale();
+
   return <MarkdownContent text={text} highlightQuery={highlightQuery} />;
 }
 
@@ -98,6 +102,8 @@ export const MessageItem = memo(function MessageItem({
   highlightQuery?: string;
   childSessionById?: ReadonlyMap<string, SessionHead>;
 }) {
+  useLocale();
+
   const isUser = msg.role === "user";
   const isAbortMessage = isCodexTurnAbortedMessage(msg, sessionAgentKey);
   const messageAnchorId = isUser ? buildMessageTimelineAnchorId(messageIndex) : undefined;
@@ -167,7 +173,7 @@ export const MessageItem = memo(function MessageItem({
                 to={getSessionRoutePath(childSession)}
                 className="console-mono rounded-full border border-[var(--brand-line)] px-1.5 py-0.5 text-[10px] text-[var(--brand)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-hover)]"
               >
-                Open sub-session ↗
+                {t("Open sub-session ↗")}
               </Link>
             ) : null}
           </div>
@@ -224,22 +230,23 @@ export const MessageItem = memo(function MessageItem({
             <div className="flex flex-wrap gap-2">
               {msg.tokens?.input ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  INPUT {fmtTokens(msg.tokens.input)}
+                  {t("INPUT")} {fmtTokens(msg.tokens.input)}
                 </span>
               ) : null}
               {msg.tokens?.output ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  OUTPUT {fmtTokens(msg.tokens.output)}
+                  {t("OUTPUT")} {fmtTokens(msg.tokens.output)}
                 </span>
               ) : null}
               {msg.tokens?.reasoning ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  REASONING {fmtTokens(msg.tokens.reasoning)}
+                  {t("REASONING")} {fmtTokens(msg.tokens.reasoning)}
                 </span>
               ) : null}
               {msg.cost ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  {msg.cost_source === "estimated" ? "EST COST" : "COST"} ${msg.cost.toFixed(4)}
+                  {msg.cost_source === "estimated" ? t("EST COST") : t("COST")} $
+                  {msg.cost.toFixed(4)}
                 </span>
               ) : null}
             </div>
@@ -259,6 +266,8 @@ const MessageTextSection = memo(function MessageTextSection({
   parts: Array<{ text: string }>;
   highlightQuery?: string;
 }) {
+  useLocale();
+
   const anchorRef = useTimelineAnchorRef(anchorId);
 
   return (
@@ -277,6 +286,8 @@ const MessageTextSection = memo(function MessageTextSection({
 });
 
 function AbortToolItem() {
+  useLocale();
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-start gap-2">
@@ -285,7 +296,7 @@ function AbortToolItem() {
             <MessageCircleX className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
             <span className="min-w-0 flex-1">
               <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                abort
+                {t("abort")}
               </span>
             </span>
           </div>
@@ -304,6 +315,8 @@ const ReasoningSection = memo(function ReasoningSection({
   parts: ReasoningPart[];
   highlightQuery?: string;
 }) {
+  useLocale();
+
   const [expanded, setExpanded] = useState(false);
   const anchorRef = useTimelineAnchorRef(anchorId);
   const fullText = useMemo(
@@ -328,8 +341,7 @@ const ReasoningSection = memo(function ReasoningSection({
         aria-expanded={expanded}
       >
         <span className="console-mono flex items-center gap-2 text-xs font-medium text-[var(--console-muted)]">
-          <Lightbulb className="size-3.5" />
-          Thinking
+          <Lightbulb className="size-3.5" /> {t("Thinking")}
         </span>
         <span className="text-[var(--console-muted)]">
           <ChevronDown className="motion-chevron w-4 h-4" data-open={expanded || undefined} />
@@ -365,6 +377,8 @@ const ToolsSection = memo(function ToolsSection({
   baseDirectory: string;
   highlightQuery?: string;
 }) {
+  useLocale();
+
   return (
     <div className="space-y-2">
       <div className="space-y-2">
@@ -392,6 +406,8 @@ const PlansSection = memo(function PlansSection({
   parts: PlanPart[];
   highlightQuery?: string;
 }) {
+  useLocale();
+
   const anchorRef = useTimelineAnchorRef(anchorId);
 
   return (
@@ -410,8 +426,14 @@ const PlanItem = memo(function PlanItem({
   part: PlanPart;
   highlightQuery?: string;
 }) {
+  const locale = useLocale();
+
   const [expanded, setExpanded] = useState(false);
-  const display = useMemo(() => buildCodexPlanDisplay(part), [part]);
+  const display = useMemo(
+    () => buildCodexPlanDisplay(part),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, part],
+  );
   const statusMeta =
     display.approvalStatus === "fail" ? TOOL_STATUS_META.error : TOOL_STATUS_META.completed;
   const StatusIcon = statusMeta.icon;
@@ -434,7 +456,7 @@ const PlanItem = memo(function PlanItem({
               <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {display.title}
+                  {t(display.title)}
                 </span>
               </span>
               <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
@@ -449,7 +471,7 @@ const PlanItem = memo(function PlanItem({
               <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {display.title}
+                  {t(display.title)}
                 </span>
               </span>
             </div>
@@ -459,7 +481,7 @@ const PlanItem = memo(function PlanItem({
           className={`console-mono inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.className}`}
         >
           <StatusIcon className="size-3" />
-          {statusMeta.label}
+          {t(statusMeta.label)}
         </span>
       </div>
 
@@ -496,12 +518,16 @@ const ToolItem = memo(function ToolItem({
   baseDirectory?: string;
   highlightQuery?: string;
 }) {
+  const locale = useLocale();
+
   const [expanded, setExpanded] = useState(false);
   const anchorRef = useTimelineAnchorRef(anchorId);
   const state = useMemo(() => normalizeToolState(tool), [tool]);
   const strategy = useMemo(
     () => getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory),
-    [baseDirectory, sessionAgentKey, state, tool],
+
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, baseDirectory, sessionAgentKey, state, tool],
   );
   const inputPreviewText = useMemo(
     () => getDisplayTextWithRelativePaths(state.inputText || "{}", baseDirectory),
@@ -543,7 +569,7 @@ const ToolItem = memo(function ToolItem({
                 <StatusIcon
                   className={`size-2.5 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
                 />
-                {statusMeta.label}
+                {t(statusMeta.label)}
               </span>
               <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
                 <ChevronDown
@@ -569,7 +595,7 @@ const ToolItem = memo(function ToolItem({
                 className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
               >
                 <StatusIcon className="size-2.5" />
-                {statusMeta.label}
+                {t(statusMeta.label)}
               </span>
             </div>
           )}
@@ -581,7 +607,7 @@ const ToolItem = memo(function ToolItem({
           <div className="mt-2 overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
             <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
               <span className="console-mono text-xs text-[var(--console-muted)]">
-                {strategy.contentLabel ?? "Output"}
+                {strategy.contentLabel ?? t("Output")}
               </span>
             </div>
             <div className="space-y-3 bg-[var(--console-surface-sunken)] p-3">
@@ -618,7 +644,7 @@ const ToolItem = memo(function ToolItem({
             {strategy.showInputPreview ? (
               <div className="border-t border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
                 <span className="console-mono text-[11px] text-[var(--console-muted)]">
-                  Input Preview
+                  {t("Input Preview")}
                 </span>
                 <ProgressiveText
                   text={inputPreviewText}

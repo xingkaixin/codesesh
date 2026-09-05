@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { useCallback, useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 import type { SessionTimelineEntry, SessionTimelineEntryKind } from "./timeline";
 
@@ -25,6 +27,8 @@ export function SessionMessageTimelineMinimap({
   viewportRef,
   visibleWindow,
 }: SessionMessageTimelineMinimapProps) {
+  useLocale();
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<{ pointerId: number; grabOffset: number } | null>(null);
 
@@ -113,7 +117,7 @@ export function SessionMessageTimelineMinimap({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round((visibleWindow.start / (1 - visibleWindow.size)) * 100)}
-      aria-label="Timeline scroll position"
+      aria-label={t("Timeline scroll position")}
       tabIndex={0}
       className="session-timeline-minimap relative mt-2 h-2.5 cursor-pointer touch-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]"
       onKeyDown={handleKeyDown}

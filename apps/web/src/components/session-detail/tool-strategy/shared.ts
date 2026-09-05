@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * Cross-agent tool-strategy infrastructure: the default, skill, and file
  * strategy builders reused by 2+ agent builders.
@@ -40,7 +41,7 @@ export function stripClaudeReadNoise(text: string) {
 
 export function extractReadContent(rawOutput: unknown) {
   const rawText = joinToolText(rawOutput, false) || formatToolOutput(rawOutput);
-  if (rawText === "No output captured.") return rawText;
+  if (rawText === t("No output captured.")) return rawText;
 
   const withoutWrapper = stripClaudeReadNoise(
     rawText.replace(/^<file>\s*/i, "").replace(/\s*<\/file>\s*$/i, ""),
@@ -50,7 +51,7 @@ export function extractReadContent(rawOutput: unknown) {
     .filter((line) => !/^\(End of file - total \d+ lines\)$/.test(line.trim()))
     .map((line) => line.replace(/^\d+\|\s?/, "").replace(/^\s*\d+\t/, ""));
   const cleaned = lines.join("\n").trimEnd();
-  return cleaned || "No output captured.";
+  return cleaned || t("No output captured.");
 }
 
 export function extractWriteContent(state: NormalizedToolState) {
@@ -199,12 +200,12 @@ export function buildShellToolStrategy(options: ShellToolStrategyOptions): ToolD
     secondaryText,
     details:
       options.includeCommandDetail && options.command
-        ? [{ label: "Command", value: displayCommand || options.command }]
+        ? [{ label: t("Command"), value: displayCommand || options.command }]
         : options.defaultStrategy.details,
     showInputPreview: false,
     outputContent: {
       kind: "plain",
-      text: options.emptyOutputMarker === outputText ? "No output captured." : outputText,
+      text: options.emptyOutputMarker === outputText ? t("No output captured.") : outputText,
       language: "text",
       isCode: false,
     },

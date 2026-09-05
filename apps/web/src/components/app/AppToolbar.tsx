@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 declare const __APP_VERSION__: string;
 
 import type { Ref } from "react";
@@ -6,6 +8,7 @@ import type { Theme } from "../../hooks/useUiPreferences";
 import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
 import { TimeWindowControl } from "../TimeWindowControl";
 import { SearchControls, type SearchControlsHandle } from "./SearchControls";
+import { LanguageControl } from "./LanguageControl";
 import { ThemeToggle } from "./ThemeToggle";
 
 export interface AppToolbarProps {
@@ -32,6 +35,8 @@ export function AppToolbar({
   onShowShortcuts,
   timeWindow,
 }: AppToolbarProps) {
+  useLocale();
+
   return (
     <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
       <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
@@ -44,15 +49,16 @@ export function AppToolbar({
           </Link>
         </div>
         <SearchControls ref={searchControlsRef} onSubmit={onSubmitSearch} />
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center flex-wrap justify-end gap-2">
+          <LanguageControl />
           <ThemeToggle theme={theme} onChange={onChangeTheme} />
           <button
             type="button"
             onClick={onShowShortcuts}
             className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-            title="Show keyboard shortcuts"
+            title={t("Show keyboard shortcuts")}
           >
-            ?<span className="hidden sm:inline"> Shortcuts</span>
+            ?<span className="hidden sm:inline"> {t("Shortcuts")}</span>
           </button>
           {timeWindow ? (
             <TimeWindowControl

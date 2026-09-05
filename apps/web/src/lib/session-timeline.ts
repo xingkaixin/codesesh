@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 /**
  * View model for the project timeline: keeps a flat session snapshot as
  * day-grouped tree references and derives bounded row pages from it. Pure —
@@ -107,8 +108,8 @@ function referenceOf(session: SessionHead): SessionReference {
 
 function formatDayLabel(dayStart: number, now: number): string {
   const today = startOfCalendarDay(now);
-  if (dayStart === today) return "Today";
-  if (dayStart === addCalendarDays(today, -1)) return "Yesterday";
+  if (dayStart === today) return t("Today");
+  if (dayStart === addCalendarDays(today, -1)) return t("Yesterday");
   const date = new Date(dayStart);
   return formatMonthDay(date.getTime());
 }

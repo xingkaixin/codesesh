@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * Visibility switch for sub-sessions on the project timeline. It only chooses
  * how children are shown — it never changes the parent's aggregates.
@@ -18,15 +20,17 @@ export function SubSessionModeSwitch({
   mode: SubSessionMode;
   onChange: (mode: SubSessionMode) => void;
 }) {
+  useLocale();
+
   return (
     <div className="flex items-center gap-2">
-      <span className="console-eyebrow">Sub-sessions</span>
+      <span className="console-eyebrow">{t("Sub-sessions")}</span>
       <SegmentedControl
-        options={MODE_OPTIONS}
+        options={MODE_OPTIONS.map((option) => ({ ...option, label: t(option.label) }))}
         value={mode}
         onChange={onChange}
         size="sm"
-        ariaLabel="Sub-session display"
+        ariaLabel={t("Sub-session display")}
       />
     </div>
   );

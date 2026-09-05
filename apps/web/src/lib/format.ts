@@ -1,22 +1,24 @@
+import { getLocale } from "../i18n/language";
+import { t } from "../i18n/translate";
 /**
  * Shared display-formatting helpers.
  * Pure functions consumed across Dashboard, Projects, DetailLanding, and session-detail views.
  */
 
 export function formatRelativeTime(timestamp?: number | null) {
-  if (!timestamp) return "unknown";
+  if (!timestamp) return t("unknown");
   const diff = Date.now() - timestamp;
-  if (Number.isNaN(diff) || diff < 0) return "just now";
+  if (Number.isNaN(diff) || diff < 0) return t("just now");
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("just now");
+  if (minutes < 60) return t("{0}m ago", [minutes]);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return t("{0}h ago", [hours]);
+  return t("{0}d ago", [Math.floor(hours / 24)]);
 }
 
 export function formatNumber(value: number) {
-  return value.toLocaleString("en-US");
+  return value.toLocaleString(getLocale());
 }
 
 export function formatMoney(value: number): string {
@@ -26,8 +28,8 @@ export function formatMoney(value: number): string {
 }
 
 export function formatCostSource(source?: "recorded" | "estimated"): string | undefined {
-  if (source === "recorded") return "recorded";
-  if (source === "estimated") return "estimated";
+  if (source === "recorded") return t("recorded");
+  if (source === "estimated") return t("estimated");
   return undefined;
 }
 
@@ -39,7 +41,7 @@ export function formatTokens(n: number) {
 }
 
 export function formatInt(value: number): string {
-  return Math.round(value).toLocaleString("en-US");
+  return Math.round(value).toLocaleString(getLocale());
 }
 
 export function formatCompact(value: number): string {
@@ -50,7 +52,7 @@ export function formatCompact(value: number): string {
 }
 
 export function formatUsd(value: number): string {
-  return `$${value.toLocaleString("en-US", {
+  return `$${value.toLocaleString(getLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -77,15 +79,15 @@ export function formatDelta(current: number, previous: number): string | null {
 
 export function formatRelativeShort(timestamp: number, now: number = Date.now()): string {
   const diff = now - timestamp;
-  if (diff < 60_000) return "just now";
+  if (diff < 60_000) return t("just now");
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("{0}m ago", [minutes]);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("{0}h ago", [hours]);
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const date = new Date(timestamp);
-  if (isSameCalendarDay(date, yesterday)) return "Yesterday";
+  if (isSameCalendarDay(date, yesterday)) return t("Yesterday");
   return formatMonthDay(date.getTime());
 }
 
@@ -146,10 +148,10 @@ export function formatMessageTime(rawTime: number | string | null | undefined): 
 
   if (!date || Number.isNaN(date.getTime())) return null;
 
-  return date.toLocaleTimeString("en-US", {
+  return date.toLocaleTimeString(getLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: true,
+    hour12: getLocale() === "en",
   });
 }

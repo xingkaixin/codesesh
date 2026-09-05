@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { applySessionWindowChanges, formatSessionReference } from "@codesesh/core/contract";
 import {
   hashKey,
@@ -377,7 +378,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     window !== null && projectsQuery.isError
       ? projectsQuery.error instanceof Error
         ? projectsQuery.error.message
-        : "Unable to load projects."
+        : t("Unable to load projects.")
       : null;
   const retryProjects = useCallback(async (): Promise<void> => {
     if (!window) return;
@@ -391,7 +392,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
   const loadFailed =
     (projectionQuery.isError && projectionQuery.data === undefined) ||
     (agentsQuery.isError && agentsQuery.data === undefined);
-  const error = loadFailed ? "Failed to load session data for the selected time window." : null;
+  const error = loadFailed ? t("Failed to load session data for the selected time window.") : null;
 
   return {
     window: hasSessionData ? window : null,
@@ -401,7 +402,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     sessionsError:
       projectionQuery.data !== undefined &&
       (projectionQuery.isError || (!projectionQuery.data.complete && !projectionQuery.isFetching))
-        ? "Session loading failed. Displayed sessions may be incomplete or out of date."
+        ? t("Session loading failed. Displayed sessions may be incomplete or out of date.")
         : null,
     projects,
     projectPage,

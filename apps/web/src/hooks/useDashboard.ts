@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { type AppConfig, type DashboardData, type DashboardFilters } from "../lib/api";
@@ -32,7 +33,7 @@ export function useDashboard(
       isEnabled && query.isError
         ? query.error instanceof Error
           ? query.error.message
-          : "Unable to load dashboard."
+          : t("Unable to load dashboard.")
         : null,
     retry,
   };

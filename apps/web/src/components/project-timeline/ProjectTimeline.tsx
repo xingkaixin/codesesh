@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * Screen 2a — the project timeline. Sessions are grouped by calendar day and
  * every sub-session stays inside its parent's card, so the day axis only ever
@@ -27,10 +29,16 @@ export function ProjectTimeline({
   agentCatalog: AgentCatalog;
   onOpenSession: (reference: SessionReference) => void;
 }) {
+  const locale = useLocale();
+
   const [mode, setMode] = useState<SubSessionMode>("collapsed");
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [pageOffset, setPageOffset] = useState(0);
-  const timeline = useMemo(() => buildProjectTimeline(sessions), [sessions]);
+  const timeline = useMemo(
+    () => buildProjectTimeline(sessions),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, sessions],
+  );
   const page = useMemo(() => getProjectTimelinePage(timeline, pageOffset), [pageOffset, timeline]);
 
   // Mode changes deliberately leave openIds alone: collapsed -> expanded -> collapsed
@@ -44,10 +52,14 @@ export function ProjectTimeline({
   }, []);
 
   return (
-    <section aria-label={`${projectName} timeline`} className="flex flex-col gap-4">
+    <section aria-label={t("{0} timeline", [projectName])} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <span className="console-mono text-[11px] text-[var(--console-muted)]">
-          {`${timeline.mainCount} sessions · ${timeline.subCount} sub-sessions · ${formatCompact(timeline.totalTokens)} tokens`}
+          {t("{0} sessions · {1} sub-sessions · {2} tokens", [
+            timeline.mainCount,
+            timeline.subCount,
+            formatCompact(timeline.totalTokens),
+          ])}
         </span>
         <div className="ml-auto">
           <SubSessionModeSwitch mode={mode} onChange={setMode} />
@@ -56,27 +68,25 @@ export function ProjectTimeline({
 
       {timeline.mainCount > TIMELINE_MAIN_PAGE_SIZE ? (
         <div className="console-mono flex items-center justify-between gap-3 text-[11px] text-[var(--console-muted)]">
-          <span>
-            Page {page.pageNumber} · {page.shown} shown
-          </span>
+          <span>{t("Page {0} · {1} shown", [page.pageNumber, page.shown])}</span>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              aria-label="Previous timeline page"
+              aria-label={t("Previous timeline page")}
               disabled={!page.hasPrevious}
               onClick={() => setPageOffset(page.offset - TIMELINE_MAIN_PAGE_SIZE)}
               className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Previous
+              {t("Previous")}
             </button>
             <button
               type="button"
-              aria-label="Next timeline page"
+              aria-label={t("Next timeline page")}
               disabled={!page.hasNext}
               onClick={() => setPageOffset(page.offset + TIMELINE_MAIN_PAGE_SIZE)}
               className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next
+              {t("Next")}
             </button>
           </div>
         </div>
@@ -98,7 +108,7 @@ export function ProjectTimeline({
 
       {timeline.orphanCount > 0 ? (
         <p className="console-mono text-[10.5px] text-[var(--console-muted)]">
-          {timeline.orphanCount} unmounted sub-sessions · parent file is gone
+          {timeline.orphanCount} {t("unmounted sub-sessions · parent file is gone")}
         </p>
       ) : null}
     </section>

@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 /* eslint-disable react/no-array-index-key */
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -122,6 +124,8 @@ export function SessionDetail({
   highlightQuery,
   childSessions = [],
 }: SessionDetailProps) {
+  const locale = useLocale();
+
   const sessionAgentKey = session.reference.agentName;
   const sessionAgent = findAgent(agentCatalog, sessionAgentKey);
   const displayModel = useMemo(
@@ -133,7 +137,9 @@ export function SessionDetail({
           fileActivity: session.file_activity,
         }),
       ),
-    [session.file_activity, session.messages, sessionAgentKey],
+
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, session.file_activity, session.messages, sessionAgentKey],
   );
   const { messages: messageModels, toc, fileChangeSummary } = displayModel;
   const sessionReference = formatSessionReference(session.reference);
@@ -144,7 +150,9 @@ export function SessionDetail({
       measureSessionDetailWork("SessionDetail:selectDisplayModel", () =>
         displayModel.select(deriveSelectedFilters(toc, filterState.excluded)),
       ),
-    [displayModel, toc, filterState.excluded],
+
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, displayModel, toc, filterState.excluded],
   );
   const { messages: filteredMessages, timelineEntries, visibleUnitCount } = selection;
   const childSessionById = useMemo(
@@ -183,7 +191,7 @@ export function SessionDetail({
         data-testid="session-detail"
         className="mx-auto max-w-4xl rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
-        This session has no displayable messages.
+        {t("This session has no displayable messages.")}
       </div>
     );
   }
@@ -259,7 +267,7 @@ export function SessionDetail({
             </>
           ) : (
             <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
-              No messages match the current filters.
+              {t("No messages match the current filters.")}
             </div>
           )}
           <HiddenToolsFooter
@@ -287,6 +295,8 @@ export function SessionSummarySection({
   summary?: string;
   defaultExpanded?: boolean;
 }) {
+  useLocale();
+
   const content = typeof summary === "string" ? summary.trim() : "";
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -300,8 +310,7 @@ export function SessionSummarySection({
         onClick={() => setExpanded((value) => !value)}
       >
         <span className="console-mono inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
-          <FileText className="size-3.5 text-[var(--console-accent)]" />
-          Session Summary
+          <FileText className="size-3.5 text-[var(--console-accent)]" /> {t("Session Summary")}
         </span>
         {expanded ? (
           <ChevronUp className="size-3.5 text-[var(--console-muted)]" />

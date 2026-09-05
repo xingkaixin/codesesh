@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConfig } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
@@ -21,7 +22,7 @@ export function useAppConfig() {
     config: query.data ?? null,
     loading: query.isPending,
     error: query.isError
-      ? "Failed to load configuration. The CLI may be restarting or unavailable."
+      ? t("Failed to load configuration. The CLI may be restarting or unavailable.")
       : null,
     retry: query.refetch,
   };

@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * DSH tool display strategy — bash/read/write/edit/glob/grep rendering.
  *
@@ -48,7 +49,7 @@ export function buildDshToolStrategy(
         ...shell,
         details: [
           ...shell.details,
-          { label: "Workdir", value: getDisplayPath(workdir, baseDirectory) },
+          { label: t("Workdir"), value: getDisplayPath(workdir, baseDirectory) },
         ],
       };
     }

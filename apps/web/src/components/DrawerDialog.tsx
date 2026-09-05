@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import type { ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { X } from "./ui/icons";
@@ -33,6 +35,8 @@ export function DrawerDialog({
   side?: keyof typeof SIDE_STYLES;
   children: ReactNode;
 }) {
+  useLocale();
+
   const styles = VARIANT_STYLES[variant];
 
   return (
@@ -48,7 +52,7 @@ export function DrawerDialog({
               {title}
             </Dialog.Title>
             <Dialog.Close
-              aria-label={`Close ${title.toLowerCase()}`}
+              aria-label={t("Close {0}", [title.toLowerCase()])}
               className="motion-hover motion-press rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-2 text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
             >
               <X className="size-4" aria-hidden="true" />

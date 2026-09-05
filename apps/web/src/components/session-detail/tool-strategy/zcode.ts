@@ -1,3 +1,4 @@
+import { t } from "../../../i18n/translate";
 /**
  * ZCode tool display strategy — bash/read/edit/write/todo/agent/ask rendering.
  *
@@ -40,11 +41,11 @@ function buildZCodeTodoOutput(todos: unknown[]) {
     counts.set(status, (counts.get(status) ?? 0) + 1);
     const marker = status === "completed" ? "x" : status === "in_progress" ? "~" : " ";
     const suffix = priority ? ` _${priority}_` : "";
-    return `- [${marker}] ${content || "(empty todo)"}${suffix}`;
+    return `- [${marker}] ${content || t("(empty todo)")}${suffix}`;
   });
 
   return {
-    text: lines.join("\n") || "No todos captured.",
+    text: lines.join("\n") || t("No todos captured."),
     summary: [...counts.entries()].map(([status, count]) => `${count} ${status}`).join(" · "),
     details: [...counts.entries()].map(([status, count]) => ({
       label: status,
@@ -120,7 +121,7 @@ function buildZCodeAskUserQuestionDisplay(inputValue: unknown, outputText: strin
   }
 
   return {
-    secondaryText: `${questions.length} question${questions.length === 1 ? "" : "s"}`,
+    secondaryText: t("{0} question{1}", [questions.length, questions.length === 1 ? "" : "s"]),
     outputContent: { kind: "question-list" as const, questions },
   };
 }
@@ -149,7 +150,7 @@ export function buildZCodeToolStrategy(
       description,
       baseDirectory,
       includeCommandDetail: true,
-      emptyOutputMarker: "(Bash completed with no output)",
+      emptyOutputMarker: t("(Bash completed with no output)"),
     });
   }
 
@@ -173,10 +174,10 @@ export function buildZCodeToolStrategy(
       displayPath,
       details: [
         typeof display.additions === "number"
-          ? { label: "Additions", value: String(display.additions) }
+          ? { label: t("Additions"), value: String(display.additions) }
           : null,
         typeof display.deletions === "number"
-          ? { label: "Deletions", value: String(display.deletions) }
+          ? { label: t("Deletions"), value: String(display.deletions) }
           : null,
       ].filter((item): item is ToolDetailItem => item != null),
       outputContent:
@@ -232,9 +233,9 @@ export function buildZCodeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: Bot,
-      title: subagentType ? `agent · ${subagentType}` : "agent",
+      title: subagentType ? t("agent · {0}", [subagentType]) : "agent",
       secondaryText: description || undefined,
-      details: subagentType ? [{ label: "Type", value: subagentType }] : [],
+      details: subagentType ? [{ label: t("Type"), value: subagentType }] : [],
       showInputPreview: false,
       outputContent: {
         kind: "plain",
@@ -263,7 +264,7 @@ export function buildZCodeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: ListTodo,
-      title: toolKey === "enterplanmode" ? "plan mode" : "plan approved",
+      title: toolKey === "enterplanmode" ? t("plan mode") : t("plan approved"),
       secondaryText:
         plan
           .split("\n")
@@ -284,7 +285,7 @@ export function buildZCodeToolStrategy(
     return {
       ...defaultStrategy,
       Icon: FileSearch,
-      title: "web search",
+      title: t("web search"),
       secondaryText: query || undefined,
       showInputPreview: false,
       outputContent: { kind: "plain", text: outputText, language: "markdown", isCode: false },

@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { CodeHighlighter } from "./CodeHighlighter";
 import type { FileSectionItem } from "./types";
 import { UnifiedDiffOutput } from "./UnifiedDiffOutput";
@@ -9,7 +11,7 @@ interface FileSectionsOutputProps {
 }
 
 function renderSectionContent(section: FileSectionItem) {
-  const outputText = section.text || "No output captured.";
+  const outputText = section.text || t("No output captured.");
 
   if (!section.isCode || section.language === "text") {
     return (
@@ -35,6 +37,8 @@ function renderSectionContent(section: FileSectionItem) {
 }
 
 export function FileSectionsOutput({ sections }: FileSectionsOutputProps) {
+  useLocale();
+
   return (
     <div className="space-y-3">
       {sections.map((section) => (

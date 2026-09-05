@@ -1,3 +1,4 @@
+import { t } from "../../i18n/translate";
 /**
  * Tool / message text normalization and the shared NormalizedToolState type.
  *
@@ -55,7 +56,7 @@ export function extractToolMedia(value: unknown) {
     if (record.type !== "image") return [];
     const src = toSafeImageSource(record);
     if (!src) return [];
-    return [{ src, alt: `Tool output image ${index + 1}` }];
+    return [{ src, alt: t("Tool output image {0}", [index + 1]) }];
   });
 }
 
@@ -181,7 +182,7 @@ export function normalizeToolName(part: ToolPart) {
   return normalizeToolLabel(part).trim().toLowerCase();
 }
 
-export function getToolTitle(tool: ToolPart, fallback = "Tool") {
+export function getToolTitle(tool: ToolPart, fallback = t("Tool")) {
   return cleanToolTitle(toPlainText(tool.title)) || toPlainText(tool.tool) || fallback;
 }
 
@@ -189,15 +190,15 @@ export function formatToolOutput(value: unknown) {
   const structuredText = joinToolText(value);
   const text = structuredText || toDisplayText(value);
   const normalized = normalizeEscapedNewlines(text);
-  return normalized || "No output captured.";
+  return normalized || t("No output captured.");
 }
 
 export function getOutputOrErrorText(state: NormalizedToolState) {
   const outputText = formatToolOutput(state.outputValue);
-  if (outputText !== "No output captured.") return outputText;
+  if (outputText !== t("No output captured.")) return outputText;
   const errorText = formatToolOutput(state.errorValue);
-  if (errorText !== "No output captured.") return errorText;
-  return "No output captured.";
+  if (errorText !== t("No output captured.")) return errorText;
+  return t("No output captured.");
 }
 
 // ---------------------------------------------------------------------------
@@ -229,10 +230,10 @@ export function normalizeToolState(part: ToolPart): NormalizedToolState {
 
 export function getAssistantDisplayLabel(msg: Message) {
   const nickname = compactText(msg.nickname);
-  if (msg.role === "assistant" && nickname) return `AGENT (${nickname})`;
-  if (msg.role === "user") return "USER";
-  if (msg.role === "tool") return "TOOL";
-  return "AGENT";
+  if (msg.role === "assistant" && nickname) return t("AGENT ({0})", [nickname]);
+  if (msg.role === "user") return t("USER");
+  if (msg.role === "tool") return t("TOOL");
+  return t("AGENT");
 }
 
 export function normalizeMessagesForDisplay(messages: Message[], sessionAgentKey: string) {

@@ -1,3 +1,4 @@
+import { useLocale } from "../../hooks/useLocale";
 import {
   useCallback,
   useEffect,
@@ -56,6 +57,8 @@ export function MessageList({
   apiRef,
   anchorRegistry,
 }: MessageListProps) {
+  useLocale();
+
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
   useEffect(() => {
@@ -109,6 +112,8 @@ function VirtualizedMessageList({
   apiRef,
   anchorRegistry,
 }: MessageListProps) {
+  const locale = useLocale();
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<ScrollParent | null>(null);
   const [measurementVersion, setMeasurementVersion] = useState(0);
@@ -247,36 +252,40 @@ function VirtualizedMessageList({
     [heightIndex],
   );
 
-  const virtualItems = useMemo(() => {
-    if (messages.length === 0) return [];
-    void measurementVersion;
+  const virtualItems = useMemo(
+    () => {
+      if (messages.length === 0) return [];
+      void measurementVersion;
 
-    const localStart = Math.max(0, viewport.scrollTop - viewport.listTop);
-    const localEnd = localStart + viewport.height;
-    const startIndex = Math.max(
-      0,
-      heightIndex.firstEndAfter(localStart) - VIRTUALIZED_MESSAGE_OVERSCAN,
-    );
-    const endIndex = Math.min(
-      messages.length,
-      heightIndex.firstStartAfter(localEnd) + VIRTUALIZED_MESSAGE_OVERSCAN,
-    );
+      const localStart = Math.max(0, viewport.scrollTop - viewport.listTop);
+      const localEnd = localStart + viewport.height;
+      const startIndex = Math.max(
+        0,
+        heightIndex.firstEndAfter(localStart) - VIRTUALIZED_MESSAGE_OVERSCAN,
+      );
+      const endIndex = Math.min(
+        messages.length,
+        heightIndex.firstStartAfter(localEnd) + VIRTUALIZED_MESSAGE_OVERSCAN,
+      );
 
-    const items: Array<{ index: number; start: number }> = [];
-    for (let index = startIndex; index < endIndex; index += 1) {
-      items.push({ index, start: heightIndex.startAt(index) });
-    }
-
-    const forcedIndex = forcedItem?.heightIndex === heightIndex ? forcedItem.index : null;
-    if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
-      if (!items.some((item) => item.index === forcedIndex)) {
-        items.push({ index: forcedIndex, start: heightIndex.startAt(forcedIndex) });
-        items.sort((a, b) => a.start - b.start);
+      const items: Array<{ index: number; start: number }> = [];
+      for (let index = startIndex; index < endIndex; index += 1) {
+        items.push({ index, start: heightIndex.startAt(index) });
       }
-    }
 
-    return items;
-  }, [forcedItem, heightIndex, measurementVersion, messages.length, viewport]);
+      const forcedIndex = forcedItem?.heightIndex === heightIndex ? forcedItem.index : null;
+      if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
+        if (!items.some((item) => item.index === forcedIndex)) {
+          items.push({ index: forcedIndex, start: heightIndex.startAt(forcedIndex) });
+          items.sort((a, b) => a.start - b.start);
+        }
+      }
+
+      return items;
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, forcedItem, heightIndex, measurementVersion, messages.length, viewport],
+  );
 
   const scrollToIndex = useCallback(
     (index: number) => {
@@ -356,6 +365,8 @@ function VirtualizedMessageRow({
   onMeasure: (index: number, height: number) => void;
   children: ReactNode;
 }) {
+  useLocale();
+
   const rowRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {

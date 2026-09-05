@@ -1,3 +1,4 @@
+import { t } from "../i18n/translate";
 import {
   type QueryClient,
   useMutation,
@@ -199,7 +200,7 @@ export function useBookmarks() {
   const error = bookmarksQuery.isError
     ? bookmarksQuery.error instanceof Error
       ? bookmarksQuery.error.message
-      : "Unable to load bookmarks."
+      : t("Unable to load bookmarks.")
     : null;
 
   return {

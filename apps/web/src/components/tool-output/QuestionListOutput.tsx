@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import type { QuestionListItem } from "./types";
 
 interface QuestionListOutputProps {
@@ -5,6 +7,8 @@ interface QuestionListOutputProps {
 }
 
 export function QuestionListOutput({ questions }: QuestionListOutputProps) {
+  useLocale();
+
   return (
     <div className="space-y-3">
       {questions.map((question) => (
@@ -21,11 +25,11 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
               ) : null}
               {question.answers.length > 0 ? (
                 <span className="console-mono text-[11px] font-semibold text-[var(--console-success)]">
-                  Answered
+                  {t("Answered")}
                 </span>
               ) : (
                 <span className="console-mono text-[11px] font-semibold text-[var(--console-muted)]">
-                  Pending
+                  {t("Pending")}
                 </span>
               )}
             </div>
@@ -55,12 +59,12 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                     </span>
                     {option.recommended ? (
                       <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                        Recommended
+                        {t("Recommended")}
                       </span>
                     ) : null}
                     {isSelected ? (
                       <span className="console-mono rounded-sm border border-[var(--console-success-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-success)]">
-                        Selected
+                        {t("Selected")}
                       </span>
                     ) : null}
                   </div>

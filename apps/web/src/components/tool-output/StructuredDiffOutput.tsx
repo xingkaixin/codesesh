@@ -1,3 +1,4 @@
+import { useLocale } from "../../hooks/useLocale";
 import { useMemo } from "react";
 import { diffToneClass } from "./diff-tone";
 import type { DiffBlock } from "./types";
@@ -89,7 +90,13 @@ function serializeStructuredDiff(blocks: DiffBlock[]) {
 }
 
 export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
-  const totalLines = useMemo(() => getStructuredDiffLineCount(blocks), [blocks]);
+  const locale = useLocale();
+
+  const totalLines = useMemo(
+    () => getStructuredDiffLineCount(blocks),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
+    [locale, blocks],
+  );
   const { budget, renderMore } = useProgressiveRenderBudget(
     blocks,
     INITIAL_CONTENT_RENDER_BUDGETS.diff,

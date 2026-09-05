@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 /**
  * The five headline numbers. Every secondary line is optional by design: a trend
  * without a comparable baseline, or a rate without a denominator, is omitted
@@ -43,6 +45,8 @@ function KpiCard({
   hint?: string;
   emphasis?: boolean;
 }) {
+  useLocale();
+
   return (
     <Panel className={cn("px-4 py-[14px]", emphasis ? "border-[var(--brand-line)]" : null)}>
       <p className="console-eyebrow">{label}</p>
@@ -74,10 +78,10 @@ function KpiCard({
 }
 
 function costHint(totals: DashboardTotals): string {
-  if (totals.costEstimated === 0) return "All recorded by agents";
+  if (totals.costEstimated === 0) return t("All recorded by agents");
   if (totals.costEstimated === totals.cost && totals.cost > 0)
-    return "All estimated from unit price";
-  return `${formatUsd(totals.costEstimated)} estimated`;
+    return t("All estimated from unit price");
+  return t("{0} estimated", [formatUsd(totals.costEstimated)]);
 }
 
 function latestActivityHint(totals: DashboardTotals): string | undefined {
@@ -94,6 +98,8 @@ export function OverviewKpiGrid({
   totals: DashboardTotals;
   rangeDays?: number;
 }) {
+  useLocale();
+
   const previous = totals.previous;
   const delta = (current: number, base: number | undefined) =>
     base === undefined ? null : formatDelta(current, base);
@@ -107,29 +113,29 @@ export function OverviewKpiGrid({
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       <KpiCard
-        label="Sessions"
+        label={t("Sessions")}
         value={formatInt(totals.sessions)}
         trend={sessionsTrend ?? undefined}
-        hint={rangeDays ? `${oneDecimal(totals.sessions / rangeDays)}/day` : undefined}
+        hint={rangeDays ? t("{0}/day", [oneDecimal(totals.sessions / rangeDays)]) : undefined}
       />
       <KpiCard
-        label="Messages"
+        label={t("Messages")}
         value={formatInt(totals.messages)}
         trend={messagesTrend ?? undefined}
         hint={
           totals.sessions > 0
-            ? `${oneDecimal(totals.messages / totals.sessions)}/session`
+            ? t("{0}/session", [oneDecimal(totals.messages / totals.sessions)])
             : undefined
         }
       />
       <KpiCard
-        label="Tokens"
+        label={t("Tokens")}
         value={formatCompact(totals.tokens)}
         trend={tokensTrend ?? undefined}
-        hint={`Cache hit ${formatPercent(totals.cacheReadTokens / totals.tokens)}`}
+        hint={t("Cache hit {0}", [formatPercent(totals.cacheReadTokens / totals.tokens)])}
       />
       <KpiCard
-        label="Cost"
+        label={t("Cost")}
         value={formatUsd(totals.cost)}
         trend={costTrend ?? undefined}
         trendTone={costRising ? "warning" : "positive"}
@@ -137,10 +143,10 @@ export function OverviewKpiGrid({
         emphasis
       />
       <KpiCard
-        label="Last activity"
+        label={t("Last activity")}
         value={
           totals.latestActivity === undefined
-            ? "No activity"
+            ? t("No activity")
             : formatRelativeShort(totals.latestActivity)
         }
         trend={totals.latestActivity === undefined ? undefined : "●"}

@@ -1,8 +1,11 @@
+import { useLocale } from "../../hooks/useLocale";
 import { useState } from "react";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { formatScanStatusLabel } from "../../lib/scan-format";
 
 export function ScanStatusNotice({ visible }: { visible: boolean }) {
+  useLocale();
+
   const scanStatus = useScanStatus();
   const label = formatScanStatusLabel(scanStatus);
   const milestoneKey = scanStatus
@@ -35,6 +38,8 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
 }
 
 function ScanStatusAnnouncement({ visible, label }: { visible: boolean; label: string | null }) {
+  useLocale();
+
   const [announcedLabel] = useState(label);
   return (
     <div className="sr-only" aria-live="polite" aria-atomic="true">

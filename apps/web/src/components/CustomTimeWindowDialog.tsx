@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { Dialog } from "@base-ui/react/dialog";
 import { useState } from "react";
 import { formatIsoDate } from "../lib/scan-format";
@@ -18,6 +20,8 @@ export function CustomTimeWindowDialog({
   customTo?: string;
   onSelectCustom: (from: string, to: string) => void;
 }) {
+  useLocale();
+
   const initialFrom = customFrom ?? (window?.from != null ? formatIsoDate(window.from) : "");
   const initialTo = customTo ?? (window?.to != null ? formatIsoDate(window.to) : null);
 
@@ -46,6 +50,8 @@ function CustomTimeWindowDialogContent({
   onOpenChange: (open: boolean) => void;
   onSelectCustom: (from: string, to: string) => void;
 }) {
+  useLocale();
+
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(() => initialTo ?? formatIsoDate(Date.now()));
 
@@ -54,12 +60,12 @@ function CustomTimeWindowDialogContent({
       <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-[var(--scrim)]" />
       <Dialog.Popup className="motion-modal fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-5 shadow-[var(--shadow-overlay)] outline-none">
         <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
-          Custom time range
+          {t("Custom time range")}
         </Dialog.Title>
-        <p className="mt-1 text-xs text-[var(--console-muted)]">Both dates are included.</p>
+        <p className="mt-1 text-xs text-[var(--console-muted)]">{t("Both dates are included.")}</p>
         <div className="mt-4 grid grid-cols-2 gap-3">
           <label className="console-mono text-[11px] uppercase tracking-wide text-[var(--console-muted)]">
-            From
+            {t("From")}{" "}
             <input
               type="date"
               value={from}
@@ -69,7 +75,7 @@ function CustomTimeWindowDialogContent({
             />
           </label>
           <label className="console-mono text-[11px] uppercase tracking-wide text-[var(--console-muted)]">
-            To
+            {t("To")}{" "}
             <input
               type="date"
               value={to}
@@ -81,7 +87,7 @@ function CustomTimeWindowDialogContent({
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Dialog.Close className="rounded-sm border border-[var(--console-border)] px-3 py-1.5 text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]">
-            Cancel
+            {t("Cancel")}
           </Dialog.Close>
           <button
             type="button"
@@ -92,7 +98,7 @@ function CustomTimeWindowDialogContent({
             }}
             className="rounded-sm border border-[var(--console-accent)] bg-[var(--console-accent)] px-3 py-1.5 text-xs text-[var(--console-accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Apply range
+            {t("Apply range")}
           </button>
         </div>
       </Dialog.Popup>

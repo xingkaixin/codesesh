@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { CodeHighlighter } from "./CodeHighlighter";
 import { FileSectionsOutput } from "./FileSectionsOutput";
 import { MediaOutput } from "./MediaOutput";
@@ -15,6 +17,8 @@ interface ToolOutputRendererProps {
 }
 
 export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
+  useLocale();
+
   if (outputContent.kind === "structured-diff") {
     return <StructuredDiffOutput blocks={outputContent.blocks} />;
   }
@@ -39,7 +43,7 @@ export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
     return <PropertyListOutput items={outputContent.items} />;
   }
 
-  const outputText = outputContent.text || "No output captured.";
+  const outputText = outputContent.text || t("No output captured.");
 
   if (!outputContent.isCode || outputContent.language === "text") {
     return (

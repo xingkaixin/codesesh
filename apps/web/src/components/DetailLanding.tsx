@@ -1,3 +1,6 @@
+import { getLocale } from "../i18n/language";
+import { useLocale } from "../hooks/useLocale";
+import { t } from "../i18n/translate";
 import { memo, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { formatSessionReference } from "@codesesh/core/contract";
@@ -38,6 +41,8 @@ function getSessionTotalTokens(stats: SessionHead["stats"]) {
 }
 
 function LandingCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  useLocale();
+
   return (
     <Panel className="p-4">
       <p className="console-eyebrow">{label}</p>
@@ -48,6 +53,8 @@ function LandingCard({ label, value, hint }: { label: string; value: string; hin
 }
 
 function DiagnosticItem({ label, value }: { label: string; value: string }) {
+  useLocale();
+
   return (
     <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
       <p className="console-eyebrow">{label}</p>
@@ -75,6 +82,8 @@ function MissingStateHero({
   iconColored?: boolean;
   iconAlt?: string;
 }) {
+  useLocale();
+
   return (
     <Panel className="p-5 md:p-6">
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
@@ -100,7 +109,7 @@ function MissingStateHero({
           </p>
         </div>
         <div className="min-w-0 rounded-md border border-dashed border-[var(--console-border)] bg-[var(--console-surface-muted)] px-4 py-3 md:max-w-xs">
-          <p className="console-eyebrow">STATUS NOTE</p>
+          <p className="console-eyebrow">{t("STATUS NOTE")}</p>
           <p className="mt-2 text-sm leading-6 text-[var(--console-text)]">{aside}</p>
         </div>
       </div>
@@ -109,9 +118,11 @@ function MissingStateHero({
 }
 
 function AgentsPanel({ agentItems }: { agentItems: LandingAgentItem[] }) {
+  useLocale();
+
   return (
     <Panel className="p-4">
-      <PanelHeader title="Agents" meta={`${agentItems.length} items`} />
+      <PanelHeader title={t("Agents")} meta={t("{0} items", [agentItems.length])} />
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {agentItems.map((agent) => (
           <li key={agent.key}>
@@ -150,13 +161,17 @@ function RecentSessions({
   isBookmarked: (agentKey: string, sessionId: string) => boolean;
   onToggleBookmark: (session: IndexedSession) => void;
 }) {
+  useLocale();
+
   if (sessions.length === 0) {
-    return <Panel className="p-4 text-sm text-[var(--console-muted)]">No sessions yet</Panel>;
+    return (
+      <Panel className="p-4 text-sm text-[var(--console-muted)]">{t("No sessions yet")}</Panel>
+    );
   }
 
   return (
     <Panel className="p-4">
-      <PanelHeader title="Recent Sessions" meta={`${sessions.length} items`} />
+      <PanelHeader title={t("Recent Sessions")} meta={t("{0} items", [sessions.length])} />
       <ul className="mt-3 space-y-2">
         {sessions.map((session) => {
           const bookmarked = isBookmarked(session.reference.agentName, session.reference.sessionId);
@@ -202,6 +217,8 @@ export const DetailLanding = memo(function DetailLanding({
   onToggleBookmark,
   onRetry,
 }: DetailLandingProps) {
+  useLocale();
+
   const { recentSessions, totalMessages, totalTokens, totalCost, costSource, latestUpdatedAt } =
     useMemo(() => {
       const sortedSessions = sessions.toSorted(
@@ -238,17 +255,19 @@ export const DetailLanding = memo(function DetailLanding({
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
-          code="404 / AGENT"
-          title="This agent isn't on the roster."
-          description="The path you requested is valid in shape, but there is no matching agent in the current registry. It may not be connected yet, or its name may not match what the system recognizes."
-          aside="Choose one of the available agents to continue."
+          code={t("404 / AGENT")}
+          title={t("This agent isn't on the roster.")}
+          description={t(
+            "The path you requested is valid in shape, but there is no matching agent in the current registry. It may not be connected yet, or its name may not match what the system recognizes.",
+          )}
+          aside={t("Choose one of the available agents to continue.")}
         />
 
         <div className="grid gap-3 md:grid-cols-3">
-          <DiagnosticItem label="Requested Agent" value={attemptedAgentKey || "unknown"} />
-          <DiagnosticItem label="Requested Path" value={requestedPath} />
+          <DiagnosticItem label={t("Requested Agent")} value={attemptedAgentKey || "unknown"} />
+          <DiagnosticItem label={t("Requested Path")} value={requestedPath} />
           {attemptedSessionId ? (
-            <DiagnosticItem label="Requested Session" value={attemptedSessionId} />
+            <DiagnosticItem label={t("Requested Session")} value={attemptedSessionId} />
           ) : null}
         </div>
 
@@ -259,17 +278,22 @@ export const DetailLanding = memo(function DetailLanding({
 
   if (type === "missing-session") {
     const agent = activeAgentKey ? findAgent(agentCatalog, activeAgentKey) : undefined;
-    const displayName = agent?.displayName ?? activeAgentKey ?? "Unknown Agent";
+    const displayName = agent?.displayName ?? activeAgentKey ?? t("Unknown Agent");
     const agentIcon = agent?.icon;
     const sessionId = attemptedSessionId || "unknown-session";
 
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
-          code="404 / SESSION"
-          title="This session isn't in the index."
-          description={`${displayName} is available, but the session you're looking for does not exist in the current index. The session ID may be incorrect, or the record may never have been part of this dataset.`}
-          aside="We checked the current path, but nothing matched. The session list on the left is still available."
+          code={t("404 / SESSION")}
+          title={t("This session isn't in the index.")}
+          description={t(
+            "{0} is available, but the session you're looking for does not exist in the current index. The session ID may be incorrect, or the record may never have been part of this dataset.",
+            [displayName],
+          )}
+          aside={t(
+            "We checked the current path, but nothing matched. The session list on the left is still available.",
+          )}
           iconSrc={agentIcon}
           iconColored={agent?.iconColored}
           iconAlt={displayName}
@@ -277,7 +301,7 @@ export const DetailLanding = memo(function DetailLanding({
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
-            <p className="console-eyebrow">Agent</p>
+            <p className="console-eyebrow">{t("Agent")}</p>
             <div className="mt-2 flex items-center gap-2">
               {agentIcon ? (
                 <AgentIcon
@@ -292,7 +316,7 @@ export const DetailLanding = memo(function DetailLanding({
               </p>
             </div>
           </div>
-          <DiagnosticItem label="Session" value={sessionId} />
+          <DiagnosticItem label={t("Session")} value={sessionId} />
         </div>
 
         <RecentSessions
@@ -308,17 +332,19 @@ export const DetailLanding = memo(function DetailLanding({
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
-          code="LOAD / SESSION"
-          title="We couldn't load this session."
-          description="The session request failed before we could determine whether the record exists. It may still be available once the connection or server recovers."
-          aside="Retry this request without leaving the current session path."
+          code={t("LOAD / SESSION")}
+          title={t("We couldn't load this session.")}
+          description={t(
+            "The session request failed before we could determine whether the record exists. It may still be available once the connection or server recovers.",
+          )}
+          aside={t("Retry this request without leaving the current session path.")}
         />
 
         <div className="flex flex-wrap items-end justify-between gap-3 rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">
           <div className="min-w-0 flex-1">
             <DiagnosticItem
-              label="Request Error"
-              value={loadFailureMessage ?? "Unable to load this session."}
+              label={t("Request Error")}
+              value={loadFailureMessage ?? t("Unable to load this session.")}
             />
           </div>
           <button
@@ -326,7 +352,7 @@ export const DetailLanding = memo(function DetailLanding({
             onClick={onRetry}
             className="console-mono shrink-0 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           >
-            Retry
+            {t("Retry")}
           </button>
         </div>
 
@@ -343,12 +369,14 @@ export const DetailLanding = memo(function DetailLanding({
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <div className="grid gap-3 md:grid-cols-3">
-          <LandingCard label="Total Sessions" value={formatNumber(sessions.length)} />
-          <LandingCard label="Total Messages" value={formatNumber(totalMessages)} />
+          <LandingCard label={t("Total Sessions")} value={formatNumber(sessions.length)} />
+          <LandingCard label={t("Total Messages")} value={formatNumber(totalMessages)} />
           <LandingCard
-            label="Latest Activity"
+            label={t("Latest Activity")}
             value={formatRelativeTime(latestUpdatedAt)}
-            hint={latestUpdatedAt ? new Date(latestUpdatedAt).toLocaleString("zh-CN") : undefined}
+            hint={
+              latestUpdatedAt ? new Date(latestUpdatedAt).toLocaleString(getLocale()) : undefined
+            }
           />
         </div>
 
@@ -365,7 +393,7 @@ export const DetailLanding = memo(function DetailLanding({
 
   // type === "agent"
   const activeAgent = activeAgentKey ? findAgent(agentCatalog, activeAgentKey) : undefined;
-  const displayName = activeAgent?.displayName ?? "Unknown Agent";
+  const displayName = activeAgent?.displayName ?? t("Unknown Agent");
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -384,18 +412,18 @@ export const DetailLanding = memo(function DetailLanding({
               {displayName}
             </h3>
             <p className="console-mono text-xs text-[var(--console-muted)]">
-              Select a session from the left to view details
+              {t("Select a session from the left to view details")}
             </p>
           </div>
         </div>
       </Panel>
 
       <div className="grid gap-3 md:grid-cols-4">
-        <LandingCard label="Sessions" value={formatNumber(sessions.length)} />
-        <LandingCard label="Messages" value={formatNumber(totalMessages)} />
-        <LandingCard label="Tokens" value={formatNumber(totalTokens)} />
+        <LandingCard label={t("Sessions")} value={formatNumber(sessions.length)} />
+        <LandingCard label={t("Messages")} value={formatNumber(totalMessages)} />
+        <LandingCard label={t("Tokens")} value={formatNumber(totalTokens)} />
         <LandingCard
-          label="Total Cost"
+          label={t("Total Cost")}
           value={formatMoney(totalCost)}
           hint={formatCostSource(costSource)}
         />

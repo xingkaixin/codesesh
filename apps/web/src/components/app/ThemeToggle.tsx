@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { Monitor, Moon, Sun } from "../ui/icons";
 import type { Theme } from "../../hooks/useUiPreferences";
 
@@ -26,6 +28,8 @@ export function ThemeToggle({
   theme: Theme;
   onChange: (next: Theme) => void;
 }) {
+  useLocale();
+
   const Icon = THEME_ICON[theme];
   const next = THEME_CYCLE[theme];
 
@@ -33,8 +37,8 @@ export function ThemeToggle({
     <button
       type="button"
       onClick={() => onChange(next)}
-      aria-label={`Theme: ${THEME_LABEL[theme]}. Switch to ${THEME_LABEL[next]}.`}
-      title={`Theme: ${THEME_LABEL[theme]} (click for ${THEME_LABEL[next]})`}
+      aria-label={t("Theme: {0}. Switch to {1}.", [t(THEME_LABEL[theme]), t(THEME_LABEL[next])])}
+      title={t("Theme: {0} (click for {1})", [t(THEME_LABEL[theme]), t(THEME_LABEL[next])])}
       className="console-mono motion-hover motion-press rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1.5 text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
     >
       <Icon aria-hidden="true" className="size-4" />

@@ -1,3 +1,5 @@
+import { useLocale } from "../../hooks/useLocale";
+import { t } from "../../i18n/translate";
 import { Dialog } from "@base-ui/react/dialog";
 
 const SHORTCUT_GROUPS = [
@@ -21,6 +23,8 @@ const SHORTCUT_GROUPS = [
 ] as const;
 
 export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useLocale();
+
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <Dialog.Portal>
@@ -28,9 +32,9 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
         <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-5 shadow-[var(--shadow-overlay)] outline-none">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="console-eyebrow">Keyboard Shortcuts</p>
+              <p className="console-eyebrow">{t("Keyboard Shortcuts")}</p>
               <Dialog.Title className="console-display mt-2 text-[19px] font-semibold text-[var(--console-text)]">
-                Navigate without leaving the keyboard
+                {t("Navigate without leaving the keyboard")}
               </Dialog.Title>
             </div>
             <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none">
@@ -41,16 +45,16 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {SHORTCUT_GROUPS.map((group) => (
               <div
-                key={group.title}
+                key={t(group.title)}
                 className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-4"
               >
-                <h3 className="console-eyebrow">{group.title}</h3>
+                <h3 className="console-eyebrow">{t(group.title)}</h3>
                 <div className="mt-3 space-y-3">
                   {group.items.map((item) => (
                     <div key={item.keys}>
                       <p className="console-mono text-xs text-[var(--console-text)]">{item.keys}</p>
                       <p className="mt-1 text-[13px] leading-6 text-[var(--console-text-secondary)]">
-                        {item.description}
+                        {t(item.description)}
                       </p>
                     </div>
                   ))}
