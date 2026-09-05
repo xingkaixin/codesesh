@@ -77,6 +77,8 @@ export interface PricingResolver {
 export const pricingResolver: PricingResolver = {
   resolve(rawModelName: string): ModelPricing | null {
     const registry = getPricingRegistry();
+    const exact = registry.get(normalizeModelKey(rawModelName));
+    if (exact && hasBillablePricing(exact)) return exact;
     const candidates = getCandidates(rawModelName);
 
     for (const candidate of candidates) {

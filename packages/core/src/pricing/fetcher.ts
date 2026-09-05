@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { ensurePrivateDirectory, restrictPrivateFile } from "../utils/private-storage.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import { MODELS_DEV_URL, parseModelsDevPricing } from "./models-dev.js";
 import snapshotData from "./data/snapshot.json";
 
 export interface ModelPricing {
@@ -17,19 +18,7 @@ export interface ModelPricing {
 
 type SnapshotEntry = [number, number, number | null, number | null, number?, number?];
 
-interface LiteLLMEntry {
-  input_cost_per_token?: number;
-  output_cost_per_token?: number;
-  cache_creation_input_token_cost?: number;
-  cache_read_input_token_cost?: number;
-  output_reasoning_cost_per_token?: number;
-  web_search_cost_per_request?: unknown;
-  search_context_cost_per_query?: unknown;
-}
-
-const LITELLM_URL =
-  "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 60 * 60 * 1000;
 const WEB_SEARCH_COST = 0.01;
 const REFRESH_TIMEOUT_MS = 10_000;
 
@@ -46,6 +35,7 @@ export interface PricingGeneration {
 let published = createPricingGeneration(loadSnapshot());
 /** A completed refresh waiting for a safe point to become current. */
 let pending: Map<string, ModelPricing> | null = null;
+let refreshInFlight: Promise<boolean> | null = null;
 published = readDiskCache() ?? published;
 
 export function normalizeModelKey(key: string): string {
@@ -79,7 +69,7 @@ function getCacheDir() {
 }
 
 function getCachePath() {
-  return join(getCacheDir(), "litellm-pricing.json");
+  return join(getCacheDir(), "models-dev-pricing.json");
 }
 
 function loadSnapshot(): Map<string, ModelPricing> {
@@ -99,30 +89,20 @@ function loadSnapshot(): Map<string, ModelPricing> {
   return map;
 }
 
-function parseLiteLLMEntry(entry: LiteLLMEntry): ModelPricing | null {
-  return normalizePricing({
-    inputCostPerToken: entry.input_cost_per_token,
-    outputCostPerToken: entry.output_cost_per_token,
-    cacheCreateCostPerToken: entry.cache_creation_input_token_cost,
-    cacheReadCostPerToken: entry.cache_read_input_token_cost,
-    reasoningCostPerToken: entry.output_reasoning_cost_per_token,
-    webSearchCostPerRequest:
-      entry.web_search_cost_per_request ?? entry.search_context_cost_per_query,
-  });
-}
-
-function normalizePricing(raw: Record<string, unknown>): ModelPricing | null {
-  const input = costNumber(raw["inputCostPerToken"]);
-  const output = costNumber(raw["outputCostPerToken"]);
+function normalizePricing(raw: unknown): ModelPricing | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const values = raw as Record<string, unknown>;
+  const input = costNumber(values["inputCostPerToken"]);
+  const output = costNumber(values["outputCostPerToken"]);
   if (input === undefined || output === undefined) return null;
 
   return {
     inputCostPerToken: input,
     outputCostPerToken: output,
-    cacheCreateCostPerToken: costNumber(raw["cacheCreateCostPerToken"]) ?? input * 1.25,
-    cacheReadCostPerToken: costNumber(raw["cacheReadCostPerToken"]) ?? input * 0.1,
-    reasoningCostPerToken: costNumber(raw["reasoningCostPerToken"]) ?? output,
-    webSearchCostPerRequest: costNumber(raw["webSearchCostPerRequest"]) ?? WEB_SEARCH_COST,
+    cacheCreateCostPerToken: costNumber(values["cacheCreateCostPerToken"]) ?? input * 1.25,
+    cacheReadCostPerToken: costNumber(values["cacheReadCostPerToken"]) ?? input * 0.1,
+    reasoningCostPerToken: costNumber(values["reasoningCostPerToken"]) ?? output,
+    webSearchCostPerRequest: costNumber(values["webSearchCostPerRequest"]) ?? WEB_SEARCH_COST,
   };
 }
 
@@ -137,38 +117,32 @@ function indexPricing(map: Map<string, ModelPricing>, name: string, pricing: Mod
   }
 }
 
-function parseLiteLLMData(data: Record<string, LiteLLMEntry>): Map<string, ModelPricing> {
-  const map = new Map<string, ModelPricing>();
-  for (const [name, entry] of Object.entries(data)) {
-    const pricing = parseLiteLLMEntry(entry);
-    if (pricing) indexPricing(map, name, pricing);
-  }
-  return map;
-}
-
 interface PricingCache {
   timestamp: number;
   data: Record<string, Record<string, unknown>>;
 }
 
-function readDiskCache(): PricingGeneration | null {
+function readDiskCache(requireFresh = false): PricingGeneration | null {
   const path = getCachePath();
   if (!existsSync(path)) return null;
 
   try {
     const cached = JSON.parse(readFileSync(path, "utf-8")) as PricingCache;
-    if (!Number.isFinite(cached.timestamp)) return null;
+    if (!Number.isFinite(cached.timestamp) || cached.timestamp > Date.now()) return null;
+    if (requireFresh && Date.now() - cached.timestamp >= CACHE_TTL_MS) return null;
     if (cached.data == null || typeof cached.data !== "object" || Array.isArray(cached.data)) {
       return null;
     }
 
     const next = loadSnapshot();
+    let validEntries = 0;
     for (const [name, rawPricing] of Object.entries(cached.data)) {
       const pricing = normalizePricing(rawPricing);
       if (!pricing) continue;
       next.set(normalizeModelKey(name), pricing);
+      validEntries++;
     }
-    return createPricingGeneration(next);
+    return validEntries > 0 ? createPricingGeneration(next) : null;
   } catch {
     return null;
   }
@@ -270,28 +244,24 @@ export interface RefreshPricingOptions {
  * {@link publishPendingPricing}, so an in-flight scan keeps the prices it
  * started with.
  */
-export async function refreshPricingCache(options: RefreshPricingOptions = {}): Promise<boolean> {
-  const path = getCachePath();
-  if (existsSync(path)) {
-    try {
-      const cached = JSON.parse(readFileSync(path, "utf-8")) as { timestamp?: number };
-      if (typeof cached.timestamp === "number" && Date.now() - cached.timestamp <= CACHE_TTL_MS) {
-        return false;
-      }
-    } catch {
-      // refresh malformed cache
-    }
-  }
+export function refreshPricingCache(options: RefreshPricingOptions = {}): Promise<boolean> {
+  refreshInFlight ??= fetchPricing(options).finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+async function fetchPricing(options: RefreshPricingOptions): Promise<boolean> {
+  if (pending || readDiskCache(true)) return false;
 
   const timeout = AbortSignal.timeout(options.timeoutMs ?? REFRESH_TIMEOUT_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
   getCoreDiagnostics()?.info?.("pricing.refresh.started", { generation: published.id });
   try {
-    const response = await fetch(LITELLM_URL, { signal });
+    const response = await fetch(MODELS_DEV_URL, { signal });
     if (!response.ok) return false;
-    const data = (await response.json()) as Record<string, LiteLLMEntry>;
-    const remote = parseLiteLLMData(data);
+    const remote = parseModelsDevPricing(await response.json());
     if (remote.size === 0) return false;
 
     const next = loadSnapshot();
