@@ -254,11 +254,19 @@ export function filterSessionTreeByActivityWindow<T extends SessionHead>(
   sessions: T[],
   from?: number,
   to?: number,
-  tree: SessionTree = buildSessionTree(sessions),
+  tree?: SessionTree,
 ): T[] {
   if (from == null && to == null) return sessions;
 
-  const pending = filterSessionTreeEntriesByActivityWindow(tree, from, to);
+  if (tree === undefined && sessions.every((session) => hasActivityInWindow(session, from, to))) {
+    return [...sessions];
+  }
+
+  const pending = filterSessionTreeEntriesByActivityWindow(
+    tree ?? buildSessionTree(sessions),
+    from,
+    to,
+  );
 
   const visible = new Set<string>();
   while (pending.length > 0) {

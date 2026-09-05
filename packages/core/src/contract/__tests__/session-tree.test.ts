@@ -530,6 +530,40 @@ describe("session tree window filtering", () => {
     }
   });
 
+  it("does not compute tree statistics when every session is already in the window", () => {
+    let statsReads = 0;
+    const root = makeSession("root", 0);
+    const stats = root.stats;
+    Object.defineProperty(root, "stats", {
+      get: () => {
+        statsReads++;
+        return stats;
+      },
+    });
+    const sessions = [root, makeSession("child", 1, { parent: "root" })];
+    expect(filterSessionTreeByActivityWindow(sessions)).toBe(sessions);
+    const bounded = filterSessionTreeByActivityWindow(sessions, 0, 1);
+    expect(bounded).toEqual(sessions);
+    expect(bounded).not.toBe(sessions);
+    expect(statsReads).toBe(0);
+  });
+
+  it("respects a supplied tree even when all input activity is in range", () => {
+    const root = makeSession("root", 10);
+    const child = makeSession("child", 20, { parent: "root" });
+    const suppliedTree = buildSessionTree([root]);
+    expect(filterSessionTreeByActivityWindow([root, child], 0, 100, suppliedTree)).toEqual([root]);
+  });
+
+  it("retains order, duplicates and cycles on the fully included path", () => {
+    const a = makeSession("a", 1, { parent: "b" });
+    const b = makeSession("b", 2, { parent: "a" });
+    const sessions = [b, a, b];
+    expect(filterSessionTreeByActivityWindow(sessions, 0, 10)).toEqual(
+      filterSessionTreeByActivityWindow(sessions, 0, 10, buildSessionTree(sessions)),
+    );
+  });
+
   it("preserves all-history behavior and treats a zero lower bound as present", () => {
     const initial = [makeSession("zero", 0)];
     const added = makeSession("added", 1);
