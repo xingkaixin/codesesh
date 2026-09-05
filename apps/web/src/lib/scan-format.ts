@@ -86,48 +86,8 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (failedAgent) {
     return `Session refresh failed · ${failedAgent.agentName}${failedAgent.error ? ` · ${failedAgent.error}` : ""}`;
   }
-  if (status.active) {
-    const completed = status.completedAgents.length;
-    const total = status.totalAgents;
-    const current = status.scanningAgents[0];
-    const currentStatus = current ? status.agentStatuses[current] : null;
-    const itemProgress =
-      (currentStatus?.status === "scanning" || currentStatus?.status === "finalizing") &&
-      currentStatus.total &&
-      currentStatus.processed != null
-        ? ` · ${currentStatus.processed}/${currentStatus.total}`
-        : "";
-    const agentProgress =
-      total > 0
-        ? current
-          ? ` · ${current}${itemProgress} · ${completed}/${total} agents ready`
-          : ` · ${completed}/${total} agents ready`
-        : "";
-    const stageLabel =
-      currentStatus?.status === "publish-queued"
-        ? "Session publication queued"
-        : currentStatus?.status === "finalizing"
-          ? "Finalizing session metadata"
-          : currentStatus?.status === "publishing" ||
-              currentStatus?.status === "indexing" ||
-              status.phase === "publishing" ||
-              status.phase === "indexing"
-            ? "Publishing session updates"
-            : "Checking for new or changed sessions";
-
-    if (status.phase === "initializing") {
-      return `Initializing recent sessions${agentProgress}`;
-    }
-    if (status.phase === "publishing" || status.phase === "indexing") {
-      return `${stageLabel}${agentProgress}`;
-    }
-
-    if (total > 0) {
-      return current
-        ? `${stageLabel} · ${current}${itemProgress} · ${completed}/${total} agents ready`
-        : `Checking for new or changed sessions · ${completed}/${total} agents ready`;
-    }
-    return "Checking for new or changed sessions";
+  if (status.active && status.phase === "initializing") {
+    return "Initializing recent sessions";
   }
 
   const partialBackfill = Object.entries(status.backfill?.partialAgents ?? {}).find(
@@ -149,11 +109,6 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
     return `Session refresh completed with partial data · ${partialAgent.agentName}${detail ? ` · ${detail}` : ""}`;
   }
 
-  if (status.searchIndexMaintenance?.active) {
-    const current = status.searchIndexMaintenance.currentAgent;
-    const remaining = status.searchIndexMaintenance.remaining;
-    return `Updating search index in background${current ? ` · ${current}` : ""}${remaining != null ? ` · ${remaining} remaining` : ""}`;
-  }
   if (status.searchIndexMaintenance?.failedAgents.length) {
     return `Background search index maintenance paused · ${status.searchIndexMaintenance.failedAgents.join(", ")}`;
   }
