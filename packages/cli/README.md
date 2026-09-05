@@ -23,6 +23,7 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 - **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
 - **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
+- **UI languages** — English, Simplified Chinese, and Japanese. Follows your browser language by default; use the language selector in the top toolbar to switch and save your preference. Session content and code stay in their original language.
 - **Dashboard & Activity Trends** — See totals, daily activity, agent distribution, model usage, token trends, smart tags, bookmarks, and recent sessions
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
 - **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent

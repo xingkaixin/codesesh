@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.0.6] - 2026-09-05
+
+This release adds full UI localization in English, Simplified Chinese, and Japanese with persistent preferences, fetches and caches up-to-date model pricing from models.dev before scanning, redesigns the product site with a product changelog and interactive session globe, accelerates all-time analytics reads and session tree traversals, ignores non-session Cursor watch events, keeps background refresh notices quiet, and fixes dashboard chart tooltips, pagination snapshot retention, and bookmark synchronization.
+
+### Features
+
+- Added complete UI localization across English, Simplified Chinese, and Japanese with automatic browser language detection, persistent user preferences, and localized tool fallbacks and summary labels. (#588)
+- Added cached model pricing from models.dev, refreshed before session scanning to keep token cost estimations current. (#581)
+- Redesigned the product landing page with an interactive WebGL session globe, structured section artwork, and a dedicated product changelog in English, Chinese, and Japanese. (#568, #569, #572)
+
+### Performance
+
+- Covered message usage reads with a database index and shared all-time cost calculations across API routes, speeding up full-history analytics requests. (#586)
+- Ignored Cursor shared-memory file watch events and skipped unchanged full-scan publications, eliminating redundant session refresh cycles. (#587)
+- Skipped unnecessary session window trees and visited shared ancestors only once during hierarchical traversals. (#584, #585)
+- Resolved model pricing lookups using boundary prefix matching to streamline price resolution. (#583)
+
+### Bug Fixes
+
+- Repaired dashboard chart tooltips by constraining daily tooltips within chart bounds and adding tooltips to the agent distribution chart. (#595)
+- Kept background refresh notices quiet so automated refreshes run without unnecessary interruption. (#582)
+- Retained snapshots across pagination requests to prevent inconsistent views during cursor traversal. (#580)
+- Refreshed bookmark views during live synchronization and preserved confirmed bookmark writes against concurrent loss. (#577, #579)
+- Surfaced bookmark storage read failures explicitly rather than masking them. (#578)
+
+### Refactor
+
+- Removed unused UI helpers, route decoding wrappers, file classification wrappers, scan progress formatters, Codex text helpers, and path extraction utilities. (#589, #590, #591, #592, #593, #594)
+
+### Build
+
+- Upgraded pnpm to 11.25.0 and Vitest to version 5. (#575, #576)
+- Upgraded production dependencies `hono` to 4.13.5, `@tanstack/react-query` to 5.102.8, `react-router-dom` to 7.18.3, `astro` to 7.2.9, `vite` to 8.2.2, and `open` to 11.0.2. (#571)
+- Upgraded development dependencies `oxfmt` to 0.65.0, `oxlint` to 1.80.0, `turbo` to 2.10.12, and `typescript-eslint` to 8.68.0. (#573)
+- Upgraded GitHub Action `softprops/action-gh-release` to 3.0.3. (#570)
+
+### Documentation
+
+- Refreshed agent instructions and workflow documentation. (#574)
+
 ## [1.0.5] - 2026-08-31
 
 This release adds copying sessions as Markdown from action menus and Umami analytics on the landing page, avoids full search-index rebuilds during refresh, loads cold session details in background workers, correlates and protects local diagnostic logs, and improves live session and project state consistency across reloads.
