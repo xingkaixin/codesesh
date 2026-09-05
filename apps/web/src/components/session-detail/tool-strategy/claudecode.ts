@@ -114,7 +114,7 @@ function buildSendMessageOutput(input: Record<string, unknown>, state: Normalize
     { label: t("Message"), value: toStringValue(input.message) || toStringValue(input.content) },
     { label: t("Delivery"), value: delivery },
   ];
-  return items.filter((item) => item.value && item.value !== "No output captured.");
+  return items.filter((item) => item.value && item.value !== t("No output captured."));
 }
 
 export function buildClaudeToolStrategy(

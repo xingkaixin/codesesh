@@ -195,9 +195,9 @@ export function formatToolOutput(value: unknown) {
 
 export function getOutputOrErrorText(state: NormalizedToolState) {
   const outputText = formatToolOutput(state.outputValue);
-  if (outputText !== "No output captured.") return outputText;
+  if (outputText !== t("No output captured.")) return outputText;
   const errorText = formatToolOutput(state.errorValue);
-  if (errorText !== "No output captured.") return errorText;
+  if (errorText !== t("No output captured.")) return errorText;
   return t("No output captured.");
 }
 
@@ -231,9 +231,9 @@ export function normalizeToolState(part: ToolPart): NormalizedToolState {
 export function getAssistantDisplayLabel(msg: Message) {
   const nickname = compactText(msg.nickname);
   if (msg.role === "assistant" && nickname) return t("AGENT ({0})", [nickname]);
-  if (msg.role === "user") return "USER";
-  if (msg.role === "tool") return "TOOL";
-  return "AGENT";
+  if (msg.role === "user") return t("USER");
+  if (msg.role === "tool") return t("TOOL");
+  return t("AGENT");
 }
 
 export function normalizeMessagesForDisplay(messages: Message[], sessionAgentKey: string) {

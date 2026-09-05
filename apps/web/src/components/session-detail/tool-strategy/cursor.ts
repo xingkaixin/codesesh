@@ -83,7 +83,7 @@ export function buildCursorToolStrategy(
       displayPath,
       text: content,
       details:
-        content === "No output captured."
+        content === t("No output captured.")
           ? [
               {
                 label: t("Lines"),
@@ -91,7 +91,7 @@ export function buildCursorToolStrategy(
               },
             ]
           : [],
-      isCode: content !== "No output captured.",
+      isCode: content !== t("No output captured."),
     });
   }
 

@@ -1,5 +1,8 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  USER: ["用户", "ユーザー"],
+  TOOL: ["工具", "ツール"],
+  AGENT: ["智能体", "エージェント"],
   Dashboard: ["概览", "ダッシュボード"],
   Projects: ["项目", "プロジェクト"],
   Project: ["项目", "プロジェクト"],

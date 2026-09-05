@@ -41,7 +41,7 @@ export function stripClaudeReadNoise(text: string) {
 
 export function extractReadContent(rawOutput: unknown) {
   const rawText = joinToolText(rawOutput, false) || formatToolOutput(rawOutput);
-  if (rawText === "No output captured.") return rawText;
+  if (rawText === t("No output captured.")) return rawText;
 
   const withoutWrapper = stripClaudeReadNoise(
     rawText.replace(/^<file>\s*/i, "").replace(/\s*<\/file>\s*$/i, ""),

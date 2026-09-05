@@ -1,3 +1,9 @@
+import {
+  getOutputOrErrorText,
+  normalizeToolState,
+} from "../components/session-detail/tool-normalize";
+import { getToolDisplayStrategy } from "../components/session-detail/tool-strategy";
+import type { ToolPart } from "../lib/api";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
@@ -137,4 +143,43 @@ describe("message catalog", () => {
     );
     expect(t("Unknown custom text", [], "ja")).toBe("Unknown custom text");
   });
+});
+
+describe("localized tool output", () => {
+  it.each(["en", "zh-CN", "ja"] as const)(
+    "preserves error fallbacks and empty Cursor output in %s",
+    (locale) => {
+      setLanguagePreference(locale);
+      const failed: ToolPart = {
+        type: "tool",
+        tool: "command",
+        state: { status: "error", error: "Permission denied: /original/path" },
+      };
+      expect(getOutputOrErrorText(normalizeToolState(failed))).toBe(
+        "Permission denied: /original/path",
+      );
+
+      const empty: ToolPart = {
+        type: "tool",
+        tool: "read_file_v2",
+        state: {
+          status: "completed",
+          input: { target_file: "/original/file.ts" },
+          output: { totalLinesInFile: "5" },
+        },
+      };
+      const display = getToolDisplayStrategy(
+        "cursor",
+        empty,
+        normalizeToolState(empty),
+        "/original",
+      );
+      expect(display.outputContent).toMatchObject({
+        kind: "plain",
+        text: t("No output captured."),
+        isCode: false,
+      });
+      expect(display.details).toContainEqual({ label: t("Lines"), value: "5" });
+    },
+  );
 });
