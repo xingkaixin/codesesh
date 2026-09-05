@@ -236,6 +236,8 @@ listener directly. The printed and automatically opened startup URL uses `--publ
 Using `--remote-access` without either TLS option still starts on a non-loopback address and prints
 a warning that the transport is unencrypted.
 
+Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.cache/codesesh/models-dev-pricing.json` for one hour. Startup reuses valid cached prices; missing or expired prices are refreshed before scanning, with a 10-second timeout. Network failures fall back to stale cached or bundled prices. Subsequent scans recalculate previously unpriced sessions when their model prices become available.
+
 ---
 
 ## Web UI Walkthrough

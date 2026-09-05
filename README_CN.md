@@ -206,6 +206,8 @@ npx codesesh -j
 生成新的访问 token，并将其包含在输出 URL 中。请将该 URL 视为密码，不要公开或保存到
 共享的 shell 历史记录中。
 
+模型估算价格来自 [models.dev](https://models.dev/api.json)，缓存在 `~/.cache/codesesh/models-dev-pricing.json`，有效期为 1 小时。启动时复用有效缓存；缓存过期或缺失时，在扫描前刷新，最多等待 10 秒。网络失败时继续使用旧缓存或内置价格。新模型定价可用后，后续扫描会重新计算此前缺少定价的会话。
+
 ---
 
 ## Web UI 说明

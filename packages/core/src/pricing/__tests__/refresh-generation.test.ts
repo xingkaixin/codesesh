@@ -12,22 +12,21 @@ vi.mock("node:os", async (importOriginal) => {
 
 const { setCoreDiagnostics } = await import("../../utils/diagnostics.js");
 const { estimateTokenCost } = await import("../../utils/cost.js");
-const {
-  getPricingGeneration,
-  getPricingRegistry,
-  hasPendingPricing,
-  publishPendingPricing,
-  refreshPricingCache,
-} = await import("../fetcher.js");
+const { getPricingGeneration, hasPendingPricing, publishPendingPricing, refreshPricingCache } =
+  await import("../fetcher.js");
 
 const MODEL = "claude-sonnet-4-5";
 const MILLION_INPUT = { input: 1_000_000, output: 0 };
-const cachePath = join(testHome, ".cache", "codesesh", "litellm-pricing.json");
+const cachePath = join(testHome, ".cache", "codesesh", "models-dev-pricing.json");
 
 /** A remote payload that moves this model's price to an unmistakable value. */
 function remotePricing(inputCost: number) {
   return {
-    [MODEL]: { input_cost_per_token: inputCost, output_cost_per_token: inputCost },
+    anthropic: {
+      models: {
+        [MODEL]: { cost: { input: inputCost * 1_000_000, output: inputCost * 1_000_000 } },
+      },
+    },
   };
 }
 
@@ -45,6 +44,62 @@ afterEach(() => {
 });
 
 describe("CS-148: pricing generations", () => {
+  it("reuses fresh prices across process restarts without fetching", async () => {
+    stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000123) }));
+    await refreshPricingCache();
+    publishPendingPricing();
+    vi.resetModules();
+    const restarted = await import("../fetcher.js");
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    expect(await restarted.refreshPricingCache()).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(restarted.getPricingRegistry().get(MODEL)?.inputCostPerToken).toBe(0.000123);
+  });
+
+  it("refreshes an expired cache and makes a previously missing model priceable", async () => {
+    stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000123) }));
+    await refreshPricingCache();
+    publishPendingPricing();
+    const cache = JSON.parse(readFileSync(cachePath, "utf8"));
+    cache.timestamp = Date.now() - 60 * 60 * 1000;
+    writeFileSync(cachePath, JSON.stringify(cache));
+    vi.resetModules();
+    const restarted = await import("../fetcher.js");
+    const { pricingBecameAvailable } = await import("../cost.js");
+    const missing = ["brand-new-model"];
+    expect(pricingBecameAvailable(missing)).toBe(false);
+    const fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        openai: { models: { "brand-new-model": { cost: { input: 2, output: 8 } } } },
+      }),
+    }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await restarted.refreshPricingCache()).toBe(true);
+    expect(fetch).toHaveBeenCalledWith("https://models.dev/api.json", expect.any(Object));
+    expect(pricingBecameAvailable(missing)).toBe(false);
+    restarted.publishPendingPricing();
+    expect(pricingBecameAvailable(missing)).toBe(true);
+  });
+
+  it.each([{}, { bad: null }, { bad: { inputCostPerToken: -1 } }])(
+    "refreshes a fresh but unusable cache: %j",
+    async (data) => {
+      mkdirSync(join(testHome, ".cache", "codesesh"), { recursive: true });
+      writeFileSync(cachePath, JSON.stringify({ timestamp: Date.now(), data }));
+      stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000123) }));
+      expect(await refreshPricingCache()).toBe(true);
+    },
+  );
+
+  it("shares concurrent refresh requests", async () => {
+    const fetch = vi.fn(async () => ({ ok: true, json: async () => remotePricing(0.000123) }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await Promise.all([refreshPricingCache(), refreshPricingCache()])).toEqual([true, true]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("loads stale cache data and derives generation identity from its content", async () => {
     mkdirSync(join(testHome, ".cache", "codesesh"), { recursive: true });
     writeFileSync(
@@ -88,6 +143,9 @@ describe("CS-148: pricing generations", () => {
   });
 
   it("CS-194: keeps parent and isolated worker pricing on one generation", async () => {
+    vi.resetModules();
+    const { getPricingGeneration, getPricingRegistry, refreshPricingCache, publishPendingPricing } =
+      await import("../fetcher.js");
     const generationBefore = getPricingGeneration().id;
     const pricingBefore = getPricingRegistry().get(MODEL);
     stubFetch(async () => ({ ok: true, json: async () => remotePricing(0.000777) }));
@@ -112,17 +170,17 @@ describe("CS-148: pricing generations", () => {
     [
       "zero input or output prices",
       {
-        "input-only": { input_cost_per_token: 0.000001, output_cost_per_token: 0 },
-        "output-only": { input_cost_per_token: 0, output_cost_per_token: 0.000002 },
-        free: { input_cost_per_token: 0, output_cost_per_token: 0 },
+        "input-only": { input: 0.000001, output: 0 },
+        "output-only": { input: 0, output: 0.000002 },
+        free: { input: 0, output: 0 },
       },
     ],
     [
       "nested provider prefixes",
       {
         "provider/vendor/chat-model": {
-          input_cost_per_token: 0.000001,
-          output_cost_per_token: 0.000002,
+          input: 0.000001,
+          output: 0.000002,
         },
       },
     ],
@@ -130,12 +188,10 @@ describe("CS-148: pricing generations", () => {
       "invalid optional prices",
       {
         "fallback-prices": {
-          input_cost_per_token: 0.000001,
-          output_cost_per_token: 0.000002,
-          cache_creation_input_token_cost: Infinity,
-          cache_read_input_token_cost: NaN,
-          output_reasoning_cost_per_token: -1,
-          web_search_cost_per_request: Infinity,
+          input: 0.000001,
+          output: 0.000002,
+          cache_write: Infinity,
+          cache_read: NaN,
         },
       },
     ],
@@ -144,15 +200,22 @@ describe("CS-148: pricing generations", () => {
     const parentPricing = await import("../fetcher.js");
     vi.resetModules();
     const existingWorkerPricing = await import("../fetcher.js");
-    stubFetch(async () => ({ ok: true, json: async () => data }));
+    stubFetch(async () => ({
+      ok: true,
+      json: async () => ({
+        test: {
+          models: Object.fromEntries(Object.entries(data).map(([name, cost]) => [name, { cost }])),
+        },
+      }),
+    }));
 
     expect(await parentPricing.refreshPricingCache()).toBe(true);
     expect(parentPricing.publishPendingPricing()).toBe(true);
     const publishedGeneration = parentPricing.getPricingGeneration();
     for (const [name, entry] of Object.entries(data)) {
       expect(publishedGeneration.pricing.get(name)).toMatchObject({
-        inputCostPerToken: entry.input_cost_per_token,
-        outputCostPerToken: entry.output_cost_per_token,
+        inputCostPerToken: entry.input / 1_000_000,
+        outputCostPerToken: entry.output / 1_000_000,
       });
     }
     existingWorkerPricing.synchronizePricingGeneration(publishedGeneration.id);
