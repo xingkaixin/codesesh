@@ -9,9 +9,10 @@ import { useMemo, useState } from "react";
 
 import type { BarHover } from "../../hooks/useBarField";
 import type { DashboardAgentStat } from "../../lib/api";
-import { formatInt, formatUsd } from "../../lib/format";
+import { formatCompact, formatInt, formatUsd } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { AgentIcon } from "../AgentIcon";
+import { ChartTooltip } from "../ui/chart-tooltip";
 import { Panel, PanelHeader } from "../ui/panel";
 import { TileBarPlot } from "../ui/tile-bar-plot";
 
@@ -48,6 +49,8 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
     [locale, perAgent],
   );
 
+  const hovered = hover === null ? undefined : visible[hover.column];
+
   return (
     <Panel role="region" aria-label={t("Agents")} className="p-4">
       <PanelHeader
@@ -58,7 +61,7 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
       {visible.length === 0 ? (
         <p className="console-mono mt-3 text-[11px] text-[var(--console-muted)]">{t("No data")}</p>
       ) : (
-        <div className="mt-[14px]">
+        <div className="relative mt-[14px]">
           <TileBarPlot
             values={values}
             axisMax={axisMax}
@@ -70,6 +73,19 @@ export function OverviewAgentDistribution({ perAgent }: { perAgent: DashboardAge
             ariaLabel={t("Agent distribution chart")}
             itemLabels={itemLabels}
           />
+          {hovered && hover ? (
+            <ChartTooltip index={hover.column} count={visible.length}>
+              <div>{hovered.displayName}</div>
+              <div>
+                {formatCompact(hovered.tokens)} {t("tok ·")}{" "}
+                <span className="text-[var(--brand)]">{formatUsd(hovered.cost)}</span>
+              </div>
+              <div>
+                {formatInt(hovered.sessions)} {t("sessions ·")} {formatInt(hovered.messages)}{" "}
+                {t("messages")}
+              </div>
+            </ChartTooltip>
+          ) : null}
           <div
             className="mt-2 grid"
             style={{ gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))` }}
