@@ -139,7 +139,7 @@ describe("ZCodeAgent parsing", () => {
         role: "user",
         tokens: { input: 10, output: 0 },
         cost: 0.01,
-        modelID: "GLM-5.2",
+        modelID: "zcode-test-unpriced",
         providerID: "zai",
       }),
     );
@@ -163,7 +163,7 @@ describe("ZCodeAgent parsing", () => {
       JSON.stringify({
         role: "assistant",
         tokens: { input: 20, output: 30 },
-        modelID: "GLM-5.2",
+        modelID: "zcode-test-unpriced",
         providerID: "zai",
       }),
     );
@@ -210,7 +210,7 @@ describe("ZCodeAgent parsing", () => {
     });
     expect(data.messages[0]).toMatchObject({
       role: "user",
-      model: "GLM-5.2",
+      model: "zcode-test-unpriced",
       provider: "zai",
     });
     expect(data.messages[1]?.parts[0]).toMatchObject({
