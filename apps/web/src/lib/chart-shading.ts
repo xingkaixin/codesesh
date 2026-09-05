@@ -55,11 +55,6 @@ export function resolveColor(style: CSSStyleDeclaration, color: string): string 
   return style.getPropertyValue(name).trim() || color;
 }
 
-export function resolveColors(element: Element, colors: readonly string[]): string[] {
-  const style = getComputedStyle(element);
-  return colors.map((color) => resolveColor(style, color));
-}
-
 /** Only hex is expanded; anything else is returned as-is and drawn opaque. */
 export function withAlpha(color: string, alpha: number): string {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
