@@ -121,3 +121,39 @@ node scripts/benchmark-session-window.mjs
 有边界调用返回新数组的行为。需要实际筛选时继续使用原有树规则，保留命中父节点的全部
 子会话；调用方显式提供树时，也继续使用该树。All time 优化主要减少分配和计算常数，
 其渐进复杂度仍为 O(N)。上述数据仅衡量过滤函数，不代表页面或扫描整体耗时。
+
+## Share All time cost facts between API handlers
+
+Dashboard and Projects previously loaded the same message cost facts independently
+when the UI switched to All time. They now share the snapshot's unbounded cost
+facts. Dashboard still applies its current-time upper bound during aggregation;
+explicit date ranges retain their bounded reads. Snapshot replacement and analytics
+revision changes invalidate the shared facts.
+
+On a local cache with 4,553 sessions and 270,155 timed messages, three warmed
+iterations with fresh snapshot caches gave these median handler times:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Dashboard | 1,213.65 ms | 1,226.99 ms |
+| Projects | 1,120.63 ms | 239.83 ms |
+| Combined | 2,306.59 ms | 1,456.90 ms |
+
+The combined time decreased about 37%. Both routes still perform their own
+aggregation. This removes one O(M) database read and conversion per snapshot,
+where M is the number of timed messages; total complexity remains O(M). The
+existing snapshot cache bounds retention. This is a backend measurement, not a
+browser load or rendering measurement.
+
+Reproduce against an existing local CodeSesh cache after building Core:
+
+```bash
+node scripts/benchmark-all-time-aggregation.mjs 1788571200000
+```
+
+Use the same timestamp and unchanged cache when comparing revisions. The script
+builds the two current API handlers together, reads local cached sessions, and
+reports five fresh-snapshot timings. It prints a response digest without session
+content, excluding the per-request pagination cursor. Before/after responses on
+the measured cache matched exactly after excluding that cursor. OS cache warmth,
+background indexing, and concurrent workloads affect timings.
