@@ -45,12 +45,8 @@ export function buildToolAnchorId(messageIndex: number, toolIndex: number) {
   return `tool-${messageIndex}-${toolIndex}`;
 }
 
-export function classifyToolKind(part: ToolPart): FileChangeKind | null {
-  return classifyFileTool(part);
-}
-
 export function classifyToolOperation(part: ToolPart): ToolOperationKind {
-  const fileKind = classifyToolKind(part);
+  const fileKind = classifyFileTool(part);
   if (fileKind === "read") return "read";
   if (fileKind) return "write";
   return "execute";
