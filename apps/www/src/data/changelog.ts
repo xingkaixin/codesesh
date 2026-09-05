@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.6",
+        date: "2026-09-05",
+        title: "Localized interface and faster history analytics",
+        summary:
+          "CodeSesh now speaks English, Simplified Chinese, and Japanese with persistent language preferences. Model pricing updates automatically from models.dev for accurate cost estimates, while full-history analytics and session hierarchy browsing are substantially faster.",
+        direction:
+          "A local history viewer should feel natural in your primary language and stay instantaneous even after months of heavy agent use.",
+        highlights: [
+          {
+            title: "Native trilingual interface",
+            description:
+              "Switch seamlessly between English, Simplified Chinese, and Japanese with preferences saved across sessions, while session transcripts and code remain in their original form.",
+          },
+          {
+            title: "Live-updated model pricing",
+            description:
+              "Automatically caches up-to-date pricing from models.dev before scanning, keeping token cost tracking accurate as model catalogs expand.",
+          },
+          {
+            title: "Faster full-history analytics",
+            description:
+              "Database-indexed usage queries and streamlined tree traversal deliver snappy dashboard metrics and smoother browsing across large archives.",
+          },
+        ],
+      },
+      {
         version: "1.0.5",
         date: "2026-08-31",
         title: "Faster refreshes and more dependable live state",
@@ -175,6 +201,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.6",
+        date: "2026-09-05",
+        title: "多语言界面与更快的历史分析",
+        summary:
+          "CodeSesh 正式支持简体中文、英文与日文三语界面并持久化偏好设置。模型定价现已接入 models.dev 自动同步最新标准，全量历史分析与会话层级浏览速度显著提升。",
+        direction:
+          "本地历史查看器应当以你最熟悉的母语呈现，并在数月高频使用、积累海量 Agent 会话后，依然保持即时响应与准确透明。",
+        highlights: [
+          {
+            title: "原生三语界面支持",
+            description:
+              "支持在简体中文、英文和日文间自由切换并记住偏好，会话对话原文与代码片段始终保持原始语言。",
+          },
+          {
+            title: "实时同步模型定价",
+            description:
+              "扫描前自动从 models.dev 获取并缓存最新定价数据，让日益丰富的 Agent 模型用量与花费估算更准更全。",
+          },
+          {
+            title: "全历史分析显著加速",
+            description:
+              "通过消息用量索引与层级遍历优化，大幅加快 Dashboard 指标加载，大型历史库浏览更流畅。",
+          },
+        ],
+      },
+      {
         version: "1.0.5",
         date: "2026-08-31",
         title: "刷新更快，实时状态更可信",
@@ -271,6 +323,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.6",
+        date: "2026-09-05",
+        title: "多言語 UI と高速化された履歴分析",
+        summary:
+          "CodeSesh が日本語、英語、簡体字中国語の 3 言語 UI に対応し、言語設定を保存できるようになりました。models.dev から最新のモデル価格を自動取得してコスト試算の精度を高め、全期間の履歴分析と階層表示も大幅に高速化しています。",
+        direction:
+          "ローカル履歴ビューアーは使い慣れた言語で自然に操作でき、長期間にわたる膨大な Agent 会話が蓄積されても素早く軽快に動作し続けるべきだと考えています。",
+        highlights: [
+          {
+            title: "ネイティブな 3 言語対応",
+            description:
+              "日本語、英語、簡体字中国語を自由に切り替えられ、設定を保持します。会話の原文やコードはそのまま維持されます。",
+          },
+          {
+            title: "モデル価格の自動更新",
+            description:
+              "スキャン前に models.dev から最新の価格情報を自動キャッシュし、多様化するモデルの利用コストをより正確に把握できます。",
+          },
+          {
+            title: "全期間の分析を高速化",
+            description:
+              "メッセージ使用量へのインデックス追加と階層巡回の最適化により、ダッシュボードの表示や大規模な履歴の閲覧がさらに軽快になりました。",
+          },
+        ],
+      },
       {
         version: "1.0.5",
         date: "2026-08-31",
