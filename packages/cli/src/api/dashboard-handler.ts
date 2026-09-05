@@ -21,7 +21,7 @@ import {
 import type { ScanResultSource } from "./scan-sources.js";
 import { decorateFileActivity, loadAliasView } from "./session-aliases-view.js";
 import {
-  getDashboardCostFacts,
+  getSnapshotCostFacts,
   getDashboardStorageAggregation,
   getSnapshotAggregation,
 } from "./snapshot-aggregation.js";
@@ -57,12 +57,13 @@ export function handleGetDashboard(
   const fixedTo = dateWindow.to;
   const cacheTo = fixedTo ?? startOfCalendarDay(to);
   const analyticsRevision = getAnalyticsRevision();
-  const costFacts = getDashboardCostFacts(
+  // Keep all-time facts reusable by Projects; buildDashboard applies the current-time bound.
+  const costFacts = getSnapshotCostFacts(
     scanSource,
     scanResult.sessions,
     compare?.from ?? from,
-    to,
-    cacheTo,
+    from == null && fixedTo == null ? undefined : to,
+    from == null && fixedTo == null ? undefined : cacheTo,
     analyticsRevision,
   );
   const aggregate = getSnapshotAggregation(

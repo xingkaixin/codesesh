@@ -13,6 +13,7 @@ import {
 } from "./handler-test-fixtures.js";
 
 const { handleGetDashboard } = await import("../dashboard-handler.js");
+const { handleGetProjects } = await import("../catalog-handlers.js");
 
 describe("handleGetDashboard", () => {
   it("rejects invalid dates instead of silently using defaults", () => {
@@ -579,5 +580,104 @@ describe("handleGetDashboard", () => {
       expect.objectContaining({ costFacts }),
     );
     expect(response.modelCost).toEqual([]);
+  });
+});
+
+describe("shared all-time cost facts", () => {
+  it.each([true, false])("reads once with dashboard first: %s", (dashboardFirst) => {
+    const source = makeScanSource();
+    const dashboard = () => handleGetDashboard(makeMockContext({ query: { days: "0" } }), source);
+    const projects = () =>
+      handleGetProjects(makeMockContext({ query: { from: new Date(0).toISOString() } }), source);
+    const requests = dashboardFirst ? [dashboard, projects] : [projects, dashboard];
+    for (const request of requests) request();
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(1);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledWith({
+      from: undefined,
+      to: undefined,
+    });
+
+    coreMocks.getAnalyticsRevision.mockReturnValue("updated");
+    for (const request of requests) request();
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(2);
+
+    const snapshot = source.getSnapshot();
+    snapshot.sessions = [...snapshot.sessions];
+    for (const request of requests) request();
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps explicit upper bounds separate from the all-time project query", () => {
+    const source = makeScanSource();
+    const to = "2026-07-26T12:00:00.000Z";
+    handleGetDashboard(makeMockContext({ query: { days: "0", to } }), source);
+    handleGetProjects(makeMockContext({ query: { from: new Date(0).toISOString() } }), source);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(2);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenNthCalledWith(1, {
+      from: undefined,
+      to: Date.parse(to),
+    });
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenNthCalledWith(2, {
+      from: undefined,
+      to: undefined,
+    });
+  });
+
+  it("does not reuse facts when the analytics revision is unavailable", () => {
+    coreMocks.getAnalyticsRevision.mockReturnValue(null);
+    const source = makeScanSource();
+    handleGetDashboard(makeMockContext({ query: { days: "0" } }), source);
+    handleGetProjects(makeMockContext({ query: { from: new Date(0).toISOString() } }), source);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(2);
+  });
+
+  it("excludes future messages from dashboard totals while retaining them for unbounded projects", () => {
+    const now = Date.now();
+    const session = makeSession("timed", {
+      time_created: now - 100,
+      time_updated: now - 100,
+      stats: { message_count: 2, total_input_tokens: 0, total_output_tokens: 0, total_cost: 2 },
+    });
+    coreMocks.listDashboardCostFacts.mockReturnValue({
+      sessions: [
+        {
+          reference: session.reference,
+          messageCount: 2,
+          untimedMessageCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          untimedInputTokens: 0,
+          untimedOutputTokens: 0,
+          untimedReasoningTokens: 0,
+          untimedCacheReadTokens: 0,
+          untimedCacheCreateTokens: 0,
+          messageCost: 2,
+          untimedMessageCost: 0,
+          modelCosts: [],
+        },
+      ],
+      messages: [now - 100, now + 86400000].map((time) => ({
+        reference: session.reference,
+        time,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+        cost: 1,
+      })),
+    });
+    const source = makeScanSource({ sessions: [session], byAgent: { agent: [session] } });
+    const dashboard = makeMockContext({ query: { days: "0" } });
+    const projects = makeMockContext({ query: { from: new Date(0).toISOString() } });
+    handleGetDashboard(dashboard, source);
+    handleGetProjects(projects, source);
+    expect(dashboard.json.mock.calls[0]![0].totals.cost).toBe(1);
+    expect(dashboard.json.mock.calls[0]![0].totals.messages).toBe(1);
+    expect(projects.json.mock.calls[0]![0].summary.cost).toBe(2);
+    expect(coreMocks.listDashboardCostFacts).toHaveBeenCalledTimes(1);
   });
 });
