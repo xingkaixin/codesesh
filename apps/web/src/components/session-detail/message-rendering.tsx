@@ -245,7 +245,8 @@ export const MessageItem = memo(function MessageItem({
               ) : null}
               {msg.cost ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  {msg.cost_source === "estimated" ? t("EST COST") : "COST"} ${msg.cost.toFixed(4)}
+                  {msg.cost_source === "estimated" ? t("EST COST") : t("COST")} $
+                  {msg.cost.toFixed(4)}
                 </span>
               ) : null}
             </div>
@@ -455,7 +456,7 @@ const PlanItem = memo(function PlanItem({
               <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {display.title}
+                  {t(display.title)}
                 </span>
               </span>
               <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
@@ -470,7 +471,7 @@ const PlanItem = memo(function PlanItem({
               <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
               <span className="min-w-0 flex-1">
                 <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {display.title}
+                  {t(display.title)}
                 </span>
               </span>
             </div>
