@@ -350,6 +350,65 @@ describe("SessionWatcher", () => {
     }
   });
 
+  it("ignores declared shared-memory files while watching workspace changes", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-workspaces-"));
+    const watcher = new SessionWatcher();
+    try {
+      const workspaceRoot = join(tempDir, "workspaceStorage");
+      mkdirSync(join(workspaceRoot, "entry"), { recursive: true });
+      const changed = vi.fn();
+      watcher.onAgentsChanged(changed);
+      watcher.start([
+        source("cursor", {
+          status: "supported",
+          targets: [
+            {
+              root: tempDir,
+              path: workspaceRoot,
+              ignoredFileNames: ["state.vscdb-shm"],
+            },
+          ],
+        }),
+      ]);
+      const emit = async (event: string, filename: string | null) => {
+        fsWatch.watchers[0]!.listener(event, filename);
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(1_000);
+      };
+      const shmPath = join("workspaceStorage", "entry", "state.vscdb-shm");
+      writeFileSync(join(tempDir, shmPath), "shared memory");
+      for (let i = 0; i < 21; i++) await emit("change", shmPath);
+      rmSync(join(tempDir, shmPath));
+      await emit("rename", shmPath);
+      expect(changed).not.toHaveBeenCalled();
+
+      for (const filename of [
+        "state.vscdb",
+        "state.vscdb-wal",
+        "state.vscdb-journal",
+        "workspace.json",
+      ]) {
+        const path = join("workspaceStorage", "entry", filename);
+        writeFileSync(join(tempDir, path), "data");
+        await emit("change", path);
+        expect(changed).toHaveBeenCalledExactlyOnceWith(new Set(["cursor"]));
+        changed.mockClear();
+        rmSync(join(tempDir, path));
+        await emit("rename", path);
+        expect(changed).toHaveBeenCalledExactlyOnceWith(new Set(["cursor"]));
+        changed.mockClear();
+      }
+      for (const filename of [join("workspaceStorage", "entry"), "workspaceStorage", null]) {
+        await emit("rename", filename);
+        expect(changed).toHaveBeenCalledExactlyOnceWith(new Set(["cursor"]));
+        changed.mockClear();
+      }
+    } finally {
+      await watcher.dispose();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("CS-139: emits a database agent change for its WAL sidecar", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "watcher-db-wal-"));
     try {

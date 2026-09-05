@@ -145,6 +145,8 @@ export interface SessionWatchTarget {
   path: string;
   /** Stable ancestor to watch when the source path can be created or replaced. */
   root?: string;
+  /** Exact descendant file names that do not represent session changes. */
+  ignoredFileNames?: readonly string[];
 }
 
 /** `supported` may have no targets when the provider has no location in the current environment. */
