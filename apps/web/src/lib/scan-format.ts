@@ -127,26 +127,3 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   }
   return null;
 }
-
-export function formatAgentScanProgress(
-  status: ScanStatusEvent | null,
-  agentName: string,
-): string | null {
-  const agentStatus = status?.agentStatuses[agentName];
-  if (!agentStatus || agentStatus.status === "complete") return null;
-  if (agentStatus.status === "failed") return t("Failed");
-  if (agentStatus.status === "finalizing") {
-    if (agentStatus.total && agentStatus.processed != null) {
-      return `${agentStatus.processed}/${agentStatus.total}`;
-    }
-    return t("Finalizing");
-  }
-  if (agentStatus.status === "publishing" || agentStatus.status === "indexing") {
-    return t("Publishing");
-  }
-  if (agentStatus.status === "publish-queued") return t("Queued to publish");
-  if (agentStatus.total && agentStatus.processed != null) {
-    return `${agentStatus.processed}/${agentStatus.total}`;
-  }
-  return agentStatus.status === "scanning" ? t("Scanning") : t("Pending");
-}
