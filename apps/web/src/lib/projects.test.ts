@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { decodeProjectRouteKey, getProjectPath, type ProjectRouteIdentity } from "./projects";
+import { getProjectPath, type ProjectRouteIdentity } from "./projects";
 
 function getRouteKey(project: ProjectRouteIdentity): string {
   const segments = getProjectPath(project)
     .replace(/^\/+|\/+$/g, "")
     .split("/");
 
-  return decodeProjectRouteKey(segments[2]!);
+  return decodeURIComponent(segments[2]!);
 }
 
 describe("project routes", () => {

@@ -14,10 +14,6 @@ export function getProjectGroupIdentity(project: ApiProjectGroup): ProjectRouteI
   return { kind: project.identityKind, key: project.identityKey };
 }
 
-export function decodeProjectRouteKey(value: string): string {
-  return decodeURIComponent(value);
-}
-
 export function getProjectPath(project: ProjectRouteIdentity): string {
   return `/projects/${encodeURIComponent(project.kind)}/${encodeURIComponent(project.key)}`;
 }
