@@ -324,11 +324,11 @@ function collectAffectedHierarchyKeys(
   }
 
   if (!includeAncestors) return;
+  const visitedAncestors = new Set<string>();
   for (const seed of seedKeys) {
     let key = graph.sessionsByKey.has(seed) ? seed : undefined;
-    const onPath = new Set<string>();
-    while (key && !onPath.has(key)) {
-      onPath.add(key);
+    while (key && !visitedAncestors.has(key)) {
+      visitedAncestors.add(key);
       collected.add(key);
       key = graph.parentByKey.get(key);
     }
