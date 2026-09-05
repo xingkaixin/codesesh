@@ -60,14 +60,15 @@ function lookupCandidate(model: string, registry: Map<string, ModelPricing>) {
 }
 
 function fuzzyLookup(model: string, registry: Map<string, ModelPricing>) {
-  let best: [string, ModelPricing] | null = null;
-  for (const [key, pricing] of registry.entries()) {
-    if (!hasBillablePricing(pricing)) continue;
-    if (model.startsWith(`${key}-`) || model.startsWith(`${key}@`) || model === key) {
-      if (!best || key.length > best[0].length) best = [key, pricing];
-    }
+  const direct = registry.get(model);
+  if (direct && hasBillablePricing(direct)) return direct;
+
+  for (let index = model.length - 1; index >= 0; index--) {
+    if (model[index] !== "-" && model[index] !== "@") continue;
+    const pricing = registry.get(model.slice(0, index));
+    if (pricing && hasBillablePricing(pricing)) return pricing;
   }
-  return best?.[1] ?? null;
+  return null;
 }
 
 export interface PricingResolver {
