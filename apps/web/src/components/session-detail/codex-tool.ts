@@ -72,38 +72,6 @@ function buildQuestionSummary(headers: string[], questionCount: number) {
   return truncateText(parts.join(" · "), 96);
 }
 
-function extractTextSegments(value: unknown): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => extractTextSegments(item));
-  }
-
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const textValue = record.text;
-    if (typeof textValue === "string") {
-      return [textValue];
-    }
-    const contentValue = record.content;
-    if (contentValue !== undefined) {
-      return extractTextSegments(contentValue);
-    }
-  }
-
-  return [];
-}
-
-function joinToolText(value: unknown) {
-  const segments = extractTextSegments(value)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  return segments.join("\n");
-}
-
 function parseJsonText<T>(value: string): T | null {
   try {
     return JSON.parse(value) as T;
@@ -553,8 +521,4 @@ export function buildCodexViewImageDisplay(
   appendDetail(details, t("Detail"), detail);
 
   return { secondaryText: displayPath || undefined, details };
-}
-
-export function extractCodexToolText(value: unknown) {
-  return joinToolText(value);
 }
