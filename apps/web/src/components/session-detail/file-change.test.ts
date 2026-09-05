@@ -4,7 +4,6 @@ import {
   buildFileChangeSummary,
   buildFileChangeSummaryFromActivity,
   buildToolAnchorId,
-  classifyToolKind,
   classifyToolOperation,
   summarizeFileChangeItems,
   type FileChangeRecord,
@@ -24,30 +23,6 @@ function part(overrides?: Partial<ToolPart>): ToolPart {
 describe("buildToolAnchorId", () => {
   it("formats as tool-{msg}-{tool}", () => {
     expect(buildToolAnchorId(3, 7)).toBe("tool-3-7");
-  });
-});
-
-describe("classifyToolKind", () => {
-  it("classifies read tools", () => {
-    expect(classifyToolKind(part({ tool: "read", title: "read" }))).toBe("read");
-  });
-
-  it("classifies edit tools", () => {
-    expect(classifyToolKind(part({ tool: "edit", title: "edit" }))).toBe("edit");
-    expect(classifyToolKind(part({ tool: "apply_patch", title: "apply_patch" }))).toBe("edit");
-  });
-
-  it("classifies write tools", () => {
-    expect(classifyToolKind(part({ tool: "write", title: "write" }))).toBe("write");
-    expect(classifyToolKind(part({ tool: "create_file", title: "create_file" }))).toBe("write");
-  });
-
-  it("classifies delete tools", () => {
-    expect(classifyToolKind(part({ tool: "delete", title: "delete" }))).toBe("delete");
-  });
-
-  it("returns null for unknown tools", () => {
-    expect(classifyToolKind(part({ tool: "bash", title: "bash" }))).toBeNull();
   });
 });
 
