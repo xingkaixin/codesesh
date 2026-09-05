@@ -118,7 +118,17 @@ export function createSessionTables(db: SQLiteDatabase): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session
       ON messages(agent_name, session_id, message_index);
+  `);
 
+  createMessageUsageIndex(db);
+  createSessionModelCostTable(db);
+  createSessionCostSummaryTable(db);
+  createMessageToolTables(db);
+}
+
+export function createMessageUsageIndex(db: SQLiteDatabase): void {
+  // Keep analytics reads off message rows containing large transcript payloads.
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_usage_time
       ON messages(
         CASE
@@ -126,13 +136,14 @@ export function createSessionTables(db: SQLiteDatabase): void {
           WHEN time_created > 0 THEN time_created
         END,
         agent_name,
-        session_id
+        session_id,
+        message_index,
+        model,
+        tokens_json,
+        cost,
+        cost_source
       );
   `);
-
-  createSessionModelCostTable(db);
-  createSessionCostSummaryTable(db);
-  createMessageToolTables(db);
 }
 
 /**

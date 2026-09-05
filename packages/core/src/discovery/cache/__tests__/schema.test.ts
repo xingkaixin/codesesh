@@ -11,6 +11,7 @@ import { syncSessionSearchIndex } from "../search-index-writer.js";
 import { makeSessionData, makeSessionHead } from "./fixtures.js";
 import { setCoreDiagnostics } from "../../../utils/diagnostics.js";
 import { ensureCacheSchema } from "../schema.js";
+import { listDashboardCostFacts } from "../cost-facts.js";
 import { CACHE_SCHEMA_VERSION } from "../version.js";
 import { UnsupportedCacheSchemaVersionError } from "../errors.js";
 
@@ -53,6 +54,59 @@ afterEach(() => {
 });
 
 describe("cache schema boundary", () => {
+  it("upgrades the version 32 usage index without changing cost facts", () => {
+    const session = makeSessionHead("usage-index");
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => ({
+      ...makeSessionData(session.reference.sessionId),
+      ...session,
+      messages: [
+        {
+          id: "usage",
+          role: "assistant",
+          time_created: 100,
+          time_completed: 200,
+          model: "model",
+          tokens: { input: 20, output: 5 },
+          cost: 2,
+          cost_source: "recorded",
+          parts: [],
+        },
+      ],
+    }));
+    const before = listDashboardCostFacts();
+    setSchemaEnsuredPath(null);
+    const legacyDb = new Database(getCachePath());
+    legacyDb.exec(`
+      DROP INDEX idx_messages_usage_time;
+      CREATE INDEX idx_messages_usage_time ON messages(
+        CASE WHEN time_completed > 0 THEN time_completed WHEN time_created > 0 THEN time_created END,
+        agent_name, session_id
+      );
+      PRAGMA user_version = 32;
+      UPDATE cache_meta SET value = '32' WHERE key = 'schema_version';
+    `);
+    legacyDb.close();
+    const columns = schema.withCacheDb((db) =>
+      db
+        .prepare("PRAGMA index_info(idx_messages_usage_time)")
+        .all()
+        .map((row) => row.name),
+    );
+    expect(columns).toEqual([
+      null,
+      "agent_name",
+      "session_id",
+      "message_index",
+      "model",
+      "tokens_json",
+      "cost",
+      "cost_source",
+    ]);
+    expect(listDashboardCostFacts()).toEqual(before);
+    expect(readCachedValue("codex")?.sessions).toHaveLength(1);
+  });
+
   it("opens an empty cache with the complete current schema", () => {
     const state = schema.withCacheDb((db) => {
       const objects = db
