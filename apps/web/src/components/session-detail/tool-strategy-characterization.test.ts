@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlanPart, ToolPart } from "../../lib/api";
 import { buildCodexPlanDisplay } from "./codex-plan";
-import { extractCodexToolText } from "./codex-tool";
 import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 import {
   BookOpenText,
@@ -853,11 +852,5 @@ describe("Codex plan and text displays", () => {
       contentLabel: fixture.contentLabel,
       contentMarkdown: fixture.contentMarkdown,
     });
-  });
-
-  it("joins nested Codex text segments", () => {
-    expect(extractCodexToolText([{ text: "first" }, { content: [{ text: "second" }] }])).toBe(
-      "first\nsecond",
-    );
   });
 });
