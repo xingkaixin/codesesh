@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatAgentScanProgress,
   formatIsoDate,
   formatScanStatusLabel,
   formatSearchSubtitle,
@@ -78,7 +77,6 @@ describe("formatScanStatusLabel", () => {
     expect(formatScanStatusLabel(status)).toBe(
       "Session refresh failed · codex · cache is read-only",
     );
-    expect(formatAgentScanProgress(status, "codex")).toBe("Failed");
   });
 
   it("shows full-history backfill progress after the main scan finishes", () => {
@@ -274,29 +272,5 @@ describe("formatScanStatusLabel", () => {
         },
       } as unknown as ScanStatusEvent),
     ).toBeNull();
-  });
-});
-
-describe("formatAgentScanProgress", () => {
-  it("returns null for complete or missing agent", () => {
-    expect(formatAgentScanProgress(null, "codex")).toBeNull();
-  });
-
-  it("distinguishes publishing from scanning and pending", () => {
-    const status = {
-      agentStatuses: {
-        codex: { status: "publishing", total: 119, processed: 119 },
-        zcode: { status: "publish-queued", total: 84, processed: 84 },
-        claudecode: { status: "indexing", total: 141, processed: 141 },
-        claude: { status: "scanning" },
-        kimi: { status: "pending" },
-      },
-    } as unknown as ScanStatusEvent;
-
-    expect(formatAgentScanProgress(status, "codex")).toBe("Publishing");
-    expect(formatAgentScanProgress(status, "zcode")).toBe("Queued to publish");
-    expect(formatAgentScanProgress(status, "claudecode")).toBe("Publishing");
-    expect(formatAgentScanProgress(status, "claude")).toBe("Scanning");
-    expect(formatAgentScanProgress(status, "kimi")).toBe("Pending");
   });
 });
