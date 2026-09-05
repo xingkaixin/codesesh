@@ -5,16 +5,9 @@ import { join } from "node:path";
 import { ensurePrivateDirectory, restrictPrivateFile } from "../utils/private-storage.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { MODELS_DEV_URL, parseModelsDevPricing } from "./models-dev.js";
+import { normalizeModelKey, type ModelPricing } from "./model-pricing.js";
+export { normalizeModelKey, type ModelPricing } from "./model-pricing.js";
 import snapshotData from "./data/snapshot.json";
-
-export interface ModelPricing {
-  inputCostPerToken: number;
-  outputCostPerToken: number;
-  cacheCreateCostPerToken: number;
-  cacheReadCostPerToken: number;
-  reasoningCostPerToken: number;
-  webSearchCostPerRequest: number;
-}
 
 type SnapshotEntry = [number, number, number | null, number | null, number?, number?];
 
@@ -37,10 +30,6 @@ let published = createPricingGeneration(loadSnapshot());
 let pending: Map<string, ModelPricing> | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
 published = readDiskCache() ?? published;
-
-export function normalizeModelKey(key: string): string {
-  return key.trim().toLowerCase().replaceAll("_", "-");
-}
 
 function createPricingGeneration(pricing: Map<string, ModelPricing>): PricingGeneration {
   const hash = createHash("sha256");

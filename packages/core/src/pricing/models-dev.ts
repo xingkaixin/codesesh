@@ -1,5 +1,4 @@
-import type { ModelPricing } from "./fetcher.js";
-import { normalizeModelKey } from "./fetcher.js";
+import { normalizeModelKey, type ModelPricing } from "./model-pricing.js";
 
 export const MODELS_DEV_URL = "https://models.dev/api.json";
 

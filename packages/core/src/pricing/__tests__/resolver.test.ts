@@ -10,9 +10,16 @@ describe("pricing resolver", () => {
   });
 
   it("uses the longest billable model prefix for fuzzy variants", () => {
-    const expected = getPricingRegistry().get("claude-opus-4-6");
-
-    expect(pricingResolver.resolve("claude-opus-4-6-thinking")).toEqual(expected);
+    const registry = getPricingRegistry();
+    const expected = registry.get("claude-opus-4-6")!;
+    registry.set("test-fuzzy-model", { ...expected, inputCostPerToken: 1 });
+    registry.set("test-fuzzy-model-extended", expected);
+    try {
+      expect(pricingResolver.resolve("test-fuzzy-model-extended-thinking")).toEqual(expected);
+    } finally {
+      registry.delete("test-fuzzy-model");
+      registry.delete("test-fuzzy-model-extended");
+    }
   });
 
   it("prefers exact model prices over legacy aliases and stripped dates", () => {
