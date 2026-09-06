@@ -44,6 +44,8 @@ export function OverviewSkeleton() {
         <Bar className="mt-[14px] h-[168px] w-full" />
       </Panel>
 
+      <CardSkeleton bodyClassName="h-[428px] w-full" />
+
       <div className="grid gap-4 lg:grid-cols-[1.45fr_1fr]">
         <CardSkeleton bodyClassName="h-[248px] w-full" />
         <div className="grid content-start gap-4">

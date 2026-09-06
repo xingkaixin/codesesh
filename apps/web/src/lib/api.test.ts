@@ -182,6 +182,7 @@ describe("remote access", () => {
 });
 
 describe("fetchDashboard", () => {
+  const timeZoneQuery = `&timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`;
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -207,7 +208,7 @@ describe("fetchDashboard", () => {
 
     await fetchDashboard({ from: 0, days: 0 }, {});
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0" + timeZoneQuery);
   });
 
   it("sends exact bounds without a redundant days value", async () => {
@@ -220,7 +221,8 @@ describe("fetchDashboard", () => {
     await fetchDashboard({ from: 10, to: 20, days: 7 }, {});
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/dashboard?from=1970-01-01T00%3A00%3A00.010Z&to=1970-01-01T00%3A00%3A00.020Z",
+      "/api/dashboard?from=1970-01-01T00%3A00%3A00.010Z&to=1970-01-01T00%3A00%3A00.020Z" +
+        timeZoneQuery,
     );
   });
 
@@ -246,7 +248,7 @@ describe("fetchDashboard", () => {
 
     await fetchDashboard({ days: 7 }, filters);
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(expected);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(expected + timeZoneQuery);
   });
 });
 

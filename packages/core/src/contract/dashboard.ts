@@ -93,7 +93,14 @@ export interface DashboardAggregate {
   recentSessions: DashboardRecentSession[];
 }
 
+export interface DashboardActiveHours {
+  timeZone: string;
+  /** Sunday first; each weekday has twelve consecutive two-hour slots. */
+  counts: number[];
+}
+
 export interface DashboardData extends DashboardAggregate {
+  activeHours: DashboardActiveHours | null;
   recentFileActivities: FileActivityResult[];
   window: { from?: number; to: number; days?: number; compareFrom?: number; compareTo?: number };
 }

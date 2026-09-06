@@ -184,6 +184,7 @@ export function createApiClient(access: RemoteAccess) {
       params.set("projectKey", filters.project.key);
     }
     if (filters.agent) params.set("agent", filters.agent);
+    params.set("timeZone", filters.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
     const suffix = params.toString();
     return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard", options);
   }

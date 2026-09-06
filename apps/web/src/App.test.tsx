@@ -47,6 +47,7 @@ const emptyDashboard: DashboardData = {
   projectRollup: { projects: 0, sessions: 0, tokens: 0, cost: 0 },
   recentSessions: [],
   recentFileActivities: [],
+  activeHours: null,
   window: { to: 1_700_000_000_000 },
 };
 

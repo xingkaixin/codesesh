@@ -27,6 +27,7 @@ export {
   inspectAgentRefresh,
   listCachedProjectGroups,
   listDashboardCostFacts,
+  listDashboardActiveHours,
   listFileActivity,
   listModelCostDistribution,
   loadCachedSessionHeads,

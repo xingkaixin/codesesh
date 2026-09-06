@@ -89,6 +89,7 @@ export interface SessionFetchProgress {
 }
 
 export interface DashboardFilters {
+  timeZone?: string;
   project?: { kind: ProjectIdentityKind; key: string };
   agent?: string;
 }

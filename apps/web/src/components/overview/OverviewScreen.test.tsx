@@ -80,6 +80,7 @@ const dashboard = {
   projectRollup: { projects: 0, sessions: 0, tokens: 0, cost: 0 },
   recentSessions: [],
   recentFileActivities: [],
+  activeHours: null,
   modelCost: [{ model: "sonnet", cost: 6, costRecorded: 1, costEstimated: 5 }],
   window: { from: 1, to: 2, days: 7 },
 } as unknown as DashboardData;
@@ -140,6 +141,7 @@ describe("OverviewScreen", () => {
     expect(screen.getByTestId("dashboard")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Daily usage" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
     expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
   });
@@ -176,6 +178,7 @@ describe("OverviewScreen", () => {
 
     await screen.findByRole("heading", { name: "Agents" });
     expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,
       { project: { kind: "path", key: "/repo/codesesh" }, agent: undefined },

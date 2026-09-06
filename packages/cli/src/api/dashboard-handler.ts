@@ -31,6 +31,16 @@ export function handleGetDashboard(
   scanSource: ScanResultSource,
   defaults: SessionListDefaults = {},
 ) {
+  let timeZone: string;
+  try {
+    timeZone = new Intl.DateTimeFormat("en", {
+      timeZone:
+        optionalQueryValue(c.req.query("timeZone")) ??
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }).resolvedOptions().timeZone;
+  } catch {
+    return c.json({ error: "timeZone must be a valid IANA time zone" }, 400);
+  }
   const scanResult = scanSource.getSnapshot();
   const projectIdentity = parseProjectIdentityFilter(
     c.req.query("projectKind"),
@@ -103,6 +113,7 @@ export function handleGetDashboard(
     to,
     cacheTo,
     analyticsRevision,
+    timeZone,
   );
   const data: DashboardData = {
     ...aggregate,

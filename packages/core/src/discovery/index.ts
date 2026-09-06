@@ -115,3 +115,5 @@ export type {
 } from "./cache/search.js";
 export { perf } from "../utils/index.js";
 export type { PerfMarker } from "../utils/index.js";
+
+export { listDashboardActiveHours } from "./cache/active-hours.js";
