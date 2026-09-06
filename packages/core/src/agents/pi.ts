@@ -424,7 +424,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
     if (role === "custom" && message["display"] === true) {
       const parts = normalizeTextParts(message["content"], timestampMs);
       if (parts.length === 0) return null;
-      return this.emptyUsageResult({ id, role: "user", timestampMs, parts });
+      return this.emptyUsageResult({ id, role: "user", timestampMs, parts, automated: true });
     }
 
     if (role === "branchSummary" || role === "compactionSummary") {
@@ -552,6 +552,7 @@ export class PiAgent extends SingleFileSessionSource<SessionMeta> {
     return {
       id: narrowPiField("summary.id", entry["id"], asString) ?? "",
       role: type === "custom_message" ? "user" : "assistant",
+      automated: type === "custom_message",
       agent: type === "custom_message" ? undefined : "pi",
       timestampMs,
       parts: [{ type: "text", text, time_created: timestampMs }],

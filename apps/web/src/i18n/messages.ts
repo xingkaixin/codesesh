@@ -1,5 +1,27 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  Time: ["时段", "時間帯"],
+  "Active hours": ["活跃时段", "アクティブな時間帯"],
+  "User messages by weekday and two-hour period. Counts are cumulative within the selected range.":
+    [
+      "按星期和两小时时段汇总用户消息，数量为所选统计范围内的累计值。",
+      "曜日と2時間ごとのユーザーメッセージ数。選択した期間内の累計です。",
+    ],
+  "Activity data is unavailable.": [
+    "暂时无法获取活跃时段数据。",
+    "アクティビティデータを取得できません。",
+  ],
+  "Time zone: {0}": ["时区：{0}", "タイムゾーン：{0}"],
+  "{0} user messages": ["{0} 条用户消息", "ユーザーメッセージ {0} 件"],
+  "No user messages in this range.": [
+    "此范围内暂无用户消息。",
+    "この期間のユーザーメッセージはありません。",
+  ],
+  "Size reference (messages)": ["大小参考（消息数）", "サイズの目安（メッセージ数）"],
+  "Reference sizes; these counts may not occur in the chart.": [
+    "圆点面积的参考刻度，不代表图中一定存在对应计数。",
+    "円の面積の目安です。グラフ内に同じ件数が存在するとは限りません。",
+  ],
   COST: ["费用", "費用"],
   plan: ["计划", "計画"],
   USER: ["用户", "ユーザー"],

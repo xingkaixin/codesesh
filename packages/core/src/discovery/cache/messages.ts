@@ -68,6 +68,7 @@ export interface MessageBackfillRow extends DatabaseRow {
   parts_json?: string;
   subagent_id?: string | null;
   nickname?: string | null;
+  automated?: number;
 }
 
 export interface CachedMessageRow extends MessageBackfillRow {
@@ -94,6 +95,7 @@ export interface StructuredMessageRecord {
   partsJson: string;
   subagentId?: string | null;
   nickname?: string | null;
+  automated?: number;
   contentText: string;
   toolMetadataJson?: string | null;
   toolNames: string[];
@@ -116,6 +118,7 @@ export function messageCursorContentFromCachedRow(row: CachedMessageRow): Messag
     partsFormatVersion: row.parts_format_version,
     subagentId: row.subagent_id,
     nickname: row.nickname,
+    automated: row.automated,
   };
 }
 
@@ -138,6 +141,7 @@ export function messageCursorContentFromStructuredRecord(
     partsFormatVersion: MESSAGE_PARTS_FORMAT_VERSION,
     subagentId: record.subagentId,
     nickname: record.nickname,
+    automated: record.automated,
   };
 }
 
@@ -435,6 +439,7 @@ function messageMetadataFromBackfillRow(row: MessageBackfillRow): Omit<Message, 
     provider: row.provider ?? null,
     subagent_id: row.subagent_id ?? undefined,
     nickname: row.nickname ?? undefined,
+    ...(row.automated ? { automated: true } : {}),
   };
 }
 
@@ -625,6 +630,7 @@ export function normalizeMessages(session: SessionDetail): StructuredMessageReco
       partsJson: JSON.stringify(message.parts),
       subagentId: message.subagent_id ?? null,
       nickname: message.nickname ?? null,
+      automated: message.automated ? 1 : 0,
       contentText: buildMessageText(message),
       toolMetadataJson: toolMetadata.length > 0 ? JSON.stringify(toolMetadata) : null,
       toolNames: toolNamesFromMessage(message),

@@ -145,6 +145,7 @@ export const SAMPLE_DASHBOARD_DATA = {
     },
   ],
   recentFileActivities: [],
+  activeHours: null,
   modelCost: null,
   window: { from: 1_699_900_000_000, to: 1_700_003_600_000, days: 1 },
 } satisfies DashboardData;

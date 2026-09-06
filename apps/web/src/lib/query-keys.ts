@@ -14,6 +14,7 @@ function normalizeDashboardFilters(filters: DashboardFilters): DashboardFilters 
   return {
     ...(filters.project ? { project: filters.project } : {}),
     ...(filters.agent ? { agent: filters.agent } : {}),
+    timeZone: filters.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 

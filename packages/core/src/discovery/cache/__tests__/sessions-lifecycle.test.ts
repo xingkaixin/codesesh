@@ -886,6 +886,7 @@ describe("clearCache", () => {
       { key: "analytics_revision", value: "2" },
       { key: "codex_exec_decode_migrated_v3", value: "1" },
       { key: "opencode_subagent_fold_v1", value: "1" },
+      { key: "pi_automated_messages_v1", value: "1" },
       { key: "subagent_tree_v1", value: "1" },
       { key: "version", value: String(CACHE_SCHEMA_VERSION) },
     ]);

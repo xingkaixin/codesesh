@@ -194,6 +194,8 @@
     --console-accent-fg: #ffffff;
 
     /* Brand */
+    --activity-low: #d27845;
+    --activity-high: #b13e16;
     --brand: #e8622e;
     --brand-hover: #c94e1f;
     --brand-soft: #fdede5;
@@ -360,6 +362,8 @@
     --console-accent-strong: #ffffff;
     --console-accent-fg: #101012;
 
+    --activity-low: #ffb38e;
+    --activity-high: #ff7a45;
     --brand: #ff7a45;
     --brand-hover: #ff9166;
     --brand-soft: #2a1710;

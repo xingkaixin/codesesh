@@ -37,6 +37,7 @@ import {
   createFileActivityTables,
   createMessageToolTables,
   createMessageUsageIndex,
+  createUserActivityIndex,
   createLegacyProjectTables,
   createSearchStateIndex,
   createSearchTables,
@@ -817,6 +818,7 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
   }
   if (currentVersion === 0 && !hasAnyCacheSchema(db)) {
     createLatestCacheSchema(db);
+    createUserActivityIndex(db);
     createSearchStateIndex(db);
     setCacheSchemaVersion(db);
     runCacheContentMigrations(db);
@@ -910,10 +912,20 @@ export function ensureCacheSchema(db: SQLiteDatabase, dbPath: string): void {
           createMessageUsageIndex(db);
         },
       },
+      {
+        version: 34,
+        migrate(db) {
+          if (!columnExists(db, "messages", "automated")) {
+            db.exec("ALTER TABLE messages ADD COLUMN automated INTEGER NOT NULL DEFAULT 0");
+          }
+          createUserActivityIndex(db);
+        },
+      },
     ],
   });
 
   createLatestCacheSchema(db);
+  createUserActivityIndex(db);
   createSearchStateIndex(db);
 
   // Only stamp when behind: every thread's first connection runs ensureSchema,

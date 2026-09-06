@@ -9,6 +9,7 @@ type CoreMockName =
   | "getAnalyticsRevision"
   | "materializeSessionDetailResponse"
   | "listDashboardCostFacts"
+  | "listDashboardActiveHours"
   | "listFileActivity"
   | "matchesProjectIdentity"
   | "listSessionAliases"
@@ -22,6 +23,7 @@ const coreMocks: Record<CoreMockName, Mock> = vi.hoisted(() => {
     filterSessionSearchCandidates: vi.fn(),
     getAnalyticsRevision: vi.fn(() => "0"),
     materializeSessionDetailResponse: vi.fn(),
+    listDashboardActiveHours: vi.fn(() => null),
     listDashboardCostFacts: vi.fn((): DashboardCostFacts | null => null),
     listFileActivity: vi.fn((): FileActivityResult[] => []),
     matchesProjectIdentity: vi.fn(),
@@ -96,6 +98,7 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
   getAnalyticsRevision: coreMocks.getAnalyticsRevision,
   listDashboardCostFacts: coreMocks.listDashboardCostFacts,
+  listDashboardActiveHours: coreMocks.listDashboardActiveHours,
   materializeSessionDetailResponse: coreMocks.materializeSessionDetailResponse,
   listFileActivity: coreMocks.listFileActivity,
 }));
@@ -302,6 +305,8 @@ afterEach(() => {
   coreMocks.filterSessionSearchCandidates.mockClear();
   coreMocks.getAnalyticsRevision.mockReset();
   coreMocks.getAnalyticsRevision.mockReturnValue("0");
+  coreMocks.listDashboardActiveHours.mockReset();
+  coreMocks.listDashboardActiveHours.mockReturnValue(null);
   coreMocks.listDashboardCostFacts.mockReset();
   coreMocks.listDashboardCostFacts.mockReturnValue(null);
   coreMocks.materializeSessionDetailResponse.mockReset();

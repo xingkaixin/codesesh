@@ -21,6 +21,7 @@ export interface TranscriptMessageInput {
   costSource?: Message["cost_source"];
   subagentId?: string;
   nickname?: string;
+  automated?: boolean;
 }
 
 export type AssistantMessageInput = Omit<TranscriptMessageInput, "role" | "parts">;
@@ -259,6 +260,7 @@ export class TranscriptBuilder {
       parts: (input.parts ?? []).map((part) => this.retainPart(part)),
       subagent_id: input.subagentId,
       nickname: input.nickname,
+      ...(input.automated ? { automated: true } : {}),
     };
   }
 

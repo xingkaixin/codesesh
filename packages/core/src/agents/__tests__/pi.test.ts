@@ -55,6 +55,42 @@ function captureDiagnostics(): Array<{ event: string; detail?: Record<string, un
 }
 
 describe("PiAgent", () => {
+  it("marks extension messages as automated while preserving their display", () => {
+    const id = "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa";
+    const { agent } = writePiSession(id, [
+      { type: "session", version: 3, id, timestamp: TS, cwd: "/tmp/project" },
+      {
+        type: "message",
+        id: "a",
+        parentId: null,
+        timestamp: TS,
+        message: { role: "user", content: "Human prompt" },
+      },
+      {
+        type: "message",
+        id: "b",
+        parentId: "a",
+        timestamp: TS,
+        message: { role: "custom", display: true, content: "Extension context" },
+      },
+      {
+        type: "custom_message",
+        id: "c",
+        parentId: "b",
+        timestamp: TS,
+        display: true,
+        content: "Extension notice",
+      },
+    ]);
+    agent.scan();
+    const messages = agent.getSessionData(id)!.messages;
+    expect(messages.map((m) => [m.role, m.automated === true])).toEqual([
+      ["user", false],
+      ["user", true],
+      ["user", true],
+    ]);
+  });
+
   it("parses only the current branch path", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "codesesh-pi-test-"));
     tempDirs.push(tempDir);

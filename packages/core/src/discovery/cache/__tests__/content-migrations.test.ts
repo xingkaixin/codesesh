@@ -41,13 +41,15 @@ describe("cache content migrations", () => {
       db.exec(`
         INSERT INTO sessions(agent_name, session_id) VALUES ('codex', 'codex-session');
         INSERT INTO sessions(agent_name, session_id) VALUES ('cursor', 'cursor-session');
+        INSERT INTO sessions(agent_name, session_id) VALUES ('pi', 'pi-session');
       `);
       seedAgentCache(db);
 
       runCacheContentMigrations(db);
 
-      expect(db.prepare("SELECT * FROM pending_reindex").all()).toEqual([
+      expect(db.prepare("SELECT * FROM pending_reindex ORDER BY agent_name").all()).toEqual([
         { agent_name: "codex", session_id: "codex-session" },
+        { agent_name: "pi", session_id: "pi-session" },
       ]);
       expect(db.prepare("SELECT agent_name FROM agent_cache ORDER BY agent_name").all()).toEqual([
         { agent_name: "cursor" },
@@ -55,6 +57,7 @@ describe("cache content migrations", () => {
       expect(db.prepare("SELECT key, value FROM cache_meta ORDER BY key").all()).toEqual([
         { key: "codex_exec_decode_migrated_v3", value: "1" },
         { key: "opencode_subagent_fold_v1", value: "1" },
+        { key: "pi_automated_messages_v1", value: "1" },
         { key: "subagent_tree_v1", value: "1" },
       ]);
 

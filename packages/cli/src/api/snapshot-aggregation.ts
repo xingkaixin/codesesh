@@ -1,5 +1,6 @@
 import {
   listFileActivity,
+  listDashboardActiveHours,
   listDashboardCostFacts,
   type SessionHead,
 } from "@codesesh/core/runtime/discovery";
@@ -74,7 +75,7 @@ export function getSnapshotSessionTree(
   return (cache.sessionTree ??= buildSessionTree(sessions));
 }
 
-type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities">;
+type DashboardStorageAggregation = Pick<DashboardData, "recentFileActivities" | "activeHours">;
 
 export function getSnapshotCostFacts(
   source: ScanResultSource,
@@ -105,8 +106,10 @@ export function getDashboardStorageAggregation(
   to: number,
   cacheTo: number,
   analyticsRevision: string | null,
+  timeZone: string,
 ): DashboardStorageAggregation {
   const build = (): DashboardStorageAggregation => ({
+    activeHours: listDashboardActiveHours({ ...scope, from, to, timeZone }, source.queryScope),
     recentFileActivities: listFileActivity(
       {
         agent: scope.agent,
@@ -139,6 +142,7 @@ export function getDashboardStorageAggregation(
     sessions,
     [
       "dashboard-storage",
+      timeZone,
       scope.agent,
       scope.projectKind,
       scope.projectKey,

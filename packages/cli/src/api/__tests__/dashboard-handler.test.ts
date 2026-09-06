@@ -16,6 +16,25 @@ const { handleGetDashboard } = await import("../dashboard-handler.js");
 const { handleGetProjects } = await import("../catalog-handlers.js");
 
 describe("handleGetDashboard", () => {
+  it("validates activity time zones and caches each zone independently", () => {
+    const source = makeScanSource();
+    const invalid = makeMockContext({ query: { timeZone: "invalid" } });
+    handleGetDashboard(invalid, source);
+    expect(invalid.json).toHaveBeenCalledWith(
+      { error: "timeZone must be a valid IANA time zone" },
+      400,
+    );
+    expect(coreMocks.listDashboardActiveHours).not.toHaveBeenCalled();
+    for (const timeZone of ["UTC", "UTC", "Asia/Tokyo"]) {
+      handleGetDashboard(makeMockContext({ query: { timeZone } }), source);
+    }
+    expect(coreMocks.listDashboardActiveHours).toHaveBeenCalledTimes(2);
+    expect(coreMocks.listDashboardActiveHours).toHaveBeenLastCalledWith(
+      expect.objectContaining({ timeZone: "Asia/Tokyo" }),
+      undefined,
+    );
+  });
+
   it("rejects invalid dates instead of silently using defaults", () => {
     const c = makeMockContext({ query: { from: "invalid", to: "invalid" } });
 

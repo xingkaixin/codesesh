@@ -478,7 +478,8 @@ function readCachedSessionMessageRows(
           parts_format_version,
           content_chain_digest,
           subagent_id,
-          nickname
+          nickname,
+          automated
         FROM messages
         WHERE agent_name = ? AND session_id = ? AND message_index >= ?
         ORDER BY message_index

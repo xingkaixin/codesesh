@@ -139,9 +139,10 @@ export function prepareSessionMaterializationWriter(
       content_chain_digest,
       subagent_id,
       nickname,
+      automated,
       content_text,
       tool_metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(agent_name, session_id, message_index) DO UPDATE SET
       message_id = excluded.message_id,
       role = excluded.role,
@@ -159,6 +160,7 @@ export function prepareSessionMaterializationWriter(
       content_chain_digest = excluded.content_chain_digest,
       subagent_id = excluded.subagent_id,
       nickname = excluded.nickname,
+      automated = excluded.automated,
       content_text = excluded.content_text,
       tool_metadata_json = excluded.tool_metadata_json
   `);
@@ -215,6 +217,7 @@ export function prepareSessionMaterializationWriter(
           contentChainDigest,
           message.subagentId ?? null,
           message.nickname ?? null,
+          message.automated ?? 0,
           message.contentText,
           message.toolMetadataJson ?? null,
         );

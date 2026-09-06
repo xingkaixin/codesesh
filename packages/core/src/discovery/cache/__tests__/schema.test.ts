@@ -54,6 +54,29 @@ afterEach(() => {
 });
 
 describe("cache schema boundary", () => {
+  it("adds user activity indexing to schema 33 without losing transcripts", () => {
+    const session = makeSessionHead("user-activity");
+    saveCachedSessions("codex", [session]);
+    syncSessionSearchIndex("codex", [session], () => makeSessionData("user-activity"));
+    setSchemaEnsuredPath(null);
+    const db = new Database(getCachePath());
+    db.exec(`DROP INDEX idx_messages_user_activity;
+      ALTER TABLE messages DROP COLUMN automated;
+      PRAGMA user_version = 33;`);
+    db.close();
+    expect(
+      schema.withCacheDb((db) => db.prepare("SELECT message_id, automated FROM messages").all()),
+    ).toEqual([{ message_id: "user-activity-message", automated: 0 }]);
+    expect(
+      schema.withCacheDb((db) =>
+        db
+          .prepare("PRAGMA index_info(idx_messages_user_activity)")
+          .all()
+          .map((row) => row.name),
+      ),
+    ).toEqual(["time_created", "agent_name", "session_id"]);
+  });
+
   it("upgrades the version 32 usage index without changing cost facts", () => {
     const session = makeSessionHead("usage-index");
     saveCachedSessions("codex", [session]);
