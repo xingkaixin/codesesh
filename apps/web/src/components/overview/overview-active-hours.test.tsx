@@ -45,6 +45,16 @@ describe("active hours chart", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it.each([
+    [2342, ["500", "1,000", "2,000"]],
+    [7, ["1", "2", "5"]],
+    [1, ["1"]],
+  ] as const)("uses rounded reference counts for a peak of %i", (peak, expected) => {
+    render(<OverviewActiveHours activity={{ ...activity, counts: [peak] }} />);
+    const legend = screen.getByText("Size reference (messages)").nextElementSibling!;
+    expect(Array.from(legend.children, (element) => element.textContent)).toEqual(expected);
+  });
+
   it("distinguishes an empty range from unavailable data", () => {
     const { rerender } = render(
       <OverviewActiveHours activity={{ ...activity, counts: Array<number>(84).fill(0) }} />,

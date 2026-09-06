@@ -9,26 +9,40 @@ function hourRange(slot: number): string {
   return `${String(slot * 2).padStart(2, "0")}:00–${String(slot * 2 + 2).padStart(2, "0")}:00`;
 }
 
-function ActivityBubble({
-  count,
-  peak,
-  pattern,
-}: {
-  count: number;
-  peak: number;
-  pattern: string;
-}) {
-  const radius = peak > 0 ? 12 * Math.sqrt(count / peak) : 0;
+function referenceCounts(peak: number): number[] {
+  if (peak < 1) return [];
+  return [
+    ...new Set(
+      [peak / 4, peak / 2, peak].map((value) => {
+        const power = 10 ** Math.floor(Math.log10(Math.max(1, value)));
+        const step = value / power;
+        return (step >= 5 ? 5 : step >= 2 ? 2 : 1) * power;
+      }),
+    ),
+  ];
+}
+
+function ActivityBubble({ count, peak }: { count: number; peak: number }) {
+  const pattern = useId();
+  const scale = peak > 0 ? Math.sqrt(count / peak) : 0;
+  const radius = 12 * scale;
   return (
     <svg
       width="28"
       height="28"
       viewBox="0 0 28 28"
       aria-hidden="true"
-      className="text-[var(--brand)]"
+      style={{
+        color: `color-mix(in oklab, var(--activity-high) ${scale * 100}%, var(--activity-low))`,
+      }}
     >
       {count > 0 ? (
         <>
+          <defs>
+            <pattern id={pattern} width="3" height="3" patternUnits="userSpaceOnUse">
+              <rect width="2" height="2" fill="currentColor" />
+            </pattern>
+          </defs>
           <circle cx="14" cy="14" r={radius} fill="currentColor" opacity="0.2" />
           <circle cx="14" cy="14" r={radius} fill={`url(#${pattern})`} />
         </>
@@ -39,7 +53,6 @@ function ActivityBubble({
 
 export function OverviewActiveHours({ activity }: { activity: DashboardActiveHours | null }) {
   const locale = useLocale();
-  const pattern = useId();
   const [active, setActive] = useState<number | null>(null);
   const weekdays = locale === "zh-CN" ? [1, 2, 3, 4, 5, 6, 0] : [0, 1, 2, 3, 4, 5, 6];
   const formatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
@@ -49,13 +62,6 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
 
   return (
     <Panel className="p-4" aria-label={t("Active hours")}>
-      <svg width="0" height="0" aria-hidden="true" className="absolute text-[var(--brand)]">
-        <defs>
-          <pattern id={pattern} width="3" height="3" patternUnits="userSpaceOnUse">
-            <rect width="2" height="2" fill="currentColor" />
-          </pattern>
-        </defs>
-      </svg>
       <PanelHeader title={t("Active hours")} />
       <p className="mt-1 text-xs text-[var(--console-muted)]">
         {t(
@@ -114,7 +120,7 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                             if (event.key === "Escape") setActive(null);
                           }}
                         >
-                          <ActivityBubble count={count} peak={peak} pattern={pattern} />
+                          <ActivityBubble count={count} peak={peak} />
                         </button>
                         {active === index ? (
                           <span
@@ -143,15 +149,9 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                   {t("Size reference (messages)")}
                 </span>
                 <span className="flex items-center gap-4">
-                  {[
-                    ...new Set([
-                      Math.max(1, Math.round(peak / 4)),
-                      Math.max(1, Math.round(peak / 2)),
-                      peak,
-                    ]),
-                  ].map((count) => (
+                  {referenceCounts(peak).map((count) => (
                     <span key={count} className="flex items-center gap-1.5">
-                      <ActivityBubble count={count} peak={peak} pattern={pattern} />
+                      <ActivityBubble count={count} peak={peak} />
                       {formatInt(count)}
                     </span>
                   ))}
