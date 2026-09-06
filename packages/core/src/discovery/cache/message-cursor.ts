@@ -19,6 +19,7 @@ export interface MessageCursorContent {
   partsFormatVersion: number | string | null | undefined;
   subagentId: string | null | undefined;
   nickname: string | null | undefined;
+  automated?: number;
 }
 
 function updateField(hash: Hash, value: string | number | null | undefined): void {
@@ -46,6 +47,8 @@ function updateMessageContent(hash: Hash, content: MessageCursorContent): void {
   updateField(hash, content.partsFormatVersion);
   updateField(hash, content.subagentId);
   updateField(hash, content.nickname);
+  // Keep existing cursors valid for messages whose origin has not changed.
+  if (content.automated) updateField(hash, "automated");
 }
 
 export function initialMessageCursorDigest(reference: SessionReference): string {

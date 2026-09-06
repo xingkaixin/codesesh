@@ -108,6 +108,7 @@ export function createSessionTables(db: SQLiteDatabase): void {
       content_chain_digest TEXT,
       subagent_id TEXT,
       nickname TEXT,
+      automated INTEGER NOT NULL DEFAULT 0,
       content_text TEXT NOT NULL,
       tool_metadata_json TEXT,
       PRIMARY KEY (agent_name, session_id, message_index),
@@ -520,4 +521,10 @@ function createProjectGroupsView(db: SQLiteDatabase): void {
 export function recreateProjectGroupsView(db: SQLiteDatabase): void {
   db.exec("DROP VIEW IF EXISTS project_groups_v");
   createProjectGroupsView(db);
+}
+
+export function createUserActivityIndex(db: SQLiteDatabase): void {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_user_activity
+    ON messages(time_created, agent_name, session_id)
+    WHERE role = 'user' AND automated = 0 AND time_created > 0`);
 }

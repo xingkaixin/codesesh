@@ -7,6 +7,15 @@ interface CacheContentMigration {
 
 const CACHE_CONTENT_MIGRATIONS: readonly CacheContentMigration[] = [
   {
+    key: "pi_automated_messages_v1",
+    apply(db) {
+      if (!tableExists(db, "sessions") || !tableExists(db, "pending_reindex")) return;
+      db.exec(
+        "INSERT OR IGNORE INTO pending_reindex(agent_name, session_id) SELECT agent_name, session_id FROM sessions WHERE agent_name = 'pi'",
+      );
+    },
+  },
+  {
     key: "codex_exec_decode_migrated_v3",
     apply(db) {
       if (!tableExists(db, "sessions") || !tableExists(db, "pending_reindex")) return;

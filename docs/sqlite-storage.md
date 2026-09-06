@@ -6,7 +6,7 @@ CodeSesh 将会话列表、详情快照、搜索索引和增量同步状态存�
 
 - 路径：`~/.cache/codesesh/codesesh.db`
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 33`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 34`
 <!-- repo-fact:cache-schema-version:end -->
 - 稳定导出入口：`packages/core/src/discovery/index.ts`
 - 实现目录：`packages/core/src/discovery/cache/`
@@ -204,3 +204,7 @@ materializeSessionDetailResponse()
 Schema 33 扩展消息用量时间索引，覆盖消息顺序、模型、tokens 和成本字段。
 Dashboard 的统计查询无需回读含消息正文的大表，也不再为同时间消息额外排序。
 升级时重建该派生索引，不修改消息、会话或成本数据；索引会占用额外空间并增加写入维护开销。
+
+Schema 34 为消息保存 `automated` 来源标记，并增加用户消息发送时间的部分索引。
+Dashboard 活跃时段只统计有发送时间的非自动用户消息，排除子 Agent 会话，按浏览器时区聚合。
+Pi 扩展注入消息通过一次性重新索引补齐来源标记。

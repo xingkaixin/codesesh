@@ -150,6 +150,8 @@ export interface Message {
   parts: MessagePart[];
   subagent_id?: string;
   nickname?: string;
+  /** Source-generated content displayed as a user message, rather than human input. */
+  automated?: boolean;
 }
 
 /** Lightweight metadata for session listing */
