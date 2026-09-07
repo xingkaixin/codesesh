@@ -9,19 +9,6 @@ function hourRange(slot: number): string {
   return `${String(slot * 2).padStart(2, "0")}:00–${String(slot * 2 + 2).padStart(2, "0")}:00`;
 }
 
-function referenceCounts(peak: number): number[] {
-  if (peak < 1) return [];
-  return [
-    ...new Set(
-      [peak / 4, peak / 2, peak].map((value) => {
-        const power = 10 ** Math.floor(Math.log10(Math.max(1, value)));
-        const step = value / power;
-        return (step >= 5 ? 5 : step >= 2 ? 2 : 1) * power;
-      }),
-    ),
-  ];
-}
-
 function ActivityBubble({ count, peak }: { count: number; peak: number }) {
   const pattern = useId();
   const scale = peak > 0 ? Math.sqrt(count / peak) : 0;
@@ -82,7 +69,7 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
             <caption className="sr-only">{t("Active hours")}</caption>
             <thead>
               <tr>
-                <th scope="col" className="w-[90px] pb-2 text-left font-normal">
+                <th scope="col" className="w-[48px] pb-2 text-left font-normal">
                   {t("Time")}
                 </th>
                 {labels.map((label) => (
@@ -99,7 +86,7 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                     scope="row"
                     className="h-8 bg-[var(--console-surface)] text-left font-normal tabular-nums"
                   >
-                    {hourRange(slot)}
+                    {`${String(slot * 2).padStart(2, "0")}:00`}
                   </th>
                   {weekdays.map((day, column) => {
                     const index = day * 12 + slot;
@@ -145,17 +132,17 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
               <span>{t("No user messages in this range.")}</span>
             ) : (
               <>
-                <span title={t("Reference sizes; these counts may not occur in the chart.")}>
-                  {t("Size reference (messages)")}
-                </span>
-                <span className="flex items-center gap-4">
-                  {referenceCounts(peak).map((count) => (
-                    <span key={count} className="flex items-center gap-1.5">
-                      <ActivityBubble count={count} peak={peak} />
-                      {formatInt(count)}
-                    </span>
+                <span
+                  className="flex items-center gap-1.5"
+                  aria-label={t("Size reference (messages)")}
+                >
+                  {t("Less")}
+                  {[1, 4, 9].map((count) => (
+                    <ActivityBubble key={count} count={count} peak={9} />
                   ))}
+                  {t("More")}
                 </span>
+                <span>{t("Peak: {0}", [formatInt(peak)])}</span>
               </>
             )}
           </div>

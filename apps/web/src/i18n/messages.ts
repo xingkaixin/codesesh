@@ -18,10 +18,9 @@ export const messages = {
     "この期間のユーザーメッセージはありません。",
   ],
   "Size reference (messages)": ["大小参考（消息数）", "サイズの目安（メッセージ数）"],
-  "Reference sizes; these counts may not occur in the chart.": [
-    "圆点面积的参考刻度，不代表图中一定存在对应计数。",
-    "円の面積の目安です。グラフ内に同じ件数が存在するとは限りません。",
-  ],
+  Less: ["少", "少ない"],
+  More: ["多", "多い"],
+  "Peak: {0}": ["峰值：{0}", "最大：{0}"],
   COST: ["费用", "費用"],
   plan: ["计划", "計画"],
   USER: ["用户", "ユーザー"],
