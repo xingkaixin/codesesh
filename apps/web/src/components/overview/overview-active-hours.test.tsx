@@ -15,18 +15,23 @@ afterEach(() => {
 describe("active hours chart", () => {
   it("reorders weekdays when language changes without moving message counts", () => {
     render(<OverviewActiveHours activity={activity} />);
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("Sun");
+    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("Sun");
     act(() => setLanguagePreference("zh-CN"));
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("周一");
+    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("周一");
     expect(screen.getByRole("button", { name: "周日 · 00:00–02:00 · 4 条用户消息" })).toBeTruthy();
     act(() => setLanguagePreference("ja"));
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("日");
+    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("日");
     expect(screen.getByText("タイムゾーン：Asia/Shanghai")).toBeTruthy();
   });
 
   it("scales circle area and exposes counts with hover, keyboard and touch", () => {
     render(<OverviewActiveHours activity={activity} />);
-    expect(screen.getAllByRole("rowheader").map((header) => header.textContent)).toEqual([
+    expect(
+      screen
+        .getAllByRole("rowheader")
+        .filter((header) => header.getAttribute("scope") === "row")
+        .map((header) => header.textContent),
+    ).toEqual([
       "00:00",
       "02:00",
       "04:00",
@@ -40,6 +45,14 @@ describe("active hours chart", () => {
       "20:00",
       "22:00",
     ]);
+    const groups = screen.getAllByRole("rowgroup").slice(1);
+    expect(groups.map((group) => group.querySelector('[scope="rowgroup"]')?.textContent)).toEqual([
+      "Overnight",
+      "Morning",
+      "Afternoon",
+      "Evening",
+    ]);
+    expect(groups.map((group) => group.querySelectorAll("tr").length)).toEqual([3, 3, 3, 3]);
     const sunday = screen.getByRole("button", { name: "Sun · 00:00–02:00 · 4 user messages" });
     const monday = screen.getByRole("button", { name: "Mon · 00:00–02:00 · 1 user messages" });
     const radius = (button: HTMLElement) =>

@@ -1,5 +1,10 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Day period": ["时段分组", "時間帯の区分"],
+  Overnight: ["凌晨", "未明"],
+  Morning: ["上午", "午前"],
+  Afternoon: ["下午", "午後"],
+  Evening: ["晚上", "夜間"],
   Time: ["时段", "時間帯"],
   "Active hours": ["活跃时段", "アクティブな時間帯"],
   "User messages by weekday and two-hour period. Counts are cumulative within the selected range.":

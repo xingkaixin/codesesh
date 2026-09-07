@@ -40,6 +40,7 @@ function ActivityBubble({ count, peak }: { count: number; peak: number }) {
 
 export function OverviewActiveHours({ activity }: { activity: DashboardActiveHours | null }) {
   const locale = useLocale();
+  const periods = [t("Overnight"), t("Morning"), t("Afternoon"), t("Evening")];
   const [active, setActive] = useState<number | null>(null);
   const weekdays = locale === "zh-CN" ? [1, 2, 3, 4, 5, 6, 0] : [0, 1, 2, 3, 4, 5, 6];
   const formatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
@@ -69,7 +70,10 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
             <caption className="sr-only">{t("Active hours")}</caption>
             <thead>
               <tr>
-                <th scope="col" className="w-[48px] pb-2 text-left font-normal">
+                <th scope="col" className={locale === "en" ? "w-16" : "w-9"}>
+                  <span className="sr-only">{t("Day period")}</span>
+                </th>
+                <th scope="col" className="w-11 pb-2 text-left font-normal">
                   {t("Time")}
                 </th>
                 {labels.map((label) => (
@@ -79,53 +83,74 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                 ))}
               </tr>
             </thead>
-            <tbody className="chart-hatch">
-              {Array.from({ length: 12 }, (_, slot) => (
-                <tr key={slot} className="border-t border-dashed border-[var(--console-border)]">
-                  <th
-                    scope="row"
-                    className="h-8 bg-[var(--console-surface)] text-left font-normal tabular-nums"
-                  >
-                    {`${String(slot * 2).padStart(2, "0")}:00`}
-                  </th>
-                  {weekdays.map((day, column) => {
-                    const index = day * 12 + slot;
-                    const count = activity.counts[index] ?? 0;
-                    const summary = `${labels[column]} · ${hourRange(slot)} · ${t("{0} user messages", [formatInt(count)])}`;
-                    return (
-                      <td key={day} className="relative p-0 text-center">
-                        <button
-                          type="button"
-                          aria-label={summary}
-                          className="flex h-8 w-full items-center justify-center rounded-sm outline-none hover:bg-[var(--brand-soft)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
-                          onMouseEnter={() => setActive(index)}
-                          onMouseLeave={() => setActive(null)}
-                          onFocus={() => setActive(index)}
-                          onBlur={() => setActive(null)}
-                          onClick={() => setActive(index)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Escape") setActive(null);
-                          }}
+            {periods.map((period, group) => (
+              <tbody key={period} className="chart-hatch">
+                {Array.from({ length: 3 }, (_, row) => {
+                  const slot = group * 3 + row;
+                  return (
+                    <tr
+                      key={slot}
+                      className={
+                        row === 0 && group > 0
+                          ? "border-t border-solid border-[var(--console-border-strong)]"
+                          : "border-t border-dashed border-[var(--console-border)]"
+                      }
+                    >
+                      {row === 0 ? (
+                        <th
+                          scope="rowgroup"
+                          rowSpan={3}
+                          className="bg-[var(--console-surface)] pr-2 text-left align-middle font-normal"
                         >
-                          <ActivityBubble count={count} peak={peak} />
-                        </button>
-                        {active === index ? (
-                          <span
-                            role="tooltip"
-                            className={`pointer-events-none absolute bottom-full z-10 w-max max-w-[180px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-left text-[var(--console-text)] shadow-[var(--shadow-overlay)] ${column < 3 ? "left-0" : "right-0"}`}
-                          >
-                            {`${labels[column]} · ${hourRange(slot)} · `}
-                            <span className="font-semibold text-[var(--brand)]">
-                              {t("{0} user messages", [formatInt(count)])}
-                            </span>
-                          </span>
-                        ) : null}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
+                          {period}
+                        </th>
+                      ) : null}
+                      <th
+                        scope="row"
+                        className="h-8 bg-[var(--console-surface)] text-left font-normal tabular-nums"
+                      >
+                        {`${String(slot * 2).padStart(2, "0")}:00`}
+                      </th>
+                      {weekdays.map((day, column) => {
+                        const index = day * 12 + slot;
+                        const count = activity.counts[index] ?? 0;
+                        const summary = `${labels[column]} · ${hourRange(slot)} · ${t("{0} user messages", [formatInt(count)])}`;
+                        return (
+                          <td key={day} className="relative p-0 text-center">
+                            <button
+                              type="button"
+                              aria-label={summary}
+                              className="flex h-8 w-full items-center justify-center rounded-sm outline-none hover:bg-[var(--brand-soft)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+                              onMouseEnter={() => setActive(index)}
+                              onMouseLeave={() => setActive(null)}
+                              onFocus={() => setActive(index)}
+                              onBlur={() => setActive(null)}
+                              onClick={() => setActive(index)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Escape") setActive(null);
+                              }}
+                            >
+                              <ActivityBubble count={count} peak={peak} />
+                            </button>
+                            {active === index ? (
+                              <span
+                                role="tooltip"
+                                className={`pointer-events-none absolute bottom-full z-10 w-max max-w-[180px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-left text-[var(--console-text)] shadow-[var(--shadow-overlay)] ${column < 3 ? "left-0" : "right-0"}`}
+                              >
+                                {`${labels[column]} · ${hourRange(slot)} · `}
+                                <span className="font-semibold text-[var(--brand)]">
+                                  {t("{0} user messages", [formatInt(count)])}
+                                </span>
+                              </span>
+                            ) : null}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            ))}
           </table>
           <div className="mt-3 flex min-h-7 flex-wrap items-center justify-end gap-4 console-mono text-[10.5px] text-[var(--console-muted)]">
             {peak === 0 ? (
