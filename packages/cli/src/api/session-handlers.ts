@@ -202,7 +202,8 @@ export async function handleGetSessionData(
         session_id: sessionId,
         duration_ms: Math.round(performance.now() - startedAt),
       });
-      return c.json({ error: "Session cache not ready" }, 404);
+      c.header("Retry-After", "1");
+      return c.json({ error: "Session detail not ready; retry later" }, 503);
     }
 
     appLogger.info("api.session_data", {

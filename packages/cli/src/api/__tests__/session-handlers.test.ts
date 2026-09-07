@@ -599,13 +599,15 @@ describe("handleGetSessionData", () => {
     expect(c.json).toHaveBeenCalledWith({ error: "Unknown agent: unknown" }, 404);
   });
 
-  it("maps unavailable detail to 404", async () => {
+  it("maps unavailable detail to a retryable 503", async () => {
     coreMocks.materializeSessionDetailResponse.mockReturnValue({ status: "not-ready" });
     const c = makeMockContext({ param: { agent: "claudecode", id: "s1" } });
+    c.header = vi.fn();
 
     await handleGetSessionData(c, makeScanSource());
 
-    expect(c.json).toHaveBeenCalledWith({ error: "Session cache not ready" }, 404);
+    expect(c.header).toHaveBeenCalledWith("Retry-After", "1");
+    expect(c.json).toHaveBeenCalledWith({ error: "Session detail not ready; retry later" }, 503);
   });
 
   it("maps materialization errors to 500", async () => {
