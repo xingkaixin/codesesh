@@ -63,20 +63,15 @@ function readAliasView(): AliasView | null {
 
 const EMPTY_ALIAS_VIEW = buildAliasView(new Map());
 
-/**
- * Aliases change only through this process's own PUT/DELETE handlers, so the
- * read model is built once and reused until one of them invalidates it. Six read
- * handlers call this per request; without the cache each one re-queries the whole
- * table. Failed reads return an empty view for that request but are not published,
- * so a recovered store is retried on the next request.
- */
-let cachedView: AliasView | null = null;
+// Other CLI instances share state.db but cannot invalidate this process's view.
+const ALIAS_VIEW_TTL_MS = 1_000;
+let cachedView: { view: AliasView; expiresAt: number } | null = null;
 
 export function loadAliasView(): AliasView {
-  if (cachedView) return cachedView;
+  if (cachedView && Date.now() < cachedView.expiresAt) return cachedView.view;
   const loaded = readAliasView();
   if (!loaded) return EMPTY_ALIAS_VIEW;
-  cachedView = loaded;
+  cachedView = { view: loaded, expiresAt: Date.now() + ALIAS_VIEW_TTL_MS };
   return loaded;
 }
 
