@@ -219,6 +219,7 @@ function sameWindow(
 export function useSessionStore(window: AppConfig["window"] | null) {
   const queryClient = useQueryClient();
   const pendingProjectionLoads = useRef(new PendingSessionProjectionLoads()).current;
+  const liveAggregateRefreshRef = useRef<{ dirty: boolean } | null>(null);
   const liveAggregateWindowRef = useRef<AppConfig["window"] | null>(null);
   const liveAggregateRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const projectionQuery = useQuery<SessionProjection>({
@@ -259,6 +260,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
 
   useEffect(
     () => () => {
+      liveAggregateRefreshRef.current = null;
       if (liveAggregateRefreshTimerRef.current) {
         clearTimeout(liveAggregateRefreshTimerRef.current);
         liveAggregateRefreshTimerRef.current = null;
@@ -328,16 +330,30 @@ export function useSessionStore(window: AppConfig["window"] | null) {
       const forceAggregateRefresh = !sameWindow(liveAggregateWindowRef.current, activeWindow);
       const refreshAggregates = () => {
         liveAggregateRefreshTimerRef.current = null;
-        void Promise.all([
-          refreshLiveSnapshotAggregates(queryClient, activeWindow),
-          refreshProjectQueries(queryClient, activeWindow),
-        ])
-          .then(() => {
-            liveAggregateWindowRef.current = activeWindow;
-          })
-          .catch(() => undefined);
+        if (liveAggregateRefreshRef.current) {
+          liveAggregateRefreshRef.current.dirty = true;
+          return;
+        }
+        const refresh = { dirty: false };
+        liveAggregateRefreshRef.current = refresh;
+        const run = async () => {
+          try {
+            do {
+              refresh.dirty = false;
+              await Promise.all([
+                refreshLiveSnapshotAggregates(queryClient, activeWindow),
+                refreshProjectQueries(queryClient, activeWindow),
+              ]);
+              if (liveAggregateRefreshRef.current !== refresh) return;
+              liveAggregateWindowRef.current = activeWindow;
+            } while (refresh.dirty);
+          } finally {
+            if (liveAggregateRefreshRef.current === refresh) liveAggregateRefreshRef.current = null;
+          }
+        };
+        void run().catch(() => undefined);
       };
-      if (forceAggregateRefresh) {
+      if (forceAggregateRefresh || liveAggregateRefreshRef.current) {
         refreshAggregates();
       } else if (!liveAggregateRefreshTimerRef.current) {
         const delay = liveAggregateRefreshDelay(queryClient, activeWindow);

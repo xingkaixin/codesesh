@@ -820,15 +820,16 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
-  it("keeps overlapping live events on the incremental path", async () => {
+  it("refreshes aggregates again after an event arrives during an in-flight refresh", async () => {
     const { result } = await renderStore();
     await act(() => result.current.reload());
     vi.mocked(api.fetchSessions).mockClear();
     const firstAgents = deferred<AgentInfo[]>();
+    const updatedAgents = agents.map((agent) => ({ ...agent, count: agent.count + 1 }));
     vi.mocked(api.fetchAgents)
       .mockClear()
       .mockReturnValueOnce(firstAgents.promise)
-      .mockResolvedValue(agents);
+      .mockResolvedValue(updatedAgents);
 
     let firstUpdate!: ReturnType<typeof result.current.applyLiveEvent>;
     let secondUpdate!: ReturnType<typeof result.current.applyLiveEvent>;
@@ -841,6 +842,8 @@ describe("useSessionStore", () => {
     firstAgents.resolve(agents);
     await act(async () => firstAgents.promise);
 
+    await waitFor(() => expect(result.current.agents).toEqual(updatedAgents));
+    expect(api.fetchAgents).toHaveBeenCalledTimes(2);
     expect(api.fetchSessions).not.toHaveBeenCalled();
     expect(result.current.version).toBeGreaterThan(0);
   });
