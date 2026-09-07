@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { DashboardActiveHours } from "@codesesh/core/contract";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
@@ -9,50 +9,9 @@ function hourRange(slot: number): string {
   return `${String(slot * 2).padStart(2, "0")}:00–${String(slot * 2 + 2).padStart(2, "0")}:00`;
 }
 
-function referenceCounts(peak: number): number[] {
-  if (peak < 1) return [];
-  return [
-    ...new Set(
-      [peak / 4, peak / 2, peak].map((value) => {
-        const power = 10 ** Math.floor(Math.log10(Math.max(1, value)));
-        const step = value / power;
-        return (step >= 5 ? 5 : step >= 2 ? 2 : 1) * power;
-      }),
-    ),
-  ];
-}
-
-function ActivityBubble({ count, peak }: { count: number; peak: number }) {
-  const pattern = useId();
-  const scale = peak > 0 ? Math.sqrt(count / peak) : 0;
-  const radius = 12 * scale;
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 28 28"
-      aria-hidden="true"
-      style={{
-        color: `color-mix(in oklab, var(--activity-high) ${scale * 100}%, var(--activity-low))`,
-      }}
-    >
-      {count > 0 ? (
-        <>
-          <defs>
-            <pattern id={pattern} width="3" height="3" patternUnits="userSpaceOnUse">
-              <rect width="2" height="2" fill="currentColor" />
-            </pattern>
-          </defs>
-          <circle cx="14" cy="14" r={radius} fill="currentColor" opacity="0.2" />
-          <circle cx="14" cy="14" r={radius} fill={`url(#${pattern})`} />
-        </>
-      ) : null}
-    </svg>
-  );
-}
-
 export function OverviewActiveHours({ activity }: { activity: DashboardActiveHours | null }) {
   const locale = useLocale();
+  const slots = Array.from({ length: 12 }, (_, slot) => slot);
   const [active, setActive] = useState<number | null>(null);
   const weekdays = locale === "zh-CN" ? [1, 2, 3, 4, 5, 6, 0] : [0, 1, 2, 3, 4, 5, 6];
   const formatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
@@ -78,39 +37,43 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
             <span>{t("Time zone: {0}", [activity.timeZone])}</span>
             <span>{t("{0} user messages", [formatInt(total)])}</span>
           </div>
-          <table className="mt-[14px] w-full table-fixed border-collapse console-mono text-[10.5px] text-[var(--console-muted)]">
+          <table className="mt-[14px] w-full table-fixed border-separate border-spacing-1 console-mono text-[10.5px] text-[var(--console-muted)]">
             <caption className="sr-only">{t("Active hours")}</caption>
             <thead>
               <tr>
-                <th scope="col" className="w-[90px] pb-2 text-left font-normal">
-                  {t("Time")}
+                <th scope="col" className="w-8 pb-1 text-left font-normal">
+                  <span className="sr-only">{t("Time")}</span>
                 </th>
-                {labels.map((label) => (
-                  <th key={label} scope="col" className="pb-2 font-normal">
-                    {label}
+                {slots.map((slot) => (
+                  <th key={slot} scope="col" className="pb-1 font-normal tabular-nums">
+                    {String(slot * 2).padStart(2, "0")}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="chart-hatch">
-              {Array.from({ length: 12 }, (_, slot) => (
-                <tr key={slot} className="border-t border-dashed border-[var(--console-border)]">
-                  <th
-                    scope="row"
-                    className="h-8 bg-[var(--console-surface)] text-left font-normal tabular-nums"
-                  >
-                    {hourRange(slot)}
+            <tbody>
+              {weekdays.map((day, row) => (
+                <tr key={day}>
+                  <th scope="row" className="text-left font-normal">
+                    {labels[row]}
                   </th>
-                  {weekdays.map((day, column) => {
+                  {slots.map((slot) => {
                     const index = day * 12 + slot;
                     const count = activity.counts[index] ?? 0;
-                    const summary = `${labels[column]} · ${hourRange(slot)} · ${t("{0} user messages", [formatInt(count)])}`;
+                    const scale = peak > 0 ? Math.sqrt(count / peak) : 0;
+                    const summary = `${labels[row]} · ${hourRange(slot)} · ${t("{0} user messages", [formatInt(count)])}`;
                     return (
-                      <td key={day} className="relative p-0 text-center">
+                      <td key={slot} className="relative p-0">
                         <button
                           type="button"
                           aria-label={summary}
-                          className="flex h-8 w-full items-center justify-center rounded-sm outline-none hover:bg-[var(--brand-soft)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+                          className="block h-7 w-full rounded-[2px] outline-none hover:ring-2 hover:ring-[var(--brand)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+                          style={{
+                            backgroundColor:
+                              count > 0
+                                ? `color-mix(in oklab, var(--activity-high) ${20 + scale * 80}%, var(--console-surface))`
+                                : "var(--console-border)",
+                          }}
                           onMouseEnter={() => setActive(index)}
                           onMouseLeave={() => setActive(null)}
                           onFocus={() => setActive(index)}
@@ -119,15 +82,13 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                           onKeyDown={(event) => {
                             if (event.key === "Escape") setActive(null);
                           }}
-                        >
-                          <ActivityBubble count={count} peak={peak} />
-                        </button>
+                        />
                         {active === index ? (
                           <span
                             role="tooltip"
-                            className={`pointer-events-none absolute bottom-full z-10 w-max max-w-[180px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-left text-[var(--console-text)] shadow-[var(--shadow-overlay)] ${column < 3 ? "left-0" : "right-0"}`}
+                            className={`pointer-events-none absolute bottom-full z-10 w-max max-w-[180px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-left text-[var(--console-text)] shadow-[var(--shadow-overlay)] ${slot < 6 ? "left-0" : "right-0"}`}
                           >
-                            {`${labels[column]} · ${hourRange(slot)} · `}
+                            {`${labels[row]} · ${hourRange(slot)} · `}
                             <span className="font-semibold text-[var(--brand)]">
                               {t("{0} user messages", [formatInt(count)])}
                             </span>
@@ -145,17 +106,19 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
               <span>{t("No user messages in this range.")}</span>
             ) : (
               <>
-                <span title={t("Reference sizes; these counts may not occur in the chart.")}>
-                  {t("Size reference (messages)")}
+                <span className="flex items-center gap-2">
+                  {t("Less")}
+                  <span
+                    aria-hidden="true"
+                    className="h-2 w-20 rounded-[2px]"
+                    style={{
+                      background:
+                        "linear-gradient(to right in oklab, color-mix(in oklab, var(--activity-high) 20%, var(--console-surface)), var(--activity-high))",
+                    }}
+                  />
+                  {t("More")}
                 </span>
-                <span className="flex items-center gap-4">
-                  {referenceCounts(peak).map((count) => (
-                    <span key={count} className="flex items-center gap-1.5">
-                      <ActivityBubble count={count} peak={peak} />
-                      {formatInt(count)}
-                    </span>
-                  ))}
-                </span>
+                <span>{t("Peak: {0}", [formatInt(peak)])}</span>
               </>
             )}
           </div>

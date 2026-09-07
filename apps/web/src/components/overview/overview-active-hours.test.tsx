@@ -15,22 +15,28 @@ afterEach(() => {
 describe("active hours chart", () => {
   it("reorders weekdays when language changes without moving message counts", () => {
     render(<OverviewActiveHours activity={activity} />);
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("Sun");
+    expect(screen.getAllByRole("rowheader")[0]!.textContent).toBe("Sun");
     act(() => setLanguagePreference("zh-CN"));
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("周一");
+    expect(screen.getAllByRole("rowheader")[0]!.textContent).toBe("周一");
     expect(screen.getByRole("button", { name: "周日 · 00:00–02:00 · 4 条用户消息" })).toBeTruthy();
     act(() => setLanguagePreference("ja"));
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("日");
+    expect(screen.getAllByRole("rowheader")[0]!.textContent).toBe("日");
     expect(screen.getByText("タイムゾーン：Asia/Shanghai")).toBeTruthy();
   });
 
-  it("scales circle area and exposes counts with hover, keyboard and touch", () => {
+  it("exposes exact counts with hover, keyboard and touch", () => {
     render(<OverviewActiveHours activity={activity} />);
     const sunday = screen.getByRole("button", { name: "Sun · 00:00–02:00 · 4 user messages" });
     const monday = screen.getByRole("button", { name: "Mon · 00:00–02:00 · 1 user messages" });
-    const radius = (button: HTMLElement) =>
-      Number(button.querySelector("circle")!.getAttribute("r"));
-    expect(radius(sunday) ** 2 / radius(monday) ** 2).toBe(4);
+    expect(sunday.textContent).toBe("");
+    expect(monday.textContent).toBe("");
+    expect(screen.getAllByRole("rowheader")).toHaveLength(7);
+    expect(
+      screen
+        .getAllByRole("columnheader")
+        .slice(1)
+        .map((header) => header.textContent),
+    ).toEqual(["00", "02", "04", "06", "08", "10", "12", "14", "16", "18", "20", "22"]);
     fireEvent.mouseEnter(sunday);
     expect(screen.getByRole("tooltip").textContent).toBe(sunday.getAttribute("aria-label"));
     fireEvent.mouseLeave(sunday);
@@ -45,14 +51,15 @@ describe("active hours chart", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it.each([
-    [2342, ["500", "1,000", "2,000"]],
-    [7, ["1", "2", "5"]],
-    [1, ["1"]],
-  ] as const)("uses rounded reference counts for a peak of %i", (peak, expected) => {
-    render(<OverviewActiveHours activity={{ ...activity, counts: [peak] }} />);
-    const legend = screen.getByText("Size reference (messages)").nextElementSibling!;
-    expect(Array.from(legend.children, (element) => element.textContent)).toEqual(expected);
+  it("keeps large counts out of cells and shows the full peak and tooltip", () => {
+    render(<OverviewActiveHours activity={{ ...activity, counts: [1234567] }} />);
+    expect(screen.getByText("Peak: 1,234,567")).toBeTruthy();
+    const cell = screen.getByRole("button", {
+      name: "Sun · 00:00–02:00 · 1,234,567 user messages",
+    });
+    expect(cell.textContent).toBe("");
+    fireEvent.click(cell);
+    expect(screen.getByRole("tooltip").textContent).toBe(cell.getAttribute("aria-label"));
   });
 
   it("distinguishes an empty range from unavailable data", () => {
@@ -60,7 +67,11 @@ describe("active hours chart", () => {
       <OverviewActiveHours activity={{ ...activity, counts: Array<number>(84).fill(0) }} />,
     );
     expect(screen.getByText("No user messages in this range.")).toBeTruthy();
-    expect(screen.getByRole("table").querySelector("circle")).toBeNull();
+    const cells = screen.getAllByRole("button");
+    expect(cells).toHaveLength(84);
+    expect(cells.every((cell) => cell.textContent === "")).toBe(true);
+    fireEvent.click(cells[0]!);
+    expect(screen.getByRole("tooltip").textContent).toContain("0 user messages");
     rerender(<OverviewActiveHours activity={null} />);
     expect(screen.getByText("Activity data is unavailable.")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
