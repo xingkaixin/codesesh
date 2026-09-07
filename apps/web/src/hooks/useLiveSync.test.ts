@@ -141,37 +141,47 @@ describe("useLiveSync", () => {
     expect(deps.resyncLiveState).toHaveBeenCalledOnce();
     expect(deps.applyLiveEvent).not.toHaveBeenCalled();
   });
-  it("keeps the recovery notice until a failed resync is retried successfully", async () => {
-    vi.useFakeTimers();
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const deps = makeDeps();
-    let finishRecovery!: () => void;
-    deps.resyncLiveState
-      .mockRejectedValueOnce(new Error("HTTP unavailable"))
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            finishRecovery = resolve;
-          }),
-      );
-    const { result } = renderHook(() => useLiveSync(deps));
+  it.each(["reconnect", "event-failure"])(
+    "retries a failed resync after %s until recovery succeeds",
+    async (trigger) => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const deps = makeDeps();
+      let finishRecovery!: () => void;
+      deps.resyncLiveState
+        .mockRejectedValueOnce(new Error("HTTP unavailable"))
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finishRecovery = resolve;
+            }),
+        );
+      const { result } = renderHook(() => useLiveSync(deps));
 
-    await act(async () => reconnectCallback?.());
-    expect(result.current.liveNotice).toBe("Live data may be out of date; synchronizing…");
+      await act(async () => {
+        if (trigger === "reconnect") reconnectCallback?.();
+        else {
+          deps.applyLiveEvent.mockRejectedValueOnce(new Error("Event apply failed"));
+          sessionsCallback?.(SAMPLE_SESSIONS_UPDATED_EVENT);
+          await vi.advanceTimersByTimeAsync(500);
+        }
+      });
+      expect(result.current.liveNotice).toBe("Live data may be out of date; synchronizing…");
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
-    });
-    expect(deps.resyncLiveState).toHaveBeenCalledTimes(2);
-    expect(result.current.liveNotice).toBe("Live data may be out of date; synchronizing…");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(deps.resyncLiveState).toHaveBeenCalledTimes(2);
+      expect(result.current.liveNotice).toBe("Live data may be out of date; synchronizing…");
 
-    await act(async () => finishRecovery());
-    expect(result.current.liveNotice).toBeNull();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000);
-    });
-    expect(deps.resyncLiveState).toHaveBeenCalledTimes(2);
-  });
+      await act(async () => finishRecovery());
+      expect(result.current.liveNotice).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(deps.resyncLiveState).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it.each(["disconnect", "unmount"] as const)(
     "cancels scheduled recovery on %s",
@@ -207,4 +217,37 @@ describe("useLiveSync", () => {
     await act(async () => finishRecovery());
     expect(result.current.liveNotice).toBe("Live updates disconnected; reconnecting…");
   });
+  it.each(["disconnect", "unmount"] as const)(
+    "does not start recovery when an in-flight event fails after %s",
+    async (reason) => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const deps = makeDeps();
+      let failEvent!: (error: Error) => void;
+      deps.applyLiveEvent.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failEvent = reject;
+          }),
+      );
+      const { result, unmount } = renderHook(() => useLiveSync(deps));
+      await act(async () => {
+        sessionsCallback?.(SAMPLE_SESSIONS_UPDATED_EVENT);
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      if (reason === "unmount") unmount();
+      else act(() => disconnectCallback?.());
+      await act(async () => {
+        failEvent(new Error("Event apply failed"));
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(deps.resyncLiveState).not.toHaveBeenCalled();
+      if (reason === "disconnect") {
+        expect(result.current.liveNotice).toBe("Live updates disconnected; reconnecting…");
+        await act(async () => reconnectCallback?.());
+        expect(deps.resyncLiveState).toHaveBeenCalledOnce();
+        expect(result.current.liveNotice).toBeNull();
+      }
+    },
+  );
 });
