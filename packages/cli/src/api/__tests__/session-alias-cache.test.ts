@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { BookmarkView } from "./state-handler-test-fixtures.js";
 import {
   bookmarkScanSource,
@@ -29,6 +29,32 @@ describe("session alias caching", () => {
     handleGetBookmarks(makeContext() as never, bookmarkScanSource);
 
     expect(coreMocks.listSessionAliases).toHaveBeenCalledTimes(1);
+  });
+
+  it("observes another instance's alias writes after the cache expires", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
+    coreMocks.listSessionAliases.mockReturnValue([]);
+    const readTitle = () => {
+      const context = makeContext();
+      handleGetBookmarks(context as never, bookmarkScanSource);
+      const bookmark = getResponsePayload<{ bookmarks: BookmarkView[] }>(context).bookmarks[0];
+      return bookmark?.availability === "available" ? bookmark.session.display_title : undefined;
+    };
+    try {
+      expect(readTitle()).toBeUndefined();
+      coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
+      expect(readTitle()).toBeUndefined();
+
+      now.mockReturnValue(2_000);
+      expect(readTitle()).toBe("Renamed");
+
+      coreMocks.listSessionAliases.mockReturnValue([]);
+      now.mockReturnValue(3_000);
+      expect(readTitle()).toBeUndefined();
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("picks up a stored alias on the next read", async () => {
