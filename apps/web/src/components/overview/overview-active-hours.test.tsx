@@ -15,17 +15,44 @@ afterEach(() => {
 describe("active hours chart", () => {
   it("reorders weekdays when language changes without moving message counts", () => {
     render(<OverviewActiveHours activity={activity} />);
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("Sun");
+    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("Sun");
     act(() => setLanguagePreference("zh-CN"));
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("周一");
+    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("周一");
     expect(screen.getByRole("button", { name: "周日 · 00:00–02:00 · 4 条用户消息" })).toBeTruthy();
     act(() => setLanguagePreference("ja"));
-    expect(screen.getAllByRole("columnheader")[1]!.textContent).toBe("日");
+    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("日");
     expect(screen.getByText("タイムゾーン：Asia/Shanghai")).toBeTruthy();
   });
 
   it("scales circle area and exposes counts with hover, keyboard and touch", () => {
     render(<OverviewActiveHours activity={activity} />);
+    expect(
+      screen
+        .getAllByRole("rowheader")
+        .filter((header) => header.getAttribute("scope") === "row")
+        .map((header) => header.textContent),
+    ).toEqual([
+      "00:00",
+      "02:00",
+      "04:00",
+      "06:00",
+      "08:00",
+      "10:00",
+      "12:00",
+      "14:00",
+      "16:00",
+      "18:00",
+      "20:00",
+      "22:00",
+    ]);
+    const groups = screen.getAllByRole("rowgroup").slice(1);
+    expect(groups.map((group) => group.querySelector('[scope="rowgroup"]')?.textContent)).toEqual([
+      "Overnight",
+      "Morning",
+      "Afternoon",
+      "Evening",
+    ]);
+    expect(groups.map((group) => group.querySelectorAll("tr").length)).toEqual([3, 3, 3, 3]);
     const sunday = screen.getByRole("button", { name: "Sun · 00:00–02:00 · 4 user messages" });
     const monday = screen.getByRole("button", { name: "Mon · 00:00–02:00 · 1 user messages" });
     const radius = (button: HTMLElement) =>
@@ -45,14 +72,15 @@ describe("active hours chart", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it.each([
-    [2342, ["500", "1,000", "2,000"]],
-    [7, ["1", "2", "5"]],
-    [1, ["1"]],
-  ] as const)("uses rounded reference counts for a peak of %i", (peak, expected) => {
+  it.each([2342, 7, 1])("shows a relative area legend and the exact peak of %i", (peak) => {
     render(<OverviewActiveHours activity={{ ...activity, counts: [peak] }} />);
-    const legend = screen.getByText("Size reference (messages)").nextElementSibling!;
-    expect(Array.from(legend.children, (element) => element.textContent)).toEqual(expected);
+    const legend = screen.getByLabelText("Size reference (messages)");
+    expect(legend.textContent).toBe("LessMore");
+    const radii = Array.from(legend.querySelectorAll("svg"), (svg) =>
+      Number(svg.querySelector("circle")!.getAttribute("r")),
+    );
+    expect(radii).toEqual([4, 8, 12]);
+    expect(screen.getByText(`Peak: ${peak.toLocaleString("en-US")}`)).toBeTruthy();
   });
 
   it("distinguishes an empty range from unavailable data", () => {
