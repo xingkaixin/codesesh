@@ -121,9 +121,9 @@ describe("useSessionDetail", () => {
     expect(result.current.session).toBeNull();
   });
 
-  it("recovers from a failed detail request with a local retry", async () => {
+  it.each([500, 503])("recovers from a %i detail response with a local retry", async (status) => {
     vi.mocked(api.fetchSessionData)
-      .mockRejectedValueOnce(new api.ApiRequestError("server unavailable", 500))
+      .mockRejectedValueOnce(new api.ApiRequestError("server unavailable", status))
       .mockResolvedValueOnce(sample);
     const { result } = renderSessionDetail();
 
