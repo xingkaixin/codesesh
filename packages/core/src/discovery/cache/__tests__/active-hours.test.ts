@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const home = mkdtempSync(join(tmpdir(), "codesesh-active-hours-"));
@@ -10,7 +11,7 @@ vi.mock("node:os", async (original) => ({
 }));
 
 import { listDashboardActiveHours } from "../active-hours.js";
-import { closeCacheStorage } from "../db.js";
+import { closeCacheStorage, getCachePath } from "../db.js";
 import { syncSessionSearchIndex } from "../search.js";
 import { saveCachedSessions } from "../sessions.js";
 import { loadCachedSessionRawEntry } from "../sessions.js";
@@ -91,6 +92,27 @@ describe("user active hours", () => {
         (m) => m.message_id === "injected",
       )?.automated,
     ).toBe(1);
+  });
+
+  it.each([undefined, from])("reads the user activity index with lower bound %s", (lowerBound) => {
+    seed();
+    const prepare = vi.spyOn(Database.prototype, "prepare");
+    let sql: string;
+    try {
+      expect(listDashboardActiveHours({ ...options, from: lowerBound })!.counts).toHaveLength(84);
+      sql = prepare.mock.calls.find(([source]) => source.includes("SELECT m.time_created"))![0];
+    } finally {
+      prepare.mockRestore();
+    }
+    const db = new Database(getCachePath(), { readonly: true });
+    try {
+      const params = lowerBound === undefined ? [to] : [to, lowerBound];
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as { detail: string }[];
+      expect(plan[0]!.detail).toContain("idx_messages_user_activity");
+      expect(plan.map(({ detail }) => detail).join("\n")).not.toContain("idx_messages_session");
+    } finally {
+      db.close();
+    }
   });
 
   it("uses the requested time zone across midnight and repeated DST hours", () => {

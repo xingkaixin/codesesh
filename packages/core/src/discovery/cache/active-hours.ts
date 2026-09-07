@@ -45,9 +45,10 @@ export function listDashboardActiveHours(
   }
   const read = withCacheDbReadOnly((db) => {
     const counts = Array<number>(84).fill(0);
+    // Avoid the session-first plan, which reads every message before filtering user activity.
     const rows = db
       .prepare(`
-      SELECT m.time_created FROM messages m
+      SELECT m.time_created FROM messages m INDEXED BY idx_messages_user_activity
       JOIN sessions s ON s.agent_name = m.agent_name AND s.session_id = m.session_id
       WHERE ${clauses.join(" AND ")}
     `)
