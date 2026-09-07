@@ -24,6 +24,7 @@ import type { ScanEventSource } from "../scan-source.js";
 import type { ProjectIdentityResolver } from "../project-identity-resolver.js";
 import { appLogger } from "../logging.js";
 import type { SessionDetailLoader } from "../session-detail-loader.js";
+import { loadAliasView } from "./session-aliases-view.js";
 import { SseEventBuffer } from "./sse-event-buffer.js";
 
 export const MAX_ACTIVE_SSE_CONNECTIONS = 32;
@@ -116,7 +117,19 @@ function createSseResponse(
           buffer.enqueueScanStatus(eventSource.getScanStatus());
 
           unsubscribeSessions = eventSource.subscribe((event) => {
-            buffer?.enqueue(event.type, event);
+            if (isClosed) return;
+            const aliases = loadAliasView();
+            buffer?.enqueue(event.type, {
+              ...event,
+              changedSessionHeads: event.changedSessionHeads.map((change) => ({
+                ...change,
+                session: aliases.decorate(change.session, change.reference),
+              })),
+              projectionRelatedSessionHeads: event.projectionRelatedSessionHeads?.map((change) => ({
+                ...change,
+                session: aliases.decorate(change.session, change.reference),
+              })),
+            });
           });
           unsubscribeScanStatus = eventSource.subscribeScanStatus((event) => {
             buffer?.enqueueScanStatus(event);
