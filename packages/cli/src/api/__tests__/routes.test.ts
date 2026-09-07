@@ -1,5 +1,15 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
+import type { SessionAlias } from "@codesesh/core/runtime/state";
+
+const stateMocks = vi.hoisted(() => ({
+  listSessionAliases: vi.fn<() => SessionAlias[]>(() => []),
+}));
+vi.mock("@codesesh/core/runtime/state", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  listSessionAliases: stateMocks.listSessionAliases,
+}));
+
 const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
 
 vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
@@ -9,6 +19,7 @@ import {
 } from "@codesesh/core/test-fixtures";
 import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contract";
 import { createApiRoutes, MAX_ACTIVE_SSE_CONNECTIONS } from "../routes.js";
+import { invalidateAliasView } from "../session-aliases-view.js";
 import { MAX_PENDING_CRITICAL_SSE_FRAMES } from "../sse-event-buffer.js";
 import type { LiveSnapshot } from "@codesesh/core/runtime/discovery";
 import type { ScanResultSource } from "../scan-sources.js";
@@ -16,6 +27,9 @@ import type { ScanEventSource } from "../../scan-source.js";
 
 describe("createApiRoutes", () => {
   beforeEach(() => {
+    invalidateAliasView();
+    stateMocks.listSessionAliases.mockReset();
+    stateMocks.listSessionAliases.mockReturnValue([]);
     loggerMocks.info.mockClear();
     loggerMocks.warn.mockClear();
   });
@@ -25,6 +39,44 @@ describe("createApiRoutes", () => {
       .filter(([loggedEvent]) => loggedEvent === event)
       .map(([, data]) => data as Record<string, unknown>);
   }
+
+  it("preserves aliases in changed and related session records over SSE", async () => {
+    const change = SAMPLE_SESSIONS_UPDATED_EVENT.changedSessionHeads[0]!;
+    stateMocks.listSessionAliases.mockReturnValue([
+      { reference: change.reference, alias: "Renamed session", updatedAt: 1 },
+    ]);
+    let emitSession: ((event: SessionsUpdatedEvent) => void) | undefined;
+    const app = createApiRoutes(
+      { getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) },
+      {
+        getScanStatus: () => SAMPLE_SCAN_STATUS_EVENT,
+        subscribe: (listener) => {
+          emitSession = listener;
+          return () => {};
+        },
+        subscribeScanStatus: () => () => {},
+      },
+    );
+    const response = await app.request("/events");
+    const reader = response.body!.getReader();
+    try {
+      await reader.read();
+      await reader.read();
+      emitSession!({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        projectionRelatedSessionHeads: [change],
+      });
+      const frame = new TextDecoder().decode((await reader.read()).value);
+      const event = JSON.parse(frame.split("data: ")[1]!) as SessionsUpdatedEvent;
+      expect(event.changedSessionHeads[0]!.session.display_title).toBe("Renamed session");
+      expect(event.projectionRelatedSessionHeads![0]!.session.display_title).toBe(
+        "Renamed session",
+      );
+      expect(change.session).not.toHaveProperty("display_title");
+    } finally {
+      await reader.cancel();
+    }
+  });
 
   it("logs bounded connection lifecycle data with elapsed time", async () => {
     const eventSource: ScanEventSource = {
