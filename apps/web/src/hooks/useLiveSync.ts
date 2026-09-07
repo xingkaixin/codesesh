@@ -25,6 +25,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
   const pendingEventRef = useRef<SessionsUpdatedEvent | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const updateChainRef = useRef(Promise.resolve());
+  const startRecoveryRef = useRef(() => {});
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
     try {
@@ -34,6 +35,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
       }
     } catch (error) {
       console.error("Failed to sync live session update:", error);
+      startRecoveryRef.current();
     }
   });
 
@@ -59,6 +61,29 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
 
   useEffect(() => {
     let cancelRecovery = () => {};
+    const startRecovery = () => {
+      cancelRecovery();
+      clearPendingLiveUpdate();
+      setConnectionState("recovering");
+      let cancelled = false;
+      let retryTimer: ReturnType<typeof setTimeout> | undefined;
+      cancelRecovery = () => {
+        cancelled = true;
+        clearTimeout(retryTimer);
+      };
+      const recover = async () => {
+        try {
+          await resync();
+          if (!cancelled) setConnectionState("connected");
+        } catch (error) {
+          if (cancelled) return;
+          console.error("Failed to resync live session state:", error);
+          retryTimer = setTimeout(() => void recover(), LIVE_RECOVERY_RETRY_MS);
+        }
+      };
+      void recover();
+    };
+    startRecoveryRef.current = startRecovery;
     const unsubscribe = subscribeSessionUpdates(
       (event) => {
         pendingEventRef.current = pendingEventRef.current
@@ -71,33 +96,17 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
       },
       setScanStatus,
       () => {
-        cancelRecovery();
-        clearPendingLiveUpdate();
-        setConnectionState("recovering");
-        let cancelled = false;
-        let retryTimer: ReturnType<typeof setTimeout> | undefined;
-        cancelRecovery = () => {
-          cancelled = true;
-          clearTimeout(retryTimer);
-        };
-        const recover = async () => {
-          try {
-            await resync();
-            if (!cancelled) setConnectionState("connected");
-          } catch (error) {
-            if (cancelled) return;
-            console.error("Failed to resync live session state:", error);
-            retryTimer = setTimeout(() => void recover(), LIVE_RECOVERY_RETRY_MS);
-          }
-        };
-        void recover();
+        startRecoveryRef.current = startRecovery;
+        startRecovery();
       },
       () => {
+        startRecoveryRef.current = () => {};
         cancelRecovery();
         setConnectionState("disconnected");
       },
     );
     return () => {
+      startRecoveryRef.current = () => {};
       cancelRecovery();
       unsubscribe();
     };
