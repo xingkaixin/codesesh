@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { DashboardActiveHours } from "@codesesh/core/contract";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
@@ -37,7 +37,10 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
             <span>{t("Time zone: {0}", [activity.timeZone])}</span>
             <span>{t("{0} user messages", [formatInt(total)])}</span>
           </div>
-          <table className="mt-[14px] w-full table-fixed border-separate border-spacing-1 console-mono text-[10.5px] text-[var(--console-muted)]">
+          <table
+            data-active={active !== null ? "true" : undefined}
+            className="mt-[14px] w-full table-fixed border-separate border-spacing-1 console-mono text-[10.5px] text-[var(--console-muted)]"
+          >
             <caption className="sr-only">{t("Active hours")}</caption>
             <thead>
               <tr>
@@ -45,7 +48,15 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                   <span className="sr-only">{t("Time")}</span>
                 </th>
                 {slots.map((slot) => (
-                  <th key={slot} scope="col" className="pb-1 font-normal tabular-nums">
+                  <th
+                    key={slot}
+                    scope="col"
+                    className="pb-1 font-normal tabular-nums"
+                    style={{
+                      color:
+                        active !== null && active % 12 === slot ? "var(--console-text)" : undefined,
+                    }}
+                  >
                     {String(slot * 2).padStart(2, "0")}
                   </th>
                 ))}
@@ -54,7 +65,16 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
             <tbody>
               {weekdays.map((day, row) => (
                 <tr key={day}>
-                  <th scope="row" className="text-left font-normal">
+                  <th
+                    scope="row"
+                    className="text-left font-normal"
+                    style={{
+                      color:
+                        active !== null && Math.floor(active / 12) === day
+                          ? "var(--console-text)"
+                          : undefined,
+                    }}
+                  >
                     {labels[row]}
                   </th>
                   {slots.map((slot) => {
@@ -67,13 +87,17 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                         <button
                           type="button"
                           aria-label={summary}
-                          className="block h-7 w-full rounded-[2px] outline-none hover:ring-2 hover:ring-[var(--brand)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
-                          style={{
-                            backgroundColor:
-                              count > 0
-                                ? `color-mix(in oklab, var(--activity-high) ${20 + scale * 80}%, var(--console-surface))`
-                                : "var(--console-border)",
-                          }}
+                          className="activity-cell block h-7 w-full rounded-[2px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+                          data-active={active === index ? "true" : undefined}
+                          data-empty={count === 0 ? "true" : undefined}
+                          style={
+                            {
+                              "--activity-color":
+                                count > 0
+                                  ? `color-mix(in oklab, var(--activity-high) ${20 + scale * 80}%, var(--console-surface))`
+                                  : "var(--console-border)",
+                            } as CSSProperties
+                          }
                           onMouseEnter={() => setActive(index)}
                           onMouseLeave={() => setActive(null)}
                           onFocus={() => setActive(index)}
@@ -82,7 +106,9 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
                           onKeyDown={(event) => {
                             if (event.key === "Escape") setActive(null);
                           }}
-                        />
+                        >
+                          <span aria-hidden="true" className="activity-cell-tiles" />
+                        </button>
                         {active === index ? (
                           <span
                             role="tooltip"

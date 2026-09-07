@@ -38,8 +38,10 @@ describe("active hours chart", () => {
         .map((header) => header.textContent),
     ).toEqual(["00", "02", "04", "06", "08", "10", "12", "14", "16", "18", "20", "22"]);
     fireEvent.mouseEnter(sunday);
+    expect(sunday.getAttribute("data-active")).toBe("true");
     expect(screen.getByRole("tooltip").textContent).toBe(sunday.getAttribute("aria-label"));
     fireEvent.mouseLeave(sunday);
+    expect(sunday.hasAttribute("data-active")).toBe(false);
     expect(screen.queryByRole("tooltip")).toBeNull();
     fireEvent.focus(monday);
     expect(screen.getByRole("tooltip").textContent).toBe(monday.getAttribute("aria-label"));
