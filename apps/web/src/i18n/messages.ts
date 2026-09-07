@@ -506,6 +506,10 @@ export const messages = {
     "发现 {0} 个新会话，列表已自动刷新",
     "新しいセッションを {0} 件検出し、一覧を自動更新しました",
   ],
+  "Live data may be out of date; synchronizing…": [
+    "实时数据可能已过时，正在同步…",
+    "即時資料可能已過時，正在同步…",
+  ],
   "Live updates disconnected; reconnecting…": [
     "实时连接已断开，正在重连…",
     "ライブ更新が切断されました。再接続中…",

@@ -15,10 +15,13 @@ interface LiveSyncDeps {
 }
 
 const LIVE_UPDATE_WINDOW_MS = 500;
+const LIVE_RECOVERY_RETRY_MS = 5_000;
 
 export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: LiveSyncDeps) {
   const [newSessionCount, setNewSessionCount] = useState<number | null>(null);
-  const [disconnected, setDisconnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<
+    "connected" | "disconnected" | "recovering"
+  >("connected");
   const pendingEventRef = useRef<SessionsUpdatedEvent | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const updateChainRef = useRef(Promise.resolve());
@@ -49,19 +52,14 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     pendingTimerRef.current = null;
   });
 
-  const handleReconnect = useEffectEvent(async () => {
-    clearPendingLiveUpdate();
-    setDisconnected(false);
-    try {
-      await updateChainRef.current;
-      await resyncLiveState();
-    } catch (error) {
-      console.error("Failed to resync live session state:", error);
-    }
+  const resync = useEffectEvent(async () => {
+    await updateChainRef.current;
+    await resyncLiveState();
   });
 
   useEffect(() => {
-    return subscribeSessionUpdates(
+    let cancelRecovery = () => {};
+    const unsubscribe = subscribeSessionUpdates(
       (event) => {
         pendingEventRef.current = pendingEventRef.current
           ? mergeSessionsUpdatedEvents(pendingEventRef.current, event)
@@ -72,11 +70,37 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
         );
       },
       setScanStatus,
-      () => void handleReconnect(),
       () => {
-        setDisconnected(true);
+        cancelRecovery();
+        clearPendingLiveUpdate();
+        setConnectionState("recovering");
+        let cancelled = false;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        cancelRecovery = () => {
+          cancelled = true;
+          clearTimeout(retryTimer);
+        };
+        const recover = async () => {
+          try {
+            await resync();
+            if (!cancelled) setConnectionState("connected");
+          } catch (error) {
+            if (cancelled) return;
+            console.error("Failed to resync live session state:", error);
+            retryTimer = setTimeout(() => void recover(), LIVE_RECOVERY_RETRY_MS);
+          }
+        };
+        void recover();
+      },
+      () => {
+        cancelRecovery();
+        setConnectionState("disconnected");
       },
     );
+    return () => {
+      cancelRecovery();
+      unsubscribe();
+    };
   }, [setScanStatus]);
 
   useEffect(() => () => clearPendingLiveUpdate(), []);
@@ -88,10 +112,13 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
   }, [newSessionCount]);
 
   return {
-    liveNotice: disconnected
-      ? t("Live updates disconnected; reconnecting…")
-      : newSessionCount == null
-        ? null
-        : t("{0} new sessions found; the list refreshed automatically", [newSessionCount]),
+    liveNotice:
+      connectionState === "disconnected"
+        ? t("Live updates disconnected; reconnecting…")
+        : connectionState === "recovering"
+          ? t("Live data may be out of date; synchronizing…")
+          : newSessionCount == null
+            ? null
+            : t("{0} new sessions found; the list refreshed automatically", [newSessionCount]),
   };
 }

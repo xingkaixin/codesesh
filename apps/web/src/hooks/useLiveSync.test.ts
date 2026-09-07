@@ -38,6 +38,7 @@ function makeDeps(visibleNewSessions = 0) {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   sessionsCallback = undefined;
   reconnectCallback = undefined;
@@ -139,5 +140,71 @@ describe("useLiveSync", () => {
     expect(result.current.liveNotice).toBeNull();
     expect(deps.resyncLiveState).toHaveBeenCalledOnce();
     expect(deps.applyLiveEvent).not.toHaveBeenCalled();
+  });
+  it("keeps the recovery notice until a failed resync is retried successfully", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const deps = makeDeps();
+    let finishRecovery!: () => void;
+    deps.resyncLiveState
+      .mockRejectedValueOnce(new Error("HTTP unavailable"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRecovery = resolve;
+          }),
+      );
+    const { result } = renderHook(() => useLiveSync(deps));
+
+    await act(async () => reconnectCallback?.());
+    expect(result.current.liveNotice).toBe("Live data may be out of date; synchronizing…");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(deps.resyncLiveState).toHaveBeenCalledTimes(2);
+    expect(result.current.liveNotice).toBe("Live data may be out of date; synchronizing…");
+
+    await act(async () => finishRecovery());
+    expect(result.current.liveNotice).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(deps.resyncLiveState).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["disconnect", "unmount"] as const)(
+    "cancels scheduled recovery on %s",
+    async (reason) => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const deps = makeDeps();
+      deps.resyncLiveState.mockRejectedValue(new Error("HTTP unavailable"));
+      const { unmount } = renderHook(() => useLiveSync(deps));
+      await act(async () => reconnectCallback?.());
+
+      if (reason === "unmount") unmount();
+      else act(() => disconnectCallback?.());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(deps.resyncLiveState).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not let an older recovery clear a later disconnect", async () => {
+    const deps = makeDeps();
+    let finishRecovery!: () => void;
+    deps.resyncLiveState.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRecovery = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useLiveSync(deps));
+    await act(async () => reconnectCallback?.());
+    act(() => disconnectCallback?.());
+    await act(async () => finishRecovery());
+    expect(result.current.liveNotice).toBe("Live updates disconnected; reconnecting…");
   });
 });
