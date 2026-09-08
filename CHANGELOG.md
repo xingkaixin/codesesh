@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.7] - 2026-09-08
+
+This release introduces an active hours breakdown on the Overview dashboard to visualize coding activity across the day, ensures live session updates and reconnection recover cleanly from errors, keeps unavailable session details retryable, refreshes aggregate metrics after overlapping updates, preserves session aliases through live events, leverages the user activity database index on startup, and upgrades pnpm to 12.3.4.
+
+### Features
+
+- Added an active hours chart on the Overview dashboard showing user interaction distribution across time of day, grouped into day periods with shaded activity levels. (#598, #603)
+
+### Performance
+
+- Utilized the user activity database index during startup scans to accelerate initial dashboard metric calculations. (#604)
+
+### Bug Fixes
+
+- Recovered from failed live session updates and retried state recovery after SSE reconnection to maintain reliable real-time synchronization. (#601, #607)
+- Kept unavailable session details retryable so temporary load failures can be recovered without reloading the page. (#606)
+- Refreshed dashboard aggregate metrics after overlapping updates to prevent stale counts. (#605)
+- Preserved custom session aliases during live updates and properly expired shared alias views to prevent stale alias displays. (#599, #600)
+
+### Build
+
+- Upgraded pnpm to 12.3.4. (#597)
+
 ## [1.0.6] - 2026-09-05
 
 This release adds full UI localization in English, Simplified Chinese, and Japanese with persistent preferences, fetches and caches up-to-date model pricing from models.dev before scanning, redesigns the product site with a product changelog and interactive session globe, accelerates all-time analytics reads and session tree traversals, ignores non-session Cursor watch events, keeps background refresh notices quiet, and fixes dashboard chart tooltips, pagination snapshot retention, and bookmark synchronization.
