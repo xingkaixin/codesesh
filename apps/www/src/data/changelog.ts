@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.7",
+        date: "2026-09-08",
+        title: "Active hours overview and more resilient live sync",
+        summary:
+          "The Overview dashboard now features an active hours breakdown to visualize your coding rhythm across the day. Real-time updates recover cleanly from disconnections and transient errors, unavailable sessions remain retryable, and custom session aliases are preserved throughout live streams.",
+        direction:
+          "A local coding history tool should reveal personal development patterns without friction, and live synchronization must remain rock-solid regardless of connection flickers or heavy background updates.",
+        highlights: [
+          {
+            title: "Active hours by time of day",
+            description:
+              "See when you collaborate with AI agents throughout the day, grouped by morning, afternoon, and evening periods with intensity cues.",
+          },
+          {
+            title: "Resilient live synchronization",
+            description:
+              "Reconnection and transient stream failures recover automatically, keeping session lists and dashboard aggregates in sync without manual reloads.",
+          },
+          {
+            title: "Retryable sessions and durable aliases",
+            description:
+              "Temporarily unavailable session details can be retried directly, and custom session aliases remain intact during concurrent live updates.",
+          },
+        ],
+      },
+      {
         version: "1.0.6",
         date: "2026-09-05",
         title: "Localized interface and faster history analytics",
@@ -201,6 +227,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.7",
+        date: "2026-09-08",
+        title: "活跃时段概览与更稳健的实时同步",
+        summary:
+          "Overview 概览面板新增活跃时段分布，直观呈现全天不同时段的 AI 交互节奏。实时更新大幅加固断线重连与异常自愈能力，临时不可用的会话详情支持一键重试，自定义会话别名在实时流中得到完整保护。",
+        direction:
+          "本地编码历史工具不仅要忠实记录会话，更要帮助开发者洞察自己的 AI 协作节奏；而无论本地环境或连接如何波动，实时同步都必须始终稳定自愈。",
+        highlights: [
+          {
+            title: "一日活跃时段分布",
+            description:
+              "按上午、下午、晚间等时段清晰汇总与 Agent 的交互频次，配合直观的气泡强度图例呈现工作节奏。",
+          },
+          {
+            title: "自愈式实时状态同步",
+            description:
+              "网络重连或偶发更新异常后自动完成状态恢复，重叠更新后及时刷新统计指标，无需手动刷新页面。",
+          },
+          {
+            title: "会话按需重试与别名保护",
+            description:
+              "临时读取失败的会话详情可直接重试恢复，自定义设置的会话别名在实时更新推送期间不会被覆盖或丢失。",
+          },
+        ],
+      },
+      {
         version: "1.0.6",
         date: "2026-09-05",
         title: "多语言界面与更快的历史分析",
@@ -323,6 +375,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.7",
+        date: "2026-09-08",
+        title: "アクティブ時間帯の可視化とリアルタイム同期の堅牢化",
+        summary:
+          "ダッシュボードにアクティブ時間帯の分布表示が加わり、1 日のどの時間帯に AI と対話しているかがひと目で把握できるようになりました。ネットワーク再接続や一時的なエラーからの自動復旧を強化し、セッション詳細の再試行やカスタム別名の保護も向上しています。",
+        direction:
+          "ローカルの履歴ツールは開発の記録を保つだけでなく、日々の作業リズムを直感的に捉えられるべきです。そして接続の変動があっても、リアルタイム同期は常に自律して正常な状態を維持しなければなりません。",
+        highlights: [
+          {
+            title: "時間帯別のアクティブ状況",
+            description:
+              "朝、昼、夜などの時間区分ごとに Agent との対話頻度をまとめ、バブルの濃淡で作業リズムを直感的に示します。",
+          },
+          {
+            title: "自律復旧するリアルタイム同期",
+            description:
+              "接続切断や一時的なストリーム障害の後も自動で状態を復元し、重複した更新の後も統計値を正しく再計算します。",
+          },
+          {
+            title: "セッションの再試行と別名保護",
+            description:
+              "一時的に読み込めなかったセッション詳細はその場で再試行でき、設定したカスタム別名がリアルタイム更新で消えるのを防ぎます。",
+          },
+        ],
+      },
       {
         version: "1.0.6",
         date: "2026-09-05",
