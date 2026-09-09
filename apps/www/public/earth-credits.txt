@@ -1,0 +1,44 @@
+Earth rendering credits
+
+Surface BRDF adapted from Solaris by Cuvii:
+https://github.com/thecuvii/solaris/blob/5e2e15e3db18001a764fcef23f60cbc2d59ae5ef/src/earth/atmospheric-orb.effect.tsx
+
+CodeSesh uses Solaris surface lighting and textures in its existing WebGL sphere renderer.
+The full Solaris atmospheric scattering and bloom pipeline is not included.
+
+Earth textures: Solar System Scope (INOVE), CC BY 4.0.
+https://www.solarsystemscope.com/textures/
+https://creativecommons.org/licenses/by/4.0/
+
+The six WebP maps were prepared by Cuvii from the three.js Earth example textures
+at commit 444f238c63b594fbaf1d5adde301fa7e10c29a83:
+https://github.com/mrdoob/three.js/tree/444f238c63b594fbaf1d5adde301fa7e10c29a83/examples/textures/planets
+Cuvii converted day/night maps, extracted cloud and roughness channels,
+generated a tangent-space normal map, and derived the ocean material mask.
+CodeSesh resized these maps from 2048x1024 to 512x256 using cwebp (quality 85)
+for the small sphere in the landing page solar system.
+
+Source and adaptation details:
+https://github.com/thecuvii/solaris/blob/5e2e15e3db18001a764fcef23f60cbc2d59ae5ef/website/public/textures/v1/CREDITS.md
+
+MIT License
+
+Copyright (c) 2026 Cuvii
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
