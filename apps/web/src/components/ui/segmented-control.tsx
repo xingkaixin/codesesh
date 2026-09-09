@@ -6,6 +6,8 @@
 import { useRef } from "react";
 import type * as React from "react";
 
+import { useFluidHover } from "../../hooks/useFluidHover";
+
 import { cn } from "../../lib/utils";
 
 export interface SegmentedOption<T extends string> {
@@ -31,6 +33,7 @@ export function SegmentedControl<T extends string>({
   size?: "sm" | "md";
   ariaLabel: string;
 }) {
+  const hoverRef = useFluidHover<HTMLDivElement>();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const selectedIndex = options.findIndex((option) => option.value === value);
   const focusIndex = selectedIndex < 0 ? 0 : selectedIndex;
@@ -43,6 +46,8 @@ export function SegmentedControl<T extends string>({
 
   return (
     <div
+      ref={hoverRef}
+      data-fluid-hover="x"
       role="radiogroup"
       aria-label={ariaLabel}
       className="inline-flex rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-[3px]"
@@ -51,6 +56,7 @@ export function SegmentedControl<T extends string>({
         const selected = index === selectedIndex;
         return (
           <button
+            data-fluid-item
             key={option.value}
             ref={(node) => {
               buttons.current[index] = node;

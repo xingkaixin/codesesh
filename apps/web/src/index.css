@@ -6,6 +6,7 @@
    Never move it. See index.html's pre-hydration script and hooks/useTheme.ts. */
 
 @import "tailwindcss";
+@import "../../shared/fluid-hover.css";
 
 @plugin "tailwindcss-animate";
 

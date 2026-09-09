@@ -1,3 +1,4 @@
+import { useFluidHover } from "../../hooks/useFluidHover";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { useCallback, useEffect, type ReactNode } from "react";
@@ -212,6 +213,7 @@ export function AppSidebar({
   actions: AppSidebarActions;
 }) {
   useLocale();
+  const hoverRef = useFluidHover<HTMLUListElement>();
 
   const activeSessionReference =
     viewState.mode === "session"
@@ -244,9 +246,14 @@ export function AppSidebar({
     >
       <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
         <section>
-          <ul className="console-scrollbar max-h-[min(320px,calc(100vh-400px))] space-y-1 overflow-y-auto pr-1">
+          <ul
+            ref={hoverRef}
+            data-fluid-hover="y"
+            className="console-scrollbar max-h-[min(320px,calc(100vh-400px))] space-y-1 overflow-y-auto pr-1"
+          >
             <li className="flex items-center gap-2">
               <Link
+                data-fluid-item
                 to="/"
                 data-active={isOverviewSelected ? "true" : undefined}
                 className={`min-w-0 flex-1 ${navItemClass(isOverviewSelected)}`}
@@ -269,6 +276,7 @@ export function AppSidebar({
             </li>
             <li>
               <Link
+                data-fluid-item
                 to="/projects"
                 data-active={isProjectsSelected ? "true" : undefined}
                 className={navItemClass(isProjectsSelected)}

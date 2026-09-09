@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../../../shared/fluid-hover.css";
 
 @custom-variant dark (&:is(.dark *));
 

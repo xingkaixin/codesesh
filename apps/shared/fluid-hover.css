@@ -1,0 +1,57 @@
+[data-fluid-hover] {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-fluid-hover] [data-fluid-item] {
+  position: relative;
+  z-index: 1;
+}
+
+[data-fluid-ready]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--fluid-width, 0px);
+  height: var(--fluid-height, 0px);
+  transform: translate(var(--fluid-x, 0px), var(--fluid-y, 0px));
+  background: var(--console-surface-muted);
+  border-radius: var(--radius-sm, 6px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms ease-out;
+}
+
+[data-fluid-ready][data-fluid-travel]::before {
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    height 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 100ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-fluid-ready][data-fluid-visible]::before {
+    opacity: 1;
+  }
+
+  [data-fluid-ready]
+    [data-fluid-item]:not([data-active="true"]):not([aria-checked="true"]):not(
+      [aria-current="page"]
+    ):hover {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-fluid-ready][data-fluid-travel]::before {
+    transition: opacity 100ms ease-out;
+  }
+}
+
+@media (forced-colors: active) {
+  [data-fluid-ready]::before {
+    display: none;
+  }
+}
