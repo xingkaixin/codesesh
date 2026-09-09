@@ -39,21 +39,37 @@ const themes = [
     </a>
 
     <nav
-      class="ml-8 hidden items-center gap-6 md:flex"
+      data-fluid-hover="x"
+      class="ml-8 hidden items-center gap-2 md:flex"
       aria-label={localeConfig[locale].primaryNavigationLabel}
     >
-      <a class="landing-nav-link" href={`${homeRoute}#tour`}>{t.tour}</a>
-      <a class="landing-nav-link" href={`${homeRoute}#capabilities`}
-        >{t.capabilities}</a
-      >
-      <a class="landing-nav-link" href={`${homeRoute}#agents`}>{t.agents}</a>
       <a
-        class="landing-nav-link hidden lg:inline"
+        data-fluid-item
+        class="landing-nav-link rounded-sm px-2 py-2"
+        href={`${homeRoute}#tour`}>{t.tour}</a
+      >
+      <a
+        data-fluid-item
+        class="landing-nav-link rounded-sm px-2 py-2"
+        href={`${homeRoute}#capabilities`}>{t.capabilities}</a
+      >
+      <a
+        data-fluid-item
+        class="landing-nav-link rounded-sm px-2 py-2"
+        href={`${homeRoute}#agents`}>{t.agents}</a
+      >
+      <a
+        data-fluid-item
+        class="landing-nav-link rounded-sm px-2 py-2 hidden lg:inline"
         href={changelogRoutes[locale]}
         aria-current={page === "changelog" ? "page" : undefined}
         >{t.changelog}</a
       >
-      <a class="landing-nav-link" href={`${homeRoute}#faq`}>{t.faq}</a>
+      <a
+        data-fluid-item
+        class="landing-nav-link rounded-sm px-2 py-2"
+        href={`${homeRoute}#faq`}>{t.faq}</a
+      >
     </nav>
 
     <nav
@@ -62,12 +78,14 @@ const themes = [
     >
       <div
         class="flex min-h-9 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-0.5"
+        data-fluid-hover="x"
         role="group"
         aria-label={t.languageLabel}
       >
         {
           locales.map((item) => (
             <a
+              data-fluid-item
               href={languageRoutes?.[item] ?? localeConfig[item].route}
               class:list={[
                 "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
@@ -121,6 +139,22 @@ const themes = [
 </header>
 
 <script>
+  import { attachFluidHover } from "../../../shared/fluid-hover";
+
+  function setupFluidHover() {
+    const cleanups = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-fluid-hover]"),
+      attachFluidHover,
+    );
+    document.addEventListener(
+      "astro:before-swap",
+      () => cleanups.forEach((cleanup) => cleanup()),
+      { once: true },
+    );
+  }
+  setupFluidHover();
+  document.addEventListener("astro:after-swap", setupFluidHover);
+
   const THEMES = ["light", "dark", "system"] as const;
   type Theme = (typeof THEMES)[number];
   const NEXT_THEME: Record<Theme, Theme> = {
