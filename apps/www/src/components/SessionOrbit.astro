@@ -1,8 +1,25 @@
 ---
-import earthMap from "../assets/backgrounds/earth-map.webp";
+import earthDay from "../assets/earth/day.webp";
+import earthNight from "../assets/earth/night.webp";
+import earthCloud from "../assets/earth/cloud.webp";
+import earthNormal from "../assets/earth/normal.webp";
+import earthMaterial from "../assets/earth/material.webp";
+import earthRoughness from "../assets/earth/roughness.webp";
+
+const earthTextures = [
+  earthDay,
+  earthNight,
+  earthCloud,
+  earthNormal,
+  earthMaterial,
+  earthRoughness,
+];
 ---
 
-<div class="session-orbit-wrap" data-earth-texture={earthMap.src}>
+<div
+  class="session-orbit-wrap"
+  data-earth-textures={JSON.stringify(earthTextures.map(({ src }) => src))}
+>
   <canvas class="session-orbit" data-session-orbit aria-hidden="true"></canvas>
   <div class="session-orbit__badge" data-orbit-badge>
     <span class="badge__dot" data-badge-dot></span>
@@ -112,6 +129,8 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
 </style>
 
 <script>
+  import { earthSurfaceShader } from "./session-orbit/earth-surface";
+  import { loadEarthTextures } from "./session-orbit/earth-textures";
   type Mesh = {
     position: WebGLBuffer;
     normal: WebGLBuffer;
@@ -196,8 +215,7 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
     uniform float uKind;
     uniform float uHover;
 
-    uniform sampler2D uEarthTex;
-    uniform float uHasEarthTex;
+    ${earthSurfaceShader}
 
     varying vec3 vNormal;
     varying vec3 vWorld;
@@ -247,45 +265,7 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
         color += uHighlight * (uHover * 0.35);
         alpha = 0.94 + coronaGlow * 0.06;
       } else if (uKind < 2.5) {
-        // === KIND 2: REAL EARTH (NASA BLUE MARBLE + ATMOSPHERE) ===
-        vec3 groundColor;
-        float isOcean = 0.0;
-
-        if (uHasEarthTex > 0.5) {
-          vec4 texColor = texture2D(uEarthTex, vUv);
-          groundColor = texColor.rgb;
-          // Ocean identification: high blue, low red
-          isOcean = smoothstep(0.35, 0.12, texColor.r) * smoothstep(0.12, 0.26, texColor.b);
-        } else {
-          float continentNoise = sin(vObject.x * 6.5) * cos(vObject.y * 5.5 + vObject.z * 4.0);
-          isOcean = 1.0 - smoothstep(0.12, 0.24, continentNoise);
-          vec3 ocean = vec3(0.10, 0.32, 0.65);
-          vec3 land = vec3(0.24, 0.54, 0.32);
-          groundColor = mix(land, ocean, isOcean);
-        }
-
-        // Dynamic atmospheric cloud swirls drifting over continents
-        float cloudU = vUv.x - uTime * 0.025;
-        float cloudNoise1 = sin(cloudU * 22.0 + sin(vUv.y * 14.0) * 1.6) * cos(vUv.y * 16.0);
-        float cloudNoise2 = sin(cloudU * 36.0 + uTime * 0.015) * sin(vUv.y * 22.0);
-        float clouds = smoothstep(0.38, 0.72, cloudNoise1 * 0.6 + cloudNoise2 * 0.4);
-
-        // Soft cloud shadow on ground
-        groundColor *= 1.0 - clouds * 0.32;
-        // Blend bright white cloud tops
-        vec3 surfaceWithClouds = mix(groundColor, vec3(0.96, 0.98, 1.0), clouds * 0.82);
-
-        // Diffuse illumination
-        color = surfaceWithClouds * (0.52 + diffuseKey * 0.48);
-
-        // Only oceans reflect the sun's glare!
-        float oceanSpecular = specKey * isOcean * (1.0 - clouds * 0.85);
-        color += vec3(0.95, 0.98, 1.0) * (oceanSpecular * 1.15);
-
-        // Thin electric-blue Rayleigh atmospheric limb scattering
-        float atmosphere = pow(1.0 - abs(dot(normal, viewDir)), 2.8);
-        color += vec3(0.2, 0.6, 1.0) * (atmosphere * 0.95);
-
+        color = earthSurface(vUv, vObject, normal, viewDir, keyLight, uTime);
         color += uHighlight * (uHover * 0.35);
         alpha = 1.0;
       } else if (uKind < 3.5) {
@@ -1013,8 +993,6 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
       highlight: gl.getUniformLocation(meshProg, "uHighlight"),
       shockwave: gl.getUniformLocation(meshProg, "uShockwave"),
       shockwavePower: gl.getUniformLocation(meshProg, "uShockwavePower"),
-      earthTex: gl.getUniformLocation(meshProg, "uEarthTex"),
-      hasEarthTex: gl.getUniformLocation(meshProg, "uHasEarthTex"),
     };
 
     const partAttrs = {
@@ -1037,50 +1015,12 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
       shockwavePower: gl.getUniformLocation(particleProg, "uShockwavePower"),
     };
 
-    // Initialize Earth texture map
-    const earthTexture = gl.createTexture();
-    let hasEarthTexture = false;
-
-    if (earthTexture) {
-      gl.bindTexture(gl.TEXTURE_2D, earthTexture);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        1,
-        1,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        new Uint8Array([20, 60, 140, 255]),
-      );
-
-      const earthImg = new Image();
-      earthImg.src = container.dataset.earthTexture ?? "";
-      earthImg.onload = () => {
-        gl.bindTexture(gl.TEXTURE_2D, earthTexture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGBA,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          earthImg,
-        );
-        gl.generateMipmap(gl.TEXTURE_2D);
-        gl.texParameteri(
-          gl.TEXTURE_2D,
-          gl.TEXTURE_MIN_FILTER,
-          gl.LINEAR_MIPMAP_LINEAR,
-        );
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        hasEarthTexture = true;
-        start();
-      };
-    }
+    const earthTextures = loadEarthTextures(
+      gl,
+      meshProg,
+      JSON.parse(container.dataset.earthTextures ?? "[]"),
+      start,
+    );
 
     const planets: Planet[] = [
       {
@@ -1376,13 +1316,7 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
       );
       gl.uniform1f(meshUniforms.shockwavePower, shockwavePower);
 
-      // Bind Earth texture unit 0
-      if (earthTexture) {
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, earthTexture);
-        gl.uniform1i(meshUniforms.earthTex, 0);
-      }
-      gl.uniform1f(meshUniforms.hasEarthTex, hasEarthTexture ? 1.0 : 0.0);
+      earthTextures.bind();
 
       const viewProjection = multiply(projection, view);
 
@@ -1706,9 +1640,7 @@ import earthMap from "../assets/backgrounds/earth-map.webp";
         resizeObserver.disconnect();
         intersectionObserver.disconnect();
         themeObserver.disconnect();
-        if (earthTexture) {
-          gl.deleteTexture(earthTexture);
-        }
+        earthTextures.dispose();
         activeCanvas.removeEventListener("pointerdown", handlePointerDown);
         activeCanvas.removeEventListener("pointermove", handlePointerMove);
         activeCanvas.removeEventListener("pointerup", handlePointerUp);
