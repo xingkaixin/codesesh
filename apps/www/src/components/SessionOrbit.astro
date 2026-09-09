@@ -1,4 +1,10 @@
 ---
+import sunMap from "../assets/planets/sun.webp";
+import moonMap from "../assets/planets/moon.webp";
+import marsMap from "../assets/planets/mars.webp";
+import jupiterMap from "../assets/planets/jupiter.webp";
+import saturnMap from "../assets/planets/saturn.webp";
+import ringsMap from "../assets/planets/rings.webp";
 import earthDay from "../assets/earth/day.webp";
 import earthNight from "../assets/earth/night.webp";
 import earthCloud from "../assets/earth/cloud.webp";
@@ -18,6 +24,14 @@ const earthTextures = [
 
 <div
   class="session-orbit-wrap"
+  data-body-textures={JSON.stringify([
+    sunMap.src,
+    moonMap.src,
+    marsMap.src,
+    jupiterMap.src,
+    saturnMap.src,
+    ringsMap.src,
+  ])}
   data-earth-textures={JSON.stringify(earthTextures.map(({ src }) => src))}
 >
   <canvas class="session-orbit" data-session-orbit aria-hidden="true"></canvas>
@@ -129,6 +143,8 @@ const earthTextures = [
 </style>
 
 <script>
+  import { bodySurfaceShader } from "./session-orbit/body-surface";
+  import { loadBodyTextures } from "./session-orbit/body-textures";
   import { earthSurfaceShader } from "./session-orbit/earth-surface";
   import { loadEarthTextures } from "./session-orbit/earth-textures";
   type Mesh = {
@@ -216,6 +232,7 @@ const earthTextures = [
     uniform float uHover;
 
     ${earthSurfaceShader}
+    ${bodySurfaceShader}
 
     varying vec3 vNormal;
     varying vec3 vWorld;
@@ -241,6 +258,25 @@ const earthTextures = [
       vec3 color = vec3(0.0);
       float alpha = 1.0;
 
+      #ifdef BODY_PASS
+      if (uKind < 1.5) {
+        color = solarObservation(normal, uTime);
+        color += uHighlight * (uHover * 0.35);
+        alpha = 1.0;
+      } else if (uKind < 6.5) {
+        color = litBody(vUv, normal, viewDir, keyLight, uKind < 4.5 ? 0.95 : 0.8);
+        color += uHighlight * (uHover * 0.4);
+        alpha = 1.0;
+      } else if (uKind < 7.5) {
+        vec4 ring = saturnRing(vObject, normal, viewDir, keyLight);
+        color = ring.rgb;
+        alpha = ring.a;
+      } else if (uKind < 8.5) {
+        color = neptuneAtmosphere(vObject, normal, viewDir, keyLight, uTime);
+        color += uHighlight * (uHover * 0.4);
+        alpha = 1.0;
+      }
+      #else
       if (uKind < 0.5) {
         // === KIND 0: ORBIT PATHS ===
         float angle = atan(vObject.z, vObject.x);
@@ -251,87 +287,9 @@ const earthTextures = [
         color *= 0.55 + diffuseKey * 0.35;
         color += uHighlight * (specKey * 0.85 + fresnel * 0.45 + packet * 0.75);
         alpha = 0.18 + fresnel * 0.38 + packet * 0.32;
-      } else if (uKind < 1.5) {
-        // === KIND 1: THE SUN (SOL) ===
-        float s1 = sin(vObject.x * 9.0 + uTime * 1.5) * cos(vObject.y * 8.0 - uTime * 1.2);
-        float s2 = sin(vObject.z * 11.0 - uTime * 1.4) * cos(vObject.x * 7.0 + uTime * 0.9);
-        float plasma = (s1 + s2) * 0.25 + 0.5;
-
-        vec3 sunCore = mix(vec3(1.0, 0.56, 0.16), vec3(1.0, 0.86, 0.40), plasma);
-        vec3 sunCorona = mix(vec3(1.0, 0.36, 0.08), vec3(1.0, 0.74, 0.24), plasma);
-        float coronaGlow = pow(1.0 - abs(dot(normal, viewDir)), 1.7);
-
-        color = mix(sunCore, sunCorona, coronaGlow * 0.7) + vec3(1.0, 0.96, 0.82) * (coronaGlow * 0.85);
-        color += uHighlight * (uHover * 0.35);
-        alpha = 0.94 + coronaGlow * 0.06;
       } else if (uKind < 2.5) {
         color = earthSurface(vUv, vObject, normal, viewDir, keyLight, uTime);
         color += uHighlight * (uHover * 0.35);
-        alpha = 1.0;
-      } else if (uKind < 3.5) {
-        // === KIND 3: MOON ===
-        float craters = sin(vObject.x * 24.0) * cos(vObject.y * 22.0) * 0.15;
-        vec3 moonColor = vec3(0.72, 0.74, 0.76) + craters;
-        color = moonColor * (0.5 + diffuseKey * 0.5);
-        alpha = 1.0;
-      } else if (uKind < 4.5) {
-        // === KIND 4: MARS ===
-        float polar = smoothstep(0.78, 0.92, abs(vObject.y));
-        float terrain = sin(vObject.x * 8.0 + vObject.z * 7.0) * cos(vObject.y * 9.0) * 0.18;
-        vec3 rust = mix(vec3(0.78, 0.34, 0.18), vec3(0.62, 0.26, 0.14), terrain + 0.5);
-        vec3 marsColor = mix(rust, vec3(0.94, 0.94, 0.96), polar);
-        color = marsColor * (0.55 + diffuseKey * 0.45) + vec3(0.85, 0.55, 0.35) * (fresnel * 0.35);
-        color += uHighlight * (uHover * 0.4);
-        alpha = 1.0;
-      } else if (uKind < 5.5) {
-        // === KIND 5: JUPITER ===
-        float wave = sin(vObject.x * 6.0 + uTime * 0.3) * 1.2;
-        float bandVal = sin(vObject.y * 32.0 + wave);
-        vec3 band1 = vec3(0.82, 0.68, 0.52);
-        vec3 band2 = vec3(0.64, 0.42, 0.28);
-        vec3 band3 = vec3(0.92, 0.84, 0.72);
-        vec3 jupColor = mix(band1, band2, smoothstep(-0.4, 0.4, bandVal));
-        jupColor = mix(jupColor, band3, smoothstep(0.3, 0.8, sin(vObject.y * 18.0 - wave * 0.5)));
-
-        vec2 spotCoord = vec2((vObject.x - 0.45) * 1.8, vObject.y + 0.32);
-        float inSpot = smoothstep(0.22, 0.08, length(spotCoord));
-        jupColor = mix(jupColor, vec3(0.78, 0.28, 0.20), inSpot * 0.85);
-
-        color = jupColor * (0.55 + diffuseKey * 0.45) + vec3(0.85, 0.78, 0.65) * (fresnel * 0.35);
-        color += uHighlight * (uHover * 0.4);
-        alpha = 1.0;
-      } else if (uKind < 6.5) {
-        // === KIND 6: SATURN BODY ===
-        float satBand = sin(vObject.y * 28.0);
-        vec3 sat1 = vec3(0.88, 0.80, 0.62);
-        vec3 sat2 = vec3(0.76, 0.68, 0.50);
-        vec3 satColor = mix(sat1, sat2, smoothstep(-0.5, 0.5, satBand));
-        color = satColor * (0.55 + diffuseKey * 0.45) + vec3(0.88, 0.82, 0.70) * (fresnel * 0.35);
-        color += uHighlight * (uHover * 0.4);
-        alpha = 1.0;
-      } else if (uKind < 7.5) {
-        // === KIND 7: SATURN RING ===
-        float r = length(vObject.xz);
-        float normR = clamp((r - 1.35) / (2.45 - 1.35), 0.0, 1.0);
-        float cassini = 1.0 - smoothstep(0.018, 0.0, abs(normR - 0.62));
-        float fineBands = 0.75 + 0.25 * sin(normR * 55.0);
-
-        vec3 ringTint = mix(vec3(0.84, 0.76, 0.60), vec3(0.70, 0.62, 0.48), normR) * fineBands;
-        ringTint += uHighlight * (specKey * 0.6);
-        float edgeFade = smoothstep(0.0, 0.08, normR) * smoothstep(1.0, 0.92, normR);
-        alpha = (0.55 + 0.32 * fineBands) * cassini * edgeFade;
-        color = ringTint;
-      } else if (uKind < 8.5) {
-        // === KIND 8: NEPTUNE ===
-        float storms = sin(vObject.y * 18.0 + sin(vObject.x * 5.0 + uTime * 0.4)) * 0.15;
-        vec3 deepBlue = vec3(0.12, 0.28, 0.78);
-        vec3 brightAzure = vec3(0.24, 0.52, 0.94);
-        vec3 nepColor = mix(deepBlue, brightAzure, storms + 0.5);
-
-        float nepAtmosphere = pow(1.0 - abs(dot(normal, viewDir)), 2.4);
-        color = nepColor * (0.55 + diffuseKey * 0.45) + vec3(0.45, 0.82, 1.0) * (nepAtmosphere * 0.85);
-        color += vec3(0.75, 0.92, 1.0) * (specKey * 0.55);
-        color += uHighlight * (uHover * 0.4);
         alpha = 1.0;
       } else {
         // === KIND 9: TELEMETRY BEAM ===
@@ -340,6 +298,7 @@ const earthTextures = [
         color += uSurface * (fresnel * 0.55);
         alpha = (0.28 + beamTravel * 0.38 + uHover * 0.34) * (1.0 - abs(vObject.y - 0.5) * 0.5);
       }
+      #endif
 
       color += uHighlight * (vShockwaveWave * 1.35);
       alpha = min(1.0, alpha + vShockwaveWave * 0.5);
@@ -940,6 +899,11 @@ const earthTextures = [
       meshVertexShaderSource,
       meshFragmentShaderSource,
     );
+    const candidateBodyProg = createProgram(
+      gl,
+      meshVertexShaderSource,
+      "#define BODY_PASS\n" + meshFragmentShaderSource,
+    );
     const candidateParticleProg = createProgram(
       gl,
       particleVertexShaderSource,
@@ -955,6 +919,7 @@ const earthTextures = [
 
     if (
       !candidateMeshProg ||
+      !candidateBodyProg ||
       !candidateParticleProg ||
       !candidateSphereMesh ||
       !candidateTorusMesh ||
@@ -967,6 +932,7 @@ const earthTextures = [
     }
 
     const meshProg: WebGLProgram = candidateMeshProg;
+    const bodyProg: WebGLProgram = candidateBodyProg;
     const particleProg: WebGLProgram = candidateParticleProg;
     const sphereMesh: Mesh = candidateSphereMesh;
     const torusMesh: Mesh = candidateTorusMesh;
@@ -975,25 +941,28 @@ const earthTextures = [
     const particles: ParticleBuffer = candidateParticles;
     const sparks: SparkBuffer = candidateSparks;
 
-    const meshAttrs = {
-      position: gl.getAttribLocation(meshProg, "aPosition"),
-      normal: gl.getAttribLocation(meshProg, "aNormal"),
-      uv: gl.getAttribLocation(meshProg, "aTexCoord"),
-    };
-    const meshUniforms = {
-      projection: gl.getUniformLocation(meshProg, "uProjection"),
-      view: gl.getUniformLocation(meshProg, "uView"),
-      model: gl.getUniformLocation(meshProg, "uModel"),
-      normalMatrix: gl.getUniformLocation(meshProg, "uNormalMatrix"),
-      time: gl.getUniformLocation(meshProg, "uTime"),
-      kind: gl.getUniformLocation(meshProg, "uKind"),
-      hover: gl.getUniformLocation(meshProg, "uHover"),
-      accent: gl.getUniformLocation(meshProg, "uAccent"),
-      surface: gl.getUniformLocation(meshProg, "uSurface"),
-      highlight: gl.getUniformLocation(meshProg, "uHighlight"),
-      shockwave: gl.getUniformLocation(meshProg, "uShockwave"),
-      shockwavePower: gl.getUniformLocation(meshProg, "uShockwavePower"),
-    };
+    const meshPrograms = [meshProg, bodyProg].map((program) => ({
+      program,
+      attrs: {
+        position: gl.getAttribLocation(program, "aPosition"),
+        normal: gl.getAttribLocation(program, "aNormal"),
+        uv: gl.getAttribLocation(program, "aTexCoord"),
+      },
+      uniforms: {
+        projection: gl.getUniformLocation(program, "uProjection"),
+        view: gl.getUniformLocation(program, "uView"),
+        model: gl.getUniformLocation(program, "uModel"),
+        normalMatrix: gl.getUniformLocation(program, "uNormalMatrix"),
+        time: gl.getUniformLocation(program, "uTime"),
+        kind: gl.getUniformLocation(program, "uKind"),
+        hover: gl.getUniformLocation(program, "uHover"),
+        accent: gl.getUniformLocation(program, "uAccent"),
+        surface: gl.getUniformLocation(program, "uSurface"),
+        highlight: gl.getUniformLocation(program, "uHighlight"),
+        shockwave: gl.getUniformLocation(program, "uShockwave"),
+        shockwavePower: gl.getUniformLocation(program, "uShockwavePower"),
+      },
+    }));
 
     const partAttrs = {
       position: gl.getAttribLocation(particleProg, "aPosition"),
@@ -1019,6 +988,13 @@ const earthTextures = [
       gl,
       meshProg,
       JSON.parse(container.dataset.earthTextures ?? "[]"),
+      start,
+    );
+
+    const bodyTextures = loadBodyTextures(
+      gl,
+      bodyProg,
+      JSON.parse(container.dataset.bodyTextures ?? "[]"),
       start,
     );
 
@@ -1176,6 +1152,11 @@ const earthTextures = [
       kind: number,
       hover = 0,
     ) {
+      const bindings =
+        meshPrograms[kind === 1 || (kind >= 3 && kind <= 8) ? 1 : 0]!;
+      const { attrs: meshAttrs, uniforms: meshUniforms } = bindings;
+      gl.useProgram(bindings.program);
+      bodyTextures.bind(kind);
       gl.bindBuffer(gl.ARRAY_BUFFER, mesh.position);
       gl.enableVertexAttribArray(meshAttrs.position);
       gl.vertexAttribPointer(meshAttrs.position, 3, gl.FLOAT, false, 0, 0);
@@ -1300,22 +1281,24 @@ const earthTextures = [
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
+      for (const { program, uniforms: meshUniforms } of meshPrograms) {
+        gl.useProgram(program);
+        gl.uniformMatrix4fv(meshUniforms.projection, false, projection);
+        gl.uniformMatrix4fv(meshUniforms.view, false, view);
+        gl.uniform1f(meshUniforms.time, time);
+        gl.uniform3fv(meshUniforms.accent, colors.accent);
+        gl.uniform3fv(meshUniforms.surface, colors.surface);
+        gl.uniform3fv(meshUniforms.highlight, colors.highlight);
+        gl.uniform4f(
+          meshUniforms.shockwave,
+          shockwaveOrigin[0],
+          shockwaveOrigin[1],
+          shockwaveOrigin[2],
+          shockwaveRadius,
+        );
+        gl.uniform1f(meshUniforms.shockwavePower, shockwavePower);
+      }
       gl.useProgram(meshProg);
-      gl.uniformMatrix4fv(meshUniforms.projection, false, projection);
-      gl.uniformMatrix4fv(meshUniforms.view, false, view);
-      gl.uniform1f(meshUniforms.time, time);
-      gl.uniform3fv(meshUniforms.accent, colors.accent);
-      gl.uniform3fv(meshUniforms.surface, colors.surface);
-      gl.uniform3fv(meshUniforms.highlight, colors.highlight);
-      gl.uniform4f(
-        meshUniforms.shockwave,
-        shockwaveOrigin[0],
-        shockwaveOrigin[1],
-        shockwaveOrigin[2],
-        shockwaveRadius,
-      );
-      gl.uniform1f(meshUniforms.shockwavePower, shockwavePower);
-
       earthTextures.bind();
 
       const viewProjection = multiply(projection, view);
@@ -1641,6 +1624,8 @@ const earthTextures = [
         intersectionObserver.disconnect();
         themeObserver.disconnect();
         earthTextures.dispose();
+        bodyTextures.dispose();
+        gl.deleteProgram(bodyProg);
         activeCanvas.removeEventListener("pointerdown", handlePointerDown);
         activeCanvas.removeEventListener("pointermove", handlePointerMove);
         activeCanvas.removeEventListener("pointerup", handlePointerUp);
