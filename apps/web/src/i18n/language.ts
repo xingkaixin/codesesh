@@ -1,4 +1,5 @@
 export type Locale = "en" | "zh-CN" | "ja";
+
 export type LanguagePreference = Locale | "system";
 
 export const LANGUAGE_STORAGE_KEY = "codesesh.language";

@@ -1,6 +1,7 @@
 import { appLogger } from "./logging.js";
 
 export type AgentOperationKind = "backfill" | "refresh";
+
 export type AgentOperationResult = "committed" | "failed" | "skipped" | "unchanged";
 
 interface AgentScheduleState {

@@ -16,6 +16,7 @@ export interface ProjectBackfillSessionRow extends DatabaseRow {
   meta_json?: string | null;
   sort_index?: number;
 }
+
 export type LegacyProjectIdentityResolver = (directory: string) => ProjectIdentity;
 
 // Schema migrations hold an immediate SQLite transaction, so identity discovery

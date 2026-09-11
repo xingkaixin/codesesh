@@ -21,6 +21,7 @@ interface SnapshotAggregationCache {
 
 const SNAPSHOT_AGGREGATION_CACHE_LIMIT = 64;
 const snapshotAggregationCaches = new WeakMap<ScanResultSource, SnapshotAggregationCache>();
+
 type SnapshotAggregationCacheState = "hit" | "miss";
 
 function getSnapshotAggregationCache(

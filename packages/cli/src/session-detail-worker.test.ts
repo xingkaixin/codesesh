@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
+
 const mocks = vi.hoisted(() => ({
   materialize: vi.fn(),
   post: vi.fn(),

@@ -82,6 +82,7 @@ const SESSION_HEAD_SELECT_COLUMNS = `
   s.smart_tags_classifier_revision,
   s.meta_json
 `;
+
 export interface CachedResult {
   sessions: IdentifiedSessionHead[];
   meta: Record<string, SessionCacheMeta>;

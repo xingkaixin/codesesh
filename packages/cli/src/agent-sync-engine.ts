@@ -67,7 +67,9 @@ export interface AgentSyncEngineInitializationOptions extends LiveSessionIndexOp
 }
 
 type SessionsChangedListener = (change: AgentSessionsChanged) => void;
+
 type StatusChangedListener = (event: ScanStatusEvent) => void;
+
 type CachedSessions = CachedResult;
 
 interface RefreshResult {

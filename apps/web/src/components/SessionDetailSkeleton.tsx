@@ -1,4 +1,5 @@
 import { useLocale } from "../hooks/useLocale";
+
 /**
  * Mirrors the reader's real two-column grid (288px filter aside + stream) so
  * loading → ready does not shift the page.

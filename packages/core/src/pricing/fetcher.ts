@@ -6,6 +6,7 @@ import { ensurePrivateDirectory, restrictPrivateFile } from "../utils/private-st
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
 import { MODELS_DEV_URL, parseModelsDevPricing } from "./models-dev.js";
 import { normalizeModelKey, type ModelPricing } from "./model-pricing.js";
+
 export { normalizeModelKey, type ModelPricing } from "./model-pricing.js";
 import snapshotData from "./data/snapshot.json";
 

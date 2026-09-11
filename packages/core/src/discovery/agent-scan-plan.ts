@@ -26,8 +26,11 @@ export type AgentScanPlan =
   | { kind: "reuse-baseline" };
 
 type SourceScanPlan = Extract<AgentScanPlan, { kind: "scan" | "synchronize" }>;
+
 type RefreshScanPlan = Extract<AgentScanPlan, { kind: "synchronize" | "check-for-changes" }>;
+
 type RecomputeScanPlan = Extract<AgentScanPlan, { kind: "reuse-baseline" }>;
+
 export type ExecutableAgentScanPlan = Exclude<AgentScanPlan, { kind: "check-for-changes" }>;
 
 export interface AgentScanPlanExecution {

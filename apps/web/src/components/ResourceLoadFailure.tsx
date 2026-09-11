@@ -1,5 +1,6 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
+
 export function ResourceLoadFailure({
   title,
   message,

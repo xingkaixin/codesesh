@@ -1,5 +1,6 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
+
 /**
  * Closes the stream with an honest account of what the current filter removed,
  * and the single action that undoes it.
