@@ -78,13 +78,13 @@ function hasSafetyComment(
   }
 }
 
-/** Require every non-const type assertion to state the invariant TypeScript cannot express. */
+/** Require configured type assertions to state the invariant TypeScript cannot express. */
 export const requireSafetyCommentForTypeAssertionRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Require a nearby SAFETY comment for every TypeScript type assertion except const assertions.",
+        "Require a nearby SAFETY comment for configured TypeScript assertions; const assertions are exempt.",
     },
     messages: {
       missingSafetyComment:
@@ -94,6 +94,7 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
       {
         type: "object",
         properties: {
+          scope: { enum: ["all", "type-escapes"] },
           markers: {
             type: "array",
             items: { type: "string", minLength: 1 },
@@ -109,9 +110,26 @@ export const requireSafetyCommentForTypeAssertionRule = defineRule({
   createOnce(context) {
     const patterns = new Map<string, RegExp>();
 
+    const containsTypeEscape = (node: ESTree.Node): boolean => {
+      if (node.type === "TSAnyKeyword" || node.type === "TSNeverKeyword") return true;
+      for (const key of context.sourceCode.visitorKeys[node.type] ?? []) {
+        // SAFETY: Oxlint visitor keys enumerate AST child properties, never metadata or parent links.
+        const child = (node as unknown as Record<string, ESTree.Node | ESTree.Node[] | null>)[key];
+        if (Array.isArray(child) ? child.some(containsTypeEscape) : child && containsTypeEscape(child)) return true;
+      }
+      return false;
+    };
+
     const checkAssertion = (node: TypeAssertion) => {
       if (isConstAssertion(node)) return;
-      const markers = configuredSafetyMarkers(context.options?.[0]);
+      const option = context.options?.[0];
+      if (typeof option === "object" && option !== null && !Array.isArray(option) && option.scope === "type-escapes") {
+        let expression = node.expression;
+        while (expression.type === "ParenthesizedExpression") expression = expression.expression;
+        const chain = expression.type === "TSAsExpression" || expression.type === "TSTypeAssertion";
+        if (!chain && !containsTypeEscape(node.typeAnnotation)) return;
+      }
+      const markers = configuredSafetyMarkers(option);
       const patternKey = markers.join("\u0000");
       const pattern = patterns.get(patternKey) ?? markerPattern(markers);
       patterns.set(patternKey, pattern);

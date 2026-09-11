@@ -22,12 +22,25 @@ verified against the actual assets, not inferred from that metadata.
 
 ## Local configuration and deviations
 
-There are no changes to the copied plugin source. This provenance file is the
-only local documentation addition to the upstream asset tree. The upstream root LICENSE is also retained verbatim. The skill's asset bundle does not include the upstream rule tests.
+The upstream root `LICENSE` is retained verbatim; it is not included in the
+skill asset bundle. The bundled rule tests are not part of those assets.
 
-All 18 generic rules and the native `oxc/no-accumulating-spread` companion rule
-are enabled at `error`. `@oxlint/plugins` is pinned to `1.81.0`, matching the
-installed and locked Oxlint version. Keep these versions aligned on upgrades.
-Lint and format ignore agent assets, local worktrees, and this vendored tree.
-Existing application diagnostics are retained for review without suppression
-or automatic cleanup.
+Local source changes are limited to:
+
+- `shared/dictionary-types.ts`: recognize concrete object and dictionary value
+  contracts; retain broad-value detection through supported aliases; support
+  the dictionary rule's `allowUnknown` option.
+- `rules/no-unsafe-dictionary-type.ts`: add opt-in `allowUnknown` (default false).
+- `rules/require-safety-comment-for-type-assertion.ts`: add opt-in
+  `scope: "type-escapes"`; upstream's all-assertions behavior remains the default.
+- `rules/require-readable-spacing.ts`: separate imports and module declarations
+  without forcing blank lines throughout function bodies; preserve overloads.
+
+`POLICY.md` records the 12 enabled generic rules, six intentionally disabled
+rules, the native accumulating-spread companion, and justified local exceptions.
+Regression tests live in `scripts/anti-slop.test.mjs` and run the actual CLI.
+
+`@oxlint/plugins` is pinned to `1.81.0`, matching the installed and locked Oxlint
+version. Keep these versions aligned on upgrades. Lint and format ignore agent
+assets, local worktrees, and this vendored tree. Existing ignore entries are
+preserved. No application or test directory was excluded to hide diagnostics.

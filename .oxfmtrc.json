@@ -4,6 +4,22 @@
     "**/dist/**",
     "**/node_modules/**",
     "**/.turbo/**",
-    "**/docs/**"
+    "**/docs/**",
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    ".delta/**",
+    ".design/**",
+    ".issues/**",
+    ".worktree/**",
+    "tools/oxlint/anti-slop/**"
   ]
 }

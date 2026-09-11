@@ -32,7 +32,6 @@ export type UnsafeDictionary = {
 };
 
 export type WideningTargetKind =
-	| "anonymous object"
 	| "generic container"
 	| "object"
 	| "open dictionary"
@@ -43,6 +42,7 @@ export type WideningTarget = {
 };
 
 export type TypeEnvironment = {
+	readonly allowUnknown?: boolean;
 	readonly interfaces: ReadonlyMap<string, readonly ESTree.TSInterfaceDeclaration[]>;
 	readonly typeAliases: LexicalTypeAliasEnvironment;
 };
@@ -180,7 +180,7 @@ function unsafeDirectValue(
 	resolvingAliases: ReadonlySet<string>,
 ): UnsafeDictionary["unsafeValue"] | null {
 	const unwrapped = unwrapTransparentType(type);
-	if (unwrapped.type === "TSUnknownKeyword") return "unknown";
+	if (unwrapped.type === "TSUnknownKeyword") return environment.allowUnknown ? null : "unknown";
 	if (unwrapped.type === "TSAnyKeyword") return "any";
 	if (unwrapped.type === "TSObjectKeyword") return "object";
 	if (unwrapped.type === "TSTypeLiteral" && isEffectivelyEmptyTypeLiteral(unwrapped))
@@ -321,15 +321,24 @@ export function classifyWideningTarget(
 	type: ESTree.TSType,
 	environment: TypeEnvironment,
 ): WideningTarget | null {
+	const target = classifyBroadTarget(type, environment);
+	if (target?.kind === "open dictionary" || target?.kind === "generic container") {
+		return classifyUnsafeDictionary(type, environment) === null ? null : target;
+	}
+	return target;
+}
+
+function classifyBroadTarget(
+	type: ESTree.TSType,
+	environment: TypeEnvironment,
+): WideningTarget | null {
 	const unwrapped = unwrapTransparentType(type);
 	if (unwrapped.type === "TSUnknownKeyword") return { kind: "unknown" };
 	if (unwrapped.type === "TSObjectKeyword") return { kind: "object" };
 	if (unwrapped.type === "TSTypeLiteral") {
 		return unwrapped.members.some((member) => member.type === "TSIndexSignature")
 			? { kind: "open dictionary" }
-			: unwrapped.members.length > 0
-				? { kind: "anonymous object" }
-				: null;
+			: null;
 	}
 	if (unwrapped.type === "TSMappedType") return { kind: "open dictionary" };
 	if (unwrapped.type !== "TSTypeReference") return null;

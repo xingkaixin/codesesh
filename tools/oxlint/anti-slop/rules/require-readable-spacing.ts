@@ -2,24 +2,14 @@ import type { CreateRule } from "@oxlint/plugins";
 
 import createPaddingLineRule from "../vendor/eslint-stylistic/padding-line-between-statements.ts";
 
+const declarations = {
+  selector: "Program > :matches(FunctionDeclaration, ClassDeclaration, TSInterfaceDeclaration, TSTypeAliasDeclaration, ExportNamedDeclaration[declaration.type=/^(FunctionDeclaration|ClassDeclaration|TSInterfaceDeclaration|TSTypeAliasDeclaration)$/], ExportDefaultDeclaration[declaration.type=/^(FunctionDeclaration|ClassDeclaration)$/])",
+};
+
 const paddingRule = createPaddingLineRule([
   { blankLine: "always", prev: "import", next: "*" },
-  { blankLine: "always", prev: "*", next: { selector: "Program > :not(ImportDeclaration)" } },
-  { blankLine: "always", prev: { selector: "Program > :not(ImportDeclaration)" }, next: "*" },
-  { blankLine: "always", prev: "*", next: ["function", "class", "interface", "type"] },
-  { blankLine: "always", prev: ["function", "class", "interface", "type"], next: "*" },
-  {
-    blankLine: "always",
-    prev: "*",
-    next: ["multiline-const", "multiline-let", "multiline-var", "multiline-using"],
-  },
-  {
-    blankLine: "always",
-    prev: ["multiline-const", "multiline-let", "multiline-var", "multiline-using"],
-    next: "*",
-  },
-  { blankLine: "always", prev: "*", next: ["return", "if", "switch", "try", "for", "while", "do"] },
-  { blankLine: "always", prev: "block-like", next: "*" },
+  { blankLine: "always", prev: "*", next: declarations },
+  { blankLine: "always", prev: declarations, next: "*" },
   { blankLine: "any", prev: "import", next: "import" },
   {
     blankLine: "any",
@@ -34,13 +24,13 @@ const paddingRule = createPaddingLineRule([
   },
 ]);
 
-/** Restore structural blank lines with whitespace-only fixes; keep local short bindings and overloads grouped. */
+/** Separate module declarations without splitting function-local statement groups. */
 export const requireReadableSpacingRule: CreateRule = {
   ...paddingRule,
   meta: {
     ...paddingRule.meta,
     docs: {
-      description: "Require readable spacing between declarations and logical statement groups.",
+      description: "Separate imports and module declarations while preserving local statement groups.",
     },
     schema: [],
   },

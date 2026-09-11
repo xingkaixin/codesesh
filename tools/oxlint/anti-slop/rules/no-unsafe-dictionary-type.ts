@@ -109,6 +109,8 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 			description:
 				"Disallow object-dictionary contracts whose direct value type is unknown, any, object, {}, or a union/alias containing one of those escape hatches.",
 		},
+		schema: [{ type: "object", properties: { allowUnknown: { type: "boolean" } }, additionalProperties: false }],
+		defaultOptions: [{ allowUnknown: false }],
 		messages: {
 			unsafeDictionary:
 				"This dictionary's {{value}} value type gives callers no concrete value contract. Use an owner/schema-derived value type; parse external payloads before insertion.",
@@ -128,10 +130,11 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 
 		return {
 			Program(node) {
-				environment = createTypeEnvironment(
-					node,
-					context.sourceCode.visitorKeys,
-				);
+				const option = context.options?.[0];
+				environment = {
+					...createTypeEnvironment(node, context.sourceCode.visitorKeys),
+					allowUnknown: typeof option === "object" && option !== null && !Array.isArray(option) && option.allowUnknown === true,
+				};
 			},
 			TSTypeReference: reportIfUnsafe,
 			TSTypeLiteral: reportIfUnsafe,
