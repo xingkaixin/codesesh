@@ -293,6 +293,18 @@ Package-level baselines prevent coverage regressions, while stricter targeted
 thresholds protect the scanning, API, live runtime, hook, and interaction paths.
 The Astro landing page is covered by Playwright rather than Vitest.
 
+The Pages deployment uses `apps/www/public/_headers` to cache fingerprinted
+`/_astro/` assets for one year. Keep HTML and unversioned public files on the
+Pages defaults so deployments remain visible. Landing pages preload their hero
+image, which Pages can use for Early Hints. These optimizations use the existing
+Pages service. `apps/www/public/404.html` disables Pages' SPA fallback so missing
+assets return an uncached 404 instead of a cacheable copy of the homepage.
+
+Use one Cloudflare Web Analytics injection source for the landing page. When
+Pages injects the beacon, leave `PUBLIC_ANALYTICS_TOKEN` unset; it is only a
+fallback for deployments without automatic injection. Check both Pages and zone
+settings if the production HTML contains multiple CF beacons. Umami is separate.
+
 ### Reproduce Required CI Checks
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs the main
