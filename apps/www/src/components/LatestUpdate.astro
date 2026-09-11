@@ -21,9 +21,7 @@ const release = t.releases[0]!;
   class="scroll-mt-20 px-4 pt-24 sm:px-6 lg:px-7"
   aria-labelledby="updates-heading"
 >
-  <div
-    class="mx-auto grid max-w-[1180px] gap-9 border-t border-[var(--console-border)] pt-10 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-[72px]"
-  >
+  <div class="mx-auto grid max-w-[1180px] gap-9 border-t border-[var(--console-border)] pt-10 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-[72px]">
     <div>
       <p class="console-eyebrow mb-4">{t.latest.label}</p>
       <h2
@@ -32,21 +30,17 @@ const release = t.releases[0]!;
       >
         {t.latest.title}
       </h2>
-      <p
-        class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]"
-      >
+      <p class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]">
         {t.latest.body}
       </p>
     </div>
 
     <article aria-labelledby={`release-${release.version}`}>
-      <div
-        class="console-mono flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[var(--console-muted)]"
-      >
+      <div class="console-mono flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[var(--console-muted)]">
         <span>CodeSesh {release.version}</span>
-        <time datetime={release.date}
-          >{formatReleaseDate(locale, release.date)}</time
-        >
+        <time datetime={release.date}>
+          {formatReleaseDate(locale, release.date)}
+        </time>
       </div>
       <h3
         id={`release-${release.version}`}
@@ -54,25 +48,21 @@ const release = t.releases[0]!;
       >
         {release.title}
       </h3>
-      <p
-        class="mt-4 max-w-[70ch] text-[15px] leading-7 text-[var(--console-text-secondary)]"
-      >
+      <p class="mt-4 max-w-[70ch] text-[15px] leading-7 text-[var(--console-text-secondary)]">
         {release.summary}
       </p>
 
       <ul class="mt-7 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        {
-          release.highlights.map((item) => (
-            <li>
-              <p class="text-sm font-semibold text-[var(--console-text)]">
-                {item.title}
-              </p>
-              <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
-                {item.description}
-              </p>
-            </li>
-          ))
-        }
+        {release.highlights.map((item) => (
+          <li>
+            <p class="text-sm font-semibold text-[var(--console-text)]">
+              {item.title}
+            </p>
+            <p class="mt-1 text-sm leading-6 text-[var(--console-muted)]">
+              {item.description}
+            </p>
+          </li>
+        ))}
       </ul>
 
       <a

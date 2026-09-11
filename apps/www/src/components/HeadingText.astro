@@ -8,8 +8,6 @@ interface Props {
 const { value } = Astro.props;
 ---
 
-{
-  Array.isArray(value)
-    ? value.map((line) => <span class="block">{line}</span>)
-    : value
-}
+{Array.isArray(value)
+  ? value.map((line) => <span class="block">{line}</span>)
+  : value}

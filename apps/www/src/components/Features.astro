@@ -25,25 +25,23 @@ const t = copy[locale].features;
     </header>
 
     <div class="features__grid">
-      {
-        t.groups.map((group, index) => (
-          <article class={`feature-card feature-card--${index + 1}`}>
-            <h3 class="console-display">{group.title}</h3>
-            <p class="feature-card__description">{group.description}</p>
-            <ul>
-              {group.items.map((item) => (
-                <li>
-                  <Icon name={item.icon} class="size-4" />
-                  <div>
-                    <p>{item.title}</p>
-                    <span>{item.description}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </article>
-        ))
-      }
+      {t.groups.map((group, index) => (
+        <article class={`feature-card feature-card--${index + 1}`}>
+          <h3 class="console-display">{group.title}</h3>
+          <p class="feature-card__description">{group.description}</p>
+          <ul>
+            {group.items.map((item) => (
+              <li>
+                <Icon name={item.icon} class="size-4" />
+                <div>
+                  <p>{item.title}</p>
+                  <span>{item.description}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
     </div>
   </div>
 </section>

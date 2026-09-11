@@ -16,44 +16,42 @@ const scenes = sceneNames.map((scene, index) => ({
 ---
 
 <div class="product-showcase">
-  {
-    scenes.map(({ copy: sceneCopy, scene }, index) => {
-      const sectionId = index === 0 ? "tour" : `tour-${scene}`;
-      const headingId = `${sectionId}-heading`;
-      const descriptionId = `${sectionId}-description`;
+  {scenes.map(({ copy: sceneCopy, scene }, index) => {
+    const sectionId = index === 0 ? "tour" : `tour-${scene}`;
+    const headingId = `${sectionId}-heading`;
+    const descriptionId = `${sectionId}-description`;
 
-      return (
-        <section
-          id={sectionId}
-          class:list={[
-            "showcase-section landing-background",
-            `showcase-section--${scene}`,
-          ]}
-          aria-labelledby={headingId}
-          aria-describedby={descriptionId}
-        >
-          {scene !== "overview" && <SectionBackground variant={scene} />}
-          <div class="showcase-inner">
-            <div class="showcase-grid">
-              <div class="showcase-copy">
-                <h2 id={headingId}>{sceneCopy?.title}</h2>
-                <p id={descriptionId}>{sceneCopy?.description}</p>
-              </div>
+    return (
+      <section
+        id={sectionId}
+        class:list={[
+          "showcase-section landing-background",
+          `showcase-section--${scene}`,
+        ]}
+        aria-labelledby={headingId}
+        aria-describedby={descriptionId}
+      >
+        {scene !== "overview" && <SectionBackground variant={scene} />}
+        <div class="showcase-inner">
+          <div class="showcase-grid">
+            <div class="showcase-copy">
+              <h2 id={headingId}>{sceneCopy?.title}</h2>
+              <p id={descriptionId}>{sceneCopy?.description}</p>
+            </div>
 
-              <div class="showcase-preview">
-                <ProductDemo
-                  id={`tour-demo-${locale}-${scene}`}
-                  locale={locale}
-                  scene={scene}
-                />
-                <p class="showcase-hint">{sceneCopy?.hint}</p>
-              </div>
+            <div class="showcase-preview">
+              <ProductDemo
+                id={`tour-demo-${locale}-${scene}`}
+                locale={locale}
+                scene={scene}
+              />
+              <p class="showcase-hint">{sceneCopy?.hint}</p>
             </div>
           </div>
-        </section>
-      );
-    })
-  }
+        </div>
+      </section>
+    );
+  })}
 </div>
 
 <style>
