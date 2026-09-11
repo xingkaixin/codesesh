@@ -5,6 +5,7 @@ let dispose: (() => void) | undefined;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This fixture supplies only the media-query state and subscription methods read by fluid hover.
   vi.spyOn(window, "matchMedia").mockReturnValue({
     matches: true,
     addEventListener: vi.fn(),

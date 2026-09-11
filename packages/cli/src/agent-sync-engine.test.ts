@@ -19,7 +19,6 @@ import type { ScanStatusEvent } from "@codesesh/core/contract";
 import type { StagedWorkerRun, WorkerResult, WorkerRunner } from "./worker-runner.js";
 import { appLogger } from "./logging.js";
 import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
-import type { ScanStatusModel } from "./scan-status-model.js";
 
 const core = vi.hoisted(() => {
   const getAgentLastFullSyncAt = vi.fn(() => Date.now());
@@ -72,6 +71,7 @@ const searchIndex = vi.hoisted(() => ({
   snapshot: vi.fn(() => ({ activeBatchId: undefined, pendingBatches: 0 })),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control cache publication, revisions and failures at the scan orchestration boundary.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   const original = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
   // Spy that still delegates to the real implementation, so diff behavior is unchanged.
@@ -92,11 +92,13 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Fix the classifier revision to exercise stale-tag reconciliation deterministically.
 vi.mock("@codesesh/core/runtime/diagnostics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/diagnostics")>()),
   SMART_TAG_CLASSIFIER_REVISION: "smart-tags-v1",
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe enqueued index jobs while testing scan commits independently of index worker scheduling.
 vi.mock("./search-index-job-runner.js", () => ({
   SearchIndexJobRunner: class {
     enqueue = searchIndex.enqueue;
@@ -144,6 +146,7 @@ function makeAgent(overrides: TestAgentOverrides = {}): TestAggregateAgent {
     checkForChanges: () => ({ hasChanges: false, timestamp: Date.now() }),
     commitChangeCheck: () => undefined,
     incrementalScan: (sessions: SessionHead[]) => sessions,
+    // SAFETY: This orchestration fixture provides empty message content; adapter parsing is covered separately.
     getSessionData: () => ({ messages: [] }) as never,
     getSessionWatchPlan: () => ({ status: "not-needed" as const, reason: "test adapter" }),
     getSessionCacheMeta: (sessionId: string) => meta[sessionId],
@@ -155,7 +158,7 @@ function makeAgent(overrides: TestAgentOverrides = {}): TestAggregateAgent {
       for (const sessionId of sessionIds) delete meta[sessionId];
     },
     ...overrides,
-  } as unknown as TestAggregateAgent;
+  } as TestAggregateAgent;
   return Object.assign(agent, {
     sessionSourceAccess: {
       kind: "aggregate" as const,
@@ -185,6 +188,7 @@ class FakeSyncAgent extends FileSystemSessionSource {
   }
 
   getSessionData() {
+    // SAFETY: This orchestration fixture provides empty message content; adapter parsing is covered separately.
     return { messages: [] } as never;
   }
 
@@ -418,12 +422,12 @@ describe("AgentSyncEngine", () => {
     const workerRunner = makeWorkerRunner();
     const warn = vi.spyOn(appLogger, "warn");
     const { engine } = makeEngine(agent, [previous], workerRunner);
-    const refreshState = engine as unknown as { lastRefreshAtByAgent: Map<string, number> };
-    const baseline = refreshState.lastRefreshAtByAgent.get("codex");
+    const refreshTimes = engine["lastRefreshAtByAgent"];
+    const baseline = refreshTimes.get("codex");
 
     await engine.refresh("codex");
 
-    expect(refreshState.lastRefreshAtByAgent.get("codex")).toBe(baseline);
+    expect(refreshTimes.get("codex")).toBe(baseline);
     expect(engine.snapshot().sessions).toEqual([previous]);
     expect(workerRunner.run).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith("scan.refresh.change_check_failed", {
@@ -1489,8 +1493,7 @@ describe("AgentSyncEngine", () => {
     engine.subscribeSessionsChanged(() => {
       throw new Error("session event broadcast failed");
     });
-    const scanStatus = (engine as unknown as { statusReporter: { scanStatus: ScanStatusModel } })
-      .statusReporter.scanStatus;
+    const scanStatus = engine["statusReporter"]["scanStatus"];
     const finishAgent = vi.spyOn(scanStatus, "finishAgent").mockImplementationOnce(() => {
       throw new Error("terminal status publication failed");
     });
@@ -1599,15 +1602,15 @@ describe("AgentSyncEngine", () => {
       [previous],
       workerRunner,
     );
-    const refreshState = engine as unknown as { lastRefreshAtByAgent: Map<string, number> };
-    const baselineTimestamp = refreshState.lastRefreshAtByAgent.get("codex");
+    const refreshTimes = engine["lastRefreshAtByAgent"];
+    const baselineTimestamp = refreshTimes.get("codex");
     const sessionChanges = vi.fn();
     engine.subscribeSessionsChanged(sessionChanges);
 
     await engine.refresh("codex");
 
     expect(engine.snapshot().byAgent.codex).toEqual([previous]);
-    expect(refreshState.lastRefreshAtByAgent.get("codex")).toBe(baselineTimestamp);
+    expect(refreshTimes.get("codex")).toBe(baselineTimestamp);
     expect(sessionChanges).not.toHaveBeenCalled();
     expect(searchIndex.enqueue).not.toHaveBeenCalled();
     expect(workerLifecycle.commit).not.toHaveBeenCalled();

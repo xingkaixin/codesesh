@@ -91,7 +91,11 @@ describe("CS-141: private storage", () => {
     source.exec("CREATE TABLE t (id INTEGER PRIMARY KEY)");
     source.prepare("INSERT INTO t (id) VALUES (1)").run();
 
-    const backupPath = backupDatabase(source as never, dbPath, "test");
+    const backupPath = backupDatabase(
+      source as import("../sqlite.js").SQLiteDatabase,
+      dbPath,
+      "test",
+    );
     source.close();
 
     expect(backupPath).not.toBeNull();

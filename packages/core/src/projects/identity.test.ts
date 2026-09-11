@@ -14,6 +14,7 @@ import {
 } from "./identity.js";
 import { realFs } from "./fs.js";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control home expansion while resolving real temporary Git repositories.
 vi.mock("node:os", async () => {
   const actual = await vi.importActual<typeof import("node:os")>("node:os");
   return {

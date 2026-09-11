@@ -20,6 +20,7 @@ import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostic
 
 // Spies while delegating to the real implementation so regression tests can
 // count filesystem calls during a live scan.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real filesystem reads and inject read failures without replacing agent parsing.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
@@ -80,8 +81,9 @@ describe("CodexAgent cache refresh", () => {
     writeFileSync(oldA, '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n');
     writeFileSync(newC, '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:05:00Z"}}\n');
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionMetaMap = new Map([
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    // SAFETY: This fixture deliberately models an incomplete legacy cache entry during refresh.
+    agent["sessionMetaMap"] = new Map([
       [
         "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
         { id: "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa", sourcePath: oldA },
@@ -93,8 +95,8 @@ describe("CodexAgent cache refresh", () => {
           sourcePath: join(tempDir, "missing.jsonl"),
         },
       ],
-    ]);
-    agent.listRolloutFiles = () => [
+    ]) as (typeof agent)["sessionMetaMap"];
+    agent["listRolloutFiles"] = () => [
       { file: oldA, stat: statSync(oldA) },
       { file: newC, stat: statSync(newC) },
     ];
@@ -135,8 +137,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     const cached = agent.scan({ from: 0 }) as SessionHead[];
     expect(cached[0]?.stats.total_cost).toBe(0);
     expect(agent.getSessionCacheMeta(sessionId)?.unpricedModels).toEqual([model]);
@@ -169,7 +171,7 @@ describe("CodexAgent cache refresh", () => {
     );
     writeFileSync(indexFile, `{"id":"${sessionId}","thread_name":"Old title"}\n`);
 
-    const agent = new CodexAgent({ sourceRoot: sessionsDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: sessionsDir });
     // Seed baseline meta with the live fingerprint.
     agent.scan();
     const baselineFingerprint = agent.listSessionSources()[0]?.fingerprint;
@@ -218,7 +220,7 @@ describe("CodexAgent cache refresh", () => {
     utimesSync(oldFile, oldTime, oldTime);
     utimesSync(newFile, newTime, newTime);
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     expect(
       agent
@@ -263,7 +265,7 @@ describe("CodexAgent cache refresh", () => {
       );
     }
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     const statSpy = vi.mocked(statSync);
     statSpy.mockClear();
@@ -295,12 +297,12 @@ describe("CodexAgent cache refresh", () => {
       meta({ id: childId, thread_source: "subagent", parent_thread_id: parentId }),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
     const window = { from: Date.now() - 24 * 60 * 60 * 1000 };
     const openSpy = vi.mocked(openSync);
 
     openSpy.mockClear();
-    let sources = agent.listScanSources(window);
+    let sources = agent["listScanSources"](window);
     expect(sources.map((ref: { file: string }) => ref.file).sort()).toEqual(
       [parentFile, otherParentFile, childFile].sort(),
     );
@@ -309,7 +311,7 @@ describe("CodexAgent cache refresh", () => {
     // A new scan cycle drops the index but must rebuild it from cached meta.
     agent.restoreSessionCacheMeta({});
     openSpy.mockClear();
-    sources = agent.listScanSources(window);
+    sources = agent["listScanSources"](window);
     expect(sources).toHaveLength(3);
     expect(openSpy.mock.calls.length).toBe(0);
 
@@ -320,9 +322,11 @@ describe("CodexAgent cache refresh", () => {
     );
     agent.restoreSessionCacheMeta({});
     openSpy.mockClear();
-    agent.listScanSources(window);
+    agent["listScanSources"](window);
     expect(openSpy.mock.calls.length).toBe(1);
-    expect(agent.ensureSubagentIndex().childFilesByParent.get(otherParentId)).toEqual([childFile]);
+    expect(agent["ensureSubagentIndex"]().childFilesByParent.get(otherParentId)).toEqual([
+      childFile,
+    ]);
   });
 
   it("rebuilds the subagent index from persisted session metadata", () => {
@@ -344,25 +348,25 @@ describe("CodexAgent cache refresh", () => {
       })}\n`,
     );
 
-    const firstAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const firstAgent = new CodexAgent({ sourceRoot: tempDir });
     firstAgent.scan();
     const cachedMeta = firstAgent.snapshotSessionCacheMeta();
     expect(cachedMeta[childId]).toMatchObject({ isSubagent: true, parentThreadId: parentId });
 
-    const restoredAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const restoredAgent = new CodexAgent({ sourceRoot: tempDir });
     restoredAgent.restoreSessionCacheMeta(cachedMeta);
     const openSpy = vi.mocked(openSync);
     openSpy.mockClear();
     const readDirectorySpy = vi.spyOn(restoredAgent, "readSessionSourceDirectory");
 
-    const sources = restoredAgent.listScanSources({ from: 0 });
+    const sources = restoredAgent["listScanSources"]({ from: 0 });
 
     expect(sources.map((source: { file: string }) => source.file).sort()).toEqual(
       [parentFile, childFile].sort(),
     );
     expect(openSpy).not.toHaveBeenCalled();
     expect(readDirectorySpy).toHaveBeenCalledOnce();
-    expect(restoredAgent.ensureSubagentIndex().childFilesByParent.get(parentId)).toEqual([
+    expect(restoredAgent["ensureSubagentIndex"]().childFilesByParent.get(parentId)).toEqual([
       childFile,
     ]);
   });
@@ -381,15 +385,15 @@ describe("CodexAgent cache refresh", () => {
       })}\n`,
     );
 
-    const firstAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const firstAgent = new CodexAgent({ sourceRoot: tempDir });
     firstAgent.scan();
     const cachedMeta = firstAgent.snapshotSessionCacheMeta();
-    delete cachedMeta[childId].isSubagent;
-    delete cachedMeta[childId].parentThreadId;
+    delete cachedMeta[childId]!.isSubagent;
+    delete cachedMeta[childId]!.parentThreadId;
 
-    const restoredAgent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const restoredAgent = new CodexAgent({ sourceRoot: tempDir });
     restoredAgent.restoreSessionCacheMeta(cachedMeta);
-    restoredAgent.listScanSources({ from: 0 });
+    restoredAgent["listScanSources"]({ from: 0 });
 
     expect(restoredAgent.snapshotSessionCacheMeta()[childId]).toMatchObject({
       isSubagent: true,
@@ -415,7 +419,7 @@ describe("CodexAgent cache refresh", () => {
     const sessionTime = new Date(1_700_000_000_000);
     utimesSync(sessionFile, sessionTime, sessionTime);
 
-    const agent = new CodexAgent({ sourceRoot: sessionsDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: sessionsDir });
 
     expect(agent.listSessionSources()).toEqual([
       {
@@ -453,7 +457,7 @@ describe("CodexAgent cache refresh", () => {
       );
     }
 
-    const agent = new CodexAgent({ sourceRoot: sessionsDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: sessionsDir });
     const readSpy = vi.mocked(readFileSync);
     const statSpy = vi.mocked(statSync);
     readSpy.mockClear();
@@ -491,7 +495,7 @@ describe("CodexAgent cache refresh", () => {
     );
     writeFileSync(indexFile, `{"id":"${sessionId}","thread_name":"Old title"}\n`);
 
-    const firstAgent = new CodexAgent({ sourceRoot: sessionsDir }) as any;
+    const firstAgent = new CodexAgent({ sourceRoot: sessionsDir });
     const firstFingerprint = firstAgent.listSessionSources()[0]?.fingerprint;
 
     writeFileSync(
@@ -502,11 +506,11 @@ describe("CodexAgent cache refresh", () => {
         "",
       ].join("\n"),
     );
-    const unrelatedAgent = new CodexAgent({ sourceRoot: sessionsDir }) as any;
+    const unrelatedAgent = new CodexAgent({ sourceRoot: sessionsDir });
     const unrelatedFingerprint = unrelatedAgent.listSessionSources()[0]?.fingerprint;
 
     writeFileSync(indexFile, `{"id":"${sessionId}","thread_name":"New title"}\n`);
-    const renamedAgent = new CodexAgent({ sourceRoot: sessionsDir }) as any;
+    const renamedAgent = new CodexAgent({ sourceRoot: sessionsDir });
     const renamedFingerprint = renamedAgent.listSessionSources()[0]?.fingerprint;
 
     expect(unrelatedFingerprint).toBe(firstFingerprint);
@@ -526,8 +530,9 @@ describe("CodexAgent cache refresh", () => {
       '{"type":"session_meta","payload":{"timestamp":"2026-04-20T10:00:00Z"}}\n',
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionMetaMap = new Map([
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    // SAFETY: This fixture deliberately models an incomplete legacy cache entry during refresh.
+    agent["sessionMetaMap"] = new Map([
       [
         "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
         {
@@ -540,8 +545,8 @@ describe("CodexAgent cache refresh", () => {
           parserVersion: "codex-parser-v2",
         },
       ],
-    ]);
-    agent.listRolloutFiles = () => [{ file: sessionFile, stat: statSync(sessionFile) }];
+    ]) as (typeof agent)["sessionMetaMap"];
+    agent["listRolloutFiles"] = () => [{ file: sessionFile, stat: statSync(sessionFile) }];
 
     const result = refresh(agent, [makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa")]);
 
@@ -563,9 +568,9 @@ describe("CodexAgent cache refresh", () => {
     writeFileSync(oldA, "");
     writeFileSync(newC, "");
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
     // Replace the single-file parser while keeping the shared scan lifecycle intact.
-    agent.parseFileSessionHeadResult = (file: string) => {
+    agent["parseFileSessionHeadResult"] = (file: string) => {
       if (file === oldA) {
         return { status: "parsed", data: makeSession("019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa") };
       }
@@ -584,7 +589,7 @@ describe("CodexAgent cache refresh", () => {
       "019daaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
       "019dcccc-cccc-7ccc-cccc-cccccccccccc",
     ]);
-    expect(agent.sessionMetaMap.has("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb")).toBe(false);
+    expect(agent["sessionMetaMap"].has("019dbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb")).toBe(false);
   });
 
   it("uses the latest record timestamp as time_updated", () => {
@@ -604,8 +609,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
 
     const head = agent.scanSessionSource(sessionFile);
 
@@ -629,8 +634,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
     const head = agent.scanSessionSource(sessionFile);
 
     expect(head?.time_created).toBe(Date.parse("2026-04-20T10:00:00+08:00"));
@@ -653,8 +658,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
 
     const head = agent.scanSessionSource(sessionFile);
 
@@ -681,7 +686,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
     const [head] = agent.scan();
     const detail = agent.getSessionData(sessionId);
 
@@ -706,7 +711,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
     const [head] = agent.scan();
     const detail = agent.getSessionData(sessionId);
 
@@ -734,8 +739,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
 
     const head = agent.scanSessionSource(sessionFile);
 
@@ -764,8 +769,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
 
     const head = agent.scanSessionSource(sessionFile);
 
@@ -788,8 +793,8 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
 
     const head = agent.scanSessionSource(sessionFile);
 
@@ -812,7 +817,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     expect(agent.scan()).toEqual([]);
   });
@@ -889,7 +894,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -959,7 +964,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -1008,7 +1013,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -1186,7 +1191,7 @@ describe("CodexAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -1289,7 +1294,7 @@ describe("CodexAgent code-mode exec decoding", () => {
     ];
     writeFileSync(sessionFile, lines.join("\n"));
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
     agent.scan();
     return { agent, sessionId };
   }
@@ -1502,8 +1507,8 @@ describe("CodexAgent field shape mismatches", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent() as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent();
+    agent["sessionIndexCache"] = new Map();
 
     const head = agent.scanSessionSource(sessionFile);
 
@@ -1533,7 +1538,7 @@ describe("CodexAgent field shape mismatches", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
+    const agent = new CodexAgent({ sourceRoot: tempDir });
     agent.scan();
 
     const data = agent.getSessionData(sessionId);
@@ -1623,15 +1628,15 @@ describe("CodexAgent subagent folding", () => {
       extra: [tokenCountLine(40, 60, 100)],
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
 
     const heads = agent.scan({ from: 0 });
     expect(heads.map((h: SessionHead) => h.reference.sessionId)).toEqual([PARENT_ID, CHILD_ID]);
-    expect(heads[0].stats.total_input_tokens).toBe(100);
-    expect(heads[0].stats.total_output_tokens).toBe(20);
-    expect(heads[1].parent_reference).toEqual({ agentName: "codex", sessionId: PARENT_ID });
-    expect(heads[1].stats.total_input_tokens).toBe(40);
+    expect(heads[0]!.stats.total_input_tokens).toBe(100);
+    expect(heads[0]!.stats.total_output_tokens).toBe(20);
+    expect(heads[1]!.parent_reference).toEqual({ agentName: "codex", sessionId: PARENT_ID });
+    expect(heads[1]!.stats.total_input_tokens).toBe(40);
     expect(buildSessionTree(heads).roots[0]?.inclusiveStats).toMatchObject({
       inputTokens: 140,
       outputTokens: 80,
@@ -1655,8 +1660,8 @@ describe("CodexAgent subagent folding", () => {
       extra: [tokenCountLine(40, 60, 100)],
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     agent.scan({ from: 0 });
 
     const data = agent.getSessionData(PARENT_ID);
@@ -1685,8 +1690,8 @@ describe("CodexAgent subagent folding", () => {
       ],
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     agent.scan({ from: 0 });
 
     const data = agent.getSessionData(PARENT_ID);
@@ -1708,13 +1713,13 @@ describe("CodexAgent subagent folding", () => {
   });
 
   it("merges child messages with exact id and nickname/text visibility rules", () => {
-    const agent = new CodexAgent() as any;
+    const agent = new CodexAgent();
     const visibleMessages = [
       makeMessage({ subagentId: "known-child", nickname: "worker", texts: ["id match"] }),
       makeMessage({ nickname: "worker", texts: ["prefix", "shared text"] }),
     ];
 
-    agent.mergeChildMessages(visibleMessages, [
+    agent["mergeChildMessages"](visibleMessages, [
       makeMessage({ subagentId: "known-child", nickname: "other", texts: ["different"] }),
       makeMessage({ nickname: "worker", texts: ["shared text"] }),
       makeMessage({ subagentId: "different-child", nickname: "worker", texts: ["shared text"] }),
@@ -1731,13 +1736,13 @@ describe("CodexAgent subagent folding", () => {
     const identifiedVisible = [
       makeMessage({ subagentId: "identified", nickname: "worker", texts: ["shared text"] }),
     ];
-    agent.mergeChildMessages(identifiedVisible, [
+    agent["mergeChildMessages"](identifiedVisible, [
       makeMessage({ nickname: "worker", texts: ["shared text"] }),
     ]);
     expect(identifiedVisible).toHaveLength(2);
 
     const newlyVisible: Message[] = [];
-    agent.mergeChildMessages(newlyVisible, [
+    agent["mergeChildMessages"](newlyVisible, [
       makeMessage({ nickname: "worker", texts: ["new text"] }),
       makeMessage({ nickname: "worker", texts: ["new text"] }),
     ]);
@@ -1745,7 +1750,7 @@ describe("CodexAgent subagent folding", () => {
   });
 
   it("merges large child batches without pairwise array scans", () => {
-    const agent = new CodexAgent() as any;
+    const agent = new CodexAgent();
     const visibleMessages = Array.from({ length: 200 }, (_, index) =>
       makeMessage({ nickname: `worker-${index}`, texts: [`visible-${index}`] }),
     );
@@ -1755,7 +1760,7 @@ describe("CodexAgent subagent folding", () => {
     const someSpy = vi.spyOn(Array.prototype, "some");
 
     someSpy.mockClear();
-    agent.mergeChildMessages(visibleMessages, childMessages);
+    agent["mergeChildMessages"](visibleMessages, childMessages);
     const someCallCount = someSpy.mock.calls.length;
     someSpy.mockRestore();
 
@@ -1781,8 +1786,8 @@ describe("CodexAgent subagent folding", () => {
     });
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     agent.scan({ from: 0 });
     const openSpy = vi.mocked(openSync);
     openSpy.mockClear();
@@ -1794,9 +1799,9 @@ describe("CodexAgent subagent folding", () => {
     agent.getSessionData(PARENT_ID);
     expect(childOpenCount(childFile)).toBe(0);
 
-    const cacheEntry = agent.childSessionSummariesByParent.get(PARENT_ID)?.get(childFile);
+    const cacheEntry = agent["childSessionSummariesByParent"].get(PARENT_ID)?.get(childFile);
     expect(cacheEntry).toBeDefined();
-    cacheEntry.parserVersion = "codex-parser-old";
+    cacheEntry!.parserVersion = "codex-parser-old";
     openSpy.mockClear();
     agent.getSessionData(PARENT_ID);
     expect(childOpenCount(childFile)).toBeGreaterThan(0);
@@ -1830,8 +1835,8 @@ describe("CodexAgent subagent folding", () => {
     });
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     agent.scan({ from: 0 });
     expect(agent.getSessionData(PARENT_ID).messages).toEqual([]);
 
@@ -1853,16 +1858,16 @@ describe("CodexAgent subagent folding", () => {
     });
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     agent.scan({ from: 0 });
     agent.getSessionData(PARENT_ID);
-    expect(agent.childSessionSummariesByParent.get(PARENT_ID)?.has(childFile)).toBe(true);
+    expect(agent["childSessionSummariesByParent"].get(PARENT_ID)?.has(childFile)).toBe(true);
 
     rmSync(childFile);
-    agent.subagentIndex = null;
+    agent["subagentIndex"] = null;
     agent.getSessionData(PARENT_ID);
-    expect(agent.childSessionSummariesByParent.has(PARENT_ID)).toBe(false);
+    expect(agent["childSessionSummariesByParent"].has(PARENT_ID)).toBe(false);
   });
 
   it("finds child rollouts when detail parsing starts from cached metadata", () => {
@@ -1879,12 +1884,12 @@ describe("CodexAgent subagent folding", () => {
       ],
     });
 
-    const scanned = new CodexAgent({ sourceRoot: tempDir }) as any;
-    scanned.sessionIndexCache = new Map();
+    const scanned = new CodexAgent({ sourceRoot: tempDir });
+    scanned["sessionIndexCache"] = new Map();
     scanned.scan({ from: 0 });
 
-    const fresh = new CodexAgent() as any;
-    fresh.findBasePath = () => tempDir;
+    const fresh = new CodexAgent();
+    fresh["findBasePath"] = () => tempDir;
     fresh.restoreSessionCacheMeta(scanned.snapshotSessionCacheMeta());
 
     const data = fresh.getSessionData(PARENT_ID);
@@ -1908,13 +1913,13 @@ describe("CodexAgent subagent folding", () => {
       ],
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
 
     const [head] = agent.scan({ from: 0 });
-    expect(head.reference.sessionId).toBe(PARENT_ID);
-    expect(head.stats.total_input_tokens).toBe(100);
-    expect(head.stats.total_output_tokens).toBe(20);
+    expect(head?.reference.sessionId).toBe(PARENT_ID);
+    expect(head?.stats.total_input_tokens).toBe(100);
+    expect(head?.stats.total_output_tokens).toBe(20);
   });
 
   it("expands a changed child to include its parent, leaving roots alone", () => {
@@ -1927,8 +1932,8 @@ describe("CodexAgent subagent folding", () => {
       parentThreadId: PARENT_ID,
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
 
     const refs = [
       {
@@ -1962,10 +1967,10 @@ describe("CodexAgent subagent folding", () => {
       extra: [tokenCountLine(40, 60, 100)],
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
     const [parentHead] = agent.scan({ from: 0 });
-    expect(parentHead.stats.total_input_tokens).toBe(100);
+    expect(parentHead?.stats.total_input_tokens).toBe(100);
 
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
     rmSync(childFile);
@@ -1987,8 +1992,8 @@ describe("CodexAgent subagent folding", () => {
       extra: [tokenCountLine(40, 60, 100)],
     });
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
 
     const childFile = join(tempDir, `rollout-2026-04-20T10-00-00-${CHILD_ID}.jsonl`);
     expect(agent.scanSessionSource(childFile)).toMatchObject({
@@ -2021,8 +2026,8 @@ describe("CodexAgent subagent folding", () => {
       ].join("\n"),
     );
 
-    const agent = new CodexAgent({ sourceRoot: tempDir }) as any;
-    agent.sessionIndexCache = new Map();
+    const agent = new CodexAgent({ sourceRoot: tempDir });
+    agent["sessionIndexCache"] = new Map();
 
     const heads = agent.scan({ from: 0, fast: true });
     expect(heads.find((head: SessionHead) => head.reference.sessionId === CHILD_ID)).toMatchObject({

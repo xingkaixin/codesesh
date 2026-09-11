@@ -15,6 +15,7 @@ import { AsyncLogFileWriter, type DroppedLogCounts } from "./log-file-writer.js"
 import { LogRecordEncoder, type EncodedLogLine } from "./log-record.js";
 
 export type LogContext = WorkerLogContext;
+
 type LogLevel = WorkerLogLevel;
 
 interface WorkerLogPort {

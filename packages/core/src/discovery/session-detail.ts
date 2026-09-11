@@ -207,6 +207,7 @@ function getSessionDetailContext(
 }
 
 type CachedDetailState = "fresh" | "stale" | "missing";
+
 type CachedSessionDetailEntry = Pick<
   CachedSessionRawEntry,
   "data" | "detailVersion" | "pendingReindex"

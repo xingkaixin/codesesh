@@ -47,6 +47,7 @@ function getServerAccess(startupUrl: string) {
   };
 }
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe bind options while delegating to the real HTTP server.
 vi.mock("@hono/node-server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hono/node-server")>();
   return {

@@ -5,6 +5,7 @@ import type { SessionAlias } from "@codesesh/core/runtime/state";
 const stateMocks = vi.hoisted(() => ({
   listSessionAliases: vi.fn<() => SessionAlias[]>(() => []),
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control persistence results and failures at the HTTP handler boundary without modifying user state.
 vi.mock("@codesesh/core/runtime/state", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listSessionAliases: stateMocks.listSessionAliases,
@@ -12,6 +13,7 @@ vi.mock("@codesesh/core/runtime/state", async (importOriginal) => ({
 
 const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
 import {
   SAMPLE_SCAN_STATUS_EVENT,
@@ -251,7 +253,7 @@ describe("createApiRoutes", () => {
           sessions: [],
           byAgent: {},
           agents: [],
-        } as unknown as LiveSnapshot;
+        } as LiveSnapshot;
       },
     };
     const app = createApiRoutes(scanSource);

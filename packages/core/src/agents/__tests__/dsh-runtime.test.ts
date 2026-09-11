@@ -8,6 +8,7 @@ import { DshAgent } from "../dsh.js";
 // engine floor at 22 so every other agent still works there. Removing the
 // decoder proves a DSH compressed artifact fails with an actionable runtime
 // diagnostic rather than a bare "not a function".
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Exercise the unsupported Node zstd capability branch on every test runtime.
 vi.mock("node:zlib", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:zlib")>();
   return { ...actual, zstdDecompressSync: undefined };

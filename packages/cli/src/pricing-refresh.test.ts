@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), publish: vi.fn() }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control pricing generation publication and synchronization independently of network refresh.
 vi.mock("@codesesh/core/runtime/pricing", () => ({
   refreshPricingCache: mocks.refresh,
   publishPendingPricing: mocks.publish,
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({ appLogger: { info: vi.fn(), warn: vi.fn() } }));
 const { startPricingRefresh } = await import("./pricing-refresh.js");
 

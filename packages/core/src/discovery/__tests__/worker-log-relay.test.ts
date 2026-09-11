@@ -42,10 +42,12 @@ const workers = vi.hoisted(() => {
   return { FakeWorker };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Fix the worker pool size so lifecycle assertions do not depend on the host CPU count.
 vi.mock("node:os", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:os")>()),
   availableParallelism: vi.fn(() => 3),
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control worker messages, failures and shutdown without timing real threads.
 vi.mock("node:worker_threads", () => ({ Worker: workers.FakeWorker }));
 
 import { finalizeAgentScan } from "../scanner.js";
@@ -81,6 +83,7 @@ describe("smart tag worker logging", () => {
     });
     const sessions = Array.from({ length: 50 }, (_, index) => makeSession(index));
     const meta = new Map<string, SessionCacheMeta>();
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This relay test needs only agent identity and metadata; content work is supplied by the controlled worker.
     const agent = {
       name: "test",
       snapshotSessionCacheMeta: () => Object.fromEntries(meta),

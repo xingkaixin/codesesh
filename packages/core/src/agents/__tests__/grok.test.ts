@@ -99,11 +99,7 @@ function writeGrokSession(options: SessionFixtureOptions) {
   return { agent, updatesPath };
 }
 
-function turnUsage(
-  inputTokens: number,
-  outputTokens: number,
-  costUsdTicks: number,
-): Record<string, unknown> {
+function turnUsage(inputTokens: number, outputTokens: number, costUsdTicks: number) {
   return {
     stop_reason: "end_turn",
     usage: {

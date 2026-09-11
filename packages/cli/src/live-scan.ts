@@ -31,6 +31,7 @@ export type {
 };
 
 type StoreListener = (event: SessionsUpdatedEvent) => void;
+
 type ScanStatusListener = (event: ScanStatusEvent) => void;
 
 export interface LiveScanStoreOptions {

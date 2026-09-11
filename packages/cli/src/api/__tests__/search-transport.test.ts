@@ -18,6 +18,7 @@ import type { ScanResultSource } from "../scan-sources.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-search-transport-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {

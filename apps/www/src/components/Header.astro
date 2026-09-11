@@ -152,11 +152,14 @@ const themes = [
       { once: true },
     );
   }
+
   setupFluidHover();
   document.addEventListener("astro:after-swap", setupFluidHover);
 
   const THEMES = ["light", "dark", "system"] as const;
+
   type Theme = (typeof THEMES)[number];
+
   const NEXT_THEME: Record<Theme, Theme> = {
     light: "dark",
     dark: "system",

@@ -92,6 +92,7 @@ describe("OverviewUsageChart", () => {
       new Proxy(daily[1]!, {
         get(target, property, receiver) {
           if (property === "sessions") unrelatedReads++;
+          // oxlint-disable-next-line anti-slop/no-reflect-get -- This Proxy must preserve receiver semantics while counting reads of the real target.
           return Reflect.get(target, property, receiver);
         },
       }),

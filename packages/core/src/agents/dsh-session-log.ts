@@ -690,6 +690,8 @@ function decodeStorageRecord(line: string, sourcePath: string): DshEvent[] {
       `corrupt DSH session log ${JSON.stringify(sourcePath)}: event ${JSON.stringify(tag)} has an invalid seq/time`,
     );
   }
+  // SAFETY: The tag and seq/time guards validate the envelope; materialization checks event-specific payloads.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Preserve the decoded JSON object after validating its envelope.
   return [parsed as unknown as DshEvent];
 }
 

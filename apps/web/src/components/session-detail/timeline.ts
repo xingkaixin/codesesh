@@ -13,6 +13,7 @@ export type SessionTimelineEntryKind =
   | "tool-read"
   | "tool-write"
   | "tool-execute";
+
 export type ToolTimelineEntryKind = Extract<SessionTimelineEntryKind, `tool-${string}`>;
 
 export interface SessionTimelineEntry {

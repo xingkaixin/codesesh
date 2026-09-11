@@ -4,7 +4,7 @@ import { CodexTokenUsageAccumulator } from "../codex-token-usage.js";
 function tokenPayload(
   lastUsage: Record<string, number> | undefined,
   totalUsage?: Record<string, number>,
-): Record<string, unknown> {
+) {
   return {
     info: {
       last_token_usage: lastUsage,

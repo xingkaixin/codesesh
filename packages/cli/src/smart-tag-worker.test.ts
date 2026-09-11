@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getSmartTagSourceTimestamp: vi.fn(() => 42),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Drive this worker entry point with controlled messages and observe its replies in-process.
 vi.mock("node:worker_threads", () => ({
   parentPort: { postMessage: mocks.postMessage },
   threadId: 17,
@@ -17,6 +18,7 @@ vi.mock("node:worker_threads", () => ({
   },
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: {
     forwardToParent: vi.fn(),
@@ -25,16 +27,19 @@ vi.mock("./logging.js", () => ({
   },
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Register only the fixture agents so orchestration cannot discover host agent data.
 vi.mock("@codesesh/core/runtime/agents", () => ({
   createRegisteredAgents: mocks.createRegisteredAgents,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control classifier results and failures at the worker message boundary.
 vi.mock("@codesesh/core/runtime/diagnostics", () => ({
   classifySessionTags: mocks.classifySessionTags,
   getSmartTagSourceTimestamp: mocks.getSmartTagSourceTimestamp,
   setCoreDiagnostics: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control pricing generation publication and synchronization independently of network refresh.
 vi.mock("@codesesh/core/runtime/pricing", () => ({
   synchronizePricingGeneration: mocks.synchronizePricingGeneration,
 }));

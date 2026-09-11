@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const home = mkdtempSync(join(tmpdir(), "codesesh-active-hours-"));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (original) => ({
   ...(await original<typeof import("node:os")>()),
   homedir: () => home,
@@ -21,6 +22,7 @@ import type { Message } from "../../../types/index.js";
 const from = Date.parse("2026-09-06T00:00:00Z");
 const to = Date.parse("2026-09-07T23:59:59.999Z");
 const options = { from, to, timeZone: "UTC" };
+
 function message(id: string, time: number, extra: Partial<Message> = {}): Message {
   return { id, role: "user", time_created: time, parts: [{ type: "text", text: id }], ...extra };
 }

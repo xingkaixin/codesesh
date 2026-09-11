@@ -19,6 +19,7 @@ const core = vi.hoisted(() => ({
   })),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control the persisted last-sync timestamp to exercise backfill scheduling.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
   readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
@@ -41,6 +42,7 @@ class FakeSyncAgent extends FileSystemSessionSource {
   }
 
   getSessionData() {
+    // SAFETY: This orchestration fixture provides empty message content; adapter parsing is covered separately.
     return { messages: [] } as never;
   }
 

@@ -31,7 +31,7 @@ export class SearchIndexMaintenanceScheduler {
   private stopped = false;
 
   constructor(
-    private readonly runner: SearchIndexJobRunner,
+    private readonly runner: Pick<SearchIndexJobRunner, "enqueueMaintenance">,
     private readonly onStatus: StatusListener,
   ) {}
 

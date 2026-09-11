@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-project-groups-test-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {
@@ -15,6 +16,7 @@ vi.mock("node:os", async (importOriginal) => {
 
 // Wrap (not replace) withCacheDb so the writable-fallback path is still
 // exercised for real, while letting the test assert whether it ran.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real database access to verify project grouping uses bounded queries.
 vi.mock("../connection.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../connection.js")>();
   return { ...actual, withCacheDb: vi.fn(actual.withCacheDb) };

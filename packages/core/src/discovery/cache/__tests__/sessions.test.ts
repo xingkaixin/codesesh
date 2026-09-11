@@ -24,6 +24,7 @@ function readCachedValue(agentName: string): CachedResult | null {
   return outcome.status === "success" ? outcome.value : null;
 }
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: vi.fn(() => testHomeDir) };

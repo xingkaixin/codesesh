@@ -12,6 +12,7 @@ import { setStateSchemaEnsuredPath } from "../database.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-aliases-test-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Fix home and platform to exercise portable storage paths without touching user data.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {

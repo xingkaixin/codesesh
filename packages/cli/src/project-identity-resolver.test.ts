@@ -40,7 +40,9 @@ const workerMocks = vi.hoisted(() => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control worker messages, failures and shutdown without timing real threads.
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: {
     consumeWorkerMessage: workerMocks.consumeWorkerMessage,

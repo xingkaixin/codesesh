@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createSessionIdentity } from "@codesesh/core/contract";
 import type { SearchResult, SessionHead } from "./api";
 import type { SearchProjectOption } from "../components/app/types";
-import { getSessionAgentKey, type SessionIndexes } from "./session-indexes";
+import { buildSessionIndexes, getSessionAgentKey, type SessionIndexes } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
 import { buildLocalRecentResults, buildSearchProjectOptions, usesServerSearch } from "./search";
 
@@ -62,11 +62,12 @@ describe("buildLocalRecentResults", () => {
       }
     }
     return {
+      ...buildSessionIndexes(sessions, []),
       byAgent,
       byProjectIdentityKey,
       projectOptions: [],
       sessionsByActivity: sessions,
-    } as unknown as SessionIndexes;
+    };
   }
 
   const sBugfixApp = makeSession("s-bugfix-app", {

@@ -29,6 +29,7 @@ const PARSEABLE_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml"] as 
 
 const LOOSE_DIRS = new Set(["/tmp", "/private/tmp"]);
 const LOOSE_HOME_DIRS = ["Desktop", "Downloads", "Documents"];
+
 type PathOps = Pick<
   typeof path.posix,
   "dirname" | "isAbsolute" | "join" | "relative" | "resolve" | "sep"

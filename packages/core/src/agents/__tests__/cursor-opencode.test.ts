@@ -58,8 +58,8 @@ describe("SQLite-backed agent parse contracts", () => {
       db.close();
     }
 
-    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-    agent.buildWorkspacePathMap = () => new Map([["composer-1", "/tmp/project"]]);
+    const agent = new CursorAgent({ sourceRoot: tempDir });
+    agent["buildWorkspacePathMap"] = () => new Map([["composer-1", "/tmp/project"]]);
 
     const [head] = agent.scan({ from: 0 });
     const data = agent.getSessionData("composer-1");

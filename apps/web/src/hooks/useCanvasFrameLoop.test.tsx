@@ -69,6 +69,7 @@ describe("useCanvasFrameLoop", () => {
       class {
         constructor(callback: IntersectionObserverCallback) {
           intersectionCallback = callback;
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The frame-loop hook only uses this observer identity and the entries driven by the test.
           observer = this as unknown as IntersectionObserver;
         }
         observe() {}

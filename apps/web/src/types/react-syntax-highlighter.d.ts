@@ -1,5 +1,6 @@
 declare module "react-syntax-highlighter" {
   import type { ComponentType, CSSProperties } from "react";
+
   interface SyntaxHighlighterProps {
     language?: string;
     style?: Record<string, unknown>;
@@ -23,6 +24,7 @@ declare module "react-syntax-highlighter/dist/esm/styles/prism" {
 
 declare module "react-syntax-highlighter/dist/esm/prism-light" {
   import type { ComponentType, CSSProperties } from "react";
+
   interface SyntaxHighlighterProps {
     language?: string;
     style?: Record<string, unknown>;

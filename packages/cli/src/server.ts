@@ -141,8 +141,8 @@ function optionalOperationId(value: string | undefined): string | undefined {
 
 function errorStatus(error: unknown): number {
   try {
-    if (typeof error !== "object" || error === null) return 500;
-    const status = Reflect.get(error, "status");
+    if (typeof error !== "object" || error === null || !("status" in error)) return 500;
+    const status = error.status;
     if (typeof status === "number" && status >= 400 && status <= 599) return status;
   } catch {}
   return 500;

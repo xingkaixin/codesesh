@@ -28,6 +28,7 @@ function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionH
 }
 
 function makeAgent(getSessionData: BaseAgent["getSessionData"]): BaseAgent {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: Finalization exercises only the explicit scan, metadata and detail methods of this agent fixture.
   return {
     name: "codex",
     displayName: "Codex",
@@ -44,6 +45,7 @@ function makeAgent(getSessionData: BaseAgent["getSessionData"]): BaseAgent {
 
 describe("finalizeSessions", () => {
   it("attaches project identity to sessions missing one", () => {
+    // SAFETY: Tag finalization reads only message parts and source timestamps from this partial detail fixture.
     const agent = makeAgent(() => ({ messages: [] }) as never);
     const [result] = finalizeSessions(agent, [makeSession("s1")]);
 
@@ -55,6 +57,7 @@ describe("finalizeSessions", () => {
   });
 
   it("computes smart tags for a session whose content changed", () => {
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: Tag finalization reads only message parts and source timestamps from this partial detail fixture.
     const getSessionData = vi.fn(() => ({
       time_created: 1000,
       time_updated: 1000,
@@ -72,6 +75,7 @@ describe("finalizeSessions", () => {
   it("reports source-read and tag-classification timing separately", () => {
     const agent = makeAgent(
       () =>
+        // SAFETY: Tag finalization reads only message parts and source timestamps from this partial detail fixture.
         ({
           time_created: 1000,
           time_updated: 1000,
@@ -94,6 +98,7 @@ describe("finalizeSessions", () => {
   });
 
   it("reports progress while finalizing settled sessions", () => {
+    // SAFETY: Tag finalization reads only message parts and source timestamps from this partial detail fixture.
     const agent = makeAgent(() => ({ messages: [] }) as never);
     const progress: AgentScanProgress[] = [];
 
@@ -106,6 +111,7 @@ describe("finalizeSessions", () => {
   });
 
   it("limits finalization to the selected session ids", () => {
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: Tag finalization reads only message parts and source timestamps from this partial detail fixture.
     const getSessionData = vi.fn(() => ({
       messages: [],
     })) as unknown as BaseAgent["getSessionData"];
@@ -126,6 +132,7 @@ describe("finalizeSessions", () => {
   });
 
   it("checkpoints settled sessions from newest to oldest", () => {
+    // SAFETY: Tag finalization reads only message parts and source timestamps from this partial detail fixture.
     const agent = makeAgent(() => ({ messages: [] }) as never);
     const newest = makeSession("newest", { time_updated: 3_000 });
     const oldest = makeSession("oldest", { time_updated: 2_000 });
@@ -142,7 +149,7 @@ describe("finalizeSessions", () => {
 
   it("does not recompute tags for a session whose tags are already current", () => {
     const getSessionData = vi.fn();
-    const agent = makeAgent(getSessionData as unknown as BaseAgent["getSessionData"]);
+    const agent = makeAgent(getSessionData as BaseAgent["getSessionData"]);
 
     const session = makeSession("s1", {
       smart_tags: ["bugfix"],
@@ -158,7 +165,7 @@ describe("finalizeSessions", () => {
 
   it("skips tag computation for a session still within the settle window", () => {
     const getSessionData = vi.fn();
-    const agent = makeAgent(getSessionData as unknown as BaseAgent["getSessionData"]);
+    const agent = makeAgent(getSessionData as BaseAgent["getSessionData"]);
 
     const hotSession = makeSession("hot", { time_updated: Date.now() - 10_000 });
     const settledSession = makeSession("settled");

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   postMessage: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Drive this worker entry point with controlled messages and observe its replies in-process.
 vi.mock("node:worker_threads", () => ({
   parentPort: {
     on: (
@@ -21,14 +22,17 @@ vi.mock("node:worker_threads", () => ({
   threadId: 17,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Inject identity projection failures to verify worker error replies.
 vi.mock("@codesesh/core/runtime/projects", () => ({
   computeIdentityProjection: mocks.computeIdentityProjection,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Keep worker entry point tests from changing process-wide diagnostic callbacks.
 vi.mock("@codesesh/core/runtime/diagnostics", () => ({
   setCoreDiagnostics: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: { forwardToParent: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));

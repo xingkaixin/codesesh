@@ -8,6 +8,7 @@ import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostic
 
 // Spies on statSync while delegating to the real implementation, so the
 // single-stat regression test can count per-file calls during a live scan.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real filesystem reads and inject read failures without replacing agent parsing.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return { ...actual, statSync: vi.fn(actual.statSync) };

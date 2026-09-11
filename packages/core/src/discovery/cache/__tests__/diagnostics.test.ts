@@ -14,6 +14,7 @@ import {
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-diag-test-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: vi.fn(() => testHomeDir) };

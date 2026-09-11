@@ -53,10 +53,12 @@ const workers = vi.hoisted(() => {
   return { FakeWorker, state };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Fix the worker pool size so lifecycle assertions do not depend on the host CPU count.
 vi.mock("node:os", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:os")>()),
   availableParallelism: vi.fn(() => 3),
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control worker messages, failures and shutdown without timing real threads.
 vi.mock("node:worker_threads", () => ({ Worker: workers.FakeWorker }));
 
 import { finalizeAgentScan } from "../scanner.js";
@@ -80,11 +82,12 @@ function makeSession(index: number): IdentifiedSessionHead {
 
 function makeAgent(): BaseAgent {
   const meta = new Map<string, SessionCacheMeta>();
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: These worker lifecycle tests use only agent identity, metadata and the explicit detail mock.
   return {
     name: "test",
     snapshotSessionCacheMeta: () => Object.fromEntries(meta),
     getSessionData: vi.fn(
-      (): SessionDetail => ({ ...makeSession(0), messages: [] }) as unknown as SessionDetail,
+      (): SessionDetail => ({ ...makeSession(0), messages: [] }) as SessionDetail,
     ),
   } as unknown as BaseAgent;
 }

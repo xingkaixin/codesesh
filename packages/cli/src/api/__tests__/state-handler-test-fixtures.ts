@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import { afterEach, beforeEach, vi, type Mock } from "vitest";
 
 type StateMockName =
@@ -32,6 +33,7 @@ const loggerMocks: Record<LoggerMockName, Mock> = vi.hoisted(() => ({
   warn: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control persistence results and failures at the HTTP handler boundary without modifying user state.
 vi.mock("@codesesh/core/runtime/state", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/state")>();
   return {
@@ -46,12 +48,14 @@ vi.mock("@codesesh/core/runtime/state", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Supply cached analytics reads to exercise handler responses independently of SQLite.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
   listDashboardCostFacts: coreMocks.listDashboardCostFacts,
   listFileActivity: coreMocks.listFileActivity,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("../../logging.js", () => ({ appLogger: loggerMocks }));
 import type { BookmarkRecord, BookmarkView } from "@codesesh/core/runtime/state";
 import type { LiveSnapshot, SessionHead } from "@codesesh/core/runtime/discovery";
@@ -85,9 +89,11 @@ interface TestContext {
   >;
 }
 
-function makeContext(options: ContextOptions = {}): TestContext {
+function makeContext(options: ContextOptions = {}): TestContext & Context {
   const params = new URLSearchParams(options.query ?? {});
   const url = `http://localhost/${params.size > 0 ? `?${params.toString()}` : ""}`;
+  // SAFETY: These handler tests exercise req/json only; route integration tests cover Hono middleware.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- This partial Hono context is confined to direct handler tests.
   return {
     req: {
       json: () =>
@@ -100,7 +106,7 @@ function makeContext(options: ContextOptions = {}): TestContext {
       raw: new Request(url),
     },
     json: vi.fn((payload: unknown, status = 200) => ({ payload, status })),
-  };
+  } as unknown as TestContext & Context;
 }
 
 function makeProjectIdentityResolver(): ProjectIdentityResolver {

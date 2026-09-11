@@ -42,6 +42,7 @@ function snapshot(
 describe("LiveSessionIndex", () => {
   it("rejects unresolved project identities at snapshot boundaries", () => {
     const codex = makeAgent("codex");
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The missing identity is intentional invalid input; this test verifies rejection at the snapshot boundary.
     const unresolved = {
       ...makeSession("unresolved", 1),
       project_identity: undefined,

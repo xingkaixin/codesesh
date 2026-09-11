@@ -8,6 +8,7 @@ import type { ApiProjectGroup } from "./api";
 // Identity semantics come from the contract; this module only turns them into
 // URLs and back. A route key is percent-encoded, an identity key is not.
 export { getProjectIdentityKey, isProjectIdentityKind };
+
 export type ProjectRouteIdentity = ProjectIdentityRef;
 
 export function getProjectGroupIdentity(project: ApiProjectGroup): ProjectRouteIdentity {

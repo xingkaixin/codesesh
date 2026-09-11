@@ -40,6 +40,7 @@ import type { SessionHead } from "../../../types/index.js";
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-cache-test-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {
@@ -645,6 +646,7 @@ describe("saveCachedSessions", () => {
   it("skips a malformed legacy session without aborting migration", () => {
     createLegacyCachedSessionDb(3, {
       ...makeSession("legacy-null-directory"),
+      // SAFETY: The null directory deliberately models corrupt legacy storage so migration recovery is exercised.
       directory: null as never,
       project_identity: undefined,
     });

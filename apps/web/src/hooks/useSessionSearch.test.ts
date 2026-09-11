@@ -1,22 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { SearchResult } from "../lib/api";
-import type { SessionIndexes } from "../lib/session-indexes";
+import { buildSessionIndexes, type SessionIndexes } from "../lib/session-indexes";
 import * as api from "../lib/api";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionSearch } from "./useSessionSearch";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", () => ({
   fetchSearchResults: vi.fn(),
   logClientEvent: vi.fn(),
 }));
 
-const emptyIndexes = {
-  byAgent: new Map(),
-  byProjectIdentityKey: new Map(),
-  projectOptions: [],
-  sessionsByActivity: [],
-} as unknown as SessionIndexes;
+const emptyIndexes = buildSessionIndexes([], []);
 
 function makeSearchResult(id: string): SearchResult {
   return {

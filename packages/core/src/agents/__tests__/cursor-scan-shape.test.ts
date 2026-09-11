@@ -164,11 +164,11 @@ describe("CS-142: Cursor scan shape", () => {
     const agent = makeAgent(dbPath);
 
     agent.scan({ from: 0 });
-    expect((agent as any).composerCache.has("stale")).toBe(true);
+    expect(agent["composerCache"].has("stale")).toBe(true);
 
     agent.scan({ from: 3_000 });
 
-    expect((agent as any).composerCache.has("stale")).toBe(false);
+    expect(agent["composerCache"].has("stale")).toBe(false);
     expect(textOf(agent, "stale")).toEqual(["old"]);
   });
 

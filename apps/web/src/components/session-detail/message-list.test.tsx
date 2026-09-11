@@ -7,6 +7,7 @@ import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
 
 const anchorRegistry = createTimelineAnchorRegistry();
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Render observable row indices to test virtualized ranges without transcript renderer dependencies.
 vi.mock("./message-rendering", () => ({
   MessageItem: ({ messageIndex }: { messageIndex: number }) => (
     <div data-message-index={messageIndex}>Message {messageIndex}</div>
@@ -42,7 +43,7 @@ class ResizeObserverMock {
 
   trigger(target: Element) {
     if (!this.targets.has(target)) return;
-    this.callback([{ target } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    this.callback([{ target } as ResizeObserverEntry], this as ResizeObserver);
   }
 }
 

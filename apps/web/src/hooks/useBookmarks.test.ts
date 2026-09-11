@@ -6,6 +6,7 @@ import * as bookmarkUtils from "../lib/bookmarks";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useBookmarks } from "./useBookmarks";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", () => ({
   fetchBookmarks: vi.fn(),
   importBookmarks: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("../lib/api", () => ({
   logClientEvent: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Exercise legacy bookmark migration without depending on browser storage left by other tests.
 vi.mock("../lib/bookmarks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/bookmarks")>();
   return {

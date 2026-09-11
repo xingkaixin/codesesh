@@ -29,7 +29,8 @@ class IntersectionObserverMock {
 
   trigger(changes: Array<{ target: Element; isIntersecting: boolean }>) {
     this.callback(
-      changes as unknown as IntersectionObserverEntry[],
+      changes as IntersectionObserverEntry[],
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This observer fixture supplies the callback identity; timeline tests drive intersection entries explicitly.
       this as unknown as IntersectionObserver,
     );
   }

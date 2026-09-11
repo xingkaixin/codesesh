@@ -7,6 +7,7 @@ import type { MessageBlock } from "./blocks";
 
 const normalizeToolStateCalls = vi.hoisted(() => vi.fn());
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real tool normalization calls to verify rendering memoization.
 vi.mock("./tool-strategy", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./tool-strategy")>();
   return {

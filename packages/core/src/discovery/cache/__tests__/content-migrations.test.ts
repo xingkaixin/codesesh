@@ -26,7 +26,7 @@ function createDatabase(): TestDatabase {
       agent_name TEXT PRIMARY KEY
     );
   `);
-  return db as unknown as TestDatabase;
+  return db as TestDatabase;
 }
 
 function seedAgentCache(db: TestDatabase): void {

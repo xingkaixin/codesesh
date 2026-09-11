@@ -48,8 +48,12 @@ function withCurrentIdentity(session: SessionHead): IdentifiedSessionHead {
 
 class TestAgent extends BaseAgent {
   private meta: Record<string, SessionCacheMeta> = {};
-  readonly name = "test";
-  readonly displayName = "test";
+  constructor(
+    readonly name = "test",
+    readonly displayName = name,
+  ) {
+    super();
+  }
   readonly sessionSourceAccess = {
     kind: "aggregate" as const,
     checkForChanges: (sinceTimestamp: number, cachedSessions: SessionHead[]) =>
@@ -225,6 +229,7 @@ describe("filterSessions", () => {
   });
 
   it("returns empty for null directory with cwd filter", () => {
+    // SAFETY: The null directory is intentional malformed adapter data used to test cwd filtering.
     const sessions = [makeSession("a", { directory: null as any })];
     const result = filterSessions(sessions, { cwd: "/home/user/project" });
     expect(result).toHaveLength(0);
@@ -234,6 +239,7 @@ describe("filterSessions", () => {
 // --- scanSessions integration tests ---
 // Mock cache and perf to isolate scanner logic
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control cache restoration and writes while exercising scanner reconciliation.
 vi.mock("../cache/sessions.js", () => ({
   readCachedSessions: vi.fn(() => ({ status: "success", value: null })),
   markAgentCacheInitialized: vi.fn(),
@@ -242,6 +248,7 @@ vi.mock("../cache/sessions.js", () => ({
   saveCachedSessions: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Fix tag classification and timing results while testing scanner orchestration.
 vi.mock("../../utils/index.js", () => ({
   classifySessionTags: vi.fn(() => []),
   getSmartTagSourceTimestamp: vi.fn(() => 1000),
@@ -253,6 +260,7 @@ vi.mock("../../utils/index.js", () => ({
 }));
 
 // Mock createRegisteredAgents to return controlled agents
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Register only the fixture agents so orchestration cannot discover host agent data.
 vi.mock("../../agents/index.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../agents/index.js")>();
   return { ...actual, createRegisteredAgents: vi.fn(() => []) };
@@ -293,17 +301,15 @@ function createTestAgent(overrides: {
   incrementalScanResult?: SessionHead[];
   metaMap?: Map<string, SessionCacheMeta>;
 }) {
-  const agent = new TestAgent() as any;
-  agent.name = overrides.name;
-  agent.displayName = overrides.name;
+  const agent = new TestAgent(overrides.name);
   agent.isAvailable = () => overrides.available;
   agent.scan = () => {
     if (overrides.shouldThrow) throw new Error("scan failed");
-    if (overrides.metaMap) agent._metaMap = overrides.metaMap;
+    if (overrides.metaMap) agent.restoreSessionCacheMeta(Object.fromEntries(overrides.metaMap));
     return overrides.sessions;
   };
   agent.getSessionData = () => ({
-    id: "s1",
+    reference: { agentName: overrides.name, sessionId: "s1" },
     title: "Session",
     directory: "/repo",
     time_created: 1000,
@@ -324,7 +330,7 @@ function createTestAgent(overrides: {
   if (overrides.incrementalScanResult) {
     agent.incrementalScan = () => overrides.incrementalScanResult!;
   }
-  return agent as TestAgent;
+  return agent;
 }
 
 describe("ensureSessionTagsSync", () => {

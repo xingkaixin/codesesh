@@ -8,6 +8,7 @@ import {
 import type { AppConfig } from "./api";
 
 export type TimeWindow = AppConfig["window"];
+
 export type TimeWindowPreset = "7d" | "14d" | "30d" | "90d" | "all" | "custom";
 
 export interface ResolvedTimeWindow {

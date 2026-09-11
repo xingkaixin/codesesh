@@ -38,7 +38,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       activeAgentKey: null,
       activeSessionId: null,
     } satisfies ViewState,
-    navigate: vi.fn() as unknown as NavigateFunction,
+    navigate: vi.fn() as NavigateFunction,
     selectedProjectNavigationIdentity: null,
     shortcutHelpOpen: false,
     setShortcutHelpOpen: vi.fn(),

@@ -64,8 +64,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
   readonly displayName = AGENT_METADATA.displayName;
 
   private basePath: string | null = this.configuredSourceRoot;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private sessionsIndexCache: Record<string, any> = {};
+  private sessionsIndexCache = new Map<string, Map<string, Record<string, unknown>>>();
   private sessionsIndexMtime: Record<string, number | null> = {};
   private childContextsBySource = new Map<string, ClaudeChildContext>();
   private childContextCache = new Map<string, ClaudeChildContextCacheEntry>();
@@ -439,8 +438,9 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
 
     // Invalidate when the index file mtime advances so long-running processes
     // pick up title changes without relying on callers to evict manually.
-    if (cacheKey in this.sessionsIndexCache && this.sessionsIndexMtime[cacheKey] === mtime) {
-      return this.sessionsIndexCache[cacheKey];
+    const cached = this.sessionsIndexCache.get(cacheKey);
+    if (cached && this.sessionsIndexMtime[cacheKey] === mtime) {
+      return cached;
     }
 
     const map = new Map<string, Record<string, unknown>>();
@@ -460,7 +460,7 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
       }
     }
 
-    this.sessionsIndexCache[cacheKey] = map;
+    this.sessionsIndexCache.set(cacheKey, map);
     this.sessionsIndexMtime[cacheKey] = mtime;
     return map;
   }

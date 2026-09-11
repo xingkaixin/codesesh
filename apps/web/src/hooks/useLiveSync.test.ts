@@ -9,6 +9,7 @@ let sessionsCallback: ((event: SessionsUpdatedEvent) => void) | undefined;
 let reconnectCallback: (() => void) | undefined;
 let disconnectCallback: (() => void) | undefined;
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Drive subscription events and observe telemetry without a live SSE server.
 vi.mock("../lib/api", () => ({
   subscribeSessionUpdates: vi.fn(
     (

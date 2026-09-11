@@ -3,6 +3,7 @@ import type { SessionHead } from "../../types/session.js";
 
 const treeMocks = vi.hoisted(() => ({ buildSessionTree: vi.fn() }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real session-tree builds to verify aggregation reuses the existing tree.
 vi.mock("../../contract/index.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../contract/index.js")>();
   treeMocks.buildSessionTree.mockImplementation(actual.buildSessionTree);

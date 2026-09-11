@@ -66,7 +66,7 @@ describe("CursorAgent parsing", () => {
     symlinkSync(outsideWorkspace, join(workspaceStorage, "linked-workspace"));
     vi.stubEnv("CURSOR_DATA_PATH", dataRoot);
 
-    const map = (new CursorAgent() as any).buildWorkspacePathMap();
+    const map = new CursorAgent()["buildWorkspacePathMap"]();
 
     expect(map).toEqual(new Map());
   });
@@ -93,8 +93,8 @@ describe("CursorAgent parsing", () => {
       },
     });
 
-    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-    agent.composerCache.set("composer-1", {
+    const agent = new CursorAgent({ sourceRoot: tempDir });
+    agent["composerCache"].set("composer-1", {
       id: "composer-1",
       text: "Fallback title",
       createdAt: 1_000,
@@ -136,8 +136,8 @@ describe("CursorAgent parsing", () => {
       },
     });
 
-    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-    agent.composerCache.set("composer-1", { id: "composer-1", createdAt: 1_000 });
+    const agent = new CursorAgent({ sourceRoot: tempDir });
+    agent["composerCache"].set("composer-1", { id: "composer-1", createdAt: 1_000 });
 
     const tool = agent
       .getSessionData("composer-1")
@@ -162,8 +162,8 @@ describe("CursorAgent parsing", () => {
     );
     insertKv(dbPath, "bubble:sub-1", fixture);
 
-    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-    agent.composerCache.set("composer-1", {
+    const agent = new CursorAgent({ sourceRoot: tempDir });
+    agent["composerCache"].set("composer-1", {
       id: "composer-1",
       createdAt: 1_000,
       updatedAt: 2_000,
@@ -200,8 +200,8 @@ describe("CursorAgent parsing", () => {
       createdAt: 1_000,
     });
 
-    const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-    agent.composerCache.set("composer-1", {
+    const agent = new CursorAgent({ sourceRoot: tempDir });
+    agent["composerCache"].set("composer-1", {
       id: "composer-1",
       createdAt: 1_000,
       updatedAt: 1_000,
@@ -230,8 +230,8 @@ describe("CursorAgent parsing", () => {
     setCoreDiagnostics(sink);
 
     try {
-      const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-      agent.composerCache.set("composer-1", {
+      const agent = new CursorAgent({ sourceRoot: tempDir });
+      agent["composerCache"].set("composer-1", {
         id: "composer-1",
         createdAt: 1_000,
         updatedAt: 1_000,
@@ -268,8 +268,8 @@ describe("CursorAgent parsing", () => {
     setCoreDiagnostics(sink);
 
     try {
-      const agent = new CursorAgent({ sourceRoot: tempDir }) as any;
-      agent.composerCache.set("composer-1", {
+      const agent = new CursorAgent({ sourceRoot: tempDir });
+      agent["composerCache"].set("composer-1", {
         id: "composer-1",
         createdAt: 1_000,
         updatedAt: 1_000,
@@ -314,6 +314,7 @@ describe("CursorAgent scan outcomes", () => {
   });
 
   it("CS-273: throws instead of returning empty messages when the bubble query fails", () => {
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The injected database throws on prepare before any other database method or message data is used.
     const agent = new CursorAgent() as unknown as {
       loadMessagesFromBubbles(db: unknown, composerId: string, model: string | null): unknown;
     };

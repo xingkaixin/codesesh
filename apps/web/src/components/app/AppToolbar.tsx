@@ -1,5 +1,6 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
+
 declare const __APP_VERSION__: string;
 
 import type { Ref } from "react";

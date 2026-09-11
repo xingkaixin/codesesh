@@ -11,8 +11,11 @@ import type {
 import type { LogContext } from "./logging.js";
 
 type FullSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "full" }>;
+
 type ChangesSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "changes" }>;
+
 type MaintenanceSearchIndexJob = Extract<SearchIndexWorkerJob, { kind: "maintenance" }>;
+
 type IncrementalSearchIndexJob = ChangesSearchIndexJob | MaintenanceSearchIndexJob;
 
 const LOG_CONTEXT_KEYS = ["request_id", "operation_id", "publication_id"] as const;

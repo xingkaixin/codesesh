@@ -41,7 +41,7 @@ describe("bookmark handlers", () => {
     ]);
     const c = makeContext();
 
-    handleGetBookmarks(c as never, bookmarkScanSource);
+    handleGetBookmarks(c, bookmarkScanSource);
 
     expect(c.json).toHaveBeenCalledWith({
       bookmarks: [
@@ -76,7 +76,7 @@ describe("bookmark handlers", () => {
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
     const c = makeContext();
 
-    handleGetBookmarks(c as never, source);
+    handleGetBookmarks(c, source);
 
     const bookmark = getResponsePayload<{ bookmarks: BookmarkView[] }>(c).bookmarks[0];
     const responseSession = bookmark?.availability === "available" ? bookmark.session : undefined;
@@ -93,13 +93,13 @@ describe("bookmark handlers", () => {
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw new StateStorageUnavailableError();
     });
-    handleGetBookmarks(makeContext() as never, bookmarkScanSource);
+    handleGetBookmarks(makeContext(), bookmarkScanSource);
     expect(loggerMocks.warn).not.toHaveBeenCalled();
 
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw new Error("corrupt aliases");
     });
-    handleGetBookmarks(makeContext() as never, bookmarkScanSource);
+    handleGetBookmarks(makeContext(), bookmarkScanSource);
     expect(loggerMocks.warn).toHaveBeenLastCalledWith("api.session_aliases.load_failed", {
       error: "corrupt aliases",
     });
@@ -107,7 +107,7 @@ describe("bookmark handlers", () => {
     coreMocks.listSessionAliases.mockImplementationOnce(() => {
       throw "invalid aliases";
     });
-    handleGetBookmarks(makeContext() as never, bookmarkScanSource);
+    handleGetBookmarks(makeContext(), bookmarkScanSource);
     expect(loggerMocks.warn).toHaveBeenLastCalledWith("api.session_aliases.load_failed", {
       error: "invalid aliases",
     });
@@ -118,7 +118,7 @@ describe("bookmark handlers", () => {
       throw new BookmarkStorageUnavailableError();
     });
     const unavailable = makeContext();
-    handleGetBookmarks(unavailable as never, bookmarkScanSource);
+    handleGetBookmarks(unavailable, bookmarkScanSource);
     expect(unavailable.json).toHaveBeenCalledWith(
       { error: "Bookmark storage is unavailable" },
       503,
@@ -127,9 +127,7 @@ describe("bookmark handlers", () => {
     coreMocks.listBookmarks.mockImplementationOnce(() => {
       throw new Error("unexpected");
     });
-    expect(() => handleGetBookmarks(makeContext() as never, bookmarkScanSource)).toThrow(
-      "unexpected",
-    );
+    expect(() => handleGetBookmarks(makeContext(), bookmarkScanSource)).toThrow("unexpected");
   });
 
   it.each([
@@ -143,7 +141,7 @@ describe("bookmark handlers", () => {
   ])("rejects invalid bookmark identity payload %#", async (body) => {
     const c = makeContext({ body });
 
-    await handlePutBookmark(c as never);
+    await handlePutBookmark(c);
 
     expect(c.json).toHaveBeenCalledWith({ error: "Invalid bookmark payload" }, 400);
     expect(coreMocks.upsertBookmark).not.toHaveBeenCalled();
@@ -151,12 +149,12 @@ describe("bookmark handlers", () => {
 
   it("rejects writes referencing agents that do not exist", async () => {
     const put = makeContext({ body: { reference: { agentName: "ghost", sessionId: "s1" } } });
-    await handlePutBookmark(put as never);
+    await handlePutBookmark(put);
     expect(put.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
     expect(coreMocks.upsertBookmark).not.toHaveBeenCalled();
 
     const del = makeContext({ param: { agent: "ghost", id: "s1" } });
-    await handleDeleteBookmark(del as never);
+    await handleDeleteBookmark(del);
     expect(del.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
     expect(coreMocks.deleteBookmark).not.toHaveBeenCalled();
 
@@ -164,12 +162,12 @@ describe("bookmark handlers", () => {
       param: { agent: "ghost", id: "s1" },
       body: { alias: "renamed" },
     });
-    await handlePutSessionAlias(putAlias as never);
+    await handlePutSessionAlias(putAlias);
     expect(putAlias.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
     expect(coreMocks.upsertSessionAlias).not.toHaveBeenCalled();
 
     const delAlias = makeContext({ param: { agent: "ghost", id: "s1" } });
-    await handleDeleteSessionAlias(delAlias as never);
+    await handleDeleteSessionAlias(delAlias);
     expect(delAlias.json).toHaveBeenCalledWith({ error: "Unknown agent: ghost" }, 400);
     expect(coreMocks.deleteSessionAlias).not.toHaveBeenCalled();
   });
@@ -179,7 +177,7 @@ describe("bookmark handlers", () => {
       body: [storedBookmark, { reference: { agentName: "ghost", sessionId: "s9" } }],
     });
 
-    await handleImportBookmarks(mixed as never, bookmarkScanSource);
+    await handleImportBookmarks(mixed, bookmarkScanSource);
 
     expect(coreMocks.importBookmarks).toHaveBeenCalledWith([storedBookmark]);
     expect(mixed.json).toHaveBeenCalledWith({
@@ -193,10 +191,10 @@ describe("bookmark handlers", () => {
     const current = makeContext({
       body: { reference: validReference, session: { stale: true }, bookmarkedAt: 99 },
     });
-    await handlePutBookmark(current as never);
+    await handlePutBookmark(current);
 
     const legacy = makeContext({ body: legacyBookmark });
-    await handlePutBookmark(legacy as never);
+    await handlePutBookmark(legacy);
 
     expect(coreMocks.upsertBookmark).toHaveBeenNthCalledWith(1, validReference);
     expect(coreMocks.upsertBookmark).toHaveBeenNthCalledWith(2, validReference);
@@ -211,7 +209,7 @@ describe("bookmark handlers", () => {
       throw new BookmarkStorageUnavailableError();
     });
     const unavailable = makeContext({ body: { reference: validReference } });
-    await handlePutBookmark(unavailable as never);
+    await handlePutBookmark(unavailable);
     expect(unavailable.json).toHaveBeenCalledWith(
       { error: "Bookmark storage is unavailable" },
       503,
@@ -221,21 +219,21 @@ describe("bookmark handlers", () => {
       throw new Error("unexpected");
     });
     await expect(
-      handlePutBookmark(makeContext({ body: { reference: validReference } }) as never),
+      handlePutBookmark(makeContext({ body: { reference: validReference } })),
     ).rejects.toThrow("unexpected");
   });
 
   it("validates, imports, and materializes bookmark fact batches", async () => {
     const nonArray = makeContext({ body: storedBookmark });
-    await handleImportBookmarks(nonArray as never, bookmarkScanSource);
+    await handleImportBookmarks(nonArray, bookmarkScanSource);
     expect(nonArray.json).toHaveBeenCalledWith({ error: "Invalid bookmark payload" }, 400);
 
     const mixed = makeContext({ body: [storedBookmark, { invalid: true }] });
-    await handleImportBookmarks(mixed as never, bookmarkScanSource);
+    await handleImportBookmarks(mixed, bookmarkScanSource);
     expect(mixed.json).toHaveBeenCalledWith({ error: "Invalid bookmark payload" }, 400);
 
     const valid = makeContext({ body: [storedBookmark] });
-    await handleImportBookmarks(valid as never, bookmarkScanSource);
+    await handleImportBookmarks(valid, bookmarkScanSource);
     expect(coreMocks.importBookmarks).toHaveBeenCalledWith([storedBookmark]);
     expect(valid.json).toHaveBeenCalledWith({
       bookmarks: [availableBookmark],
@@ -243,7 +241,7 @@ describe("bookmark handlers", () => {
     });
 
     const legacy = makeContext({ body: [legacyBookmark] });
-    await handleImportBookmarks(legacy as never, bookmarkScanSource);
+    await handleImportBookmarks(legacy, bookmarkScanSource);
     expect(coreMocks.importBookmarks).toHaveBeenLastCalledWith([storedBookmark]);
   });
 
@@ -252,7 +250,7 @@ describe("bookmark handlers", () => {
       body: [{ reference: validReference, bookmarkedAt: "3" }],
     });
 
-    await handleImportBookmarks(context as never, bookmarkScanSource);
+    await handleImportBookmarks(context, bookmarkScanSource);
 
     expect(context.json).toHaveBeenCalledWith({ error: "Invalid bookmark payload" }, 400);
     expect(coreMocks.importBookmarks).not.toHaveBeenCalled();
@@ -263,7 +261,7 @@ describe("bookmark handlers", () => {
       throw new BookmarkStorageUnavailableError();
     });
     const unavailable = makeContext({ body: [storedBookmark] });
-    await handleImportBookmarks(unavailable as never, bookmarkScanSource);
+    await handleImportBookmarks(unavailable, bookmarkScanSource);
     expect(unavailable.json).toHaveBeenCalledWith(
       { error: "Bookmark storage is unavailable" },
       503,
@@ -273,24 +271,24 @@ describe("bookmark handlers", () => {
       throw new Error("unexpected");
     });
     await expect(
-      handleImportBookmarks(makeContext({ body: [storedBookmark] }) as never, bookmarkScanSource),
+      handleImportBookmarks(makeContext({ body: [storedBookmark] }), bookmarkScanSource),
     ).rejects.toThrow("unexpected");
   });
 
   it("validates bookmark identifiers before deleting", () => {
     const missingAgent = makeContext({ param: { id: "s1" } });
-    handleDeleteBookmark(missingAgent as never);
+    handleDeleteBookmark(missingAgent);
     expect(missingAgent.json).toHaveBeenCalledWith({ error: "Missing bookmark identifier" }, 400);
 
     const missingSession = makeContext({ param: { agent: "codex" } });
-    handleDeleteBookmark(missingSession as never);
+    handleDeleteBookmark(missingSession);
     expect(missingSession.json).toHaveBeenCalledWith({ error: "Missing bookmark identifier" }, 400);
     expect(coreMocks.deleteBookmark).not.toHaveBeenCalled();
   });
 
   it("deletes bookmarks and handles storage failures", () => {
     const valid = makeContext({ param: { agent: "codex", id: "s1" } });
-    handleDeleteBookmark(valid as never);
+    handleDeleteBookmark(valid);
     expect(coreMocks.deleteBookmark).toHaveBeenCalledWith({
       agentName: "codex",
       sessionId: "s1",
@@ -301,7 +299,7 @@ describe("bookmark handlers", () => {
       throw new BookmarkStorageUnavailableError();
     });
     const unavailable = makeContext({ param: { agent: "codex", id: "s1" } });
-    handleDeleteBookmark(unavailable as never);
+    handleDeleteBookmark(unavailable);
     expect(unavailable.json).toHaveBeenCalledWith(
       { error: "Bookmark storage is unavailable" },
       503,
@@ -311,7 +309,7 @@ describe("bookmark handlers", () => {
       throw new Error("unexpected");
     });
     expect(() =>
-      handleDeleteBookmark(makeContext({ param: { agent: "codex", id: "s1" } }) as never),
+      handleDeleteBookmark(makeContext({ param: { agent: "codex", id: "s1" } })),
     ).toThrow("unexpected");
   });
 });
@@ -319,14 +317,14 @@ describe("bookmark handlers", () => {
 describe("session alias handlers", () => {
   it("validates alias payloads and identifiers", async () => {
     const missingAgent = makeContext({ body: { alias: "Renamed" }, param: { id: "s1" } });
-    await handlePutSessionAlias(missingAgent as never);
+    await handlePutSessionAlias(missingAgent);
     expect(missingAgent.json).toHaveBeenCalledWith({ error: "Invalid session alias payload" }, 400);
 
     const missingSession = makeContext({
       body: { alias: "Renamed" },
       param: { agent: "codex" },
     });
-    await handlePutSessionAlias(missingSession as never);
+    await handlePutSessionAlias(missingSession);
     expect(missingSession.json).toHaveBeenCalledWith(
       { error: "Invalid session alias payload" },
       400,
@@ -336,7 +334,7 @@ describe("session alias handlers", () => {
       body: { alias: 42 },
       param: { agent: "codex", id: "s1" },
     });
-    await handlePutSessionAlias(invalidAlias as never);
+    await handlePutSessionAlias(invalidAlias);
     expect(invalidAlias.json).toHaveBeenCalledWith({ error: "Invalid session alias payload" }, 400);
   });
 
@@ -345,7 +343,7 @@ describe("session alias handlers", () => {
       body: { alias: "Renamed" },
       param: { agent: "codex", id: "s1" },
     });
-    await handlePutSessionAlias(valid as never);
+    await handlePutSessionAlias(valid);
     expect(coreMocks.upsertSessionAlias).toHaveBeenCalledWith(
       { agentName: "codex", sessionId: "s1" },
       "Renamed",
@@ -358,7 +356,7 @@ describe("session alias handlers", () => {
       body: { alias: " " },
       param: { agent: "codex", id: "s1" },
     });
-    await handlePutSessionAlias(invalid as never);
+    await handlePutSessionAlias(invalid);
     expect(invalid.json).toHaveBeenCalledWith(
       { error: "Session alias must be non-empty and at most 160 characters" },
       400,
@@ -394,7 +392,7 @@ describe("session alias handlers", () => {
       body: { alias: "Renamed" },
       param: { agent: "codex", id: "s1" },
     });
-    await handlePutSessionAlias(unavailable as never);
+    await handlePutSessionAlias(unavailable);
     expect(unavailable.json).toHaveBeenCalledWith(
       { error: "Session alias storage is unavailable" },
       503,
@@ -408,21 +406,21 @@ describe("session alias handlers", () => {
         makeContext({
           body: { alias: "Renamed" },
           param: { agent: "codex", id: "s1" },
-        }) as never,
+        }),
       ),
     ).rejects.toThrow("unexpected");
   });
 
   it("validates alias identifiers before deleting", () => {
     const missingAgent = makeContext({ param: { id: "s1" } });
-    handleDeleteSessionAlias(missingAgent as never);
+    handleDeleteSessionAlias(missingAgent);
     expect(missingAgent.json).toHaveBeenCalledWith(
       { error: "Missing session alias identifier" },
       400,
     );
 
     const missingSession = makeContext({ param: { agent: "codex" } });
-    handleDeleteSessionAlias(missingSession as never);
+    handleDeleteSessionAlias(missingSession);
     expect(missingSession.json).toHaveBeenCalledWith(
       { error: "Missing session alias identifier" },
       400,
@@ -431,7 +429,7 @@ describe("session alias handlers", () => {
 
   it("deletes aliases and handles storage failures", () => {
     const valid = makeContext({ param: { agent: "codex", id: "s1" } });
-    handleDeleteSessionAlias(valid as never);
+    handleDeleteSessionAlias(valid);
     expect(coreMocks.deleteSessionAlias).toHaveBeenCalledWith({
       agentName: "codex",
       sessionId: "s1",
@@ -442,7 +440,7 @@ describe("session alias handlers", () => {
       throw new StateStorageUnavailableError();
     });
     const unavailable = makeContext({ param: { agent: "codex", id: "s1" } });
-    handleDeleteSessionAlias(unavailable as never);
+    handleDeleteSessionAlias(unavailable);
     expect(unavailable.json).toHaveBeenCalledWith(
       { error: "Session alias storage is unavailable" },
       503,
@@ -452,7 +450,7 @@ describe("session alias handlers", () => {
       throw new Error("unexpected");
     });
     expect(() =>
-      handleDeleteSessionAlias(makeContext({ param: { agent: "codex", id: "s1" } }) as never),
+      handleDeleteSessionAlias(makeContext({ param: { agent: "codex", id: "s1" } })),
     ).toThrow("unexpected");
   });
 });

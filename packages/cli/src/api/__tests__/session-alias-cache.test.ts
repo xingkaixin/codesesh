@@ -24,9 +24,9 @@ describe("session alias caching", () => {
   it("queries alias storage once across repeated reads", () => {
     coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
 
-    handleGetSessions(makeContext() as never, scanSource);
-    handleGetSessions(makeContext() as never, scanSource);
-    handleGetBookmarks(makeContext() as never, bookmarkScanSource);
+    handleGetSessions(makeContext(), scanSource);
+    handleGetSessions(makeContext(), scanSource);
+    handleGetBookmarks(makeContext(), bookmarkScanSource);
 
     expect(coreMocks.listSessionAliases).toHaveBeenCalledTimes(1);
   });
@@ -37,7 +37,7 @@ describe("session alias caching", () => {
     coreMocks.listSessionAliases.mockReturnValue([]);
     const readTitle = () => {
       const context = makeContext();
-      handleGetBookmarks(context as never, bookmarkScanSource);
+      handleGetBookmarks(context, bookmarkScanSource);
       const bookmark = getResponsePayload<{ bookmarks: BookmarkView[] }>(context).bookmarks[0];
       return bookmark?.availability === "available" ? bookmark.session.display_title : undefined;
     };
@@ -59,17 +59,17 @@ describe("session alias caching", () => {
 
   it("picks up a stored alias on the next read", async () => {
     coreMocks.listSessionAliases.mockReturnValue([]);
-    handleGetSessions(makeContext() as never, scanSource);
+    handleGetSessions(makeContext(), scanSource);
 
     coreMocks.upsertSessionAlias.mockReturnValue(aliasRecord);
     coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
     await handlePutSessionAlias(
-      makeContext({ body: { alias: "Renamed" }, param: { agent: "codex", id: "s1" } }) as never,
+      makeContext({ body: { alias: "Renamed" }, param: { agent: "codex", id: "s1" } }),
     );
 
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
     const after = makeContext();
-    handleGetBookmarks(after as never, bookmarkScanSource);
+    handleGetBookmarks(after, bookmarkScanSource);
 
     expect(getResponsePayload<{ bookmarks: BookmarkView[] }>(after).bookmarks[0]).toMatchObject({
       session: { display_title: "Renamed" },
@@ -79,13 +79,13 @@ describe("session alias caching", () => {
   it("drops a removed alias on the next read", () => {
     coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
-    handleGetBookmarks(makeContext() as never, bookmarkScanSource);
+    handleGetBookmarks(makeContext(), bookmarkScanSource);
 
     coreMocks.listSessionAliases.mockReturnValue([]);
-    handleDeleteSessionAlias(makeContext({ param: { agent: "codex", id: "s1" } }) as never);
+    handleDeleteSessionAlias(makeContext({ param: { agent: "codex", id: "s1" } }));
 
     const after = makeContext();
-    handleGetBookmarks(after as never, bookmarkScanSource);
+    handleGetBookmarks(after, bookmarkScanSource);
 
     const bookmark = getResponsePayload<{ bookmarks: BookmarkView[] }>(after).bookmarks[0];
     expect(bookmark).toMatchObject({ availability: "available" });
@@ -100,11 +100,11 @@ describe("session alias caching", () => {
     });
     coreMocks.listSessionAliases.mockReturnValue([aliasRecord]);
 
-    handleGetSessions(makeContext() as never, scanSource);
+    handleGetSessions(makeContext(), scanSource);
     coreMocks.listBookmarks.mockReturnValue([storedBookmark]);
     const recovered = makeContext();
-    handleGetBookmarks(recovered as never, bookmarkScanSource);
-    handleGetSessions(makeContext() as never, scanSource);
+    handleGetBookmarks(recovered, bookmarkScanSource);
+    handleGetSessions(makeContext(), scanSource);
 
     expect(getResponsePayload<{ bookmarks: BookmarkView[] }>(recovered).bookmarks[0]).toMatchObject(
       { session: { display_title: "Renamed" } },

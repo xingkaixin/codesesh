@@ -18,6 +18,7 @@ import type { SessionHead } from "../../types/index.js";
 
 const enumerated: EnumeratedSessionSourceCapability = {
   kind: "enumerated",
+  // SAFETY: Plan selection inspects the capability kind without calling this synchronization placeholder.
   synchronize: () => ({}) as never,
   count: () => 0,
 };
@@ -43,6 +44,7 @@ function agent(
   source: AggregateSessionSourceCapability | EnumeratedSessionSourceCapability,
   sessions: SessionHead[] = [],
 ): BaseAgent {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: These planning tests only exercise the supplied availability, scan and source capability methods.
   return {
     sessionSourceAccess: source,
     isAvailable: () => true,

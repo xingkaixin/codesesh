@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import { afterEach, vi, type Mock } from "vitest";
 import { createSessionIdentity } from "@codesesh/core/contract";
 
@@ -48,6 +49,7 @@ const coreMocks: Record<CoreMockName, Mock> = vi.hoisted(() => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real project projection calls to verify handler work is bounded.
 vi.mock("@codesesh/core/runtime/projects", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/projects")>();
   return {
@@ -69,6 +71,7 @@ vi.mock("@codesesh/core/runtime/projects", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real dashboard builds to verify the handler reuses cached results.
 vi.mock("@codesesh/core/runtime/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/analytics")>();
   return {
@@ -80,6 +83,7 @@ vi.mock("@codesesh/core/runtime/analytics", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real search filtering calls and control the index query result at the handler boundary.
 vi.mock("@codesesh/core/runtime/search", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/search")>();
   return {
@@ -94,6 +98,7 @@ vi.mock("@codesesh/core/runtime/search", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control cached analytics revisions and search results at the HTTP boundary.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/discovery")>()),
   getAnalyticsRevision: coreMocks.getAnalyticsRevision,
@@ -103,11 +108,13 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => ({
   listFileActivity: coreMocks.listFileActivity,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control persistence results and failures at the HTTP handler boundary without modifying user state.
 vi.mock("@codesesh/core/runtime/state", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/state")>()),
   listSessionAliases: coreMocks.listSessionAliases,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real session-tree builds to verify aggregation reuses the existing tree.
 vi.mock("@codesesh/core/contract", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/contract")>();
   return {
@@ -179,10 +186,11 @@ function makeMockContext(
     param?: Record<string, string>;
     signal?: AbortSignal;
   } = {},
-) {
+): Context & { json: Mock } {
   const jsonFn = vi.fn().mockReturnValue({ status: 200 });
   const params = new URLSearchParams(overrides.query ?? {});
   const url = `http://localhost/${params.size ? `?${params.toString()}` : ""}`;
+  // SAFETY: The fixture implements the req/json surface used by these handlers and retains the JSON spy.
   return {
     req: {
       query: (key: string) => overrides.query?.[key] ?? "",
@@ -191,7 +199,7 @@ function makeMockContext(
       raw: new Request(url, { signal: overrides.signal }),
     },
     json: jsonFn,
-  } as any;
+  } as Context & { json: Mock };
 }
 
 class MockAgent extends BaseAgent {

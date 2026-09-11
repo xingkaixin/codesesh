@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type BaseAgent, type SessionWatchPlan } from "@codesesh/core/runtime/agents";
+import { type SessionWatchPlan } from "@codesesh/core/runtime/agents";
 
 const fsWatch = vi.hoisted(() => ({
   watchers: [] as Array<{
@@ -15,6 +15,7 @@ const fsWatch = vi.hoisted(() => ({
   watch: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Deliver deterministic watch events without relying on OS notification timing.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
@@ -23,6 +24,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -254,7 +256,7 @@ describe("SessionWatcher", () => {
             count: () => 0,
           },
         },
-      ) as unknown as BaseAgent;
+      );
       const watcher = new SessionWatcher();
 
       watcher.start([adapter]);
