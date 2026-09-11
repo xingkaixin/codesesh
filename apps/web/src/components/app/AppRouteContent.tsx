@@ -23,12 +23,15 @@ import type {
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
-import { DetailLanding, type LandingAgentItem } from "../DetailLanding";
+import type { LandingAgentItem } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 
+const DetailLanding = lazy(() =>
+  import("../DetailLanding").then((module) => ({ default: module.DetailLanding })),
+);
 const OverviewScreen = lazy(() =>
   import("../overview/OverviewScreen").then((module) => ({ default: module.OverviewScreen })),
 );
@@ -283,15 +286,17 @@ function AgentRouteContent({ route }: { route: AgentRouteModel }) {
     [toggleSessionBookmark],
   );
   return (
-    <DetailLanding
-      type="agent"
-      agentCatalog={route.agentCatalog}
-      sessions={route.sessions}
-      agentItems={agentItems}
-      activeAgentKey={route.activeAgentKey}
-      isBookmarked={route.bookmarks.isBookmarked}
-      onToggleBookmark={toggleBookmark}
-    />
+    <LazySurface>
+      <DetailLanding
+        type="agent"
+        agentCatalog={route.agentCatalog}
+        sessions={route.sessions}
+        agentItems={agentItems}
+        activeAgentKey={route.activeAgentKey}
+        isBookmarked={route.bookmarks.isBookmarked}
+        onToggleBookmark={toggleBookmark}
+      />
+    </LazySurface>
   );
 }
 
@@ -323,30 +328,34 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
   if (route.detail.loading) return <SessionDetailSkeleton />;
   if (route.detail.error?.kind === "missing") {
     return (
-      <DetailLanding
-        type="missing-session"
-        agentCatalog={route.agentCatalog}
-        sessions={route.sessions}
-        agentItems={agentItems}
-        activeAgentKey={route.activeAgentKey}
-        attemptedSessionId={route.activeSessionId}
-        isBookmarked={route.bookmarks.isBookmarked}
-        onToggleBookmark={toggleBookmark}
-      />
+      <LazySurface>
+        <DetailLanding
+          type="missing-session"
+          agentCatalog={route.agentCatalog}
+          sessions={route.sessions}
+          agentItems={agentItems}
+          activeAgentKey={route.activeAgentKey}
+          attemptedSessionId={route.activeSessionId}
+          isBookmarked={route.bookmarks.isBookmarked}
+          onToggleBookmark={toggleBookmark}
+        />
+      </LazySurface>
     );
   }
   if (route.detail.error?.kind === "load-failed") {
     return (
-      <DetailLanding
-        type="load-failed"
-        agentCatalog={route.agentCatalog}
-        sessions={route.sessions}
-        agentItems={agentItems}
-        loadFailureMessage={route.detail.error.message}
-        isBookmarked={route.bookmarks.isBookmarked}
-        onToggleBookmark={toggleBookmark}
-        onRetry={route.detail.retry}
-      />
+      <LazySurface>
+        <DetailLanding
+          type="load-failed"
+          agentCatalog={route.agentCatalog}
+          sessions={route.sessions}
+          agentItems={agentItems}
+          loadFailureMessage={route.detail.error.message}
+          isBookmarked={route.bookmarks.isBookmarked}
+          onToggleBookmark={toggleBookmark}
+          onRetry={route.detail.retry}
+        />
+      </LazySurface>
     );
   }
   if (!currentSession) return <SessionDetailSkeleton />;
@@ -376,17 +385,19 @@ function MissingAgentRouteContent({ route }: { route: MissingAgentRouteModel }) 
 
   const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
   return (
-    <DetailLanding
-      type="missing-agent"
-      agentCatalog={route.agentCatalog}
-      sessions={route.sessions}
-      agentItems={agentItems}
-      attemptedAgentKey={route.attemptedKey}
-      isBookmarked={route.bookmarks.isBookmarked}
-      onToggleBookmark={(session) =>
-        route.bookmarks.toggleSessionBookmark(session, session.reference.agentName)
-      }
-    />
+    <LazySurface>
+      <DetailLanding
+        type="missing-agent"
+        agentCatalog={route.agentCatalog}
+        sessions={route.sessions}
+        agentItems={agentItems}
+        attemptedAgentKey={route.attemptedKey}
+        isBookmarked={route.bookmarks.isBookmarked}
+        onToggleBookmark={(session) =>
+          route.bookmarks.toggleSessionBookmark(session, session.reference.agentName)
+        }
+      />
+    </LazySurface>
   );
 }
 
