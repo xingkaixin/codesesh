@@ -2,6 +2,7 @@
 import "@fontsource-variable/ibm-plex-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "@fontsource-variable/space-grotesk";
+import heroArtwork from "../assets/backgrounds/session-orbit.webp";
 import {
   copy,
   localeConfig,
@@ -167,6 +168,7 @@ const jsonLd = {
 <html lang={currentLocale.language}>
   <head>
     <meta charset="UTF-8" />
+    {!page && <link rel="preload" href={heroArtwork.src} as="image" />}
     <script is:inline>
       // Applies the persisted theme before first paint to avoid a light->dark
       // flash. Key ("www-theme") is independent from apps/web's
