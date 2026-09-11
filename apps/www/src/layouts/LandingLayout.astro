@@ -50,9 +50,8 @@ const defaultLocaleUrl = new URL(
 const ogLocaleAlternates = alternateLocales.filter(
   (alternate) => alternate.ogLocale !== currentLocale.ogLocale,
 );
-// The token is a public-by-design client-side site ID, but it belongs in
-// deploy configuration, not source: rotating or re-pointing analytics must
-// not require a code change. A missing token disables analytics.
+// Pages can inject its own beacon; this public site ID enables the fallback
+// for deployments without automatic injection.
 const analyticsToken = import.meta.env.PUBLIC_ANALYTICS_TOKEN as
   string | undefined;
 const analyticsEnabled = import.meta.env.PROD && Boolean(analyticsToken);

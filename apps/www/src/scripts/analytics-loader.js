@@ -9,6 +9,8 @@
   window.addEventListener(
     "load",
     function () {
+      if (document.querySelector("script[data-cf-beacon]")) return;
+
       var beacon = document.createElement("script");
       beacon.async = true;
       beacon.src = "https://static.cloudflareinsights.com/beacon.min.js";

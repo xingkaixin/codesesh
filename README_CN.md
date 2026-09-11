@@ -262,6 +262,16 @@ pnpm --filter @codesesh/www deploy:cf
 扫描、API、实时运行时、Hook 和交互路径继续使用更严格的定向门槛。
 Astro 落地页由 Playwright 覆盖，不计入 Vitest 覆盖率。
 
+Pages 部署通过 `apps/www/public/_headers` 为文件名带内容哈希的 `/_astro/` 资源
+设置一年缓存。HTML 和未版本化的公共文件沿用 Pages 默认策略，保证部署更新及时可见。
+落地页预加载首屏主图，Pages 可据此生成 Early Hints。这些优化使用现有 Pages 服务。
+`apps/www/public/404.html` 关闭 Pages 的 SPA 回退，让缺失资源返回不可缓存的 404，
+避免把首页 HTML 当作静态资源长期缓存。
+
+落地页的 Cloudflare Web Analytics 应只保留一个注入入口。Pages 已注入 beacon 时，
+不要设置 `PUBLIC_ANALYTICS_TOKEN`；该变量仅供没有自动注入的部署作为回退。
+若生产 HTML 出现多个 CF beacon，需同时检查 Pages 和域名级配置。Umami 独立运行。
+
 ### 复现 CI 必需检查
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 是事实源。CI 会在 Linux、macOS、Windows
