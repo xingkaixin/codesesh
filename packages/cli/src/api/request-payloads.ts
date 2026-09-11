@@ -56,10 +56,10 @@ export function parseBookmarkImport(value: unknown): BookmarkRecord | null {
   };
 }
 
-export function sanitizeClientLogData(value: unknown): Record<string, unknown> {
+export function sanitizeClientLogData(value: unknown): Record<string, string | number | null> {
   if (!isRecord(value)) return {};
 
-  const sanitized: Record<string, unknown> = {};
+  const sanitized: Record<string, string | number | null> = {};
   for (const [key, item] of Object.entries(value)) {
     if (CLIENT_LOG_STRING_FIELDS.has(key) && typeof item === "string") {
       if (key === "operation_id" && !UUID_PATTERN.test(item)) continue;

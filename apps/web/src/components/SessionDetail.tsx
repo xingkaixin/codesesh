@@ -1,6 +1,5 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-/* eslint-disable react/no-array-index-key */
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { formatSessionReference } from "@codesesh/core/contract";

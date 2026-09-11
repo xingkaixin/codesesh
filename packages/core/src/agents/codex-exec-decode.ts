@@ -85,8 +85,8 @@ export function decodeExecCalls(input: unknown): ExecInnerCall[] {
 }
 
 /** Pre-scan `const/let/var NAME = "..."` so shorthand args can resolve them. */
-function collectStringVars(input: string): Map<string, unknown> {
-  const scope = new Map<string, unknown>();
+function collectStringVars(input: string): Map<string, string> {
+  const scope = new Map<string, string>();
   const assignRe = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*/g;
   let match: RegExpExecArray | null;
   while ((match = assignRe.exec(input)) !== null) {
@@ -107,9 +107,9 @@ const IDENT_PART_RE = /[\w$]/;
 class JsValueReader {
   pos: number;
   private readonly src: string;
-  private readonly scope: Map<string, unknown>;
+  private readonly scope: Map<string, string>;
 
-  constructor(src: string, start: number, scope: Map<string, unknown>) {
+  constructor(src: string, start: number, scope: Map<string, string>) {
     this.src = src;
     this.pos = start;
     this.scope = scope;
@@ -272,7 +272,7 @@ class JsValueReader {
     return Number(match[0]);
   }
 
-  private parseIdentifierValue(): unknown {
+  private parseIdentifierValue(): string | boolean | null | undefined {
     const name = this.readIdentifier();
     if (name === "true") return true;
     if (name === "false") return false;
@@ -281,7 +281,7 @@ class JsValueReader {
     return this.resolveIdentifier(name);
   }
 
-  private resolveIdentifier(name: string): unknown {
+  private resolveIdentifier(name: string): string | undefined {
     return this.scope.has(name) ? this.scope.get(name) : undefined;
   }
 

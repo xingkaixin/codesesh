@@ -63,7 +63,8 @@ const t = copy[locale].hero;
         textarea.style.top = "-9999px";
         document.body.append(textarea);
         textarea.select();
-        const execCommand = Reflect.get(document, "execCommand");
+        const execCommand =
+          "execCommand" in document ? document.execCommand : undefined;
         const copied =
           typeof execCommand === "function" &&
           execCommand.call(document, "copy") === true;

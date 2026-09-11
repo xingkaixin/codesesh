@@ -4,6 +4,15 @@ import { types } from "node:util";
 import { AGENT_CATALOG } from "@codesesh/core/contract";
 import type { WorkerLogContext, WorkerLogLevel } from "@codesesh/core/runtime/diagnostics";
 
+type SanitizedLogValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SanitizedLogValue[]
+  | { [key: string]: SanitizedLogValue };
+
 export const LOG_SCHEMA_VERSION = 1;
 export const MIN_LOG_RECORD_BYTES = 512;
 
@@ -355,7 +364,7 @@ export class LogRecordEncoder {
     ancestors: WeakSet<object>,
     trustedCorrelationIds: boolean,
     budget: SanitizationBudget,
-  ): unknown {
+  ): SanitizedLogValue {
     if (budget.remainingValues <= 0 || budget.remainingCharacters <= 0) return TRUNCATED_VALUE;
     budget.remainingValues -= 1;
 
@@ -421,7 +430,7 @@ export class LogRecordEncoder {
         return this.sanitizeArray(value, key, depth, ancestors, trustedCorrelationIds, budget);
       }
       if (types.isMap(value)) {
-        const result: unknown[] = [];
+        const result: SanitizedLogValue[] = [];
         for (const [mapKey, item] of Map.prototype.entries.call(value)) {
           result.push([
             this.sanitizeValue(mapKey, "key", depth + 1, ancestors, trustedCorrelationIds, budget),
@@ -438,7 +447,7 @@ export class LogRecordEncoder {
         return result;
       }
       if (types.isSet(value)) {
-        const result: unknown[] = [];
+        const result: SanitizedLogValue[] = [];
         for (const item of Set.prototype.values.call(value)) {
           result.push(
             this.sanitizeValue(item, key, depth + 1, ancestors, trustedCorrelationIds, budget),
@@ -462,12 +471,13 @@ export class LogRecordEncoder {
   }
 
   private sanitizeObject(
+    // oxlint-disable-next-line anti-slop/no-object-parameters -- Sanitization must inspect arbitrary runtime objects after excluding null and primitives.
     value: object,
     depth: number,
     ancestors: WeakSet<object>,
     trustedCorrelationIds: boolean,
     budget: SanitizationBudget,
-  ): Record<string, unknown> | string {
+  ): { [key: string]: SanitizedLogValue } | string {
     let keys: string[];
     try {
       keys = Object.getOwnPropertyNames(value).slice(0, MAX_OBJECT_FIELDS);
@@ -475,7 +485,7 @@ export class LogRecordEncoder {
       return UNSERIALIZABLE_VALUE;
     }
 
-    const result: Record<string, unknown> = {};
+    const result: { [key: string]: SanitizedLogValue } = {};
     for (const key of keys) {
       let descriptor: PropertyDescriptor | undefined;
       try {
@@ -510,13 +520,13 @@ export class LogRecordEncoder {
     ancestors: WeakSet<object>,
     trustedCorrelationIds: boolean,
     budget: SanitizationBudget,
-  ): unknown[] {
+  ): SanitizedLogValue[] {
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     const length =
       lengthDescriptor && "value" in lengthDescriptor && typeof lengthDescriptor.value === "number"
         ? Math.min(lengthDescriptor.value, MAX_ARRAY_ITEMS)
         : 0;
-    const result: unknown[] = [];
+    const result: SanitizedLogValue[] = [];
     for (let index = 0; index < length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       result.push(
@@ -544,7 +554,7 @@ export class LogRecordEncoder {
     ancestors: WeakSet<object>,
     trustedCorrelationIds: boolean,
     budget: SanitizationBudget,
-  ): Record<string, unknown> {
+  ): { [key: string]: SanitizedLogValue } {
     const code = this.errorProperty(error, "code");
     const cause = this.errorProperty(error, "cause");
     const message = this.errorStringProperty(error, "message", "");
@@ -591,6 +601,7 @@ export class LogRecordEncoder {
       if (!descriptor) return undefined;
       return "value" in descriptor ? descriptor.value : ACCESSOR_VALUE;
     } catch {
+      // oxlint-disable-next-line anti-slop/no-known-value-widening -- The error-property boundary returns arbitrary user fields or this unreadable-property sentinel.
       return UNSERIALIZABLE_VALUE;
     }
   }
@@ -600,6 +611,7 @@ export class LogRecordEncoder {
     return value == null ? fallback : typeof value === "string" ? value : UNSERIALIZABLE_VALUE;
   }
 
+  // oxlint-disable-next-line anti-slop/no-object-parameters -- Calling the native URL method tests the brand without trusting user-defined getters.
   private urlString(value: object): string | undefined {
     try {
       return URL.prototype.toString.call(value);

@@ -22,6 +22,7 @@ function cleanUnknown(value: unknown): unknown {
   for (const [key, child] of Object.entries(value)) {
     cleaned[key] = cleanUnknown(child);
   }
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- Recursive cleanup preserves arbitrary tool payload fields while removing empty values.
   return cleaned;
 }
 

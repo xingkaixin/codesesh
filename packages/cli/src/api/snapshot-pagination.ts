@@ -67,6 +67,7 @@ export function createSnapshotPaginator<T, View>() {
   const snapshotsBySource = new WeakMap<object, Map<string, RetainedSnapshot<T, View>>>();
 
   return function paginateSnapshot(
+    // oxlint-disable-next-line anti-slop/no-object-parameters -- The source is a WeakMap identity token; pagination never reads its fields.
     source: object,
     request: PaginationRequest,
     load: () => PaginationSnapshot<T, View>,

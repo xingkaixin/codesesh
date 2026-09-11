@@ -63,6 +63,8 @@ function getCachePath() {
 
 function loadSnapshot(): Map<string, ModelPricing> {
   const map = new Map<string, ModelPricing>();
+  // SAFETY: The bundled pricing snapshot stores fixed-position price tuples; JSON imports infer arrays.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- Preserve the documented tuple schema of the bundled JSON asset.
   const snapshot = snapshotData as unknown as Record<string, SnapshotEntry>;
   for (const [name, entry] of Object.entries(snapshot)) {
     const [input, output, cacheCreate, cacheRead, reasoning, webSearch] = entry;

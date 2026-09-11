@@ -53,6 +53,7 @@ function update(preference: LanguagePreference) {
 }
 
 export function setLanguagePreference(preference: LanguagePreference) {
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- Validate runtime callers before persisting a preference even when TypeScript callers are typed.
   if (!isLanguagePreference(preference)) return;
   try {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, preference);

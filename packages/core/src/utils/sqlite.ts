@@ -50,7 +50,6 @@ let loadErrorMessage: string | null = null;
 
 try {
   const require = createRequire(import.meta.url);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require("better-sqlite3");
   DatabaseConstructor = (
     typeof mod === "function" ? mod : (mod as { default?: unknown }).default
