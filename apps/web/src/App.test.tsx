@@ -261,7 +261,15 @@ describe("App session loading", () => {
       failPage(new Response("second page unavailable", { status: 503 }));
     });
     await screen.findByText(/Displayed sessions may be incomplete/);
-    expect(screen.getAllByText(SAMPLE_SESSION_HEAD.title).length).toBeGreaterThan(0);
+    expect(
+      (
+        await screen.findAllByText(
+          SAMPLE_SESSION_HEAD.title,
+          {},
+          { timeout: LAZY_SURFACE_TIMEOUT_MS },
+        )
+      ).length,
+    ).toBeGreaterThan(0);
 
     retry = true;
     fireEvent.click(screen.getByRole("button", { name: "Retry session load" }));

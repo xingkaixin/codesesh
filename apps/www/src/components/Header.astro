@@ -20,20 +20,14 @@ const themes = [
 ] as const;
 ---
 
-<header
-  class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/84 backdrop-blur-xl"
->
-  <div
-    class="mx-auto flex h-[60px] max-w-[86rem] items-center px-4 sm:px-6 lg:px-7"
-  >
+<header class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/84 backdrop-blur-xl">
+  <div class="mx-auto flex h-[60px] max-w-[86rem] items-center px-4 sm:px-6 lg:px-7">
     <a
       href={localeConfig[locale].route}
       class="motion-hover flex shrink-0 items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <img src="/logo.svg?v=3" alt="CodeSesh" class="size-6 rounded-sm" />
-      <span
-        class="console-display hidden text-sm font-bold tracking-[0.06em] sm:inline"
-      >
+      <span class="console-display hidden text-sm font-bold tracking-[0.06em] sm:inline">
         CODESESH
       </span>
     </a>
@@ -46,30 +40,39 @@ const themes = [
       <a
         data-fluid-item
         class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#tour`}>{t.tour}</a
+        href={`${homeRoute}#tour`}
       >
+        {t.tour}
+      </a>
       <a
         data-fluid-item
         class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#capabilities`}>{t.capabilities}</a
+        href={`${homeRoute}#capabilities`}
       >
+        {t.capabilities}
+      </a>
       <a
         data-fluid-item
         class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#agents`}>{t.agents}</a
+        href={`${homeRoute}#agents`}
       >
+        {t.agents}
+      </a>
       <a
         data-fluid-item
         class="landing-nav-link rounded-sm px-2 py-2 hidden lg:inline"
         href={changelogRoutes[locale]}
         aria-current={page === "changelog" ? "page" : undefined}
-        >{t.changelog}</a
       >
+        {t.changelog}
+      </a>
       <a
         data-fluid-item
         class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#faq`}>{t.faq}</a
+        href={`${homeRoute}#faq`}
       >
+        {t.faq}
+      </a>
     </nav>
 
     <nav
@@ -82,23 +85,21 @@ const themes = [
         role="group"
         aria-label={t.languageLabel}
       >
-        {
-          locales.map((item) => (
-            <a
-              data-fluid-item
-              href={languageRoutes?.[item] ?? localeConfig[item].route}
-              class:list={[
-                "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
-                locale === item
-                  ? "bg-[var(--console-text)] text-[var(--console-bg)]"
-                  : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
-              ]}
-              aria-current={locale === item ? "page" : undefined}
-            >
-              {localeConfig[item].switchLabel}
-            </a>
-          ))
-        }
+        {locales.map((item) => (
+          <a
+            data-fluid-item
+            href={languageRoutes?.[item] ?? localeConfig[item].route}
+            class:list={[
+              "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+              locale === item
+                ? "bg-[var(--console-text)] text-[var(--console-bg)]"
+                : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
+            ]}
+            aria-current={locale === item ? "page" : undefined}
+          >
+            {localeConfig[item].switchLabel}
+          </a>
+        ))}
       </div>
       <button
         type="button"
@@ -108,23 +109,21 @@ const themes = [
         class="motion-hover console-mono inline-flex size-9 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
       >
         <span class="copy-icon-stack inline-grid">
-          {
-            themes.map((theme) => (
-              <span
-                data-theme-icon={theme.key}
-                data-theme-text={theme.label}
-                data-active={theme.key === "system" ? "true" : undefined}
-              >
-                <Icon name={theme.icon} class="size-4" />
-              </span>
-            ))
-          }
+          {themes.map((theme) => (
+            <span
+              data-theme-icon={theme.key}
+              data-theme-text={theme.label}
+              data-active={theme.key === "system" ? "true" : undefined}
+            >
+              <Icon name={theme.icon} class="size-4" />
+            </span>
+          ))}
         </span>
-        <span class="sr-only" aria-live="polite" data-theme-status
-          >{
-            `${t.themeLabel}: ${t.themeSystem}${t.themeSwitchTo.replace("{next}", t.themeLight)}`
-          }</span
-        >
+        <span
+          class="sr-only"
+          aria-live="polite"
+          data-theme-status
+        >{`${t.themeLabel}: ${t.themeSystem}${t.themeSwitchTo.replace("{next}", t.themeLight)}`}</span>
       </button>
       <a
         href="https://github.com/xingkaixin/codesesh"

@@ -15,11 +15,13 @@ const t = copy[locale].hero;
   <div class="install-command__box">
     <span
       class="console-mono text-sm text-[var(--console-muted)]"
-      aria-hidden="true">$</span
+      aria-hidden="true"
     >
-    <code class="console-mono text-sm text-[var(--console-text)]"
-      >{t.command}</code
-    >
+      $
+    </span>
+    <code class="console-mono text-sm text-[var(--console-text)]">
+      {t.command}
+    </code>
     <button
       type="button"
       data-copy-command={t.command}
@@ -29,23 +31,22 @@ const t = copy[locale].hero;
       class="pressable motion-hover console-mono inline-flex min-h-8 min-w-[4.25rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 text-[10px] font-medium text-[var(--console-text-secondary)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
     >
       <span class="copy-icon-stack inline-grid">
-        <span data-copy-icon="idle" data-active="true"
-          ><Icon name="copy" class="size-3.5" /></span
-        >
-        <span data-copy-icon="done"><Icon name="check" class="size-3.5" /></span
-        >
+        <span data-copy-icon="idle" data-active="true">
+          <Icon name="copy" class="size-3.5" />
+        </span>
+        <span data-copy-icon="done">
+          <Icon name="check" class="size-3.5" />
+        </span>
       </span>
       <span data-copy-text>{t.copyCommand}</span>
     </button>
   </div>
-  {
-    showEndpoint && (
-      <span class="console-mono text-[11px] text-[var(--console-muted)]">
-        <span aria-hidden="true">→ </span>
-        {t.endpoint}
-      </span>
-    )
-  }
+  {showEndpoint && (
+    <span class="console-mono text-[11px] text-[var(--console-muted)]">
+      <span aria-hidden="true">→ </span>
+      {t.endpoint}
+    </span>
+  )}
   <span class="sr-only" aria-live="polite" data-copy-status></span>
 </div>
 

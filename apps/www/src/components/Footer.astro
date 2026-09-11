@@ -11,9 +11,7 @@ const t = copy[locale].footer;
 ---
 
 <footer class="px-4 pb-12 pt-14 sm:px-6 lg:px-7">
-  <div
-    class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--console-border)] pt-6 sm:flex-row sm:items-center"
-  >
+  <div class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--console-border)] pt-6 sm:flex-row sm:items-center">
     <a
       href={localeConfig[locale].route}
       class="flex items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
@@ -25,29 +23,35 @@ const t = copy[locale].footer;
         height="20"
         class="size-5 rounded-xs"
       />
-      <span class="console-display text-xs font-bold tracking-[0.06em]"
-        >CODESESH</span
-      >
+      <span class="console-display text-xs font-bold tracking-[0.06em]">
+        CODESESH
+      </span>
     </a>
-    <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]"
-      >{t.note}</span
-    >
+    <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]">
+      {t.note}
+    </span>
     <nav
       class="flex gap-5 sm:ml-auto"
       aria-label={localeConfig[locale].footerNavigationLabel}
     >
-      <a class="footer-link" href="https://github.com/xingkaixin/codesesh"
-        >GitHub</a
-      >
-      <a class="footer-link" href={changelogRoutes[locale]}>{t.changelog}</a>
+      <a class="footer-link" href="https://github.com/xingkaixin/codesesh">
+        GitHub
+      </a>
+      <a class="footer-link" href={changelogRoutes[locale]}>
+        {t.changelog}
+      </a>
       <a
         class="footer-link"
-        href="https://github.com/xingkaixin/codesesh#readme">{t.docs}</a
+        href="https://github.com/xingkaixin/codesesh#readme"
       >
+        {t.docs}
+      </a>
       <a
         class="footer-link"
-        href="https://github.com/xingkaixin/codesesh/issues">{t.issues}</a
+        href="https://github.com/xingkaixin/codesesh/issues"
       >
+        {t.issues}
+      </a>
     </nav>
   </div>
 </footer>

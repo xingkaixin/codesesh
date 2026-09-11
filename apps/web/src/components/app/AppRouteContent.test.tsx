@@ -337,7 +337,7 @@ describe("AppRouteContent", () => {
     expect(sessionDetailRender.mock.calls.at(-1)?.[0].childSessions).toBe(firstChildren);
   });
 
-  it("renders an agent landing with encoded session links and full-reference bookmark actions", () => {
+  it("renders an agent landing with encoded session links and full-reference bookmark actions", async () => {
     const props = makeProps();
     const bookmarks = makeBookmarks();
     const sessionId = "shared/id?x#y%";
@@ -354,7 +354,13 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    expect(screen.getByRole("heading", { name: "Claude Code" })).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "Claude Code" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
     const sessionLink = screen.getByRole("link", { name: /Claude opaque session/ });
     expect(sessionLink.getAttribute("href")).toBe("/claudecode/shared%2Fid%3Fx%23y%25");
     expect(screen.queryByText("Codex twin session")).toBeNull();
@@ -364,7 +370,7 @@ describe("AppRouteContent", () => {
     expect(bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
   });
 
-  it("renders a missing session with agent-scoped recovery links", () => {
+  it("renders a missing session with agent-scoped recovery links", async () => {
     const props = makeProps();
     const attemptedSessionId = "missing/id?#%";
     const recoverySessionId = "recovery/id?#%";
@@ -384,7 +390,13 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    expect(screen.getByRole("heading", { name: "This session isn't in the index." })).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "This session isn't in the index." },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(attemptedSessionId)).toBeTruthy();
     const recoveryLink = screen.getByRole("link", { name: /Claude recovery session/ });
     expect(recoveryLink.getAttribute("href")).toBe("/claudecode/recovery%2Fid%3F%23%25");
@@ -395,7 +407,7 @@ describe("AppRouteContent", () => {
     expect(route.bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
   });
 
-  it("renders a retryable load failure instead of a missing session", () => {
+  it("renders a retryable load failure instead of a missing session", async () => {
     const props = makeProps();
     const retry = vi.fn();
     props.route = makeSessionRoute("unavailable-session", {
@@ -407,14 +419,20 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    expect(screen.getByRole("heading", { name: "We couldn't load this session." })).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "We couldn't load this session." },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("server unavailable")).toBeTruthy();
     expect(screen.queryByText("This session isn't in the index.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("renders a missing agent with diagnostics and canonical recovery links", () => {
+  it("renders a missing agent with diagnostics and canonical recovery links", async () => {
     const props = makeProps();
     props.route = {
       mode: "missingAgent",
@@ -429,7 +447,13 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    expect(screen.getByRole("heading", { name: "This agent isn't on the roster." })).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "This agent isn't on the roster." },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("ghost-agent")).toBeTruthy();
     expect(screen.getByText("/ghost-agent")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Claude Code/ }).getAttribute("href")).toBe(

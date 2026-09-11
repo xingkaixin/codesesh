@@ -35,25 +35,25 @@ const replayFilters = [
     <fieldset class="demo-toc">
       <legend>Session TOC</legend>
       <div role="group" aria-label={t.filters}>
-        {
-          replayFilters.map((filter) => (
-            <label>
-              <input
-                type="checkbox"
-                checked
-                data-replay-filter={filter.key}
-                aria-controls={`${id}-messages`}
-              />
-              <span>{filter.label}</span>
-              <small>{filter.count}</small>
-            </label>
-          ))
-        }
+        {replayFilters.map((filter) => (
+          <label>
+            <input
+              type="checkbox"
+              checked
+              data-replay-filter={filter.key}
+              aria-controls={`${id}-messages`}
+            />
+            <span>{filter.label}</span>
+            <small>{filter.count}</small>
+          </label>
+        ))}
       </div>
     </fieldset>
 
     <section class="demo-file-tracker" aria-labelledby={`${id}-files`}>
-      <p id={`${id}-files`} role="heading" aria-level="3">File Tracker</p>
+      <p id={`${id}-files`} role="heading" aria-level="3">
+        File Tracker
+      </p>
       <dl>
         <div>
           <>
@@ -83,7 +83,10 @@ const replayFilters = [
     <ol id={`${id}-messages`} class="demo-message-list">
       <li data-replay-item="user" data-replay-message>
         <article class="demo-message">
-          <span class="demo-avatar" aria-hidden="true"> U </span>
+          <span class="demo-avatar" aria-hidden="true">
+            {" "}
+            U{" "}
+          </span>
           <div>
             <header>
               <>

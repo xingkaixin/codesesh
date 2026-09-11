@@ -279,26 +279,22 @@ const jsonLd = {
     />
     <link rel="canonical" href={canonicalUrl} />
     <Fragment>
-      {
-        alternateLocales.map((alternate) => (
-          <link
-            rel="alternate"
-            hreflang={alternate.language}
-            href={alternate.url}
-          />
-        ))
-      }
-    </Fragment>
-    <link rel="alternate" hreflang="x-default" href={defaultLocaleUrl} />
-    {
-      (!page || page.markdownUrl) && (
+      {alternateLocales.map((alternate) => (
         <link
           rel="alternate"
-          type="text/markdown"
-          href={page?.markdownUrl ?? "/index.md"}
+          hreflang={alternate.language}
+          href={alternate.url}
         />
-      )
-    }
+      ))}
+    </Fragment>
+    <link rel="alternate" hreflang="x-default" href={defaultLocaleUrl} />
+    {(!page || page.markdownUrl) && (
+      <link
+        rel="alternate"
+        type="text/markdown"
+        href={page?.markdownUrl ?? "/index.md"}
+      />
+    )}
     <link
       rel="alternate"
       type="text/plain"
@@ -325,11 +321,9 @@ const jsonLd = {
     <meta property="og:site_name" content="CodeSesh" />
     <meta property="og:locale" content={currentLocale.ogLocale} />
     <Fragment>
-      {
-        ogLocaleAlternates.map((alternate) => (
-          <meta property="og:locale:alternate" content={alternate.ogLocale} />
-        ))
-      }
+      {ogLocaleAlternates.map((alternate) => (
+        <meta property="og:locale:alternate" content={alternate.ogLocale} />
+      ))}
     </Fragment>
 
     <meta name="twitter:card" content="summary_large_image" />
@@ -347,28 +341,24 @@ const jsonLd = {
       is:inline
       type="application/ld+json"
       set:html={JSON.stringify(jsonLd)}
-    />
-    {
-      import.meta.env.PROD && (
-        <script
-          is:inline
-          defer
-          src="https://umami.xingkaixin.me/script.js"
-          data-website-id="ef9537a4-c9aa-4f4c-b228-78efa155a203"
-          data-domains={analyticsHost}
-        />
-      )
-    }
-    {
-      analyticsEnabled && (
-        <script
-          is:inline
-          data-analytics-host={analyticsHost}
-          data-analytics-token={analyticsToken}
-          set:html={analyticsLoader}
-        />
-      )
-    }
+    ></script>
+    {import.meta.env.PROD && (
+      <script
+        is:inline
+        defer
+        src="https://umami.xingkaixin.me/script.js"
+        data-website-id="ef9537a4-c9aa-4f4c-b228-78efa155a203"
+        data-domains={analyticsHost}
+      ></script>
+    )}
+    {analyticsEnabled && (
+      <script
+        is:inline
+        data-analytics-host={analyticsHost}
+        data-analytics-token={analyticsToken}
+        set:html={analyticsLoader}
+      ></script>
+    )}
   </head>
   <body>
     <slot />

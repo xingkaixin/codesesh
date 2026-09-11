@@ -254,7 +254,9 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
       </ul>
     </nav>
     <section aria-labelledby={`${id}-bookmarks`}>
-      <p id={`${id}-bookmarks`} class="demo-mini-heading">Bookmarks</p>
+      <p id={`${id}-bookmarks`} class="demo-mini-heading">
+        Bookmarks
+      </p>
       <ul class="demo-bookmarks">
         <li>
           <span>Refactor data ingestion pipeline</span>
@@ -285,21 +287,19 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
     </header>
 
     <dl class="demo-kpis">
-      {
-        defaultRange.kpis.map((kpi, index) => (
-          <div
-            class:list={["demo-kpi", kpi.emphasis && "is-emphasis"]}
-            data-demo-kpi={index}
-          >
-            <dt>{kpi.label}</dt>
-            <dd data-demo-kpi-value>{kpi.value}</dd>
-            <dd class="demo-kpi-meta">
-              <span data-demo-kpi-trend>{kpi.trend}</span>{" "}
-              <span data-demo-kpi-hint>{kpi.hint}</span>
-            </dd>
-          </div>
-        ))
-      }
+      {defaultRange.kpis.map((kpi, index) => (
+        <div
+          class:list={["demo-kpi", kpi.emphasis && "is-emphasis"]}
+          data-demo-kpi={index}
+        >
+          <dt>{kpi.label}</dt>
+          <dd data-demo-kpi-value>{kpi.value}</dd>
+          <dd class="demo-kpi-meta">
+            <span data-demo-kpi-trend>{kpi.trend}</span>{" "}
+            <span data-demo-kpi-hint>{kpi.hint}</span>
+          </dd>
+        </div>
+      ))}
     </dl>
 
     <figure class="demo-panel demo-activity">
@@ -308,24 +308,22 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
         <span data-demo-chart-meta>{defaultRange.meta}</span>
       </figcaption>
       <ol class="demo-bars">
-        {
-          defaultRange.bars.map((bar, index) => (
-            <li
-              data-demo-bar={index}
-              aria-label={t.sampleSessions
-                .replace("{label}", bar.label)
-                .replace("{count}", String(bar.value))}
-            >
-              <span class="demo-bar-track" aria-hidden="true">
-                <span
-                  class="demo-bar-fill"
-                  style={`--bar-scale:${bar.value / defaultBarMax}`}
-                />
-              </span>
-              <small data-demo-bar-label>{bar.label}</small>
-            </li>
-          ))
-        }
+        {defaultRange.bars.map((bar, index) => (
+          <li
+            data-demo-bar={index}
+            aria-label={t.sampleSessions
+              .replace("{label}", bar.label)
+              .replace("{count}", String(bar.value))}
+          >
+            <span class="demo-bar-track" aria-hidden="true">
+              <span
+                class="demo-bar-fill"
+                style={`--bar-scale:${bar.value / defaultBarMax}`}
+              />
+            </span>
+            <small data-demo-bar-label>{bar.label}</small>
+          </li>
+        ))}
       </ol>
     </figure>
 
@@ -340,34 +338,32 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
         <span>5 agents / 212 sessions</span>
       </header>
       <ul>
-        {
-          defaultRange.distribution.map((agent, index) => (
-            <li data-demo-agent={index}>
-              <img
-                class="demo-agent-icon"
-                src={agent.icon}
-                alt=""
-                width="14"
-                height="14"
-                loading="lazy"
-                data-monochrome={agent.name === "Claude Code" ? undefined : ""}
+        {defaultRange.distribution.map((agent, index) => (
+          <li data-demo-agent={index}>
+            <img
+              class="demo-agent-icon"
+              src={agent.icon}
+              alt=""
+              width="14"
+              height="14"
+              loading="lazy"
+              data-monochrome={agent.name === "Claude Code" ? undefined : ""}
+            />
+            <span data-demo-agent-name>{agent.name}</span>
+            <span class="demo-agent-meter" aria-hidden="true">
+              <span
+                style={`--agent-scale:${agent.pct / 100}`}
+                data-demo-agent-fill
               />
-              <span data-demo-agent-name>{agent.name}</span>
-              <span class="demo-agent-meter" aria-hidden="true">
-                <span
-                  style={`--agent-scale:${agent.pct / 100}`}
-                  data-demo-agent-fill
-                />
-              </span>
-              <progress value={agent.pct} max={100}>
-                {agent.pct}%
-              </progress>
-              <small
-                data-demo-agent-stat
-              >{`${agent.count} / ${agent.pct.toFixed(1)}%`}</small>
-            </li>
-          ))
-        }
+            </span>
+            <progress value={agent.pct} max={100}>
+              {agent.pct}%
+            </progress>
+            <small
+              data-demo-agent-stat
+            >{`${agent.count} / ${agent.pct.toFixed(1)}%`}</small>
+          </li>
+        ))}
       </ul>
     </section>
   </div>
@@ -377,7 +373,7 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
   type="application/json"
   data-demo-ranges
   set:html={rangePayload}
-/>
+></script>
 <script>
   interface DemoKpi {
     value: string;
