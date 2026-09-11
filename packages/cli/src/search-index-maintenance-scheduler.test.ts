@@ -8,7 +8,9 @@ const core = vi.hoisted(() => ({
   readPendingSearchIndexMaintenance: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control durable maintenance markers and cache read failures for scheduler recovery tests.
 vi.mock("@codesesh/core/runtime/discovery", () => core);
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: {
     info: vi.fn(),
@@ -88,7 +90,7 @@ describe("SearchIndexMaintenanceScheduler", () => {
       const job = jobs[0];
       if (job?.kind === "maintenance") processed += job.changes.length;
     });
-    const scheduler = new SearchIndexMaintenanceScheduler(runner as never, () => undefined);
+    const scheduler = new SearchIndexMaintenanceScheduler(runner, () => undefined);
 
     scheduler.enqueue("codex");
     await scheduler.waitForIdle();
@@ -105,7 +107,7 @@ describe("SearchIndexMaintenanceScheduler", () => {
       .mockReturnValueOnce({ sessionIds: [], total: 0 });
     const runner = makeRunner();
     const statuses: SearchIndexMaintenanceStatus[] = [];
-    const scheduler = new SearchIndexMaintenanceScheduler(runner as never, (status) =>
+    const scheduler = new SearchIndexMaintenanceScheduler(runner, (status) =>
       statuses.push(status),
     );
 
@@ -155,7 +157,7 @@ describe("SearchIndexMaintenanceScheduler", () => {
     });
     const runner = makeRunner();
     runner.enqueueMaintenance.mockReturnValueOnce(firstBatch);
-    const scheduler = new SearchIndexMaintenanceScheduler(runner as never, () => undefined);
+    const scheduler = new SearchIndexMaintenanceScheduler(runner, () => undefined);
 
     scheduler.enqueue("codex");
     const updated = { ...makeSession("three"), title: "Updated session" };
@@ -183,7 +185,7 @@ describe("SearchIndexMaintenanceScheduler", () => {
     });
     const runner = makeRunner();
     const statuses: SearchIndexMaintenanceStatus[] = [];
-    const scheduler = new SearchIndexMaintenanceScheduler(runner as never, (status) =>
+    const scheduler = new SearchIndexMaintenanceScheduler(runner, (status) =>
       statuses.push(status),
     );
 
@@ -207,7 +209,7 @@ describe("SearchIndexMaintenanceScheduler", () => {
     core.readCachedSessions.mockReturnValue({ status: "failed" });
     const runner = makeRunner();
     const statuses: SearchIndexMaintenanceStatus[] = [];
-    const scheduler = new SearchIndexMaintenanceScheduler(runner as never, (status) =>
+    const scheduler = new SearchIndexMaintenanceScheduler(runner, (status) =>
       statuses.push(status),
     );
 

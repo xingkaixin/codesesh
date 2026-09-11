@@ -61,7 +61,7 @@ export function stubAnimationFrames() {
 }
 
 function defineSize(size: { width: number; height: number }): () => void {
-  const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+  const proto = HTMLElement.prototype;
   const previous = {
     clientWidth: Object.getOwnPropertyDescriptor(proto, "clientWidth"),
     clientHeight: Object.getOwnPropertyDescriptor(proto, "clientHeight"),
@@ -72,7 +72,7 @@ function defineSize(size: { width: number; height: number }): () => void {
   return () => {
     for (const [name, descriptor] of Object.entries(previous)) {
       if (descriptor) Object.defineProperty(proto, name, descriptor);
-      else delete proto[name];
+      else Reflect.deleteProperty(proto, name);
     }
   };
 }
@@ -82,8 +82,10 @@ export function stubCanvas(size: { width: number; height: number }): StubbedCanv
     CONTEXT_METHODS.map((name) => [name, vi.fn()]),
   ) as StubbedCanvas["context"];
 
+  // SAFETY: The chart painters only call the drawing methods recorded in CONTEXT_METHODS.
   const getContext = vi
     .spyOn(HTMLCanvasElement.prototype, "getContext")
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- The chart painters only call the drawing methods recorded in CONTEXT_METHODS.
     .mockReturnValue(context as unknown as CanvasRenderingContext2D);
   const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
     left: 0,
@@ -104,12 +106,12 @@ export function stubCanvas(size: { width: number; height: number }): StubbedCanv
   globalThis.ResizeObserver = class {
     constructor(callback: ResizeObserverCallback) {
       resizeCallback = callback;
-      resizeObserver = this as unknown as ResizeObserver;
+      resizeObserver = this as ResizeObserver;
     }
     observe() {}
     disconnect() {}
     unobserve() {}
-  } as unknown as typeof ResizeObserver;
+  } as typeof ResizeObserver;
 
   return {
     context,

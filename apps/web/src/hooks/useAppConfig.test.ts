@@ -5,6 +5,7 @@ import * as api from "../lib/api";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useAppConfig } from "./useAppConfig";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", () => ({ fetchConfig: vi.fn() }));
 
 const config = {

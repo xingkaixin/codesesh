@@ -40,6 +40,7 @@ function readCachedValue(agentName: string): CachedResult | null {
   return outcome.status === "success" ? outcome.value : null;
 }
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Fix home and platform to exercise portable storage paths without touching user data.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {
@@ -217,7 +218,7 @@ function getBookmarkColumns(): string[] {
   }
 }
 
-function readMigratedFacts(): Record<string, unknown> {
+function readMigratedFacts() {
   const db = new Database(getCachePath(), { readonly: true });
   try {
     const scalar = (sql: string): number => {

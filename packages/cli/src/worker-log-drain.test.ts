@@ -5,6 +5,7 @@ import { appLogger } from "./logging.js";
 import { acknowledgeWorkerLogDrain, terminateWorkerAfterLogDrain } from "./worker-log-drain.js";
 
 function workerFromPort(port: MessagePort, terminate: () => Promise<number>): Worker {
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The drain protocol uses only events, postMessage and terminate, which this controllable worker fixture implements.
   return {
     on: port.on.bind(port),
     once: port.once.bind(port),
@@ -56,6 +57,7 @@ describe("worker log drain", () => {
     worker.postMessage = vi.fn();
     worker.terminate = vi.fn(async () => 0);
 
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The drain protocol uses only events, postMessage and terminate, which this controllable worker fixture implements.
     const termination = terminateWorkerAfterLogDrain(worker as unknown as Worker);
     await vi.advanceTimersByTimeAsync(99);
     expect(worker.terminate).not.toHaveBeenCalled();
@@ -80,6 +82,7 @@ describe("worker log drain", () => {
     worker.postMessage = vi.fn();
     worker.terminate = vi.fn(async () => 0);
 
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The drain protocol uses only events, postMessage and terminate, which this controllable worker fixture implements.
     const termination = terminateWorkerAfterLogDrain(worker as unknown as Worker);
     worker.emit("exit", 7);
 
@@ -96,6 +99,7 @@ describe("worker log drain", () => {
     worker.terminate = vi.fn(async () => 0);
     worker.on("error", () => undefined);
 
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The drain protocol uses only events, postMessage and terminate, which this controllable worker fixture implements.
     const termination = terminateWorkerAfterLogDrain(worker as unknown as Worker);
     worker.emit("error", new Error("failed"));
     await Promise.resolve();

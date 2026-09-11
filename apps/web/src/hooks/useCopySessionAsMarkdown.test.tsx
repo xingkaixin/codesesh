@@ -12,11 +12,13 @@ const apiMocks = vi.hoisted(() => ({
 }));
 const clipboardMocks = vi.hoisted(() => ({ writeToClipboard: vi.fn() }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   fetchSessionData: apiMocks.fetchSessionData,
   logClientEvent: apiMocks.logClientEvent,
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control clipboard success and failure while verifying the copy action state.
 vi.mock("../lib/clipboard", () => clipboardMocks);
 
 afterEach(() => {

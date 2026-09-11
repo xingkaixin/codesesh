@@ -8,6 +8,7 @@ import * as api from "../../lib/api";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { OverviewScreen } from "./OverviewScreen";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../../lib/api", () => ({ fetchDashboard: vi.fn() }));
 
 const timeWindow = { from: 1, to: 2, days: 7 } as AppConfig["window"];
@@ -83,7 +84,7 @@ const dashboard = {
   activeHours: null,
   modelCost: [{ model: "sonnet", cost: 6, costRecorded: 1, costEstimated: 5 }],
   window: { from: 1, to: 2, days: 7 },
-} as unknown as DashboardData;
+} as DashboardData;
 
 function renderScreen(props: Partial<ComponentProps<typeof OverviewScreen>> = {}) {
   const { Wrapper } = createQueryWrapper();

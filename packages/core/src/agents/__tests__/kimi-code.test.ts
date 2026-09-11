@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real filesystem reads and inject read failures without replacing agent parsing.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {

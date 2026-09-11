@@ -38,6 +38,7 @@ import {
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-session-search-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {
@@ -441,6 +442,7 @@ function trackedSessions(sessions: SessionHead[]) {
     sessions: new Proxy(sessions, {
       get(target, property, receiver) {
         if (typeof property === "string" && /^\d+$/.test(property)) reads += 1;
+        // oxlint-disable-next-line anti-slop/no-reflect-get -- This Proxy must preserve receiver semantics while counting reads of the real target.
         return Reflect.get(target, property, receiver);
       },
     }),

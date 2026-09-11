@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenCodeSqliteAgent } from "../opencode-sqlite.js";
 import { SessionScanError } from "../base.js";
+import type { SQLiteDatabase } from "../../utils/sqlite.js";
 import type { ModelPricing } from "../../pricing/fetcher.js";
 import { pricingResolver } from "../../pricing/resolver.js";
 import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostics.js";
@@ -573,14 +574,7 @@ describe("CS-180: related session reads stay inside the selected roots", () => {
     const db = new Database(dbPath, { readonly: true });
 
     try {
-      const rows = (
-        agent as unknown as {
-          readRelatedSessionRows(
-            database: Database.Database,
-            rootIds: string[],
-          ): Record<string, unknown>[];
-        }
-      ).readRelatedSessionRows(db, ["cycle-a"]);
+      const rows = agent["readRelatedSessionRows"](db as SQLiteDatabase, ["cycle-a"]);
 
       expect(rows.map((row) => row.id)).toEqual(["cycle-a", "cycle-b"]);
     } finally {

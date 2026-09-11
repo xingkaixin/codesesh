@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Both file-read entry points are wrapped (call-through) so the suite can assert
 // *which* files a code path opens: readFileSync for whole-file loads, openSync for
 // the streaming reader. Everything else stays real — the fixtures are real dirs.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real filesystem reads and inject read failures without replacing agent parsing.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {

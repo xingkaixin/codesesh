@@ -18,6 +18,7 @@ import { sessionDetailVersion } from "../../discovery/cache/detail-version.js";
 
 // Spies on statSync while delegating to the real implementation, so the
 // single-stat regression test can count per-file calls during a live scan.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count real filesystem reads and inject read failures without replacing agent parsing.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
@@ -131,7 +132,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     );
     writeFileSync(indexFile, JSON.stringify({ entries: [{ sessionId: "session-1" }] }));
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     // Seed baseline: a full scan populates metaMap with the source fingerprint.
     agent.scan();
@@ -171,7 +172,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     utimesSync(oldFile, oldTime, oldTime);
     utimesSync(newFile, newTime, newTime);
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     expect(
       agent
@@ -207,7 +208,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     utimesSync(parentFile, parentTime, parentTime);
     utimesSync(childFile, childTime, childTime);
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     expect(
       agent
@@ -246,7 +247,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       writeFileSync(metaPath, JSON.stringify({ name: childId }));
     }
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
     const readSpy = vi.mocked(readFileSync);
     const statSpy = vi.mocked(statSync);
 
@@ -299,16 +300,16 @@ describe("ClaudeCodeAgent cache refresh", () => {
       JSON.stringify({ agentId: childId, toolUseId: "tool-child" }),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
     agent.scan();
     const restoredMeta = agent.snapshotSessionCacheMeta();
     const walkSpy = vi.spyOn(agent, "walkFiles");
 
     agent.restoreSessionCacheMeta(restoredMeta);
-    agent.ensureChildIndex();
+    agent["ensureChildIndex"]();
 
     expect(walkSpy).not.toHaveBeenCalled();
-    expect(agent.childSessionIdByToolUseId.get("tool-child")).toBe(childId);
+    expect(agent["childSessionIdByToolUseId"].get("tool-child")).toBe(childId);
   });
 
   it("rebuilds the child index when restored session sources change", () => {
@@ -321,7 +322,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     mkdirSync(projectDir, { recursive: true });
     writeMinimalClaudeSession(join(projectDir, parentId + ".jsonl"));
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
     agent.scan();
 
     mkdirSync(childDir, { recursive: true });
@@ -330,15 +331,15 @@ describe("ClaudeCodeAgent cache refresh", () => {
       join(childDir, "agent-" + childId + ".meta.json"),
       JSON.stringify({ agentId: childId, toolUseId: "tool-added-child" }),
     );
-    const refreshedAgent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const refreshedAgent = new ClaudeCodeAgent({ sourceRoot: basePath });
     refreshedAgent.scan();
     const walkSpy = vi.spyOn(agent, "walkFiles");
 
     agent.restoreSessionCacheMeta(refreshedAgent.snapshotSessionCacheMeta());
-    agent.ensureChildIndex();
+    agent["ensureChildIndex"]();
 
     expect(walkSpy).toHaveBeenCalledOnce();
-    expect(agent.childSessionIdByToolUseId.get("tool-added-child")).toBe(childId);
+    expect(agent["childSessionIdByToolUseId"].get("tool-added-child")).toBe(childId);
   });
 
   it("drops a window-only child when its parent is outside the window", () => {
@@ -361,7 +362,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     utimesSync(parentFile, parentTime, parentTime);
     utimesSync(childFile, childTime, childTime);
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     expect(
       agent
@@ -426,7 +427,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const indexFile = join(projectDir, "sessions-index.json");
     writeFileSync(indexFile, JSON.stringify({ entries: [] }));
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     const statSpy = vi.mocked(statSync);
     statSpy.mockClear();
@@ -453,7 +454,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     utimesSync(sessionFile, sessionTime, sessionTime);
     utimesSync(indexFile, indexTime, indexTime);
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     expect(agent.listSessionSources()).toEqual([
       {
@@ -553,7 +554,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -729,7 +730,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     const heads = agent.scan();
     const parent = heads.find((head: SessionHead) => head.reference.sessionId === parentId);
@@ -826,7 +827,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -971,7 +972,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     expect(agent.scan()).toEqual([]);
   });
@@ -1015,7 +1016,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     const [head] = agent.scan();
     const data = agent.getSessionData(sessionId);
@@ -1069,7 +1070,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
       ].join("\n"),
     );
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     expect(agent.scan()).toEqual([]);
   });
@@ -1117,7 +1118,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
     setCoreDiagnostics(sink);
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     const [head] = agent.scan();
 
@@ -1161,7 +1162,7 @@ describe("ClaudeCodeAgent cache refresh", () => {
     const sink: CoreDiagnostics = { warn: (event, detail) => calls.push({ event, detail }) };
     setCoreDiagnostics(sink);
 
-    const agent = new ClaudeCodeAgent({ sourceRoot: basePath }) as any;
+    const agent = new ClaudeCodeAgent({ sourceRoot: basePath });
 
     // No visible messages were extracted, so the session is filtered out entirely.
     expect(agent.scan()).toEqual([]);

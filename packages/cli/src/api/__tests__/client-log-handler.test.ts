@@ -6,15 +6,15 @@ const { handlePostClientLog } = await import("../client-log-handler.js");
 describe("client logging handler", () => {
   it("rejects malformed, blank, and unknown log events", async () => {
     const malformed = makeContext({ rejectBody: true });
-    await handlePostClientLog(malformed as never);
+    await handlePostClientLog(malformed);
     expect(malformed.json).toHaveBeenCalledWith({ ok: false }, 400);
 
     const blank = makeContext({ body: { event: "   " } });
-    await handlePostClientLog(blank as never);
+    await handlePostClientLog(blank);
     expect(blank.json).toHaveBeenCalledWith({ ok: false }, 400);
 
     const unknown = makeContext({ body: { event: "private arbitrary text" } });
-    await handlePostClientLog(unknown as never);
+    await handlePostClientLog(unknown);
     expect(unknown.json).toHaveBeenCalledWith({ ok: false }, 400);
     expect(loggerMocks.info).not.toHaveBeenCalled();
   });
@@ -38,7 +38,7 @@ describe("client logging handler", () => {
       body: { event: " session.open.error ", data },
     });
 
-    await handlePostClientLog(c as never);
+    await handlePostClientLog(c);
 
     const [event, loggedData] = loggerMocks.info.mock.calls[0]!;
     expect(event).toBe("client.session.open.error");
@@ -69,7 +69,7 @@ describe("client logging handler", () => {
       },
     });
 
-    await handlePostClientLog(c as never);
+    await handlePostClientLog(c);
 
     expect(loggerMocks.info).toHaveBeenCalledWith("client.app.load.done", {});
   });
@@ -77,7 +77,7 @@ describe("client logging handler", () => {
   it("drops non-record log data", async () => {
     const c = makeContext({ body: { event: "app.load.start", data: "not-an-object" } });
 
-    await handlePostClientLog(c as never);
+    await handlePostClientLog(c);
 
     expect(loggerMocks.info).toHaveBeenCalledWith("client.app.load.start", {});
   });

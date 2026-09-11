@@ -78,6 +78,7 @@ const workerThreads = vi.hoisted(() => ({
   acknowledgeLogDrain: true,
   deferSearchIndexWorkers: false,
   deferScanRefreshWorkers: false,
+  // SAFETY: This in-process Worker fixture accepts both scan and index message payloads; each branch reads its own protocol fields.
   workers: [] as Array<{
     url: URL;
     workerData: any;
@@ -92,6 +93,7 @@ const workerThreads = vi.hoisted(() => ({
     emitExit: (code: number) => void;
   }>,
   Worker: vi.fn(function (this: unknown, url: URL, options?: { workerData?: unknown }) {
+    // SAFETY: This in-process Worker fixture accepts both scan and index message payloads; each branch reads its own protocol fields.
     const workerData = (options?.workerData ?? {}) as any;
     const isSearchWorker = Boolean(workerData.jobs);
     const isScanWorker = Boolean(workerData.agentName);
@@ -263,7 +265,7 @@ const workerThreads = vi.hoisted(() => ({
       off: vi.fn((event: string, handler: (message: unknown) => void) => {
         const handlers =
           event === "message" ? messageHandlers : event === "exit" ? exitHandlers : errorHandlers;
-        const index = handlers.indexOf(handler as never);
+        const index = handlers.findIndex((registered) => registered === handler);
         if (index >= 0) handlers.splice(index, 1);
         return worker;
       }),
@@ -318,6 +320,7 @@ const workerThreads = vi.hoisted(() => ({
   }),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control watcher registration and worker bundle discovery while retaining real file operations.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   fsWatch.existsSync.mockImplementation((path: Parameters<typeof actual.existsSync>[0]) =>
@@ -330,11 +333,13 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Register only the fixture agents so orchestration cannot discover host agent data.
 vi.mock("@codesesh/core/runtime/agents", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/agents")>()),
   createRegisteredAgents: core.createRegisteredAgents,
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control cache publication, revisions and failures at the scan orchestration boundary.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
   return {
@@ -356,6 +361,7 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control worker messages, failures and shutdown without timing real threads.
 vi.mock("node:worker_threads", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:worker_threads")>()),
   Worker: workerThreads.Worker,
@@ -448,6 +454,7 @@ function watchPlanFor(name: string) {
 }
 
 function makeAgent(name: string, overrides: Record<string, unknown> = {}) {
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- The fixture composes different registered agent capabilities from per-test overrides.
   const agent: Record<string, unknown> = {
     name,
     displayName: name,

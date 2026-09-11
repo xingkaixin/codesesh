@@ -27,6 +27,7 @@ import {
 import { useDashboard } from "./useDashboard";
 import { useProjectLookup, useProjectPagination } from "./useProjects";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", async (importOriginal) => {
   const { ApiRequestError } = await importOriginal<typeof import("../lib/api")>();
   return {
@@ -45,8 +46,8 @@ const config = {
 const agents = [
   { name: "ClaudeCode", displayName: "Claude Code", count: 1 },
   { name: "Codex", displayName: "Codex", count: 0 },
-] as unknown as AgentInfo[];
-const projects = [{ identityKind: "path", identityKey: "p1" }] as unknown as ApiProjectGroup[];
+] as AgentInfo[];
+const projects = [{ identityKind: "path", identityKey: "p1" }] as ApiProjectGroup[];
 const projectPage = {
   projects,
   summary: {
@@ -532,7 +533,7 @@ describe("useSessionStore", () => {
 
   it("keeps the latest snapshot when an earlier request finishes late", async () => {
     const firstAgents = deferred<AgentInfo[]>();
-    const latestAgents = [{ name: "Codex", displayName: "Codex" }] as unknown as AgentInfo[];
+    const latestAgents = [{ name: "Codex", displayName: "Codex" }] as AgentInfo[];
     vi.mocked(api.fetchAgents)
       .mockReturnValueOnce(firstAgents.promise)
       .mockResolvedValueOnce(latestAgents);

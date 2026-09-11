@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
         return { sessions };
       },
     ),
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The hoisted mock factory assigns the real constructor before any agent fixture is created.
     FileSystemSessionSource: undefined as unknown as FileSystemSourceConstructor,
     appLogger: {
       debug: vi.fn(),
@@ -43,6 +44,7 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Drive this worker entry point with controlled messages and observe its replies in-process.
 vi.mock("node:worker_threads", () => ({
   parentPort: {
     postMessage: mocks.postMessage,
@@ -56,8 +58,10 @@ vi.mock("node:worker_threads", () => ({
   },
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({ appLogger: mocks.appLogger }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Register only the fixture agents so orchestration cannot discover host agent data.
 vi.mock("@codesesh/core/runtime/agents", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/agents")>();
   mocks.FileSystemSessionSource = actual.FileSystemSessionSource as FileSystemSourceConstructor;
@@ -67,6 +71,7 @@ vi.mock("@codesesh/core/runtime/agents", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control cache publication, revisions and failures at the scan orchestration boundary.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
   return {
@@ -85,6 +90,7 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control pricing generation publication and synchronization independently of network refresh.
 vi.mock("@codesesh/core/runtime/pricing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@codesesh/core/runtime/pricing")>()),
   synchronizePricingGeneration: mocks.synchronizePricingGeneration,
@@ -364,7 +370,7 @@ describe("scan refresh worker entry", () => {
 
   it("coalesces a synchronous progress burst and flushes its latest value", async () => {
     const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
-    const scan = vi.fn((options: { onProgress: (progress: object) => void }) => {
+    const scan = vi.fn((options: { onProgress: NonNullable<AgentScanOptions["onProgress"]> }) => {
       for (let processed = 1; processed <= 10_000; processed += 1) {
         options.onProgress({ phase: "scanning", total: 10_000, processed });
       }

@@ -5,6 +5,7 @@ import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionAliasMutations } from "./useSessionAliasMutations";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", () => ({
   deleteSessionAlias: vi.fn(),
   upsertSessionAlias: vi.fn(),

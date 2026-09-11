@@ -37,7 +37,7 @@ describe("sqlite migration helpers", () => {
   }
 
   it("skips backups for in-memory databases", () => {
-    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const db = new Database(":memory:") as SQLiteDatabase;
     try {
       db.exec(`
         CREATE TABLE rows (
@@ -53,7 +53,7 @@ describe("sqlite migration helpers", () => {
   });
 
   it("reports migration start and completion", () => {
-    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const db = new Database(":memory:") as SQLiteDatabase;
     const events = collectMigrationDiagnostics();
     try {
       runSchemaMigrations(db, {
@@ -95,7 +95,7 @@ describe("sqlite migration helpers", () => {
   });
 
   it("rejects an incomplete plan before applying migrations", () => {
-    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const db = new Database(":memory:") as SQLiteDatabase;
     let migrationRan = false;
     try {
       expect(() =>
@@ -124,7 +124,7 @@ describe("sqlite migration helpers", () => {
   });
 
   it("rejects unordered migration plans", () => {
-    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const db = new Database(":memory:") as SQLiteDatabase;
     try {
       expect(() =>
         runSchemaMigrations(db, {
@@ -146,7 +146,7 @@ describe("sqlite migration helpers", () => {
   });
 
   it("reports migration failures before rethrowing", () => {
-    const db = new Database(":memory:") as unknown as SQLiteDatabase;
+    const db = new Database(":memory:") as SQLiteDatabase;
     const events = collectMigrationDiagnostics();
     try {
       expect(() =>
@@ -187,7 +187,7 @@ describe("sqlite migration helpers", () => {
   it("keeps the source and backup recoverable when a destructive migration fails", () => {
     const dir = mkdtempSync(join(tmpdir(), "codesesh-migration-recovery-"));
     const dbPath = join(dir, "cache.db");
-    const db = new Database(dbPath) as unknown as SQLiteDatabase;
+    const db = new Database(dbPath) as SQLiteDatabase;
     try {
       db.exec("CREATE TABLE rows(id INTEGER PRIMARY KEY, value TEXT NOT NULL)");
       db.prepare("INSERT INTO rows(id, value) VALUES (1, 'before')").run();
@@ -276,8 +276,7 @@ describe("openDb pragmas", () => {
     const db = openDb(dbPath);
     expect(db).not.toBeNull();
     try {
-      const pragmaCapable = db as unknown as { pragma(sql: string): unknown };
-      expect(pragmaCapable.pragma("busy_timeout")).toEqual([{ timeout: 5000 }]);
+      expect(db?.prepare("PRAGMA busy_timeout").all()).toEqual([{ timeout: 5000 }]);
     } finally {
       db?.close();
     }
@@ -292,8 +291,7 @@ describe("openDb pragmas", () => {
     const db = openDbReadOnly(dbPath);
     expect(db).not.toBeNull();
     try {
-      const pragmaCapable = db as unknown as { pragma(sql: string): unknown };
-      expect(pragmaCapable.pragma("busy_timeout")).toEqual([{ timeout: 5000 }]);
+      expect(db?.prepare("PRAGMA busy_timeout").all()).toEqual([{ timeout: 5000 }]);
     } finally {
       db?.close();
     }

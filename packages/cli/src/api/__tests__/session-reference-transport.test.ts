@@ -9,6 +9,7 @@ const received = vi.hoisted(() => ({
   deleteAlias: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Capture decoded session references at the HTTP-to-core boundary.
 vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/discovery")>();
   return {
@@ -20,6 +21,7 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control persistence results and failures at the HTTP handler boundary without modifying user state.
 vi.mock("@codesesh/core/runtime/state", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@codesesh/core/runtime/state")>();
   return {
@@ -47,7 +49,7 @@ const OPAQUE_IDS = [
 
 function makeApp() {
   return createApiRoutes({
-    getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) as unknown as LiveSnapshot,
+    getSnapshot: () => ({ sessions: [], byAgent: {}, agents: [] }) as LiveSnapshot,
   });
 }
 

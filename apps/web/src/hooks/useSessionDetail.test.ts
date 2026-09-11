@@ -7,6 +7,7 @@ import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionDetail } from "./useSessionDetail";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   fetchSessionData: vi.fn(),
@@ -22,13 +23,17 @@ const sessionView: ViewState = {
 function makeSessionDetail(
   agentName: string,
   sessionId: string,
-  overrides: Record<string, unknown> = {},
+  overrides: Partial<SessionDetail> = {},
 ): SessionDetail {
   return {
     reference: { agentName, sessionId },
+    title: sessionId,
+    directory: "/workspace",
+    time_created: 0,
+    stats: { message_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
     messages: [],
     ...overrides,
-  } as unknown as SessionDetail;
+  };
 }
 
 const sample = makeSessionDetail("claudecode", "abc");
@@ -152,7 +157,9 @@ describe("useSessionDetail", () => {
     const { result } = renderSessionDetail();
     await waitFor(() => expect(result.current.session).toEqual(sample));
 
-    const updated = makeSessionDetail("claudecode", "abc", { messages: [1] });
+    const updated = makeSessionDetail("claudecode", "abc", {
+      messages: [{ id: "refreshed", role: "user", time_created: 0, parts: [] }],
+    });
     vi.mocked(api.fetchSessionData).mockResolvedValue(updated);
     await act(async () => {
       await result.current.refresh();
@@ -189,8 +196,8 @@ describe("useSessionDetail", () => {
   });
 
   it("requests and merges only messages appended by a live update", async () => {
-    const firstMessage = { id: "m1" };
-    const nextMessage = { id: "m2" };
+    const firstMessage = { id: "m1", role: "user" as const, time_created: 0, parts: [] };
+    const nextMessage = { id: "m2", role: "user" as const, time_created: 0, parts: [] };
     const initial = makeSessionDetail("claudecode", "abc", {
       messages: [firstMessage],
       message_cursor: "cursor-1",

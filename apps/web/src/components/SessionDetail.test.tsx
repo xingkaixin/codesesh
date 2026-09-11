@@ -7,6 +7,7 @@ const displayModelMocks = vi.hoisted(() => ({
   build: vi.fn(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count display model construction to verify unrelated UI state does not rebuild the transcript.
 vi.mock("./session-detail/display-model", () => ({
   buildSessionDetailDisplayModel: displayModelMocks.build,
 }));

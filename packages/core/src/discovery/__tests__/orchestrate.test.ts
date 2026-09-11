@@ -156,6 +156,7 @@ describe("buildAgentCacheMeta", () => {
       return [];
     }
     getSessionData() {
+      // SAFETY: This orchestration fixture never loads details; it exercises scan state and watch capabilities.
       return {} as never;
     }
     getSessionWatchPlan() {

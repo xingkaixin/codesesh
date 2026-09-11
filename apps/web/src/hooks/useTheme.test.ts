@@ -15,6 +15,7 @@ function mockMatchMedia(initialMatches: boolean) {
       changeListener = null;
     }),
   };
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This media-query fixture implements the state and listener methods used by the hook.
   vi.spyOn(window, "matchMedia").mockReturnValue(mediaQueryList as unknown as MediaQueryList);
   return {
     emitChange(matches: boolean) {

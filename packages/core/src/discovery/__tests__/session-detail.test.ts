@@ -33,6 +33,7 @@ const projectIdentity = {
   displayName: "project",
 };
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: vi.fn(() => testHomeDir) };
@@ -335,6 +336,7 @@ describe("materializeSessionDetail", () => {
 
   it("rejects an invalid snapshot instead of resolving identity during a detail request", () => {
     const detail = { ...makeDetail(), project_identity: undefined };
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The missing identity is intentional invalid input; this test verifies rejection at the snapshot boundary.
     const head = {
       ...makeHead(),
       project_identity: undefined,

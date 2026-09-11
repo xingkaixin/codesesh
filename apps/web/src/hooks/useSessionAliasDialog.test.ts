@@ -5,6 +5,7 @@ import type { BookmarkView } from "../lib/api";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionAliasDialog } from "./useSessionAliasDialog";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),
   deleteSessionAlias: vi.fn(),

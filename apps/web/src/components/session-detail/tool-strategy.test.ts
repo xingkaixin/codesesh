@@ -732,16 +732,17 @@ describe("getToolDisplayStrategy", () => {
 
 describe("getAssistantDisplayLabel", () => {
   it("returns USER for user role", () => {
-    expect(getAssistantDisplayLabel({ role: "user" } as unknown as Message)).toBe("USER");
+    expect(getAssistantDisplayLabel({ role: "user" } as Message)).toBe("USER");
   });
 
   it("returns AGENT for assistant role", () => {
-    expect(getAssistantDisplayLabel({ role: "assistant" } as unknown as Message)).toBe("AGENT");
+    expect(getAssistantDisplayLabel({ role: "assistant" } as Message)).toBe("AGENT");
   });
 });
 
 describe("normalizeMessagesForDisplay", () => {
   it("returns messages unchanged for non-cursor agents", () => {
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This deliberately minimal message must pass through untouched for agents without normalization.
     const messages = [{ role: "user", content: "hi" } as unknown as Message];
     expect(normalizeMessagesForDisplay(messages, "claudecode")).toBe(messages);
   });

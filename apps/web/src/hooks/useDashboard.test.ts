@@ -6,9 +6,11 @@ import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useDashboard } from "./useDashboard";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", () => ({ fetchDashboard: vi.fn() }));
 
 const window = { from: 1, to: 2 } as AppConfig["window"];
+// oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: Only response identity and the session count are observed in these query lifecycle tests.
 const data = { totals: { sessions: 3 }, perAgent: [] } as unknown as DashboardData;
 
 const globalScope: DashboardFilters = {};
@@ -85,6 +87,7 @@ describe("useDashboard", () => {
     const first = new Promise<DashboardData>((resolve) => {
       resolveFirst = resolve;
     });
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: Only response identity and the session count are observed in these query lifecycle tests.
     const latest = { totals: { sessions: 9 }, perAgent: [] } as unknown as DashboardData;
     vi.mocked(api.fetchDashboard).mockReturnValueOnce(first).mockResolvedValueOnce(latest);
     const { Wrapper } = createQueryWrapper();

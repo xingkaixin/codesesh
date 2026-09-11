@@ -19,6 +19,7 @@ const clientTelemetry = vi.hoisted(() => ({
   logClientEvent: vi.fn<(event: string, data?: Record<string, unknown>) => void>(),
 }));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Drive subscription events and observe telemetry without a live SSE server.
 vi.mock("./lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/api")>()),
   subscribeSessionUpdates: (onUpdate: (event: SessionsUpdatedEvent) => void) => {
@@ -75,6 +76,7 @@ const workspaceProjectPage = {
   },
 };
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- This fetch fixture routes heterogeneous JSON response schemas by endpoint path.
 const responses: Record<string, unknown> = {
   "/api/config": { window: { days: 30 } },
   "/api/agents": [],
@@ -97,7 +99,7 @@ const responses: Record<string, unknown> = {
 };
 
 let requestedUrls: string[] = [];
-let projectDetailResponse: unknown = null;
+let projectDetailResponse: typeof workspaceProjectPage | null = null;
 
 beforeEach(() => {
   requestedUrls = [];

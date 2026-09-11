@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it } from "vitest";
 import { queryKeys } from "./query-keys";
 import {
@@ -66,9 +66,9 @@ describe("CS-147: session detail cache is bounded", () => {
     const observed = active
       .getQueryCache()
       .find({ queryKey: queryKeys.sessionDetail("codex", "watched") })!;
-    const observer = { onQueryUpdate: () => {} };
+    const observer = new QueryObserver(active, { queryKey: observed.queryKey });
     // Simulate a mounted component holding this query.
-    observed.addObserver(observer as never);
+    observed.addObserver(observer);
 
     for (let index = 0; index < 5; index += 1) {
       await openDetail(active, `other-${index}`);
@@ -76,7 +76,7 @@ describe("CS-147: session detail cache is bounded", () => {
     pruneSessionDetailCache(active);
 
     expect(cachedDetailIds(active)).toContain("watched");
-    observed.removeObserver(observer as never);
+    observed.removeObserver(observer);
   });
 
   it("keeps a newly created detail during observer handoff", async () => {
@@ -87,8 +87,8 @@ describe("CS-147: session detail cache is bounded", () => {
     const previous = active
       .getQueryCache()
       .find({ queryKey: queryKeys.sessionDetail("codex", "previous-2") })!;
-    const observer = { onQueryUpdate: () => {} };
-    previous.addObserver(observer as never);
+    const observer = new QueryObserver(active, { queryKey: previous.queryKey });
+    previous.addObserver(observer);
 
     const pendingKey = queryKeys.sessionDetail("codex", "pending");
     const pending = active.getQueryCache().build(active, {
@@ -96,7 +96,7 @@ describe("CS-147: session detail cache is bounded", () => {
       queryFn: async () => transcript("pending"),
     });
 
-    previous.removeObserver(observer as never);
+    previous.removeObserver(observer);
 
     expect(active.getQueryCache().find({ queryKey: pendingKey })).toBe(pending);
   });
@@ -129,9 +129,9 @@ describe("CS-147: session detail cache is bounded", () => {
       const query = active
         .getQueryCache()
         .find({ queryKey: queryKeys.sessionDetail("codex", `s${index}`) })!;
-      const observer = { onQueryUpdate: () => {} };
-      query.addObserver(observer as never);
-      query.removeObserver(observer as never);
+      const observer = new QueryObserver(active, { queryKey: query.queryKey });
+      query.addObserver(observer);
+      query.removeObserver(observer);
     }
 
     expect(cachedDetailIds(active)).toHaveLength(RETAINED_INACTIVE_SESSION_DETAILS);

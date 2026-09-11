@@ -9,6 +9,7 @@ function mockMedia(matches: boolean) {
     addEventListener: (_: string, listener: () => void) => listeners.add(listener),
     removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
   };
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This media-query fixture implements the state and listener methods used by the hook.
   vi.spyOn(window, "matchMedia").mockReturnValue(media as unknown as MediaQueryList);
 
   return {

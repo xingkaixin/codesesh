@@ -132,7 +132,9 @@ test("copies the install command with the clipboard API", async ({ page }) => {
 
   await expect(copy).toContainText("Copied");
   await expect
-    .poll(() => page.evaluate(() => Reflect.get(window, "__copiedCommand")))
+    .poll(() =>
+      page.evaluate(() => ("__copiedCommand" in window ? window.__copiedCommand : undefined)),
+    )
     .toBe("npx codesesh");
 });
 

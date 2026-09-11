@@ -16,6 +16,7 @@ import { matchesSessionQueryScope, type SessionQueryScope } from "../session-sco
 
 const testHomeDir = mkdtempSync(join(tmpdir(), "codesesh-query-scope-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:os")>()),
   homedir: () => testHomeDir,

@@ -5,6 +5,7 @@ import type { ScanStatusEvent } from "../lib/api";
 import * as api from "../lib/api";
 import { ScanStatusProvider, useScanStatus, useScanStatusPublisher } from "./useScanStatus";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control API response ordering and failures while testing client state transitions.
 vi.mock("../lib/api", () => ({
   fetchScanStatus: vi.fn(),
 }));

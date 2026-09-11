@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Force a render failure to exercise the router error boundary.
 vi.mock("./App", () => ({
   default: () => {
     throw new Error("render failed");

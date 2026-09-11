@@ -11,6 +11,7 @@ import { setCoreDiagnostics, type CoreDiagnostics } from "../../utils/diagnostic
 
 // Delegates to the real implementation; only the stable-snapshot test replaces
 // it, so a file that keeps changing under the reader can be simulated.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Simulate file identity changes while retaining real filesystem reads.
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return { ...actual, statSync: vi.fn(actual.statSync) };
@@ -432,12 +433,12 @@ describe("DSH Zstandard container", () => {
 
     const real = (await vi.importActual<typeof import("node:fs")>("node:fs")).statSync;
     let identity = 0;
-    vi.mocked(statSync).mockImplementation(((path: string, options?: { bigint?: boolean }) => {
-      const stats = real(path, options as never) as unknown as Record<string, unknown>;
-      // A fresh identity on every bigint stat: the two stats bracketing a read
-      // can never agree, which is exactly what an active append looks like.
-      return options?.bigint ? { ...stats, size: BigInt(identity++) } : stats;
-    }) as unknown as typeof statSync);
+    // SAFETY: This stub preserves both stat return shapes; the reader only requests the bigint option.
+    vi.mocked(statSync).mockImplementation(((path, options?: { bigint?: boolean }) => {
+      if (!options?.bigint) return real(path);
+      // Changing identity makes the stats bracketing every read disagree.
+      return { ...real(path, { bigint: true }), size: BigInt(identity++) };
+    }) as typeof statSync);
 
     expectSourceFailure(/changed during every read attempt/);
   });

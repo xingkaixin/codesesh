@@ -1,12 +1,17 @@
 import { EventEmitter } from "node:events";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import type { LiveSnapshot } from "@codesesh/core/runtime/discovery";
 import { SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
 
-const mocks = vi.hoisted(() => ({ cached: vi.fn(), workers: [] as any[] }));
+const mocks = vi.hoisted(() => ({
+  cached: vi.fn(),
+  workers: [] as (EventEmitter & { postMessage: Mock; terminate: Mock<() => Promise<number>> })[],
+}));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Select cache hits or worker fallback without depending on an on-disk cache.
 vi.mock("@codesesh/core/runtime/discovery", () => ({
   materializeCachedSessionDetailResponse: mocks.cached,
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: {
     info: vi.fn(),
@@ -14,6 +19,7 @@ vi.mock("./logging.js", () => ({
     captureContext: vi.fn(() => ({})),
   },
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control worker messages, failures and shutdown without timing real threads.
 vi.mock("node:worker_threads", () => ({
   Worker: class extends EventEmitter {
     postMessage = vi.fn((message: { type?: string; requestId?: string }) => {
@@ -44,7 +50,7 @@ const snapshot = {
   agents: [],
   sessions: [SAMPLE_SESSION_HEAD],
   byAgent: { claudecode: [SAMPLE_SESSION_HEAD] },
-} as unknown as LiveSnapshot;
+} as LiveSnapshot;
 const reference = SAMPLE_SESSION_HEAD.reference;
 let loader: ThreadSessionDetailLoader;
 beforeEach(() => {
@@ -66,12 +72,12 @@ it("serves a cached result without creating a worker", async () => {
 
 it("returns serialized worker results and retires the worker", async () => {
   const pending = loader.load(snapshot, reference);
-  mocks.workers[0].emit("message", { type: "result", result: { status: "not-ready" } });
+  mocks.workers[0]!.emit("message", { type: "result", result: { status: "not-ready" } });
   await expect(pending).resolves.toEqual({ status: "not-ready" });
-  expect(mocks.workers[0].postMessage).toHaveBeenCalledWith(
+  expect(mocks.workers[0]!.postMessage).toHaveBeenCalledWith(
     expect.objectContaining({ type: "codesesh.worker-log-drain" }),
   );
-  expect(mocks.workers[0].terminate).toHaveBeenCalledOnce();
+  expect(mocks.workers[0]!.terminate).toHaveBeenCalledOnce();
 });
 
 it.each(["error", "exit", "reported-error"])(
@@ -79,11 +85,11 @@ it.each(["error", "exit", "reported-error"])(
   async (failure) => {
     const pending = loader.load(snapshot, reference);
     const rejection = expect(pending).rejects.toThrow();
-    if (failure === "error") mocks.workers[0].emit("error", new Error("failed"));
-    else if (failure === "exit") mocks.workers[0].emit("exit", 1);
-    else mocks.workers[0].emit("message", { type: "error", error: "source failed" });
+    if (failure === "error") mocks.workers[0]!.emit("error", new Error("failed"));
+    else if (failure === "exit") mocks.workers[0]!.emit("exit", 1);
+    else mocks.workers[0]!.emit("message", { type: "error", error: "source failed" });
     await rejection;
-    expect(mocks.workers[0].terminate).toHaveBeenCalledOnce();
+    expect(mocks.workers[0]!.terminate).toHaveBeenCalledOnce();
   },
 );
 
@@ -99,13 +105,13 @@ it("bounds concurrent parsing and cancels outstanding work on shutdown", async (
 it("waits for every worker retirement when one termination fails", async () => {
   const first = expect(loader.load(snapshot, reference)).rejects.toThrow();
   const second = expect(loader.load(snapshot, reference)).rejects.toThrow();
-  mocks.workers[0].terminate.mockRejectedValueOnce(new Error("termination failed"));
+  mocks.workers[0]!.terminate.mockRejectedValueOnce(new Error("termination failed"));
   let finishSecond = () => {};
-  mocks.workers[1].terminate.mockImplementationOnce(
+  mocks.workers[1]!.terminate.mockImplementationOnce(
     () =>
       new Promise<number>((resolve) => {
         finishSecond = () => {
-          mocks.workers[1].emit("exit", 0);
+          mocks.workers[1]!.emit("exit", 0);
           resolve(0);
         };
       }),
@@ -115,7 +121,7 @@ it("waits for every worker retirement when one termination fails", async () => {
   const shutdown = loader.shutdown().then(() => {
     shutdownCompleted = true;
   });
-  await vi.waitFor(() => expect(mocks.workers[1].terminate).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(mocks.workers[1]!.terminate).toHaveBeenCalledOnce());
   expect(shutdownCompleted).toBe(false);
 
   finishSecond();
@@ -128,7 +134,7 @@ it("cancels a worker when the client aborts", async () => {
   const pending = expect(loader.load(snapshot, reference, {}, controller.signal)).rejects.toThrow();
   controller.abort();
   await pending;
-  expect(mocks.workers[0].terminate).toHaveBeenCalledOnce();
+  expect(mocks.workers[0]!.terminate).toHaveBeenCalledOnce();
 });
 
 it("terminates a worker that never returns", async () => {

@@ -5,6 +5,7 @@ import { setCoreDiagnostics, type CoreDiagnostics } from "../diagnostics.js";
 // before any host has a chance to call setCoreDiagnostics — so simulating an
 // unavailable native module requires faking createRequire itself rather than
 // vi.mock("better-sqlite3"), which only intercepts the ESM graph.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Simulate the optional SQLite native binding being unavailable without changing installed dependencies.
 vi.mock("node:module", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:module")>();
   return {

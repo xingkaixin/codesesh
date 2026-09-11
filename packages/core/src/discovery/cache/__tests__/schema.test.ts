@@ -25,6 +25,7 @@ function readCachedValue(agentName: string) {
   return outcome.status === "success" ? outcome.value : null;
 }
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: vi.fn(() => testHomeDir) };
@@ -203,7 +204,7 @@ describe("cache schema boundary", () => {
         PRAGMA user_version = ${newerVersion};
       `);
 
-      expect(() => ensureCacheSchema(db as unknown as SQLiteDatabase, getCachePath())).toThrow(
+      expect(() => ensureCacheSchema(db as SQLiteDatabase, getCachePath())).toThrow(
         new UnsupportedCacheSchemaVersionError(newerVersion, CACHE_SCHEMA_VERSION),
       );
       expect(Number(db.pragma("user_version", { simple: true }))).toBe(newerVersion);

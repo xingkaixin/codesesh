@@ -9,6 +9,7 @@ import { AppRouteContent, type AppRouteModel } from "./AppRouteContent";
 
 const sessionDetailRender = vi.hoisted(() => vi.fn());
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe route-to-detail props without mounting the full transcript UI.
 vi.mock("../SessionDetail", () => ({
   SessionDetail: (props: { session: SessionDetail; childSessions: SessionDetail[] }) => {
     sessionDetailRender(props);

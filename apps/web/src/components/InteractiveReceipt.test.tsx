@@ -88,6 +88,7 @@ function installFonts(ready: Promise<unknown>) {
 
 function createMediaQueryControl(query: string, matches: boolean): MediaQueryControl {
   const listeners = new Set<EventListenerOrEventListenerObject>();
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: The media-query fixture installs controlled listeners below before exposing the list.
   const list = {
     media: query,
     matches,
@@ -116,8 +117,8 @@ function createMediaQueryControl(query: string, matches: boolean): MediaQueryCon
       Object.defineProperty(list, "matches", { configurable: true, value: nextMatches });
       const event = { matches: nextMatches, media: query } as MediaQueryListEvent;
       for (const listener of listeners) {
-        if (typeof listener === "function") listener.call(list, event as unknown as Event);
-        else listener.handleEvent(event as unknown as Event);
+        if (typeof listener === "function") listener.call(list, event as Event);
+        else listener.handleEvent(event as Event);
       }
     },
   };
@@ -169,8 +170,10 @@ function installEnvironment({
   });
 
   const context = createCanvasContext();
+  // SAFETY: The receipt painter only calls the canvas methods recorded by this stub.
   const getContext = vi
     .spyOn(HTMLCanvasElement.prototype, "getContext")
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- The receipt painter only calls the canvas methods recorded by this stub.
     .mockReturnValue(context as unknown as CanvasRenderingContext2D);
   const frames = stubAnimationFrames();
 

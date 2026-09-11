@@ -86,11 +86,15 @@ const workerMocks = vi.hoisted(() => {
   };
 });
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control worker messages, failures and shutdown without timing real threads.
 vi.mock("node:worker_threads", () => ({ Worker: workerMocks.FakeWorker }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Exercise the missing worker bundle branch without altering build output.
 vi.mock("node:fs", () => ({ existsSync: () => workerMocks.workerExists }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Control pricing generation publication and synchronization independently of network refresh.
 vi.mock("@codesesh/core/runtime/pricing", () => ({
   getPricingGeneration: () => ({ id: 17 }),
 }));
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe logging and worker log forwarding without emitting to the process log sink.
 vi.mock("./logging.js", () => ({
   appLogger: {
     debug: vi.fn(),

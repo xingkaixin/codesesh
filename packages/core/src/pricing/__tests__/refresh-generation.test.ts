@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const testHome = mkdtempSync(join(tmpdir(), "codesesh-pricing-refresh-"));
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Route persistent test data to an isolated home directory.
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return { ...actual, homedir: () => testHome };
@@ -270,7 +271,7 @@ describe("CS-148: pricing generations", () => {
   ])("leaves the current generation alone after %s", async (_name, handler) => {
     const before = estimateTokenCost(MODEL, MILLION_INPUT);
     const generationBefore = getPricingGeneration().id;
-    stubFetch(handler as never);
+    stubFetch(handler);
 
     expect(await refreshPricingCache()).toBe(false);
 

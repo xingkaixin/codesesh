@@ -4,6 +4,7 @@ import type { AppConfig } from "../lib/api";
 import * as api from "../lib/api";
 import { useWindowLoadTelemetry } from "./useWindowLoadTelemetry";
 
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Observe client telemetry events without making HTTP requests.
 vi.mock("../lib/api", () => ({ logClientEvent: vi.fn() }));
 
 const window = { from: 1, to: 2 } as AppConfig["window"];

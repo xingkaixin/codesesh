@@ -13,6 +13,7 @@ const { markdownRender } = vi.hoisted(() => ({
 
 // Stubbed so the assertions count parses rather than markdown output; the
 // rendered highlight itself is covered by MarkdownContent.test.tsx.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Count markdown renders and inspect plugin inputs to verify memoization.
 vi.mock("react-markdown", () => ({
   default: ({ children, rehypePlugins }: { children: string; rehypePlugins?: unknown[] }) => {
     markdownRender(children, rehypePlugins);
