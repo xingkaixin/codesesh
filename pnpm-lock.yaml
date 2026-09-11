@@ -167,6 +167,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^5.0.0
         version: 5.0.0(vitest@5.0.0)
+      node-gyp:
+        specifier: ^13.0.2
+        version: 13.0.2
       oxfmt:
         specifier: ^0.67.0
         version: 0.67.0
@@ -396,9 +399,6 @@ importers:
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.0.2
-      node-gyp:
-        specifier: ^13.0.2
-        version: 13.0.2
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(@typescript/typescript6@6.0.2)(jiti@2.7.0)(yaml@2.9.0)

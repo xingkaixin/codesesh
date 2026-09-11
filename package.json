@@ -41,6 +41,7 @@
     "@types/node": "catalog:",
     "@typescript/native": "catalog:",
     "@vitest/coverage-v8": "^5.0.0",
+    "node-gyp": "^13.0.2",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
     "playwright": "^1.63.0",
