@@ -1,5 +1,6 @@
 import { expect, test } from "./test-fixtures.js";
 import type { Locator } from "playwright/test";
+import type { DashboardData } from "@codesesh/core/contract";
 
 const CODEX_SESSION_ID = "019daaaa-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
 
@@ -8,6 +9,69 @@ const CODEX_SESSION_ID = "019daaaa-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
 function sessionsKpi(dashboard: Locator): Locator {
   return dashboard.locator("section").filter({ hasText: /^Sessions/ });
 }
+
+test("keeps model colors consistent across token and cost rankings and project scopes", async ({
+  page,
+}) => {
+  await page.route("**/api/dashboard?*", async (route) => {
+    const response = await route.fetch();
+    const data = (await response.json()) as DashboardData;
+    const project = new URL(route.request().url()).searchParams.has("projectKey");
+    const models = project
+      ? [{ model: "sonnet", tokens: 80, sessions: 1 }]
+      : [
+          { model: "sonnet", tokens: 80, sessions: 1 },
+          { model: "haiku", tokens: 20, sessions: 1 },
+        ];
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        totals: { ...data.totals, tokens: project ? 80 : 100, cost: 10 },
+        modelDistribution: models,
+        modelCost: [
+          { model: "haiku", cost: 9, costRecorded: 9, costEstimated: 0 },
+          { model: "sonnet", cost: 1, costRecorded: 1, costEstimated: 0 },
+        ],
+      },
+    });
+  });
+  await page.goto("/");
+  const tokens = page.getByRole("region", { name: "Tokens by Model", exact: true });
+  const cost = page.getByRole("region", { name: "Cost by Model", exact: true });
+  const tokenSwatch = (model: string) =>
+    tokens.getByRole("button", { name: new RegExp(`^${model}:`) }).locator("[aria-hidden]");
+  const costSwatch = (model: string) =>
+    cost
+      .getByRole("list")
+      .getByRole("listitem")
+      .filter({ hasText: model })
+      .locator("[aria-hidden]");
+  await expect(tokens.getByRole("button", { name: /^sonnet:/ })).toBeVisible();
+  const sonnetColor = await tokenSwatch("sonnet").evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  await expect(costSwatch("sonnet")).toHaveCSS("background-color", sonnetColor);
+  const haikuColor = await tokenSwatch("haiku").evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  await expect(costSwatch("haiku")).toHaveCSS("background-color", haikuColor);
+  expect(sonnetColor).not.toBe(haikuColor);
+  const chart = tokens.getByRole("listbox");
+  await chart.getByRole("option").first().focus();
+  await expect(tokens.getByRole("tooltip")).toContainText("sonnet");
+  await page.keyboard.press("ArrowRight");
+  await expect(tokens.getByRole("tooltip")).toContainText("haiku");
+  await expect(tokens.getByRole("tooltip")).toContainText("20 tokens");
+
+  await page.goto("/projects");
+  await page
+    .locator("main")
+    .getByRole("link", { name: /codesesh-e2e/ })
+    .click();
+  await expect(tokens.getByRole("button", { name: /^sonnet:/ })).toBeVisible();
+  await expect(tokenSwatch("sonnet")).toHaveCSS("background-color", sonnetColor);
+});
 
 test("aggregates Claude and Codex sessions under one project", async ({ page }) => {
   await page.goto("/");

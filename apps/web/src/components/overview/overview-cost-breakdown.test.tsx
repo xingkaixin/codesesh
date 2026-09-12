@@ -123,7 +123,13 @@ describe("OverviewCostBreakdown", () => {
   });
 
   it("says so when there is nothing to break down", () => {
-    render(<OverviewCostBreakdown modelCost={null} modelDistribution={[]} totals={totals()} />);
+    render(
+      <OverviewCostBreakdown
+        modelCost={null}
+        modelDistribution={[]}
+        totals={totals({ tokens: 0 })}
+      />,
+    );
 
     expect(screen.getByText("No model data")).toBeTruthy();
   });

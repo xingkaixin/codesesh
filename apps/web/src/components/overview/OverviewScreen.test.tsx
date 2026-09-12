@@ -141,6 +141,7 @@ describe("OverviewScreen", () => {
     await screen.findByRole("heading", { name: "Agents" });
     expect(screen.getByTestId("dashboard")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Daily usage" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Tokens by Model" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
     expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();

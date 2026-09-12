@@ -215,6 +215,13 @@ export const messages = {
   more: ["更多", "その他"],
   Other: ["其他", "その他"],
   "Cost by Model": ["模型费用", "モデル別費用"],
+  "Tokens by Model": ["模型 Token 分布", "モデル別トークン"],
+  "Model token distribution chart": ["模型 Token 分布图", "モデル別トークン分布図"],
+  "Token share in the selected range, including cache tokens.": [
+    "当前统计范围内的 Token 占比，包含缓存 Token。",
+    "選択した期間内のトークン割合。キャッシュトークンを含みます。",
+  ],
+  "Unknown model": ["未知模型", "不明なモデル"],
   Models: ["模型", "モデル"],
   "No model data": ["暂无模型数据", "モデルのデータがありません"],
   "{0} chart": ["{0}图表", "{0}グラフ"],

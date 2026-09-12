@@ -39,6 +39,8 @@ export function OverviewSkeleton() {
         ))}
       </div>
 
+      <CardSkeleton bodyClassName="h-[68px] w-full" />
+
       <Panel className="p-4">
         <Bar className="h-[15px] w-28" />
         <Bar className="mt-[14px] h-[168px] w-full" />
