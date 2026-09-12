@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 
 import type { DashboardTotals, ModelCostEntry, ModelDistributionEntry } from "../../lib/api";
 import { formatCompact, formatPercent, formatUsd, formatUsdCompact } from "../../lib/format";
+import { modelColor, tokenBreakdown, type ModelBreakdownEntry } from "../../lib/model-breakdown";
 import { cn } from "../../lib/utils";
 import { Panel, PanelHeader } from "../ui/panel";
 import { TileDonut } from "../ui/tile-donut";
@@ -19,25 +20,17 @@ const DONUT_SIZE = 142;
 /** Below this share of the total the cache lag is noise, not a missing slice. */
 const REMAINDER_THRESHOLD = 0.01;
 
-interface BreakdownEntry {
-  key: string;
-  label: string;
-  value: number;
-  color: string;
-  display: string;
-}
-
 function hasCost(modelCost: ModelCostEntry[] | null): modelCost is ModelCostEntry[] {
   return modelCost !== null && modelCost.some((entry) => entry.cost > 0);
 }
 
-function costEntries(modelCost: ModelCostEntry[], totalCost: number): BreakdownEntry[] {
+function costEntries(modelCost: ModelCostEntry[], totalCost: number): ModelBreakdownEntry[] {
   const top = [...modelCost].sort((a, b) => b.cost - a.cost).slice(0, LEGEND_LIMIT);
-  const entries = top.map((entry, index) => ({
+  const entries = top.map((entry) => ({
     key: entry.model,
     label: entry.model,
     value: entry.cost,
-    color: `var(--chart-${index + 1})`,
+    color: modelColor(entry.model),
     display: formatUsdCompact(entry.cost),
   }));
 
@@ -52,19 +45,6 @@ function costEntries(modelCost: ModelCostEntry[], totalCost: number): BreakdownE
     });
   }
   return entries;
-}
-
-function tokenEntries(modelDistribution: ModelDistributionEntry[]): BreakdownEntry[] {
-  return [...modelDistribution]
-    .sort((a, b) => b.tokens - a.tokens)
-    .slice(0, LEGEND_LIMIT)
-    .map((entry, index) => ({
-      key: entry.model,
-      label: entry.model,
-      value: entry.tokens,
-      color: `var(--chart-${index + 1})`,
-      display: formatCompact(entry.tokens),
-    }));
 }
 
 export function OverviewCostBreakdown({
@@ -85,11 +65,13 @@ export function OverviewCostBreakdown({
       const byCost = hasCost(modelCost);
       return {
         byCost,
-        entries: byCost ? costEntries(modelCost, totals.cost) : tokenEntries(modelDistribution),
+        entries: byCost
+          ? costEntries(modelCost, totals.cost)
+          : tokenBreakdown(modelDistribution, totals.tokens),
       };
     },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, modelCost, modelDistribution, totals.cost],
+    [locale, modelCost, modelDistribution, totals.cost, totals.tokens],
   );
   // Shares are of the ring, so they always add up to it; the centre reports the
   // scope total the KPI row already shows, which the ring covers in full once

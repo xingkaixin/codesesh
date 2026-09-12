@@ -43,6 +43,7 @@ export interface AttributedUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreateTokens: number;
+  modelUsage?: Readonly<Record<string, number>>;
 }
 
 export type UsageAttributionOptions = CostAttributionOptions;
@@ -251,6 +252,10 @@ export function visitAttributedUsage(
             outputTokens,
             cacheReadTokens: detailedTokens ? message.cacheReadTokens : 0,
             cacheCreateTokens: detailedTokens ? message.cacheCreateTokens : 0,
+            modelUsage:
+              detailedTokens && message.model
+                ? { [message.model]: message.inputTokens + outputTokens }
+                : undefined,
           });
         }
       }
@@ -271,15 +276,22 @@ export function visitAttributedUsage(
       if (!detailedTokens) {
         const inputTokens = nonNegative(session.stats.total_input_tokens);
         const outputTokens = nonNegative(session.stats.total_output_tokens);
+        const totalTokens = nonNegative(session.stats.total_tokens ?? inputTokens + outputTokens);
+        const modelTotal = Object.values(session.model_usage ?? {}).reduce(
+          (sum, tokens) => sum + tokens,
+          0,
+        );
         visit({
           entry,
           time: fallbackTime,
           messages: 0,
-          totalTokens: nonNegative(session.stats.total_tokens ?? inputTokens + outputTokens),
+          totalTokens,
           inputTokens,
           outputTokens,
           cacheReadTokens: nonNegative(session.stats.total_cache_read_tokens),
           cacheCreateTokens: nonNegative(session.stats.total_cache_create_tokens),
+          // Unreconciled model totals stay unassigned rather than inflating their shares.
+          modelUsage: modelTotal <= totalTokens ? session.model_usage : undefined,
         });
       }
     }

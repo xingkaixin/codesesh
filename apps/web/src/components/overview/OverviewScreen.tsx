@@ -24,6 +24,7 @@ import { OverviewAgentDistribution } from "./overview-agent-distribution";
 import { OverviewCostBreakdown } from "./overview-cost-breakdown";
 import { OverviewFilterBar } from "./overview-filter-bar";
 import { OverviewKpiGrid } from "./overview-kpi-grid";
+import { OverviewModelTokens } from "./overview-model-tokens";
 import { OverviewSkeleton } from "./overview-skeleton";
 import { OverviewActiveHours } from "./overview-active-hours";
 import { OverviewUsageChart } from "./overview-usage-chart";
@@ -78,6 +79,10 @@ export function OverviewScreen({
       {dashboard ? (
         <>
           <OverviewKpiGrid totals={dashboard.totals} rangeDays={dashboard.window.days} />
+          <OverviewModelTokens
+            models={dashboard.modelDistribution}
+            totalTokens={dashboard.totals.tokens}
+          />
           <OverviewUsageChart daily={dashboard.dailyActivity} />
           <OverviewActiveHours activity={dashboard.activeHours} />
           <div className="grid gap-4 lg:grid-cols-2">

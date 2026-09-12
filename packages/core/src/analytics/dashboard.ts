@@ -34,7 +34,11 @@ import {
   toCalendarDayKey,
 } from "../contract/index.js";
 import type { DashboardCostFacts } from "./cost-facts.js";
-import { visitAttributedCosts, visitAttributedUsage } from "./cost-attribution.js";
+import {
+  visitAttributedCosts,
+  visitAttributedUsage,
+  type AttributedUsage,
+} from "./cost-attribution.js";
 
 export type {
   DashboardAgentStat,
@@ -98,7 +102,7 @@ interface DashboardAccumulator {
   agents: Map<string, DashboardAgentAggregate>;
   agentKeys: Set<string>;
   daily: Map<string, DashboardDailyBucket>;
-  models: Map<string, { tokens: number; sessions: number }>;
+  models: Map<string, { tokens: number; sessions: Set<SessionTreeNode> }>;
   modelCosts: Map<string, ModelCostEntry>;
   projects: Map<string, DashboardProjectAggregate>;
   projectKeys: Set<string>;
@@ -208,15 +212,6 @@ function createAccumulator(
   };
 }
 
-function foldModelUsage(node: SessionTreeNode, into: Map<string, number>): void {
-  if (node.session.model_usage) {
-    for (const [model, tokens] of Object.entries(node.session.model_usage)) {
-      into.set(model, (into.get(model) ?? 0) + tokens);
-    }
-  }
-  for (const child of node.children) foldModelUsage(child, into);
-}
-
 function getOrCreateProject(
   session: SessionHead,
   acc: DashboardAccumulator,
@@ -280,18 +275,6 @@ function accumulateActivity(node: SessionTreeNode, acc: DashboardAccumulator): v
   }
   bucket.sessions += 1;
 
-  const usage = new Map<string, number>();
-  foldModelUsage(node, usage);
-  for (const [model, tokens] of usage) {
-    const entry = acc.models.get(model);
-    if (entry) {
-      entry.tokens += tokens;
-      entry.sessions += 1;
-    } else {
-      acc.models.set(model, { tokens, sessions: 1 });
-    }
-  }
-
   trackProjectActivity(node, acc, agentKey);
 
   let recentIndex = acc.recent.length;
@@ -311,14 +294,7 @@ function addUsage(
   acc: DashboardAccumulator,
   entry: SessionTreeNode,
   time: number,
-  usage: {
-    messages: number;
-    totalTokens: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreateTokens: number;
-  },
+  usage: Omit<AttributedUsage, "entry" | "time">,
 ): void {
   const { messages, totalTokens, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens } =
     usage;
@@ -336,6 +312,16 @@ function addUsage(
   acc.messages += messages;
   acc.tokens += totalTokens;
   acc.cacheReadTokens += cacheReadTokens;
+  for (const [model, tokens] of Object.entries(usage.modelUsage ?? {})) {
+    if (tokens <= 0) continue;
+    const current = acc.models.get(model);
+    if (current) {
+      current.tokens += tokens;
+      current.sessions.add(entry);
+    } else {
+      acc.models.set(model, { tokens, sessions: new Set([entry]) });
+    }
+  }
 
   const agentKey = getSessionAgentName(entry.session);
   let metric = acc.agents.get(agentKey);
@@ -537,7 +523,7 @@ export function buildDashboard(
 
   const dailyActivity = [...acc.daily.values()].sort((a, b) => a.date.localeCompare(b.date));
   const modelDistribution: ModelDistributionEntry[] = [...acc.models.entries()]
-    .map(([model, { tokens, sessions: count }]) => ({ model, tokens, sessions: count }))
+    .map(([model, { tokens, sessions }]) => ({ model, tokens, sessions: sessions.size }))
     .sort((a, b) => b.tokens - a.tokens);
   const modelCost = costFactsAvailable
     ? [...acc.modelCosts.values()].sort((a, b) => b.cost - a.cost).slice(0, MODEL_COST_LIMIT)

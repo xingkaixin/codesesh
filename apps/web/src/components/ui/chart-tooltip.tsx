@@ -3,14 +3,14 @@ import type { ReactNode } from "react";
 export function ChartTooltip({
   index,
   count,
+  position = ((index + 0.5) / count) * 100,
   children,
 }: {
   index: number;
   count: number;
+  position?: number;
   children: ReactNode;
 }) {
-  const position = ((index + 0.5) / count) * 100;
-
   return (
     <div
       role="tooltip"
