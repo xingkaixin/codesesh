@@ -64,11 +64,13 @@ const t = copy[locale].hero;
         textarea.style.top = "-9999px";
         document.body.append(textarea);
         textarea.select();
-        const execCommand =
-          "execCommand" in document ? document.execCommand : undefined;
+        // Isolate the deprecated API retained for Clipboard API failures.
+        const legacyDocument: {
+          execCommand?: (command: "copy") => boolean;
+        } = document;
         const copied =
-          typeof execCommand === "function" &&
-          execCommand.call(document, "copy") === true;
+          typeof legacyDocument.execCommand === "function" &&
+          legacyDocument.execCommand("copy") === true;
         textarea.remove();
         return copied;
       } catch {
