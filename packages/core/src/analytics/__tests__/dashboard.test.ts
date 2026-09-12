@@ -312,6 +312,7 @@ describe("buildDashboard", () => {
     const session = makeSession("usage-diagnostic", {
       time_created: day1,
       time_updated: day2,
+      model_usage: { sonnet: 120, haiku: 60 },
       stats: {
         message_count: 2,
         total_input_tokens: 150,
@@ -341,6 +342,7 @@ describe("buildDashboard", () => {
           reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day1 + 1_000,
           inputTokens: 100,
+          model: "sonnet",
           outputTokens: 20,
           cacheReadTokens: 80,
           cost: 1,
@@ -351,6 +353,7 @@ describe("buildDashboard", () => {
           reference: { agentName: "claudecode", sessionId: session.reference.sessionId },
           time: day2 + 1_000,
           inputTokens: 50,
+          model: "haiku",
           outputTokens: 10,
           cacheReadTokens: 20,
           cost: 2,
@@ -377,6 +380,14 @@ describe("buildDashboard", () => {
       { sessions: 1, messages: 1, input: 30, output: 10, cache_read: 20, cost: 2 },
     ]);
     expect(result.totals).toMatchObject({ messages: 2, tokens: 180 });
+    expect(result.modelDistribution).toEqual([
+      { model: "sonnet", tokens: 120, sessions: 1 },
+      { model: "haiku", tokens: 60, sessions: 1 },
+    ]);
+
+    const firstDay = buildDashboard([session], opts({ from: day1, to: day2 - 1, costFacts }));
+    expect(firstDay.totals.tokens).toBe(120);
+    expect(firstDay.modelDistribution).toEqual([{ model: "sonnet", tokens: 120, sessions: 1 }]);
   });
 
   it("keeps unreconciled or untimed usage on the session activity day", () => {
@@ -710,8 +721,24 @@ describe("buildDashboard", () => {
   it("aggregates model distribution sorted by tokens desc", () => {
     const result = buildDashboard(
       [
-        makeSession("a", { model_usage: { "gpt-4": 100, "gpt-3.5": 50 } }),
-        makeSession("b", { model_usage: { "gpt-4": 200 } }),
+        makeSession("a", {
+          model_usage: { "gpt-4": 100, "gpt-3.5": 50 },
+          stats: {
+            message_count: 1,
+            total_input_tokens: 150,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        }),
+        makeSession("b", {
+          model_usage: { "gpt-4": 200 },
+          stats: {
+            message_count: 1,
+            total_input_tokens: 200,
+            total_output_tokens: 0,
+            total_cost: 0,
+          },
+        }),
       ],
       opts(),
     );
@@ -721,6 +748,17 @@ describe("buildDashboard", () => {
       tokens: 50,
       sessions: 1,
     });
+  });
+
+  it("leaves tokens unassigned when model totals exceed the session total", () => {
+    const session = makeSession("inconsistent-models", {
+      model_usage: { sonnet: 200 },
+      stats: { message_count: 1, total_input_tokens: 100, total_output_tokens: 0, total_cost: 0 },
+    });
+    const result = buildDashboard([session], opts());
+
+    expect(result.totals.tokens).toBe(100);
+    expect(result.modelDistribution).toEqual([]);
   });
 
   it("keeps the ten most recent sessions", () => {
