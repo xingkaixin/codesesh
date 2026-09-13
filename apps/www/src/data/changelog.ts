@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.8",
+        date: "2026-09-13",
+        title: "See how token usage is split across models",
+        summary:
+          "Overview and project dashboards now show each model’s token total and share for the selected date range, including cache tokens. Navigation gains consistent hover feedback, and the product site updates its celestial visuals and asset loading.",
+        direction:
+          "Local AI coding history should make usage comparisons easy to read and keep every breakdown tied to the time range you choose.",
+        highlights: [
+          {
+            title: "Model token shares",
+            description:
+              "Compare model token totals and percentages in overview and project dashboards, with details available by pointer or keyboard.",
+          },
+          {
+            title: "Usage within your selected dates",
+            description:
+              "Model totals follow the dashboard date range, so activity outside that range no longer enters the comparison.",
+          },
+          {
+            title: "Consistent navigation and lighter loading",
+            description:
+              "Navigation gains shared hover feedback, agent introduction pages load on demand, and product site assets use caching and homepage artwork preloading.",
+          },
+        ],
+      },
+      {
         version: "1.0.7",
         date: "2026-09-08",
         title: "Active hours overview and more resilient live sync",
@@ -227,6 +253,30 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.8",
+        date: "2026-09-13",
+        title: "看清各模型的 Token 用量占比",
+        summary:
+          "概览与项目 Dashboard 现在展示所选日期范围内各模型的 Token 总量与占比，包含缓存 Token。导航悬停反馈更加一致，产品站也更新了天体视觉与资源加载方式。",
+        direction: "本地 AI 编码历史应让用量对比易于理解，并让每项细分统计遵循用户选择的时间范围。",
+        highlights: [
+          {
+            title: "按模型比较 Token 用量",
+            description:
+              "在概览与项目 Dashboard 中比较各模型的 Token 总量和百分比，通过指针或键盘查看详情。",
+          },
+          {
+            title: "统计遵循所选日期",
+            description: "模型用量与 Dashboard 日期范围保持一致，范围外的会话活动不再计入比较。",
+          },
+          {
+            title: "一致的导航反馈与更轻的加载",
+            description:
+              "导航使用统一悬停反馈，Agent 介绍页按需加载，产品站资源使用缓存并预加载首页主视觉。",
+          },
+        ],
+      },
+      {
         version: "1.0.7",
         date: "2026-09-08",
         title: "活跃时段概览与更稳健的实时同步",
@@ -375,6 +425,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.8",
+        date: "2026-09-13",
+        title: "モデルごとのトークン使用割合を把握",
+        summary:
+          "概要とプロジェクトのダッシュボードで、選択した期間のモデル別トークン数と割合を確認できるようになりました。キャッシュトークンも含まれます。ナビゲーションのホバー表示を統一し、製品サイトの天体ビジュアルとリソース読み込みも更新しました。",
+        direction:
+          "ローカルの AI コーディング履歴では、使用量を比較しやすくし、すべての内訳を選択した期間に揃えることを重視しています。",
+        highlights: [
+          {
+            title: "モデル別のトークン使用割合",
+            description:
+              "概要とプロジェクトのダッシュボードでモデル別のトークン数と割合を比較でき、ポインターやキーボードで詳細を確認できます。",
+          },
+          {
+            title: "選択期間に沿った集計",
+            description:
+              "モデル使用量がダッシュボードの日付範囲に揃い、期間外のセッション内の使用量が比較に含まれなくなりました。",
+          },
+          {
+            title: "統一された操作感と読み込みの改善",
+            description:
+              "ナビゲーションのホバー表示を統一しました。Agent 紹介ページは必要時に読み込み、製品サイトではリソースのキャッシュとトップ画像の先読みを利用します。",
+          },
+        ],
+      },
       {
         version: "1.0.7",
         date: "2026-09-08",

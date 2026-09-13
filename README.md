@@ -27,7 +27,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
 - **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
 - **UI languages** — English, Simplified Chinese, and Japanese. Follows your browser language by default; use the language selector in the top toolbar to switch and save your preference. Session content and code stay in their original language.
-- **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model usage, smart tags, and cost at a glance
+- **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model token shares for the selected date range, smart tags, and cost at a glance
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
 - **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent
 - **Smart Tags** — Automatically label sessions such as bugfix, refactoring, feature work, testing, docs, planning, git operations, build/deploy, and exploration
@@ -245,7 +245,7 @@ Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.cac
 
 Once CodeSesh is running, here's what you'll find:
 
-1. **Dashboard** — Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, model distribution, token trends, smart tags, bookmarks, and recent sessions.
+1. **Dashboard** — Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, model token shares for the selected date range, token trends, smart tags, bookmarks, and recent sessions.
 2. **Structured Global Search** — Query titles, messages, tool output, and file paths, then narrow results by agent, project, tag, tool, file activity, or cost.
 3. **Projects** — Browse project-level totals, recent activity, agent mix, scoped dashboards, and sessions for a single repository or project identity.
 4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity, with nested subagent sessions kept under their parents, and filter by agent or smart tag.
