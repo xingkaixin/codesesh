@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.0.8] - 2026-09-13
+
+This release adds model token shares to dashboards, aligns model usage with the selected date range, introduces consistent navigation hover feedback, and refreshes the product site's celestial visuals and asset loading. (#610, #611, #613, #614, #616)
+
+### Features
+
+- Added model token totals and percentage shares to overview and project dashboards, including cache tokens, with pointer and keyboard interaction. (#616)
+- Added consistent animated hover feedback to the app sidebar, segmented controls, and product site navigation. (#611)
+- Updated the product site's interactive globe and celestial bodies with new surface textures and materials. (#610)
+
+### Performance
+
+- Lazy-loaded agent landing pages to reduce initial Web app loading work. (#614)
+- Added long-lived caching for fingerprinted product site assets and preloaded the homepage artwork; avoided duplicate Cloudflare analytics loading. (#613)
+
+### Bug Fixes
+
+- Aligned model token aggregation with the dashboard's selected date range instead of including whole-session usage outside that range. (#616)
+
+### Build
+
+- Upgraded workspace dependencies and made node-gyp available to workspace installs. (#614)
+- Added reviewed anti-slop lint rules and updated source code and test fixtures to comply. (#612)
+- Cleared the product site's clipboard API deprecation hint while retaining the copy fallback. (#615)
+
 ## [1.0.7] - 2026-09-08
 
 This release introduces an active hours breakdown on the Overview dashboard to visualize coding activity across the day, ensures live session updates and reconnection recover cleanly from errors, keeps unavailable session details retryable, refreshes aggregate metrics after overlapping updates, preserves session aliases through live events, leverages the user activity database index on startup, and upgrades pnpm to 12.3.4.
