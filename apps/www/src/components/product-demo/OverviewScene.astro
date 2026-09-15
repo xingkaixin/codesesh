@@ -18,6 +18,7 @@ interface RangeDatum {
     hint: string;
     emphasis?: boolean;
   }>;
+  models: Array<{ name: string; value: string; share: number }>;
   bars: Array<{ label: string; value: number }>;
   distribution: Array<{
     name: string;
@@ -61,14 +62,19 @@ const overviewRanges = {
         hint: "webapp / Claude Code",
       },
     ],
+    models: [
+      { name: "gpt-5.4", value: "820M", share: 52 },
+      { name: "claude-sonnet-4-5", value: "490M", share: 31 },
+      { name: "Other", value: "270M", share: 17 },
+    ],
     bars: [
-      { label: "Apr 17", value: 62 },
-      { label: "Apr 18", value: 31 },
-      { label: "Apr 19", value: 57 },
-      { label: "Apr 20", value: 44 },
-      { label: "Apr 21", value: 33 },
-      { label: "Apr 22", value: 22 },
-      { label: "Apr 23", value: 19 },
+      { label: "Apr 17", value: 340 },
+      { label: "Apr 18", value: 185 },
+      { label: "Apr 19", value: 305 },
+      { label: "Apr 20", value: 240 },
+      { label: "Apr 21", value: 205 },
+      { label: "Apr 22", value: 165 },
+      { label: "Apr 23", value: 140 },
     ],
     distribution: [
       {
@@ -119,14 +125,19 @@ const overviewRanges = {
         hint: "webapp / Claude Code",
       },
     ],
+    models: [
+      { name: "gpt-5.4", value: "3.21B", share: 50 },
+      { name: "claude-sonnet-4-5", value: "1.93B", share: 30 },
+      { name: "Other", value: "1.28B", share: 20 },
+    ],
     bars: [
-      { label: "W13", value: 38 },
-      { label: "W14", value: 54 },
-      { label: "W15", value: 47 },
-      { label: "W16", value: 66 },
-      { label: "W17", value: 72 },
-      { label: "W18", value: 58 },
-      { label: "W19", value: 41 },
+      { label: "W13", value: 760 },
+      { label: "W14", value: 1020 },
+      { label: "W15", value: 880 },
+      { label: "W16", value: 1100 },
+      { label: "W17", value: 1240 },
+      { label: "W18", value: 820 },
+      { label: "W19", value: 600 },
     ],
     distribution: [
       {
@@ -167,14 +178,19 @@ const overviewRanges = {
         hint: "webapp / Claude Code",
       },
     ],
+    models: [
+      { name: "gpt-5.4", value: "8.51B", share: 45 },
+      { name: "claude-sonnet-4-5", value: "6.61B", share: 35 },
+      { name: "Other", value: "3.78B", share: 20 },
+    ],
     bars: [
-      { label: "Sep", value: 24 },
-      { label: "Oct", value: 36 },
-      { label: "Nov", value: 45 },
-      { label: "Dec", value: 39 },
-      { label: "Jan", value: 58 },
-      { label: "Feb", value: 71 },
-      { label: "Mar", value: 88 },
+      { label: "Sep", value: 1200 },
+      { label: "Oct", value: 1900 },
+      { label: "Nov", value: 2600 },
+      { label: "Dec", value: 2300 },
+      { label: "Jan", value: 3100 },
+      { label: "Feb", value: 3800 },
+      { label: "Mar", value: 4000 },
     ],
     distribution: [
       {
@@ -302,18 +318,43 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
       ))}
     </dl>
 
+    <figure class="demo-panel demo-models">
+      <figcaption>
+        <strong>Tokens by Model</strong>
+        <span data-demo-model-total>
+          {defaultRange.kpis[2]?.value} total tokens
+        </span>
+      </figcaption>
+      <div class="demo-model-bar" aria-hidden="true">
+        {defaultRange.models.map((model, index) => (
+          <span
+            data-demo-model-segment={index}
+            style={`flex-grow:${model.share}`}
+          />
+        ))}
+      </div>
+      <ul>
+        {defaultRange.models.map((model, index) => (
+          <li data-demo-model={index}>
+            <strong>{model.name}</strong>
+            <span>
+              {model.value} · {model.share}%
+            </span>
+          </li>
+        ))}
+      </ul>
+    </figure>
+
     <figure class="demo-panel demo-activity">
       <figcaption>
-        <strong>Daily Activity</strong>
+        <strong>Daily usage · tokens</strong>
         <span data-demo-chart-meta>{defaultRange.meta}</span>
       </figcaption>
       <ol class="demo-bars">
         {defaultRange.bars.map((bar, index) => (
           <li
             data-demo-bar={index}
-            aria-label={t.sampleSessions
-              .replace("{label}", bar.label)
-              .replace("{count}", String(bar.value))}
+            aria-label={`${bar.label}: ${bar.value}M tokens`}
           >
             <span class="demo-bar-track" aria-hidden="true">
               <span
@@ -395,6 +436,7 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
     chip: string;
     meta: string;
     kpis: DemoKpi[];
+    models: Array<{ name: string; value: string; share: number }>;
     bars: DemoBar[];
     distribution: DemoAgent[];
   }
@@ -402,8 +444,6 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
   function initializeOverviewDemo(root: HTMLElement) {
     const source = root.querySelector<HTMLScriptElement>("[data-demo-ranges]");
     if (!source?.textContent) return;
-    const sampleSessionsTemplate =
-      root.dataset.sampleSessionsTemplate ?? "{label}: {count} sample sessions";
 
     let ranges: Record<string, DemoRange>;
     try {
@@ -443,6 +483,24 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
         if (hint) hint.textContent = kpi.hint;
       });
 
+      const modelTotal = root.querySelector<HTMLElement>(
+        "[data-demo-model-total]",
+      );
+      if (modelTotal)
+        modelTotal.textContent = `${range.kpis[2]?.value} total tokens`;
+      root
+        .querySelectorAll<HTMLElement>("[data-demo-model]")
+        .forEach((item) => {
+          const index = Number(item.dataset.demoModel);
+          const model = range.models[index];
+          if (!model) return;
+          const value = item.querySelector("span");
+          if (value) value.textContent = `${model.value} · ${model.share}%`;
+          root
+            .querySelector<HTMLElement>(`[data-demo-model-segment="${index}"]`)
+            ?.style.setProperty("flex-grow", String(model.share));
+        });
+
       const barMax = Math.max(...range.bars.map((bar) => bar.value));
       root.querySelectorAll<HTMLElement>("[data-demo-bar]").forEach((item) => {
         const index = Number(item.dataset.demoBar);
@@ -452,12 +510,7 @@ const sampleLabel = `${t.sampleLabel} / DEMO`;
         const label = item.querySelector<HTMLElement>("[data-demo-bar-label]");
         fill?.style.setProperty("--bar-scale", String(bar.value / barMax));
         if (label) label.textContent = bar.label;
-        item.setAttribute(
-          "aria-label",
-          sampleSessionsTemplate
-            .replace("{label}", bar.label)
-            .replace("{count}", String(bar.value)),
-        );
+        item.setAttribute("aria-label", `${bar.label}: ${bar.value}M tokens`);
       });
 
       root

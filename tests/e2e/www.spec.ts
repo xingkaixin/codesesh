@@ -191,6 +191,8 @@ test("explores each interactive product preview", async ({ page }) => {
   await expect(overview.locator('[data-demo-kpi="0"] [data-demo-kpi-value]')).toHaveText("863");
   await expect(overview.locator("[data-demo-range-chip]")).toContainText("Last 30d");
 
+  await expect(overview.locator("[data-demo-model-total]")).toContainText("6.42B");
+
   const project = page.locator('[data-product-demo="projects"]');
   const subsession = project.locator("details[data-demo-subsession]").first();
   await subsession.locator("summary").click();
@@ -204,13 +206,19 @@ test("explores each interactive product preview", async ({ page }) => {
   await expect(tool).toContainText("buildClauses(filters)");
 });
 
-for (const route of ["/", "/ja/"]) {
+for (const route of ["/", "/zh/", "/ja/"]) {
   test(`keeps ${route} within a 390px mobile viewport`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(route);
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
+
+    for (const demo of await page.locator(".demo-shell").all()) {
+      expect(await demo.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+    }
 
     await expect
       .poll(() =>

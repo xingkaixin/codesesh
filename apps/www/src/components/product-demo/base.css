@@ -275,3 +275,41 @@ summary:focus-visible,
 .dark .demo-agent-icon[data-monochrome] {
   filter: invert(1);
 }
+
+@media (max-width: 767px) {
+  .demo-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .demo-sidebar,
+  .demo-shortcut,
+  .demo-range-chip {
+    display: none;
+  }
+
+  .demo-frame {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .demo-search {
+    order: 1;
+    flex-basis: 100%;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+  }
+
+  .demo-sample-label {
+    margin-left: auto;
+  }
+
+  .demo-main {
+    padding: 0.75rem;
+  }
+
+  .demo-panel-heading {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}
