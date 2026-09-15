@@ -52,6 +52,7 @@ export function formatCompact(value: number): string {
 }
 
 export function formatUsd(value: number): string {
+  if (value > 0 && value < 0.01) return "<$0.01";
   return `$${value.toLocaleString(getLocale(), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -127,7 +128,7 @@ function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-export function formatMessageTime(rawTime: number | string | null | undefined): string | null {
+function parseMessageDate(rawTime: number | string | null | undefined): Date | null {
   if (rawTime == null) return null;
   if (typeof rawTime === "number" && (!Number.isFinite(rawTime) || rawTime <= 0)) return null;
 
@@ -148,6 +149,22 @@ export function formatMessageTime(rawTime: number | string | null | undefined): 
 
   if (!date || Number.isNaN(date.getTime())) return null;
 
+  return date;
+}
+
+export function formatMessageDate(rawTime: number | string | null | undefined): string | null {
+  return (
+    parseMessageDate(rawTime)?.toLocaleDateString(getLocale(), {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }) ?? null
+  );
+}
+
+export function formatMessageTime(rawTime: number | string | null | undefined): string | null {
+  const date = parseMessageDate(rawTime);
+  if (!date) return null;
   return date.toLocaleTimeString(getLocale(), {
     hour: "2-digit",
     minute: "2-digit",

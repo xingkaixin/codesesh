@@ -93,12 +93,11 @@
 .demo-bar-fill {
   position: relative;
   width: 100%;
-  height: 100%;
+  height: calc(var(--bar-scale) * 100%);
   border-radius: 3px 3px 0 0;
-  background: #3b82f6;
-  transform: scaleY(var(--bar-scale));
+  background: radial-gradient(circle, #e07a3a 1.5px, transparent 1.7px) 0 100% / 5px 5px;
   transform-origin: bottom;
-  transition: transform 260ms var(--ease-out);
+  transition: height 260ms var(--ease-out);
 }
 
 .demo-bars small {
@@ -171,5 +170,105 @@
   .demo-bar-fill,
   .demo-agent-meter > span {
     transition: none;
+  }
+}
+
+.demo-model-bar {
+  display: flex;
+  gap: 3px;
+  height: 1.8rem;
+  margin-top: 0.75rem;
+}
+
+.demo-model-bar > span {
+  flex-basis: 0;
+  background: radial-gradient(circle, currentColor 1.5px, transparent 1.7px) 0 0 / 5px 5px;
+}
+
+.demo-models li:nth-child(1),
+.demo-model-bar > span:nth-child(1) {
+  color: #4a9eff;
+}
+.demo-models li:nth-child(2),
+.demo-model-bar > span:nth-child(2) {
+  color: #7c5cff;
+}
+.demo-models li:nth-child(3),
+.demo-model-bar > span:nth-child(3) {
+  color: var(--console-muted);
+}
+
+.demo-models ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demo-models li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+}
+
+.demo-models li::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 2px;
+  background: currentColor;
+  content: "";
+}
+
+.demo-models li strong {
+  color: var(--console-text);
+  font-weight: 400;
+}
+
+.demo-models li span {
+  color: var(--console-muted);
+}
+
+@media (max-width: 767px) {
+  .demo-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .demo-kpi:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .demo-kpi dt,
+  .demo-kpi-meta {
+    font-size: 0.65rem;
+    white-space: normal;
+  }
+
+  .demo-panel figcaption,
+  .demo-distribution header {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .demo-panel figcaption strong,
+  .demo-distribution [role="heading"] {
+    font-size: 0.85rem;
+  }
+
+  .demo-distribution li {
+    grid-template-columns: 0.9rem minmax(0, 1fr) auto;
+  }
+
+  .demo-agent-meter {
+    display: none;
+  }
+
+  .demo-distribution li > span:nth-of-type(1),
+  .demo-distribution small,
+  .demo-bars small {
+    font-size: 0.65rem;
   }
 }

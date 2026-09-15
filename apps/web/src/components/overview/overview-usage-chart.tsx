@@ -36,10 +36,11 @@ const TOKEN_SERIES = [
 
 const TOKEN_COLORS = TOKEN_SERIES.map((series) => series.color);
 
-/** Axis ticks land on arbitrary fractions of the peak, so cents would be noise
- *  in a 38px gutter. */
 function formatCostTick(value: number): string {
-  return value >= 1000 ? `$${formatCompact(value)}` : `$${Math.round(value)}`;
+  if (value === 0) return "$0";
+  if (value >= 1000) return `$${formatCompact(value)}`;
+  if (value >= 1) return `$${Number(value.toFixed(2))}`;
+  return `$${Number(value.toPrecision(2))}`;
 }
 
 function bucketTokens(bucket: DashboardDailyBucket): number {

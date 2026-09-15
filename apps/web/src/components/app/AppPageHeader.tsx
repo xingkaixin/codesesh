@@ -58,7 +58,7 @@ export function AppPageHeader({
   useLocale();
 
   return (
-    <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-4 backdrop-blur-sm md:px-8">
+    <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-3 backdrop-blur-sm md:px-8">
       <button
         type="button"
         aria-expanded={mobileNavigationOpen}
@@ -82,28 +82,42 @@ export function AppPageHeader({
         </button>
       ) : null}
       <div className="min-w-0 flex-1">
-        <nav
-          aria-label={t("Breadcrumb")}
-          className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
-        >
-          {route.breadcrumbs.map((item, index) => (
-            <span key={`${item.label}-${index}`} className="flex items-center gap-1">
-              {item.to ? (
-                <Link to={item.to} className="motion-hover hover:text-[var(--console-text)]">
-                  {item.label}
-                </Link>
-              ) : (
-                <span className="text-[var(--console-text)]">{item.label}</span>
-              )}
-              {index < route.breadcrumbs.length - 1 ? <span>/</span> : null}
-            </span>
-          ))}
-        </nav>
+        {route.breadcrumbs.length > 1 ? (
+          <nav
+            aria-label={t("Breadcrumb")}
+            className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
+          >
+            {route.breadcrumbs.map((item, index) => (
+              <span
+                key={`${item.label}-${index}`}
+                className={
+                  index === route.breadcrumbs.length - 2
+                    ? "flex min-w-0 items-center gap-1"
+                    : "hidden min-w-0 items-center gap-1 sm:flex"
+                }
+              >
+                {item.to ? (
+                  <Link
+                    to={item.to}
+                    className="truncate motion-hover hover:text-[var(--console-text)]"
+                  >
+                    {item.label}
+                  </Link>
+                ) : (
+                  <span className="text-[var(--console-text)]">{item.label}</span>
+                )}
+                {index < route.breadcrumbs.length - 1 ? <span>/</span> : null}
+              </span>
+            ))}
+          </nav>
+        ) : null}
         <div className="flex items-center gap-2">
-          <span className="console-eyebrow rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5">
-            {route.contextLabel}
-          </span>
-          <h1 className="console-display text-2xl font-semibold text-[var(--console-text)]">
+          {route.contextLabel !== route.title ? (
+            <span className="console-eyebrow hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 sm:inline-flex">
+              {route.contextLabel}
+            </span>
+          ) : null}
+          <h1 className="console-display min-w-0 break-words text-xl font-semibold sm:text-2xl text-[var(--console-text)]">
             {route.title}
           </h1>
         </div>
@@ -112,7 +126,7 @@ export function AppPageHeader({
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {shortcutHintVisible ? (
-            <div className="console-mono inline-flex items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
+            <div className="console-mono hidden items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)] sm:inline-flex">
               <span>{t("Keyboard navigation available")}</span>
               <span className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1">
                 ?
@@ -128,7 +142,7 @@ export function AppPageHeader({
             </div>
           ) : null}
           {sessionBackHintVisible ? (
-            <span className="console-mono inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+            <span className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)] sm:inline-flex">
               {t("Esc back")}
             </span>
           ) : null}

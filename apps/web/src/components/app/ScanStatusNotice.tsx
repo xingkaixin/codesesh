@@ -22,7 +22,7 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
     : null;
   return (
     <>
-      <div className={visible ? "flow-root h-9" : undefined}>
+      <div className={visible && label ? "flow-root" : undefined}>
         {visible && label ? (
           <p
             title={label}

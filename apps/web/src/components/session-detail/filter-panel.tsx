@@ -161,19 +161,13 @@ function ToolGroup({
                 state={state.excluded.has(tool.id) ? "unchecked" : "checked"}
                 onToggle={() => actions.toggleTool(tool.id)}
               />
-              <span className="console-mono min-w-0 flex-1 truncate text-xs text-[var(--console-text)]">
+              <span
+                title={tool.label}
+                className="console-mono min-w-0 flex-1 break-all text-xs text-[var(--console-text)]"
+              >
                 {tool.label}
               </span>
-              <span
-                aria-hidden="true"
-                className="h-1 w-[34px] shrink-0 overflow-hidden rounded-[2px] bg-[var(--console-surface-sunken)]"
-              >
-                <span
-                  className="block h-full rounded-[2px] bg-[var(--brand)]"
-                  style={{ width: `${(tool.count / toc.maxToolCount) * 100}%` }}
-                />
-              </span>
-              <span className="console-mono w-5 shrink-0 text-right text-[10px] text-[var(--console-muted)]">
+              <span className="console-mono min-w-5 shrink-0 text-right text-[10px] text-[var(--console-muted)]">
                 {tool.count}
               </span>
             </div>
@@ -222,7 +216,7 @@ export function SessionFilterAside({
   useLocale();
 
   return (
-    <aside className="console-scrollbar hidden min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:block min-[1025px]:max-h-[calc(100dvh-14rem)] min-[1025px]:overflow-y-auto min-[1025px]:overscroll-contain">
+    <aside className="console-scrollbar hidden min-[1280px]:sticky min-[1280px]:top-4 min-[1280px]:block min-[1280px]:max-h-[calc(100dvh-14rem)] min-[1280px]:overflow-y-auto min-[1280px]:overscroll-contain">
       <div className="space-y-4">
         <SessionFilterPanel {...panelProps} />
         <FileChangeTracker

@@ -284,14 +284,9 @@ function ProjectHeader({ project }: { project: ApiProjectGroup }) {
   useLocale();
 
   return (
-    <Panel className="p-4">
-      <h2 className="console-display text-[19px] font-semibold text-[var(--console-text)]">
-        {project.displayName}
-      </h2>
-      <p className="console-mono mt-1 break-all text-[10.5px] text-[var(--console-muted)]">
-        {project.identityKind}: {project.identityKey}
-      </p>
-    </Panel>
+    <p className="console-mono break-all text-xs text-[var(--console-muted)]">
+      {project.identityKind}: {project.identityKey}
+    </p>
   );
 }
 
@@ -391,15 +386,15 @@ export function ProjectDashboardView({
         rangePreset={rangePreset}
         onRangeChange={onRangeChange}
         onSelectCustom={onSelectCustom}
-      />
-
-      <ProjectTimeline
-        key={`${project.identityKind}:${project.identityKey}:${activeAgent ?? "all"}`}
-        sessions={scopedSessions}
-        projectName={project.displayName}
-        agentCatalog={agentCatalog}
-        onOpenSession={(reference) => navigate(sessionRoutePath(reference))}
-      />
+      >
+        <ProjectTimeline
+          key={`${project.identityKind}:${project.identityKey}:${activeAgent ?? "all"}`}
+          sessions={scopedSessions}
+          projectName={project.displayName}
+          agentCatalog={agentCatalog}
+          onOpenSession={(reference) => navigate(sessionRoutePath(reference))}
+        />
+      </OverviewScreen>
     </div>
   );
 }
