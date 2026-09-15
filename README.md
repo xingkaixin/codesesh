@@ -81,7 +81,7 @@ More agents coming soon. See the [extension checklist](#extending).
 
 <!-- repo-fact:pnpm-version:start -->
 
-- pnpm 12.3.4 for building from source
+- pnpm 12.4.1 for building from source
 
 <!-- repo-fact:pnpm-version:end -->
 
