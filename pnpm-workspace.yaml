@@ -22,6 +22,7 @@ allowBuilds:
   sharp: true
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
+  - "@shadcn/lint@0.1.0"
   - "@vitest/coverage-v8@5.0.0"
   - "@vitest/mocker@5.0.0"
   - "@vitest/spy@5.0.0"

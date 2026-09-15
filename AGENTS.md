@@ -79,6 +79,21 @@ CLI 参数 → LiveScanStore 恢复 SQLite 快照 → Hono HTTP API / SSE
 - `node scripts/release-preflight.mjs`：包版本一致性。
 - `pnpm perf:check`：算法增长率检查。
 
+## Web 设计规则
+
+根目录 `.oxlintrc.json` 的 `overrides` 对 `apps/web/src/**/*.{ts,tsx}` 启用
+`shadcn/no-raw-colors` 和 `shadcn/no-unknown-classes`，检查主题颜色和无效类名。
+组件与主题通过 `apps/web/components.json` 自动发现。运行
+`pnpm --filter @codesesh/web lint` 检查，完整 CI 通过 `pnpm lint` 执行。
+
+- `bg-grid` 是 `apps/web/src/index.css` 中的自定义背景类，不是颜色 token，
+  因此仅在颜色规则中豁免。
+- `session-tree`、`session-message-timeline`、`session-timeline-item` 是现有 DOM
+  标记类，不生成 CSS，因此仅在类名规则中豁免。不要用通配符扩大例外。
+- 暂不启用 `no-restyle`、`no-arbitrary-values`、`no-inline-styles` 和
+  `require-static-classes`：现有组件允许样式组合，图表和虚拟列表需要动态尺寸与定位。
+- Astro 产品站不在这些规则的检查范围内。
+
 ## 扩展新 Agent
 
 1. 在 `packages/core/src/agents/` 新增适配器并导出数据根目录解析器。

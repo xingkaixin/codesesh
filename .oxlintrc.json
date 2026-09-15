@@ -2,6 +2,7 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "react", "import"],
   "jsPlugins": [
+    "@shadcn/lint",
     {
       "name": "anti-slop",
       "specifier": "./tools/oxlint/anti-slop/index.ts"
@@ -41,6 +42,20 @@
       }
     ]
   },
+  "overrides": [
+    {
+      "files": ["apps/web/src/**/*.{ts,tsx}"],
+      "rules": {
+        "shadcn/no-raw-colors": ["error", { "allow": ["bg-grid"] }],
+        "shadcn/no-unknown-classes": [
+          "error",
+          {
+            "allow": ["session-tree", "session-message-timeline", "session-timeline-item"]
+          }
+        ]
+      }
+    }
+  ],
   "env": {
     "builtin": true
   },
