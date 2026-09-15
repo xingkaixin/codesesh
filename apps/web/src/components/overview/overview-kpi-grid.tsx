@@ -48,7 +48,12 @@ function KpiCard({
   useLocale();
 
   return (
-    <Panel className={cn("px-4 py-[14px]", emphasis ? "border-[var(--brand-line)]" : null)}>
+    <Panel
+      className={cn(
+        "min-w-0 px-4 py-[14px] last:col-span-2 md:last:col-span-1",
+        emphasis ? "border-[var(--brand-line)]" : null,
+      )}
+    >
       <p className="console-eyebrow">{label}</p>
       <p
         className={cn(
@@ -58,17 +63,17 @@ function KpiCard({
       >
         {value}
       </p>
-      <div className="mt-[7px] flex items-center gap-[7px]">
+      <div className="mt-[7px] flex items-start gap-[7px]">
         {trend === undefined ? null : (
           <span
             data-testid="overview-kpi-trend"
-            className={cn("console-mono text-[10.5px]", TREND_TONE_CLASS[trendTone])}
+            className={cn("console-mono shrink-0 text-xs", TREND_TONE_CLASS[trendTone])}
           >
             {trend}
           </span>
         )}
         {hint === undefined ? null : (
-          <span className="console-mono truncate text-[10.5px] text-[var(--console-muted)]">
+          <span className="console-mono min-w-0 flex-1 break-words text-xs text-[var(--console-muted)]">
             {hint}
           </span>
         )}

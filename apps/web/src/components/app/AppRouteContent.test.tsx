@@ -243,13 +243,12 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    const heading = await screen.findByRole(
-      "heading",
-      { name: "acme/app" },
+    await screen.findByText(
+      "git_remote: github.com/acme/app",
+      {},
       { timeout: LAZY_SURFACE_TIMEOUT_MS },
     );
-
-    expect(heading.closest("section")?.textContent).not.toContain("claudecode · 1");
+    expect(screen.queryByRole("heading", { name: "acme/app" })).toBeNull();
     expect(screen.getByRole("button", { name: "claudecode · 1" })).toBeTruthy();
   });
 

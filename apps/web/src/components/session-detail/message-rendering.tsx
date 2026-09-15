@@ -14,7 +14,7 @@ import {
 } from "../ui/icons";
 import type { AgentInfo, Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
 import type { SessionHead } from "../../lib/api";
-import { formatMessageTime } from "../../lib/format";
+import { formatMessageDate, formatMessageTime } from "../../lib/format";
 import { getSessionRoutePath } from "../../lib/session-indexes";
 import { buildHighlightPattern } from "../../lib/search-highlight";
 import { AgentIcon } from "../AgentIcon";
@@ -83,6 +83,7 @@ function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuer
 
 export const MessageItem = memo(function MessageItem({
   messageIndex,
+  previousMessageTime,
   msg,
   blocks,
   formatTokens: fmtTokens,
@@ -93,6 +94,7 @@ export const MessageItem = memo(function MessageItem({
   childSessionById,
 }: {
   messageIndex: number;
+  previousMessageTime?: Message["time_created"];
   msg: Message;
   blocks: MessageBlock[];
   formatTokens: (n: number) => string;
@@ -132,128 +134,139 @@ export const MessageItem = memo(function MessageItem({
   const modelLabel = msg.model || null;
   const roleLabel = getAssistantDisplayLabel(msg);
   const time = formatMessageTime(msg.time_created);
+  const date = formatMessageDate(msg.time_created);
+  const startsDay = date !== null && date !== formatMessageDate(previousMessageTime);
   const childSession = msg.subagent_id ? childSessionById?.get(msg.subagent_id) : undefined;
 
   return (
-    <article
-      ref={messageAnchorRef}
-      id={messageAnchorId}
-      className="w-full scroll-mt-20 border-l-2 border-[var(--console-thread)] pl-4 pr-3 md:pr-5"
-    >
-      <div className="flex gap-4">
-        <div className="shrink-0 pt-1">
-          <div className="flex size-8 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
-            {isUser ? (
-              <UserRound className="size-4 text-[var(--console-muted)]" />
-            ) : (
-              getAgentAvatar()
-            )}
+    <div>
+      {startsDay ? (
+        <p className="console-mono mb-4 border-b border-[var(--console-border)] pb-2 text-xs font-medium text-[var(--console-muted)]">
+          {date}
+        </p>
+      ) : null}
+      <article
+        ref={messageAnchorRef}
+        id={messageAnchorId}
+        className="w-full scroll-mt-20 border-l-2 border-[var(--console-thread)] pl-4 pr-3 md:pr-5"
+      >
+        <div className="flex gap-4">
+          <div className="shrink-0 pt-1">
+            <div className="flex size-8 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
+              {isUser ? (
+                <UserRound className="size-4 text-[var(--console-muted)]" />
+              ) : (
+                getAgentAvatar()
+              )}
+            </div>
           </div>
-        </div>
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex items-baseline gap-3">
-            <span className="console-mono text-sm font-bold tracking-wide text-[var(--console-text)]">
-              {roleLabel}
-            </span>
-            {time ? (
-              <time className="console-mono text-xs text-[var(--console-muted)]">{time}</time>
-            ) : null}
-            {modeLabel && (
-              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                {modeLabel}
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="console-mono text-sm font-bold tracking-wide text-[var(--console-text)]">
+                {roleLabel}
               </span>
-            )}
-            {modelLabel && (
-              <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                {modelLabel}
-              </span>
-            )}
-            {childSession ? (
-              <Link
-                to={getSessionRoutePath(childSession)}
-                className="console-mono rounded-full border border-[var(--brand-line)] px-1.5 py-0.5 text-[10px] text-[var(--brand)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-hover)]"
-              >
-                {t("Open sub-session ↗")}
-              </Link>
-            ) : null}
-          </div>
-
-          {isAbortMessage ? (
-            <AbortToolItem />
-          ) : (
-            blocks.map((block, index) => {
-              const timelineAnchorId = buildBlockTimelineAnchorId(messageIndex, index);
-              if (block.type === "reasoning") {
-                return (
-                  <ReasoningSection
-                    key={index}
-                    anchorId={timelineAnchorId}
-                    parts={block.parts}
-                    highlightQuery={highlightQuery}
-                  />
-                );
-              }
-              if (block.type === "plan") {
-                return (
-                  <PlansSection
-                    key={index}
-                    anchorId={timelineAnchorId}
-                    parts={block.parts}
-                    highlightQuery={highlightQuery}
-                  />
-                );
-              }
-              if (block.type === "tool") {
-                return (
-                  <ToolsSection
-                    key={index}
-                    parts={block.parts}
-                    anchorIds={block.anchorIds}
-                    sessionAgentKey={sessionAgentKey}
-                    baseDirectory={baseDirectory}
-                    highlightQuery={highlightQuery}
-                  />
-                );
-              }
-              return (
-                <MessageTextSection
-                  key={index}
-                  anchorId={timelineAnchorId}
-                  parts={block.parts}
-                  highlightQuery={highlightQuery}
-                />
-              );
-            })
-          )}
-
-          {!isUser && (msg.tokens || msg.cost) && (
-            <div className="flex flex-wrap gap-2">
-              {msg.tokens?.input ? (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  {t("INPUT")} {fmtTokens(msg.tokens.input)}
-                </span>
+              {time ? (
+                <time className="console-mono whitespace-nowrap text-xs text-[var(--console-muted)]">
+                  {time}
+                </time>
               ) : null}
-              {msg.tokens?.output ? (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  {t("OUTPUT")} {fmtTokens(msg.tokens.output)}
+              {modeLabel && (
+                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
+                  {modeLabel}
                 </span>
-              ) : null}
-              {msg.tokens?.reasoning ? (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  {t("REASONING")} {fmtTokens(msg.tokens.reasoning)}
+              )}
+              {modelLabel && (
+                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
+                  {modelLabel}
                 </span>
-              ) : null}
-              {msg.cost ? (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                  {msg.cost_source === "estimated" ? t("EST COST") : t("COST")} $
-                  {msg.cost.toFixed(4)}
-                </span>
+              )}
+              {childSession ? (
+                <Link
+                  to={getSessionRoutePath(childSession)}
+                  className="console-mono rounded-full border border-[var(--brand-line)] px-1.5 py-0.5 text-[10px] text-[var(--brand)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-hover)]"
+                >
+                  {t("Open sub-session ↗")}
+                </Link>
               ) : null}
             </div>
-          )}
+
+            {isAbortMessage ? (
+              <AbortToolItem />
+            ) : (
+              blocks.map((block, index) => {
+                const timelineAnchorId = buildBlockTimelineAnchorId(messageIndex, index);
+                if (block.type === "reasoning") {
+                  return (
+                    <ReasoningSection
+                      key={index}
+                      anchorId={timelineAnchorId}
+                      parts={block.parts}
+                      highlightQuery={highlightQuery}
+                    />
+                  );
+                }
+                if (block.type === "plan") {
+                  return (
+                    <PlansSection
+                      key={index}
+                      anchorId={timelineAnchorId}
+                      parts={block.parts}
+                      highlightQuery={highlightQuery}
+                    />
+                  );
+                }
+                if (block.type === "tool") {
+                  return (
+                    <ToolsSection
+                      key={index}
+                      parts={block.parts}
+                      anchorIds={block.anchorIds}
+                      sessionAgentKey={sessionAgentKey}
+                      baseDirectory={baseDirectory}
+                      highlightQuery={highlightQuery}
+                    />
+                  );
+                }
+                return (
+                  <MessageTextSection
+                    key={index}
+                    anchorId={timelineAnchorId}
+                    parts={block.parts}
+                    highlightQuery={highlightQuery}
+                  />
+                );
+              })
+            )}
+
+            {!isUser && (msg.tokens || msg.cost) && (
+              <div className="flex flex-wrap gap-2">
+                {msg.tokens?.input ? (
+                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+                    {t("INPUT")} {fmtTokens(msg.tokens.input)}
+                  </span>
+                ) : null}
+                {msg.tokens?.output ? (
+                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+                    {t("OUTPUT")} {fmtTokens(msg.tokens.output)}
+                  </span>
+                ) : null}
+                {msg.tokens?.reasoning ? (
+                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+                    {t("REASONING")} {fmtTokens(msg.tokens.reasoning)}
+                  </span>
+                ) : null}
+                {msg.cost ? (
+                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
+                    {msg.cost_source === "estimated" ? t("EST COST") : t("COST")} $
+                    {msg.cost.toFixed(4)}
+                  </span>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </article>
+      </article>
+    </div>
   );
 });
 
@@ -548,20 +561,13 @@ const ToolItem = memo(function ToolItem({
           {strategy.expandable ? (
             <button
               type="button"
-              className="flex w-full items-center gap-2.5 text-left active:scale-[0.995] motion-reduce:transform-none"
+              className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 gap-y-1 text-left active:scale-[0.995] motion-reduce:transform-none"
               onClick={() => setExpanded(!expanded)}
               aria-expanded={expanded}
             >
               <ToolIcon className="size-4 shrink-0 text-[var(--console-accent)]" />
-              <span className="min-w-0 flex-1">
-                <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {strategy.title}
-                </span>
-                {strategy.secondaryText ? (
-                  <span className="console-mono mt-0.5 block whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                    {renderHighlightedText(strategy.secondaryText, highlightQuery)}
-                  </span>
-                ) : null}
+              <span className="console-mono min-w-0 break-words text-xs font-semibold text-[var(--console-text)]">
+                {strategy.title}
               </span>
               <span
                 className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
@@ -577,19 +583,17 @@ const ToolItem = memo(function ToolItem({
                   data-open={expanded || undefined}
                 />
               </span>
+              {strategy.secondaryText ? (
+                <span className="console-mono col-span-full row-start-2 min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
+                  {renderHighlightedText(strategy.secondaryText, highlightQuery)}
+                </span>
+              ) : null}
             </button>
           ) : (
-            <div className="flex items-center gap-2.5">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1">
               <ToolIcon className="size-4 shrink-0 text-[var(--console-accent)]" />
-              <span className="min-w-0 flex-1">
-                <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {strategy.title}
-                </span>
-                {strategy.secondaryText ? (
-                  <span className="console-mono mt-0.5 block whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                    {renderHighlightedText(strategy.secondaryText, highlightQuery)}
-                  </span>
-                ) : null}
+              <span className="console-mono min-w-0 break-words text-xs font-semibold text-[var(--console-text)]">
+                {strategy.title}
               </span>
               <span
                 className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
@@ -597,6 +601,11 @@ const ToolItem = memo(function ToolItem({
                 <StatusIcon className="size-2.5" />
                 {t(statusMeta.label)}
               </span>
+              {strategy.secondaryText ? (
+                <span className="console-mono col-span-full row-start-2 min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
+                  {renderHighlightedText(strategy.secondaryText, highlightQuery)}
+                </span>
+              ) : null}
             </div>
           )}
         </div>

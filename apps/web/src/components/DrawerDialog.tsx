@@ -9,6 +9,10 @@ const VARIANT_STYLES = {
     backdrop: "z-[60] hidden bg-[var(--scrim)] min-[1025px]:block",
     popup: "z-[61] hidden w-[min(92vw,430px)] p-4 min-[1025px]:block",
   },
+  filters: {
+    backdrop: "z-50 bg-[var(--scrim)] min-[1280px]:hidden",
+    popup: "console-scrollbar z-[51] w-[min(90vw,380px)] overflow-y-auto p-3 min-[1280px]:hidden",
+  },
   mobile: {
     backdrop: "z-50 bg-[var(--scrim)] min-[1025px]:hidden",
     popup: "console-scrollbar z-[51] w-[min(90vw,380px)] overflow-y-auto p-3 min-[1025px]:hidden",

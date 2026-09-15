@@ -27,6 +27,35 @@ afterEach(() => {
 });
 
 describe("MessageItem", () => {
+  it("separates days using the preceding visible message", () => {
+    const msg: Message = {
+      id: "dated",
+      role: "user",
+      time_created: new Date(2026, 8, 15, 12).getTime(),
+      parts: [],
+    };
+    const viewFor = (previousMessageTime?: number) => (
+      <MemoryRouter>
+        <MessageItem
+          messageIndex={2}
+          msg={msg}
+          previousMessageTime={previousMessageTime}
+          blocks={[]}
+          formatTokens={String}
+          sessionAgentKey="codex"
+          baseDirectory="/repo"
+        />
+      </MemoryRouter>
+    );
+    const view = render(viewFor());
+    const date = view.container.querySelector("p")?.textContent;
+    expect(date).toBeTruthy();
+    view.rerender(viewFor(new Date(2026, 8, 15, 10).getTime()));
+    expect(view.queryByText(date!)).toBeNull();
+    view.rerender(viewFor(new Date(2026, 8, 14, 12).getTime()));
+    expect(view.getByText(date!)).toBeTruthy();
+  });
+
   it("CS-258: matches Markdown highlighting for the same query", () => {
     const text = "The quick brown fox";
     const highlightQuery = '"quick brown" OR fox';

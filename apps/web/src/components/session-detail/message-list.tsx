@@ -83,10 +83,11 @@ export function MessageList({
   return (
     <TimelineAnchorRegistryProvider registry={anchorRegistry}>
       <div className="flex min-w-0 flex-col gap-8">
-        {messages.map(({ msg, blocks, index }) => (
+        {messages.map(({ msg, blocks, index }, position) => (
           <MessageItem
             key={`${msg.id}:${index}`}
             messageIndex={index}
+            previousMessageTime={messages[position - 1]?.msg.time_created}
             msg={msg}
             blocks={blocks}
             formatTokens={formatTokens}
@@ -337,6 +338,7 @@ function VirtualizedMessageList({
             >
               <MessageItem
                 messageIndex={item.index}
+                previousMessageTime={messages[index - 1]?.msg.time_created}
                 msg={item.msg}
                 blocks={item.blocks}
                 formatTokens={formatTokens}

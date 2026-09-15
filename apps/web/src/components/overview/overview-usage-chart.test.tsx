@@ -50,6 +50,12 @@ describe("OverviewUsageChart", () => {
     expect(screen.getByText("Peak $2.50 · Avg $2.00 · Total $4.00")).toBeTruthy();
   });
 
+  it("keeps sub-cent spending distinct from zero", () => {
+    render(<OverviewUsageChart daily={[{ ...daily[0]!, cost: 0.00069 }]} />);
+    expect(screen.getByText("Peak <$0.01 · Avg <$0.01 · Total <$0.01")).toBeTruthy();
+    expect(screen.getAllByText("$0.00069").length).toBeGreaterThan(0);
+  });
+
   it("drops the cost area when nothing was spent", () => {
     render(<OverviewUsageChart daily={daily.map((bucket) => ({ ...bucket, cost: 0 }))} />);
 

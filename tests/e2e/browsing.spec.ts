@@ -106,7 +106,7 @@ test("searches indexed messages and opens a result", async ({ page }) => {
   await page.getByRole("button", { name: "Search" }).click();
   const searchHeading = page.getByRole("heading", { level: 1, name: "Search" });
   await expect(searchHeading).toBeVisible();
-  await expect(searchHeading.locator("..").locator("span")).toHaveText("Search");
+  await expect(searchHeading.locator("..").locator("span")).toHaveCount(0);
 
   const searchResult = page
     .getByRole("link")

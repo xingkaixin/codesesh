@@ -109,7 +109,7 @@ export function DeferredInteractiveReceipt({
 const AUX_BUTTON_CLASS =
   "console-mono motion-hover inline-flex h-9 items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 text-xs font-semibold tracking-[0.12em] text-[var(--console-text)] uppercase shadow-[var(--shadow-raised)] hover:bg-[var(--console-surface-muted)]";
 
-/** Below 1025px the filter chips collapse into this row: one button that opens
+/** Below 1280px the filter chips collapse into this row: one button that opens
  *  the aside in a drawer, labelled with the number of active tool chips. */
 export function SessionDetailAuxControls({
   toc,
@@ -128,7 +128,7 @@ export function SessionDetailAuxControls({
   const chipCount = countActiveFilterChips(toc, state);
 
   return (
-    <div className="flex flex-wrap gap-2 min-[1025px]:hidden">
+    <div className="flex flex-wrap gap-2 min-[1280px]:hidden">
       <button type="button" onClick={() => onOpen("toc")} className={AUX_BUTTON_CLASS}>
         <Funnel className="size-3.5 text-[var(--brand)]" />
         {chipCount > 0 ? t("{0} filters", [chipCount]) : t("Content filters")}
@@ -161,7 +161,7 @@ export function SessionDetailAuxOverlay({
 
   useEffect(() => {
     if (!openPanel) return;
-    const desktopQuery = window.matchMedia("(min-width: 1025px)");
+    const desktopQuery = window.matchMedia("(min-width: 1280px)");
     const closeOnDesktop = () => {
       if (desktopQuery.matches) onClose();
     };
@@ -179,7 +179,7 @@ export function SessionDetailAuxOverlay({
         if (!open) onClose();
       }}
       title={openPanel === "files" ? t("File Tracker") : t("Content filters")}
-      variant="mobile"
+      variant="filters"
     >
       {openPanel ? (
         openPanel === "toc" ? (

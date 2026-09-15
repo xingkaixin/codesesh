@@ -13,7 +13,7 @@ import { t } from "../../i18n/translate";
  * The time window is NOT owned here — the range pills report upwards so the
  * app's time-window controller stays the single source of truth.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { AgentCatalog } from "../../lib/agents";
 import type { AppConfig, DashboardFilters } from "../../lib/api";
@@ -38,7 +38,9 @@ export function OverviewScreen({
   rangePreset,
   onRangeChange,
   onSelectCustom,
+  children,
 }: {
+  children?: ReactNode;
   project?: DashboardFilters["project"];
   agent?: string;
   onAgentChange?: (agent?: string) => void;
@@ -79,6 +81,7 @@ export function OverviewScreen({
       {dashboard ? (
         <>
           <OverviewKpiGrid totals={dashboard.totals} rangeDays={dashboard.window.days} />
+          {children}
           <OverviewModelTokens
             models={dashboard.modelDistribution}
             totalTokens={dashboard.totals.tokens}
@@ -97,6 +100,7 @@ export function OverviewScreen({
       ) : error ? null : (
         <OverviewSkeleton />
       )}
+      {!dashboard ? children : null}
     </div>
   );
 }

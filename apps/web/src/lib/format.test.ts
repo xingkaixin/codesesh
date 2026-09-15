@@ -188,8 +188,10 @@ describe("formatUsd", () => {
     expect(formatUsd(12345.6)).toBe("$12,345.60");
   });
 
-  it("rounds sub-cent values to two decimals", () => {
-    expect(formatUsd(0.004)).toBe("$0.00");
+  it("distinguishes positive sub-cent values from zero", () => {
+    expect(formatUsd(0.004)).toBe("<$0.01");
+    expect(formatUsd(0.000001)).toBe("<$0.01");
+    expect(formatUsd(0.01)).toBe("$0.01");
   });
 });
 

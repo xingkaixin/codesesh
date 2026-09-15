@@ -203,7 +203,7 @@ export function SessionDetail({
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
-      <div className="grid gap-6 min-[1025px]:grid-cols-[288px_minmax(0,1fr)] min-[1025px]:items-start">
+      <div className="grid gap-6 min-[1280px]:grid-cols-[288px_minmax(0,1fr)] min-[1280px]:items-start">
         <SessionDetailAuxControls
           toc={toc}
           state={filterState}

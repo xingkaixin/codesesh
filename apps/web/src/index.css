@@ -545,12 +545,12 @@
     background-image:
       linear-gradient(
         to right,
-        color-mix(in oklab, var(--console-text) 5%, transparent) 1px,
+        color-mix(in oklab, var(--console-text) 2%, transparent) 1px,
         transparent 1px
       ),
       linear-gradient(
         to bottom,
-        color-mix(in oklab, var(--console-text) 5%, transparent) 1px,
+        color-mix(in oklab, var(--console-text) 2%, transparent) 1px,
         transparent 1px
       );
   }

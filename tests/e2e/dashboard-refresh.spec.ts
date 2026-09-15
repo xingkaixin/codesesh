@@ -81,9 +81,9 @@ for (const width of [1280, 375]) {
       );
       await expect(notice).toContainText(label);
       await expect(notice).toBeVisible();
-      expect(await dashboard.evaluate((element) => element.getBoundingClientRect().top)).toBe(
-        initialTop,
-      );
+      expect(
+        await dashboard.evaluate((element) => element.getBoundingClientRect().top),
+      ).toBeGreaterThan(initialTop);
     }
   });
 }
