@@ -80,7 +80,7 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 
 <!-- repo-fact:pnpm-version:start -->
 
-- 源码构建需要 pnpm 12.3.4
+- 源码构建需要 pnpm 12.4.1
 
 <!-- repo-fact:pnpm-version:end -->
 
