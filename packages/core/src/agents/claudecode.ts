@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, basename, dirname } from "node:path";
+import { join, basename, dirname, isAbsolute, relative, sep } from "node:path";
 import { getAgentCatalogEntry } from "../contract/agent-catalog.js";
 import { SingleFileSessionSource, filteredSession, parsedSession, skippedSession } from "./base.js";
 import type { ParseSessionResult } from "./base.js";
@@ -107,6 +107,18 @@ export class ClaudeCodeAgent extends SingleFileSessionSource<SessionMeta> {
       }
     }
     return false;
+  }
+
+  override filterCachedSessions(sessions: SessionHead[]): SessionHead[] {
+    const basePath = this.basePath ?? this.findBasePath();
+    if (!basePath) return sessions;
+
+    return sessions.filter((session) => {
+      const sourcePath = this.sessionMetaMap.get(session.reference.sessionId)?.sourcePath;
+      if (!sourcePath) return true;
+      const path = relative(basePath, sourcePath);
+      return path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+    });
   }
 
   listSessionSources(options?: AgentScanOptions): SessionSourceRef[] {
