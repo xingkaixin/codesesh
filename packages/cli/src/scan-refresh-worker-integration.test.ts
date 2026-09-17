@@ -185,7 +185,7 @@ async function runWorker() {
   await import("./scan-refresh-worker.js");
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   mocks.workerMessageHandler = undefined;
@@ -195,6 +195,8 @@ beforeEach(() => {
     return { sessions };
   });
   setWorkerData();
+  await import("./diagnostics-bridge.js");
+  await import("@codesesh/core/runtime/agents");
 });
 
 describe("scan refresh worker entry", () => {
