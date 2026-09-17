@@ -75,6 +75,48 @@ afterEach(() => {
 });
 
 describe("ClaudeCodeAgent cache refresh", () => {
+  it.each(["refresh", "reload"] as const)(
+    "removes cached sources outside the active Claude root during %s",
+    (kind) => {
+      const directory = mkdtempSync(join(tmpdir(), "codesesh-claude-root-change-"));
+      tempDirs.push(directory);
+      const previousRoot = join(directory, "projects-old");
+      const currentRoot = join(directory, "projects");
+      const previousFile = join(previousRoot, "project", "old-session.jsonl");
+      const currentFile = join(currentRoot, "project", "current-session.jsonl");
+      mkdirSync(join(previousRoot, "project"), { recursive: true });
+      mkdirSync(join(currentRoot, "project"), { recursive: true });
+      writeMinimalClaudeSession(previousFile);
+      writeMinimalClaudeSession(currentFile);
+      const previousAgent = new ClaudeCodeAgent({ sourceRoot: previousRoot });
+      const currentAgent = new ClaudeCodeAgent({ sourceRoot: currentRoot });
+      const previousSessions = previousAgent.scan();
+      const currentSessions = currentAgent.scan();
+
+      const refreshed = currentAgent.sessionSourceAccess.synchronize(
+        {
+          sessions: [...previousSessions, ...currentSessions],
+          meta: {
+            ...previousAgent.snapshotSessionCacheMeta(),
+            ...currentAgent.snapshotSessionCacheMeta(),
+          },
+        },
+        { kind },
+      );
+
+      expect(refreshed.sessions).toEqual(currentSessions);
+      expect(refreshed.explicitRemovedSessionIds).toEqual(["old-session"]);
+      expect(Object.keys(refreshed.meta)).toEqual(["current-session"]);
+      expect(refreshed.sourceFailures).toEqual([]);
+      expect(refreshed.completeness).toBe("complete");
+      expect(statSync(previousFile).isFile()).toBe(true);
+
+      const repeated = currentAgent.sessionSourceAccess.synchronize(refreshed, { kind: "refresh" });
+      expect(repeated.detectedSessionIds).toEqual([]);
+      expect(repeated.sourceFailures).toEqual([]);
+    },
+  );
+
   it("rebuilds heads and invalidates details with outdated parent references", () => {
     const basePath = mkdtempSync(join(tmpdir(), "codesesh-claude-parser-"));
     tempDirs.push(basePath);
