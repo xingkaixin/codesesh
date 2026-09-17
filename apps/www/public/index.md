@@ -65,6 +65,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - OpenCode
 - ZCode
 - DSH
+- DeepChat
 <!-- repo-fact:agents:end -->
 
 ## Data Boundary

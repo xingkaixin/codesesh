@@ -58,7 +58,7 @@ CLI Entry (packages/cli/src/index.ts --json)
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi
-- SQLite: OpenCode · Cursor · ZCode
+- SQLite: OpenCode · Cursor · ZCode · DeepChat
 <!-- repo-fact:agent-source-kinds:end -->
 
 SQLite 存储在 `~/.cache/codesesh/codesesh.db`，包含 session heads、materialized details

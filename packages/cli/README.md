@@ -56,8 +56,14 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 | OpenCode    | ✅ Supported |
 | ZCode       | ✅ Supported |
 | DSH         | ✅ Supported |
+| DeepChat    | ✅ Supported |
 
 <!-- repo-fact:agents:end -->
+
+DeepChat supports the current unencrypted `app_db/agent.db`, including native and ACP sessions.
+Set `DEEPCHAT_USER_DATA_DIR` to override its user data directory. Legacy `chat.db`,
+SQLCipher-encrypted databases, and resume commands are not supported. ACP sessions are counted
+under DeepChat; records also discovered from an external agent are not deduplicated.
 
 ## Usage
 

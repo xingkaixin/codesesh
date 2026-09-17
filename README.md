@@ -61,8 +61,14 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 | OpenCode    | Supported |
 | ZCode       | Supported |
 | DSH         | Supported |
+| DeepChat    | Supported |
 
 <!-- repo-fact:agents:end -->
+
+DeepChat supports the current unencrypted `app_db/agent.db`, including native and ACP sessions.
+Set `DEEPCHAT_USER_DATA_DIR` to override its user data directory. Legacy `chat.db`,
+SQLCipher-encrypted databases, and resume commands are not supported. ACP sessions are counted
+under DeepChat; records also discovered from an external agent are not deduplicated.
 
 More agents coming soon. See the [extension checklist](#extending).
 

@@ -80,6 +80,7 @@ CodeSesh currently supports these AI coding agents:
 - OpenCode
 - ZCode
 - DSH
+- DeepChat
 <!-- repo-fact:agents:end -->
 
 Each supported agent has an adapter in the core package. Adding support for another agent follows the same adapter pattern.

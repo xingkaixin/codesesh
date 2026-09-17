@@ -61,8 +61,14 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | OpenCode    | 已支持 |
 | ZCode       | 已支持 |
 | DSH         | 已支持 |
+| DeepChat    | 已支持 |
 
 <!-- repo-fact:agents:end -->
+
+DeepChat 支持新版未加密的 `app_db/agent.db`，包含原生及 ACP 会话。
+可通过 `DEEPCHAT_USER_DATA_DIR` 指定用户数据目录。
+旧版 `chat.db`、SQLCipher 加密库和恢复会话命令暂不支持。
+ACP 会话按 DeepChat 来源统计，不与外部 Agent 的原始记录自动去重。
 
 更多 Agent 持续接入中。参见[扩展清单](#扩展新-agent)。
 
