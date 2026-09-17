@@ -62,6 +62,7 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | ZCode       | 已支持 |
 | DSH         | 已支持 |
 | DeepChat    | 已支持 |
+| Cherry Studio | 已支持 |
 
 <!-- repo-fact:agents:end -->
 
@@ -69,6 +70,13 @@ DeepChat 支持新版未加密的 `app_db/agent.db`，包含原生及 ACP 会话
 可通过 `DEEPCHAT_USER_DATA_DIR` 指定用户数据目录。
 旧版 `chat.db`、SQLCipher 加密库和恢复会话命令暂不支持。
 ACP 会话按 DeepChat 来源统计，不与外部 Agent 的原始记录自动去重。
+
+Cherry Studio 支持 2.x 的 `Data/cherrystudio.sqlite`，包含 Agent 会话（Claude Code、Pi、DSH）
+和普通助手聊天的当前分支。聊天消息及用量按当前分支统计，不包含其他候选回复。
+普通聊天按用户数据目录分组，Agent 会话保留工作目录。自定义或便携版数据目录可通过
+`CHERRYSTUDIO_USER_DATA_DIR` 指定。用量读取 Cherry 已汇总的消息统计，避免重复累计。
+美元费用保留原值；其他币种在有模型定价时估算美元费用。旧版 1.x 的 `agents.db`、
+独立子 Agent 会话树及恢复会话命令暂不支持。会话统一归属 Cherry Studio，不跨 Agent 去重。
 
 更多 Agent 持续接入中。参见[扩展清单](#扩展新-agent)。
 

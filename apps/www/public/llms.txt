@@ -33,6 +33,7 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 - ZCode
 - DSH
 - DeepChat
+- Cherry Studio
 <!-- repo-fact:agents:end -->
 
 ## Core Capabilities

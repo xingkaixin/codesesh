@@ -66,6 +66,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - ZCode
 - DSH
 - DeepChat
+- Cherry Studio
 <!-- repo-fact:agents:end -->
 
 ## Data Boundary

@@ -62,6 +62,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 | ZCode       | Supported |
 | DSH         | Supported |
 | DeepChat    | Supported |
+| Cherry Studio | Supported |
 
 <!-- repo-fact:agents:end -->
 
@@ -69,6 +70,15 @@ DeepChat supports the current unencrypted `app_db/agent.db`, including native an
 Set `DEEPCHAT_USER_DATA_DIR` to override its user data directory. Legacy `chat.db`,
 SQLCipher-encrypted databases, and resume commands are not supported. ACP sessions are counted
 under DeepChat; records also discovered from an external agent are not deduplicated.
+
+Cherry Studio supports 2.x `Data/cherrystudio.sqlite`: Agent sessions (Claude Code, Pi, DSH)
+and the selected branch of assistant chats. Chat messages and usage follow that branch;
+alternative replies are excluded. Chats are grouped under the user data directory, while Agent
+sessions retain their workspace. Set `CHERRYSTUDIO_USER_DATA_DIR` for custom or portable data
+directories. Message usage is counted once from Cherry's stored statistics. USD costs are
+preserved; other currencies use USD model estimates when pricing is available. Legacy 1.x
+`agents.db`, independent subagent session trees, and resume commands are not supported.
+Sessions are attributed to Cherry Studio without cross-agent deduplication.
 
 More agents coming soon. See the [extension checklist](#extending).
 
