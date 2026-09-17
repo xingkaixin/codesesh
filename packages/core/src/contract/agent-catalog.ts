@@ -97,6 +97,15 @@ export const AGENT_CATALOG = [
     resumeCommandPrefix: null,
     toolStrategy: "custom",
   },
+  {
+    name: "deepchat",
+    displayName: "DeepChat",
+    icon: "/icon/agent/deepchat.svg",
+    iconColored: true,
+    sourceKind: "sqlite",
+    resumeCommandPrefix: null,
+    toolStrategy: "default",
+  },
 ] as const satisfies readonly AgentCatalogEntry[];
 
 export type AgentName = (typeof AGENT_CATALOG)[number]["name"];

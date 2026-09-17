@@ -14,6 +14,7 @@ import { PiAgent, resolvePiDataRoot } from "./pi.js";
 import { ZCodeAgent, resolveZCodeDataRoot } from "./zcode.js";
 import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
 import { DshAgent, resolveDshDataRoot } from "./dsh.js";
+import { DeepChatAgent, resolveDeepChatDataRoot } from "./deepchat.js";
 
 export interface AgentRegistration extends AgentCatalogEntry {
   create: () => BaseAgent;
@@ -62,6 +63,10 @@ const RUNTIME_REGISTRATIONS = {
   dsh: {
     create: () => new DshAgent(),
     resolveDataRoot: resolveDshDataRoot,
+  },
+  deepchat: {
+    create: () => new DeepChatAgent(),
+    resolveDataRoot: resolveDeepChatDataRoot,
   },
 } satisfies Record<AgentName, AgentRuntimeRegistration>;
 

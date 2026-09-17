@@ -5,6 +5,7 @@ import { createRegisteredAgents, resolveAgentRoots } from "../registry.js";
 import { ClaudeCodeAgent } from "../claudecode.js";
 import { CodexAgent } from "../codex.js";
 import { DshAgent } from "../dsh.js";
+import { DeepChatAgent } from "../deepchat.js";
 import { GrokAgent } from "../grok.js";
 import { KimiAgent } from "../kimi.js";
 import { KimiCodeAgent } from "../kimi-code.js";
@@ -19,6 +20,11 @@ describe("registered agent session watch plans", () => {
     const root = "/tmp/custom-agent-root";
     const sourceRoot = join(root, "sessions");
     const watchRoot = dirname(sourceRoot);
+
+    expect(new DeepChatAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
+      status: "supported",
+      targets: [{ root: sourceRoot, path: join(sourceRoot, "app_db", "agent.db") }],
+    });
 
     expect(new CodexAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
       status: "supported",
@@ -56,6 +62,7 @@ describe("registered agent session watch plans", () => {
       "claudecode",
       "codex",
       "cursor",
+      "deepchat",
       "dsh",
       "grok",
       "kimi",

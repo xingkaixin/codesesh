@@ -43,6 +43,8 @@ beforeEach(() => {
   vi.stubEnv("XDG_DATA_HOME", undefined);
   vi.stubEnv("LOCALAPPDATA", undefined);
   vi.stubEnv("APPDATA", undefined);
+  vi.stubEnv("DEEPCHAT_USER_DATA_DIR", undefined);
+  vi.stubEnv("XDG_CONFIG_HOME", undefined);
 });
 
 afterEach(() => {
@@ -60,6 +62,7 @@ describe("resolveAgentRoots", () => {
     expectPath(roots.pi!).toBe("/home/user/.pi");
     expectPath(roots.grok!).toBe("/home/user/.grok");
     expectPath(roots.zcode!).toBe("/home/user/.zcode");
+    expectPath(roots.deepchat!).toBe("/home/user/Library/Application Support/DeepChat");
   });
 
   it("respects CODEX_HOME override", () => {
@@ -123,6 +126,26 @@ describe("resolveAgentRoots", () => {
     vi.stubEnv("XDG_DATA_HOME", "/custom/data");
     const roots = resolveAgentRoots();
     expectPath(roots.opencode!).toBe("/custom/data/opencode");
+  });
+});
+
+describe("DeepChat data root", () => {
+  it("supports custom user data directories", () => {
+    mockedHomedir.mockReturnValue("/home/user");
+    vi.stubEnv("DEEPCHAT_USER_DATA_DIR", "~/deepchat-test");
+    expectPath(resolveAgentRoots().deepchat!).toBe("/home/user/deepchat-test");
+  });
+
+  it("uses the Linux config home", () => {
+    mockedPlatform.mockReturnValue("linux");
+    vi.stubEnv("XDG_CONFIG_HOME", "/custom/config");
+    expectPath(resolveAgentRoots().deepchat!).toBe("/custom/config/DeepChat");
+  });
+
+  it("uses Windows roaming app data", () => {
+    mockedPlatform.mockReturnValue("win32");
+    vi.stubEnv("APPDATA", "/custom/roaming");
+    expectPath(resolveAgentRoots().deepchat!).toBe("/custom/roaming/DeepChat");
   });
 });
 
