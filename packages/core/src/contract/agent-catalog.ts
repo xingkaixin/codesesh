@@ -106,6 +106,15 @@ export const AGENT_CATALOG = [
     resumeCommandPrefix: null,
     toolStrategy: "default",
   },
+  {
+    name: "cherrystudio",
+    displayName: "Cherry Studio",
+    icon: "/icon/agent/cherrystudio.svg",
+    iconColored: true,
+    sourceKind: "sqlite",
+    resumeCommandPrefix: null,
+    toolStrategy: "default",
+  },
 ] as const satisfies readonly AgentCatalogEntry[];
 
 export type AgentName = (typeof AGENT_CATALOG)[number]["name"];

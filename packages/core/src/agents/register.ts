@@ -15,6 +15,7 @@ import { ZCodeAgent, resolveZCodeDataRoot } from "./zcode.js";
 import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
 import { DshAgent, resolveDshDataRoot } from "./dsh.js";
 import { DeepChatAgent, resolveDeepChatDataRoot } from "./deepchat.js";
+import { CherryStudioAgent, resolveCherryStudioDataRoot } from "./cherrystudio.js";
 
 export interface AgentRegistration extends AgentCatalogEntry {
   create: () => BaseAgent;
@@ -67,6 +68,10 @@ const RUNTIME_REGISTRATIONS = {
   deepchat: {
     create: () => new DeepChatAgent(),
     resolveDataRoot: resolveDeepChatDataRoot,
+  },
+  cherrystudio: {
+    create: () => new CherryStudioAgent(),
+    resolveDataRoot: resolveCherryStudioDataRoot,
   },
 } satisfies Record<AgentName, AgentRuntimeRegistration>;
 

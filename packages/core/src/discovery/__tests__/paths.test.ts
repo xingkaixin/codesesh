@@ -44,6 +44,7 @@ beforeEach(() => {
   vi.stubEnv("LOCALAPPDATA", undefined);
   vi.stubEnv("APPDATA", undefined);
   vi.stubEnv("DEEPCHAT_USER_DATA_DIR", undefined);
+  vi.stubEnv("CHERRYSTUDIO_USER_DATA_DIR", undefined);
   vi.stubEnv("XDG_CONFIG_HOME", undefined);
 });
 
@@ -63,6 +64,7 @@ describe("resolveAgentRoots", () => {
     expectPath(roots.grok!).toBe("/home/user/.grok");
     expectPath(roots.zcode!).toBe("/home/user/.zcode");
     expectPath(roots.deepchat!).toBe("/home/user/Library/Application Support/DeepChat");
+    expectPath(roots.cherrystudio!).toBe("/home/user/Library/Application Support/CherryStudio");
   });
 
   it("respects CODEX_HOME override", () => {
@@ -146,6 +148,26 @@ describe("DeepChat data root", () => {
     mockedPlatform.mockReturnValue("win32");
     vi.stubEnv("APPDATA", "/custom/roaming");
     expectPath(resolveAgentRoots().deepchat!).toBe("/custom/roaming/DeepChat");
+  });
+});
+
+describe("Cherry Studio data root", () => {
+  it("supports custom and portable user data directories", () => {
+    mockedHomedir.mockReturnValue("/home/user");
+    vi.stubEnv("CHERRYSTUDIO_USER_DATA_DIR", "~/cherry-test");
+    expectPath(resolveAgentRoots().cherrystudio!).toBe("/home/user/cherry-test");
+  });
+
+  it("uses the Linux config home", () => {
+    mockedPlatform.mockReturnValue("linux");
+    vi.stubEnv("XDG_CONFIG_HOME", "/custom/config");
+    expectPath(resolveAgentRoots().cherrystudio!).toBe("/custom/config/CherryStudio");
+  });
+
+  it("uses Windows roaming app data", () => {
+    mockedPlatform.mockReturnValue("win32");
+    vi.stubEnv("APPDATA", "/custom/roaming");
+    expectPath(resolveAgentRoots().cherrystudio!).toBe("/custom/roaming/CherryStudio");
   });
 });
 
