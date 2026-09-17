@@ -6,9 +6,9 @@ catalog:
   "@fontsource-variable/ibm-plex-sans": ^5.3.0
   "@fontsource-variable/jetbrains-mono": ^5.3.0
   "@fontsource-variable/space-grotesk": ^5.3.0
-  "@hugeicons/core-free-icons": ^4.3.2
+  "@hugeicons/core-free-icons": ^4.3.3
   "@tailwindcss/vite": ^4.3.3
-  "@types/node": 22.20.2
+  "@types/node": 22.20.3
   "@typescript/native": npm:typescript@^7.0.2
   better-sqlite3: ^13.0.3
   tailwindcss: ^4.3.3
@@ -23,10 +23,6 @@ allowBuilds:
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@shadcn/lint@0.1.0"
-  - "@vitest/coverage-v8@5.0.0"
-  - "@vitest/mocker@5.0.0"
-  - "@vitest/spy@5.0.0"
-  - "vitest@5.0.0"
 
 # eslint-plugin-astro 3 requires ESLint 10 while its jsx-a11y peer has not yet
 # widened its compatible peer range. Keep the exception scoped to that edge.
