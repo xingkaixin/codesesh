@@ -6,6 +6,7 @@ import { ClaudeCodeAgent } from "../claudecode.js";
 import { CodexAgent } from "../codex.js";
 import { DshAgent } from "../dsh.js";
 import { DeepChatAgent } from "../deepchat.js";
+import { CherryStudioAgent } from "../cherrystudio.js";
 import { GrokAgent } from "../grok.js";
 import { KimiAgent } from "../kimi.js";
 import { KimiCodeAgent } from "../kimi-code.js";
@@ -24,6 +25,11 @@ describe("registered agent session watch plans", () => {
     expect(new DeepChatAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
       status: "supported",
       targets: [{ root: sourceRoot, path: join(sourceRoot, "app_db", "agent.db") }],
+    });
+
+    expect(new CherryStudioAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
+      status: "supported",
+      targets: [{ root: sourceRoot, path: join(sourceRoot, "Data", "cherrystudio.sqlite") }],
     });
 
     expect(new CodexAgent({ sourceRoot }).getSessionWatchPlan()).toEqual({
@@ -59,6 +65,7 @@ describe("registered agent session watch plans", () => {
     const agents = createRegisteredAgents();
 
     expect(agents.map((agent) => agent.name).sort()).toEqual([
+      "cherrystudio",
       "claudecode",
       "codex",
       "cursor",

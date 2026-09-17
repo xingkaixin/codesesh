@@ -44,7 +44,7 @@ CLI
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件型：Claude Code、Codex、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
-- 单 SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat
+- 单 SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio
 <!-- repo-fact:agent-source-kinds:end -->
 
 不同 Agent 可以并行刷新；同一个 Agent 的 refresh 与 backfill 由 `AgentSyncEngine`
