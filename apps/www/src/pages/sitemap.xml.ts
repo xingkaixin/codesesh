@@ -1,5 +1,6 @@
 import { latestReleaseDate, sitemapEntries } from "../data/changelog";
-import { siteUrl } from "../data/landing";
+import { localeConfig, locales, siteUrl } from "../data/landing";
+import { sessionHistoryRoutes, sessionHistoryUpdated } from "../data/session-history";
 
 export const prerender = true;
 
@@ -16,7 +17,21 @@ function absoluteUrl(route: string): string {
 }
 
 export function GET(): Response {
-  const urls = sitemapEntries
+  const entries = [
+    ...sitemapEntries.map((entry) => ({
+      ...entry,
+      lastmod: latestReleaseDate,
+    })),
+    ...locales.map((locale) => ({
+      route: sessionHistoryRoutes[locale],
+      alternates: Object.fromEntries(
+        locales.map((key) => [localeConfig[key].language, sessionHistoryRoutes[key]]),
+      ),
+      priority: "0.8",
+      lastmod: sessionHistoryUpdated,
+    })),
+  ];
+  const urls = entries
     .map((entry) => {
       const alternates = Object.entries(entry.alternates)
         .map(
@@ -31,7 +46,7 @@ export function GET(): Response {
         `    <loc>${escapeXml(absoluteUrl(entry.route))}</loc>`,
         alternates,
         `    <xhtml:link rel="alternate" hreflang="x-default" href="${escapeXml(absoluteUrl(defaultRoute))}" />`,
-        `    <lastmod>${latestReleaseDate}</lastmod>`,
+        `    <lastmod>${entry.lastmod}</lastmod>`,
         "    <changefreq>weekly</changefreq>",
         `    <priority>${entry.priority}</priority>`,
         "  </url>",

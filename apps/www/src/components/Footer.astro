@@ -1,5 +1,9 @@
 ---
 import { copy, localeConfig, type Locale } from "../data/landing";
+import {
+  sessionHistoryCopy,
+  sessionHistoryRoutes,
+} from "../data/session-history";
 import { changelogRoutes } from "../data/changelog";
 
 interface Props {
@@ -31,7 +35,7 @@ const t = copy[locale].footer;
       {t.note}
     </span>
     <nav
-      class="flex gap-5 sm:ml-auto"
+      class="flex flex-wrap gap-x-5 gap-y-3 sm:ml-auto"
       aria-label={localeConfig[locale].footerNavigationLabel}
     >
       <a class="footer-link" href="https://github.com/xingkaixin/codesesh">
@@ -39,6 +43,9 @@ const t = copy[locale].footer;
       </a>
       <a class="footer-link" href={changelogRoutes[locale]}>
         {t.changelog}
+      </a>
+      <a class="footer-link" href={sessionHistoryRoutes[locale]}>
+        {sessionHistoryCopy[locale].label}
       </a>
       <a
         class="footer-link"

@@ -6,12 +6,15 @@ import Icon from "./Icon.astro";
 interface Props {
   locale: Locale;
   page?: "landing" | "changelog";
+  languageRoutes?: Record<Locale, string>;
 }
 
 const { locale, page = "landing" } = Astro.props;
 const t = copy[locale].header;
 const homeRoute = localeConfig[locale].route;
-const languageRoutes = page === "changelog" ? changelogRoutes : undefined;
+const languageRoutes =
+  Astro.props.languageRoutes ??
+  (page === "changelog" ? changelogRoutes : undefined);
 
 const themes = [
   { key: "light", icon: "sun", label: t.themeLight },
