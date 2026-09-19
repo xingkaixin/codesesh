@@ -63,8 +63,11 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | DSH         | 已支持 |
 | DeepChat    | 已支持 |
 | Cherry Studio | 已支持 |
+| MiniMax Code | 已支持 |
 
 <!-- repo-fact:agents:end -->
+
+MiniMax Code 支持 CLI 0.4.12 的 `v2/sqlite/runtime-state.sqlite`，包含会话树、思考、工具调用和用量。默认依次查找 `~/.minimax`、`~/.minimax-code`，选择首个存在数据库的目录；`MINIMAX_DATA_DIR` 优先于 `MAVIS_DATA_DIR`。同步会识别已有消息的修改和删除，不限于追加消息。媒体仅展示可用引用；旧 ledger 布局和 Desktop 兼容性未验证。详情见 [接入设计](docs/minimax-code-integration.md)。
 
 DeepChat 支持新版未加密的 `app_db/agent.db`，包含原生及 ACP 会话。
 可通过 `DEEPCHAT_USER_DATA_DIR` 指定用户数据目录。

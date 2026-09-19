@@ -52,13 +52,13 @@ CLI Entry (packages/cli/src/index.ts --json)
 | `packages/core/src/agents/registry.ts` | 从不可变注册声明派生 Agent 实例、公开信息与数据根目录 |
 | `packages/cli/src/live-scan.ts` | 运行中快照、订阅和生命周期入口 |
 | `packages/cli/src/agent-sync-engine.ts` | 持续 refresh、backfill、持久化后发布 |
-| `packages/cli/src/session-watcher.ts` | 文件事件监听、稳定性等待与归并 |
+| `packages/cli/src/session-watcher.ts` | 文件事件监听、按声明轮询文件状态、稳定性等待与归并 |
 | `packages/cli/src/scan-refresh-worker.ts` | 数据源扫描与解析 worker |
 | `packages/cli/src/search-index-worker.ts` | SQLite 会话、详情和 FTS 写入 worker |
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi
-- SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio
+- SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code
 <!-- repo-fact:agent-source-kinds:end -->
 
 SQLite 存储在 `~/.cache/codesesh/codesesh.db`，包含 session heads、materialized details

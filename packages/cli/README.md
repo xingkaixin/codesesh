@@ -58,8 +58,11 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 | DSH         | ✅ Supported |
 | DeepChat    | ✅ Supported |
 | Cherry Studio | ✅ Supported |
+| MiniMax Code | ✅ Supported |
 
 <!-- repo-fact:agents:end -->
+
+MiniMax Code supports CLI 0.4.12 `v2/sqlite/runtime-state.sqlite`, including session trees, reasoning, tools, and usage. Discovery selects the first database under `~/.minimax` or `~/.minimax-code`; `MINIMAX_DATA_DIR` takes precedence over `MAVIS_DATA_DIR`. Refresh detects updates and removals as well as new messages. Media retains available references; legacy ledger layouts and Desktop compatibility are unverified. See the [integration design](../../docs/minimax-code-integration.md).
 
 DeepChat supports the current unencrypted `app_db/agent.db`, including native and ACP sessions.
 Set `DEEPCHAT_USER_DATA_DIR` to override its user data directory. Legacy `chat.db`,

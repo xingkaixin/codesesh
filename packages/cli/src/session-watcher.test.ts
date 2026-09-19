@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  appendFileSync,
+  openSync,
+  writeSync,
+  closeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +74,48 @@ afterEach(() => {
 });
 
 describe("SessionWatcher", () => {
+  it("polls open file writes and recreation without directory notifications", async () => {
+    vi.useRealTimers();
+    const tempDir = mkdtempSync(join(tmpdir(), "watcher-polled-"));
+    const path = join(tempDir, "runtime.sqlite-wal");
+    const watcher = new SessionWatcher();
+    const changed = vi.fn();
+    let fd: number | undefined;
+    try {
+      watcher.onAgentsChanged(changed);
+      watcher.start([
+        source("database-agent", {
+          status: "supported",
+          targets: [{ path, pollForChanges: true }],
+        }),
+      ]);
+      expect(fsWatch.watchers).toHaveLength(0);
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(changed).not.toHaveBeenCalled();
+
+      fd = openSync(path, "w");
+      writeSync(fd, "first commit");
+      await expect.poll(() => changed.mock.calls.length, { timeout: 3000 }).toBe(1);
+      expect(changed).toHaveBeenLastCalledWith(new Set(["database-agent"]));
+      writeSync(fd, "second commit");
+      await expect.poll(() => changed.mock.calls.length, { timeout: 3000 }).toBe(2);
+      closeSync(fd);
+      fd = undefined;
+      rmSync(path);
+      await expect.poll(() => changed.mock.calls.length, { timeout: 3000 }).toBe(3);
+      writeFileSync(path, "replacement");
+      await expect.poll(() => changed.mock.calls.length, { timeout: 3000 }).toBe(4);
+      await watcher.dispose();
+      writeFileSync(path, "after dispose");
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+      expect(changed).toHaveBeenCalledTimes(4);
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      await watcher.dispose();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 15000);
+
   it("fires onAgentsChanged after write stability", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "watcher-test-"));
     try {
