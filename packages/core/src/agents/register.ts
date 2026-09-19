@@ -16,6 +16,7 @@ import { GrokAgent, resolveGrokDataRoot } from "./grok.js";
 import { DshAgent, resolveDshDataRoot } from "./dsh.js";
 import { DeepChatAgent, resolveDeepChatDataRoot } from "./deepchat.js";
 import { CherryStudioAgent, resolveCherryStudioDataRoot } from "./cherrystudio.js";
+import { MiniMaxCodeAgent, resolveMiniMaxCodeDataRoot } from "./minimax-code.js";
 
 export interface AgentRegistration extends AgentCatalogEntry {
   create: () => BaseAgent;
@@ -25,6 +26,10 @@ export interface AgentRegistration extends AgentCatalogEntry {
 type AgentRuntimeRegistration = Pick<AgentRegistration, "create" | "resolveDataRoot">;
 
 const RUNTIME_REGISTRATIONS = {
+  "minimax-code": {
+    create: () => new MiniMaxCodeAgent(),
+    resolveDataRoot: resolveMiniMaxCodeDataRoot,
+  },
   claudecode: {
     create: () => new ClaudeCodeAgent(),
     resolveDataRoot: resolveClaudeCodeDataRoot,

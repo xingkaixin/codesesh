@@ -88,6 +88,14 @@ export const AGENT_CATALOG = [
     toolStrategy: "custom",
   },
   {
+    name: "minimax-code",
+    displayName: "MiniMax Code",
+    icon: "/icon/agent/minimax-code.svg",
+    sourceKind: "sqlite",
+    resumeCommandPrefix: "mcode --session",
+    toolStrategy: "custom",
+  },
+  {
     name: "dsh",
     displayName: "DSH",
     icon: "/icon/agent/dsh.svg",

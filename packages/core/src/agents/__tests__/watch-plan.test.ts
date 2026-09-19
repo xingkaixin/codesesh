@@ -74,6 +74,7 @@ describe("registered agent session watch plans", () => {
       "grok",
       "kimi",
       "kimi-code",
+      "minimax-code",
       "opencode",
       "pi",
       "zcode",

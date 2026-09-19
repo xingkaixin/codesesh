@@ -85,7 +85,8 @@ describe("handleGetAgents", () => {
       { from: 3000 },
     );
 
-    expect(c.json.mock.calls[0]![0][0].count).toBe(2);
+    const response = c.json.mock.calls[0]![0];
+    expect(response.find((agent: { name: string }) => agent.name === "claudecode")?.count).toBe(2);
   });
 
   it("reuses agent counts for the same snapshot and window", () => {
