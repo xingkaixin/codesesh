@@ -1,5 +1,5 @@
 ---
-import { copy, type Locale } from "../data/landing";
+import { copy, type FAQItem, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 
@@ -9,6 +9,7 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].faq;
+const items: FAQItem[] = t.items;
 ---
 
 <section
@@ -30,11 +31,11 @@ const t = copy[locale].faq;
     </div>
 
     <div>
-      {t.items.map((item, index) => (
+      {items.map((item, index) => (
         <details
           class:list={[
             "group border-t border-[var(--console-border)]",
-            index === t.items.length - 1 && "border-b",
+            index === items.length - 1 && "border-b",
           ]}
         >
           <summary class="flex min-h-16 cursor-pointer list-none items-center gap-4 py-4 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none [&::-webkit-details-marker]:hidden">
@@ -48,9 +49,14 @@ const t = copy[locale].faq;
               <Icon name="chevron-right" class="size-4" />
             </span>
           </summary>
-          <p class="max-w-[64ch] pb-5 pr-8 text-sm leading-7 text-[var(--console-text-secondary)]">
-            {item.answer}
-          </p>
+          <div class="max-w-[64ch] pb-5 pr-8 text-sm leading-7 text-[var(--console-text-secondary)]">
+            <p>{item.answer}</p>
+            {item.link && (
+              <a class="footer-link mt-2 block w-fit" href={item.link.href}>
+                {item.link.label}
+              </a>
+            )}
+          </div>
         </details>
       ))}
     </div>
