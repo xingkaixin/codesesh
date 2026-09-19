@@ -8,13 +8,23 @@
  * recursive-vs-fallback strategy, APFS mtime quirks, and path-stability polling
  * are all internal details.
  */
-import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  statSync,
+  watch,
+  watchFile,
+  unwatchFile,
+  type FSWatcher,
+  type Stats,
+} from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SessionWatchPlan } from "@codesesh/core/runtime/agents";
 import { appLogger } from "./logging.js";
 
 const WRITE_STABILITY_THRESHOLD_MS = 250;
 const WRITE_STABILITY_POLL_MS = 100;
+const SOURCE_POLL_MS = 1000;
 
 export interface SessionWatchSource {
   readonly name: string;
@@ -143,6 +153,7 @@ function resolveWatchEventPath(watchPath: string, filename: string | Buffer | nu
 
 export class SessionWatcher {
   private watchers: WatchRegistration[] = [];
+  private pollingCleanups: Array<() => void> = [];
   private fallbackWatchScopes = new Map<string, WatchScope[]>();
   private stablePaths = new Map<string, StablePathState>();
   private listeners = new Set<AgentsChangedListener>();
@@ -158,6 +169,7 @@ export class SessionWatcher {
   /** Begin watching the session sources declared by each agent adapter. */
   start(agents: SessionWatchSource[]): void {
     const scopesByRoot = new Map<string, WatchScope[]>();
+    const polledPaths = new Map<string, Set<string>>();
 
     for (const agent of agents) {
       const plan = agent.getSessionWatchPlan();
@@ -175,6 +187,13 @@ export class SessionWatcher {
       }
 
       for (const target of plan.targets) {
+        if (target.pollForChanges) {
+          const path = toAbsolutePath(target.path);
+          const names = polledPaths.get(path) ?? new Set<string>();
+          names.add(agent.name);
+          polledPaths.set(path, names);
+          continue;
+        }
         const watchRootPath = closestWatchablePath(target.root ?? target.path);
         if (!watchRootPath) continue;
 
@@ -198,6 +217,15 @@ export class SessionWatcher {
         }
         scopesByRoot.set(rootPath, scopes);
       }
+    }
+
+    for (const [path, names] of polledPaths) {
+      const listener = (current: Stats, previous: Stats) => {
+        if (current.nlink === 0 && previous.nlink === 0) return;
+        this.waitForStablePath(path, names);
+      };
+      watchFile(path, { interval: SOURCE_POLL_MS, persistent: false }, listener);
+      this.pollingCleanups.push(() => unwatchFile(path, listener));
     }
 
     for (const [rootPath, scopes] of scopesByRoot.entries()) {
@@ -224,6 +252,8 @@ export class SessionWatcher {
 
   /** Stop all watchers and clear pending stability polls. */
   async dispose(): Promise<void> {
+    for (const cleanup of this.pollingCleanups) cleanup();
+    this.pollingCleanups = [];
     for (const state of this.stablePaths.values()) {
       if (state.timer) {
         clearTimeout(state.timer);

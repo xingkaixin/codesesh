@@ -147,6 +147,8 @@ export interface SessionWatchTarget {
   root?: string;
   /** Exact descendant file names that do not represent session changes. */
   ignoredFileNames?: readonly string[];
+  /** Stat polling catches writes through long-lived file handles that directory events can miss. */
+  pollForChanges?: boolean;
 }
 
 /** `supported` may have no targets when the provider has no location in the current environment. */
