@@ -49,14 +49,14 @@ const items: FAQItem[] = t.items;
               <Icon name="chevron-right" class="size-4" />
             </span>
           </summary>
-          <p class="max-w-[64ch] pb-5 pr-8 text-sm leading-7 text-[var(--console-text-secondary)]">
-            {item.answer}
+          <div class="max-w-[64ch] pb-5 pr-8 text-sm leading-7 text-[var(--console-text-secondary)]">
+            <p>{item.answer}</p>
             {item.link && (
               <a class="footer-link mt-2 block w-fit" href={item.link.href}>
                 {item.link.label}
               </a>
             )}
-          </p>
+          </div>
         </details>
       ))}
     </div>
