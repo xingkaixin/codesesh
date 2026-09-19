@@ -51,7 +51,11 @@ const t = sessionHistoryCopy[locale];
           >
             {t.start}
           </h2>
-          <InstallCommand locale={locale} showEndpoint />
+          <InstallCommand
+            locale={locale}
+            command="npx codesesh --days 0"
+            showEndpoint
+          />
           <a
             class="footer-link mt-6 inline-block"
             href={localeConfig[locale].route}

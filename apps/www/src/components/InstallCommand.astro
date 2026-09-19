@@ -5,10 +5,12 @@ import Icon from "./Icon.astro";
 interface Props {
   locale: Locale;
   showEndpoint?: boolean;
+  command?: string;
 }
 
 const { locale, showEndpoint = false } = Astro.props;
 const t = copy[locale].hero;
+const command = Astro.props.command ?? t.command;
 ---
 
 <div class="install-command" data-copy-group>
@@ -20,11 +22,11 @@ const t = copy[locale].hero;
       $
     </span>
     <code class="console-mono text-sm text-[var(--console-text)]">
-      {t.command}
+      {command}
     </code>
     <button
       type="button"
-      data-copy-command={t.command}
+      data-copy-command={command}
       data-copy-label={t.copyCommand}
       data-copied-label={t.copied}
       data-copy-failed-label={t.copyFailed}

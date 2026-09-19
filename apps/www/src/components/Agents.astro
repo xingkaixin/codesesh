@@ -1,5 +1,9 @@
 ---
 import { agents, copy, type Locale } from "../data/landing";
+import {
+  sessionHistoryCopy,
+  sessionHistoryRoutes,
+} from "../data/session-history";
 import HeadingText from "./HeadingText.astro";
 
 interface Props {
@@ -26,6 +30,12 @@ const t = copy[locale].agents;
       <p class="mt-4 text-sm leading-7 text-[var(--console-text-secondary)]">
         {t.body}
       </p>
+      <a
+        class="footer-link mt-4 inline-block"
+        href={sessionHistoryRoutes[locale]}
+      >
+        {sessionHistoryCopy[locale].title}
+      </a>
     </div>
 
     <ul class="grid gap-px overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-border)] sm:grid-cols-2 lg:grid-cols-5">

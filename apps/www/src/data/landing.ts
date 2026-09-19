@@ -41,6 +41,7 @@ export interface FeatureGroup {
 export interface FAQItem {
   question: string;
   answer: string;
+  link?: { href: string; label: string };
 }
 
 interface LandingCopy {
@@ -117,6 +118,8 @@ interface LandingCopy {
     issues: string;
   };
 }
+
+export const landingUpdated = "2026-09-19";
 
 export const siteUrl = "https://codesesh.xingkaixin.me";
 
@@ -195,7 +198,7 @@ export const copy = {
     hero: {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
       title: ["你和 AI 写过的", "每一次对话，都还在。"],
-      body: `CodeSesh 把 ${agentCount} 种 Agent 的本地会话按项目归档，随时搜索、回放，数据始终留在本机。`,
+      body: `在本机统一搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用与文件变更。`,
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
@@ -351,6 +354,16 @@ export const copy = {
           question: "如何安装和启动 CodeSesh？",
           answer:
             "在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4521 打开 Web UI；如果默认端口被占用，它会尝试下一个可用端口。发布版需要 Node.js 22 或更高版本。",
+          link: { href: "/zh/guides/session-history/", label: "历史会话查找指南" },
+        },
+        {
+          question: "为什么找不到某次会话？",
+          answer:
+            "默认只显示最近七天活跃的会话。查找旧记录时使用 --days 0，并检查筛选、源文件和自定义数据目录；首次扫描和搜索索引可能仍在进行。CodeSesh 不能恢复已删除的原始记录。",
+          link: {
+            href: "/zh/guides/session-history/#troubleshooting",
+            label: "查看缺失会话排查步骤",
+          },
         },
         {
           question: "历史会话很多时，CodeSesh 如何保持流畅？",
@@ -393,7 +406,7 @@ export const copy = {
     hero: {
       eyebrow: `Local / Zero config / ${agentCount} agents`,
       title: ["Every AI session.", "Still here."],
-      body: `Search and replay local sessions from ${agentCount} AI coding agents, organized by project and kept on your machine.`,
+      body: `Search and replay local history from Claude Code, Codex, Cursor, and ${agentCount - 3} other agents. Browse messages, tool calls, and file changes by project.`,
       privacy:
         "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
       command: "npx codesesh",
@@ -553,6 +566,16 @@ export const copy = {
           question: "How do I install and start CodeSesh?",
           answer:
             "Run npx codesesh in a terminal. CodeSesh scans supported local AI coding sessions and opens its Web UI at http://localhost:4521. If the default port is busy, it tries the next available port. The published CLI requires Node.js 22 or later.",
+          link: { href: "/guides/session-history/", label: "Session history guide" },
+        },
+        {
+          question: "Why is a session missing?",
+          answer:
+            "By default, CodeSesh includes sessions active in the last seven days. Use --days 0 for older records, check filters and source directories, and allow the initial scan and search indexing to finish. CodeSesh cannot recover deleted source records.",
+          link: {
+            href: "/guides/session-history/#troubleshooting",
+            label: "Troubleshoot missing sessions",
+          },
         },
         {
           question: "How does CodeSesh stay responsive with a large history?",
@@ -595,7 +618,7 @@ export const copy = {
     hero: {
       eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
       title: ["AIとの開発履歴を、", "すべてここに。"],
-      body: `CodeSeshは${agentCount}種類のエージェント履歴をプロジェクト別に整理し、ローカルのまま検索・再生できます。`,
+      body: `Claude Code、Codex、Cursorなど${agentCount}種類のツールの履歴をローカルで検索・再生。メッセージ、ツール呼び出し、ファイル変更をプロジェクト別に確認できます。`,
       privacy:
         "セッション内容とインデックスはローカルに保持されます。アカウント、クラウド同期、セッションのテレメトリは不要です。",
       command: "npx codesesh",
@@ -765,6 +788,16 @@ export const copy = {
           question: "CodeSeshをインストールして起動するには？",
           answer:
             "ターミナルでnpx codeseshを実行してください。対応するローカルAIコーディングセッションをスキャンし、http://localhost:4521 でWeb UIを開きます。既定のポートが使用中の場合は、次に利用可能なポートを試します。公開版CLIにはNode.js 22以降が必要です。",
+          link: { href: "/ja/guides/session-history/", label: "会話履歴の検索ガイド" },
+        },
+        {
+          question: "会話が見つからないのはなぜですか？",
+          answer:
+            "標準では直近7日間に活動があった会話が対象です。古い記録には --days 0 を使い、フィルター、元ファイル、独自のデータ保存先を確認してください。初回スキャンや検索インデックスの作成中の場合もあります。削除された元の記録は復元できません。",
+          link: {
+            href: "/ja/guides/session-history/#troubleshooting",
+            label: "会話が見つからない場合の確認手順",
+          },
         },
         {
           question: "大量の履歴があっても快適に動作しますか？",

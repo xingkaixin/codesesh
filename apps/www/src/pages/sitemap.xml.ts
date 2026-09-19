@@ -1,5 +1,5 @@
 import { latestReleaseDate, sitemapEntries } from "../data/changelog";
-import { localeConfig, locales, siteUrl } from "../data/landing";
+import { landingUpdated, localeConfig, locales, siteUrl } from "../data/landing";
 import { sessionHistoryRoutes, sessionHistoryUpdated } from "../data/session-history";
 
 export const prerender = true;
@@ -17,10 +17,11 @@ function absoluteUrl(route: string): string {
 }
 
 export function GET(): Response {
+  const homeUpdated = latestReleaseDate > landingUpdated ? latestReleaseDate : landingUpdated;
   const entries = [
     ...sitemapEntries.map((entry) => ({
       ...entry,
-      lastmod: latestReleaseDate,
+      lastmod: entry.route === localeConfig[entry.locale].route ? homeUpdated : latestReleaseDate,
     })),
     ...locales.map((locale) => ({
       route: sessionHistoryRoutes[locale],
