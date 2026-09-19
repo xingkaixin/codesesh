@@ -82,6 +82,7 @@ CodeSesh currently supports these AI coding agents:
 - DSH
 - DeepChat
 - Cherry Studio
+- MiniMax Code
 <!-- repo-fact:agents:end -->
 
 Each supported agent has an adapter in the core package. Adding support for another agent follows the same adapter pattern.

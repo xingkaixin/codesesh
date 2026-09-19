@@ -9,7 +9,7 @@
 
 实现基线为 CLI `@minimax-ai/code@0.4.12`，源码提交
 [`81b666a10bb1bd097633b373679dbf399278b8d3`](https://github.com/MiniMax-AI/minimax-code/commit/81b666a10bb1bd097633b373679dbf399278b8d3)。
-已静态核对 npm 发布包的主要路径和表结构；测试使用根据上游协议构建的脱敏样本，
+已静态核对 npm 发布包的主要路径和表结构；测试使用根据上游协议构建的合成 SQLite 样本，
 不把源码核对等同于真实账号、Desktop 或全部历史版本的兼容认证。
 
 首期不读取旧 ledger 布局，不迁移上游数据库，不拼接模型上下文快照，
@@ -41,7 +41,10 @@
 
 数据库相对路径为 `v2/sqlite/runtime-state.sqlite`。使用现有只读 SQLite 工具，
 在只读事务内获取一致快照，读取后关闭连接，不调用上游具有迁移副作用的 repository。
-监听数据库、WAL 和 journal，沿用现有防抖与写入稳定检测；忽略 SHM 的读取副作用。
+每秒轮询数据库、WAL 和 journal 的文件状态，沿用现有防抖与写入稳定检测；
+不轮询 SHM，避免读取副作用触发刷新。两个默认候选目录最多检查六个路径，
+即使文件尚不存在也能发现后续创建。没有变化时不读取数据库内容。
+macOS 实测目录监听未报告持续打开的 WAL 的写入，因此不能只依赖目录事件。
 
 ## 权威数据与字段映射
 
@@ -76,7 +79,7 @@
 | `thinking_content` | reasoning，放在对应助手正文之前 |
 | `tool_calls` | tool；保留工具名、调用 ID、输入、输出和元数据 |
 | `kind` | compaction/review 等事件以有标签的文本和 mode 保存 |
-| `attachments` | 可用 HTTP(S) 图片 URL 预览；其他附件保留名称、类型、路径 |
+| `attachments` | 以文本保留名称、类型、路径或 URL，遵循现有本地媒体策略，不自动加载远程图片 |
 | 系统产生的用户消息 | 有明确自动来源时设置 automated，不推测普通来源 |
 
 工具状态 Preparing/Prepared/Start 映射为 running，Finished 为 completed，Failed 为 error。
@@ -134,7 +137,7 @@
 | todowrite | 任务列表，保留取消状态的文字信息 |
 | skill | 技能名及原始结果 |
 | task / task_append / task_query / task_output / task_stop | 任务说明、task ID、子会话和结果 |
-| ask_user | steps 中的问题、选项和已记录答案；不伪造等待后的用户答复 |
+| ask_user | steps 中的问题、选项和等待结果；后续答复保留在实际用户消息中 |
 | mcp_invoke | 有 tool_name 时展示目标名称，同时保留 wrapper 参数和结果 |
 | goal / memory / review / web / 媒体 / 其他插件 | 通用卡片保留工具名称、结构化输入输出 |
 
@@ -146,7 +149,8 @@
 2. Core 新增 adapter 和消息/用量转换，注册 catalog、runtime 和必要测试。
 3. Web 新增 tool strategy、图标、展示测试，同步 README 和产品站支持列表。
 
-保持现有公开接口、缓存 schema 和 HTTP API 不变。不新增运行时依赖。
+SessionWatchTarget 增加可选 pollForChanges 声明，由现有 SessionWatcher 管理轮询与释放；
+其他 Agent 继续使用现有监听方式。缓存 schema 和 HTTP API 不变，不新增运行时依赖。
 
 ## 验收
 

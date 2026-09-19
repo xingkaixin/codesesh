@@ -44,7 +44,7 @@ CLI
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件型：Claude Code、Codex、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
-- 单 SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio
+- 单 SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio、MiniMax Code
 <!-- repo-fact:agent-source-kinds:end -->
 
 不同 Agent 可以并行刷新；同一个 Agent 的 refresh 与 backfill 由 `AgentSyncEngine`
@@ -140,6 +140,7 @@ last-known-good 顺序不会泄漏到编排器。
 
 - 平台支持时使用递归监听；
 - 不支持时遍历目录建立非递归 fallback；
+- 声明 `pollForChanges` 的目标每秒检查文件状态，覆盖持续打开文件的写入、创建和替换；MiniMax Code 对数据库、WAL、journal 使用此方式；
 - 等待写入稳定后，把路径事件归并为 Agent 名称；
 - 普通 Agent 默认 debounce 200ms，空 Agent 使用更长等待，以容纳首次创建目录/数据库。
 

@@ -23,6 +23,7 @@ import { buildCursorToolStrategy } from "./cursor";
 import { buildGrokToolStrategy } from "./grok";
 import { buildPiToolStrategy } from "./pi";
 import { buildDshToolStrategy } from "./dsh";
+import { buildMiniMaxCodeToolStrategy } from "./minimax-code";
 import { buildDefaultToolStrategy } from "./shared";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus } from "../tool-normalize";
@@ -48,6 +49,7 @@ type ToolStrategyBuilder = (
 // test keeps that declaration aligned with this map. Unknown future agents still get
 // a safe default renderer when an older web bundle reads a newer server response.
 const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
+  "minimax-code": buildMiniMaxCodeToolStrategy,
   claudecode: buildClaudeToolStrategy,
   opencode: buildOpencodeToolStrategy,
   kimi: buildKimiToolStrategy,

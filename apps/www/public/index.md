@@ -67,6 +67,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - DSH
 - DeepChat
 - Cherry Studio
+- MiniMax Code
 <!-- repo-fact:agents:end -->
 
 ## Data Boundary
