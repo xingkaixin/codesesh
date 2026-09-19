@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.9",
+        date: "2026-09-19",
+        title: "Bring DeepChat and Cherry Studio history into one view",
+        summary:
+          "CodeSesh now includes DeepChat and Cherry Studio conversations alongside your other local AI coding history. Session layouts are easier to read, small costs remain visible, and Claude Code refreshes remove cached entries from data directories you no longer use.",
+        direction:
+          "Support for more local tools should preserve each source’s conversation structure and usage records, with clear guidance on what can be found and replayed.",
+        highlights: [
+          {
+            title: "DeepChat conversations alongside your coding sessions",
+            description:
+              "Browse native and ACP sessions from DeepChat’s current unencrypted local database, replay messages, and review usage as records update.",
+          },
+          {
+            title: "Cherry Studio Agent sessions and assistant chats",
+            description:
+              "Read Cherry Studio 2.x Agent sessions with their workspaces and follow the selected branch of assistant chats, with usage tied to that branch.",
+          },
+          {
+            title: "Clearer dates, messages, and small costs",
+            description:
+              "Date separators and layouts that adapt to narrower screens make long conversations easier to follow. Positive costs below one cent are shown as <$0.01 instead of $0.00.",
+          },
+          {
+            title: "Guides to finding your local history",
+            description:
+              "English, Chinese, and Japanese guides explain where Claude Code and Codex records live, how to search and replay them, and what to check when a session is missing.",
+          },
+        ],
+      },
+      {
         version: "1.0.8",
         date: "2026-09-13",
         title: "See how token usage is split across models",
@@ -253,6 +284,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.9",
+        date: "2026-09-19",
+        title: "在同一界面查看 DeepChat 与 Cherry Studio 历史",
+        summary:
+          "CodeSesh 现在可以将 DeepChat、Cherry Studio 对话与其他本地 AI 编码历史一起浏览。会话布局更易阅读，小额费用清晰可见，Claude Code 刷新时也会移除已停用数据目录中的缓存记录。",
+        direction:
+          "支持更多本地工具时，应保留各来源的对话结构与用量记录，并清楚说明哪些历史可以查找和回放。",
+        highlights: [
+          {
+            title: "统一浏览 DeepChat 与编码会话",
+            description:
+              "读取 DeepChat 新版未加密本地数据库中的原生及 ACP 会话，回放消息、查看用量，并随记录变化更新。",
+          },
+          {
+            title: "支持 Cherry Studio Agent 与助手聊天",
+            description:
+              "查看 Cherry Studio 2.x 的 Agent 会话及其工作目录，按当前选中的分支阅读普通助手聊天，并统计该分支的用量。",
+          },
+          {
+            title: "看清日期、消息与小额费用",
+            description:
+              "日期分隔与适应较窄屏幕的布局让长对话更易阅读。不足一美分的正数费用显示为 <$0.01，不再显示为 $0.00。",
+          },
+          {
+            title: "查找本地历史的指南",
+            description:
+              "英文、中文、日文指南说明 Claude Code 与 Codex 记录的位置、搜索和回放方法，以及会话缺失时的排查步骤。",
+          },
+        ],
+      },
+      {
         version: "1.0.8",
         date: "2026-09-13",
         title: "看清各模型的 Token 用量占比",
@@ -425,6 +487,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.9",
+        date: "2026-09-19",
+        title: "DeepChat と Cherry Studio の履歴をひとつの画面で",
+        summary:
+          "DeepChat と Cherry Studio の会話を、ほかのローカル AI コーディング履歴と一緒に閲覧できるようになりました。セッションの読みやすさと少額費用の表示を改善し、Claude Code の更新時には使わなくなったデータディレクトリのキャッシュ記録を除外します。",
+        direction:
+          "対応するローカルツールを増やす際も、各ツールの会話構造と使用量の記録を保ち、どの履歴を検索・再生できるかを明確に伝えることを重視しています。",
+        highlights: [
+          {
+            title: "DeepChat の会話もまとめて閲覧",
+            description:
+              "DeepChat の現行の暗号化されていないローカルデータベースから、ネイティブおよび ACP セッションを読み取ります。メッセージの再生や使用量の確認ができ、記録の変更も反映されます。",
+          },
+          {
+            title: "Cherry Studio の Agent とアシスタントチャットに対応",
+            description:
+              "Cherry Studio 2.x の Agent セッションをワークスペースとともに確認できます。アシスタントチャットは選択中の分岐を表示し、その分岐に沿って使用量を集計します。",
+          },
+          {
+            title: "日付、メッセージ、少額費用を読み取りやすく",
+            description:
+              "日付の区切りと狭い画面に対応したレイアウトで、長い会話を追いやすくしました。1 セント未満の正の費用は $0.00 ではなく <$0.01 と表示します。",
+          },
+          {
+            title: "ローカル履歴を探すためのガイド",
+            description:
+              "英語、中国語、日本語のガイドで、Claude Code と Codex の記録場所、検索と再生の方法、セッションが見つからない場合の確認手順を説明しています。",
+          },
+        ],
+      },
       {
         version: "1.0.8",
         date: "2026-09-13",

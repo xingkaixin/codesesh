@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.0.9] - 2026-09-19
+
+This release adds DeepChat and Cherry Studio session support, improves session readability and small-cost displays, removes stale Claude Code entries after data-root changes, and adds session history guides in English, Chinese, and Japanese. (#619, #622, #623, #624, #625)
+
+### Features
+
+- Added DeepChat native and ACP sessions from the current unencrypted `app_db/agent.db`, including message replay, usage statistics, and live updates. Custom data directories can be set with `DEEPCHAT_USER_DATA_DIR`. (#622)
+- Added Cherry Studio 2.x Agent sessions and the selected branch of assistant chats from `Data/cherrystudio.sqlite`, preserving Agent workspaces and stored message usage. Custom data directories can be set with `CHERRYSTUDIO_USER_DATA_DIR`. (#624)
+
+### Bug Fixes
+
+- Removed cached Claude Code sessions outside the active data root during refresh and reload, without deleting the original session files. (#623)
+- Improved dense session layouts with date separators, wrapping message metadata and tool names, and a filter drawer on narrower screens; aligned responsive product previews. (#619)
+- Displayed positive costs below one cent as `<$0.01` and preserved fractional cost chart labels instead of rounding them to whole dollars. (#619)
+
+### Compatibility
+
+- DeepChat legacy `chat.db` and SQLCipher-encrypted databases are not supported. Cherry Studio support requires 2.x; legacy `agents.db` and independent subagent session trees are not supported. Neither integration provides resume commands or cross-agent deduplication. (#622, #624)
+
+### Build
+
+- Upgraded workspace dependencies, pnpm to 12.4.2, and `pnpm/action-setup` to 6.1.0. (#620, #621)
+- Enforced Web theme color and class-name lint rules. (#618)
+
+### Documentation
+
+- Added English, Chinese, and Japanese guides for locating, searching, and replaying local Claude Code and Codex history, including troubleshooting missing sessions and explaining storage boundaries. (#625)
+
 ## [1.0.8] - 2026-09-13
 
 This release adds model token shares to dashboards, aligns model usage with the selected date range, introduces consistent navigation hover feedback, and refreshes the product site's celestial visuals and asset loading. (#610, #611, #613, #614, #616)
