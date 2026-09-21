@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.10",
+        date: "2026-09-21",
+        title: "Browse MiniMax Code history alongside your other sessions",
+        summary:
+          "CodeSesh now brings MiniMax Code CLI 0.4.12 history into your local AI coding history view, with parent and child sessions, reasoning, tool details, and usage. Saved message changes stay in sync, and the product site's mobile hero artwork takes up less vertical space.",
+        direction:
+          "Adding a local tool should preserve its conversation structure and saved changes, so you can follow the work and return to a session with its context intact.",
+        highlights: [
+          {
+            title: "Follow MiniMax Code sessions and subtasks",
+            description:
+              "Browse parent and child conversations, review reasoning, tool details, and usage, and copy a resume command to continue a session in MiniMax Code.",
+          },
+          {
+            title: "Keep saved history current",
+            description:
+              "Automatic refresh picks up new messages, edits, and deletions in MiniMax Code, including writes that directory watchers can miss.",
+          },
+          {
+            title: "More room for content on mobile",
+            description:
+              "The product site's opening artwork is shorter on mobile screens, leaving more space for the page content.",
+          },
+        ],
+      },
+      {
         version: "1.0.9",
         date: "2026-09-19",
         title: "Bring DeepChat and Cherry Studio history into one view",
@@ -284,6 +310,31 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.10",
+        date: "2026-09-21",
+        title: "将 MiniMax Code 历史与其他会话一起浏览",
+        summary:
+          "CodeSesh 现在可以统一查看 MiniMax Code CLI 0.4.12 的本地 AI 编码历史，包含父子会话、思考、工具详情与用量。已保存的消息变化会持续同步，产品站移动端首屏插图也减少了纵向占用。",
+        direction:
+          "接入本地工具时，应保留其对话结构并反映已保存的变化，让用户能追溯工作过程，也能带着已有上下文继续会话。",
+        highlights: [
+          {
+            title: "查看 MiniMax Code 会话与子任务",
+            description:
+              "浏览父子对话、查看思考、工具详情与用量，并复制恢复命令，在 MiniMax Code 中继续原有会话。",
+          },
+          {
+            title: "同步已保存的历史变化",
+            description:
+              "自动刷新会识别 MiniMax Code 的新增消息、修改和删除，目录监听遗漏的写入也能被检测。",
+          },
+          {
+            title: "移动端为内容留出更多空间",
+            description: "产品站首屏插图在移动端更矮，为页面内容留出更多可见空间。",
+          },
+        ],
+      },
+      {
         version: "1.0.9",
         date: "2026-09-19",
         title: "在同一界面查看 DeepChat 与 Cherry Studio 历史",
@@ -487,6 +538,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.10",
+        date: "2026-09-21",
+        title: "MiniMax Code の履歴をほかのセッションとまとめて閲覧",
+        summary:
+          "MiniMax Code CLI 0.4.12 の履歴を、ほかのローカル AI コーディング履歴と一緒に確認できるようになりました。親子セッション、思考内容、ツールの詳細、使用量を表示し、保存済みメッセージの変更も反映します。製品サイトではモバイル表示の冒頭画像を低くしました。",
+        direction:
+          "ローカルツールへの対応では、会話の構造を保ち、保存された変更を反映することを重視しています。作業の経緯をたどり、これまでの文脈を引き継いでセッションを再開できるようにします。",
+        highlights: [
+          {
+            title: "MiniMax Code のセッションとサブタスクを確認",
+            description:
+              "親子の会話を閲覧し、思考内容、ツールの詳細、使用量を確認できます。再開コマンドをコピーすれば、MiniMax Code で元のセッションを続けられます。",
+          },
+          {
+            title: "保存済みの履歴を最新に保つ",
+            description:
+              "MiniMax Code の新規メッセージ、編集、削除を自動更新で反映します。ディレクトリ監視で見逃す書き込みも検出します。",
+          },
+          {
+            title: "モバイル画面でコンテンツの表示領域を確保",
+            description:
+              "製品サイトの冒頭画像をモバイル画面では低くし、ページの内容を表示するための空間を増やしました。",
+          },
+        ],
+      },
       {
         version: "1.0.9",
         date: "2026-09-19",

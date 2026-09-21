@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.10] - 2026-09-21
+
+This release adds MiniMax Code session history with session trees, reasoning, tool details, usage statistics, and resume commands, and reduces the product site's mobile hero artwork height. (#627, #628)
+
+### Features
+
+- Added MiniMax Code sessions from CLI 0.4.12's `v2/sqlite/runtime-state.sqlite`, including parent and child sessions, message replay, reasoning, tool details, model usage, and costs. Resume commands use `mcode --session <sessionId>`. (#627)
+- Discover the first database under `~/.minimax` or `~/.minimax-code`, with `MINIMAX_DATA_DIR` taking precedence over `MAVIS_DATA_DIR` for custom data directories. Refresh detects message edits and deletions as well as new messages. (#627)
+
+### Bug Fixes
+
+- Detect MiniMax Code database and WAL updates through open file handles so automatic refresh works when directory watchers miss writes. (#627)
+- Reduced the product site's hero artwork height on mobile screens to leave more room for page content. (#628)
+
+### Compatibility
+
+- MiniMax Code support targets CLI 0.4.12. Legacy ledger layouts are not supported, Desktop compatibility is unverified, and media retains available references. (#627)
+
 ## [1.0.9] - 2026-09-19
 
 This release adds DeepChat and Cherry Studio session support, improves session readability and small-cost displays, removes stale Claude Code entries after data-root changes, and adds session history guides in English, Chinese, and Japanese. (#619, #622, #623, #624, #625)
