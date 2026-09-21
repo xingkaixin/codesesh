@@ -2021,6 +2021,10 @@ describe("LiveScanStore", () => {
       "scan.refresh.error",
       expect.objectContaining({ agent: "codex", error: expect.any(Error) }),
     );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[codex] Session refresh failed:",
+      expect.objectContaining({ message: "bad file" }),
+    );
 
     await store.shutdown();
     rmSync(tempDir, { recursive: true, force: true });
@@ -2147,8 +2151,8 @@ describe("LiveScanStore", () => {
     const existing = makeSession("existing");
     const codex = makeFileSystemAgent("codex");
     const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => undefined);
-    vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     core.isAgentCacheInitialized.mockReturnValue(false);
     core.createRegisteredAgents.mockReturnValue([codex]);
     core.scanSessions.mockResolvedValue({
@@ -2181,6 +2185,8 @@ describe("LiveScanStore", () => {
     );
     expect(store.getSnapshot().sessions).toEqual([existing]);
     expect(listener).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(logError).not.toHaveBeenCalled();
   });
 
   it("does not start a pending search-index batch while shutting down", async () => {
@@ -2216,8 +2222,8 @@ describe("LiveScanStore", () => {
       byAgent: { codex: [codexBefore], kimi: [kimiBefore] },
       agents: [codex, kimi],
     });
-    vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const store = new LiveScanStore({ watchEnabled: false, deferInitialRefresh: true });
     await store.initialize();
     workerThreads.deferSearchIndexWorkers = true;
@@ -2245,6 +2251,47 @@ describe("LiveScanStore", () => {
       "kimi before",
     ]);
     expect(listener).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it("cancels backfill publication without reporting a failure during shutdown", async () => {
+    workerThreads.deferSearchIndexWorkers = true;
+    core.getAgentLastFullSyncAt.mockReturnValue(null);
+    core.markAgentFullSyncStarted.mockReturnValue(true);
+    const existing = makeSession("existing");
+    const codex = makeAgent("codex", {
+      checkForChanges: vi.fn(() => ({ hasChanges: false, timestamp: Date.now() })),
+    });
+    core.createRegisteredAgents.mockReturnValue([codex]);
+    core.scanSessions.mockResolvedValue({
+      sessions: [existing],
+      byAgent: { codex: [existing] },
+      agents: [codex],
+    });
+    const logError = vi.spyOn(appLogger, "error").mockImplementation(() => undefined);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const store = new LiveScanStore({
+      watchEnabled: false,
+      deferInitialRefresh: true,
+      startupScanOptions: { from: 1 },
+    });
+    await store.initialize();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.startBackgroundRefresh();
+    await vi.waitFor(() =>
+      expect(
+        workerThreads.workers.some((worker) => worker.workerData.context === "scan.backfill"),
+      ).toBe(true),
+    );
+
+    await store.shutdown();
+
+    expect(store.getSnapshot().sessions).toEqual([existing]);
+    expect(listener).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(logError).not.toHaveBeenCalled();
   });
 
   it("coalesces pending search-index changes to the latest session state", async () => {

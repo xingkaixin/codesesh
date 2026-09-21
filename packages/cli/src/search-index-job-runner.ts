@@ -5,6 +5,7 @@ import { getPricingGeneration } from "@codesesh/core/runtime/pricing";
 import { toError } from "./errors.js";
 import { appLogger, logSearchIndexSync } from "./logging.js";
 import { PendingSearchIndexJobs, type SearchIndexJobBatch } from "./pending-search-index-jobs.js";
+import { ScanShutdownError } from "./scan-refresh-error.js";
 import type {
   SearchIndexWorkerJob,
   SearchIndexWorkerMessage,
@@ -54,7 +55,7 @@ export class SearchIndexJobRunner {
     onProgress?: (progress: SearchIndexPublicationProgress) => void,
   ): Promise<void> {
     if (jobs.length === 0) return Promise.resolve();
-    if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
+    if (this.isShuttingDown) return Promise.reject(new ScanShutdownError(SHUTDOWN_ERROR_MESSAGE));
 
     const batchId = this.nextBatchId++;
     const completion = queue.enqueue(
@@ -99,7 +100,7 @@ export class SearchIndexJobRunner {
     this.activeBatch = null;
     this.worker = null;
 
-    const shutdownError = new Error(SHUTDOWN_ERROR_MESSAGE);
+    const shutdownError = new ScanShutdownError(SHUTDOWN_ERROR_MESSAGE);
     if (activeBatch) this.settle(activeBatch, shutdownError);
     this.pendingJobs.rejectAll(shutdownError);
     this.pendingMaintenanceJobs.rejectAll(shutdownError);
@@ -136,7 +137,7 @@ export class SearchIndexJobRunner {
 
   private startBatch(batch: SearchIndexJobBatch): void {
     if (this.isShuttingDown) {
-      this.settle(batch, new Error(SHUTDOWN_ERROR_MESSAGE));
+      this.settle(batch, new ScanShutdownError(SHUTDOWN_ERROR_MESSAGE));
       return;
     }
 

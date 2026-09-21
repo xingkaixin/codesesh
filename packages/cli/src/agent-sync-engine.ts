@@ -50,7 +50,7 @@ import type {
   ScanRefreshOperation,
 } from "./scan-refresh-operation.js";
 import type { ScanRefreshWorkerCheckpoint } from "./scan-refresh-worker.js";
-import { AgentUnavailableDuringScanError } from "./scan-refresh-error.js";
+import { AgentUnavailableDuringScanError, ScanShutdownError } from "./scan-refresh-error.js";
 import type { StagedWorkerRun, WorkerRunner } from "./worker-runner.js";
 import { toError } from "./errors.js";
 
@@ -363,6 +363,7 @@ export class AgentSyncEngine {
         cached = this.readCachedSessionsOrWarn("scan.refresh", agentName);
       refresh = await this.runRefresh(agentName, cached, startedAt);
     } catch (error) {
+      if (error instanceof ScanShutdownError) return "skipped";
       const failure = toError(error);
       if (failure instanceof AgentUnavailableDuringScanError) {
         appLogger.warn("scan.refresh.worker_agent_unavailable", {
@@ -1052,6 +1053,7 @@ export class AgentSyncEngine {
       return "committed";
     } catch (error) {
       workerRun?.discard();
+      if (error instanceof ScanShutdownError) return "skipped";
       appLogger.error("scan.backfill.error", { agent: agentName, error });
       console.error(`[${agentName}] Backfill failed:`, error);
       return "failed";
