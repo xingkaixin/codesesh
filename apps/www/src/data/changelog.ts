@@ -71,6 +71,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.11",
+        date: "2026-09-21",
+        title: "Exit cleanly while background work is running",
+        summary:
+          "Pressing Ctrl+C now cancels background refreshes and history backfills without misleading failure messages. CodeSesh keeps the existing session view intact, while real errors continue to be reported.",
+        direction:
+          "Routine actions should give clear feedback, so messages about local AI coding history point to problems that need attention.",
+        highlights: [
+          {
+            title: "Stop a background refresh without an error stack",
+            description:
+              "Closing CodeSesh while sessions are being scanned or indexed no longer prints a session refresh failure caused by the shutdown itself.",
+          },
+          {
+            title: "Cancel history backfills with the same clear feedback",
+            description:
+              "Stopping while older sessions are being loaded follows the same cancellation handling, keeping expected shutdowns out of failure reports.",
+          },
+        ],
+      },
+      {
         version: "1.0.10",
         date: "2026-09-21",
         title: "Browse MiniMax Code history alongside your other sessions",
@@ -310,6 +331,25 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.11",
+        date: "2026-09-21",
+        title: "后台任务运行时也能正常退出",
+        summary:
+          "按 Ctrl+C 退出时，后台刷新和历史补扫现在会正常取消，不再显示误导性的失败信息。CodeSesh 保留已有会话视图，真正的错误仍会报告。",
+        direction: "日常操作应有清楚的反馈，让本地 AI 编码历史中的错误提示对应需要处理的问题。",
+        highlights: [
+          {
+            title: "停止后台刷新时不再出现错误堆栈",
+            description:
+              "在扫描会话或建立搜索索引时关闭 CodeSesh，不再将退出引起的取消误报为会话刷新失败。",
+          },
+          {
+            title: "历史补扫采用一致的取消处理",
+            description: "加载较早会话时退出也会正常取消任务，避免将预期的关闭记录为补扫失败。",
+          },
+        ],
+      },
+      {
         version: "1.0.10",
         date: "2026-09-21",
         title: "将 MiniMax Code 历史与其他会话一起浏览",
@@ -538,6 +578,27 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.11",
+        date: "2026-09-21",
+        title: "バックグラウンド処理中も正常に終了",
+        summary:
+          "Ctrl+C で終了するとき、バックグラウンド更新や過去の履歴の読み込みを中止しても、誤解を招く失敗メッセージが表示されなくなりました。既存のセッション表示を保ち、実際のエラーは引き続き報告します。",
+        direction:
+          "日常的な操作には明確なフィードバックが必要です。ローカル AI コーディング履歴のエラー表示は、対処が必要な問題を伝えるものにします。",
+        highlights: [
+          {
+            title: "バックグラウンド更新をエラースタックなしで停止",
+            description:
+              "セッションのスキャンや検索索引の作成中に CodeSesh を閉じても、終了に伴うキャンセルを更新失敗として表示しなくなりました。",
+          },
+          {
+            title: "過去の履歴の読み込みも同じように中止",
+            description:
+              "古いセッションの読み込み中も同じキャンセル処理を使い、通常の終了が履歴の読み込み失敗として記録されることを防ぎます。",
+          },
+        ],
+      },
       {
         version: "1.0.10",
         date: "2026-09-21",
