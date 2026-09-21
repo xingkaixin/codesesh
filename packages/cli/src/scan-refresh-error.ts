@@ -2,6 +2,13 @@ export const AGENT_UNAVAILABLE_DURING_SCAN_ERROR_CODE = "agent-unavailable-durin
 
 export type ScanRefreshWorkerErrorCode = typeof AGENT_UNAVAILABLE_DURING_SCAN_ERROR_CODE;
 
+export class ScanShutdownError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScanShutdownError";
+  }
+}
+
 export class AgentUnavailableDuringScanError extends Error {
   readonly code = AGENT_UNAVAILABLE_DURING_SCAN_ERROR_CODE;
 

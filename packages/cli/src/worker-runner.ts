@@ -22,6 +22,7 @@ import type { ScanRefreshOperation } from "./scan-refresh-operation.js";
 import {
   AGENT_UNAVAILABLE_DURING_SCAN_ERROR_CODE,
   AgentUnavailableDuringScanError,
+  ScanShutdownError,
 } from "./scan-refresh-error.js";
 import { toError } from "./errors.js";
 import { terminateWorkerAfterLogDrain } from "./worker-log-drain.js";
@@ -139,7 +140,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
   }
 
   run(agentName: string, payload: WorkerPayload): Promise<StagedWorkerRun> {
-    if (this.isShuttingDown) return Promise.reject(new Error(SHUTDOWN_ERROR_MESSAGE));
+    if (this.isShuttingDown) return Promise.reject(new ScanShutdownError(SHUTDOWN_ERROR_MESSAGE));
 
     const existingSlot = this.workers.get(agentName);
     if (existingSlot && (existingSlot.pending.size > 0 || existingSlot.awaitingCommit)) {
@@ -201,7 +202,7 @@ export class ThreadWorkerRunner implements WorkerRunner {
     this.isShuttingDown = true;
     const slots = [...this.workers.values()];
     this.workers.clear();
-    const shutdownError = new Error(SHUTDOWN_ERROR_MESSAGE);
+    const shutdownError = new ScanShutdownError(SHUTDOWN_ERROR_MESSAGE);
     for (const slot of slots) {
       slot.closed = true;
       for (const pending of slot.pending.values()) pending.reject(shutdownError);

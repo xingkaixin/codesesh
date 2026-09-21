@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.11] - 2026-09-21
+
+This release removes misleading session refresh and backfill errors when Ctrl+C interrupts background work during shutdown.
+
+### Bug Fixes
+
+- Treat scan and search-index worker shutdown as cancellation, preventing expected cancellation from being reported as `Session refresh failed`, `Backfill failed`, or a publication failure. Active and queued work still settles, previous session snapshots are retained, and genuine failures remain visible.
+
 ## [1.0.10] - 2026-09-21
 
 This release adds MiniMax Code session history with session trees, reasoning, tool details, usage statistics, and resume commands, and reduces the product site's mobile hero artwork height. (#627, #628)

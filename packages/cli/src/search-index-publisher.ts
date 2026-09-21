@@ -5,6 +5,7 @@ import {
   type IdentifiedSessionHead,
 } from "@codesesh/core/runtime/discovery";
 import { appLogger } from "./logging.js";
+import { ScanShutdownError } from "./scan-refresh-error.js";
 import type { SearchIndexJobRunner } from "./search-index-job-runner.js";
 import type {
   SearchIndexPublicationProgress,
@@ -92,6 +93,7 @@ export class SearchIndexPublisher {
           ? this.options.jobs.enqueue(context, publicationJobs, details.onStarted)
           : this.options.jobs.enqueue(context, publicationJobs));
     } catch (error) {
+      if (error instanceof ScanShutdownError) throw error;
       appLogger.error("session.publication.failed", {
         publication_id: details.publicationId,
         context,
