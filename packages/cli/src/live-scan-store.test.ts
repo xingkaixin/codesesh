@@ -349,6 +349,7 @@ vi.mock("@codesesh/core/runtime/discovery", async (importOriginal) => {
     readAgentCacheInitialization: core.readAgentCacheInitialization,
     readAgentLastFullSyncAt: core.readAgentLastFullSyncAt,
     readCachedSessions: core.readCachedSessions,
+    readPendingSearchIndexMaintenance: () => ({ sessionIds: [], total: 0 }),
     markAgentCacheInitialized: core.markAgentCacheInitialized,
     markAgentFullSyncProgress: core.markAgentFullSyncProgress,
     markAgentFullSyncStarted: core.markAgentFullSyncStarted,
