@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../../lib/api";
 import { createAgentCatalog } from "../../lib/agents";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
@@ -155,6 +155,11 @@ function makeLandingSession(agentKey: string, sessionId: string, title: string):
     },
   };
 }
+
+beforeAll(async () => {
+  // Keep cold module transforms out of the first landing test's timeout on CI.
+  await import("../DetailLanding");
+});
 
 afterEach(() => {
   cleanup();
