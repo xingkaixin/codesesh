@@ -155,10 +155,12 @@ describe("registered agent session watch plans", () => {
     });
     expect(agents.get("opencode")?.getSessionWatchPlan()).toEqual({
       status: "supported",
-      targets: [
-        { root: roots.opencode, path: join(roots.opencode!, "opencode.db") },
-        { root: "data/opencode", path: "data/opencode/opencode.db" },
-      ],
+      targets: [join(roots.opencode!, "opencode.db"), "data/opencode/opencode.db"].flatMap((path) =>
+        ["", "-wal", "-journal"].map((suffix) => ({
+          path: `${path}${suffix}`,
+          pollForChanges: true,
+        })),
+      ),
     });
     expect(agents.get("zcode")?.getSessionWatchPlan()).toEqual({
       status: "supported",

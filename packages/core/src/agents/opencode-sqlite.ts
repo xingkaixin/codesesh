@@ -21,6 +21,7 @@ import { resolveSessionTitle } from "../utils/title-fallback.js";
 import { isInternalEventType } from "../utils/parse-cleanup.js";
 import { asRecord, asString, narrowField, reportFieldMismatch } from "../utils/narrow.js";
 import { getCoreDiagnostics } from "../utils/diagnostics.js";
+import { hasOpenCodeV2, readOpenCodeV2 } from "./opencode-v2.js";
 import {
   cleanMessagePart,
   cleanParsedMessages,
@@ -51,11 +52,12 @@ interface OpenCodeSqliteAgentConfig {
   displayName: string;
   findDbPath: () => string | null;
   getSessionWatchPlan: () => SessionWatchPlan;
+  supportsV2?: boolean;
 }
 
 const MESSAGE_ROLES = new Set<Message["role"]>(["user", "assistant", "tool"]);
 const SESSION_ID_QUERY_CHUNK_SIZE = 500;
-const HEAD_PARSER_VERSION = "opencode-sqlite-head-v1";
+const HEAD_PARSER_VERSION = "opencode-sqlite-head-v2";
 
 function compareSessionRowsByActivityDesc(
   left: Record<string, unknown>,
@@ -121,6 +123,7 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
   readonly displayName: string;
 
   private dbPath: string | null = null;
+  private hasCommittedRefresh = false;
 
   constructor(private readonly config: OpenCodeSqliteAgentConfig) {
     super();
@@ -156,6 +159,20 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
     if (!db) throw new SessionScanError(this.name, "opening the database");
 
     try {
+      if (this.config.supportsV2) {
+        const sessions = db.transaction(() =>
+          hasOpenCodeV2(db) ? readOpenCodeV2(db, options) : null,
+        )();
+        if (sessions)
+          return sessions.map(({ data, sourceFingerprint }) => {
+            this.rememberSession(data.reference.sessionId, {
+              headParserVersion: HEAD_PARSER_VERSION,
+              sourceFingerprint,
+            });
+            const { messages: _messages, ...head } = data;
+            return head;
+          });
+      }
       const cutoffTime = options?.from ?? Date.now() - 3650 * 24 * 60 * 60 * 1000;
       const activityPredicate =
         options?.to == null
@@ -539,8 +556,17 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
         this.sessionMetaMap.get(session.reference.sessionId)?.headParserVersion !==
         HEAD_PARSER_VERSION,
     );
-    if (hasStaleHead) return { hasChanges: true, timestamp: Date.now() };
-    return super.checkForChanges(sinceTimestamp, cachedSessions);
+    const check = super.checkForChanges(sinceTimestamp, cachedSessions);
+    if (check.status === "failed") return check;
+    // Older parsers could cache an empty V2 database, leaving no head version to invalidate.
+    const uncheckedEmpty =
+      this.config.supportsV2 && !this.hasCommittedRefresh && cachedSessions.length === 0;
+    return hasStaleHead || uncheckedEmpty ? { ...check, hasChanges: true } : check;
+  }
+
+  commitChangeCheck(): void {
+    super.commitChangeCheck();
+    this.hasCommittedRefresh = true;
   }
 
   private sumChildTokenStats(db: SQLiteDatabase, parentSessionId: string): SessionHead["stats"][] {
@@ -589,6 +615,16 @@ export class OpenCodeSqliteAgent extends DatabaseSessionSource {
 
     try {
       // First get session metadata
+      if (this.config.supportsV2) {
+        const sessions = db.transaction(() =>
+          hasOpenCodeV2(db) ? readOpenCodeV2(db, undefined, sessionId) : null,
+        )();
+        if (sessions) {
+          const session = sessions[0];
+          if (!session) throw new Error(`Session not found: ${sessionId}`);
+          return session.data;
+        }
+      }
       const sessionRow = db.prepare("SELECT * FROM session WHERE id = ?").get(sessionId) as
         | Record<string, unknown>
         | undefined;
