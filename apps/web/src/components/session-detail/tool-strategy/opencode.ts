@@ -4,7 +4,7 @@
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "../../../lib/api";
-import { extractEditDiff } from "../diff";
+import { buildStructuredDiffFromTexts, extractEditDiff } from "../diff";
 import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
@@ -28,6 +28,21 @@ export function buildOpencodeToolStrategy(
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  if (state.status === "error") {
+    const error = toPlainText(state.errorValue);
+    const output = toPlainText(state.outputValue);
+    return error && output
+      ? {
+          ...defaultStrategy,
+          outputContent: {
+            kind: "plain",
+            text: `${error}\n\n${output}`,
+            language: "text",
+            isCode: false,
+          },
+        }
+      : defaultStrategy;
+  }
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
@@ -54,7 +69,7 @@ export function buildOpencodeToolStrategy(
     });
   }
 
-  if (toolKey === "bash") {
+  if (toolKey === "bash" || toolKey === "shell") {
     return buildShellToolStrategy({
       defaultStrategy,
       state,
@@ -70,15 +85,22 @@ export function buildOpencodeToolStrategy(
   }
 
   if (toolKey === "edit") {
+    const blocks = buildStructuredDiffFromTexts(
+      displayPath || filePath,
+      toPlainText(input.oldString),
+      toPlainText(input.newString),
+    );
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      outputContent: {
-        kind: "plain",
-        text: extractEditDiff(state),
-        language: "diff",
-        isCode: true,
-      },
+      outputContent: blocks.length
+        ? { kind: "structured-diff", blocks }
+        : {
+            kind: "plain",
+            text: extractEditDiff(state),
+            language: "diff",
+            isCode: true,
+          },
     });
   }
 
