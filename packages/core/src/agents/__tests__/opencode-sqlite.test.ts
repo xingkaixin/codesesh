@@ -325,7 +325,7 @@ describe("OpenCodeSqliteAgent", () => {
     const heads = agent.scan({ from: 0 });
 
     expect(agent.getSessionCacheMeta("s1")).toMatchObject({
-      headParserVersion: "opencode-sqlite-head-v1",
+      headParserVersion: "opencode-sqlite-head-v2",
     });
     expect(agent.checkForChanges(Number.MAX_SAFE_INTEGER, heads).hasChanges).toBe(false);
 
