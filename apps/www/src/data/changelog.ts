@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.12",
+        date: "2026-09-24",
+        title: "Keep browsing your history after moving to OpenCode V2",
+        summary:
+          "CodeSesh now supports OpenCode V2 history based on version 2.0.15, while retaining V1 support. Review conversations, reasoning, and tool results, keep fork usage from being counted twice, and refresh cached history when you select a different database.",
+        direction:
+          "Local AI coding history should remain useful as tools change their storage formats, preserving conversation context and the usage recorded by each source.",
+        highlights: [
+          {
+            title: "Replay OpenCode V2 conversations",
+            description:
+              "Search and replay saved messages, reasoning, tool results, child sessions, and compaction records. Copy a resume command to continue a session in OpenCode.",
+          },
+          {
+            title: "Usage that respects forks and subtasks",
+            description:
+              "Session usage and costs follow OpenCode's recorded totals, so copied fork history and child-session usage are not counted again. Explicit zero costs stay zero.",
+          },
+          {
+            title: "History follows your selected database",
+            description:
+              "Choose a custom OpenCode database and keep saved message changes in sync. Switching database paths refreshes cached sessions even when the selected database is older than the last scan.",
+          },
+        ],
+      },
+      {
         version: "1.0.11",
         date: "2026-09-21",
         title: "Exit cleanly while background work is running",
@@ -331,6 +357,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.0.12",
+        date: "2026-09-24",
+        title: "升级到 OpenCode V2 后，继续查看会话历史",
+        summary:
+          "CodeSesh 现在支持基于 2.0.15 版本的 OpenCode V2 历史，同时保留 V1 支持。可以回看对话、思考与工具结果，避免重复计算 fork 复制的历史用量，并在切换数据库后刷新缓存历史。",
+        direction:
+          "本地 AI 编码工具改变存储格式后，历史记录仍应可查、可读，并保留对话上下文和数据源记录的用量。",
+        highlights: [
+          {
+            title: "搜索与回放 OpenCode V2 会话",
+            description:
+              "查看已保存的消息、思考、工具结果、子会话与上下文压缩记录，也可以复制恢复命令，回到 OpenCode 继续会话。",
+          },
+          {
+            title: "fork 与子任务用量不重复累计",
+            description:
+              "会话用量与费用采用 OpenCode 记录的累计值，避免再次计入 fork 复制的历史和子会话用量，明确记录的零费用也保持为零。",
+          },
+          {
+            title: "历史记录跟随所选数据库",
+            description:
+              "支持选择自定义 OpenCode 数据库，并同步已保存的消息变化。切换数据库路径后，即使所选数据库早于上次扫描，也会重新读取并更新缓存会话。",
+          },
+        ],
+      },
+      {
         version: "1.0.11",
         date: "2026-09-21",
         title: "后台任务运行时也能正常退出",
@@ -578,6 +630,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.0.12",
+        date: "2026-09-24",
+        title: "OpenCode V2 への移行後も会話履歴を確認",
+        summary:
+          "CodeSesh が OpenCode 2.0.15 に基づく V2 の履歴に対応しました。V1 への対応も維持しています。会話、思考内容、ツールの結果を確認でき、フォークでコピーされた履歴の使用量を二重計上しません。データベースを切り替えると、キャッシュされた履歴も更新します。",
+        direction:
+          "ローカル AI コーディングツールの保存形式が変わっても、履歴を検索して読み返せることを重視しています。会話の文脈と、各データソースが記録した使用量を保ちます。",
+        highlights: [
+          {
+            title: "OpenCode V2 の会話を検索して振り返る",
+            description:
+              "保存されたメッセージ、思考内容、ツールの結果、子セッション、コンテキスト圧縮の記録を確認できます。再開コマンドをコピーして OpenCode で会話を続けることもできます。",
+          },
+          {
+            title: "フォークや子タスクの使用量を二重計上しない",
+            description:
+              "使用量と費用には OpenCode が記録したセッション合計を使い、フォークでコピーされた履歴や子セッションの使用量を重ねて加算しません。明示的にゼロと記録された費用もそのまま表示します。",
+          },
+          {
+            title: "選択したデータベースに履歴を合わせる",
+            description:
+              "OpenCode のデータベースを指定し、保存されたメッセージの変更を反映できます。データベースのパスを切り替えると、選択したデータベースが前回のスキャンより古い場合も、キャッシュされたセッションを更新します。",
+          },
+        ],
+      },
       {
         version: "1.0.11",
         date: "2026-09-21",

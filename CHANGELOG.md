@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.12] - 2026-09-24
+
+This release adds OpenCode V2 session history alongside existing V1 support, preserves session usage without double-counting copied fork history, refreshes cached sessions when the source database path changes, and updates workspace dependencies. (#631, #632, #633, #634)
+
+### Features
+
+- Added OpenCode V2 history based on the `2.0.15` schema, including ordered message replay, reasoning, tool results, attachment references, child sessions, and compaction records. Shell commands and edit diffs use the existing tool views, and resume commands remain `opencode -s <sessionId>`. (#633)
+- Support custom OpenCode databases through `OPENCODE_DB`, with relative paths resolved against `XDG_DATA_HOME/opencode` or the default `~/.local/share/opencode`. Database and WAL changes refresh session details and search, including edits and deletions. (#633)
+- Use OpenCode V2 session totals for usage and costs to avoid counting copied fork history or child-session usage again. Preserve explicit zero costs and omit model breakdowns when message usage cannot reliably account for session totals. (#633)
+
+### Bug Fixes
+
+- Refresh database-backed session caches when the source database path changes, even if the selected database is older than the last scan, so cached history follows the selected source. (#634)
+
+### Compatibility
+
+- Retain OpenCode V1 support and read V2 databases without modifying them. Incomplete V1-to-V2 migrations or unreadable data report a scan failure while retaining cached history. V2 compatibility targets the `2.0.15` schema and is validated with constructed SQLite fixtures; older development schemas are not supported. (#633)
+
+### Build
+
+- Updated React Query, Astro, Hugeicons, and Node.js type definitions. (#631)
+- Updated Turbo, ESLint, Astro lint and formatting plugins, Prettier, and shadcn lint rules. (#632)
+
 ## [1.0.11] - 2026-09-21
 
 This release removes misleading session refresh and backfill errors when Ctrl+C interrupts background work during shutdown.
