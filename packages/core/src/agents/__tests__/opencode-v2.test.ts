@@ -439,6 +439,25 @@ describe("OpenCode V2", () => {
     expect(agent.checkForChanges(future, []).hasChanges).toBe(false);
   });
 
+  it("refreshes cached sessions from another database even when the current database is older", () => {
+    session();
+    message("user", { text: "Current history" }, 1);
+    const previousRoot = join(root, "previous");
+    mkdirSync(previousRoot);
+    copyFileSync(join(root, "opencode.db"), join(previousRoot, "opencode.db"));
+    const previous = new OpenCodeAgent({ sourceRoot: previousRoot });
+    const cached = previous.scan();
+    agent.restoreSessionCacheMeta(previous.snapshotSessionCacheMeta());
+    const future = Date.now() + 10000;
+
+    expect(agent.checkForChanges(future, cached).hasChanges).toBe(true);
+    expect(agent.checkForChanges(future, cached).hasChanges).toBe(true);
+    const refreshed = agent.scan();
+    agent.commitChangeCheck();
+    expect(agent.snapshotSessionCacheMeta().root?.sourcePath).toBe(join(root, "opencode.db"));
+    expect(agent.checkForChanges(future, refreshed).hasChanges).toBe(false);
+  });
+
   it("resolves explicit, relative, absolute and unavailable database paths consistently", () => {
     session();
     message("user", { text: "Configured" }, 1);

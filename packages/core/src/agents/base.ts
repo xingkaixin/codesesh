@@ -682,14 +682,15 @@ export abstract class DatabaseSessionSource extends BaseAgent {
       if (!statOrNull(dbPath)) {
         return { hasChanges: false, timestamp: Date.now() };
       }
-      const pricingChanged = cachedSessions.some((session) => {
+      const cacheMetadataChanged = cachedSessions.some((session) => {
         const meta = this.sessionMetaMap.get(session.reference.sessionId);
         return (
-          meta?.pricingCaptureEpoch !== PRICING_CAPTURE_EPOCH ||
+          meta?.sourcePath !== dbPath ||
+          meta.pricingCaptureEpoch !== PRICING_CAPTURE_EPOCH ||
           pricingBecameAvailable(meta.unpricedModels)
         );
       });
-      if (pricingChanged) return { hasChanges: true, timestamp: Date.now() };
+      if (cacheMetadataChanged) return { hasChanges: true, timestamp: Date.now() };
 
       const fingerprint = sqliteSourceFingerprint(dbPath);
       const previous = this.lastSourceFingerprint;
