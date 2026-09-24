@@ -1,6 +1,6 @@
 {
   "name": "codesesh",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Browse local AI coding-agent sessions in one Web UI.",
   "keywords": [
     "ai",
