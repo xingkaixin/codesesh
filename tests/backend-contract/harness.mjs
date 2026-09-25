@@ -1,3 +1,4 @@
+import { nativeBinary } from "../../scripts/lib/native-command.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -11,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 export const SESSION_ID = "019fdefe-bb8d-76f3-b988-770e6cc6a30d";
@@ -20,9 +21,7 @@ export const DETAIL_PATH = `/api/sessions/codex/${SESSION_ID}`;
 
 export function backendCommand() {
   const configured = process.env.CODESESH_BACKEND_COMMAND;
-  const command = configured
-    ? JSON.parse(configured)
-    : [process.execPath, resolve("packages/cli/dist/index.js")];
+  const command = configured ? JSON.parse(configured) : [nativeBinary];
   assert.ok(
     Array.isArray(command) &&
       command.length > 0 &&
