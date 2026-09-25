@@ -13,6 +13,7 @@ import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";
 import { HeightIndex } from "./height-index";
+import { useTranscriptScroll } from "./use-transcript-scroll";
 import {
   findScrollParent,
   getElementTop,
@@ -59,47 +60,48 @@ export function MessageList({
 }: MessageListProps) {
   useLocale();
 
+  const transcriptRef = useTranscriptScroll(messages);
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
   useEffect(() => {
     if (!shouldVirtualize) apiRef.current = null;
   }, [apiRef, shouldVirtualize]);
 
-  if (shouldVirtualize) {
-    return (
-      <VirtualizedMessageList
-        messages={messages}
-        sessionAgentKey={sessionAgentKey}
-        agent={agent}
-        baseDirectory={baseDirectory}
-        highlightQuery={highlightQuery}
-        childSessionById={childSessionById}
-        apiRef={apiRef}
-        anchorRegistry={anchorRegistry}
-      />
-    );
-  }
-
   return (
-    <TimelineAnchorRegistryProvider registry={anchorRegistry}>
-      <div className="flex min-w-0 flex-col gap-8">
-        {messages.map(({ msg, blocks, index }, position) => (
-          <MessageItem
-            key={`${msg.id}:${index}`}
-            messageIndex={index}
-            previousMessageTime={messages[position - 1]?.msg.time_created}
-            msg={msg}
-            blocks={blocks}
-            formatTokens={formatTokens}
-            sessionAgentKey={sessionAgentKey}
-            agent={agent}
-            baseDirectory={baseDirectory}
-            highlightQuery={highlightQuery}
-            childSessionById={childSessionById}
-          />
-        ))}
-      </div>
-    </TimelineAnchorRegistryProvider>
+    <div ref={transcriptRef}>
+      {shouldVirtualize ? (
+        <VirtualizedMessageList
+          messages={messages}
+          sessionAgentKey={sessionAgentKey}
+          agent={agent}
+          baseDirectory={baseDirectory}
+          highlightQuery={highlightQuery}
+          childSessionById={childSessionById}
+          apiRef={apiRef}
+          anchorRegistry={anchorRegistry}
+        />
+      ) : (
+        <TimelineAnchorRegistryProvider registry={anchorRegistry}>
+          <div className="flex min-w-0 flex-col gap-8">
+            {messages.map(({ msg, blocks, index }, position) => (
+              <MessageItem
+                key={`${msg.id}:${index}`}
+                messageIndex={index}
+                previousMessageTime={messages[position - 1]?.msg.time_created}
+                msg={msg}
+                blocks={blocks}
+                formatTokens={formatTokens}
+                sessionAgentKey={sessionAgentKey}
+                agent={agent}
+                baseDirectory={baseDirectory}
+                highlightQuery={highlightQuery}
+                childSessionById={childSessionById}
+              />
+            ))}
+          </div>
+        </TimelineAnchorRegistryProvider>
+      )}
+    </div>
   );
 }
 
@@ -225,9 +227,19 @@ function VirtualizedMessageList({
     };
   }, [updateViewport]);
 
+  const [measuredHeights] = useState(() => new Map<string, number>());
   const heightIndex = useMemo(() => {
-    return new HeightIndex(messages.length, VIRTUALIZED_MESSAGE_ESTIMATE_PX, MESSAGE_LIST_GAP_PX);
-  }, [messages]);
+    const index = new HeightIndex(
+      messages.length,
+      VIRTUALIZED_MESSAGE_ESTIMATE_PX,
+      MESSAGE_LIST_GAP_PX,
+    );
+    messages.forEach(({ msg }, position) => {
+      const height = measuredHeights.get(msg.id);
+      if (height != null) index.setHeight(position, height);
+    });
+    return index;
+  }, [messages, measuredHeights]);
 
   useEffect(() => {
     updateViewport();
@@ -243,6 +255,8 @@ function VirtualizedMessageList({
   const measureItem = useCallback(
     (index: number, height: number) => {
       if (!heightIndex.setHeight(index, height)) return;
+      const message = messages[index];
+      if (message) measuredHeights.set(message.msg.id, height);
       // Every row mounting in one frame would otherwise commit its own render.
       if (pendingMeasureFrameRef.current) return;
       pendingMeasureFrameRef.current = requestAnimationFrame(() => {
@@ -250,7 +264,7 @@ function VirtualizedMessageList({
         setMeasurementVersion((version) => version + 1);
       });
     },
-    [heightIndex],
+    [heightIndex, messages, measuredHeights],
   );
 
   const virtualItems = useMemo(
