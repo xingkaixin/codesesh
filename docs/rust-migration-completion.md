@@ -1,5 +1,7 @@
 # Rust 后端迁移汇总包
 
+完整历史回填吞吐的后续优化见 [扫描吞吐报告](benchmarks/rust-backfill-throughput-2026-09-25.md)。
+
 2026-09-25 后续解析、索引与常驻内存优化，以及 5,356 个本地会话的验收，见
 [JSONL 解析与常驻内存报告](benchmarks/rust-streaming-memory-2026-09-25.md)。此前 P6 和本地内存报告保留其原构建指标。
 
