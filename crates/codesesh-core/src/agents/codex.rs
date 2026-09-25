@@ -279,6 +279,10 @@ fn merge_children(
                 }
             }
         }
+        session
+            .detail
+            .messages
+            .sort_by(|a, b| a.time_created.total_cmp(&b.time_created));
         session.detail.head.stats.message_count = session.detail.messages.len();
         let tags = super::smart_tags::classify(&session.detail.messages);
         session.head.smart_tags = tags.clone();
@@ -969,6 +973,78 @@ mod incremental_tests {
     fn title_trims_after_utf16_limit() {
         let text = format!("{} trailing", "x".repeat(99));
         assert_eq!(title(&text).unwrap(), "x".repeat(99));
+    }
+
+    #[test]
+    fn child_returns_are_merged_chronologically_in_full_and_incremental_scans() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "00000000-0000-0000-0000-000000000001";
+        let child = "00000000-0000-0000-0000-000000000002";
+        let mut parent_path = PathBuf::new();
+        for (id, parent_id, messages) in [
+            (
+                parent,
+                None,
+                vec![(1000, "first"), (3000, "last"), (3000, "same-time")],
+            ),
+            (child, Some(parent), vec![(2000, "child result")]),
+        ] {
+            let mut records = vec![serde_json::json!({
+                "type":"session_meta", "timestamp":500,
+                "payload":{"id":id,"cwd":"/project","thread_source":parent_id.map(|_| "subagent"),"parent_thread_id":parent_id}
+            })];
+            for (time, text) in messages {
+                records.push(serde_json::json!({
+                    "type":"response_item", "timestamp":time,
+                    "payload":{"type":"message","role":if parent_id.is_some() {"assistant"} else {"user"},"phase":"final_answer","content":[{"type":"output_text","text":text}]}
+                }));
+            }
+            let path = sessions.join(format!("rollout-2026-01-01-{id}.jsonl"));
+            let contents = records
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n";
+            std::fs::write(&path, contents).unwrap();
+            if id == parent {
+                parent_path = path;
+            }
+        }
+        let pricing = Pricing::bundled();
+        let full = scan(root.path(), &pricing).unwrap();
+        let previous = full
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect::<Vec<_>>();
+        let incremental = scan_changed(root.path(), &pricing, &[parent_path], &previous).unwrap();
+        for result in [&full, &incremental.upserts] {
+            let messages = &result
+                .iter()
+                .find(|session| session.head.reference.session_id == parent)
+                .unwrap()
+                .detail
+                .messages;
+            assert_eq!(
+                messages
+                    .iter()
+                    .map(|message| message.time_created)
+                    .collect::<Vec<_>>(),
+                [1000.0, 2000.0, 3000.0, 3000.0]
+            );
+            assert_eq!(messages[1].subagent_id.as_deref(), Some(child));
+            let texts = messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .filter_map(|part| match part {
+                    MessagePart::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(texts, ["first", "child result", "last", "same-time"]);
+        }
     }
 
     #[test]

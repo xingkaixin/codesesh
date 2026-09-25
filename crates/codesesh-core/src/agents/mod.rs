@@ -1,4 +1,10 @@
-pub(crate) const PARSER_VERSION: &str = "rust-parser-v2";
+pub(crate) fn parser_version(agent: &str) -> &'static str {
+    if agent == "codex" {
+        "rust-parser-v3"
+    } else {
+        "rust-parser-v2"
+    }
+}
 
 pub mod cherrystudio;
 pub mod claudecode;

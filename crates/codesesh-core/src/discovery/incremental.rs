@@ -220,7 +220,7 @@ impl AgentScanner {
             let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
             checkpoint["sourceState"] = serde_json::json!({
                 "version": 1,
-                "parserVersion": agents::PARSER_VERSION,
+                "parserVersion": agents::parser_version(&self.source.agent),
                 "generation": self.pricing.generation(),
                 "root": self.source.scan_path,
                 "files": self.file_fingerprints,
@@ -698,7 +698,7 @@ impl AgentScanner {
         if let Some(state) =
             saved.and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
             && state["version"] == 1
-            && state["parserVersion"].as_str() == Some(agents::PARSER_VERSION)
+            && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
             && state["generation"].as_u64() == Some(self.pricing.generation())
             && state["root"].as_str() == self.source.scan_path.to_str()
         {

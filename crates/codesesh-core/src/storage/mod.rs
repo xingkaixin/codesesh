@@ -228,11 +228,11 @@ impl Cache {
                 .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|duration| duration.as_secs_f64() * 1000.0);
             let fingerprint = json::stringify(&serde_json::json!([
-                crate::agents::PARSER_VERSION,
+                crate::agents::parser_version(&reference.agent_name),
                 modified,
                 file_meta.as_ref().map(|meta| meta.len())
             ]))?;
-            let mut metadata = serde_json::json!({"sourcePath":session.source.to_string_lossy(),"sourceFingerprint":fingerprint,"parserVersion":crate::agents::PARSER_VERSION});
+            let mut metadata = serde_json::json!({"sourcePath":session.source.to_string_lossy(),"sourceFingerprint":fingerprint,"parserVersion":crate::agents::parser_version(&reference.agent_name)});
             if let Some(version) = &head.version {
                 metadata["rustHeadVersion"] = serde_json::Value::String(version.clone());
             }
@@ -242,7 +242,10 @@ impl Cache {
             let detail_version = json::stringify(&serde_json::json!([
                 "session-detail-v1",
                 fingerprint,
-                [["parserVersion", crate::agents::PARSER_VERSION]]
+                [[
+                    "parserVersion",
+                    crate::agents::parser_version(&reference.agent_name)
+                ]]
             ]))?;
             transaction.execute(
                 "DELETE FROM session_documents WHERE agent_name=? AND session_id=?",
