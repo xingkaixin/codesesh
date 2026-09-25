@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm build:web && pnpm build:rust",
+    "sync:version": "node scripts/sync-version.mjs",
     "build:app": "pnpm build",
     "run:app": "node scripts/run-native.mjs",
     "dev": "pnpm build && node scripts/run-native.mjs",
@@ -29,7 +30,7 @@
     "typecheck:e2e": "pnpm --filter @codesesh/contract build && tsc --noEmit -p tsconfig.e2e.json",
     "test:migration": "node --test tests/backend-contract/cache-roundtrip.test.mjs",
     "package:artifact": "node scripts/package-artifact.mjs",
-    "package:artifact:test": "node --test scripts/rust/packaging.test.mjs",
+    "package:artifact:test": "node --test scripts/rust/packaging.test.mjs scripts/rust/publish.test.mjs",
     "package:smoke": "node scripts/rust/smoke.mjs --contracts",
     "bench:perf": "node scripts/benchmark-performance.mjs",
     "perf:check": "node scripts/perf-scale.mjs",

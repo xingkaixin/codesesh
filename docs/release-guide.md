@@ -92,7 +92,7 @@ node scripts/rust/verify-set.mjs
 
 - [ ] **Changelog**：更新 `CHANGELOG.md`、`CHANGELOG_CN.md` 新版本区块
 - [ ] **产品更新日志**：更新 `apps/www/src/data/changelog.ts` 的英文、中文、日文条目
-- [ ] **版本号**：将下列文件的版本更新到目标版本（与 Cargo workspace 保持一致）：
+- [ ] **版本号**：修改 `Cargo.toml` 的 workspace version，再运行 `pnpm sync:version`，同步下列 package manifest 和 Cargo.lock 的两个 workspace 包版本：
   - `Cargo.toml`
   - `packages/contract/package.json`
   - `apps/web/package.json`

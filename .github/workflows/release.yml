@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -125,20 +129,7 @@ jobs:
           JS
 
       - name: Publish native packages, then the main package
-        run: |
-          node --input-type=module <<'JS'
-          import { execFileSync } from "node:child_process";
-          import { readFileSync } from "node:fs";
-          import { join } from "node:path";
-          import { output } from "./scripts/rust/common.mjs";
-          const { manifests } = JSON.parse(readFileSync(join(output, "release-set.json"), "utf8"));
-          const packages = manifests.map((manifest) => join(output, manifest.target, manifest.platformPackage));
-          const first = manifests[0];
-          packages.push(join(output, first.target, first.mainPackage));
-          for (const path of packages) {
-            execFileSync("npm", ["publish", path, "--provenance", "--access", "public"], { stdio: "inherit" });
-          }
-          JS
+        run: node scripts/rust/publish.mjs
         env:
           NODE_AUTH_TOKEN: ""
 

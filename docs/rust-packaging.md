@@ -49,4 +49,4 @@ node --test scripts/rust/packaging.test.mjs
 
 macOS arm64 已在 Node 24.21.0 / npm 8.3.1 上实际完成打包与完整安装 smoke，npm 安装脚本关闭；原生压缩包、平台包、安装后二进制 hash 一致。原生二进制与 npm launcher 各通过 3 个后端进程契约，并读取共 16 个内嵌 Web 资源，覆盖首页与 SPA 路由。具体二进制 hash 和时间以该目标 smoke-report.json 为准；后续代码变化需要重新打包验收。另三个平台尚未在此本地环境运行，当前没有最低 glibc 兼容性承诺。
 
-根 package:artifact 与 package:smoke 已使用原生打包和安装验证，主包采用本文的 launcher 与精确版本 optionalDependencies。默认 build 先构建 Web，再构建内嵌资源的 release 二进制；源码启动使用 scripts/run-native.mjs。CI 按四个原生目标构建并验收，实际结果以对应运行报告为准。正式发布属于 P8，仍未授权；本目录不包含 publish 命令。
+根 package:artifact 与 package:smoke 已使用原生打包和安装验证，主包采用本文的 launcher 与精确版本 optionalDependencies。默认 build 先构建 Web，再构建内嵌资源的 release 二进制；源码启动使用 scripts/run-native.mjs。CI 按四个原生目标构建并验收，实际结果以对应运行报告为准。正式发布属于 P8，仍未授权；`scripts/rust/publish.mjs` 仅由正式发布工作流调用；它先核对注册表中同版本制品的实际摘要，再按平台包、主包顺序发布。本轮仅验证模拟注册表与进程调用，不执行真实发布。
