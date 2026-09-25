@@ -97,7 +97,11 @@ fn eligible(response: &Response) -> bool {
     else {
         return false;
     };
-    let mime = content_type.split(';').next().unwrap_or("").trim();
+    let mime = content_type
+        .trim_start()
+        .split([';', ' ', '\t', '\r', '\n'])
+        .next()
+        .unwrap_or("");
     !mime.eq_ignore_ascii_case("text/event-stream") && COMPRESSIBLE.is_match(content_type)
 }
 

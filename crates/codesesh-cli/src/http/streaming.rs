@@ -37,6 +37,104 @@ where
         .unwrap()
 }
 
+pub async fn detail(
+    runtime: codesesh_core::runtime::Runtime,
+    reference: codesesh_core::contract::SessionReference,
+    cursor: Option<String>,
+    aliases: std::collections::HashMap<codesesh_core::contract::SessionReference, String>,
+    guard: tokio::sync::OwnedSemaphorePermit,
+) -> Response {
+    let (sender, mut receiver) = mpsc::channel(BUFFERED_CHUNKS);
+    let output = sender.clone();
+    tokio::spawn(async move {
+        let result = runtime
+            .read(move |connection| {
+                let head = codesesh_core::storage::head_from_connection(connection, &reference)?
+                    .ok_or(DetailNotReady)?;
+                let mut writer = ChunkWriter {
+                    sender,
+                    buffer: Vec::with_capacity(CHUNK_BYTES),
+                };
+                writer.write_all(b"{\"messages\":[")?;
+                let mut first = true;
+                let detail = codesesh_core::storage::visit_detail_messages(
+                    connection,
+                    head,
+                    cursor.as_deref(),
+                    |message| {
+                        let message = super::wire::message(message)?;
+                        if !first {
+                            writer.write_all(b",")?;
+                        }
+                        first = false;
+                        serde_json::to_writer(&mut writer, &message)?;
+                        Ok(())
+                    },
+                )?
+                .ok_or(DetailNotReady)?;
+                let mut detail = detail;
+                super::decorate(&mut detail.head, &aliases);
+                let mut footer = serde_json::to_value(super::wire::detail(detail)?)?;
+                footer
+                    .as_object_mut()
+                    .expect("detail is a JSON object")
+                    .remove("messages");
+                let footer = serde_json::to_vec(&footer)?;
+                writer.write_all(b"],")?;
+                writer.write_all(&footer[1..])?;
+                writer.flush()?;
+                Ok(())
+            })
+            .await;
+        if let Err(error) = result {
+            let kind = if error
+                .downcast_ref::<codesesh_core::runtime::ReadBusy>()
+                .is_some()
+            {
+                io::ErrorKind::WouldBlock
+            } else if error.downcast_ref::<DetailNotReady>().is_some() {
+                io::ErrorKind::NotFound
+            } else {
+                io::ErrorKind::Other
+            };
+            let _ = output.send(Err(io::Error::new(kind, error))).await;
+        }
+    });
+    let first = match receiver.recv().await {
+        Some(Ok(first)) => first,
+        Some(Err(error)) if error.kind() == io::ErrorKind::WouldBlock => {
+            return super::retry("Session details busy; retry later");
+        }
+        Some(Err(error)) if error.kind() == io::ErrorKind::NotFound => {
+            return super::retry("Session detail not ready; retry later");
+        }
+        _ => {
+            return super::error(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load session",
+            );
+        }
+    };
+    let stream = async_stream::stream! {
+        let _guard = guard;
+        yield Ok(first);
+        while let Some(chunk) = receiver.recv().await { yield chunk; }
+    };
+    Response::builder()
+        .header(header::CONTENT_TYPE, "application/json; charset=UTF-8")
+        .body(Body::from_stream(stream))
+        .unwrap()
+}
+
+#[derive(Debug)]
+struct DetailNotReady;
+impl std::fmt::Display for DetailNotReady {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("session detail not ready")
+    }
+}
+impl std::error::Error for DetailNotReady {}
+
 struct ChunkWriter {
     sender: mpsc::Sender<io::Result<Bytes>>,
     buffer: Vec<u8>,

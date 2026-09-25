@@ -142,6 +142,15 @@ test("CLI validates dates, sessions, remote access and TLS before scanning", asy
       assert.match(actual.stderr, message);
       assert.equal(actual.stdout, "");
     }
+    for (const port of ["-1", "65536"]) {
+      const args = ["--port", port, "--noOpen"];
+      const expected = await runCli(fixture, args, reference),
+        actual = await runCli(fixture, args, rust);
+      assert.equal(expected.code, 1);
+      assert.equal(actual.code, 1);
+      assert.match(expected.stderr, /port/i);
+      assert.match(actual.stderr, /port/i);
+    }
     await compareJson(fixture, [
       "--days",
       "0",
@@ -216,7 +225,7 @@ async function startup(fixture, command, flags) {
   }
 }
 
-test("CLI startup preserves opaque session paths, proxy origins and port prefix parsing", async () => {
+test("CLI startup accepts opaque sessions, preserves proxy origins and parses port prefixes", async () => {
   const fixture = createFixture();
   try {
     for (const flags of [

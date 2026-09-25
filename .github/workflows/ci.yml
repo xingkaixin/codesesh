@@ -114,6 +114,7 @@ jobs:
         run: |
           pnpm test:backend
           node --test tests/backend-contract/cli-options.test.mjs
+          node --test tests/backend-contract/lifecycle.test.mjs
       - name: Compare complete API payloads with the frozen reference
         run: |
           pnpm test:backend:compare

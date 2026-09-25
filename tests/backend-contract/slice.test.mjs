@@ -16,7 +16,16 @@ function clearCache(fixture) {
     rmSync(join(fixture.root, `.cache/codesesh/codesesh.db${suffix}`), { force: true });
 }
 
-for (const scenario of ["plain", "usage", "plan", "tools", "patch", "exec", "notification", "child"]) {
+for (const scenario of [
+  "plain",
+  "usage",
+  "plan",
+  "tools",
+  "patch",
+  "exec",
+  "notification",
+  "child",
+]) {
   test(`Rust Codex CLI and HTTP slice match the frozen Node reference (${scenario})`, async () => {
     const fixture = createFixture();
     let server;
@@ -109,20 +118,79 @@ for (const scenario of ["plain", "usage", "plan", "tools", "patch", "exec", "not
       );
     }
     if (["patch", "exec", "notification", "child"].includes(scenario)) {
-      const patch = "*** Begin Patch\n*** Add File: src/new.ts\n+export const value = 1;\n*** Update File: src/old.ts\n*** Move to: src/renamed.ts\n-old\n+new\n*** End Patch";
-      const payloads = scenario === "notification" ? [{type:"message",role:"user",content:[{type:"input_text",text:'<subagent_notification>{"agent_id":"child-1","nickname":"Worker","completed":"Completed the work."}</subagent_notification>'}]}]
-        : scenario === "child" ? [] : [
-          {type:"custom_tool_call",name:scenario === "exec" ? "exec" : "apply_patch",call_id:"custom-1",input:scenario === "exec" ? `const patch = ${JSON.stringify(patch)}; await tools.apply_patch({patch}); await tools.exec_command({cmd: 'echo hello', timeout_ms: 1000});` : patch},
-          {type:"custom_tool_call_output",call_id:"custom-1",output:"Script completed\nWall time 0.1 seconds\nOutput:\nDone."}
-        ];
-      appendFileSync(fixture.source, payloads.map((payload,index)=>JSON.stringify({timestamp:`2026-09-01T10:00:0${index+4}Z`,type:"response_item",payload})).join("\n")+"\n");
+      const patch =
+        "*** Begin Patch\n*** Add File: src/new.ts\n+export const value = 1;\n*** Update File: src/old.ts\n*** Move to: src/renamed.ts\n-old\n+new\n*** End Patch";
+      const payloads =
+        scenario === "notification"
+          ? [
+              {
+                type: "message",
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: '<subagent_notification>{"agent_id":"child-1","nickname":"Worker","completed":"Completed the work."}</subagent_notification>',
+                  },
+                ],
+              },
+            ]
+          : scenario === "child"
+            ? []
+            : [
+                {
+                  type: "custom_tool_call",
+                  name: scenario === "exec" ? "exec" : "apply_patch",
+                  call_id: "custom-1",
+                  input:
+                    scenario === "exec"
+                      ? `const patch = ${JSON.stringify(patch)}; await tools.apply_patch({patch}); await tools.exec_command({cmd: 'echo hello', timeout_ms: 1000});`
+                      : patch,
+                },
+                {
+                  type: "custom_tool_call_output",
+                  call_id: "custom-1",
+                  output: "Script completed\nWall time 0.1 seconds\nOutput:\nDone.",
+                },
+              ];
+      appendFileSync(
+        fixture.source,
+        payloads
+          .map((payload, index) =>
+            JSON.stringify({
+              timestamp: `2026-09-01T10:00:0${index + 4}Z`,
+              type: "response_item",
+              payload,
+            }),
+          )
+          .join("\n") + "\n",
+      );
       if (scenario === "child") {
-        const childSource = fixture.source.replace(/[^/\\]+$/, "rollout-2026-09-01T10-00-00-019fdefe-bb8d-76f3-b988-770e6cc6a30e.jsonl");
-        const original = JSON.parse(readFileSync(fixture.source,"utf8").split("\n")[0]);
-        original.payload.thread_source="subagent";
-        original.payload.parent_thread_id="019fdefe-bb8d-76f3-b988-770e6cc6a30d";
-        original.payload.agent_nickname="Worker";
-        writeFileSync(childSource,[original,{timestamp:"2026-09-01T10:00:04Z",type:"response_item",payload:{type:"message",role:"assistant",phase:"final_answer",content:[{type:"output_text",text:"Completed child work."}]}}].map(JSON.stringify).join("\n")+"\n");
+        const childSource = fixture.source.replace(
+          /[^/\\]+$/,
+          "rollout-2026-09-01T10-00-00-019fdefe-bb8d-76f3-b988-770e6cc6a30e.jsonl",
+        );
+        const original = JSON.parse(readFileSync(fixture.source, "utf8").split("\n")[0]);
+        original.payload.thread_source = "subagent";
+        original.payload.parent_thread_id = "019fdefe-bb8d-76f3-b988-770e6cc6a30d";
+        original.payload.agent_nickname = "Worker";
+        writeFileSync(
+          childSource,
+          [
+            original,
+            {
+              timestamp: "2026-09-01T10:00:04Z",
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: "assistant",
+                phase: "final_answer",
+                content: [{ type: "output_text", text: "Completed child work." }],
+              },
+            },
+          ]
+            .map(JSON.stringify)
+            .join("\n") + "\n",
+        );
       }
     }
     try {

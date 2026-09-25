@@ -48,28 +48,34 @@ const changes = Array.from({ length: changeCount }, (_, index) => ({
   },
 }));
 
-function measure(run) {
-  const durations = [];
-  for (let iteration = 0; iteration < 8; iteration += 1) {
-    const startedAt = performance.now();
-    run();
-    durations.push(performance.now() - startedAt);
-  }
-  return durations.toSorted((a, b) => a - b)[Math.floor(durations.length / 2)];
-}
-
-const canonicalMs = measure(() => {
+const canonical = () => {
   const updated = applySessionChanges(sessions, changes, []);
   createSessionIndex(updated);
-});
-const repeatedSortMs = measure(() => {
+};
+const repeatedSort = () => {
   const updated = applySessionChanges(sessions, changes, []);
   const redundantlySorted = [...updated].sort(
     (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
   );
   createSessionIndex(redundantlySorted);
-});
+};
 
+for (let iteration = 0; iteration < 4; iteration += 1) {
+  canonical();
+  repeatedSort();
+}
+const samples = [[], []];
+for (let iteration = 0; iteration < 8; iteration += 1) {
+  const order = iteration % 2 ? [1, 0] : [0, 1];
+  for (const index of order) {
+    const startedAt = performance.now();
+    (index === 0 ? canonical : repeatedSort)();
+    samples[index].push(performance.now() - startedAt);
+  }
+}
+const [canonicalMs, repeatedSortMs] = samples.map(
+  (values) => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)],
+);
 const ratio = canonicalMs / repeatedSortMs;
 const withinBudget = ratio <= MAX_CANONICAL_RATIO;
 

@@ -79,3 +79,121 @@ async fn guard_lasts_until_body_completion_even_after_serialization_finishes() {
     assert!(stream.next().await.is_none());
     assert_eq!(semaphore.available_permits(), 1);
 }
+
+#[tokio::test]
+async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
+    use codesesh_core::{
+        agents::codex::{self, ParsedSession},
+        pricing::Pricing,
+        storage::Cache,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("rollout-large.jsonl");
+    std::fs::write(&source,concat!(
+        "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
+        "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Fixture 中文 🔎\"}]}}\n"
+    )).unwrap();
+    let mut data = codex::parse(&source, &Default::default(), &Pricing::bundled())
+        .unwrap()
+        .unwrap();
+    let message = data.messages[0].clone();
+    data.messages = (0..300)
+        .map(|index| {
+            let mut message = message.clone();
+            message.id = format!("m{index}");
+            message.parts = vec![codesesh_core::contract::MessagePart::Text {
+                text: "中文😀".repeat(512),
+                time_created: Some(message.time_created),
+            }];
+            message
+        })
+        .collect();
+    data.head.stats.message_count = 300;
+    let reference = data.head.reference.clone();
+    let path = root.path().join("cache.db");
+    let mut cache = Cache::open(Some(&path)).unwrap();
+    let mut sessions = [ParsedSession {
+        head: data.head.clone(),
+        detail: data,
+        source,
+    }];
+    cache.publish(&mut sessions).unwrap();
+    let mut expected = cache.detail(sessions[0].head.clone()).unwrap().unwrap();
+    expected.head.display_title = Some("Local Alias".into());
+    let cursor = expected.message_cursor.clone();
+    let expected = serde_json::to_value(super::super::wire::detail(expected).unwrap()).unwrap();
+    drop(cache);
+    let runtime = codesesh_core::runtime::Runtime::start(path, vec![], 1)
+        .await
+        .unwrap();
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+    let aliases = std::collections::HashMap::from([(reference.clone(), "Local Alias".into())]);
+    let response = detail(
+        runtime.clone(),
+        reference.clone(),
+        None,
+        aliases,
+        semaphore.clone().acquire_owned().await.unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(semaphore.available_permits(), 0);
+    let mut stream = response.into_body().into_data_stream();
+    let mut bytes = Vec::new();
+    let mut chunks = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.unwrap();
+        assert!(chunk.len() <= CHUNK_BYTES);
+        bytes.extend_from_slice(&chunk);
+        chunks += 1;
+    }
+    assert!(chunks > 10);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+        expected
+    );
+    assert_eq!(semaphore.available_permits(), 1);
+    let response = detail(
+        runtime.clone(),
+        reference,
+        cursor,
+        Default::default(),
+        semaphore.clone().acquire_owned().await.unwrap(),
+    )
+    .await;
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let appended: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(appended["messages"], serde_json::json!([]));
+    assert_eq!(appended["message_update"], "append");
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn missing_detail_returns_retry_before_streaming_and_releases_permit() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = codesesh_core::runtime::Runtime::start(root.path().join("cache.db"), vec![], 1)
+        .await
+        .unwrap();
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+    let reference = codesesh_core::contract::SessionReference {
+        agent_name: "codex".into(),
+        session_id: "missing".into(),
+    };
+    let response = detail(
+        runtime.clone(),
+        reference,
+        None,
+        Default::default(),
+        semaphore.clone().acquire_owned().await.unwrap(),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(response.headers()["retry-after"], "1");
+    assert_eq!(semaphore.available_permits(), 1);
+    runtime.shutdown().await.unwrap();
+}

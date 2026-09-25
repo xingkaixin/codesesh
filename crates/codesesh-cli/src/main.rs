@@ -22,7 +22,7 @@ async fn main() {
         eprintln!("{error:#}");
         if let Ok(logger) = logging::initialize() {
             logger.error(
-                "cli.failure",
+                "cli.fatal",
                 &serde_json::json!({"error":format!("{error:#}")}),
             );
         }
@@ -111,7 +111,12 @@ async fn run() -> Result<()> {
         if let Some(path) = temporary {
             std::fs::remove_dir_all(path)?;
         }
-        println!("{}", serde_json::to_string(&result?)?);
+        let result = result?;
+        println!("{}", serde_json::to_string(&result)?);
+        logger.info(
+            "cli.json_output",
+            &serde_json::json!({"session_count":result.sessions.len()}),
+        );
         return Ok(());
     }
     let enabled_agents = sources.iter().map(|source| source.agent.clone()).collect();
@@ -194,7 +199,9 @@ async fn run() -> Result<()> {
     startup
         .query_pairs_mut()
         .append_pair("access_token", &token);
-    println!("{startup}");
+    let mut advertised = startup.clone();
+    advertised.set_path("/");
+    println!("{advertised}");
     if args.trace {
         logger.info(
             "perf.startup",

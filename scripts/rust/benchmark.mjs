@@ -575,6 +575,7 @@ const report = {
   originalCommands,
   toolchain,
   sqlite,
+  referenceManifest: JSON.parse(readFileSync(resolve("tests/reference/manifest.json"), "utf8")),
   evaluatorSha256: sha(readFileSync(import.meta.filename)),
   binarySha256: Object.fromEntries(
     Object.entries(commands).map(([name, command]) => [name, sha(readFileSync(command.at(-1)))]),
@@ -589,6 +590,10 @@ const report = {
       "Paired sequential runs on identical source files; backend order alternates per iteration. Other system/agent workloads are not controlled.",
     timings:
       "performance.now wall clock; HTTP TTFB means fetch headers resolved; complete includes response body read, excludes JSON parse",
+    bodyBytes:
+      "Decoded UTF-8 response body bytes after fetch automatic decompression; not wire transfer bytes",
+    appendVisibility:
+      "Wall time from synchronous append until 25 ms polling observes the marker in the full detail response; includes observer request/body/JSON work",
     cliCpu: "/usr/bin/time user+system seconds; not wall time",
     cliPeakRss: "/usr/bin/time OS high-water RSS for one-shot process",
     webPeakRss: "Sampled ps RSS every 200 ms: observed maximum, not OS high-water RSS",
@@ -697,6 +702,13 @@ for (const config of configurations) {
           if (config.name === "mixed-history") {
             clearCache(fixture);
             sample.backfillWeb = await web(fixture, config, commands[backend], true, true);
+          }
+          for (const source of fixture.manifest) {
+            assert.equal(
+              sha(readFileSync(join(fixture.root, source.path))),
+              source.sha256,
+              `Source changed: ${source.path}`,
+            );
           }
           pair[backend] = sample;
         } catch (error) {

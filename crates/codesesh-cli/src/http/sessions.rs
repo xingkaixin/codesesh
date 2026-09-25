@@ -1,9 +1,8 @@
-use super::{State, decorate, error, params::Params, retry};
+use super::{State, error, params::Params, retry};
 use axum::{
-    Json,
     extract::{Path, RawQuery, State as AxumState},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use codesesh_core::public_contract::WireSessionListPage;
 use codesesh_core::{
@@ -102,35 +101,14 @@ pub async fn detail(
     };
     let query = Params::new(raw.as_deref());
     let cursor = query.optional("messageCursor").map(str::to_owned);
-    let result = state
-        .runtime
-        .read(move |conn| {
-            let Some(head) = codesesh_core::storage::head_from_connection(conn, &reference)? else {
-                return Ok(None);
-            };
-            codesesh_core::storage::detail_with_cursor(conn, head, cursor.as_deref())
-        })
-        .await;
-    match result {
-        Ok(Some(mut detail)) => {
-            decorate(&mut detail.head, &state.aliases().await);
-            match super::wire::detail(detail) {
-                Ok(detail) => super::streaming::json_with_guard(detail, _permit),
-                Err(_) => error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Invalid session contract",
-                ),
-            }
-        }
-        Ok(None) => retry("Session detail not ready; retry later"),
-        Err(e)
-            if e.downcast_ref::<codesesh_core::runtime::ReadBusy>()
-                .is_some() =>
-        {
-            retry("Session details busy; retry later")
-        }
-        Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load session"),
-    }
+    super::streaming::detail(
+        state.runtime.clone(),
+        reference,
+        cursor,
+        state.aliases().await,
+        _permit,
+    )
+    .await
 }
 
 fn session_page(
@@ -142,11 +120,13 @@ fn session_page(
         .map(super::wire::head)
         .collect::<Result<Vec<_>, _>>()
     {
-        Ok(sessions) => Json(WireSessionListPage {
-            sessions,
-            next_cursor,
-        })
-        .into_response(),
+        Ok(sessions) => super::streaming::json_with_guard(
+            WireSessionListPage {
+                sessions,
+                next_cursor,
+            },
+            (),
+        ),
         Err(_) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Invalid session contract",
