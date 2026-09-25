@@ -160,7 +160,7 @@ impl AgentScanner {
             self.opencode = None;
             self.fingerprints.clear();
         }
-        if !self.initialized {
+        if !self.initialized || self.baseline.is_empty() && !self.durable_references.is_empty() {
             self.restore()?;
         }
         let page_mode =
@@ -226,6 +226,11 @@ impl AgentScanner {
                 "files": self.file_fingerprints,
                 "emptySources": self.empty_sources,
             });
+        }
+        if page_mode && complete && self.cache_path.is_file() {
+            // Release headers interleaved with parsed bodies; the next refresh reloads durable metadata.
+            self.previous = Vec::new();
+            self.baseline = HashMap::new();
         }
         let rejected = self.rejected.clone();
         Ok(runtime::ScanBatch {
