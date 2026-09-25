@@ -3,8 +3,11 @@ use serde_json::Value;
 
 pub fn stringify(value: &impl Serialize) -> serde_json::Result<String> {
     let value = serde_json::to_value(value)?;
+    stringify_value(&value)
+}
+fn stringify_value(value: &Value) -> serde_json::Result<String> {
     let mut output = String::new();
-    write(&value, &mut output)?;
+    write(value, &mut output)?;
     Ok(output)
 }
 pub fn message_parts(
@@ -13,8 +16,9 @@ pub fn message_parts(
 ) -> serde_json::Result<String> {
     // Node cursors hash JSON text, including each adapter's property insertion order.
     let agent = head.reference.agent_name.as_str();
-    let mut values = serde_json::to_value(parts)?;
-    for value in values.as_array_mut().expect("parts array") {
+    let mut output = String::from("[");
+    for (index, part) in parts.iter().enumerate() {
+        let mut value = serde_json::to_value(part)?;
         let order: Option<&[&str]> = match (agent, value["type"].as_str()) {
             ("dsh" | "deepchat", Some("tool")) => {
                 Some(&["type", "tool", "callID", "time_created", "state", "title"])
@@ -29,10 +33,10 @@ pub fn message_parts(
         };
         if let Some(order) = order {
             let object = value.as_object_mut().expect("message part object");
-            let old = std::mem::take(object);
+            let mut old = std::mem::take(object);
             for key in order {
-                if let Some(value) = old.get(*key) {
-                    object.insert((*key).into(), value.clone());
+                if let Some(value) = old.shift_remove(*key) {
+                    object.insert((*key).into(), value);
                 }
             }
             for (key, value) in old {
@@ -41,14 +45,19 @@ pub fn message_parts(
                 }
             }
         }
+        if index > 0 {
+            output.push(',');
+        }
+        write(&value, &mut output)?;
     }
-    stringify(&values)
+    output.push(']');
+    Ok(output)
 }
 
 pub fn tokens(agent: &str, tokens: &crate::contract::MessageTokens) -> serde_json::Result<String> {
     let value = serde_json::to_value(tokens)?;
     if agent != "cherrystudio" {
-        return stringify(&value);
+        return stringify_value(&value);
     }
     let mut ordered = serde_json::Map::new();
     for key in ["input", "output", "cache_read", "cache_create", "reasoning"] {
@@ -56,7 +65,7 @@ pub fn tokens(agent: &str, tokens: &crate::contract::MessageTokens) -> serde_jso
             ordered.insert(key.into(), value.clone());
         }
     }
-    stringify(&Value::Object(ordered))
+    stringify_value(&Value::Object(ordered))
 }
 
 fn write(value: &Value, output: &mut String) -> serde_json::Result<()> {

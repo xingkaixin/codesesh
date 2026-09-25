@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Seek, SeekFrom},
     path::Path,
 };
 use walkdir::WalkDir;
@@ -194,10 +194,18 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
 pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
     let mut header = None;
-    let mut entries = Vec::<Value>::new();
-    for line in BufReader::new(file).lines() {
-        let line = line?;
-        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+    struct Entry {
+        id: Option<String>,
+        parent: Option<String>,
+        offset: u64,
+    }
+    let mut entries = Vec::<Entry>::new();
+    let mut offset = 0;
+    let mut lines = super::jsonl::JsonLines::new(file);
+    while let Some(line) = lines.next_line()? {
+        let start = offset;
+        offset += line.len() as u64;
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         if !record.is_object() {
@@ -208,7 +216,11 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
                 header = Some(record);
             }
         } else {
-            entries.push(record);
+            entries.push(Entry {
+                id: record["id"].as_str().map(str::to_owned),
+                parent: record["parentId"].as_str().map(str::to_owned),
+                offset: start,
+            });
         }
     }
     let Some(header) = header else {
@@ -217,20 +229,21 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
     let by_id: HashMap<&str, usize> = entries
         .iter()
         .enumerate()
-        .filter_map(|(i, e)| e["id"].as_str().filter(|s| !s.is_empty()).map(|s| (s, i)))
+        .filter_map(|(i, e)| e.id.as_deref().filter(|s| !s.is_empty()).map(|s| (s, i)))
         .collect();
-    let mut current = entries.iter().rposition(|e| e["id"].is_string());
+    let mut current = entries.iter().rposition(|e| e.id.is_some());
     let mut seen = HashSet::new();
     let mut branch = Vec::new();
     while let Some(index) = current {
         let entry = &entries[index];
-        let id = entry["id"].as_str().unwrap_or("");
+        let id = entry.id.as_deref().unwrap_or("");
         if id.is_empty() || !seen.insert(id) {
             break;
         }
-        branch.push(entry);
-        current = entry["parentId"]
-            .as_str()
+        branch.push(index);
+        current = entry
+            .parent
+            .as_deref()
             .and_then(|id| by_id.get(id))
             .copied();
     }
@@ -255,32 +268,45 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
         0.0 => mtime(path)?,
         n => n,
     };
-    let updated = branch.iter().fold(created, |max, e| max.max(time(e)));
-    let explicit_title = branch
-        .iter()
-        .rev()
-        .filter(|e| e["type"] == "session_info")
-        .find_map(|e| title(&text(&e["name"])));
-    let prompt_title = branch
-        .iter()
-        .filter(|e| e["type"] == "message" && e["message"]["role"] == "user")
-        .find_map(|e| title(&content(&e["message"]["content"])));
-    let title = explicit_title
-        .or(prompt_title)
-        .or_else(|| {
-            title(
-                &Path::new(&cwd)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            )
-        })
-        .unwrap_or_else(|| "Untitled Session".into());
+    let mut updated = created;
+    let mut explicit_title = None;
+    let mut prompt_title = None;
     let mut messages = Vec::<Message>::new();
     let mut models = BTreeMap::<String, f64>::new();
     let mut tools = HashMap::<String, (usize, usize)>::new();
-    for entry in branch {
-        let ts = time(entry);
+    let mut reader = BufReader::with_capacity(64 * 1024, File::open(path)?);
+    let mut line = String::new();
+    let mut position = 0;
+    for index in branch {
+        if position != entries[index].offset {
+            reader.seek(SeekFrom::Start(entries[index].offset))?;
+            position = entries[index].offset;
+        }
+        if line.capacity() > 1024 * 1024 {
+            line = String::new();
+        } else {
+            line.clear();
+        }
+        position += reader.read_line(&mut line)? as u64;
+        let entry: Value = serde_json::from_str(&line)?;
+        if entry["id"].as_str() != entries[index].id.as_deref()
+            || entry["parentId"].as_str() != entries[index].parent.as_deref()
+        {
+            return Err(InvalidSession("Pi source changed while reading").into());
+        }
+        let ts = time(&entry);
+        updated = updated.max(ts);
+        if entry["type"] == "session_info"
+            && let Some(value) = title(&text(&entry["name"]))
+        {
+            explicit_title = Some(value);
+        }
+        if prompt_title.is_none()
+            && entry["type"] == "message"
+            && entry["message"]["role"] == "user"
+        {
+            prompt_title = title(&content(&entry["message"]["content"]));
+        }
         let id = entry["id"].as_str().unwrap_or("").to_owned();
         let kind = entry["type"].as_str().unwrap_or("");
         let raw = &entry["message"];
@@ -442,6 +468,17 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
     if messages.is_empty() {
         return Ok(None);
     }
+    let title = explicit_title
+        .or(prompt_title)
+        .or_else(|| {
+            title(
+                &Path::new(&cwd)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+            )
+        })
+        .unwrap_or_else(|| "Untitled Session".into());
     Ok(Some(detail(
         SessionReference {
             agent_name: "pi".into(),

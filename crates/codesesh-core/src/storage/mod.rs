@@ -47,6 +47,13 @@ impl Cache {
         snapshot::load(&self.connection)
     }
 
+    pub fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
+        let mut query = self.connection.prepare("SELECT * FROM sessions WHERE publication_id IS NULL AND agent_name=? ORDER BY activity_time DESC,session_id")?;
+        Ok(query
+            .query_map([agent], snapshot::head)?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn head(&self, reference: &SessionReference) -> Result<Option<SessionHead>> {
         Ok(self.connection.query_row("SELECT * FROM sessions WHERE agent_name=? AND session_id=? AND publication_id IS NULL",params![reference.agent_name,reference.session_id],snapshot::head).optional()?)
     }
@@ -212,10 +219,10 @@ impl Cache {
                 let content = message_text(message);
                 text.push('\n');
                 text.push_str(&content);
-                transaction.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)",
+                transaction.prepare_cached("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)")?.execute(
                     params![reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content])?;
             }
-            transaction.execute("INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at) VALUES(?,?,?,?,?,?,?)", params![reference.agent_name,reference.session_id,session.detail.head.title,text,facts::content_hash(head)?,session.detail.messages.len() as i64,chrono::Utc::now().timestamp_millis()])?;
+            transaction.execute("INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at,detail_version) VALUES(?,?,?,?,?,?,?,?)", params![reference.agent_name,reference.session_id,session.detail.head.title,text,facts::content_hash(head)?,session.detail.messages.len() as i64,chrono::Utc::now().timestamp_millis(),detail_version])?;
             for activity in &session.detail.file_activity {
                 transaction.execute("INSERT INTO session_file_activity(agent_name,session_id,project_identity_key,path,kind,count,latest_time) VALUES(?,?,?,?,?,?,?)",params![reference.agent_name,reference.session_id,activity.project_identity_key,activity.path,activity.kind,activity.count as i64,activity.latest_time])?;
             }
@@ -231,10 +238,6 @@ impl Cache {
             transaction.execute(
                 "DELETE FROM pending_reindex WHERE agent_name=? AND session_id=?",
                 params![reference.agent_name, reference.session_id],
-            )?;
-            transaction.execute(
-                "UPDATE session_documents SET detail_version=? WHERE agent_name=? AND session_id=?",
-                params![detail_version, reference.agent_name, reference.session_id],
             )?;
             cursors.push(cursor::encode(session.detail.messages.len(), &digest)?);
         }

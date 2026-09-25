@@ -39,28 +39,36 @@ pub fn clean(value: &str) -> String {
         Regex::new(r"(?i)</?(?:command-message|command-name|local-command-caveat|local-command-stdout|system-reminder|command-args)\b[^>]*>").unwrap()
     });
     let mut value = value.to_owned();
-    for (line, block, open) in BLOCKS.iter() {
-        value = line.replace_all(&value, "$1").into_owned();
-        value = block.replace_all(&value, "").into_owned();
-        value = open.replace_all(&value, "").into_owned();
-    }
-    let value = TAGS.replace_all(&value, "");
-    let value = value
-        .split('\n')
-        .map(|line| {
-            if let Some(line) = line.strip_suffix('\r') {
-                format!("{}\r", line.trim_end_matches([' ', '\t']))
-            } else {
-                line.trim_end_matches([' ', '\t']).to_owned()
+    if value.contains('<') && TAGS.is_match(&value) {
+        for (line, block, open) in BLOCKS.iter() {
+            for (pattern, replacement) in [(line, "$1"), (block, ""), (open, "")] {
+                if let std::borrow::Cow::Owned(updated) = pattern.replace_all(&value, replacement) {
+                    value = updated;
+                }
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    if value.trim().is_empty() {
-        String::new()
-    } else {
-        value.trim_end_matches(['\r', '\n']).into()
+        }
+        if let std::borrow::Cow::Owned(updated) = TAGS.replace_all(&value, "") {
+            value = updated;
+        }
     }
+    let mut output = String::with_capacity(value.len());
+    for (index, line) in value.split('\n').enumerate() {
+        if index > 0 {
+            output.push('\n');
+        }
+        if let Some(line) = line.strip_suffix('\r') {
+            output.push_str(line.trim_end_matches([' ', '\t']));
+            output.push('\r');
+        } else {
+            output.push_str(line.trim_end_matches([' ', '\t']));
+        }
+    }
+    if output.trim().is_empty() {
+        output.clear();
+    } else {
+        output.truncate(output.trim_end_matches(['\r', '\n']).len());
+    }
+    output
 }
 
 pub fn title(value: &str) -> Option<String> {

@@ -6,6 +6,7 @@ pub mod cursor;
 pub mod deepchat;
 pub mod dsh;
 pub mod grok;
+mod jsonl;
 pub mod kimi;
 pub mod kimi_code;
 pub mod minimax_code;
@@ -92,12 +93,13 @@ pub fn scan_agent(
 
 pub fn complete_projections(session: &mut ParsedSession) {
     let source_updated_at = session.head.time_updated;
+    let smart_tags = smart_tags::classify(&session.detail.messages);
     for head in [&mut session.head, &mut session.detail.head] {
         let projection = crate::projects::compute_identity_projection(&head.directory);
         head.project_identity = projection.identity;
         head.project_identity_resolver_revision = Some(projection.resolver_revision);
         head.project_identity_input_signature = Some(projection.input_signature);
-        head.smart_tags = smart_tags::classify(&session.detail.messages);
+        head.smart_tags = smart_tags.clone();
         head.smart_tags_source_updated_at = Some(source_updated_at);
         head.smart_tags_classifier_revision = Some("smart-tags-v1".into());
     }

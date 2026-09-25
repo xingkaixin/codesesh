@@ -415,12 +415,18 @@ static LOOSE_TAG: LazyLock<Regex> = LazyLock::new(|| {
 
 fn clean(text: &str) -> String {
     let mut text = text.to_owned();
-    for (line, block, open) in CLEANUP.iter() {
-        text = line.replace_all(&text, "$1").into_owned();
-        text = block.replace_all(&text, "").into_owned();
-        text = open.replace_all(&text, "").into_owned();
+    if text.contains('<') && LOOSE_TAG.is_match(&text) {
+        for (line, block, open) in CLEANUP.iter() {
+            for (pattern, replacement) in [(line, "$1"), (block, ""), (open, "")] {
+                if let std::borrow::Cow::Owned(updated) = pattern.replace_all(&text, replacement) {
+                    text = updated;
+                }
+            }
+        }
+        if let std::borrow::Cow::Owned(updated) = LOOSE_TAG.replace_all(&text, "") {
+            text = updated;
+        }
     }
-    text = LOOSE_TAG.replace_all(&text, "").into_owned();
     static TRAILING_SPACE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?m)[ \t]+(\r?$)").unwrap());
     static TRAILING_LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:\r?\n)+$").unwrap());
@@ -469,17 +475,60 @@ fn content(payload: &Value, assistant: bool) -> String {
     }
 }
 
+fn projected_record(line: &str) -> serde_json::Result<Value> {
+    #[derive(serde::Deserialize)]
+    struct Record<'a> {
+        #[serde(default, rename = "type")]
+        kind: Value,
+        #[serde(default)]
+        timestamp: Value,
+        #[serde(borrow)]
+        payload: Option<&'a serde_json::value::RawValue>,
+    }
+    #[derive(Default, serde::Deserialize)]
+    struct Header {
+        #[serde(default, rename = "type")]
+        kind: Value,
+        #[serde(default)]
+        timestamp: Value,
+        #[serde(default)]
+        model: Value,
+    }
+    let Ok(record) = serde_json::from_str::<Record<'_>>(line) else {
+        return serde_json::from_str(line);
+    };
+    let raw = record.payload.map_or("null", |payload| payload.get());
+    let header = if raw == "null" {
+        Header::default()
+    } else if let Ok(header) = serde_json::from_str::<Header>(raw) {
+        header
+    } else {
+        return serde_json::from_str(line);
+    };
+    let payload = if !internal(&record.kind)
+        && !internal(&header.kind)
+        && (record.kind == "response_item"
+            || (record.kind == "event_msg" && header.kind == "token_count"))
+    {
+        serde_json::from_str(raw)?
+    } else {
+        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model})
+    };
+    Ok(serde_json::json!({"type":record.kind,"timestamp":record.timestamp,"payload":payload}))
+}
+
 pub fn parse(
     path: &Path,
     titles: &HashMap<String, String>,
     pricing: &Pricing,
 ) -> Result<Option<SessionDetail>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut lines = BufReader::new(file).lines();
-    let Some(line) = lines.next().transpose()? else {
+    let mut lines = super::jsonl::JsonLines::new(file);
+    let Some(line) = lines.next_line()? else {
         return Ok(None);
     };
-    let Ok(first) = serde_json::from_str::<Value>(&line) else {
+    let first_line = line.to_owned();
+    let Ok(first) = serde_json::from_str::<Value>(&first_line) else {
         return Ok(None);
     };
     let filename = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -505,9 +554,18 @@ pub fn parse(
     let mut latest_text = None;
     let mut tools = HashMap::<String, (usize, usize)>::new();
     let mut has_record = false;
-    for (line_index, line) in std::iter::once(Ok(line)).chain(lines).enumerate() {
-        let line = line?;
-        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+    let mut next_index = 0;
+    loop {
+        let line = if next_index == 0 {
+            first_line.as_str()
+        } else if let Some(line) = lines.next_line()? {
+            line
+        } else {
+            break;
+        };
+        let line_index = next_index;
+        next_index += 1;
+        let Ok(record) = projected_record(line) else {
             continue;
         };
         let payload = &record["payload"];

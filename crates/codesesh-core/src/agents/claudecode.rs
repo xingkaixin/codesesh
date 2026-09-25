@@ -10,7 +10,6 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap},
     fs::{self, File},
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
 use transcript::Transcript;
@@ -241,14 +240,14 @@ fn parse(
     let mut usage_by_request = HashMap::<String, (Option<String>, MessageTokens)>::new();
     let mut usage_order = Vec::<String>::new();
     let mut line_index = 0;
-    for line in BufReader::new(file).lines() {
-        let line = line?;
+    let mut lines = super::jsonl::JsonLines::new(file);
+    while let Some(line) = lines.next_line()? {
         if line.trim().is_empty() {
             continue;
         }
         let record_index = line_index;
         line_index += 1;
-        let Ok(record) = serde_json::from_str::<Value>(&line) else {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
             if record_index == 0 {
                 return Err(InvalidSession("malformed first Claude record").into());
             }

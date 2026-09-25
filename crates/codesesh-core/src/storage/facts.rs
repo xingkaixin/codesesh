@@ -77,31 +77,43 @@ pub fn write(
     for (index, message) in messages.iter().enumerate() {
         let mut metadata = Vec::new();
         for part in &message.parts {
-            if let MessagePart::Tool { tool, .. } = part {
+            if let MessagePart::Tool {
+                tool,
+                call_id,
+                state,
+                title,
+                ..
+            } = part
+            {
                 let name = tool.trim().to_lowercase();
                 if !name.is_empty() {
-                    connection.execute(
-                        "INSERT OR IGNORE INTO message_tools VALUES(?,?,?,?)",
-                        params![
+                    connection
+                        .prepare_cached("INSERT OR IGNORE INTO message_tools VALUES(?,?,?,?)")?
+                        .execute(params![
                             reference.agent_name,
                             reference.session_id,
                             index as i64,
                             name
-                        ],
-                    )?;
+                        ])?;
                 }
-                let mut value = serde_json::to_value(part)?;
-                let object = value.as_object_mut().expect("tool is an object");
-                object.remove("time_created");
-                if let Some(state) = object.get_mut("state").and_then(Value::as_object_mut) {
-                    state.remove("input");
-                    state.remove("output");
-                }
-                metadata.push(value);
+                let projection = MessagePart::Tool {
+                    tool: tool.clone(),
+                    call_id: call_id.clone(),
+                    state: Box::new(crate::contract::ToolState {
+                        status: state.status.clone(),
+                        input: None,
+                        output: None,
+                        error: state.error.clone(),
+                        metadata: state.metadata.clone(),
+                    }),
+                    time_created: None,
+                    title: title.clone(),
+                };
+                metadata.push(serde_json::to_value(projection)?);
             }
         }
         if !metadata.is_empty() {
-            connection.execute("UPDATE messages SET tool_metadata_json=? WHERE agent_name=? AND session_id=? AND message_index=?",params![super::json::stringify(&metadata)?,reference.agent_name,reference.session_id,index as i64])?;
+            connection.prepare_cached("UPDATE messages SET tool_metadata_json=? WHERE agent_name=? AND session_id=? AND message_index=?")?.execute(params![super::json::stringify(&metadata)?,reference.agent_name,reference.session_id,index as i64])?;
         }
     }
     Ok(())

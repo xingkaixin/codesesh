@@ -696,11 +696,7 @@ impl AgentScanner {
                 serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
         }
 
-        for head in cache
-            .snapshot()?
-            .into_iter()
-            .filter(|head| head.reference.agent_name == self.source.agent)
-        {
+        for head in cache.agent_snapshot(&self.source.agent)? {
             self.durable_references.insert(head.reference.clone());
             let source: Option<String> = cache.connection().query_row(
                 "SELECT source_path FROM sessions WHERE agent_name=?1 AND session_id=?2",
