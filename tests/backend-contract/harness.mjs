@@ -185,7 +185,7 @@ export async function runCli(fixture, args, command) {
 export async function startServer(fixture, command) {
   const process = launch(
     fixture,
-    ["--agent", "codex", "--days", "0", "--noOpen", "--port", "0"],
+    ["--agent", "codex", "--days", "0", "--noOpen", "--host", "127.0.0.1", "--port", "0"],
     command,
   );
   try {
@@ -195,6 +195,7 @@ export async function startServer(fixture, command) {
         .map((match) => new URL(match[0]))
         .find((url) => url.searchParams.has("access_token"));
     }, "server startup URL");
+    startup.hostname = "127.0.0.1";
     const request = (path, options = {}) =>
       fetch(new URL(path, startup.origin), {
         ...options,
@@ -213,7 +214,7 @@ export async function startServer(fixture, command) {
     return { ...process, request, origin: startup.origin };
   } catch (error) {
     await stop(process);
-    throw error;
+    throw new Error(`${error.message}\n${JSON.stringify(process.output())}`, { cause: error });
   }
 }
 

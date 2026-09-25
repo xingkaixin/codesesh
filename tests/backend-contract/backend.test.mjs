@@ -73,7 +73,9 @@ test(
         (await readJson(server, "/api/sessions")).sessions[0].display_title,
         "My migration alias",
       );
-      assert.equal((await stop(server)).code, 0);
+      const stopped = await stop(server);
+      if (process.platform === "win32") assert.equal(stopped.signal, "SIGTERM");
+      else assert.equal(stopped.code, 0);
       server = await startServer(fixture);
       const bookmarks = await readJson(server, "/api/bookmarks");
       assert.equal(bookmarks.bookmarks.length, 1);
