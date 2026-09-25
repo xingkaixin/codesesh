@@ -1,0 +1,70 @@
+# Rust 迁移进度
+
+范围：执行 [P0～P7](rust-migration-plan.md)，P8 发布不在当前任务内。
+
+参考提交：`a545f543a554421b0576058c701ef2ac4190d62e`。分支：`feat/rust-rewrite`。
+
+## 阶段状态
+
+| 阶段 | 状态 | 证据与剩余项 |
+| --- | --- | --- |
+| P0 | 本地基础验收通过 | 固定 npm 参考、依赖锁、CLI/HTTP/SSE 测试和 4 场景基线已建立；跨平台由 PR CI 验证 |
+| P1 | 待实施 | Rust crate、Codex 端到端、DTO 生成和浏览器验收 |
+| P2 | 待实施 | 13 个 Agent 的完整功能矩阵 |
+| P3 | 待实施 | schema 34/state 3、搜索、统计、价格和用户状态 |
+| P4 | 待实施 | 持续同步、事务发布、快照与 SSE |
+| P5 | 待实施 | 全部 CLI/HTTP 行为与 E2E |
+| P6 | 待实施 | 支持平台制品、安装验证、完整性能对照 |
+| P7 | 待实施 | 切换、旧后端清理、最终 CI 和汇总包 |
+
+## P0 参考与复现
+
+本地从参考业务源码构建 npm tgz，SHA-256 记录在 `tests/reference/manifest.json`。同时固定已发布的 `codesesh@1.0.12` 和其 registry SHA-512；`tests/reference/package-lock.json` 固定全部安装依赖。两者的首批进程契约与 CLI JSON 差分均通过。
+
+使用已发布固定制品作为持久参考，旧业务源码删除后仍可安装。参考安装目录位于忽略的 artifacts 下，不进入产品运行路径。命令：
+
+```bash
+pnpm prepare:reference
+pnpm test:backend
+pnpm test:backend:compare
+pnpm bench:backend
+```
+
+`CODESESH_BACKEND_COMMAND` 接受 JSON 命令数组，默认运行当前构建的 Node CLI；后续传入 Rust release 文件路径。比较驱动的 `CODESESH_REFERENCE_COMMAND` 仅用于指定另一个参考进程或验证比较器，默认仍为冻结的 npm 制品。
+
+输入使用合成 Codex JSONL，隔离所有 Agent 根、home、用户状态、缓存和日志；预写入有效价格缓存，避免网络影响。差分的两个候选按顺序复用同一份来源，清除中间派生缓存，直接比较完整 JSON，不剔除业务字段或排序。
+
+首批进程契约：
+
+- CLI JSON：完整输出、Project Identity、摘要不包含正文、进程正常结束、源文件未修改。
+- HTTP：鉴权、config/list/detail/search、非法书签输入。
+- 用户状态：书签和别名写入、停机、重新启动后恢复、删除。
+- SSE：connected/status、追加文件、等待已发布消息数、立即读取对应详情。
+- 比较器：实际启动参考和候选子进程；遗漏 Session、身份变化、顺序变化必须失败。
+
+这不是全部功能验收，其他 Adapter、查询参数、错误分类和并发序列随 P1～P5 迁移。
+
+## P0 验证记录
+
+2026-09-25，本机 macOS arm64 / Node 24.21.0 / pnpm 12.4.2：原有 `pnpm test` 通过，Core 1,163 passed / 1 skipped，CLI 653 passed，Web 898 passed。本地源码构建版与固定 npm 版均通过首批三个进程契约；比较器自检和完整 JSON 差分单独运行。
+
+P0 仅改动迁移验证工具、CI 与说明，没有修改后端业务行为。CI 在既有 Linux/macOS/Windows × Node 22/24 构建后增加进程契约，Linux smoke 增加冻结参考差分；远端通过状态以 PR 最终检查为准。
+
+## P0 性能起点
+
+原始样本：[Node P0 JSON](benchmarks/rust-migration-node-p0.json)。同机、单 Session / 两条消息，每场景一次预热、五次正式采样。价格缓存已预置，OS 页缓存未清空。该规模用于验证评估链路，不能代表完整历史性能。
+
+| 场景 | wall time 中位数 | 峰值 RSS 中位数 |
+| --- | ---: | ---: |
+| version | 110.53 ms | 79.67 MiB |
+| 冷应用缓存 JSON | 214.32 ms | 103.52 MiB |
+| 热应用缓存 JSON | 170.72 ms | 102.28 MiB |
+| Web 启动至初始扫描完成 | 275.59 ms | 未测 |
+
+前三项通过 OS time 工具测量单进程峰值 RSS；Web 不套用 time 包装以免改变信号转发和退出行为。后续 P6 增加大历史、混合 Agent、后台负载与稳态延迟，并同时重新测量两个实现。
+
+## 平台与分发记录
+
+当前 README 说明三种 OS 的 CI，没有声明额外 CPU 架构。首批原生安装矩阵按计划为 macOS arm64/x64、Linux x64、Windows x64；其余架构不得在文档中宣称已覆盖。Linux 最低 glibc、额外架构和 npm 平台包实际权限在制品实施时核实。
+
+主包继续使用 `codesesh`。当前仅固定已发布参考，不创建平台包或执行 registry 发布。

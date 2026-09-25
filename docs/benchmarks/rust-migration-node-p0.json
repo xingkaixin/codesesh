@@ -1,0 +1,152 @@
+{
+  "generatedAt": "2026-09-25T07:47:27.115Z",
+  "command": [
+    "/Users/Kevin/.local/share/mise/installs/node/24.21.0/bin/node",
+    "/Users/Kevin/.codex/worktrees/rust-rewrite/codesesh/packages/cli/dist/index.js"
+  ],
+  "environment": {
+    "os": "darwin",
+    "release": "27.0.0",
+    "cpu": "Apple M1 Pro",
+    "node": "v24.21.0"
+  },
+  "evaluator": {
+    "scripts/benchmark-backend.mjs": "7db823e7b4df51fa154b340cc3c528d7a729111c1ba6ca2e8244bbacf0e1c7de",
+    "tests/backend-contract/harness.mjs": "68df1dfec5fac23f545405c32f92757ceed8582e6f67ec7cbf689dc1bbc64a49"
+  },
+  "fixture": {
+    "sessions": 1,
+    "messages": 2,
+    "pricing": "seeded disk cache",
+    "dates": "2026-09-01 UTC"
+  },
+  "method": {
+    "warmups": 1,
+    "samplesPerScenario": 5,
+    "osPageCacheCleared": false,
+    "peakRss": "One-shot process maximum RSS; web RSS not measured",
+    "scope": "P0 starter workload, not a large-history benchmark"
+  },
+  "samples": [
+    {
+      "scenario": "version",
+      "iteration": 0,
+      "elapsedMs": 107.13345899999999,
+      "peakRssBytes": 83492864
+    },
+    {
+      "scenario": "version",
+      "iteration": 1,
+      "elapsedMs": 176.11120900000003,
+      "peakRssBytes": 83623936
+    },
+    {
+      "scenario": "version",
+      "iteration": 2,
+      "elapsedMs": 110.529833,
+      "peakRssBytes": 83574784
+    },
+    {
+      "scenario": "version",
+      "iteration": 3,
+      "elapsedMs": 109.50024999999994,
+      "peakRssBytes": 83378176
+    },
+    {
+      "scenario": "version",
+      "iteration": 4,
+      "elapsedMs": 110.92683399999999,
+      "peakRssBytes": 83542016
+    },
+    {
+      "scenario": "cold-json",
+      "iteration": 0,
+      "elapsedMs": 214.3232079999999,
+      "peakRssBytes": 108609536
+    },
+    {
+      "scenario": "cold-json",
+      "iteration": 1,
+      "elapsedMs": 437.656375,
+      "peakRssBytes": 108478464
+    },
+    {
+      "scenario": "cold-json",
+      "iteration": 2,
+      "elapsedMs": 215.16779199999996,
+      "peakRssBytes": 108544000
+    },
+    {
+      "scenario": "cold-json",
+      "iteration": 3,
+      "elapsedMs": 202.41491599999995,
+      "peakRssBytes": 108527616
+    },
+    {
+      "scenario": "cold-json",
+      "iteration": 4,
+      "elapsedMs": 205.13812499999995,
+      "peakRssBytes": 108609536
+    },
+    {
+      "scenario": "warm-json",
+      "iteration": 0,
+      "elapsedMs": 168.570917,
+      "peakRssBytes": 107249664
+    },
+    {
+      "scenario": "warm-json",
+      "iteration": 1,
+      "elapsedMs": 161.47404200000028,
+      "peakRssBytes": 106954752
+    },
+    {
+      "scenario": "warm-json",
+      "iteration": 2,
+      "elapsedMs": 179.24845799999957,
+      "peakRssBytes": 107200512
+    },
+    {
+      "scenario": "warm-json",
+      "iteration": 3,
+      "elapsedMs": 170.71712500000012,
+      "peakRssBytes": 107773952
+    },
+    {
+      "scenario": "warm-json",
+      "iteration": 4,
+      "elapsedMs": 172.52637500000037,
+      "peakRssBytes": 107331584
+    },
+    {
+      "scenario": "web-ready-with-scan",
+      "iteration": 0,
+      "elapsedMs": 277.98425000000043,
+      "peakRssBytes": null
+    },
+    {
+      "scenario": "web-ready-with-scan",
+      "iteration": 1,
+      "elapsedMs": 275.58279200000015,
+      "peakRssBytes": null
+    },
+    {
+      "scenario": "web-ready-with-scan",
+      "iteration": 2,
+      "elapsedMs": 275.5862079999997,
+      "peakRssBytes": null
+    },
+    {
+      "scenario": "web-ready-with-scan",
+      "iteration": 3,
+      "elapsedMs": 274.7790420000001,
+      "peakRssBytes": null
+    },
+    {
+      "scenario": "web-ready-with-scan",
+      "iteration": 4,
+      "elapsedMs": 280.4426659999999,
+      "peakRssBytes": null
+    }
+  ]
+}

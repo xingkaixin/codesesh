@@ -311,6 +311,7 @@ node scripts/check-docs-paths.mjs
 # 算法、构建、文档事实与清理重建门禁
 pnpm perf:check
 pnpm build
+pnpm test:backend
 node scripts/check-docs-facts.mjs
 node packages/cli/dist/index.js --version
 pnpm clean
@@ -320,6 +321,8 @@ pnpm build
 pnpm test
 pnpm test:coverage # 内含 pnpm check:coverage-scopes
 pnpm test:migration
+pnpm prepare:reference
+pnpm test:backend:compare
 pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
 pnpm exec playwright install-deps chromium

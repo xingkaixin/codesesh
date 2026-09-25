@@ -60,6 +60,9 @@ jobs:
 
       - run: pnpm build
 
+      - name: Verify backend process contracts
+        run: pnpm test:backend
+
       - name: Verify documented repository facts
         run: node scripts/check-docs-facts.mjs
 
@@ -101,6 +104,12 @@ jobs:
       - run: pnpm test:coverage
 
       - run: pnpm test:migration
+
+      - name: Prepare frozen Node reference
+        run: pnpm prepare:reference
+
+      - name: Compare backend with frozen reference
+        run: pnpm test:backend:compare
 
       - name: Enforce the initial bundle budget
         run: pnpm --filter @codesesh/web test:bundle
