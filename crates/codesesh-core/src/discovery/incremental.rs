@@ -9,7 +9,7 @@ use crate::{
     runtime,
     storage::Cache,
 };
-use anyhow::{Result, bail};
+use anyhow::Result;
 use rusqlite::OptionalExtension;
 use std::{
     collections::{HashMap, HashSet},
@@ -279,10 +279,7 @@ impl AgentScanner {
                 && !has_sources(&self.source)?
                 && !self.durable_references.is_empty()
             {
-                bail!(
-                    "Agent {} is unavailable; retaining durable sessions",
-                    self.source.agent
-                );
+                return Ok((ScanDelta::default(), None, true));
             }
             self.backfill = Some(Backfill::new(
                 items,
@@ -424,10 +421,7 @@ impl AgentScanner {
             && !has_sources(&self.source)?
             && !self.durable_references.is_empty()
         {
-            bail!(
-                "Agent {} is unavailable; retaining durable sessions",
-                self.source.agent
-            );
+            return Ok(ScanDelta::default());
         }
         let eligible: HashSet<_> = plan.items[..plan.offset]
             .iter()
@@ -542,10 +536,7 @@ impl AgentScanner {
             && !self.source.scan_path.try_exists()?
             && !self.durable_references.is_empty()
         {
-            bail!(
-                "Agent {} is unavailable; retaining durable sessions",
-                self.source.agent
-            );
+            return Ok((ScanDelta::default(), None, true));
         }
         let changed: Vec<_> = current
             .iter()
@@ -745,10 +736,7 @@ impl AgentScanner {
     fn full(&self) -> Result<ScanDelta> {
         let result = scan_source(&self.source, &self.pricing)?;
         if !result.available && (!self.previous.is_empty() || !self.durable_references.is_empty()) {
-            bail!(
-                "Agent {} is unavailable; retaining durable sessions",
-                self.source.agent
-            );
+            return Ok(ScanDelta::default());
         }
         Ok(ScanDelta {
             upserts: result.sessions,
@@ -764,7 +752,7 @@ impl AgentScanner {
                 if !has_sources(&self.source)?
                     && (!self.previous.is_empty() || !self.durable_references.is_empty())
                 {
-                    bail!("Cursor database is unavailable");
+                    return Ok(ScanDelta::default());
                 }
                 let delta = self.cursor.refresh(root, pricing)?;
                 Ok(ScanDelta {
@@ -777,7 +765,7 @@ impl AgentScanner {
                 if !has_sources(&self.source)?
                     && (!self.previous.is_empty() || !self.durable_references.is_empty())
                 {
-                    bail!("{} database is unavailable", self.source.agent);
+                    return Ok(ScanDelta::default());
                 }
                 let path = if self.source.agent == "opencode" {
                     root.clone()
@@ -890,7 +878,7 @@ impl AgentScanner {
                     ..Default::default()
                 });
             }
-            bail!("{} database is unavailable", self.source.agent);
+            return Ok(ScanDelta::default());
         }
         let root = &self.source.scan_path;
         let current = match self.source.agent.as_str() {

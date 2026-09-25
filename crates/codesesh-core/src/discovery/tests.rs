@@ -204,8 +204,73 @@ fn head_only_durable_sessions_are_retained_when_source_disappears() {
         .unwrap();
     std::fs::remove_file(file).unwrap();
     let mut scanner = AgentScanner::new(source, db, std::sync::Arc::new(Pricing::bundled()));
-    assert!(scanner.refresh(None).is_err());
+    let mut absent = scanner.refresh(None).unwrap();
+    assert!(absent.complete);
+    assert!(absent.sessions.is_empty());
+    assert!(absent.removed.is_empty());
+    commit_page(&mut cache, &mut absent);
     assert_eq!(cache.snapshot().unwrap().len(), 1);
+}
+
+#[test]
+fn removed_zcode_database_retains_sessions_and_resumes_after_restore() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("zcode");
+    let file = root.join("cli/db/db.sqlite");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('retained','Before removal',1000,2000,'/project');").unwrap();
+    drop(database);
+    let source = AgentSource {
+        agent: "zcode".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut first = scanner.refresh(None).unwrap();
+    assert_eq!(first.sessions.len(), 1);
+    cache
+        .apply_checkpoint(
+            &mut first.sessions,
+            &first.removed,
+            "zcode",
+            &first.checkpoint,
+            first.complete,
+        )
+        .unwrap();
+    first.on_reject.take();
+    let backup = temporary.path().join("backup.sqlite");
+    std::fs::rename(&file, &backup).unwrap();
+    for paths in [Some(vec![file.clone()]), None] {
+        let mut absent = scanner.refresh(paths.as_deref()).unwrap();
+        assert!(absent.complete);
+        assert!(absent.sessions.is_empty());
+        assert!(absent.removed.is_empty());
+        cache
+            .apply_checkpoint(
+                &mut absent.sessions,
+                &absent.removed,
+                "zcode",
+                &absent.checkpoint,
+                absent.complete,
+            )
+            .unwrap();
+        absent.on_reject.take();
+        assert_eq!(cache.snapshot().unwrap().len(), 1);
+        scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    }
+    std::fs::rename(backup, &file).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database
+        .execute("UPDATE session SET title='Restored',time_updated=3000", [])
+        .unwrap();
+    drop(database);
+    let restored = scanner.refresh(None).unwrap();
+    assert_eq!(restored.sessions[0].head.title, "Restored");
+    assert!(restored.removed.is_empty());
 }
 
 fn many_pi(source: &AgentSource, count: usize) -> Vec<std::path::PathBuf> {
