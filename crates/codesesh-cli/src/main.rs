@@ -16,8 +16,26 @@ use codesesh_core::{
 };
 use std::{path::PathBuf, sync::Arc};
 
+fn main() {
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("MallocSpaceEfficient").is_none() {
+        use std::os::unix::process::CommandExt;
+        // libmalloc reads this before main; exec preserves the PID and inherited I/O.
+        let error = match std::env::current_exe() {
+            Ok(executable) => std::process::Command::new(executable)
+                .args(std::env::args_os().skip(1))
+                .env("MallocSpaceEfficient", "1")
+                .exec(),
+            Err(error) => error,
+        };
+        eprintln!("codesesh: cannot initialize the allocator: {error}");
+        std::process::exit(1);
+    }
+    main_async();
+}
+
 #[tokio::main]
-async fn main() {
+async fn main_async() {
     let result = run().await;
     if let Err(error) = &result {
         eprintln!("{error:#}");
