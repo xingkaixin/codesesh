@@ -175,6 +175,34 @@ async fn run() -> Result<()> {
     let runtime_started = std::time::Instant::now();
     let runtime = Runtime::start(cache_path, runtime_sources, 4).await?;
     let runtime_duration = runtime_started.elapsed();
+    let mut scan_status = runtime.statuses();
+    let mut scan_shutdown = runtime.shutdown_receiver();
+    logger.info("scan.startup.start", &serde_json::json!({}));
+    tokio::spawn(async move {
+        loop {
+            let status = scan_status.borrow_and_update().clone();
+            if !status.active {
+                for agent in status.agent_statuses.values() {
+                    logger.info("scan.startup.agent", &serde_json::json!({
+                        "agent": agent.agent_name,
+                        "duration_ms": agent.completed_at.zip(agent.started_at).map(|(end, start)| end - start),
+                        "session_count": agent.sessions,
+                        "failed": agent.error.is_some(),
+                        "error": agent.error,
+                    }));
+                }
+                logger.info("scan.startup.done", &serde_json::json!({
+                    "duration_ms": status.completed_at.zip(status.started_at).map(|(end, start)| end - start),
+                    "failed_agents": status.agent_statuses.values().filter(|agent| agent.error.is_some()).map(|agent| &agent.agent_name).collect::<Vec<_>>(),
+                }));
+                break;
+            }
+            tokio::select! {
+                result = scan_status.changed() => if result.is_err() { break; },
+                _ = scan_shutdown.changed() => break,
+            }
+        }
+    });
     let listener = bind(&args.host, plan.port).await?;
     let address = listener.local_addr()?;
     let mut bytes = Vec::with_capacity(32);
