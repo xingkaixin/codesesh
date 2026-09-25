@@ -259,7 +259,14 @@ async function capture(fixture, command) {
       status: 200,
       body: normalizeEvent(stream.events.find((e) => e.type === "connected")),
     });
-    const initialEvent = stream.events.find((e) => e.type === "scan-status");
+    // Compare the same lifecycle milestone even if file notifications race the connection.
+    const initialEvent = await waitFor(
+      () =>
+        stream.events.find(
+          (e) => e.type === "scan-status" && !e.data.active && !e.data.backfill?.active,
+        ),
+      "settled initial SSE status",
+    );
     results.push({
       label: "events scan status",
       status: 200,
