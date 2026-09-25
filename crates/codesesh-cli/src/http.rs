@@ -1,234 +1,175 @@
+mod catalog;
+mod compression;
+mod event_buffer;
+mod events;
+mod logs;
+mod params;
+mod saved;
+mod search;
+mod security;
+mod sessions;
+mod streaming;
+mod wire;
+
 use axum::{
     Json, Router,
-    extract::{Path, Query, Request, State as AxumState},
-    http::{StatusCode, header},
-    middleware::{self, Next},
+    http::StatusCode,
+    middleware,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{delete, get, post, put},
 };
-use codesesh_core::{agents, contract::SessionHead, storage::Cache};
+use codesesh_core::{
+    contract::{SessionHead, SessionReference},
+    query::SnapshotPaginator,
+    runtime::Runtime,
+    state::StateStore,
+};
 use serde_json::{Value, json};
 use std::{
-    path::{Component, PathBuf},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
+use tokio::sync::Semaphore;
+
+#[derive(Clone)]
+pub struct Options {
+    pub token: String,
+    pub hostname: String,
+    pub port: u16,
+    pub tls: bool,
+    pub trust_proxy: bool,
+    pub loopback_authority: bool,
+    pub default_from: Option<f64>,
+    pub default_to: Option<f64>,
+    pub default_days: Option<u32>,
+    pub enabled_agents: Vec<String>,
+    pub cwd: Option<String>,
+}
 
 pub struct State {
-    pub sessions: Vec<SessionHead>,
-    pub cache: Mutex<Cache>,
-    pub token: String,
-    pub days: u32,
+    runtime: Runtime,
+    saved: Arc<Mutex<Option<StateStore>>>,
+    options: Options,
+    session_pages: Mutex<SnapshotPaginator<SessionHead, ()>>,
+    project_pages: Mutex<SnapshotPaginator<Value, Value>>,
+    streams: Arc<Semaphore>,
+    details: Arc<Semaphore>,
+    query_scope: codesesh_core::search::QueryScope,
+}
+
+impl State {
+    pub fn new(runtime: Runtime, saved: Option<StateStore>, options: Options) -> Self {
+        let query_scope = codesesh_core::search::QueryScope {
+            agents: options.enabled_agents.clone(),
+            project_scope: options
+                .cwd
+                .as_deref()
+                .map(codesesh_core::projects::create_project_scope_matcher),
+        };
+        Self {
+            runtime,
+            query_scope,
+            saved: Arc::new(Mutex::new(saved)),
+            options,
+            session_pages: Mutex::new(SnapshotPaginator::default()),
+            project_pages: Mutex::new(SnapshotPaginator::default()),
+            streams: Arc::new(Semaphore::new(32)),
+            details: Arc::new(Semaphore::new(2)),
+        }
+    }
+    fn snapshot(&self) -> Arc<Vec<SessionHead>> {
+        Arc::new(scoped_heads(&self.runtime.snapshot(), &self.query_scope))
+    }
+    async fn aliases(&self) -> HashMap<SessionReference, String> {
+        let saved = self.saved.clone();
+        tokio::task::spawn_blocking(move || {
+            saved
+                .lock()
+                .ok()
+                .and_then(|s| s.as_ref().and_then(|s| s.list_aliases().ok()))
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| (a.reference, a.alias))
+                .collect()
+        })
+        .await
+        .unwrap_or_default()
+    }
+    fn known(&self, agent: &str) -> bool {
+        codesesh_core::agents::catalog(0)
+            .iter()
+            .any(|a| a.name == agent.trim().to_lowercase())
+    }
 }
 
 pub fn router(state: Arc<State>) -> Router {
     Router::new()
-        .route("/api/config", get(config))
-        .route("/api/status", get(status))
-        .route("/api/agents", get(agent_list))
-        .route("/api/sessions", get(sessions))
-        .route("/api/sessions/{agent}/{id}", get(detail))
-        .fallback(static_file)
-        .layer(middleware::from_fn_with_state(state.clone(), authorize))
+        .route("/api/config", get(catalog::config))
+        .route("/api/status", get(catalog::status))
+        .route("/api/agents", get(catalog::agents))
+        .route("/api/projects", get(catalog::projects))
+        .route("/api/sessions", get(sessions::list))
+        .route("/api/sessions/{agent}/{id}", get(sessions::detail))
+        .route("/api/search", get(search::search))
+        .route("/api/file-activity", get(search::file_activity))
+        .route("/api/dashboard", get(catalog::dashboard))
+        .route("/api/bookmarks", get(saved::list).put(saved::put))
+        .route("/api/bookmarks/import", post(saved::import))
+        .route("/api/bookmarks/{agent}/{id}", delete(saved::delete))
+        .route(
+            "/api/session-aliases/{agent}/{id}",
+            put(saved::alias_put).delete(saved::alias_delete),
+        )
+        .route("/api/events", get(events::events))
+        .route("/api/logs", post(logs::post))
+        .fallback(security::static_file)
+        .layer(middleware::from_fn(compression::middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            security::guard,
+        ))
         .with_state(state)
 }
 
 fn error(status: StatusCode, message: &str) -> Response {
     (status, Json(json!({"error":message}))).into_response()
 }
-
-async fn authorize(
-    AxumState(state): AxumState<Arc<State>>,
-    request: Request,
-    next: Next,
-) -> Response {
-    let host = request
-        .headers()
-        .get(header::HOST)
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-    let authority = host.parse::<axum::http::uri::Authority>().ok();
-    if !authority.is_some_and(|a| matches!(a.host(), "localhost" | "127.0.0.1" | "[::1]")) {
-        return error(StatusCode::FORBIDDEN, "Invalid Host");
-    }
-    if let Some(origin) = request.headers().get(header::ORIGIN) {
-        let expected = format!("http://{host}");
-        if origin.as_bytes() != expected.as_bytes() {
-            return error(StatusCode::FORBIDDEN, "Invalid Origin");
-        }
-    }
-    if request.uri().path().starts_with("/api/") {
-        let bearer = request
-            .headers()
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|value| value.strip_prefix("Bearer "));
-        let cookie = request
-            .headers()
-            .get(header::COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|cookie| {
-                cookie
-                    .split(';')
-                    .find_map(|part| part.trim().strip_prefix("codesesh_access_token="))
-            });
-        if bearer.or(cookie) != Some(state.token.as_str()) {
-            return error(StatusCode::UNAUTHORIZED, "Unauthorized");
-        }
-    }
-    let mut response = next.run(request).await;
+fn retry(message: &str) -> Response {
+    let mut response = error(StatusCode::SERVICE_UNAVAILABLE, message);
     response
         .headers_mut()
-        .insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
+        .insert("retry-after", "1".parse().unwrap());
     response
 }
-
-async fn config(AxumState(state): AxumState<Arc<State>>) -> Json<Value> {
-    Json(json!({"window":{"days":state.days}}))
+fn decorate(head: &mut SessionHead, aliases: &HashMap<SessionReference, String>) {
+    if let Some(alias) = aliases.get(&head.reference) {
+        head.display_title = Some(alias.clone());
+    }
 }
-async fn status() -> Json<Value> {
-    Json(json!({"type":"scan-status","active":false,"phase":"idle",
-        "pendingAgents":[],"scanningAgents":[],"completedAgents":["codex"],
-        "agentStatuses":{},"totalAgents":1,"updatedAt":chrono::Utc::now().timestamp_millis(),
-        "backfill":{"active":false,"pendingAgents":[],"completedAgents":[],"failedAgents":[]}}))
-}
-async fn agent_list(AxumState(state): AxumState<Arc<State>>) -> Json<Value> {
-    Json(serde_json::to_value(agents::catalog(state.sessions.len())).unwrap())
-}
-async fn sessions(
-    AxumState(state): AxumState<Arc<State>>,
-    Query(query): Query<std::collections::HashMap<String, String>>,
-) -> Response {
-    if query
-        .keys()
-        .any(|key| !matches!(key.as_str(), "limit" | "agent" | "from" | "to"))
+fn decorate_value(value: &mut Value, aliases: &HashMap<SessionReference, String>) {
+    if let Ok(reference) = serde_json::from_value::<SessionReference>(value["reference"].clone())
+        && let Some(alias) = aliases.get(&reference)
     {
-        return error(
-            StatusCode::NOT_IMPLEMENTED,
-            "Rust P1 query filtering is not yet implemented",
-        );
+        value["display_title"] = json!(alias);
     }
-    let limit = match query.get("limit").map(|text| text.parse::<usize>()) {
-        Some(Ok(value)) if value > 0 => value,
-        Some(_) => return error(StatusCode::BAD_REQUEST, "limit must be a positive integer"),
-        None => 250,
-    };
-    let mut from = None;
-    let mut to = None;
-    for (key, target) in [("from", &mut from), ("to", &mut to)] {
-        if let Some(value) = query.get(key) {
-            match chrono::DateTime::parse_from_rfc3339(value) {
-                Ok(date) => *target = Some(date.timestamp_millis()),
-                Err(_) => return error(StatusCode::BAD_REQUEST, "Invalid date window"),
-            }
-        }
-    }
-    let sessions = state
-        .sessions
-        .iter()
-        .filter(|session| {
-            query
-                .get("agent")
-                .is_none_or(|agent| *agent == session.reference.agent_name)
-        })
-        .filter(|session| {
-            from.is_none_or(|from| session.time_updated >= from)
-                && to.is_none_or(|to| session.time_updated <= to)
-        })
-        .map(|session| session.public())
-        .collect::<Vec<_>>();
-    if sessions.len() > limit {
-        return error(
-            StatusCode::NOT_IMPLEMENTED,
-            "Rust P1 pagination is not yet implemented",
-        );
-    }
-    Json(json!({"sessions":sessions})).into_response()
 }
 
-async fn detail(
-    AxumState(state): AxumState<Arc<State>>,
-    Path((agent, id)): Path<(String, String)>,
-) -> Response {
-    let Some(head) = state
-        .sessions
+#[cfg(test)]
+mod tests;
+
+fn scoped_heads(
+    heads: &[SessionHead],
+    scope: &codesesh_core::search::QueryScope,
+) -> Vec<SessionHead> {
+    heads
         .iter()
-        .find(|session| session.reference.agent_name == agent && session.reference.session_id == id)
+        .filter(|s| {
+            scope.agents.contains(&s.reference.agent_name)
+                && scope
+                    .project_scope
+                    .as_ref()
+                    .is_none_or(|p| codesesh_core::projects::matches_project_scope(s, p))
+        })
         .cloned()
-    else {
-        return error(StatusCode::NOT_FOUND, "Session not found");
-    };
-    let result = tokio::task::spawn_blocking(move || {
-        state
-            .cache
-            .lock()
-            .map_err(|_| anyhow::anyhow!("cache reader lock poisoned"))?
-            .detail(head)
-    })
-    .await;
-    match result {
-        Ok(Ok(Some(detail))) => Json(detail).into_response(),
-        Ok(Ok(None)) => error(StatusCode::NOT_FOUND, "Session not found"),
-        _ => error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Session detail is not ready",
-        ),
-    }
-}
-
-async fn static_file(AxumState(state): AxumState<Arc<State>>, request: Request) -> Response {
-    let path = request.uri().path();
-    if path.starts_with("/api/") {
-        return error(
-            StatusCode::NOT_IMPLEMENTED,
-            "Rust P1 endpoint is pending migration",
-        );
-    }
-    let relative = path.trim_start_matches('/');
-    if PathBuf::from(relative)
-        .components()
-        .any(|part| !matches!(part, Component::Normal(_)))
-    {
-        return error(StatusCode::NOT_FOUND, "Not found");
-    }
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/web/dist");
-    let requested = root.join(relative);
-    let file = if requested.is_file() {
-        requested
-    } else {
-        root.join("index.html")
-    };
-    let mime = match file.extension().and_then(|ext| ext.to_str()) {
-        Some("js") => "text/javascript",
-        Some("css") => "text/css",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("woff2") => "font/woff2",
-        _ => "text/html; charset=utf-8",
-    };
-    let Ok(bytes) = tokio::task::spawn_blocking(move || std::fs::read(file))
-        .await
-        .unwrap_or_else(|error| Err(std::io::Error::other(error)))
-    else {
-        return error(
-            StatusCode::NOT_FOUND,
-            "Build apps/web before running the Rust preview",
-        );
-    };
-    let mut response = ([(header::CONTENT_TYPE, mime)], bytes).into_response();
-    if request.uri().query().is_some_and(|query| {
-        query
-            .split('&')
-            .any(|entry| entry == format!("access_token={}", state.token))
-    }) {
-        response.headers_mut().insert(
-            header::SET_COOKIE,
-            format!(
-                "codesesh_access_token={}; HttpOnly; SameSite=Strict; Path=/",
-                state.token
-            )
-            .parse()
-            .unwrap(),
-        );
-    }
-    response
+        .collect()
 }
