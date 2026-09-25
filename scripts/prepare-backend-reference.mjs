@@ -15,8 +15,10 @@ mkdirSync(destination, { recursive: true });
 for (const file of ["package.json", "package-lock.json"])
   cpSync(join(reference, file), join(destination, file));
 execFileSync(
-  process.platform === "win32" ? "npm.cmd" : "npm",
-  ["ci", "--omit=dev", "--no-audit", "--no-fund"],
+  process.platform === "win32" ? "cmd.exe" : "npm",
+  process.platform === "win32"
+    ? ["/d", "/s", "/c", "npm ci --omit=dev --no-audit --no-fund"]
+    : ["ci", "--omit=dev", "--no-audit", "--no-fund"],
   { cwd: destination, stdio: "inherit" },
 );
 const command = [
