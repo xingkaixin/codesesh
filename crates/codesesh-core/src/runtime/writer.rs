@@ -62,9 +62,9 @@ pub(super) fn run(
                         &batch.checkpoint,
                         batch.complete,
                     )?;
-                    let heads = Arc::new(cache.snapshot()?);
                     batch.on_reject.take();
                     if !batch.sessions.is_empty() || !batch.removed.is_empty() {
+                        let heads = Arc::new(cache.snapshot()?);
                         let changed = Arc::new(
                             batch
                                 .sessions

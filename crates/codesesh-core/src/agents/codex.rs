@@ -55,7 +55,7 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
             });
         }
     }
-    merge_children(&mut sessions, pricing, None)?;
+    merge_children(&mut sessions, pricing, None, &[])?;
     sessions.sort_by(|a, b| {
         b.detail
             .head
@@ -76,7 +76,7 @@ pub fn scan_changed(
     root: &Path,
     pricing: &Pricing,
     paths: &[PathBuf],
-    previous: &[ParsedSession],
+    previous: &[crate::agents::SessionRecord],
 ) -> Result<super::ScanDelta> {
     if paths.iter().any(|path| {
         path.file_name()
@@ -184,13 +184,8 @@ pub fn scan_changed(
             }
         }
     }
-    let mut all: Vec<_> = previous
-        .iter()
-        .filter(|session| !affected.contains(&session.head.reference.session_id))
-        .cloned()
-        .collect();
-    all.extend(changed);
-    merge_children(&mut all, pricing, Some(&affected))?;
+    let mut all = changed;
+    merge_children(&mut all, pricing, Some(&affected), previous)?;
     let upserts: Vec<_> = all
         .into_iter()
         .filter(|session| affected.contains(&session.head.reference.session_id))
@@ -218,14 +213,31 @@ fn merge_children(
     sessions: &mut [ParsedSession],
     pricing: &Pricing,
     selected: Option<&std::collections::HashSet<String>>,
+    previous: &[crate::agents::SessionRecord],
 ) -> Result<()> {
     let mut children = HashMap::<String, Vec<(SessionStats, Option<Message>)>>::new();
-    for session in sessions.iter() {
-        if let Some(parent) = &session.head.parent_reference {
+    let current: std::collections::HashSet<_> =
+        sessions.iter().map(|s| &s.head.reference).collect();
+    let records = sessions
+        .iter()
+        .map(|s| (&s.head, s.source.as_path()))
+        .chain(
+            previous
+                .iter()
+                .filter(|s| {
+                    !current.contains(&s.head.reference)
+                        && selected.is_none_or(|ids| !ids.contains(&s.head.reference.session_id))
+                })
+                .map(|s| (&s.head, s.source.as_path())),
+        );
+    for (head, source) in records {
+        if let Some(parent) = &head.parent_reference
+            && selected.is_none_or(|ids| ids.contains(&parent.session_id))
+        {
             children
                 .entry(parent.session_id.clone())
                 .or_default()
-                .push(child_summary(session, pricing)?);
+                .push(child_summary(head, source, pricing)?);
         }
     }
     for session in sessions {
@@ -276,7 +288,8 @@ fn merge_children(
 }
 
 fn child_summary(
-    session: &ParsedSession,
+    head: &SessionHead,
+    source: &Path,
     pricing: &Pricing,
 ) -> Result<(SessionStats, Option<Message>)> {
     let mut usage = Usage::default();
@@ -284,8 +297,8 @@ fn child_summary(
     let mut nickname = None;
     let mut latest = None;
     let mut final_output = None;
-    let fallback = crate::time::file_mtime_ms(&session.source)?;
-    for line in BufReader::new(File::open(&session.source)?).lines() {
+    let fallback = crate::time::file_mtime_ms(source)?;
+    for line in BufReader::new(File::open(source)?).lines() {
         let Ok(record) = serde_json::from_str::<Value>(&line?) else {
             continue;
         };
@@ -329,10 +342,8 @@ fn child_summary(
                 output.id = payload["id"]
                     .as_str()
                     .map(str::to_owned)
-                    .unwrap_or_else(|| {
-                        format!("codex-subagent-{}", session.head.reference.session_id)
-                    });
-                output.subagent_id = Some(session.head.reference.session_id.clone());
+                    .unwrap_or_else(|| format!("codex-subagent-{}", head.reference.session_id));
+                output.subagent_id = Some(head.reference.session_id.clone());
                 output.nickname = nickname.clone();
                 if record["phase"] == "final_answer" || payload["phase"] == "final_answer" {
                     final_output = Some(output.clone());
@@ -959,12 +970,35 @@ mod incremental_tests {
                 &pricing,
                 std::slice::from_ref(&path),
                 &previous
+                    .iter()
+                    .map(crate::agents::SessionRecord::from)
+                    .collect::<Vec<_>>()
             )
             .is_err()
         );
-        assert!(scan_changed(root.path(), &pricing, &[root.path().to_owned()], &previous).is_err());
+        assert!(
+            scan_changed(
+                root.path(),
+                &pricing,
+                &[root.path().to_owned()],
+                &previous
+                    .iter()
+                    .map(crate::agents::SessionRecord::from)
+                    .collect::<Vec<_>>()
+            )
+            .is_err()
+        );
         std::fs::remove_file(&path).unwrap();
-        let deleted = scan_changed(root.path(), &pricing, &[path], &previous).unwrap();
+        let deleted = scan_changed(
+            root.path(),
+            &pricing,
+            &[path],
+            &previous
+                .iter()
+                .map(crate::agents::SessionRecord::from)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
         assert!(deleted.upserts.is_empty());
     }

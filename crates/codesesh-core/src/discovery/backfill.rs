@@ -15,6 +15,7 @@ pub struct Item {
     pub activity: f64,
     pub fingerprint: String,
     pub target: bool,
+    pub bytes: u64,
 }
 #[derive(Clone, Debug)]
 pub struct Backfill {
@@ -194,6 +195,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                 activity,
                 fingerprint: format!("{activity}:{database_stamp}"),
                 target: false,
+                bytes: 0,
             })
             .collect());
     }
@@ -202,8 +204,22 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     }
     let mut items = Vec::new();
     let mut context_stamps = Vec::new();
+    let mut codex_titles = std::collections::HashMap::new();
+    if source.agent == "codex" {
+        use std::io::BufRead;
+        if let Ok(file) = std::fs::File::open(source.data_root.join("session_index.jsonl")) {
+            for line in std::io::BufReader::new(file).lines() {
+                if let Ok(record) = serde_json::from_str::<serde_json::Value>(&line?)
+                    && let (Some(id), Some(title)) =
+                        (record["id"].as_str(), record["thread_name"].as_str())
+                {
+                    codex_titles.insert(id.to_owned(), title.to_owned());
+                }
+            }
+        }
+    }
     let context_names: &[&str] = match source.agent.as_str() {
-        "codex" | "kimi-code" => &["session_index.jsonl"],
+        "kimi-code" => &["session_index.jsonl"],
         "kimi" => &["kimi.json", "config.toml"],
         _ => &[],
     };
@@ -233,14 +249,6 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             continue;
         }
         let name = entry.file_name().to_string_lossy();
-        if source.agent == "claudecode"
-            && (name == "sessions-index.json" || name.ends_with(".meta.json"))
-        {
-            context_stamps.push((
-                entry.path().to_string_lossy().into_owned(),
-                stamp(entry.path())?.1,
-            ));
-        }
         let selected = match source.agent.as_str() {
             "claudecode" => {
                 name.ends_with(".jsonl")
@@ -280,6 +288,36 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             continue;
         }
         let (mut activity, mut fingerprint) = stamp(entry.path())?;
+        let mut bytes = entry.metadata()?.len();
+        if source.agent == "claudecode" {
+            let parent = entry.path().parent().unwrap();
+            let project = if parent.file_name().is_some_and(|name| name == "subagents") {
+                parent.parent().and_then(Path::parent).unwrap_or(parent)
+            } else {
+                parent
+            };
+            for related in [
+                project.join("sessions-index.json"),
+                entry.path().with_extension("meta.json"),
+            ] {
+                if related.try_exists()? {
+                    fingerprint.push_str(&stamp(&related)?.1);
+                }
+            }
+        }
+        if source.agent == "codex" {
+            let stem = entry
+                .path()
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let pieces: Vec<_> = stem.split('-').collect();
+            let id = pieces[pieces.len().saturating_sub(5)..].join("-");
+            fingerprint.push_str(&format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_vec(&codex_titles.get(&id))?)
+            ));
+        }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
             entry.path().parent().unwrap().to_owned()
         } else {
@@ -302,6 +340,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             let updates = path.with_file_name("updates.jsonl");
             if updates.try_exists()? {
                 fingerprint.push_str(&stamp(&updates)?.1);
+                bytes = bytes.saturating_add(std::fs::metadata(&updates)?.len());
             }
         }
         if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
@@ -311,6 +350,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                     let (time, stamp) = stamp(&transcript)?;
                     activity = activity.max(time);
                     fingerprint.push_str(&stamp);
+                    bytes = bytes.saturating_add(std::fs::metadata(&transcript)?.len());
                 }
             }
         }
@@ -320,6 +360,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             activity,
             fingerprint,
             target: false,
+            bytes,
         });
     }
     context_stamps.sort();

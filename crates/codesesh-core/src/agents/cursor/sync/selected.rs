@@ -135,7 +135,7 @@ impl CursorSync {
         });
         self.fingerprints.extend(fingerprints);
         for (key, _, composer) in composers {
-            self.composers.insert(key, composer);
+            self.composers.insert(key, super::metadata(&composer));
         }
         for id in selected {
             self.directories.remove(id);

@@ -154,7 +154,10 @@ fn attachments_require_verified_digest_and_keep_missing_placeholders() {
         temp.path(),
         &Pricing::bundled(),
         &[dir.join(&digest)],
-        &missing,
+        &missing
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect::<Vec<_>>(),
     )
     .unwrap();
     assert!(matches!(
@@ -166,7 +169,11 @@ fn attachments_require_verified_digest_and_keep_missing_placeholders() {
         temp.path(),
         &Pricing::bundled(),
         &[dir.join(&digest)],
-        &verified.upserts,
+        &verified
+            .upserts
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect::<Vec<_>>(),
     )
     .unwrap();
     assert!(
@@ -275,7 +282,17 @@ fn changed_scan_does_not_parse_unrelated_corrupt_artifacts() {
     .unwrap();
     assert_eq!(parsed.upserts.len(), 1);
     fs::remove_file(&path).unwrap();
-    let delta = scan_changed(temp.path(), &Pricing::bundled(), &[path], &parsed.upserts).unwrap();
+    let delta = scan_changed(
+        temp.path(),
+        &Pricing::bundled(),
+        &[path],
+        &parsed
+            .upserts
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
     assert!(delta.upserts.is_empty());
     assert_eq!(
         delta.removed,

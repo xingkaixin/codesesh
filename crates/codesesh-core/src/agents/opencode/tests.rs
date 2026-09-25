@@ -183,14 +183,21 @@ fn child_usage_only_changes_detail_and_counts_invisible_child_usage() {
     assert_eq!(root.detail.head.stats.message_count, 1);
     assert_eq!(root.detail.head.stats.total_input_tokens, 30.0);
     let pricing = Pricing::bundled();
-    let first = refresh(temp.path(), &pricing, None).unwrap();
+    let mut first = refresh(temp.path(), &pricing, None).unwrap();
+    first.release_bodies();
+    assert!(
+        refresh(temp.path(), &pricing, Some(&first))
+            .unwrap()
+            .upserts
+            .is_empty()
+    );
     db.execute(
         "UPDATE message SET data=?1 WHERE session_id='child'",
         [json!({"role":"assistant","cost":8,"tokens":{"input":20,"output":4}}).to_string()],
     )
     .unwrap();
     let next = refresh(temp.path(), &pricing, Some(&first)).unwrap();
-    assert_eq!(next.decoded, [reference("opencode", "child".into())]);
+    assert_eq!(next.decoded.len(), 2);
     assert_eq!(next.upserts.len(), 2);
     let root = next
         .sessions
@@ -199,6 +206,18 @@ fn child_usage_only_changes_detail_and_counts_invisible_child_usage() {
         .unwrap();
     assert_eq!(root.head.stats.total_cost, 1.0);
     assert_eq!(root.detail.head.stats.total_cost, 13.0);
+    assert_eq!(root.detail.messages.len(), 1);
+    let mut next = next;
+    next.release_bodies();
+    db.execute("DELETE FROM session WHERE id='child'", [])
+        .unwrap();
+    let deleted = refresh(temp.path(), &pricing, Some(&next)).unwrap();
+    let root = deleted
+        .upserts
+        .iter()
+        .find(|s| s.head.reference.session_id == "root")
+        .unwrap();
+    assert_eq!(root.detail.messages.len(), 1);
 }
 
 #[test]
@@ -224,10 +243,11 @@ fn incremental_reuses_unchanged_sessions_and_handles_wal_edits_and_deletions() {
     message(&db, "one-user", "one", "user", 1, json!({"text":"aaaa"}));
     message(&db, "two-user", "two", "user", 1, json!({"text":"keep"}));
     let pricing = Pricing::bundled();
-    let first = refresh(temp.path(), &pricing, None).unwrap();
+    let mut first = refresh(temp.path(), &pricing, None).unwrap();
     assert_eq!(first.decoded.len(), 2);
     assert_eq!(first.upserts.len(), 2);
-    let unchanged = refresh(temp.path(), &pricing, Some(&first)).unwrap();
+    first.release_bodies();
+    let mut unchanged = refresh(temp.path(), &pricing, Some(&first)).unwrap();
     assert!(unchanged.decoded.is_empty());
     assert!(unchanged.upserts.is_empty());
     db.execute(
@@ -235,13 +255,15 @@ fn incremental_reuses_unchanged_sessions_and_handles_wal_edits_and_deletions() {
         [json!({"text":"bbbb"}).to_string()],
     )
     .unwrap();
-    let changed = refresh(temp.path(), &pricing, Some(&unchanged)).unwrap();
+    unchanged.release_bodies();
+    let mut changed = refresh(temp.path(), &pricing, Some(&unchanged)).unwrap();
     assert_eq!(changed.decoded.len(), 1);
     assert_eq!(changed.decoded[0].session_id, "one");
     assert_eq!(changed.upserts.len(), 1);
     assert_eq!(changed.upserts[0].head.title, "bbbb");
     db.execute("DELETE FROM session_message WHERE session_id='one'", [])
         .unwrap();
+    changed.release_bodies();
     let removed = refresh(temp.path(), &pricing, Some(&changed)).unwrap();
     assert_eq!(removed.removed, [reference("opencode", "one".into())]);
     assert_eq!(removed.sessions.len(), 1);

@@ -17,7 +17,7 @@ pub fn scan_changed(
     root: &Path,
     pricing: &Pricing,
     changed_paths: &[PathBuf],
-    previous: &[ParsedSession],
+    previous: &[crate::agents::SessionRecord],
 ) -> Result<super::ScanDelta> {
     let mut affected = changed_paths.to_vec();
     let attachments = root.join("attachments/v1/objects");
@@ -27,7 +27,7 @@ pub fn scan_changed(
         }
         if changed_paths.iter().any(|changed| {
             (changed.starts_with(&attachments) || attachments.starts_with(changed))
-                && attachment_matches(&session.detail.messages, changed)
+                && session.attachments.matches(changed)
         }) {
             affected.push(session.source.clone());
         }
@@ -56,27 +56,45 @@ pub fn scan_changed(
     })
 }
 
-fn attachment_matches(messages: &[Message], changed: &Path) -> bool {
-    use base64::{Engine, engine::general_purpose::STANDARD};
-    use sha2::{Digest, Sha256};
-    let digest = changed
-        .file_name()
-        .and_then(|s| s.to_str())
-        .filter(|s| s.len() == 64);
-    messages
-        .iter()
-        .flat_map(|message| &message.parts)
-        .any(|part| match part {
-            MessagePart::Image {
-                data: Some(data), ..
-            } => digest.is_none_or(|digest| {
-                STANDARD
-                    .decode(data)
-                    .is_ok_and(|bytes| format!("{:x}", Sha256::digest(bytes)) == digest)
-            }),
-            MessagePart::Text { text, .. } => text == "Image attachment unavailable",
-            _ => false,
-        })
+#[derive(Clone, Debug, Default)]
+pub struct AttachmentReferences {
+    digests: HashSet<String>,
+    unavailable: bool,
+}
+impl AttachmentReferences {
+    pub fn from_messages(messages: &[Message]) -> Self {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        use sha2::{Digest, Sha256};
+        let mut references = Self::default();
+        for part in messages.iter().flat_map(|message| &message.parts) {
+            match part {
+                MessagePart::Image {
+                    data: Some(data), ..
+                } => {
+                    if let Ok(bytes) = STANDARD.decode(data) {
+                        references
+                            .digests
+                            .insert(format!("{:x}", Sha256::digest(bytes)));
+                    }
+                }
+                MessagePart::Text { text, .. } if text == "Image attachment unavailable" => {
+                    references.unavailable = true;
+                }
+                _ => {}
+            }
+        }
+        references
+    }
+    fn matches(&self, changed: &Path) -> bool {
+        self.unavailable
+            || changed
+                .file_name()
+                .and_then(|s| s.to_str())
+                .filter(|s| s.len() == 64)
+                .map_or(!self.digests.is_empty(), |digest| {
+                    self.digests.contains(digest)
+                })
+    }
 }
 
 fn scan_selected(

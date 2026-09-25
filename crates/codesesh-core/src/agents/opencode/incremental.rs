@@ -11,6 +11,22 @@ pub struct DatabaseSnapshot {
     pub(super) base_details: HashMap<String, SessionDetail>,
     pub(super) raw_usage: HashMap<String, SessionStats>,
     pub(super) pricing_generation: u64,
+    compacted: bool,
+}
+
+impl DatabaseSnapshot {
+    pub fn release_bodies(&mut self) {
+        for session in &mut self.sessions {
+            session.detail.messages = Vec::new();
+            session.detail.file_activity = Vec::new();
+        }
+        for detail in self.base_details.values_mut() {
+            detail.messages = Vec::new();
+            detail.file_activity = Vec::new();
+        }
+        self.upserts = Vec::new();
+        self.compacted = true;
+    }
 }
 
 pub fn refresh(
@@ -75,11 +91,50 @@ pub(super) fn refresh_scoped(
         );
     }
     let reuse = previous.filter(|p| p.pricing_generation == pricing.generation());
-    let changed: HashSet<_> = fingerprints
+    let mut changed: HashSet<_> = fingerprints
         .iter()
         .filter(|(id, hash)| reuse.and_then(|p| p.fingerprints.get(*id)) != Some(*hash))
         .map(|(id, _)| id.clone())
         .collect();
+    if !v2 && reuse.is_some_and(|snapshot| snapshot.compacted) {
+        let mut parents: HashMap<String, HashSet<String>> = HashMap::new();
+        for row in paging::metadata(&db, false)? {
+            if let Some(parent) = row["parent_id"].as_str() {
+                parents
+                    .entry(string(&row["id"]))
+                    .or_default()
+                    .insert(parent.into());
+            }
+        }
+        if let Some(previous) = reuse {
+            for (id, detail) in &previous.base_details {
+                if let Some(parent) = &detail.head.parent_reference {
+                    parents
+                        .entry(id.clone())
+                        .or_default()
+                        .insert(parent.session_id.clone());
+                }
+            }
+            let mut pending: Vec<_> = changed
+                .iter()
+                .cloned()
+                .chain(
+                    previous
+                        .fingerprints
+                        .keys()
+                        .filter(|id| !fingerprints.contains_key(*id))
+                        .cloned(),
+                )
+                .collect();
+            while let Some(id) = pending.pop() {
+                for parent in parents.get(&id).into_iter().flatten() {
+                    if changed.insert(parent.clone()) {
+                        pending.push(parent.clone());
+                    }
+                }
+            }
+        }
+    }
     let mut details = if v2 {
         read_v2(&db, pricing, reuse, &changed, scope.as_ref())?
     } else {
@@ -177,6 +232,7 @@ pub(super) fn refresh_scoped(
         base_details,
         raw_usage,
         pricing_generation: pricing.generation(),
+        compacted: false,
     })
 }
 

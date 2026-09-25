@@ -15,7 +15,7 @@ pub fn scan_changed(
     root: &Path,
     pricing: &Pricing,
     changed_paths: &[PathBuf],
-    previous: &[ParsedSession],
+    previous: &[crate::agents::SessionRecord],
 ) -> Result<ScanDelta> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {

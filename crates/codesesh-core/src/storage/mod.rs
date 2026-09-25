@@ -239,6 +239,14 @@ impl Cache {
             cursors.push(cursor::encode(session.detail.messages.len(), &digest)?);
         }
         if let Some((agent, checkpoint, complete)) = checkpoint {
+            if let Some(state) = checkpoint
+                .as_ref()
+                .and_then(|value| value.get("sourceState"))
+            {
+                transaction.execute("INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    params![format!("rust_source_state:{agent}"), json::stringify(state)?])?;
+            }
+
             let key = format!("rust_sync_checkpoint:{agent}");
             if complete {
                 transaction.execute("DELETE FROM cache_meta WHERE key=?", [key])?;

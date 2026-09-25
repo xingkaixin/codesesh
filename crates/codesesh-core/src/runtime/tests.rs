@@ -476,3 +476,44 @@ async fn failed_read_releases_snapshot_before_connection_reuse() {
     assert_eq!(value, "after");
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn sqlite_wal_commits_are_observed_while_writer_stays_open() {
+    let temporary = tempfile::tempdir().unwrap();
+    let database = temporary.path().join("source.sqlite");
+    let connection = Connection::open(&database).unwrap();
+    connection.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE current_title(title TEXT); INSERT INTO current_title VALUES('before');").unwrap();
+    let transcript = temporary.path().join("rollout-fixture.jsonl");
+    write_source(&transcript, "fixture");
+    let source = AgentSource {
+        name: "codex".into(),
+        roots: vec![database.clone()],
+        scan: Arc::new(move |_| {
+            let connection =
+                Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            let title: String =
+                connection.query_row("SELECT title FROM current_title", [], |row| row.get(0))?;
+            let mut batch = batch(&transcript)?;
+            batch.sessions[0].head.title = title.clone();
+            batch.sessions[0].detail.head.title = title;
+            Ok(batch)
+        }),
+    };
+    let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
+        .await
+        .unwrap();
+    until(|| {
+        runtime
+            .snapshot()
+            .first()
+            .is_some_and(|head| head.title == "before")
+    })
+    .await;
+    for title in ["first WAL commit", "second WAL commit"] {
+        connection
+            .execute("UPDATE current_title SET title=?1", [title])
+            .unwrap();
+        until(|| runtime.snapshot()[0].title == title).await;
+    }
+    runtime.shutdown().await.unwrap();
+}

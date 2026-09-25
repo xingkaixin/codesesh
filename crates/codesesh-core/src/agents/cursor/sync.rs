@@ -59,40 +59,33 @@ impl CursorSync {
         }
         let mut db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         let transaction = db.transaction()?;
-        let rows = {
+        let mut fingerprints = HashMap::new();
+        let mut composers = self.composers.clone();
+        {
             let mut query = transaction.prepare("SELECT key, value, rowid FROM cursorDiskKV WHERE key LIKE 'composerData:%' OR key LIKE 'bubbleId:%' OR key LIKE 'bubble:%' ORDER BY rowid")?;
-            query
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, i64>(2)?,
-                    ))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?
-        };
-        let fingerprints: HashMap<String, [u8; 32]> = rows
-            .iter()
-            .map(|(key, raw, row_id)| (key.clone(), fingerprint(*row_id, raw)))
-            .collect();
+            let mut rows = query.query([])?;
+            while let Some(row) = rows.next()? {
+                let key: String = row.get(0)?;
+                let raw: String = row.get(1)?;
+                let hash = fingerprint(row.get(2)?, &raw);
+                if key.starts_with("composerData:") && self.fingerprints.get(&key) != Some(&hash) {
+                    composers.remove(&key);
+                    if let Ok(value) = serde_json::from_str::<Value>(&raw)
+                        && composer_id(&value).is_some()
+                    {
+                        composers.insert(key.clone(), metadata(&value));
+                    }
+                }
+                fingerprints.insert(key, hash);
+            }
+        }
+        composers.retain(|key, _| fingerprints.contains_key(key));
         let changed: HashSet<&str> = fingerprints
             .keys()
             .chain(self.fingerprints.keys())
             .filter(|key| fingerprints.get(*key) != self.fingerprints.get(*key))
             .map(String::as_str)
             .collect();
-        let mut composers = self.composers.clone();
-        composers.retain(|key, _| fingerprints.contains_key(key));
-        for (key, raw, _) in &rows {
-            if key.starts_with("composerData:") && changed.contains(key.as_str()) {
-                composers.remove(key);
-                if let Ok(value) = serde_json::from_str::<Value>(raw)
-                    && composer_id(&value).is_some()
-                {
-                    composers.insert(key.clone(), Arc::new(value));
-                }
-            }
-        }
         let mut affected = self.dirty.clone();
         let old_children = child_owners(&self.composers);
         let children = child_owners(&composers);
@@ -144,43 +137,50 @@ impl CursorSync {
                 }
             });
         }
-        let mut bubbles: HashMap<String, Vec<(String, Value)>> = HashMap::new();
-        for (key, raw, _) in &rows {
-            if !key.starts_with("bubbleId:") {
-                continue;
-            }
-            let id = key.split(':').nth(1).unwrap_or("");
-            if affected.contains(id)
-                && let Ok(value) = serde_json::from_str::<Value>(raw)
-                && value.is_object()
-            {
-                bubbles
-                    .entry(id.into())
-                    .or_default()
-                    .push((key.clone(), value));
-            }
-        }
         let mut active = self.active.clone();
         active.retain(|id| !affected.contains(id));
         let mut upserts = Vec::new();
-        for (key, _, _) in &rows {
-            let Some(composer) = composers.get(key) else {
-                continue;
-            };
-            let Some(id) = composer_id(composer).filter(|id| affected.contains(*id)) else {
-                continue;
-            };
-            let messages = bubbles.remove(id).unwrap_or_default();
-            if let Some(session) = parse_composer(
-                &transaction,
-                &path,
-                composer,
-                &messages,
-                directories.get(id).cloned().unwrap_or_default(),
-                pricing,
-            )? {
-                active.insert(id.into());
-                upserts.push(session);
+        {
+            let mut query = transaction.prepare(
+                "SELECT key,value FROM cursorDiskKV WHERE key LIKE 'composerData:%' ORDER BY rowid",
+            )?;
+            let mut rows = query.query([])?;
+            let mut bubble_query = transaction.prepare(
+                "SELECT key,value FROM cursorDiskKV WHERE key >= ?1 AND key < ?2 ORDER BY rowid",
+            )?;
+            while let Some(row) = rows.next()? {
+                let key: String = row.get(0)?;
+                let Some(id) = composers
+                    .get(&key)
+                    .and_then(|c| composer_id(c))
+                    .filter(|id| affected.contains(*id))
+                else {
+                    continue;
+                };
+                let raw: String = row.get(1)?;
+                let composer: Value = serde_json::from_str(&raw)?;
+                let mut bubble_rows =
+                    bubble_query.query([format!("bubbleId:{id}:"), format!("bubbleId:{id};")])?;
+                let mut messages = Vec::new();
+                while let Some(row) = bubble_rows.next()? {
+                    let raw: String = row.get(1)?;
+                    if let Ok(value) = serde_json::from_str::<Value>(&raw)
+                        && value.is_object()
+                    {
+                        messages.push((row.get::<_, String>(0)?, value));
+                    }
+                }
+                if let Some(session) = parse_composer(
+                    &transaction,
+                    &path,
+                    &composer,
+                    &messages,
+                    directories.get(id).cloned().unwrap_or_default(),
+                    pricing,
+                )? {
+                    active.insert(id.into());
+                    upserts.push(session);
+                }
             }
         }
         let removed = references(self.active.difference(&active).cloned());
@@ -205,6 +205,15 @@ fn references(ids: impl Iterator<Item = String>) -> Vec<SessionReference> {
         })
         .collect()
 }
+fn metadata(composer: &Value) -> Arc<Value> {
+    Arc::new(serde_json::json!({
+        "composerId": composer_id(composer),
+        "subagentInfos": composer["subagentInfos"].as_array().into_iter().flatten()
+            .filter_map(|child| string(child, "id"))
+            .map(|id| serde_json::json!({"id":id})).collect::<Vec<_>>()
+    }))
+}
+
 fn child_owners(composers: &HashMap<String, Arc<Value>>) -> HashMap<String, HashSet<String>> {
     let mut owners: HashMap<String, HashSet<String>> = HashMap::new();
     for composer in composers.values() {

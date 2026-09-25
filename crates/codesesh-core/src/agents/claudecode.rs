@@ -455,7 +455,16 @@ mod tests {
         )
         .unwrap();
         fs::create_dir_all(root.path().join("unrelated/session.jsonl")).unwrap();
-        let delta = scan_changed(root.path(), &pricing, &[meta], &previous).unwrap();
+        let delta = scan_changed(
+            root.path(),
+            &pricing,
+            &[meta],
+            &previous
+                .iter()
+                .map(crate::agents::SessionRecord::from)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         assert!(!delta.complete);
         assert_eq!(delta.upserts.len(), 2);
         assert_eq!(delta.removed.len(), 1);
@@ -470,7 +479,17 @@ mod tests {
             Some("new-worker")
         );
         fs::remove_file(&child).unwrap();
-        let delta = scan_changed(root.path(), &pricing, &[child], &delta.upserts).unwrap();
+        let delta = scan_changed(
+            root.path(),
+            &pricing,
+            &[child],
+            &delta
+                .upserts
+                .iter()
+                .map(crate::agents::SessionRecord::from)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         assert_eq!(delta.removed[0].session_id, "new-worker");
         assert_eq!(delta.upserts[0].detail.messages[0].subagent_id, None);
     }

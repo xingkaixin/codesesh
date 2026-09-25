@@ -64,7 +64,7 @@ pub fn scan_changed(
     root: &Path,
     pricing: &Pricing,
     changed_paths: &[std::path::PathBuf],
-    previous: &[ParsedSession],
+    previous: &[crate::agents::SessionRecord],
 ) -> Result<super::ScanDelta> {
     let nested = root.join("agent/sessions");
     let root = if nested.is_dir() {
@@ -494,7 +494,10 @@ mod tests {
             root.path(),
             &pricing,
             std::slice::from_ref(&path),
-            &previous,
+            &previous
+                .iter()
+                .map(crate::agents::SessionRecord::from)
+                .collect::<Vec<_>>(),
         )
         .unwrap();
         assert_eq!(changed.upserts.len(), 1);
@@ -507,11 +510,23 @@ mod tests {
                 &pricing,
                 std::slice::from_ref(&path),
                 &previous
+                    .iter()
+                    .map(crate::agents::SessionRecord::from)
+                    .collect::<Vec<_>>()
             )
             .is_err()
         );
         std::fs::remove_file(&path).unwrap();
-        let deleted = scan_changed(root.path(), &pricing, &[path], &previous).unwrap();
+        let deleted = scan_changed(
+            root.path(),
+            &pricing,
+            &[path],
+            &previous
+                .iter()
+                .map(crate::agents::SessionRecord::from)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
         assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
         assert!(deleted.upserts.is_empty());
     }

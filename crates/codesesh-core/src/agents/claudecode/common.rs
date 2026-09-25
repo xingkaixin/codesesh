@@ -278,7 +278,7 @@ impl std::error::Error for InvalidSession {}
 pub fn changed_sources(
     root: &Path,
     changed: &[std::path::PathBuf],
-    previous: &[super::super::codex::ParsedSession],
+    previous: &[crate::agents::SessionRecord],
 ) -> anyhow::Result<std::collections::BTreeSet<std::path::PathBuf>> {
     let mut selected = std::collections::BTreeSet::new();
     for path in changed {

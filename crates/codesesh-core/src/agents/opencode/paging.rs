@@ -72,7 +72,7 @@ fn activity(row: &Value) -> f64 {
         .map(number)
         .unwrap_or_else(|| number(&row["time_created"]))
 }
-fn metadata(db: &Connection, v2: bool) -> Result<Vec<Value>> {
+pub(super) fn metadata(db: &Connection, v2: bool) -> Result<Vec<Value>> {
     let table = if v2 { "session_v2" } else { "session" };
     let columns = rows(db, &format!("PRAGMA table_info({table})"))?;
     let has = |name: &str| columns.iter().any(|row| row["name"] == name);

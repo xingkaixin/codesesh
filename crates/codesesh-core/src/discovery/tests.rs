@@ -278,7 +278,14 @@ fn backfill_resumes_durable_checkpoint_without_reparsing_previous_pages() {
         .unwrap();
     assert_eq!(final_page.sessions.len(), 1);
     assert!(final_page.complete);
-    assert!(final_page.checkpoint.is_none());
+    assert!(
+        final_page
+            .checkpoint
+            .as_ref()
+            .unwrap()
+            .get("offset")
+            .is_none()
+    );
     commit_page(&mut cache, &mut final_page);
     assert_eq!(cache.snapshot().unwrap().len(), 65);
 }
@@ -470,7 +477,7 @@ fn active_source_updates_do_not_restart_historical_frontier() {
         .refresh_with_checkpoint(None, second.checkpoint.as_ref())
         .unwrap();
     assert!(!refreshed.complete);
-    assert_eq!(refreshed.sessions.len(), 1);
+    assert!(refreshed.sessions.is_empty());
     commit_page(&mut cache, &mut refreshed);
     let mut third = scanner
         .refresh_with_checkpoint(None, refreshed.checkpoint.as_ref())
@@ -505,4 +512,100 @@ fn every_catalog_entry_has_a_source_resolver_and_scanner() {
                 .is_empty()
         );
     }
+}
+
+#[test]
+fn persisted_file_state_skips_bodies_and_rechecks_changes_after_restart() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = pi_source(temporary.path());
+    let file = write_pi(&source, "Initial");
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut first = scanner.refresh(None).unwrap();
+    commit_page(&mut cache, &mut first);
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut warm = scanner.refresh(None).unwrap();
+    assert!(warm.sessions.is_empty());
+    assert!(warm.removed.is_empty());
+    commit_page(&mut cache, &mut warm);
+    for _ in 0..3 {
+        let mut unchanged = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+        assert!(unchanged.sessions.is_empty());
+        assert!(unchanged.removed.is_empty());
+        commit_page(&mut cache, &mut unchanged);
+    }
+    write_pi(&source, "Changed");
+    let rejected = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert_eq!(rejected.sessions.len(), 1);
+    drop(rejected);
+    let mut retry = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert_eq!(retry.sessions[0].head.title, "Changed");
+    commit_page(&mut cache, &mut retry);
+    let mut scanner = AgentScanner::new(source, db, pricing);
+    let mut restart = scanner.refresh(None).unwrap();
+    assert!(restart.sessions.is_empty());
+    commit_page(&mut cache, &mut restart);
+    std::fs::remove_file(&file).unwrap();
+    let mut removed = scanner.refresh(Some(&[file])).unwrap();
+    assert_eq!(removed.removed.len(), 1);
+    commit_page(&mut cache, &mut removed);
+    assert!(cache.snapshot().unwrap().is_empty());
+}
+
+#[test]
+fn codex_title_index_refresh_only_parses_the_renamed_session() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("codex");
+    let sessions = root.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let ids = [
+        "019f0000-0000-0000-0000-000000000001",
+        "019f0000-0000-0000-0000-000000000002",
+    ];
+    for id in ids {
+        std::fs::write(sessions.join(format!("rollout-2026-09-01T00-00-00-{id}.jsonl")), format!("{}\n{}\n", serde_json::json!({"type":"session_meta","timestamp":"2026-09-01T00:00:00Z","payload":{"id":id,"cwd":"/tmp/codex-index-fixture"}}),serde_json::json!({"type":"response_item","timestamp":"2026-09-01T00:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Initial"}]}}))).unwrap();
+    }
+    let source = AgentSource {
+        agent: "codex".into(),
+        data_root: root.clone(),
+        scan_path: sessions,
+    };
+    let db = temporary.path().join("cache.db");
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source, db, std::sync::Arc::new(Pricing::bundled()));
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 2);
+    cache
+        .apply_checkpoint(
+            &mut initial.sessions,
+            &initial.removed,
+            "codex",
+            &initial.checkpoint,
+            initial.complete,
+        )
+        .unwrap();
+    initial.on_reject.take();
+    let index = root.join("session_index.jsonl");
+    std::fs::write(
+        &index,
+        serde_json::json!({"id":ids[0],"thread_name":"Renamed"}).to_string(),
+    )
+    .unwrap();
+    let mut renamed = scanner.refresh(Some(std::slice::from_ref(&index))).unwrap();
+    assert_eq!(renamed.sessions.len(), 1);
+    assert_eq!(renamed.sessions[0].head.title, "Renamed");
+    cache
+        .apply_checkpoint(
+            &mut renamed.sessions,
+            &renamed.removed,
+            "codex",
+            &renamed.checkpoint,
+            renamed.complete,
+        )
+        .unwrap();
+    renamed.on_reject.take();
+    let unchanged = scanner.refresh(Some(&[index])).unwrap();
+    assert!(unchanged.sessions.is_empty());
 }
