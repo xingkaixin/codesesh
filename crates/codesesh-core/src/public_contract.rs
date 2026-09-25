@@ -486,6 +486,8 @@ pub struct AgentScanStatus {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub enum BackfillPhase {
+    #[serde(rename = "checking")]
+    Checking,
     #[serde(rename = "scanning")]
     Scanning,
     #[serde(rename = "finalizing")]

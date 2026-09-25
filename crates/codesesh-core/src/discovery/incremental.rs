@@ -28,6 +28,7 @@ pub struct AgentScanner {
     previous: Vec<SessionRecord>,
     durable_references: HashSet<crate::contract::SessionReference>,
     initialized: bool,
+    history_complete: bool,
     backfill: Option<Backfill>,
     startup_from: Option<f64>,
     startup_to: Option<f64>,
@@ -54,6 +55,7 @@ impl AgentScanner {
             previous: Vec::new(),
             durable_references: HashSet::new(),
             initialized: false,
+            history_complete: false,
             backfill: None,
             startup_from: None,
             startup_to: None,
@@ -218,8 +220,10 @@ impl AgentScanner {
             "cursor" | "opencode" | "zcode" | "deepchat" | "cherrystudio" | "minimax-code"
         ) {
             let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
+            checkpoint["incremental"] = self.history_complete.into();
             checkpoint["sourceState"] = serde_json::json!({
                 "version": 1,
+                "historyComplete": self.history_complete || complete,
                 "parserVersion": agents::parser_version(&self.source.agent),
                 "generation": self.pricing.generation(),
                 "root": self.source.scan_path,
@@ -320,17 +324,13 @@ impl AgentScanner {
             }
             return Ok((delta, checkpoint, complete));
         }
-        let mut end = plan.offset;
-        let mut bytes = 0_u64;
-        for item in plan.items.iter().skip(plan.offset).take(BATCH_SIZE) {
-            if end > plan.offset && bytes.saturating_add(item.bytes) > 16 * 1024 * 1024 {
-                break;
-            }
-            bytes = bytes.saturating_add(item.bytes);
-            end += 1;
-        }
-        let selected = plan.items[plan.offset..end].to_vec();
-        let (mut delta, reused) = self.read_page(&selected)?;
+        let offset = plan.offset;
+        let items = std::mem::take(&mut self.backfill.as_mut().unwrap().items);
+        let result = self.read_page(&items[offset..], true);
+        self.backfill.as_mut().unwrap().items = items;
+        let (mut delta, reused, consumed) = result?;
+        let end = offset + consumed;
+        let selected = self.backfill.as_ref().unwrap().items[offset..end].to_vec();
         let refs: HashSet<_> = delta
             .upserts
             .iter()
@@ -487,7 +487,7 @@ impl AgentScanner {
                     bytes = bytes.saturating_add(item.bytes);
                     count += 1;
                 }
-                let (mut delta, _) = self.read_page(&pending[..count])?;
+                let (mut delta, _, _) = self.read_page(&pending[..count], false)?;
                 self.backfill
                     .as_mut()
                     .unwrap()
@@ -548,7 +548,7 @@ impl AgentScanner {
         {
             return self.page(None, None);
         }
-        let (mut delta, mut retained) = self.read_page(&current)?;
+        let (mut delta, mut retained, _) = self.read_page(&current, false)?;
         retained.extend(
             delta
                 .upserts
@@ -566,9 +566,12 @@ impl AgentScanner {
     fn read_page(
         &mut self,
         selected: &[Item],
-    ) -> Result<(ScanDelta, HashSet<crate::contract::SessionReference>)> {
+        limit_changes: bool,
+    ) -> Result<(ScanDelta, HashSet<crate::contract::SessionReference>, usize)> {
         let mut reused = HashSet::new();
         let mut changed = Vec::new();
+        let mut bytes = 0_u64;
+        let mut consumed = 0;
         let mut projections = HashMap::new();
         let mut by_source: HashMap<_, Vec<_>> = HashMap::new();
         for record in &self.previous {
@@ -599,8 +602,17 @@ impl AgentScanner {
                         .map(|record| record.head.reference.clone()),
                 );
             } else {
+                if limit_changes
+                    && !changed.is_empty()
+                    && (changed.len() >= BATCH_SIZE
+                        || bytes.saturating_add(item.bytes) > 16 * 1024 * 1024)
+                {
+                    break;
+                }
+                bytes = bytes.saturating_add(item.bytes);
                 changed.push(item.clone());
             }
+            consumed += 1;
         }
         let delta = self.read_selected(&changed)?;
         for item in changed.iter().filter(|item| item.path.is_some()) {
@@ -616,7 +628,7 @@ impl AgentScanner {
             self.file_fingerprints
                 .insert(item.key.clone(), item.fingerprint.clone());
         }
-        Ok((delta, reused))
+        Ok((delta, reused, consumed))
     }
     fn read_selected(&mut self, selected: &[Item]) -> Result<ScanDelta> {
         if selected.is_empty() {
@@ -674,6 +686,7 @@ impl AgentScanner {
         self.baseline.clear();
         self.file_fingerprints.clear();
         self.empty_sources.clear();
+        self.history_complete = false;
         if !self.cache_path.exists() {
             return Ok(());
         }
@@ -693,6 +706,14 @@ impl AgentScanner {
             && state["generation"].as_u64() == Some(self.pricing.generation())
             && state["root"].as_str() == self.source.scan_path.to_str()
         {
+            self.history_complete = match state["historyComplete"].as_bool() {
+                Some(complete) => complete,
+                None => cache.connection().query_row(
+                    "SELECT EXISTS(SELECT 1 FROM cache_initialization WHERE agent_name=?)",
+                    [&self.source.agent],
+                    |row| row.get(0),
+                )?,
+            };
             self.file_fingerprints =
                 serde_json::from_value(state["files"].clone()).unwrap_or_default();
             self.empty_sources =

@@ -121,7 +121,11 @@ pub(super) fn run(
                         {
                             status.backfill.current_agent = Some(agent.clone());
                             status.backfill.progress = Some(super::status::ScanProgress {
-                                phase: "scanning",
+                                phase: if checkpoint["incremental"] == true {
+                                    "checking"
+                                } else {
+                                    "scanning"
+                                },
                                 processed: processed as usize,
                                 total: total as usize,
                             });

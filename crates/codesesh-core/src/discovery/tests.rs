@@ -353,6 +353,27 @@ fn backfill_resumes_durable_checkpoint_without_reparsing_previous_pages() {
     );
     commit_page(&mut cache, &mut final_page);
     assert_eq!(cache.snapshot().unwrap().len(), 65);
+    let source = pi_source(temporary.path());
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut warm = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut checked = warm.refresh(None).unwrap();
+    assert!(checked.complete);
+    assert_eq!(checked.checkpoint.as_ref().unwrap()["incremental"], true);
+    assert!(checked.sessions.is_empty());
+    assert!(checked.removed.is_empty());
+    commit_page(&mut cache, &mut checked);
+    let changed = source.scan_path.join("history-0000.jsonl");
+    let contents = std::fs::read_to_string(&changed)
+        .unwrap()
+        .replace("History", "Updated history");
+    std::fs::write(changed, contents).unwrap();
+    std::fs::remove_file(source.scan_path.join("history-0001.jsonl")).unwrap();
+    let mut warm = AgentScanner::new(source, db, pricing);
+    let updated = warm.refresh(None).unwrap();
+    assert!(updated.complete);
+    assert_eq!(updated.sessions.len(), 1);
+    assert_eq!(updated.removed.len(), 1);
 }
 #[test]
 fn cold_invalid_transcript_does_not_block_first_backfill_page() {
