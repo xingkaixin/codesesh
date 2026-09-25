@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { targets, validateBinary } from "./common.mjs";
+import { createNativeArchive, extractArchive, targets, validateBinary } from "./common.mjs";
+
+test("native archives round-trip from a directory with spaces and Unicode", () => {
+  const directory = mkdtempSync(join(tmpdir(), "codesesh tar 中文 space "));
+  try {
+    mkdirSync(join(directory, "platform/bin"), { recursive: true });
+    mkdirSync(join(directory, "verify"));
+    const bytes = Buffer.from(Array.from({ length: 256 }, (_, index) => index));
+    writeFileSync(join(directory, "platform/bin/codesesh.exe"), bytes);
+    createNativeArchive(directory, "native.tar.gz", "codesesh.exe");
+    extractArchive(directory, "native.tar.gz", "verify");
+    assert.deepEqual(readFileSync(join(directory, "verify/codesesh.exe")), bytes);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("release validation rejects text, truncation, and a different CPU or OS", () => {
   const dir = mkdtempSync(join(tmpdir(), "codesesh-arch-"));

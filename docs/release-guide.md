@@ -19,7 +19,9 @@
 
 ## 候选制品验证
 
-需要在对应平台构建并执行，目标是 macOS arm64/x64、Linux glibc x64 和 Windows x64。
+需要在对应平台构建并执行，目标是 macOS arm64/x64、Linux x64 GNU（glibc 2.35+）和 Windows x64。
+Linux 的最低 glibc 为 2.35；CI 与 release 固定在 Ubuntu 22.04 运行完整构建、契约和安装验收，
+并记录 `getconf GNU_LIBC_VERSION`。首版不支持更旧 glibc、musl 或 Linux arm64。
 先构建契约与 Web，release 二进制内嵌静态资源：
 
 ```bash

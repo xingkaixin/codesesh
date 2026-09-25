@@ -106,6 +106,10 @@ More agents coming soon. See the [extension checklist](#extending).
 
 <!-- repo-fact:pnpm-version:end -->
 
+Native targets are macOS arm64/x64, Linux x64 GNU with **glibc 2.35 or later**, and Windows x64.
+Linux CI and release validation use Ubuntu 22.04. Older glibc, musl, and Linux arm64 are not supported
+by this release.
+
 ### Install & Run
 
 ```bash
@@ -375,7 +379,7 @@ node scripts/rust/verify-set.mjs
 
 <!-- repo-fact:ci-commands:end -->
 
-A local run covers the host platform. Native packaging targets macOS arm64/x64, Linux glibc x64,
+A local run covers the host platform. Native packaging targets macOS arm64/x64, Linux x64 GNU (glibc 2.35+),
 and Windows x64; each target still needs its own runner and installed-package checks. See
 [the packaging guide](docs/rust-packaging.md).
 

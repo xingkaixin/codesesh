@@ -33,6 +33,11 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Verify minimum supported Linux glibc
+        if: runner.os == 'Linux'
+        run: |
+          getconf GNU_LIBC_VERSION
+          test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
       - name: Preserve package source bytes on Windows
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false

@@ -9,10 +9,11 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import {
+  createNativeArchive,
+  extractArchive,
   npm,
   output,
   root,
-  run,
   sha256,
   targetFor,
   targets,
@@ -66,11 +67,11 @@ const nativePack = pack(platform);
 nativePack.filename = nativePack.filename.replace(/^@/, "").replaceAll("/", "-");
 const mainPack = pack(cli);
 const archive = `codesesh-${version}-${target.target}.tar.gz`;
-run("tar", ["-czf", join(dir, archive), "-C", join(platform, "bin"), target.executable]);
+createNativeArchive(dir, archive, target.executable);
 const verify = join(dir, "verify");
 mkdirSync(verify);
-run("tar", ["-xzf", join(dir, nativePack.filename), "-C", verify]);
-run("tar", ["-xzf", join(dir, archive), "-C", verify]);
+extractArchive(dir, nativePack.filename, "verify");
+extractArchive(dir, archive, "verify");
 const hash = sha256(binary);
 for (const path of [
   join(verify, "package/bin", target.executable),

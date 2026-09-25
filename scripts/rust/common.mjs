@@ -40,6 +40,14 @@ export function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+export function createNativeArchive(directory, archive, executable) {
+  run("tar", ["-czf", archive, "-C", "platform/bin", executable], { cwd: directory });
+}
+
+export function extractArchive(directory, archive, destination) {
+  run("tar", ["-xzf", archive, "-C", destination], { cwd: directory });
+}
+
 export function validateBinary(path, expected) {
   const bytes = readFileSync(path);
   let format, arch;

@@ -104,6 +104,9 @@ Cherry Studio 支持 2.x 的 `Data/cherrystudio.sqlite`，包含 Agent 会话（
 
 <!-- repo-fact:pnpm-version:end -->
 
+原生目标为 macOS arm64/x64、Linux x64 GNU 和 Windows x64。Linux 最低要求 **glibc 2.35**，
+CI 与 release 验收固定使用 Ubuntu 22.04；首版不支持更旧 glibc、musl 或 Linux arm64。
+
 ### 安装与运行
 
 ```bash
@@ -340,7 +343,7 @@ node scripts/rust/verify-set.mjs
 
 <!-- repo-fact:ci-commands:end -->
 
-本地运行只覆盖当前主机。原生目标为 macOS arm64/x64、Linux glibc x64 和 Windows x64；
+本地运行只覆盖当前主机。原生目标为 macOS arm64/x64、Linux x64 GNU（glibc 2.35+）和 Windows x64；
 各目标仍需要对应 runner 和安装验收。详见[制品指南](docs/rust-packaging.md)。
 
 ### 性能 Benchmark

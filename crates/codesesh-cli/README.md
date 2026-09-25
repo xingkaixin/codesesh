@@ -172,6 +172,10 @@ than trusting the header as a network boundary. Startup links use the configured
 
 MIT
 
+Supported native targets are macOS arm64/x64, Linux x64 GNU with **glibc 2.35 or later**, and
+Windows x64. Linux CI and release validation run on Ubuntu 22.04. Older glibc, musl, and Linux arm64
+are outside the supported targets for this release.
+
 ## Native implementation
 
 The CLI uses Rust, Clap, Axum, Tokio, and SQLite. Web assets are embedded at release build time.
