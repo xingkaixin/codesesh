@@ -517,3 +517,62 @@ async fn sqlite_wal_commits_are_observed_while_writer_stays_open() {
     }
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn prefetched_batch_is_discarded_when_publication_is_locked() {
+    let root = tempfile::tempdir().unwrap();
+    let db = root.path().join("cache.db");
+    drop(crate::storage::Cache::open(Some(&db)).unwrap());
+    let blocker = Arc::new(Mutex::new(Connection::open(&db).unwrap()));
+    let first = root.path().join("rollout-first.jsonl");
+    let second = root.path().join("rollout-second.jsonl");
+    write_source(&first, "First");
+    write_source(&second, "Second");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let rejected = Arc::new(AtomicUsize::new(0));
+    let scan_calls = calls.clone();
+    let scan_rejected = rejected.clone();
+    let scan_blocker = blocker.clone();
+    let runtime = Runtime::start(
+        db.clone(),
+        vec![AgentSource {
+            name: "codex".into(),
+            roots: vec![],
+            scan: Arc::new(move |request| {
+                let index = scan_calls.fetch_add(1, Ordering::SeqCst);
+                if index == 0 {
+                    scan_blocker
+                        .lock()
+                        .unwrap()
+                        .execute_batch("BEGIN IMMEDIATE")?;
+                } else {
+                    assert_eq!(index, 1);
+                    assert_eq!(request.checkpoint, Some(serde_json::json!({"offset":1})));
+                }
+                let mut result = batch(if index == 0 { &first } else { &second })?;
+                result.complete = index == 1;
+                result.checkpoint = (index == 0).then(|| serde_json::json!({"offset":1}));
+                let rejected = scan_rejected.clone();
+                result.on_reject = Some(Box::new(move || {
+                    rejected.fetch_add(1, Ordering::SeqCst);
+                }));
+                Ok(result)
+            }),
+        }],
+        2,
+    )
+    .await
+    .unwrap();
+    until(|| calls.load(Ordering::SeqCst) == 2).await;
+    assert!(runtime.snapshot().is_empty());
+    until(|| rejected.load(Ordering::SeqCst) == 2).await;
+    blocker.lock().unwrap().execute_batch("COMMIT").unwrap();
+    assert!(runtime.snapshot().is_empty());
+    let count: i64 = blocker
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+    runtime.shutdown().await.unwrap();
+}

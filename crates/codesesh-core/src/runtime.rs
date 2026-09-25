@@ -16,7 +16,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 
@@ -372,24 +372,41 @@ impl Runtime {
                 }
             };
             let mut changed_paths = request.paths.map(|paths| paths.into_iter().collect());
+            let mut prefetched = None;
             loop {
                 if cancellation.is_cancelled() {
                     break;
                 }
                 self.report(&source.name, "scanning", None).await;
-                // Keep parsed batches within the same concurrency bound until publication finishes.
-                let _permit = tokio::select! { permit = scans.clone().acquire_owned() => match permit { Ok(permit) => permit, Err(_) => return }, _ = shutdown.changed() => return };
-                let scan = source.scan.clone();
-                let scan_request = ScanRequest {
-                    changed_paths: changed_paths.take(),
-                    checkpoint: checkpoint.clone(),
-                    cancellation: cancellation.clone(),
+                let task = match prefetched.take() {
+                    Some(task) => task,
+                    None => {
+                        let permit = tokio::select! { permit = scans.clone().acquire_owned() => match permit { Ok(permit) => permit, Err(_) => return }, _ = shutdown.changed() => return };
+                        spawn_scan(
+                            source.scan.clone(),
+                            ScanRequest {
+                                changed_paths: changed_paths.take(),
+                                checkpoint: checkpoint.clone(),
+                                cancellation: cancellation.clone(),
+                            },
+                            permit,
+                        )
+                    }
                 };
-                let result = tokio::task::spawn_blocking(move || {
-                    scan_request.cancellation.check()?;
-                    scan(scan_request)
-                })
-                .await;
+                let result = task.await;
+                let (result, permit) = match result {
+                    Ok((result, permit, elapsed)) => {
+                        if std::env::var_os("CODESESH_PROFILE_SCAN").is_some() {
+                            eprintln!(
+                                "scan-profile parse agent={} ms={:.3}",
+                                source.name,
+                                elapsed.as_secs_f64() * 1000.0
+                            );
+                        }
+                        (Ok(result), Some(permit))
+                    }
+                    Err(error) => (Err(error), None),
+                };
                 let batch = match result {
                     Ok(Ok(batch)) => batch,
                     error => {
@@ -439,13 +456,30 @@ impl Runtime {
                 {
                     return;
                 }
-                match rx.await {
+                if !complete
+                    && changed_paths.is_none()
+                    && !pending.has_changed().unwrap_or(false)
+                    && let Ok(next_permit) = scans.clone().try_acquire_owned()
+                {
+                    prefetched = Some(spawn_scan(
+                        source.scan.clone(),
+                        ScanRequest {
+                            changed_paths: None,
+                            checkpoint: checkpoint.clone(),
+                            cancellation: cancellation.clone(),
+                        },
+                        next_permit,
+                    ));
+                }
+                let publication = rx.await;
+                drop(permit);
+                match publication {
                     Ok(Ok(())) if complete => {
                         self.report(&source.name, "complete", None).await;
                         break;
                     }
                     Ok(Ok(())) => {
-                        if pending.has_changed().unwrap_or(false) {
+                        if prefetched.is_none() && pending.has_changed().unwrap_or(false) {
                             let pending_request = take_pending(control, &mut pending);
                             changed_paths = pending_request
                                 .paths
@@ -464,6 +498,10 @@ impl Runtime {
                         break;
                     }
                 }
+            }
+            if let Some(task) = prefetched {
+                // Await and reject speculative work before restarting the same scanner.
+                let _ = task.await;
             }
         }
     }
@@ -512,3 +550,19 @@ fn take_pending(control: &Control, receiver: &mut watch::Receiver<Pending>) -> P
 
 #[cfg(test)]
 mod tests;
+
+fn spawn_scan(
+    scan: Arc<Scanner>,
+    request: ScanRequest,
+    permit: tokio::sync::OwnedSemaphorePermit,
+) -> tokio::task::JoinHandle<(
+    Result<ScanBatch>,
+    tokio::sync::OwnedSemaphorePermit,
+    Duration,
+)> {
+    tokio::task::spawn_blocking(move || {
+        let started = Instant::now();
+        let result = request.cancellation.check().and_then(|()| scan(request));
+        (result, permit, started.elapsed())
+    })
+}
