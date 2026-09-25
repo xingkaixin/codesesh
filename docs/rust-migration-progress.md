@@ -64,4 +64,6 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 支持macOS arm64/x64、Linux x64 GNU（glibc2.35+）及Windows x64 MSVC。
 四平台安装与Node22.0.0/24组合均有实跑记录；最终CI与哈希报告随汇总包保存。
-npm发布权限和公开渠道安装属于P8；本轮未执行发布、创建tag或合并。
+npm 发布权限和公开渠道安装属于 P8，继续暂缓；本轮不发布、不创建 tag。
+2026-09-26 收尾授权：PR 全部 CI 通过后 squash merge，合并后继续本地验证。
+当前实现与后续修复记录见[迁移汇总](rust-migration-completion.md)，实际合并状态以 PR 为准。
