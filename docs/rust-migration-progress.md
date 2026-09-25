@@ -6,18 +6,21 @@
 
 ## 阶段状态
 
-以下为本地集成状态。最终完成仍以同一候选版本的性能、四平台安装和 CI 验收为准。
+P0～P7 已实现并完成本地验收。四平台原生和八组 npm 安装已实跑通过，主包归档权限差异已修复。
+最终交付须同时附上当前 PR head 的19项CI全绿记录和无冲突状态；记录保存在汇总包中。
 
-| 阶段 | 状态 | 证据与剩余项 |
+| 阶段 | 状态 | 证据 |
 | --- | --- | --- |
 | P0 | 完成 | npm 1.0.12 固定参考、integrity/lock、进程比较器拒错验证、Node 基线 |
-| P1 | 本地验收通过 | 两 crate、Rust 工具链、Codex CLI/HTTP/游标、真实 React 浏览；最终四平台检查进行中 |
-| P2 | 本地验收通过 | 13 个适配器、项目身份、来源增量、毫秒小数及完整消息/游标差分 |
-| P3 | 本地验收通过 | schema 34/state 3；17 项迁移/往返/FTS恢复检查；搜索、统计、价格、别名和书签 |
-| P4 | 本地验收通过 | 每批32来源单元，窗口/目标优先；持久checkpoint，refresh/backfill交替；事务一致读及SSE当代快照 |
-| P5 | 最终复验中 | 98项API差分通过；5组CLI差分与5项故障/退出回归通过；流式详情及42项浏览器E2E最终复验进行中 |
-| P6 | 最终复验中 | 本机原生/npm安装通过；热JSON缓存回退已修；正式配对性能、其余三个原生目标CI待完成 |
-| P7 | 最终复验中 | Rust唯一后端；旧Core/CLI/Worker删除；独立生成契约、默认脚本、CI/发布配置及文档已切换；最终CI待完成 |
+| P1 | 完成 | 两 crate、工具链、Codex CLI/HTTP/游标、真实React浏览及契约生成 |
+| P2 | 完成 | 13个适配器、项目身份、来源增量、毫秒小数及完整消息/游标差分 |
+| P3 | 完成 | schema34/state3；17项迁移/往返/FTS恢复检查；搜索、统计、价格、别名和书签 |
+| P4 | 完成 | 每批32来源单元，窗口/目标优先；持久checkpoint，refresh/backfill交替；事务一致读及SSE当代快照 |
+| P5 | 完成 | 98项API观察、7组CLI、5项故障/退出回归和42项浏览器E2E通过 |
+| P6 | 完成 | 四平台原生与八组npm安装；实际安装文件36样本等价；保留emoji查询的一致性读取取舍；主包权限规范化及严格集合校验 |
+| P7 | 完成 | Rust唯一后端；旧Core/CLI/Worker移除；生成契约、默认脚本、CI/发布配置与文档切换 |
+
+最终实现和边界详见[汇总报告](rust-migration-completion.md)。
 
 ## 参考与复现
 
@@ -52,6 +55,13 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 ## 性能与平台记录
 
-[Node P0基线](benchmarks/rust-migration-node-p0.json)仅用于验证测量工具。[修复前配对报告](benchmarks/rust-migration-p6-before.md)保留真实回退与等价错误，不作为最终通过证据。热缓存修复后的单轮筛查约为Node201ms、Rust42ms；最终报告需重新进行同机交替、多轮测量。
+[Node P0基线](benchmarks/rust-migration-node-p0.json)用于验证测量工具。
+[修复前报告](benchmarks/rust-migration-p6-before.md)保留失败与回退样本。
+[最终配对报告](benchmarks/rust-migration-p6-final.md)绑定实际安装的arm64二进制：
+3个场景各预热1轮、正式5轮，36个完整样本无结果差异；热JSON耗时为Node的11%～16%，
+稳态RSS为13%～22%。600会话emoji搜索p95从2.15ms升至5.46ms，已定位并保留同事务
+读取会话头的一致性成本，未宣称所有查询均提速。
 
-支持目标：macOS arm64/x64、Linux x64 GNU、Windows x64 MSVC。当前只有本机arm64的完整安装记录，其他目标须以远端CI实际运行结果补齐；不能用构建成功替代安装运行。npm发布权限与公开渠道安装属于P8，本轮不执行发布或合并。
+支持macOS arm64/x64、Linux x64 GNU（glibc2.35+）及Windows x64 MSVC。
+四平台安装与Node22.0.0/24组合均有实跑记录；最终CI与哈希报告随汇总包保存。
+npm发布权限和公开渠道安装属于P8；本轮未执行发布、创建tag或合并。

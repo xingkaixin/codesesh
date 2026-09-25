@@ -1,6 +1,6 @@
 # CodeSesh 后端 Rust 迁移方案
 
-状态：实施中，工作分支 `feat/rust-rewrite`。阶段证据与未完成项见[迁移进度](rust-migration-progress.md)。本方案描述目标结构，不表示各阶段已完成。
+状态：P0～P7 实现完成，工作分支 `feat/rust-rewrite`。实际实现、结构调整和验证证据见[迁移汇总](rust-migration-completion.md)与[迁移进度](rust-migration-progress.md)。本文保留实施前方案，P8 发布不在本轮范围内。
 
 规划日期：2026-09-25。CodeSesh 参考提交：`a545f543a554421b0576058c701ef2ac4190d62e`，workspace 版本 `1.0.12`。开始实施时再次核对参考提交，后续差分验证固定使用同一份参考制品。
 
