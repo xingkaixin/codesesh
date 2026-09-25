@@ -1,5 +1,8 @@
 # Rust 后端迁移汇总包
 
+2026-09-25 后续解析、索引与常驻内存优化，以及 5,356 个本地会话的验收，见
+[JSONL 解析与常驻内存报告](benchmarks/rust-streaming-memory-2026-09-25.md)。此前 P6 和本地内存报告保留其原构建指标。
+
 本文汇总 P0～P7 的实现、兼容边界和复现入口。Rust 已成为唯一业务后端，全部适配器、
 CLI/API、数据兼容和本机性能验收已经完成。四平台原生及八组 npm 安装已实跑通过；
 最后的主包执行位差异已修复，最终提交的制品集合和 CI 状态以[PR 检查](https://github.com/xingkaixin/codesesh/pull/636/checks)
