@@ -32,6 +32,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - name: Verify minimum supported Linux glibc
         if: runner.os == 'Linux'
@@ -81,6 +82,7 @@ jobs:
   release:
     needs: native
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       id-token: write

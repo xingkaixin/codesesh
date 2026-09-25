@@ -352,8 +352,8 @@ node scripts/release-preflight.mjs
 node scripts/check-docs-paths.mjs
 node scripts/check-docs-facts.mjs
 pnpm clean
-pnpm build:web
-pnpm test
+pnpm test:coverage
+pnpm --filter @codesesh/web test:bundle
 pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -367,8 +367,6 @@ pnpm test:rust:slice
 pnpm test:backend:full
 pnpm test:migration
 pnpm perf:check
-pnpm test:coverage
-pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
 pnpm test:rust:browser
 pnpm test:e2e
@@ -392,6 +390,17 @@ pnpm bench:perf -- --days 0 --iterations 3
 # Cold-start benchmark with React render profiling enabled
 pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 ```
+
+### CI and release boundaries
+
+Frontend, contract, coverage, and documentation checks run once on Linux / Node 24. Rust is tested
+on all four native targets; npm installation is verified on Node 22.0.0 and Node 24 for each target.
+The pinned legacy Node package is only a compatibility-test reference, never a runtime fallback or
+part of the shipped application.
+
+The Rust migration is merged for local validation before publication. It does not bump versions,
+create a tag, or publish npm packages. The Release workflow only runs for `v*` tags; publication
+requires a separate pass through the [release checklist](docs/release-guide.md).
 
 ### Dev Workflow
 

@@ -11,11 +11,25 @@ CLI/API、数据兼容和本机性能验收已经完成。四平台原生及八�
 及交付包内的 `evidence/ci-results.json` 为准。P8 发布不在本轮内。
 
 - 工作分支：`feat/rust-rewrite`
-- 草稿 PR：[Rust backend migration #636](https://github.com/xingkaixin/codesesh/pull/636)
+- PR：[Rust backend migration #636](https://github.com/xingkaixin/codesesh/pull/636)
 - 固定 Node 参考：`codesesh@1.0.12`，源码参考提交 `a545f543a554421b0576058c701ef2ac4190d62e`
 - 原 P6 性能候选（历史记录）：`91766747`；当时本机已安装二进制 SHA-256：`c82c438bd465f667a10e4375f21895520405d090d62421e20ca0528504fb65f1`
 - 最终 CI：[PR #636 检查](https://github.com/xingkaixin/codesesh/pull/636/checks)；交付包记录固定 run URL、提交和全部 job 状态
-- 发布与合并：**未执行**。P8 不属于本轮；npm scope、平台包和正式发布权限尚未核验。
+- 合并门槛：PR 全部 CI 通过后 squash merge；实际合并状态以 PR 为准。
+- 发布：**未执行**。继续本地验证，不升级版本、不创建 tag、不发布 npm 包；npm scope、平台包和正式发布权限在后续发布前核验。
+
+## 迁移收尾（2026-09-26）
+
+旧 `packages/core`、`packages/cli` 及 Worker 生产实现已删除；当前 pnpm workspace 只保留
+前端、产品站和浏览器契约。旧代码的锁定参考制品和缓存 fixture 仍用于兼容验收，历史
+方案、产品立项文档与 benchmark 保留其原始上下文，不作为当前架构说明。
+
+CI 的前端矩阵收敛为 Linux / Node 24 单次质量检查，保留四目标 Rust、八组 npm 安装及
+制品集合验证。Dependabot 同时跟踪 Cargo 依赖。发布 workflow 保持 tag 触发，不随合并发布。
+
+后续重启复用、扫描进度、源移除和会话滚动行为见[扫描与缓存](scanning-and-caching.md)。
+实测结果见[文件热启动](benchmarks/rust-warm-restart-2026-09-25.md)和
+[数据库热启动](benchmarks/rust-database-warm-restart-2026-09-25.md)。
 
 ## 本地完整历史验收补充
 

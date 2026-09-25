@@ -9,7 +9,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Runtime packages compile against the minimum supported Node.js release.
+    # The npm launcher supports Node.js 22+.
     ignore:
       - dependency-name: "@types/node"
         update-types:
@@ -22,6 +22,16 @@ updates:
           - patch
       development-dependencies:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      rust-dependencies:
         update-types:
           - minor
           - patch

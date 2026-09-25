@@ -316,8 +316,8 @@ node scripts/release-preflight.mjs
 node scripts/check-docs-paths.mjs
 node scripts/check-docs-facts.mjs
 pnpm clean
-pnpm build:web
-pnpm test
+pnpm test:coverage
+pnpm --filter @codesesh/web test:bundle
 pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -331,8 +331,6 @@ pnpm test:rust:slice
 pnpm test:backend:full
 pnpm test:migration
 pnpm perf:check
-pnpm test:coverage
-pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
 pnpm test:rust:browser
 pnpm test:e2e
@@ -355,6 +353,15 @@ pnpm bench:perf -- --days 0 --iterations 3
 # 启用 cold start 和 React 渲染 profile
 pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 ```
+
+### CI 与发布边界
+
+前端、契约、覆盖率和文档检查在 Linux / Node 24 执行一次。Rust 在四个原生目标上测试，
+每个目标的 npm 安装分别使用 Node 22.0.0 和 Node 24 验证。兼容测试使用锁定的旧 Node
+参考包；该包仅用于测试，不会进入产品或作为运行时回退。
+
+本次 Rust 迁移先合入源码供本地验证，不提升版本号、不创建 tag，也不发布 npm 包。
+Release workflow 仅由 `v*` tag 触发；后续发布需单独完成[发布清单](docs/release-guide.md)。
 
 ### 开发流程
 
