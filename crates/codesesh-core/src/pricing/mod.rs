@@ -1,41 +1,33 @@
+mod controller;
+mod cost;
+mod manager;
+mod registry;
+
+pub use controller::{PricingController, PricingSnapshot};
+pub use cost::{PRICING_CAPTURE_EPOCH, capture_misses};
+pub use manager::{CACHE_TTL_MS, MODELS_DEV_URL, PricingManager};
+pub use registry::{Price, parse_models_dev};
+
 use crate::contract::MessageTokens;
-use serde::Deserialize;
-use std::{collections::HashMap, path::Path, sync::LazyLock};
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Price {
-    input_cost_per_token: f64,
-    output_cost_per_token: f64,
-    cache_create_cost_per_token: Option<f64>,
-    cache_read_cost_per_token: Option<f64>,
-    reasoning_cost_per_token: Option<f64>,
-    web_search_cost_per_request: Option<f64>,
-}
-
-impl Price {
-    fn billable(&self) -> bool {
-        [
-            self.input_cost_per_token,
-            self.output_cost_per_token,
-            self.cache_create_cost_per_token.unwrap_or(0.0),
-            self.cache_read_cost_per_token.unwrap_or(0.0),
-            self.reasoning_cost_per_token.unwrap_or(0.0),
-        ]
-        .iter()
-        .any(|value| value.is_finite() && *value > 0.0)
-    }
-}
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Arc, LazyLock},
+};
 
 static ALIASES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!(
-        "../../../../packages/core/src/pricing/data/aliases.json"
-    ))
-    .expect("bundled pricing aliases")
+    let aliases: HashMap<String, String> =
+        serde_json::from_str(include_str!("data/aliases.json")).expect("bundled pricing aliases");
+    aliases
+        .into_iter()
+        .map(|(key, value)| (normalize(&key), normalize(&value)))
+        .collect()
 });
 
+#[derive(Clone, Debug)]
 pub struct Pricing {
-    prices: HashMap<String, Price>,
+    prices: Arc<HashMap<String, Price>>,
+    generation: u64,
 }
 
 fn normalize(model: &str) -> String {
@@ -47,53 +39,41 @@ fn alias(model: &str) -> &str {
 
 impl Pricing {
     pub fn bundled() -> Self {
-        let snapshot: HashMap<String, Vec<Option<f64>>> = serde_json::from_str(include_str!(
-            "../../../../packages/core/src/pricing/data/snapshot.json"
-        ))
-        .expect("bundled pricing snapshot");
-        let prices = snapshot
-            .into_iter()
-            .map(|(model, values)| {
-                (
-                    normalize(&model),
-                    Price {
-                        input_cost_per_token: values[0].unwrap_or(0.0),
-                        output_cost_per_token: values[1].unwrap_or(0.0),
-                        cache_create_cost_per_token: values.get(2).copied().flatten(),
-                        cache_read_cost_per_token: values.get(3).copied().flatten(),
-                        reasoning_cost_per_token: None,
-                        web_search_cost_per_request: None,
-                    },
-                )
-            })
-            .collect();
-        Self { prices }
+        Self::from_prices(registry::snapshot())
+    }
+
+    fn from_prices(prices: HashMap<String, Price>) -> Self {
+        let generation = registry::generation(&prices);
+        Self {
+            prices: Arc::new(prices),
+            generation,
+        }
     }
 
     pub fn load(home: &Path) -> Self {
-        let mut pricing = Self::bundled();
-        let path = home.join(".cache/codesesh/models-dev-pricing.json");
-        #[derive(Deserialize)]
-        struct Cache {
-            data: HashMap<String, Price>,
-        }
-        if let Ok(bytes) = std::fs::read(path)
-            && let Ok(cache) = serde_json::from_slice::<Cache>(&bytes)
-        {
-            for (model, price) in cache.data {
-                if price.billable() {
-                    pricing.prices.insert(normalize(&model), price);
-                }
-            }
-        }
-        pricing
+        manager::read_cache(&home.join(".cache/codesesh/models-dev-pricing.json"), false)
+            .unwrap_or_else(Self::bundled)
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn registry(&self) -> &HashMap<String, Price> {
+        &self.prices
+    }
+
+    pub fn became_available(&self, unpriced_models: &[String]) -> bool {
+        unpriced_models
+            .iter()
+            .any(|model| self.resolve(model).is_some())
     }
 
     fn get(&self, model: &str) -> Option<&Price> {
         self.prices.get(model).filter(|price| price.billable())
     }
 
-    fn resolve(&self, model: &str) -> Option<&Price> {
+    pub fn resolve(&self, model: &str) -> Option<&Price> {
         let model = normalize(model);
         if let Some(price) = self.get(&model) {
             return Some(price);
@@ -146,7 +126,11 @@ impl Pricing {
         tokens: &MessageTokens,
         web_search: f64,
     ) -> Option<f64> {
-        let price = self.resolve(model?)?;
+        let model = model.filter(|model| !model.is_empty())?;
+        let Some(price) = self.resolve(model) else {
+            cost::record_miss(model);
+            return None;
+        };
         let positive = |value: Option<f64>| {
             value
                 .filter(|value| value.is_finite() && *value > 0.0)
@@ -157,24 +141,15 @@ impl Pricing {
         let input = (positive(tokens.input) - read - create).max(0.0);
         let cost = input * price.input_cost_per_token
             + positive(tokens.output) * price.output_cost_per_token
-            + positive(tokens.reasoning)
-                * price
-                    .reasoning_cost_per_token
-                    .unwrap_or(price.output_cost_per_token)
-            + read
-                * price
-                    .cache_read_cost_per_token
-                    .unwrap_or(price.input_cost_per_token * 0.1)
-            + create
-                * price
-                    .cache_create_cost_per_token
-                    .unwrap_or(price.input_cost_per_token * 1.25)
-            + positive(Some(web_search)) * price.web_search_cost_per_request.unwrap_or(0.01);
+            + positive(tokens.reasoning) * price.reasoning_cost_per_token
+            + read * price.cache_read_cost_per_token
+            + create * price.cache_create_cost_per_token
+            + positive(Some(web_search)) * price.web_search_cost_per_request;
         (cost > 0.0 && cost.is_finite()).then(|| round_cost(cost))
     }
 }
 
-fn round_cost(cost: f64) -> f64 {
+pub(crate) fn round_cost(cost: f64) -> f64 {
     if cost >= 67_108_864.0 {
         return cost;
     }

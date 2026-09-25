@@ -1,7 +1,7 @@
 use super::codex_usage::Usage;
 use crate::pricing::Pricing;
 use crate::{contract::*, projects::path_identity};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use chrono::DateTime;
 use regex::Regex;
 use serde_json::Value;
@@ -14,7 +14,9 @@ use std::{
 };
 use walkdir::WalkDir;
 
+#[derive(Clone, Debug)]
 pub struct ParsedSession {
+    pub head: SessionHead,
     pub source: PathBuf,
     pub detail: SessionDetail,
 }
@@ -48,15 +50,17 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
         if let Some(detail) = parse(entry.path(), &titles, pricing)? {
             sessions.push(ParsedSession {
                 source: entry.into_path(),
+                head: detail.head.clone(),
                 detail,
             });
         }
     }
+    merge_children(&mut sessions, pricing, None)?;
     sessions.sort_by(|a, b| {
         b.detail
             .head
             .time_updated
-            .cmp(&a.detail.head.time_updated)
+            .total_cmp(&a.detail.head.time_updated)
             .then_with(|| {
                 a.detail
                     .head
@@ -68,12 +72,296 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     Ok(sessions)
 }
 
-pub fn timestamp(record: &Value) -> i64 {
-    record["timestamp"]
-        .as_str()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|date| date.timestamp_millis())
-        .unwrap_or(0)
+pub fn scan_changed(
+    root: &Path,
+    pricing: &Pricing,
+    paths: &[PathBuf],
+    previous: &[ParsedSession],
+) -> Result<super::ScanDelta> {
+    if paths.iter().any(|path| {
+        path.file_name()
+            .is_some_and(|name| name == "session_index.jsonl")
+            || path == root
+    }) {
+        let upserts = scan(root, pricing)?;
+        for old in previous {
+            if old.source.try_exists()?
+                && !upserts.iter().any(|session| session.source == old.source)
+            {
+                anyhow::bail!("Codex source is incomplete: {}", old.source.display());
+            }
+        }
+        let ids: std::collections::HashSet<_> = upserts
+            .iter()
+            .map(|session| session.head.reference.clone())
+            .collect();
+        let removed = previous
+            .iter()
+            .filter(|session| !ids.contains(&session.head.reference))
+            .map(|session| session.head.reference.clone())
+            .collect();
+        return Ok(super::ScanDelta {
+            upserts,
+            removed,
+            complete: true,
+        });
+    }
+    let mut files = std::collections::HashSet::<PathBuf>::new();
+    for path in paths {
+        if path.is_dir() {
+            for entry in WalkDir::new(path) {
+                let entry = entry?;
+                if entry.file_type().is_file()
+                    && entry.file_name().to_string_lossy().starts_with("rollout-")
+                    && entry.path().extension().is_some_and(|ext| ext == "jsonl")
+                {
+                    files.insert(entry.into_path());
+                }
+            }
+        } else if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("rollout-"))
+        {
+            files.insert(path.clone());
+        }
+    }
+    for session in previous {
+        if paths.iter().any(|path| session.source.starts_with(path)) {
+            files.insert(session.source.clone());
+        }
+    }
+    let mut titles = HashMap::new();
+    if let Ok(file) = File::open(root.join("session_index.jsonl")) {
+        for line in BufReader::new(file).lines() {
+            if let Ok(value) = serde_json::from_str::<Value>(&line?)
+                && let (Some(id), Some(title)) =
+                    (value["id"].as_str(), value["thread_name"].as_str())
+            {
+                titles.insert(id.into(), title.into());
+            }
+        }
+    }
+    let mut affected = std::collections::HashSet::<String>::new();
+    for session in previous
+        .iter()
+        .filter(|session| files.contains(&session.source))
+    {
+        affected.insert(session.head.reference.session_id.clone());
+        if let Some(parent) = &session.head.parent_reference {
+            affected.insert(parent.session_id.clone());
+        }
+    }
+    let mut changed = Vec::new();
+    for file in &files {
+        if file.try_exists()?
+            && let Some(detail) = parse(file, &titles, pricing)?
+        {
+            affected.insert(detail.head.reference.session_id.clone());
+            if let Some(parent) = &detail.head.parent_reference {
+                affected.insert(parent.session_id.clone());
+            }
+            changed.push(ParsedSession {
+                source: file.clone(),
+                head: detail.head.clone(),
+                detail,
+            });
+        } else if file.try_exists()? && previous.iter().any(|session| session.source == *file) {
+            anyhow::bail!("Codex source is incomplete: {}", file.display());
+        }
+    }
+    for session in previous.iter().filter(|session| {
+        affected.contains(&session.head.reference.session_id) && !files.contains(&session.source)
+    }) {
+        if session.source.try_exists()? {
+            if let Some(detail) = parse(&session.source, &titles, pricing)? {
+                changed.push(ParsedSession {
+                    source: session.source.clone(),
+                    head: detail.head.clone(),
+                    detail,
+                });
+            } else {
+                anyhow::bail!("Codex source is incomplete: {}", session.source.display());
+            }
+        }
+    }
+    let mut all: Vec<_> = previous
+        .iter()
+        .filter(|session| !affected.contains(&session.head.reference.session_id))
+        .cloned()
+        .collect();
+    all.extend(changed);
+    merge_children(&mut all, pricing, Some(&affected))?;
+    let upserts: Vec<_> = all
+        .into_iter()
+        .filter(|session| affected.contains(&session.head.reference.session_id))
+        .collect();
+    let current: std::collections::HashSet<_> = upserts
+        .iter()
+        .map(|session| session.head.reference.clone())
+        .collect();
+    let removed = previous
+        .iter()
+        .filter(|session| {
+            affected.contains(&session.head.reference.session_id)
+                && !current.contains(&session.head.reference)
+        })
+        .map(|session| session.head.reference.clone())
+        .collect();
+    Ok(super::ScanDelta {
+        upserts,
+        removed,
+        complete: false,
+    })
+}
+
+fn merge_children(
+    sessions: &mut [ParsedSession],
+    pricing: &Pricing,
+    selected: Option<&std::collections::HashSet<String>>,
+) -> Result<()> {
+    let mut children = HashMap::<String, Vec<(SessionStats, Option<Message>)>>::new();
+    for session in sessions.iter() {
+        if let Some(parent) = &session.head.parent_reference {
+            children
+                .entry(parent.session_id.clone())
+                .or_default()
+                .push(child_summary(session, pricing)?);
+        }
+    }
+    for session in sessions {
+        if selected.is_some_and(|ids| !ids.contains(&session.head.reference.session_id)) {
+            continue;
+        }
+        let Some(summaries) = children.get_mut(&session.head.reference.session_id) else {
+            continue;
+        };
+        summaries.sort_by(|(_, a), (_, b)| {
+            a.as_ref()
+                .map(|m| m.time_created)
+                .unwrap_or(0.0)
+                .total_cmp(&b.as_ref().map(|m| m.time_created).unwrap_or(0.0))
+        });
+        for (stats, message) in summaries.iter() {
+            session.detail.head.stats.total_input_tokens += stats.total_input_tokens;
+            session.detail.head.stats.total_output_tokens += stats.total_output_tokens;
+            session.detail.head.stats.total_cost += stats.total_cost;
+            if let Some(count) = stats.total_cache_read_tokens.filter(|count| *count != 0.0) {
+                *session
+                    .detail
+                    .head
+                    .stats
+                    .total_cache_read_tokens
+                    .get_or_insert(0.0) += count;
+            }
+            if let Some(message) = message {
+                let text = message.parts.iter().find_map(|part| match part {
+                    MessagePart::Text { text, .. } => Some(text),
+                    _ => None,
+                });
+                let exists = session.detail.messages.iter().any(|visible| {
+                    message.subagent_id.is_some() && message.subagent_id == visible.subagent_id
+                        || message.nickname.is_some() && message.nickname == visible.nickname && visible.parts.iter().any(|part| matches!(part, MessagePart::Text {text:existing,..} if Some(existing)==text))
+                });
+                if !exists {
+                    session.detail.messages.push(message.clone());
+                }
+            }
+        }
+        session.detail.head.stats.message_count = session.detail.messages.len();
+        let tags = super::smart_tags::classify(&session.detail.messages);
+        session.head.smart_tags = tags.clone();
+        session.detail.head.smart_tags = tags;
+    }
+    Ok(())
+}
+
+fn child_summary(
+    session: &ParsedSession,
+    pricing: &Pricing,
+) -> Result<(SessionStats, Option<Message>)> {
+    let mut usage = Usage::default();
+    let mut model = None;
+    let mut nickname = None;
+    let mut latest = None;
+    let mut final_output = None;
+    let fallback = crate::time::file_mtime_ms(&session.source)?;
+    for line in BufReader::new(File::open(&session.source)?).lines() {
+        let Ok(record) = serde_json::from_str::<Value>(&line?) else {
+            continue;
+        };
+        let payload = &record["payload"];
+        match record["type"].as_str().unwrap_or("") {
+            "session_meta" | "turn_context" => {
+                if let Some(value) = payload["model"]
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    model = Some(value.trim().to_owned());
+                }
+                if record["type"] == "session_meta" {
+                    nickname = payload["agent_nickname"].as_str().map(str::to_owned);
+                }
+            }
+            "event_msg" if payload["type"] == "token_count" => {
+                usage.consume(payload, model.as_deref(), pricing, &mut [])
+            }
+            "response_item" if payload["type"] == "message" && payload["role"] == "assistant" => {
+                let text = clean(&content(payload, true));
+                if text.is_empty() {
+                    continue;
+                }
+                let time = timestamp(&record);
+                let time = if time != 0.0 {
+                    time
+                } else {
+                    let time = timestamp(payload);
+                    if time != 0.0 { time } else { fallback }
+                };
+                let mut output = message(
+                    Role::Assistant,
+                    MessagePart::Text {
+                        text,
+                        time_created: Some(time),
+                    },
+                    time,
+                    None,
+                );
+                output.id = payload["id"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| {
+                        format!("codex-subagent-{}", session.head.reference.session_id)
+                    });
+                output.subagent_id = Some(session.head.reference.session_id.clone());
+                output.nickname = nickname.clone();
+                if record["phase"] == "final_answer" || payload["phase"] == "final_answer" {
+                    final_output = Some(output.clone());
+                }
+                latest = Some(output);
+            }
+            _ => {}
+        }
+    }
+    Ok((usage.stats(0), final_output.or(latest)))
+}
+
+pub fn timestamp(record: &Value) -> f64 {
+    if let Some(value) = record["timestamp"].as_f64() {
+        return value;
+    }
+    let Some(value) = record["timestamp"].as_str() else {
+        return 0.0;
+    };
+    let mut value = value.trim().replacen(' ', "T", 1);
+    static SUFFIX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)(?:Z|[+-]\d{2}:?\d{2})$").unwrap());
+    if !SUFFIX.is_match(&value) {
+        value.push('Z');
+    }
+    DateTime::parse_from_rfc3339(&value)
+        .or_else(|_| DateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f%z"))
+        .map(|date| date.timestamp_millis() as f64)
+        .unwrap_or(0.0)
 }
 
 fn internal(value: &Value) -> bool {
@@ -122,12 +410,11 @@ fn clean(text: &str) -> String {
         text = open.replace_all(&text, "").into_owned();
     }
     text = LOOSE_TAG.replace_all(&text, "").into_owned();
-    text.lines()
-        .map(|line| line.trim_end_matches([' ', '\t', '\r']))
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim_end_matches('\n')
-        .to_owned()
+    static TRAILING_SPACE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?m)[ \t]+(\r?$)").unwrap());
+    static TRAILING_LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:\r?\n)+$").unwrap());
+    let text = TRAILING_SPACE.replace_all(&text, "$1");
+    TRAILING_LINES.replace_all(&text, "").into_owned()
 }
 
 fn developer_message(text: &str) -> bool {
@@ -147,9 +434,11 @@ fn title(text: &str) -> Option<String> {
     let cleaned = clean(text);
     let line = cleaned.lines().find(|line| !line.trim().is_empty())?;
     let words = line.split_whitespace().collect::<Vec<_>>().join(" ");
-    Some(String::from_utf16_lossy(
-        &words.encode_utf16().take(100).collect::<Vec<_>>(),
-    ))
+    Some(
+        String::from_utf16_lossy(&words.encode_utf16().take(100).collect::<Vec<_>>())
+            .trim()
+            .to_owned(),
+    )
 }
 
 fn content(payload: &Value, assistant: bool) -> String {
@@ -186,27 +475,22 @@ pub fn parse(
     let pieces = filename.split('-').collect::<Vec<_>>();
     let id = pieces[pieces.len().saturating_sub(5)..].join("-");
     let directory = first["payload"]["cwd"].as_str().unwrap_or("").to_owned();
-    if first["payload"]["thread_source"] == "subagent" {
-        bail!(
-            "Rust P1 does not yet support Codex subagent rollouts: {}",
-            path.display()
-        );
-    }
     let created = timestamp(&first).max(timestamp(&first["payload"]));
-    let created = if created > 0 {
+    let created = if created > 0.0 {
         created
     } else {
-        path.metadata()?
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis() as i64
+        crate::time::file_mtime_ms(path)?
     };
     let mut updated = created;
     let mut messages = Vec::<Message>::new();
     let mut model = None;
     let mut usage = Usage::default();
+    let mut head_usage = Usage::default();
+    let mut head_model = None;
+    let mut message_count = 0;
     let mut message_title = None;
-    let mut current = None;
+    let mut current: Option<usize> = None;
+    let mut pending_plan = None;
     let mut latest_text = None;
     let mut tools = HashMap::<String, (usize, usize)>::new();
     let mut has_record = false;
@@ -226,15 +510,31 @@ pub fn parse(
         if matches!(kind, "session_meta" | "turn_context") {
             if let Some(name) = payload["model"].as_str().filter(|s| !s.trim().is_empty()) {
                 model = Some(name.trim().to_owned());
+                head_model = model.clone();
             }
             continue;
         }
         if kind == "event_msg" && payload["type"] == "token_count" {
             usage.consume(payload, model.as_deref(), pricing, &mut messages);
+            head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
             continue;
         }
         if kind != "response_item" {
             continue;
+        }
+        if matches!(
+            payload["type"].as_str(),
+            Some("message" | "function_call" | "function_call_output")
+        ) {
+            message_count += 1;
+        }
+        if let Some(name) = payload["info"]
+            .get("model")
+            .unwrap_or(&payload["model"])
+            .as_str()
+            .filter(|name| !name.trim().is_empty())
+        {
+            head_model = Some(name.trim().into());
         }
         match payload["type"].as_str().unwrap_or("") {
             "message" => {
@@ -242,22 +542,80 @@ pub fn parse(
                 if !matches!(role, "user" | "assistant") {
                     continue;
                 }
-                let text = clean(&content(payload, role == "assistant"));
+                let full_text = content(payload, role == "assistant");
+                static PLAN: LazyLock<Regex> = LazyLock::new(|| {
+                    Regex::new(r"(?s)<proposed_plan>\s*(.*?)\s*</proposed_plan>").unwrap()
+                });
+                let text = if role == "assistant" {
+                    if let Some(captures) = PLAN.captures(&full_text) {
+                        pending_plan = Some(MessagePart::Plan {
+                            text: captures[1].trim().into(),
+                            approval_status: "success".into(),
+                            time_created: Some(time),
+                        });
+                    }
+                    clean(&PLAN.replace(&full_text, ""))
+                } else {
+                    clean(&full_text)
+                };
                 if text.trim().is_empty() || (role == "user" && developer_message(&text)) {
                     continue;
                 }
-                if text.contains("<proposed_plan>") || text.contains("<subagent_notification>") {
-                    bail!(
-                        "Rust P1 does not yet support Codex plans or subagent notifications: {}",
-                        path.display()
-                    );
+                if role == "user"
+                    && text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN")
+                    && let (Some(index), Some(plan)) = (current, pending_plan.take())
+                {
+                    messages[index].parts.push(plan);
+                }
+                if role == "user" && !text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN") {
+                    static NOTIFICATION: LazyLock<Regex> = LazyLock::new(|| {
+                        Regex::new(
+                            r"(?s)<subagent_notification>\s*(.*?)\s*</subagent_notification>",
+                        )
+                        .unwrap()
+                    });
+                    if let Some(captures) = NOTIFICATION.captures(&text)
+                        && let Ok(Value::Object(notification)) =
+                            serde_json::from_str::<Value>(&captures[1])
+                    {
+                        let nickname = notification
+                            .get("nickname")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        let completed = notification
+                            .get("completed")
+                            .and_then(Value::as_str)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| format!("Subagent {nickname} completed"));
+                        let mut notification_message = message(
+                            Role::Assistant,
+                            MessagePart::Text {
+                                text: completed,
+                                time_created: Some(time),
+                            },
+                            time,
+                            None,
+                        );
+                        notification_message.subagent_id = notification
+                            .get("agent_id")
+                            .and_then(Value::as_str)
+                            .filter(|id| !id.is_empty())
+                            .map(str::to_owned);
+                        notification_message.nickname =
+                            (!nickname.is_empty()).then(|| nickname.to_owned());
+                        messages.push(notification_message);
+                        current = None;
+                        latest_text = None;
+                        continue;
+                    }
                 }
                 if role == "user" && line_index < 20 && message_title.is_none() {
                     message_title = title(&text);
                 }
                 let part = MessagePart::Text {
                     text,
-                    time_created: time,
+                    time_created: Some(time),
                 };
                 if role == "user" {
                     messages.push(message(Role::User, part, time, None));
@@ -277,6 +635,7 @@ pub fn parse(
                 }
             }
             "reasoning" => {
+                pending_plan = None;
                 let text = payload["summary"]
                     .as_array()
                     .into_iter()
@@ -294,7 +653,7 @@ pub fn parse(
                         latest_text,
                         MessagePart::Reasoning {
                             text,
-                            time_created: time,
+                            time_created: Some(time),
                         },
                         time,
                         model.clone(),
@@ -303,55 +662,96 @@ pub fn parse(
                 }
             }
             "function_call" | "custom_tool_call" => {
+                pending_plan = None;
                 let name = payload["name"].as_str().unwrap_or("").trim();
                 if name.is_empty() {
                     continue;
                 }
-                if matches!(name, "exec" | "apply_patch" | "spawn_agent") {
-                    bail!(
-                        "Rust P1 does not yet support the Codex {name} tool: {}",
-                        path.display()
-                    );
-                }
                 let call_id = payload["call_id"].as_str().unwrap_or("").trim().to_owned();
-                let tool = match name {
-                    "exec_command" => "bash",
-                    "patch" => "patch",
-                    "subagent" => "subagent",
-                    _ => name,
-                }
-                .to_owned();
                 let input = if payload["type"] == "custom_tool_call" {
-                    payload["input"].clone()
+                    if name == "apply_patch" {
+                        super::codex_patch::parse(&payload["input"])
+                    } else {
+                        payload["input"].clone()
+                    }
                 } else {
                     payload["arguments"]
                         .as_str()
                         .and_then(|text| serde_json::from_str(text).ok())
                         .unwrap_or_else(|| payload["arguments"].clone())
                 };
-                let part = MessagePart::Tool {
-                    title: Some(format!("Tool: {tool}")),
-                    tool,
-                    call_id: Some(call_id.clone()),
-                    state: Box::new(ToolState {
-                        status: "running".into(),
-                        input: Some(input),
-                        output: Some(Value::Null),
-                        error: None,
-                        metadata: None,
-                    }),
-                    time_created: time,
-                };
-                let index = if let Some(target) = latest_text.or(current) {
-                    messages[target].parts.push(part);
-                    target
+                let decoded = if name == "exec" && payload["type"] == "custom_tool_call" {
+                    super::codex_exec::decode(&payload["input"])
                 } else {
-                    messages.push(message(Role::Assistant, part, time, model.clone()));
-                    messages.len() - 1
+                    Vec::new()
                 };
-                messages[index].mode = Some("tool".into());
-                tools.insert(call_id, (index, messages[index].parts.len() - 1));
-                current = Some(index);
+                let output_target = super::codex_exec::output_target(&decoded);
+                let calls = if decoded.is_empty() {
+                    vec![(
+                        name.to_owned(),
+                        payload["namespace"]
+                            .as_str()
+                            .unwrap_or("")
+                            .trim()
+                            .to_owned(),
+                        input,
+                        call_id.clone(),
+                    )]
+                } else {
+                    decoded
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, call)| {
+                            let (name, namespace) = super::codex_exec::split_tool_name(&call.name);
+                            let input = if name == "apply_patch" {
+                                super::codex_patch::parse(&Value::String(
+                                    super::codex_exec::patch_text(&call.args).into(),
+                                ))
+                            } else {
+                                call.args
+                            };
+                            (
+                                name.to_owned(),
+                                namespace.unwrap_or("").to_owned(),
+                                input,
+                                if Some(index) == output_target {
+                                    call_id.clone()
+                                } else {
+                                    format!("{call_id}#{index}")
+                                },
+                            )
+                        })
+                        .collect()
+                };
+                for (name, namespace, input, call_id) in calls {
+                    let (tool, metadata) = tool_identity(&name, &namespace);
+                    let part = MessagePart::Tool {
+                        title: Some(format!("Tool: {tool}")),
+                        tool,
+                        call_id: Some(call_id.clone()),
+                        state: Box::new(ToolState {
+                            status: "running".into(),
+                            input: Some(clean_value(input)),
+                            output: Some(Value::Null),
+                            error: None,
+                            metadata,
+                        }),
+                        time_created: Some(time),
+                    };
+                    let index = if let Some(target) = latest_text.or(current) {
+                        messages[target].parts.push(part);
+                        target
+                    } else {
+                        messages.push(message(Role::Assistant, part, time, model.clone()));
+                        messages.len() - 1
+                    };
+                    messages[index].mode = Some("tool".into());
+                    if messages[index].model.is_none() {
+                        messages[index].model = model.clone();
+                    }
+                    tools.insert(call_id, (index, messages[index].parts.len() - 1));
+                    current = Some(index);
+                }
             }
             "function_call_output" | "custom_tool_call_output" => {
                 let call_id = payload["call_id"].as_str().unwrap_or("");
@@ -364,7 +764,10 @@ pub fn parse(
                         .join(""),
                     _ => String::new(),
                 };
-                let output = clean(&output);
+                static ENVELOPE: LazyLock<Regex> = LazyLock::new(|| {
+                    Regex::new(r"^Script completed\nWall time [^\n]*\nOutput:\n?").unwrap()
+                });
+                let output = clean(&ENVELOPE.replace(&output, ""));
                 if !output.is_empty()
                     && let Some((i, p)) = tools.get(call_id)
                     && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
@@ -377,6 +780,9 @@ pub fn parse(
             }
             _ => {}
         }
+    }
+    if let (Some(index), Some(plan)) = (current, pending_plan) {
+        messages[index].parts.push(plan);
     }
     if !has_record {
         return Ok(None);
@@ -395,6 +801,8 @@ pub fn parse(
         .or_else(|| fallback.and_then(|text| title(&text)))
         .unwrap_or_else(|| "Untitled Session".into());
     let head = SessionHead {
+        version: None,
+        summary_files: None,
         reference: SessionReference {
             agent_name: "codex".into(),
             session_id: id,
@@ -402,29 +810,36 @@ pub fn parse(
         title,
         directory,
         display_title: None,
-        parent_reference: None,
+        parent_reference: (first["payload"]["thread_source"] == "subagent")
+            .then(|| first["payload"]["parent_thread_id"].as_str())
+            .flatten()
+            .map(|id| SessionReference {
+                agent_name: "codex".into(),
+                session_id: id.into(),
+            }),
         project_identity,
         project_identity_resolver_revision: Some("project-identity-v2".into()),
         project_identity_input_signature: Some(signature),
         time_created: created,
         time_updated: updated,
-        stats: usage.stats(messages.len()),
-        model_usage: usage.models(),
-        smart_tags: Vec::new(),
+        stats: head_usage.stats(message_count),
+        model_usage: head_usage.models(),
+        smart_tags: super::smart_tags::classify(&messages),
         smart_tags_source_updated_at: Some(updated),
         smart_tags_classifier_revision: Some("smart-tags-v1".into()),
     };
+    let file_activity = super::file_activity::summarize(&head, &messages);
     Ok(Some(SessionDetail {
         head,
         messages,
         detail_freshness: "fresh".into(),
         message_cursor: None,
         message_update: None,
-        file_activity: Vec::new(),
+        file_activity,
     }))
 }
 
-fn message(role: Role, part: MessagePart, time: i64, model: Option<String>) -> Message {
+fn message(role: Role, part: MessagePart, time: f64, model: Option<String>) -> Message {
     let agent = (role == Role::Assistant).then(|| "codex".into());
     Message {
         id: String::new(),
@@ -436,7 +851,7 @@ fn message(role: Role, part: MessagePart, time: i64, model: Option<String>) -> M
         model,
         provider: None,
         tokens: None,
-        cost: 0.0,
+        cost: Some(0.0),
         cost_source: None,
         parts: vec![part],
         subagent_id: None,
@@ -450,7 +865,7 @@ fn assistant_part(
     current: Option<usize>,
     latest_text: Option<usize>,
     part: MessagePart,
-    time: i64,
+    time: f64,
     model: Option<String>,
 ) -> usize {
     let target = current.filter(|index| {
@@ -460,9 +875,97 @@ fn assistant_part(
     });
     if let Some(index) = target {
         messages[index].parts.push(part);
+        if messages[index].model.is_none() {
+            messages[index].model = model;
+        }
         index
     } else {
         messages.push(message(Role::Assistant, part, time, model));
         messages.len() - 1
+    }
+}
+
+fn tool_identity(name: &str, namespace: &str) -> (String, Option<Value>) {
+    let mapped = match name {
+        "exec_command" => Some("bash"),
+        "apply_patch" | "patch" => Some("patch"),
+        "spawn_agent" | "subagent" => Some("subagent"),
+        _ => None,
+    };
+    if let Some(tool) = mapped {
+        (tool.to_owned(), None)
+    } else if namespace.is_empty() {
+        (name.to_owned(), None)
+    } else {
+        let suffix = namespace.rsplit("__").next().unwrap_or(namespace);
+        let normalized = name.trim_start_matches(['_', '.']);
+        let normalized = if normalized.is_empty() {
+            name
+        } else {
+            normalized
+        };
+        (
+            if suffix.is_empty() {
+                normalized.to_owned()
+            } else {
+                format!("{suffix}.{normalized}")
+            },
+            Some(serde_json::json!({"name":name,"namespace":namespace})),
+        )
+    }
+}
+
+fn clean_value(value: Value) -> Value {
+    match value {
+        Value::String(value) => Value::String(clean(&value)),
+        Value::Array(values) => Value::Array(values.into_iter().map(clean_value).collect()),
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, clean_value(value)))
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
+#[cfg(test)]
+mod incremental_tests {
+    use super::*;
+
+    #[test]
+    fn title_trims_after_utf16_limit() {
+        let text = format!("{} trailing", "x".repeat(99));
+        assert_eq!(title(&text).unwrap(), "x".repeat(99));
+    }
+
+    #[test]
+    fn partial_existing_source_is_not_a_deletion() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let path = sessions.join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        std::fs::write(&path, concat!(
+            "{\"type\":\"session_meta\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"payload\":{\"cwd\":\"/project\"}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-01-01T00:00:01Z\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n"
+        )).unwrap();
+        let pricing = Pricing::bundled();
+        let previous = scan(root.path(), &pricing).unwrap();
+        assert_eq!(previous.len(), 1);
+        std::fs::write(&path, "{\"type\":").unwrap();
+        assert!(
+            scan_changed(
+                root.path(),
+                &pricing,
+                std::slice::from_ref(&path),
+                &previous
+            )
+            .is_err()
+        );
+        assert!(scan_changed(root.path(), &pricing, &[root.path().to_owned()], &previous).is_err());
+        std::fs::remove_file(&path).unwrap();
+        let deleted = scan_changed(root.path(), &pricing, &[path], &previous).unwrap();
+        assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
+        assert!(deleted.upserts.is_empty());
     }
 }

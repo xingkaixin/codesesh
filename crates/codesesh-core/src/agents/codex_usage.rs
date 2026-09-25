@@ -101,7 +101,7 @@ impl Usage {
                     message.model = model.map(str::to_owned);
                 }
                 if let Some(cost) = cost {
-                    message.cost = cost;
+                    message.cost = Some(cost);
                     message.cost_source = Some(CostSource::Estimated);
                 }
                 return;
@@ -124,7 +124,7 @@ impl Usage {
                 }
             }
             if let Some(cost) = cost {
-                message.cost += cost;
+                message.cost = Some(message.cost.unwrap_or(0.0) + cost);
                 message.cost_source.get_or_insert(CostSource::Estimated);
             }
         }

@@ -1,0 +1,22 @@
+{
+  "anthropic--claude-4.6-opus": "claude-opus-4-6",
+  "anthropic--claude-4.6-sonnet": "claude-sonnet-4-6",
+  "claude-4.6-sonnet": "claude-sonnet-4-6",
+  "anthropic--claude-4.5-opus": "claude-opus-4-5",
+  "anthropic--claude-4.5-sonnet": "claude-sonnet-4-5",
+  "anthropic--claude-4.5-haiku": "claude-haiku-4-5",
+  "claude-4.5-sonnet-thinking": "claude-sonnet-4-5",
+  "claude-4-sonnet-thinking": "claude-sonnet-4-5",
+  "claude-4-opus": "claude-opus-4-5",
+  "cursor-auto": "claude-sonnet-4-5",
+  "cursor-agent-auto": "claude-sonnet-4-5",
+  "copilot-auto": "claude-sonnet-4-5",
+  "copilot-openai-auto": "gpt-5.3-codex",
+  "copilot-anthropic-auto": "claude-sonnet-4-5",
+  "kimi-for-coding": "moonshotai/kimi-k2-0905",
+  "kimi-k2.5": "moonshotai/kimi-k2-0905",
+  "moonshot-cn/kimi-k2.5": "moonshotai/kimi-k2-0905",
+  "gpt-5-codex": "gpt-5",
+  "gpt-5.1-codex-high": "gpt-5.3-codex",
+  "gpt-5.2-low": "gpt-5.2"
+}

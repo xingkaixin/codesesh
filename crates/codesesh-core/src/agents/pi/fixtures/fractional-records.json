@@ -1,0 +1,32 @@
+[
+  {
+    "type": "session",
+    "cwd": "/tmp/project",
+    "timestamp": "1776679200000.125"
+  },
+  {
+    "type": "message",
+    "id": "u",
+    "parentId": null,
+    "timestamp": "1776679200000.375",
+    "message": {
+      "role": "user",
+      "content": "Fractional prompt"
+    }
+  },
+  {
+    "type": "message",
+    "id": "a",
+    "parentId": "u",
+    "timestamp": 1776679200000.875,
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Fractional reply"
+        }
+      ]
+    }
+  }
+]

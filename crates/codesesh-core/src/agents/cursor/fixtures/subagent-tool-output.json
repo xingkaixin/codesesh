@@ -1,0 +1,22 @@
+{
+  "chatMessages": [
+    {
+      "role": "assistant",
+      "createdAt": 2000,
+      "actions": [
+        {
+          "type": "tool",
+          "tool": "read_file_v2",
+          "input": { "path": "src/example.ts" },
+          "output": [
+            { "text": "first line <system-reminder>hidden</system-reminder>" },
+            { "content": "second line" },
+            "third line",
+            42
+          ],
+          "state": { "status": "completed" }
+        }
+      ]
+    }
+  ]
+}

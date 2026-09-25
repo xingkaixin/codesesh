@@ -1,0 +1,173 @@
+{
+  "head": {
+    "reference": {
+      "agentName": "claudecode",
+      "sessionId": "session"
+    },
+    "title": "Inspect files",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000,
+    "time_updated": 1776679205000,
+    "stats": {
+      "message_count": 5,
+      "total_input_tokens": 120,
+      "total_output_tokens": 25,
+      "total_cost": 0.0007080000000000001,
+      "cost_source": "estimated",
+      "total_cache_read_tokens": 10,
+      "total_cache_create_tokens": 0
+    },
+    "model_usage": {
+      "claude-sonnet-4-5": 145
+    }
+  },
+  "detail": {
+    "reference": {
+      "agentName": "claudecode",
+      "sessionId": "session"
+    },
+    "title": "Inspect files",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000,
+    "time_updated": 1776679205000,
+    "stats": {
+      "message_count": 5,
+      "total_input_tokens": 120,
+      "total_output_tokens": 25,
+      "total_cache_read_tokens": 10,
+      "total_cost": 0.0007080000000000001,
+      "cost_source": "estimated"
+    },
+    "messages": [
+      {
+        "id": "u1",
+        "role": "user",
+        "agent": null,
+        "time_created": 1776679200000,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Inspect files",
+            "time_created": 1776679200000
+          }
+        ]
+      },
+      {
+        "id": "a1",
+        "role": "assistant",
+        "agent": "claude",
+        "time_created": 1776679201000,
+        "mode": null,
+        "model": "claude-sonnet-4-5",
+        "provider": null,
+        "tokens": {
+          "input": 110,
+          "output": 20,
+          "cache_read": 10,
+          "cache_create": 0
+        },
+        "cost": 0.000603,
+        "cost_source": "estimated",
+        "parts": [
+          {
+            "type": "reasoning",
+            "text": "Need a file",
+            "time_created": 1776679201000
+          },
+          {
+            "type": "text",
+            "text": "Inspecting",
+            "time_created": 1776679201000
+          },
+          {
+            "type": "tool",
+            "tool": "Read",
+            "callID": "call1",
+            "state": {
+              "status": "completed",
+              "input": {
+                "file_path": "package.json"
+              },
+              "output": [
+                {
+                  "type": "text",
+                  "text": "File body",
+                  "time_created": 1776679203000
+                },
+                {
+                  "type": "image",
+                  "data": "abcd",
+                  "mime_type": "image/png",
+                  "time_created": 1776679203000
+                }
+              ],
+              "metadata": {
+                "commandName": "read"
+              }
+            },
+            "time_created": 1776679201000,
+            "title": "Tool: Read"
+          }
+        ],
+        "time_completed": 1776679202000
+      },
+      {
+        "id": "u2",
+        "role": "user",
+        "agent": null,
+        "time_created": 1776679203000,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Continue",
+            "time_created": 1776679203000
+          }
+        ]
+      },
+      {
+        "id": "a3",
+        "role": "assistant",
+        "agent": "claude",
+        "time_created": 1776679204000,
+        "mode": null,
+        "model": "claude-sonnet-4-5",
+        "provider": null,
+        "tokens": {
+          "input": 10,
+          "output": 5,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        "cost": 0.000105,
+        "cost_source": "estimated",
+        "parts": [],
+        "time_completed": 1776679204000
+      },
+      {
+        "id": "detached",
+        "role": "tool",
+        "agent": null,
+        "time_created": 1776679205000,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Detached output",
+            "time_created": 1776679205000
+          }
+        ]
+      }
+    ]
+  }
+}

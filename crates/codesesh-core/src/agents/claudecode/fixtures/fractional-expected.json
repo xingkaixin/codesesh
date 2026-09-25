@@ -1,0 +1,73 @@
+{
+  "head": {
+    "reference": {
+      "agentName": "claudecode",
+      "sessionId": "fractional"
+    },
+    "title": "Fractional prompt",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000.125,
+    "time_updated": 1776679200000.875,
+    "stats": {
+      "message_count": 2,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_cost": 0,
+      "total_cache_read_tokens": 0,
+      "total_cache_create_tokens": 0
+    }
+  },
+  "detail": {
+    "reference": {
+      "agentName": "claudecode",
+      "sessionId": "fractional"
+    },
+    "title": "Fractional prompt",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000.125,
+    "time_updated": 1776679200000.875,
+    "stats": {
+      "message_count": 2,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_cost": 0
+    },
+    "messages": [
+      {
+        "id": "u",
+        "role": "user",
+        "agent": null,
+        "time_created": 1776679200000.125,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Fractional prompt",
+            "time_created": 1776679200000.125
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "role": "assistant",
+        "agent": "claude",
+        "time_created": 1776679200000.875,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Fractional reply",
+            "time_created": 1776679200000.875
+          }
+        ]
+      }
+    ]
+  },
+  "cursor": "eyJ2ZXJzaW9uIjoyLCJjb3VudCI6MiwiZGlnZXN0IjoiYTg3ZDU0NmQ5MzA3ZjJhNjc0NmUwMWQ1MGFkNGZkMGEzYzZkZjhjYmUwNzMzODZkODljMzI0MzliMDAwZmU0MiJ9"
+}

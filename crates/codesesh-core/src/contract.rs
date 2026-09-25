@@ -1,6 +1,55 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectIdentityKind {
+    GitRemote,
+    GitCommonDir,
+    ManifestPath,
+    Synthetic,
+    Path,
+    Loose,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum SmartTag {
+    Bugfix,
+    Refactoring,
+    FeatureDev,
+    Testing,
+    Docs,
+    GitOps,
+    BuildDeploy,
+    Exploration,
+    Planning,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum FileActivityKind {
+    Read,
+    Edit,
+    Write,
+    Delete,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolPartStatus {
+    Running,
+    Completed,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum PlanApprovalStatus {
+    Success,
+    Fail,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionReference {
@@ -69,6 +118,13 @@ pub struct ProjectIdentity {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct SessionHead {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[ts(type = "unknown")]
+    pub summary_files: Option<serde_json::Value>,
     pub reference: SessionReference,
     pub title: String,
     pub directory: String,
@@ -86,9 +142,9 @@ pub struct SessionHead {
     #[ts(optional)]
     pub project_identity_input_signature: Option<String>,
     #[ts(type = "number")]
-    pub time_created: i64,
+    pub time_created: f64,
     #[ts(type = "number")]
-    pub time_updated: i64,
+    pub time_updated: f64,
     pub stats: SessionStats,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -97,7 +153,7 @@ pub struct SessionHead {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[ts(type = "number")]
-    pub smart_tags_source_updated_at: Option<i64>,
+    pub smart_tags_source_updated_at: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub smart_tags_classifier_revision: Option<String>,
@@ -149,16 +205,18 @@ pub struct Message {
     pub role: Role,
     pub agent: Option<String>,
     #[ts(type = "number")]
-    pub time_created: i64,
+    pub time_created: f64,
     #[ts(type = "number | null")]
-    pub time_completed: Option<i64>,
+    pub time_completed: Option<f64>,
     pub mode: Option<String>,
     pub model: Option<String>,
     pub provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub tokens: Option<MessageTokens>,
-    pub cost: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cost_source: Option<CostSource>,
@@ -180,30 +238,38 @@ pub enum MessagePart {
     Text {
         text: String,
         #[ts(type = "number")]
-        time_created: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        time_created: Option<f64>,
     },
     Reasoning {
         text: String,
         #[ts(type = "number")]
-        time_created: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        time_created: Option<f64>,
     },
     Plan {
         text: String,
         approval_status: String,
         #[ts(type = "number")]
-        time_created: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        time_created: Option<f64>,
     },
     Tool {
         tool: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        title: Option<String>,
         #[serde(rename = "callID", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         call_id: Option<String>,
         state: Box<ToolState>,
         #[ts(type = "number")]
-        time_created: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        time_created: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        title: Option<String>,
     },
     Image {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -218,29 +284,51 @@ pub enum MessagePart {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         #[ts(type = "number")]
-        time_created: Option<i64>,
+        time_created: Option<f64>,
     },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ToolState {
     pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional)]
     #[ts(type = "unknown")]
     pub input: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional)]
     #[ts(type = "unknown")]
     pub output: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional)]
     #[ts(type = "unknown")]
     pub error: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional)]
     #[ts(type = "unknown")]
     pub metadata: Option<serde_json::Value>,
+}
+
+pub(crate) fn present_value<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
@@ -267,7 +355,7 @@ pub struct SessionFileActivity {
     pub kind: String,
     pub count: usize,
     #[ts(type = "number")]
-    pub latest_time: i64,
+    pub latest_time: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
@@ -283,4 +371,31 @@ pub struct AgentInfo {
 pub struct SessionIndex {
     pub agents: Vec<AgentInfo>,
     pub sessions: Vec<SessionHead>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ToolState;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn tool_state_roundtrip_distinguishes_missing_null_and_payloads() {
+        for payload in [
+            None,
+            Some(Value::Null),
+            Some(json!({"content":[null,"text"]})),
+        ] {
+            let mut value = json!({"status":"completed"});
+            if let Some(payload) = &payload {
+                for field in ["input", "output", "error", "metadata"] {
+                    value[field] = payload.clone();
+                }
+            }
+            let state: ToolState = serde_json::from_value(value.clone()).unwrap();
+            for field in [&state.input, &state.output, &state.error, &state.metadata] {
+                assert_eq!(field, &payload);
+            }
+            assert_eq!(serde_json::to_value(state).unwrap(), value);
+        }
+    }
 }

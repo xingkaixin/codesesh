@@ -1,0 +1,26 @@
+[
+  {
+    "type": "user",
+    "uuid": "u",
+    "cwd": "/tmp/project",
+    "timestamp": 1776679200000.125,
+    "message": {
+      "role": "user",
+      "content": "Fractional prompt"
+    }
+  },
+  {
+    "type": "assistant",
+    "uuid": "a",
+    "timestamp": 1776679200000.875,
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Fractional reply"
+        }
+      ]
+    }
+  }
+]

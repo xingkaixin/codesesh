@@ -23,34 +23,43 @@ pub fn initial(reference: &SessionReference) -> String {
     format!("{:x}", hash.finalize())
 }
 
-pub fn advance(previous: &str, message: &Message, parts: &str) -> Result<String> {
-    let tokens = message
-        .tokens
-        .as_ref()
-        .map(super::json::stringify)
-        .transpose()?;
+pub fn advance(
+    previous: &str,
+    message: &Message,
+    parts: &str,
+    tokens: Option<&str>,
+    format: i64,
+) -> Result<String> {
     let cost_source = message
         .cost_source
         .as_ref()
         .map(crate::contract::CostSource::as_str);
-    let completed = message.time_completed.map(|value| value.to_string());
+    let cost = message
+        .cost
+        .map(|value| ryu_js::Buffer::new().format(value).to_owned());
+    let completed = message
+        .time_completed
+        .map(|value| ryu_js::Buffer::new().format(value).to_owned());
+    let created = ryu_js::Buffer::new()
+        .format(message.time_created)
+        .to_owned();
     let mut hash = Sha256::new();
     hash.update("codesesh-session-messages-chain\0");
     for value in [
         Some(previous),
         Some(message.id.as_str()),
         Some(role_name(&message.role)),
-        Some(&message.time_created.to_string()),
+        Some(&created),
         completed.as_deref(),
         message.agent.as_deref(),
         message.mode.as_deref(),
         message.model.as_deref(),
         message.provider.as_deref(),
-        tokens.as_deref(),
-        Some(&message.cost.to_string()),
+        tokens,
+        cost.as_deref(),
         cost_source,
         Some(parts),
-        Some("1"),
+        Some(&format.to_string()),
         message.subagent_id.as_deref(),
         message.nickname.as_deref(),
     ] {
