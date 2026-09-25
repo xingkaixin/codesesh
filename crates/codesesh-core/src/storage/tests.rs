@@ -344,3 +344,57 @@ fn json_index_rejects_a_stale_baseline_without_publishing_rows_or_markers() {
     assert!(after.fingerprints.is_empty());
     assert!(stale[0].detail.message_cursor.is_none());
 }
+
+#[test]
+fn refreshed_snapshot_matches_durable_order_updates_and_removals() {
+    let root = tempfile::tempdir().unwrap();
+    let mut sessions = vec![
+        source(root.path(), "b"),
+        source(root.path(), "a"),
+        source(root.path(), "c"),
+    ];
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(&mut sessions).unwrap();
+    let previous = cache.snapshot().unwrap();
+    let removed = sessions[1].head.reference.clone();
+    sessions[0].head.title = "Changed".into();
+    sessions[0].head.time_updated += 1000.0;
+    let changed = sessions[0].head.reference.clone();
+    cache.apply(&mut sessions[..1], &[removed]).unwrap();
+    let refreshed = cache.refresh_snapshot(&previous, &[changed]).unwrap();
+    assert_eq!(
+        serde_json::to_value(&refreshed).unwrap(),
+        serde_json::to_value(cache.snapshot().unwrap()).unwrap()
+    );
+    assert_eq!(refreshed[0].title, "Changed");
+    cache
+        .apply(
+            &mut [],
+            &refreshed
+                .iter()
+                .map(|head| head.reference.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    assert!(cache.refresh_snapshot(&refreshed, &[]).unwrap().is_empty());
+}
+
+#[test]
+fn refreshed_snapshot_observes_other_connections() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("cache.db");
+    let mut sessions = vec![source(root.path(), "external")];
+    let mut cache = Cache::open(Some(&path)).unwrap();
+    cache.publish(&mut sessions).unwrap();
+    let previous = cache.snapshot().unwrap();
+    let other = Connection::open(&path).unwrap();
+    other
+        .execute("UPDATE sessions SET title='External change'", [])
+        .unwrap();
+    let refreshed = cache.refresh_snapshot(&previous, &[]).unwrap();
+    assert_eq!(refreshed[0].title, "External change");
+    assert_eq!(
+        serde_json::to_value(refreshed).unwrap(),
+        serde_json::to_value(cache.snapshot().unwrap()).unwrap()
+    );
+}

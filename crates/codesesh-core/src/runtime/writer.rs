@@ -60,6 +60,7 @@ pub(super) fn run(
                 let pricing = batch.pricing.take();
                 let mut publish = || -> Result<()> {
                     cancellation.check()?;
+                    let write_started = Instant::now();
                     cache.apply_checkpoint(
                         &mut batch.sessions,
                         &batch.removed,
@@ -67,9 +68,20 @@ pub(super) fn run(
                         &batch.checkpoint,
                         batch.complete,
                     )?;
+                    let write_elapsed = write_started.elapsed();
+                    let snapshot_started = Instant::now();
                     batch.on_reject.take();
                     if !batch.sessions.is_empty() || !batch.removed.is_empty() {
-                        let heads = Arc::new(cache.snapshot()?);
+                        let changed_references: Vec<_> = batch
+                            .sessions
+                            .iter()
+                            .map(|session| session.head.reference.clone())
+                            .collect();
+                        let heads =
+                            Arc::new(cache.refresh_snapshot(
+                                snapshots.borrow().as_ref(),
+                                &changed_references,
+                            )?);
                         let changed = Arc::new(
                             batch
                                 .sessions
@@ -83,6 +95,15 @@ pub(super) fn run(
                             changed,
                             removed: Arc::new(std::mem::take(&mut batch.removed)),
                         });
+                    }
+                    if std::env::var_os("CODESESH_PROFILE_SCAN").is_some() {
+                        eprintln!(
+                            "scan-profile publish agent={} sessions={} write_ms={:.3} snapshot_ms={:.3}",
+                            agent,
+                            batch.sessions.len(),
+                            write_elapsed.as_secs_f64() * 1000.0,
+                            snapshot_started.elapsed().as_secs_f64() * 1000.0
+                        );
                     }
                     let mut status = statuses.borrow().as_ref().clone();
                     if !batch.complete

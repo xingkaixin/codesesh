@@ -36,6 +36,7 @@ pub fn head_from_connection(
 
 pub struct Cache {
     connection: Connection,
+    snapshot_data_version: std::cell::Cell<Option<i64>>,
 }
 
 impl Cache {
@@ -44,7 +45,59 @@ impl Cache {
     }
 
     pub fn snapshot(&self) -> Result<Vec<SessionHead>> {
-        snapshot::load(&self.connection)
+        let transaction = self.connection.unchecked_transaction()?;
+        let heads = snapshot::load(&transaction)?;
+        let version = transaction.pragma_query_value(None, "data_version", |row| row.get(0))?;
+        transaction.commit()?;
+        self.snapshot_data_version.set(Some(version));
+        Ok(heads)
+    }
+
+    pub fn refresh_snapshot(
+        &self,
+        previous: &[SessionHead],
+        changed: &[SessionReference],
+    ) -> Result<Vec<SessionHead>> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let references = {
+            let mut query = transaction.prepare(
+                "SELECT agent_name,session_id FROM sessions WHERE publication_id IS NULL ORDER BY activity_time DESC,agent_name,session_id",
+            )?;
+            query
+                .query_map([], |row| {
+                    Ok(SessionReference {
+                        agent_name: row.get(0)?,
+                        session_id: row.get(1)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let version = transaction.pragma_query_value(None, "data_version", |row| row.get(0))?;
+        let heads = if self.snapshot_data_version.get() != Some(version) {
+            // Another connection may have changed headers outside this publication.
+            snapshot::load(&transaction)?
+        } else {
+            let previous: std::collections::HashMap<_, _> = previous
+                .iter()
+                .map(|head| (&head.reference, head))
+                .collect();
+            let changed: std::collections::HashSet<_> = changed.iter().collect();
+            references
+                .into_iter()
+                .map(|reference| {
+                    if !changed.contains(&reference)
+                        && let Some(head) = previous.get(&reference)
+                    {
+                        return Ok((*head).clone());
+                    }
+                    self.head(&reference)?
+                        .ok_or_else(|| anyhow::anyhow!("published session is missing"))
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+        transaction.commit()?;
+        self.snapshot_data_version.set(Some(version));
+        Ok(heads)
     }
 
     pub fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
@@ -67,7 +120,10 @@ impl Cache {
             version == CACHE_SCHEMA_VERSION,
             "Read-only cache requires schema {CACHE_SCHEMA_VERSION}, found {version}"
         );
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            snapshot_data_version: std::cell::Cell::new(None),
+        })
     }
 
     pub fn open_preview(path: &Path) -> Result<Self> {
@@ -91,8 +147,11 @@ impl Cache {
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA temp_store=FILE;")?;
         schema::ensure(&connection, path)?;
-        connection.execute_batch("PRAGMA journal_mode=WAL")?;
-        Ok(Self { connection })
+        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA cache_size=-16384")?;
+        Ok(Self {
+            connection,
+            snapshot_data_version: std::cell::Cell::new(None),
+        })
     }
 
     pub fn publish(&mut self, sessions: &mut [ParsedSession]) -> Result<()> {
@@ -142,6 +201,10 @@ impl Cache {
         checkpoint: Option<(&str, &Option<serde_json::Value>, bool)>,
         index: Option<&json_index::Publication<'_>>,
     ) -> Result<()> {
+        let profile = std::env::var_os("CODESESH_PROFILE_SCAN").is_some();
+        let mut message_time = std::time::Duration::ZERO;
+        let mut document_time = std::time::Duration::ZERO;
+        let mut facts_time = std::time::Duration::ZERO;
         let transaction = self.connection.transaction()?;
         if let Some(index) = index {
             index.validate(&transaction)?;
@@ -197,6 +260,7 @@ impl Cache {
                 "UPDATE sessions SET parent_agent_name=?, parent_session_id=?, total_cache_read_tokens=?, total_cache_create_tokens=?, cost_source=?, total_tokens=?, model_usage_json=? WHERE agent_name=? AND session_id=?",
                 params![head.parent_reference.as_ref().map(|parent| &parent.agent_name),head.parent_reference.as_ref().map(|parent| &parent.session_id),head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.cost_source.as_ref().map(CostSource::as_str),head.stats.total_tokens,head.model_usage.as_ref().map(json::stringify).transpose()?,reference.agent_name,reference.session_id],
             )?;
+            let message_started = std::time::Instant::now();
             let mut digest = cursor::initial(reference);
             let mut text = session.detail.head.title.trim().to_owned();
             for (index, message) in session.detail.messages.iter().enumerate() {
@@ -219,10 +283,14 @@ impl Cache {
                 let content = message_text(message);
                 text.push('\n');
                 text.push_str(&content);
-                transaction.prepare_cached("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)")?.execute(
-                    params![reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content])?;
+                transaction.prepare_cached("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text,tool_metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)")?.execute(
+                    params![reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content,facts::tool_metadata(message)?])?;
             }
+            message_time += message_started.elapsed();
+            let document_started = std::time::Instant::now();
             transaction.execute("INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at,detail_version) VALUES(?,?,?,?,?,?,?,?)", params![reference.agent_name,reference.session_id,session.detail.head.title,text,facts::content_hash(head)?,session.detail.messages.len() as i64,chrono::Utc::now().timestamp_millis(),detail_version])?;
+            document_time += document_started.elapsed();
+            let facts_started = std::time::Instant::now();
             for activity in &session.detail.file_activity {
                 transaction.execute("INSERT INTO session_file_activity(agent_name,session_id,project_identity_key,path,kind,count,latest_time) VALUES(?,?,?,?,?,?,?)",params![reference.agent_name,reference.session_id,activity.project_identity_key,activity.path,activity.kind,activity.count as i64,activity.latest_time])?;
             }
@@ -239,6 +307,7 @@ impl Cache {
                 "DELETE FROM pending_reindex WHERE agent_name=? AND session_id=?",
                 params![reference.agent_name, reference.session_id],
             )?;
+            facts_time += facts_started.elapsed();
             cursors.push(cursor::encode(session.detail.messages.len(), &digest)?);
         }
         if let Some((agent, checkpoint, complete)) = checkpoint {
@@ -266,7 +335,17 @@ impl Cache {
         if let Some(index) = index {
             index.publish(&transaction)?;
         }
+        let commit_started = std::time::Instant::now();
         transaction.commit()?;
+        if profile {
+            eprintln!(
+                "scan-profile storage messages_ms={:.3} document_ms={:.3} facts_ms={:.3} commit_ms={:.3}",
+                message_time.as_secs_f64() * 1000.0,
+                document_time.as_secs_f64() * 1000.0,
+                facts_time.as_secs_f64() * 1000.0,
+                commit_started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
         for (session, cursor) in sessions.iter_mut().zip(cursors) {
             session.detail.message_cursor = Some(cursor);
             session.detail.message_update = Some("reset".into());

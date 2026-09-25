@@ -75,16 +75,8 @@ pub fn write(
         params![reference.agent_name, reference.session_id],
     )?;
     for (index, message) in messages.iter().enumerate() {
-        let mut metadata = Vec::new();
         for part in &message.parts {
-            if let MessagePart::Tool {
-                tool,
-                call_id,
-                state,
-                title,
-                ..
-            } = part
-            {
+            if let MessagePart::Tool { tool, .. } = part {
                 let name = tool.trim().to_lowercase();
                 if !name.is_empty() {
                     connection
@@ -96,25 +88,41 @@ pub fn write(
                             name
                         ])?;
                 }
-                let projection = MessagePart::Tool {
-                    tool: tool.clone(),
-                    call_id: call_id.clone(),
-                    state: Box::new(crate::contract::ToolState {
-                        status: state.status.clone(),
-                        input: None,
-                        output: None,
-                        error: state.error.clone(),
-                        metadata: state.metadata.clone(),
-                    }),
-                    time_created: None,
-                    title: title.clone(),
-                };
-                metadata.push(serde_json::to_value(projection)?);
             }
-        }
-        if !metadata.is_empty() {
-            connection.prepare_cached("UPDATE messages SET tool_metadata_json=? WHERE agent_name=? AND session_id=? AND message_index=?")?.execute(params![super::json::stringify(&metadata)?,reference.agent_name,reference.session_id,index as i64])?;
         }
     }
     Ok(())
+}
+
+pub fn tool_metadata(message: &Message) -> Result<Option<String>> {
+    let mut metadata = Vec::new();
+    for part in &message.parts {
+        if let MessagePart::Tool {
+            tool,
+            call_id,
+            state,
+            title,
+            ..
+        } = part
+        {
+            let projection = MessagePart::Tool {
+                tool: tool.clone(),
+                call_id: call_id.clone(),
+                state: Box::new(crate::contract::ToolState {
+                    status: state.status.clone(),
+                    input: None,
+                    output: None,
+                    error: state.error.clone(),
+                    metadata: state.metadata.clone(),
+                }),
+                time_created: None,
+                title: title.clone(),
+            };
+            metadata.push(serde_json::to_value(projection)?);
+        }
+    }
+    if metadata.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(super::json::stringify(&metadata)?))
 }
