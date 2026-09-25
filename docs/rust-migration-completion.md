@@ -8,9 +8,20 @@ CLI/API、数据兼容和本机性能验收已经完成。四平台原生及八�
 - 工作分支：`feat/rust-rewrite`
 - 草稿 PR：[Rust backend migration #636](https://github.com/xingkaixin/codesesh/pull/636)
 - 固定 Node 参考：`codesesh@1.0.12`，源码参考提交 `a545f543a554421b0576058c701ef2ac4190d62e`
-- 当前代码候选：`91766747`；本机已安装二进制 SHA-256：`c82c438bd465f667a10e4375f21895520405d090d62421e20ca0528504fb65f1`
+- 原 P6 性能候选（历史记录）：`91766747`；当时本机已安装二进制 SHA-256：`c82c438bd465f667a10e4375f21895520405d090d62421e20ca0528504fb65f1`
 - 最终 CI：[PR #636 检查](https://github.com/xingkaixin/codesesh/pull/636/checks)；交付包记录固定 run URL、提交和全部 job 状态
 - 发布与合并：**未执行**。P8 不属于本轮；npm scope、平台包和正式发布权限尚未核验。
+
+## 本地完整历史验收补充
+
+原 P6 合成数据没有覆盖本机约 19.4 GiB Codex 来源及最大约 464 MiB 单会话。
+针对 `pnpm run:app` 内存持续增长，`091d27d6` 改为保留会话元数据、按来源大小分批、
+持久化增量指纹，并修复 macOS 持续打开 WAL 的监听遗漏。
+本机二进制 SHA-256 为 `9ce24eaca7ef75ed5a2111c9caa629169ec6a7485894895a5545da4b384b3acf`。
+真实数据规模、冷扫描、热启动、增量、RSS 曲线及未覆盖范围见
+[本地内存与增量报告](benchmarks/rust-local-memory-2026-09-25.md)。
+修复代码的四平台及安装验证 [CI 36132360691](https://github.com/xingkaixin/codesesh/actions/runs/36132360691)
+共 19 项通过。原 P6 配对数字继续绑定原二进制，不作为本次修复后的重新对比结果。
 
 ## P0～P7 实现清单
 
