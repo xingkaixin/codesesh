@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { normalizeMainArchive } from "./npm-archive.mjs";
 import {
   createNativeArchive,
   extractArchive,
@@ -66,6 +67,7 @@ const pack = (path) =>
 const nativePack = pack(platform);
 nativePack.filename = nativePack.filename.replace(/^@/, "").replaceAll("/", "-");
 const mainPack = pack(cli);
+normalizeMainArchive(join(dir, mainPack.filename));
 const archive = `codesesh-${version}-${target.target}.tar.gz`;
 createNativeArchive(dir, archive, target.executable);
 const verify = join(dir, "verify");

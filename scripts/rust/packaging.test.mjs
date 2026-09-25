@@ -1,9 +1,43 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { createNativeArchive, extractArchive, targets, validateBinary } from "./common.mjs";
+import { normalizeMainArchive } from "./npm-archive.mjs";
+
+test("main archive normalization preserves launcher bytes and restores executable mode", () => {
+  const directory = mkdtempSync(join(tmpdir(), "codesesh-main-tar-"));
+  try {
+    mkdirSync(join(directory, "package/bin"), { recursive: true });
+    mkdirSync(join(directory, "verify"));
+    const launcher = "#!/usr/bin/env node\nconsole.log('fixture');\n";
+    writeFileSync(join(directory, "package/bin/codesesh.cjs"), launcher, { mode: 0o644 });
+    execFileSync("tar", ["-czf", "main.tgz", "package/bin/codesesh.cjs"], { cwd: directory });
+    const archive = join(directory, "main.tgz");
+    normalizeMainArchive(archive);
+    const normalized = readFileSync(archive);
+    normalizeMainArchive(archive);
+    assert.deepEqual(readFileSync(archive), normalized);
+    extractArchive(directory, "main.tgz", "verify");
+    const extracted = join(directory, "verify/package/bin/codesesh.cjs");
+    assert.equal(readFileSync(extracted, "utf8"), launcher);
+    if (process.platform !== "win32") assert.equal(statSync(extracted).mode & 0o777, 0o755);
+    const damaged = gunzipSync(normalized);
+    damaged[0] ^= 1;
+    writeFileSync(archive, gzipSync(damaged));
+    assert.throws(() => normalizeMainArchive(archive), /Invalid tar checksum/);
+    writeFileSync(join(directory, "package/other.txt"), "no launcher");
+    execFileSync("tar", ["-czf", "main.tgz", "package/other.txt"], { cwd: directory });
+    assert.throws(() => normalizeMainArchive(archive), /Invalid main package tar structure/);
+    writeFileSync(archive, normalized.subarray(0, 20));
+    assert.throws(() => normalizeMainArchive(archive));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("native archives round-trip from a directory with spaces and Unicode", () => {
   const directory = mkdtempSync(join(tmpdir(), "codesesh tar 中文 space "));
