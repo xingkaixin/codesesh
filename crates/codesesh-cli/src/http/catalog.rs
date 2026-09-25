@@ -11,7 +11,63 @@ use codesesh_core::{
     query::{self, PaginationError},
 };
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
+
+const ANALYTICS_REVISION_QUERY: &str = concat!(
+    "SELECT COALESCE((SELECT value FROM cache_meta ",
+    "WHERE key='analytics_revision'), '0')"
+);
+
+#[derive(Default)]
+pub struct CatalogCache {
+    entries: VecDeque<(String, Value, Value)>,
+}
+
+impl CatalogCache {
+    fn get(&mut self, revision: &str, key: &Value) -> Option<Value> {
+        let index = self
+            .entries
+            .iter()
+            .position(|(generation, candidate, _)| generation == revision && candidate == key)?;
+        let entry = self.entries.remove(index)?;
+        let result = entry.2.clone();
+        self.entries.push_back(entry);
+        Some(result)
+    }
+
+    fn insert(&mut self, revision: String, key: Value, value: Value) {
+        self.entries
+            .retain(|(generation, candidate, _)| generation != &revision || candidate != &key);
+        if self.entries.len() == 64 {
+            self.entries.pop_front();
+        }
+        self.entries.push_back((revision, key, value));
+    }
+}
+
+fn cached_catalog(
+    cache: &std::sync::Mutex<CatalogCache>,
+    revision: String,
+    key: Value,
+    build: impl FnOnce() -> anyhow::Result<Value>,
+) -> anyhow::Result<Value> {
+    let cached = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?
+        .get(&revision, &key);
+    if let Some(value) = cached {
+        return Ok(value);
+    }
+    let value = build()?;
+    cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?
+        .insert(revision, key, value.clone());
+    Ok(value)
+}
 
 pub async fn config(
     AxumState(state): AxumState<Arc<State>>,
@@ -58,24 +114,36 @@ pub async fn projects(
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
     let query_scope = state.query_scope.clone();
+    let cache = state.catalog_cache.clone();
     let result = state
         .runtime
-        .read_snapshot(move |conn, heads| {
-            let sessions = super::scoped_heads(heads, &query_scope);
-            let groups = projects::build_project_groups(&sessions)
-                .into_iter()
-                .map(serde_json::to_value)
-                .collect::<serde_json::Result<Vec<_>>>()?;
-            let facts = analytics::load_cost_facts(conn, from, to, false)?;
-            let mut groups =
-                analytics::attach_project_metrics(&groups, &sessions, from, to, Some(&facts));
+        .read(move |conn| {
+            let revision =
+                conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
+            let value = cached_catalog(&cache, revision, json!(["projects", from, to]), || {
+                let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                let sessions = super::scoped_heads(&heads, &query_scope);
+                let groups = projects::build_project_groups(&sessions)
+                    .into_iter()
+                    .map(serde_json::to_value)
+                    .collect::<serde_json::Result<Vec<_>>>()?;
+                let facts = analytics::load_cost_facts(conn, from, to, false)?;
+                let mut groups =
+                    analytics::attach_project_metrics(&groups, &sessions, from, to, Some(&facts));
+                groups.retain(|g| {
+                    ["sessionCount", "messages", "tokens", "cost"]
+                        .iter()
+                        .any(|k| g[*k].as_f64().unwrap_or(0.0) > 0.0)
+                });
+                Ok(Value::Array(groups))
+            })?;
+            let Value::Array(mut groups) = value else {
+                anyhow::bail!("invalid project aggregate");
+            };
             groups.retain(|g| {
-                ["sessionCount", "messages", "tokens", "cost"]
-                    .iter()
-                    .any(|k| g[*k].as_f64().unwrap_or(0.0) > 0.0)
-                    && identity.as_ref().is_none_or(|(kind, key)| {
-                        g["identityKind"] == *kind && g["identityKey"] == *key
-                    })
+                identity.as_ref().is_none_or(|(kind, key)| {
+                    g["identityKind"] == *kind && g["identityKey"] == *key
+                })
             });
             let summary = analytics::summarize_projects(&groups);
             Ok((groups, summary))
@@ -163,36 +231,56 @@ pub async fn dashboard(
     };
     let names = state.options.enabled_agents.clone();
     let query_scope = state.query_scope.clone();
+    let cache = state.catalog_cache.clone();
+    // The Node backend reuses open-ended windows until the next local calendar day.
+    let cache_to = base_to.unwrap_or_else(|| start_day(to));
+    let key = json!([
+        "dashboard",
+        scope.agent,
+        scope.project_kind,
+        scope.project_key,
+        from,
+        cache_to,
+        compare,
+        days,
+        zone
+    ]);
     let result = state
         .runtime
-        .read_snapshot(move |conn, heads| {
-            let sessions = super::scoped_heads(heads, &query_scope);
-            let info = agent_info(&HashMap::new())
-                .into_iter()
-                .map(|a| (a["name"].as_str().unwrap().to_owned(), a))
-                .collect();
-            analytics::dashboard_response(
-                conn,
-                &sessions,
-                &analytics::DashboardResponseOptions {
-                    aggregate: analytics::DashboardOptions {
-                        by_agent_names: &names,
-                        scope: &scope,
-                        from,
-                        to,
-                        agent_info: Some(&info),
-                        compare,
-                        cost_facts: None,
+        .read(move |conn| {
+            let revision =
+                conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
+            cached_catalog(&cache, revision, key, || {
+                let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                let sessions = super::scoped_heads(&heads, &query_scope);
+                let info = agent_info(&HashMap::new())
+                    .into_iter()
+                    .map(|a| (a["name"].as_str().unwrap().to_owned(), a))
+                    .collect();
+                analytics::dashboard_response(
+                    conn,
+                    &sessions,
+                    &analytics::DashboardResponseOptions {
+                        aggregate: analytics::DashboardOptions {
+                            by_agent_names: &names,
+                            scope: &scope,
+                            from,
+                            to,
+                            agent_info: Some(&info),
+                            compare,
+                            cost_facts: None,
+                        },
+                        time_zone: &zone,
+                        days,
+                        query_scope: Some(query_scope),
                     },
-                    time_zone: &zone,
-                    days,
-                    query_scope: Some(query_scope),
-                },
-            )
+                )
+            })
         })
         .await;
     match result {
         Ok(mut value) => {
+            value["window"]["to"] = json!(to);
             let aliases = state.aliases().await;
             for key in ["recentSessions", "recentFileActivities"] {
                 if let Some(rows) = value[key].as_array_mut() {
@@ -282,3 +370,6 @@ fn agent_info(counts: &HashMap<String, usize>) -> Vec<Value> {
     }
     entries
 }
+
+#[cfg(test)]
+mod tests;

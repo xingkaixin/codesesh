@@ -54,6 +54,7 @@ pub struct State {
     project_pages: Mutex<SnapshotPaginator<Value, Value>>,
     streams: Arc<Semaphore>,
     details: Arc<Semaphore>,
+    catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
     query_scope: codesesh_core::search::QueryScope,
 }
 
@@ -75,6 +76,7 @@ impl State {
             project_pages: Mutex::new(SnapshotPaginator::default()),
             streams: Arc::new(Semaphore::new(32)),
             details: Arc::new(Semaphore::new(2)),
+            catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
         }
     }
     fn snapshot(&self) -> Arc<Vec<SessionHead>> {

@@ -5,18 +5,32 @@ use super::parser::{split_tokens, unwrap_value};
 pub struct Terms {
     pub values: Vec<String>,
     pub any: bool,
+    patterns: Vec<regex::Regex>,
 }
 impl Terms {
     pub fn parse(query: &str) -> Self {
         let tokens = split_tokens(query);
+        let values: Vec<String> = tokens
+            .iter()
+            .filter(|t| !t.eq_ignore_ascii_case("OR"))
+            .map(|t| unwrap_value(t).to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        let patterns = values
+            .iter()
+            .filter(|term| seen.insert(term.as_str()))
+            .filter_map(|term| {
+                regex::RegexBuilder::new(&regex::escape(term))
+                    .case_insensitive(true)
+                    .build()
+                    .ok()
+            })
+            .collect();
         Self {
             any: tokens.iter().any(|t| t.eq_ignore_ascii_case("OR")),
-            values: tokens
-                .iter()
-                .filter(|t| !t.eq_ignore_ascii_case("OR"))
-                .map(|t| unwrap_value(t).to_lowercase())
-                .filter(|t| !t.is_empty())
-                .collect(),
+            values,
+            patterns,
         }
     }
     pub fn matches(&self, text: &str) -> bool {
@@ -31,22 +45,14 @@ impl Terms {
     }
 }
 
-pub fn highlights(text: &str, terms: &[String]) -> Vec<HighlightRange> {
+pub fn highlights(text: &str, terms: &Terms) -> Vec<HighlightRange> {
     let mut ranges = Vec::new();
-    for term in terms {
-        if term.is_empty() {
-            continue;
-        }
-        if let Ok(pattern) = regex::RegexBuilder::new(&regex::escape(term))
-            .case_insensitive(true)
-            .build()
-        {
-            for hit in pattern.find_iter(text) {
-                ranges.push(HighlightRange {
-                    start: text[..hit.start()].encode_utf16().count(),
-                    end: text[..hit.end()].encode_utf16().count(),
-                });
-            }
+    for pattern in &terms.patterns {
+        for hit in pattern.find_iter(text) {
+            ranges.push(HighlightRange {
+                start: text[..hit.start()].encode_utf16().count(),
+                end: text[..hit.end()].encode_utf16().count(),
+            });
         }
     }
     ranges.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
@@ -89,6 +95,6 @@ pub fn build(text: &str, terms: &Terms) -> (String, Vec<HighlightRange>) {
         String::from_utf16_lossy(&units[start.min(end)..end]),
         if end < units.len() { " …" } else { "" }
     );
-    let ranges = highlights(&snippet, &terms.values);
+    let ranges = highlights(&snippet, terms);
     (snippet, ranges)
 }

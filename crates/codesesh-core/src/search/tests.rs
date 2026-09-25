@@ -168,7 +168,7 @@ fn filters_include_descendant_cost_tools_files_and_scope() {
 
 #[test]
 fn highlights_merge_overlaps_and_preserve_astral_offsets() {
-    let ranges = snippet::highlights("🔎 foobar", &["foo".into(), "foobar".into()]);
+    let ranges = snippet::highlights("🔎 foobar", &snippet::Terms::parse("foo foobar foo"));
     assert_eq!(ranges, vec![HighlightRange { start: 3, end: 9 }]);
     let text = format!("{}needle{}", "a".repeat(100), "z".repeat(100));
     let (text, ranges) = snippet::build(&text, &snippet::Terms::parse("needle"));

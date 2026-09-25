@@ -100,7 +100,7 @@ pub(super) fn search_prepared(
             message_matches
                 .remove(&session.reference)
                 .unwrap_or_else(|| {
-                    let ranges = snippet::highlights(&fallback, &terms.values);
+                    let ranges = snippet::highlights(&fallback, &terms);
                     (fallback, ranges, "assistant_reply")
                 })
         };
