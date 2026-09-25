@@ -20,8 +20,10 @@ const MAX_CANONICAL_RATIO = 1.05;
 const sessionCount = Number(process.env.SESSION_INDEX_BENCH_SIZE ?? 25_000);
 const changeCount = Number(process.env.SESSION_INDEX_BENCH_CHANGES ?? 100);
 const sessions = Array.from({ length: sessionCount }, (_, index) => ({
-  id: `session-${index}`,
-  slug: `${index % 2 === 0 ? "codex" : "claude"}/session-${index}`,
+  reference: {
+    agentName: index % 2 === 0 ? "codex" : "claudecode",
+    sessionId: `session-${index}`,
+  },
   title: `Session ${index}`,
   directory: `/workspace/${index % 200}`,
   project_identity: {
@@ -39,10 +41,7 @@ const sessions = Array.from({ length: sessionCount }, (_, index) => ({
   },
 }));
 const changes = Array.from({ length: changeCount }, (_, index) => ({
-  reference: {
-    agentName: index % 2 === 0 ? "codex" : "claude",
-    sessionId: sessions[index * 2].id,
-  },
+  reference: sessions[index * 2].reference,
   session: {
     ...sessions[index * 2],
     time_updated: sessionCount + index + 1,

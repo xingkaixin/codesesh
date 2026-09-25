@@ -74,7 +74,7 @@ pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail>
         ),
     })
 }
-fn message(value: core::Message) -> Result<wire::WireMessage> {
+pub(super) fn message(value: core::Message) -> Result<wire::WireMessage> {
     Ok(wire::WireMessage {
         id: value.id,
         role: value.role,

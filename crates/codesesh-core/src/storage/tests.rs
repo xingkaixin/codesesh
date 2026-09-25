@@ -319,3 +319,28 @@ fn detail_visitor_streams_messages_and_stops_before_reading_the_next_row() {
     });
     assert_eq!(result.err().unwrap().to_string(), "consumer disconnected");
 }
+
+#[test]
+fn json_index_rejects_a_stale_baseline_without_publishing_rows_or_markers() {
+    let root = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    let baseline = cache.json_baseline().unwrap();
+    let mut first = vec![source(root.path(), "current")];
+    cache.publish(&mut first).unwrap();
+    let mut stale = vec![source(root.path(), "stale")];
+    assert!(
+        !cache
+            .apply_json_index(
+                &mut stale,
+                &[],
+                &[("codex".into(), "stale-inventory".into())],
+                &baseline.revision
+            )
+            .unwrap()
+    );
+    let after = cache.json_baseline().unwrap();
+    assert_eq!(after.heads.len(), 1);
+    assert_eq!(after.heads[0].reference, first[0].head.reference);
+    assert!(after.fingerprints.is_empty());
+    assert!(stale[0].detail.message_cursor.is_none());
+}

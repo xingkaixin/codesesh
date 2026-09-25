@@ -93,8 +93,7 @@ export type ReferencedSessionHead = Omit<PublicReferencedSessionHead, "session">
   session: SessionHead;
 };
 
-export type SessionDetail = WireSessionDetail &
-  Partial<Pick<RuntimeSessionHead, Exclude<InternalSessionHeadField, "model_usage">>>;
+export type SessionDetail = WireSessionDetail;
 
 export type IdentifiedSessionDetail = SessionDetail &
   Required<Pick<SessionDetail, "project_identity">>;

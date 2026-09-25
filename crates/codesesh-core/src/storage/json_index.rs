@@ -84,7 +84,7 @@ impl Cache {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(query);
         let mut query = transaction.prepare(
-            "SELECT agent_name,session_id,source_path FROM sessions WHERE publication_id IS NULL",
+            "SELECT agent_name,session_id,source_path FROM sessions WHERE publication_id IS NULL AND source_path IS NOT NULL",
         )?;
         let source_paths = query
             .query_map([], |row| {
