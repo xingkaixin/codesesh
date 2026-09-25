@@ -377,7 +377,8 @@ impl Runtime {
                     break;
                 }
                 self.report(&source.name, "scanning", None).await;
-                let permit = tokio::select! { permit = scans.clone().acquire_owned() => match permit { Ok(permit) => permit, Err(_) => return }, _ = shutdown.changed() => return };
+                // Keep parsed batches within the same concurrency bound until publication finishes.
+                let _permit = tokio::select! { permit = scans.clone().acquire_owned() => match permit { Ok(permit) => permit, Err(_) => return }, _ = shutdown.changed() => return };
                 let scan = source.scan.clone();
                 let scan_request = ScanRequest {
                     changed_paths: changed_paths.take(),
@@ -385,7 +386,6 @@ impl Runtime {
                     cancellation: cancellation.clone(),
                 };
                 let result = tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
                     scan_request.cancellation.check()?;
                     scan(scan_request)
                 })
