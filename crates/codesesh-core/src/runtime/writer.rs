@@ -1,7 +1,11 @@
 use super::{Cancellation, Event, ScanBatch, ScanStatus};
 use crate::{contract::SessionHead, storage::Cache};
 use anyhow::Result;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 pub(super) enum Command {
@@ -44,6 +48,7 @@ pub(super) fn run(
             return;
         }
     }
+    let mut last_reclaim = Instant::now();
     while let Some(command) = commands.blocking_recv() {
         match command {
             Command::Publish {
@@ -109,6 +114,12 @@ pub(super) fn run(
                     Some(ticket) => ticket.with_current(publish),
                     None => publish(),
                 };
+                let complete = batch.complete;
+                drop(batch);
+                if complete || last_reclaim.elapsed() >= Duration::from_secs(1) {
+                    release_unused_memory();
+                    last_reclaim = Instant::now();
+                }
                 let _ = response.send(result);
             }
             Command::Status {
@@ -135,6 +146,19 @@ pub(super) fn run(
                 let _ = response.send(result);
                 break;
             }
+        }
+    }
+}
+
+fn release_unused_memory() {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe extern "C" {
+            fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize;
+        }
+        // NULL selects all allocator zones; zero asks to release unused pages after batch data is dropped.
+        unsafe {
+            malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
         }
     }
 }

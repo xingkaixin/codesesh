@@ -388,45 +388,8 @@ fn internal(value: &Value) -> bool {
     )
 }
 
-static CLEANUP: LazyLock<Vec<(Regex, Regex, Regex)>> = LazyLock::new(|| {
-    [
-        "command-message",
-        "command-name",
-        "local-command-caveat",
-        "local-command-stdout",
-        "system-reminder",
-    ]
-    .iter()
-    .map(|tag| {
-        (
-            Regex::new(&format!(
-                r"(?is)(^|\r?\n)[ \t]*<{tag}\b[^>]*>.*?</{tag}>[ \t]*(?:\r?\n|$)"
-            ))
-            .unwrap(),
-            Regex::new(&format!(r"(?is)<{tag}\b[^>]*>.*?</{tag}>")).unwrap(),
-            Regex::new(&format!(r"(?is)\n*<{tag}\b[^>]*>.*$")).unwrap(),
-        )
-    })
-    .collect()
-});
-static LOOSE_TAG: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)</?(?:command-message|command-name|local-command-caveat|local-command-stdout|system-reminder|command-args)\b[^>]*>").unwrap()
-});
-
 fn clean(text: &str) -> String {
-    let mut text = text.to_owned();
-    if text.contains('<') && LOOSE_TAG.is_match(&text) {
-        for (line, block, open) in CLEANUP.iter() {
-            for (pattern, replacement) in [(line, "$1"), (block, ""), (open, "")] {
-                if let std::borrow::Cow::Owned(updated) = pattern.replace_all(&text, replacement) {
-                    text = updated;
-                }
-            }
-        }
-        if let std::borrow::Cow::Owned(updated) = LOOSE_TAG.replace_all(&text, "") {
-            text = updated;
-        }
-    }
+    let text = super::message_text::strip_tags(text);
     static TRAILING_SPACE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?m)[ \t]+(\r?$)").unwrap());
     static TRAILING_LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:\r?\n)+$").unwrap());

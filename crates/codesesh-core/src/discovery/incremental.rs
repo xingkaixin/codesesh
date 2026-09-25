@@ -32,8 +32,10 @@ pub struct AgentScanner {
     startup_from: Option<f64>,
     startup_to: Option<f64>,
     target: Option<crate::contract::SessionReference>,
-    baseline:
-        HashMap<crate::contract::SessionReference, (crate::contract::SessionHead, Option<PathBuf>)>,
+    baseline: HashMap<
+        crate::contract::SessionReference,
+        (Option<crate::contract::SessionReference>, Option<PathBuf>),
+    >,
     rejected: Arc<AtomicBool>,
     cursor: agents::cursor::CursorSync,
     opencode: Option<DatabaseSnapshot>,
@@ -201,7 +203,10 @@ impl AgentScanner {
         for session in &delta.upserts {
             self.baseline.insert(
                 session.head.reference.clone(),
-                (session.head.clone(), Some(session.source.clone())),
+                (
+                    session.head.parent_reference.clone(),
+                    Some(session.source.clone()),
+                ),
             );
         }
         self.durable_references = self.baseline.keys().cloned().collect();
@@ -396,7 +401,7 @@ impl AgentScanner {
             current = self
                 .baseline
                 .get(reference)
-                .and_then(|(head, _)| head.parent_reference.as_ref());
+                .and_then(|(parent, _)| parent.as_ref());
         }
         false
     }
@@ -705,7 +710,10 @@ impl AgentScanner {
             )?;
             self.baseline.insert(
                 head.reference.clone(),
-                (head.clone(), source.as_ref().map(PathBuf::from)),
+                (
+                    head.parent_reference.clone(),
+                    source.as_ref().map(PathBuf::from),
+                ),
             );
             if let Some(source) = source {
                 let attachments = if head.reference.agent_name == "dsh" {

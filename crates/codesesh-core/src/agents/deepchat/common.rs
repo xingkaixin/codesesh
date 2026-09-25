@@ -187,39 +187,9 @@ pub fn add_stats(
 pub fn clean(text: &str) -> String {
     use regex::Regex;
     use std::sync::LazyLock;
-    static BLOCKS: LazyLock<Vec<(Regex, Regex, Regex)>> = LazyLock::new(|| {
-        [
-            "command-message",
-            "command-name",
-            "local-command-caveat",
-            "local-command-stdout",
-            "system-reminder",
-        ]
-        .iter()
-        .map(|tag| {
-            (
-                Regex::new(&format!(
-                    r"(?is)(^|\r?\n)[ \t]*<{tag}\b[^>]*>.*?</{tag}>[ \t]*(?:\r?\n|$)"
-                ))
-                .unwrap(),
-                Regex::new(&format!(r"(?is)<{tag}\b[^>]*>.*?</{tag}>")).unwrap(),
-                Regex::new(&format!(r"(?is)\n*<{tag}\b[^>]*>.*$")).unwrap(),
-            )
-        })
-        .collect()
-    });
-    static LOOSE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)</?(?:command-message|command-name|local-command-caveat|local-command-stdout|system-reminder|command-args)\b[^>]*>").unwrap()
-    });
     static SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)[ \t]+(\r?$)").unwrap());
     static LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:\r?\n)+$").unwrap());
-    let mut text = text.to_owned();
-    for (line, block, open) in BLOCKS.iter() {
-        text = line.replace_all(&text, "$1").into_owned();
-        text = block.replace_all(&text, "").into_owned();
-        text = open.replace_all(&text, "").into_owned();
-    }
-    let text = LOOSE.replace_all(&text, "");
+    let text = super::super::message_text::strip_tags(text);
     let text = SPACE.replace_all(&text, "$1");
     let text = LINES.replace_all(&text, "");
     if text.trim().is_empty() {

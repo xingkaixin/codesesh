@@ -9,6 +9,7 @@ pub mod grok;
 mod jsonl;
 pub mod kimi;
 pub mod kimi_code;
+mod message_text;
 pub mod minimax_code;
 pub mod opencode;
 pub mod pi;
