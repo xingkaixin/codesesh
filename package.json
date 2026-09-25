@@ -37,7 +37,11 @@
     "bench:session-index": "pnpm --filter @codesesh/core build && node scripts/benchmark-session-index.mjs",
     "check:coverage-scopes": "node scripts/critical-coverage.mjs",
     "test:coverage": "pnpm check:coverage-scopes && vitest run --coverage",
-    "deploy:www": "pnpm --filter @codesesh/core build && pnpm --filter @codesesh/www deploy:cf"
+    "deploy:www": "pnpm --filter @codesesh/core build && pnpm --filter @codesesh/www deploy:cf",
+    "build:rust": "cargo build --release --locked",
+    "test:rust:slice": "node --test tests/backend-contract/slice.test.mjs",
+    "test:rust:browser": "node --test tests/backend-contract/browser-slice.test.mjs",
+    "generate:rust-contract": "cargo run --locked --example export_contract && oxfmt --write crates/codesesh-core/bindings"
   },
   "devDependencies": {
     "@codesesh/core": "workspace:*",

@@ -8,8 +8,8 @@
 
 | 阶段 | 状态 | 证据与剩余项 |
 | --- | --- | --- |
-| P0 | 本地基础验收通过 | 固定 npm 参考、依赖锁、CLI/HTTP/SSE 测试和 4 场景基线已建立；跨平台由 PR CI 验证 |
-| P1 | 待实施 | Rust crate、Codex 端到端、DTO 生成和浏览器验收 |
+| P0 | 基础验收通过 | 固定参考、进程契约及基线已建立；`a79f890c` 的三 OS × Node 22/24、smoke、制品检查全部通过；平台包权限留待 P6 核实 |
+| P1 | 实施中 | 两 crate、Codex 文本路径、schema 34 创建、DTO 生成、CLI/list/detail/cursor 差分和 React 详情页本地通过；持久缓存接线与三 OS 检查尚待完成 |
 | P2 | 待实施 | 13 个 Agent 的完整功能矩阵 |
 | P3 | 待实施 | schema 34/state 3、搜索、统计、价格和用户状态 |
 | P4 | 待实施 | 持续同步、事务发布、快照与 SSE |
@@ -68,3 +68,31 @@ P0 仅改动迁移验证工具、CI 与说明，没有修改后端业务行为�
 当前 README 说明三种 OS 的 CI，没有声明额外 CPU 架构。首批原生安装矩阵按计划为 macOS arm64/x64、Linux x64、Windows x64；其余架构不得在文档中宣称已覆盖。Linux 最低 glibc、额外架构和 npm 平台包实际权限在制品实施时核实。
 
 主包继续使用 `codesesh`。当前仅固定已发布参考，不创建平台包或执行 registry 发布。
+
+## P1 首个实现切面
+
+Rust 工具链固定为 1.90.0。两个 crate 和 Cargo.lock 已建立；使用 Axum、Tokio、rusqlite bundled SQLite、Serde、ts-rs。生成的 DTO 当前位于 Rust Core 的 bindings 目录，尚未替换现有浏览器契约包。
+
+已验证：
+
+- 同一 Codex fixture 的 CLI JSON、公开列表、详情和消息游标与固定 Node 1.0.12 完整相等。
+- 现有 React 页面直接读取 Rust 详情，显示标题、中文/emoji 用户消息和 assistant 正文，没有页面 JavaScript 异常。
+- 未授权请求、非法 Host、跨源 Origin 被拒绝。
+- schema 34 的 SQLite 建库、写入、关闭/重新打开、FTS5 与 trigram 查询通过；注入第二个 Session 的事务失败时，前一个 Session 不残留，也不暴露未提交游标。
+
+当前限制必须保留在验收状态中：CLI 仍使用内存 SQLite，文件缓存的真实启动/恢复路径尚未接线；只接受显式 CODEX_HOME 与 `--agent codex`。尚未支持用量、计划、复杂工具/子会话、完整 Project Identity 和 Smart Tags。非 Codex Agent、其他 API、分页和后台刷新尚未迁移。浏览器详情测试不代表 Dashboard、侧栏项目、书签或实时功能通过；这些请求目前明确返回 501。Node 仍为默认实现。
+
+复现首个切面：
+
+```bash
+pnpm build
+pnpm prepare:reference
+cargo build --release --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+pnpm generate:rust-contract
+pnpm test:rust:slice
+pnpm test:rust:browser
+```
+
+新增独立 Rust 三 OS CI，不乘以 Node 版本矩阵。跨平台状态以包含该实现的提交为准，不能沿用 P0 通过结果。

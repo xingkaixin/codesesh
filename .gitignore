@@ -36,3 +36,6 @@ skills-lock.json
 
 # worktree
 .worktree
+
+# Rust
+/target/

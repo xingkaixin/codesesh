@@ -359,6 +359,13 @@ pnpm test:coverage # includes pnpm check:coverage-scopes
 pnpm test:migration
 pnpm prepare:reference
 pnpm test:backend:compare
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+cargo build --release --locked
+pnpm test:rust:slice
+pnpm generate:rust-contract
+pnpm test:rust:browser
 pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
 pnpm exec playwright install-deps chromium
