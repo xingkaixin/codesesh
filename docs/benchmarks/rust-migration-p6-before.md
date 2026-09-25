@@ -191,3 +191,9 @@
 - large-single-file listP95WallMs：Rust/Node 1.415，需要定位。
 - large-single-file searchP95WallMs：Rust/Node 2.347，需要定位。
 - large-single-file searchUnicodeP95WallMs：Rust/Node 1.741，需要定位。
+
+## 连接池优化前的中间候选
+
+JSON 的 followUpCandidates 保留 SHA `abce880aeebb330838a35a8eab7e4a816d003487fa695fd71cb6270bd3f5b9f1` 的完整 5 轮主测、5 轮额外端点与发布暂态诊断。暖 JSON 已改善至 19/33/19ms；small 搜索 p95 3.93→7.24ms、projects 1.68→3.17ms、dashboard 1.92→3.85ms 的回退均保留。
+
+主测 3 次首次 body 可见时的完整摘要差异没有删除。独立大文件配对复现证明 Node 在 4800.448ms 已返回 10001 条消息但 head 时间仍旧，4869.760ms 收敛后全 payload 与 Rust 相同。最终评估分别记录首次消息可见与 head 发布完成时间，并在后者执行完整等价比较。诊断 3 轮大文件、1 轮混合历史及额外端点 5 轮稳定发布比较均无差异。

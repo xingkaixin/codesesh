@@ -29,6 +29,7 @@ const samples = Number(args.samples ?? 5),
   warmups = Number(args.warmups ?? 1),
   requests = Number(args.requests ?? 30);
 assert.ok(samples > 0 && requests > 0 && warmups >= 0);
+const extraEndpoints = args["extra-endpoints"] === "true";
 const output = resolve(args.output ?? "docs/benchmarks/rust-migration-p6-current.json");
 const commands = {
   node: [
@@ -421,6 +422,13 @@ async function web(fixture, config, command, hot = false, traffic = false) {
       search: "/api/search?q=benchmark-needle",
       searchUnicode: "/api/search?q=%E6%90%9C%E7%B4%A2",
       detail: fixture.detailPath,
+      ...(extraEndpoints
+        ? {
+            searchEmoji: "/api/search?q=%F0%9F%94%8E",
+            projects: "/api/projects",
+            dashboard: "/api/dashboard?from=2026-09-01&to=2026-09-02&timeZone=UTC",
+          }
+        : {}),
     };
     const timings = {};
     const payloads = {};
@@ -474,6 +482,18 @@ async function web(fixture, config, command, hot = false, traffic = false) {
       60000,
     );
     const appendVisibleMs = performance.now() - appendStarted;
+    const settledAppend = await poll(
+      async () => {
+        const response = await request(server, fixture.detailPath);
+        return response.body.time_updated === epoch + 9999999 &&
+          response.body.messages.length === appended.messages.length
+          ? response.body
+          : false;
+      },
+      "append head publication",
+      60000,
+    );
+    const appendPublishedMs = performance.now() - appendStarted;
     return {
       httpReadyMs,
       firstUsableListMs,
@@ -481,8 +501,19 @@ async function web(fixture, config, command, hot = false, traffic = false) {
       timings,
       payloads,
       appendVisibleMs,
-      appendDigest: digest(appended),
-      rawPayloads: { ...rawPayloads, append: appended },
+      appendPublishedMs,
+      firstAppend: {
+        timeUpdated: appended.time_updated,
+        messageCount: appended.messages.length,
+        digest: digest(appended),
+      },
+      publishedAppend: {
+        timeUpdated: settledAppend.time_updated,
+        messageCount: settledAppend.messages.length,
+        digest: digest(settledAppend),
+      },
+      appendDigest: digest(settledAppend),
+      rawPayloads: { ...rawPayloads, append: settledAppend },
       steadyRssBytes: percentile(steady.map((s) => s.rssBytes).filter(Boolean), 0.5),
       sampledPeakRssBytes: rssSamples.length
         ? Math.max(...rssSamples.map((s) => s.rssBytes))
@@ -558,7 +589,38 @@ const toolchain = {
   cargo: (await exec("cargo", ["--version"])).stdout.trim(),
 };
 const sqlite = await sqliteMetadata();
+const packaging = {};
+for (const path of [
+  "artifacts/backend-reference/codesesh-1.0.12.tgz",
+  "artifacts/rust-packaging/aarch64-apple-darwin/codesesh-1.0.12.tgz",
+  "artifacts/rust-packaging/aarch64-apple-darwin/codesesh-cli-darwin-arm64-1.0.12.tgz",
+  "artifacts/rust-packaging/aarch64-apple-darwin/codesesh-1.0.12-aarch64-apple-darwin.tar.gz",
+]) {
+  try {
+    packaging[path] = { bytes: statSync(path).size, sha256: sha(readFileSync(path)) };
+  } catch {
+    packaging[path] = null;
+  }
+}
+packaging.nativeBinaryBytes = statSync(commands.rust[0]).size;
+packaging.embeddedWebInputBytes = directoryBytes(resolve("apps/web/dist"));
+packaging.nodeReferenceInstalledDependenciesBytes = directoryBytes(
+  resolve("artifacts/backend-reference/registry/node_modules"),
+);
+try {
+  packaging.manifest = JSON.parse(
+    readFileSync("artifacts/rust-packaging/aarch64-apple-darwin/manifest.json", "utf8"),
+  );
+} catch {
+  packaging.manifest = null;
+}
+packaging.matchesCandidate =
+  packaging.manifest?.binarySha256 === sha(readFileSync(commands.rust[0]));
+packaging.scope =
+  "Darwin arm64 artifacts when present. Node tarball excludes dependency downloads and Node runtime; Rust npm installation downloads main plus platform packages. Installed Node dependency tree bytes exclude Node runtime and filesystem allocation overhead.";
 const report = {
+  evaluatorArguments: process.argv.slice(2),
+  packaging,
   generatedAt: new Date().toISOString(),
   stage: args.stage ?? "interim",
   environment: {
@@ -587,13 +649,13 @@ const report = {
     osPageCacheCleared: false,
     coldDefinition: "Application SQLite cache removed; OS filesystem cache is not cleared",
     execution:
-      "Paired sequential runs on identical source files; backend order alternates per iteration. Other system/agent workloads are not controlled.",
+      "Paired sequential runs on identical source files; backend order alternates per iteration. Team builds and heavy tests are paused during formal measurement; unrelated system workloads are not controlled.",
     timings:
       "performance.now wall clock; HTTP TTFB means fetch headers resolved; complete includes response body read, excludes JSON parse",
     bodyBytes:
       "Decoded UTF-8 response body bytes after fetch automatic decompression; not wire transfer bytes",
     appendVisibility:
-      "Wall time from synchronous append until 25 ms polling observes the marker in the full detail response; includes observer request/body/JSON work",
+      "Wall time from synchronous append until 25 ms polling observes the marker in the full detail response; includes observer request/body/JSON work. appendPublishedMs separately waits for the expected head timestamp and full message count before full-payload parity",
     cliCpu: "/usr/bin/time user+system seconds; not wall time",
     cliPeakRss: "/usr/bin/time OS high-water RSS for one-shot process",
     webPeakRss: "Sampled ps RSS every 200 ms: observed maximum, not OS high-water RSS",
@@ -607,8 +669,13 @@ const report = {
       "Actual physical/logical write volume and parser/query counts not instrumented; cacheBytes is final on-disk cache size only",
     unmeasured: [
       "Browser first interactive paint",
-      "Packaged installer download/decompression size",
-      "Per-query query plan",
+      "Installer decompression time and transitive Node dependency download bytes",
+      "Per-query query plan and physical read/write counters",
+      "Separate SQLite-only initial-index workload",
+      "No-op refresh parser/query counts and burst-change memory recovery",
+      "Backfill queue depth and concurrent append latency during backfill",
+      "Dashboard/project latency on private production histories",
+      "Cold OS-page-cache search and detail latency",
     ],
     equivalence:
       "Full canonical JSON digests for CLI, list, search, Unicode search, detail and appended detail; no fields removed. Dynamic cursors can trigger reported mismatches; they are not silently dropped.",
@@ -666,6 +733,8 @@ for (const config of configurations) {
           clearCache(fixture);
           const version = await invocation(fixture, commands[backend], ["--version"]);
           sample.version = { ...version };
+          if (extraEndpoints)
+            sample.help = await invocation(fixture, commands[backend], ["--help"]);
           const cold = await invocation(fixture, commands[backend], [
             "--json",
             "--agent",
@@ -769,6 +838,9 @@ for (const config of configurations) {
   const node = rows.filter((s) => s.backend === "node"),
     rust = rows.filter((s) => s.backend === "rust");
   const metrics = {
+    versionWallMs: (s) => s.version.wallMs,
+    ...(extraEndpoints ? { helpWallMs: (s) => s.help.wallMs } : {}),
+    idleCpuMs: (s) => s.coldWeb.idleCpuMs,
     coldJsonWallMs: (s) => s.coldJson.wallMs,
     coldJsonCpuMs: (s) =>
       s.coldJson.userCpuMs === null ? null : s.coldJson.userCpuMs + s.coldJson.systemCpuMs,
@@ -782,6 +854,7 @@ for (const config of configurations) {
     steadyRssBytes: (s) => s.coldWeb.steadyRssBytes,
     sampledPeakRssBytes: (s) => s.coldWeb.sampledPeakRssBytes,
     appendVisibleMs: (s) => s.coldWeb.appendVisibleMs,
+    appendPublishedMs: (s) => s.coldWeb.appendPublishedMs,
   };
   for (const [metric, get] of Object.entries(metrics)) {
     const a = percentile(
@@ -797,8 +870,8 @@ for (const config of configurations) {
       metric,
       nodeValue: a,
       rustValue: b,
-      rustOverNode: a && b ? b / a : null,
-      regressionScreen: a && b ? b / a > 1.2 : null,
+      rustOverNode: a !== null && a !== 0 && b !== null ? b / a : null,
+      regressionScreen: a !== null && a !== 0 && b !== null ? b / a > 1.2 : null,
     });
   }
   if (config.name === "mixed-history") {
@@ -824,15 +897,21 @@ for (const config of configurations) {
           metric: `backfill${endpoint}P${p * 100}WallMs`,
           nodeValue: a,
           rustValue: b,
-          rustOverNode: a && b ? b / a : null,
+          rustOverNode: a !== null && a !== 0 && b !== null ? b / a : null,
           observationsPerBackend: { node: successful(node).length, rust: successful(rust).length },
           httpStatuses: { node: states(node), rust: states(rust) },
-          regressionScreen: a && b ? b / a > 1.2 : null,
+          regressionScreen: a !== null && a !== 0 && b !== null ? b / a > 1.2 : null,
         });
       }
     }
   }
-  for (const endpoint of ["list", "search", "searchUnicode", "detail"]) {
+  for (const endpoint of [
+    "list",
+    "search",
+    "searchUnicode",
+    "detail",
+    ...(extraEndpoints ? ["searchEmoji", "projects", "dashboard"] : []),
+  ]) {
     for (const p of [0.5, 0.95]) {
       const values = (group) =>
         group.flatMap((s) => s.coldWeb.timings[endpoint].samples.map((v) => v.wallMs));
@@ -843,9 +922,9 @@ for (const config of configurations) {
         metric: `${endpoint}P${p * 100}WallMs`,
         nodeValue: a,
         rustValue: b,
-        rustOverNode: a && b ? b / a : null,
+        rustOverNode: a !== null && a !== 0 && b !== null ? b / a : null,
         observationsPerBackend: { node: values(node).length, rust: values(rust).length },
-        regressionScreen: a && b ? b / a > 1.2 : null,
+        regressionScreen: a !== null && a !== 0 && b !== null ? b / a > 1.2 : null,
       });
     }
   }
@@ -859,7 +938,7 @@ const lines = [
   "",
   `机器：${report.environment.cpu} / ${report.environment.os} ${report.environment.release} / ${report.environment.arch}；Node ${process.version}。每场景预热 ${warmups} 次，正式 ${samples} 次；每轮每端点 ${requests} 个请求。`,
   "",
-  "冷启动仅指删除应用 SQLite 缓存，未清空 OS 页缓存。测试期间其他 Agent/系统负载未隔离。Web RSS 峰值为 200ms 采样最大值；CLI 峰值来自 OS high-water。时间均为墙钟；CPU 原始样本单独保存。",
+  "冷启动仅指删除应用 SQLite 缓存，未清空 OS 页缓存。正式测量期间暂停团队构建与重测试，系统后台负载未隔离。Web RSS 峰值为 200ms 采样最大值；CLI 峰值来自 OS high-water。时间均为墙钟；CPU 原始样本单独保存。",
   "",
   `完整记录及原始样本：[JSON](${output.split(/[\\/]/).at(-1)})。完整 JSON 等价错误及执行错误共 ${report.errors.length} 项，保留在 errors；有错误时本报告不构成验收通过。`,
   "",
@@ -872,7 +951,15 @@ const lines = [
   "",
   "`regressionScreen` 仅标记比值 > 1.2 供定位，不是新设的验收阈值。计划未约定统一加速倍数；不得据此忽略较小回退。大文件详情样本包含响应体接收，未计 JSON.parse；端点 p95 使用所有请求样本。",
   "",
-  "未测项目：浏览器可交互时间、最终安装制品下载/解压体积、查询计划、物理写入量及解析次数。混合历史另有独立清缓存 backfill 流量场景，duringBackfill 记录每次list/search/detail延迟与HTTP状态；未ready详情保留503。SQLite 写入引擎版本来自各后端缓存文件头；Node编译选项读取固定模块，Rust选项读取本机release静态构建归档代理，不声称来自安装后的CLI。",
+  "未测项目：浏览器可交互时间、安装解压时间及Node完整传递依赖下载体积、查询计划、物理读写量、解析次数、SQLite独立首次索引、监听突发变化后的内存恢复、backfill队列深度和其中并发追加延迟，以及冷OS页缓存下的查询。混合历史另有独立清缓存 backfill 流量场景，duringBackfill 记录每次list/search/detail延迟与HTTP状态；未ready详情保留503。SQLite 写入引擎版本来自各后端缓存文件头；Node编译选项读取固定模块，Rust选项读取本机release静态构建归档代理，不声称来自安装后的CLI。",
+  "",
+  "## 制品与覆盖边界",
+  "",
+  `制品记录在 JSON packaging：原生二进制 ${report.packaging.nativeBinaryBytes} bytes，内嵌 Web 构建输入 ${report.packaging.embeddedWebInputBytes} bytes；manifest 与候选 SHA 一致：${report.packaging.matchesCandidate}。Node 主包不含依赖与Node运行时，不能直接与Rust平台包比较完整安装成本。`,
+  "",
+  "appendVisibleMs 是首次消息 body 可见；appendPublishedMs 还要求 head.time_updated 达到追加事件时间且消息数一致。firstAppend 与 publishedAppend 原样记录两阶段 head、条数和完整摘要；完整等价断言在后者执行。诊断报告保留了 Node 首次 body 已新但 head 随后才发布的暂态，不对时间字段归一化。",
+  "",
+  "Dashboard 请求覆盖 2026-09-01 至 2026-09-02 UTC，包含 activeHours；emoji查询针对fixture真实存在的 🔎。这是固定合成分布上的响应指标，不覆盖所有Agent或真实用户数据分布。",
   "",
   "## 错误与回退",
   "",
