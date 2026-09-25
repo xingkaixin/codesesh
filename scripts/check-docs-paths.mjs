@@ -15,7 +15,7 @@ export const CHECKED_DOCUMENTS = [
   "CONTEXT.md",
   "README.md",
   "README_CN.md",
-  "packages/cli/README.md",
+  "crates/codesesh-cli/README.md",
   "docs/PRD.md",
   "docs/architecture.md",
   "docs/performance.md",
@@ -25,7 +25,7 @@ export const CHECKED_DOCUMENTS = [
 ];
 
 /** Directories a repository path must start with to be checked. */
-const REPO_ROOTS = ["packages/", "apps/", "docs/", "scripts/", ".github/"];
+const REPO_ROOTS = ["packages/", "crates/", "apps/", "docs/", "scripts/", ".github/"];
 
 const FENCED_CODE_BLOCK = /```[^\n]*\n([\s\S]*?)```/g;
 

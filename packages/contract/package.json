@@ -1,0 +1,41 @@
+{
+  "name": "@codesesh/contract",
+  "version": "1.0.12",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./test-fixtures": {
+      "types": "./dist/test-fixtures.d.ts",
+      "import": "./dist/test-fixtures.mjs",
+      "require": "./dist/test-fixtures.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run typecheck && tsup && tsc6 --emitDeclarationOnly",
+    "dev": "tsup --watch",
+    "clean": "node ../../scripts/clean.mjs",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "format": "oxfmt --write \"**/*.{js,mjs,cjs,ts,tsx}\"",
+    "format:check": "oxfmt --check \"**/*.{js,mjs,cjs,ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@typescript/native": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

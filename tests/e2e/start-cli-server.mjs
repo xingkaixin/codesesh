@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
+import { nativeBinary } from "../../scripts/lib/native-command.mjs";
 
 const startupUrlPath = process.env.CODESESH_E2E_STARTUP_URL_PATH;
 if (!startupUrlPath) throw new Error("Missing CODESESH_E2E_STARTUP_URL_PATH");
 
 rmSync(startupUrlPath, { force: true });
 
-const child = spawn(process.execPath, ["packages/cli/dist/index.js", ...process.argv.slice(2)], {
+const child = spawn(nativeBinary, process.argv.slice(2), {
   env: process.env,
   stdio: ["inherit", "pipe", "inherit"],
 });

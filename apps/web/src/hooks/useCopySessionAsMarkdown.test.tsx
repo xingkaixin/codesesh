@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
+import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../lib/query-client";

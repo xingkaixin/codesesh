@@ -2,7 +2,7 @@ import {
   getProjectIdentityKey,
   isProjectIdentityKind,
   type ProjectIdentityRef,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 import type { ApiProjectGroup } from "./api";
 
 // Identity semantics come from the contract; this module only turns them into

@@ -45,9 +45,9 @@ export type {
   ApiProjectAgentStat,
   BookmarkRecord,
   BookmarkView,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 
-export { SMART_TAGS } from "@codesesh/core/contract";
+export { SMART_TAGS } from "@codesesh/contract";
 
 import type {
   FileActivityKind,
@@ -55,7 +55,7 @@ import type {
   ProjectIdentityRef,
   SessionHead,
   SmartTag,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 
 export interface SearchRequestOptions {
   agent?: string;

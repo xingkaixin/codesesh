@@ -4,7 +4,7 @@ import {
   parseCalendarDayBoundary,
   startOfCalendarDay,
   toCalendarDayKey,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 import type { AppConfig } from "./api";
 
 export type TimeWindow = AppConfig["window"];

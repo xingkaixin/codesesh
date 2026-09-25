@@ -1,5 +1,5 @@
 import { expect, test } from "./test-fixtures.js";
-import { AGENT_CATALOG } from "@codesesh/core/contract";
+import { AGENT_CATALOG } from "@codesesh/contract";
 
 const siteUrl = "https://codesesh.xingkaixin.me";
 const supportedAgents = AGENT_CATALOG.map(({ displayName }) => displayName);

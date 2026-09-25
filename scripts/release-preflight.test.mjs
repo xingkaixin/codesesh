@@ -1,5 +1,13 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { VERSIONED_MANIFESTS, checkReleaseVersions, versionFromTag } from "./release-preflight.mjs";
+import {
+  VERSIONED_MANIFESTS,
+  checkReleaseVersions,
+  versionFromTag,
+  readManifests,
+} from "./release-preflight.mjs";
 
 function manifests(versions) {
   return VERSIONED_MANIFESTS.map((path, index) => ({
@@ -37,7 +45,7 @@ describe("CS-149: release preflight", () => {
   it("names the manifest that drifted", () => {
     const result = checkReleaseVersions({
       tag: "v1.2.3",
-      manifests: manifests(["1.2.3", "1.2.3", "1.2.2", "1.2.3"]),
+      manifests: manifests(["1.2.3", "1.2.2", "1.2.3"]),
     });
 
     expect(result.ok).toBe(false);
@@ -63,7 +71,7 @@ describe("CS-149: release preflight", () => {
     expect(
       checkReleaseVersions({
         tag: null,
-        manifests: manifests(["1.2.3", "1.2.3", "1.2.3", "0.9.0"]),
+        manifests: manifests(["1.2.3", "1.2.3", "0.9.0"]),
       }).problems,
     ).toEqual(["apps/www/package.json is 0.9.0, expected 1.2.3"]);
   });
@@ -71,9 +79,31 @@ describe("CS-149: release preflight", () => {
   it("rejects a non-semver manifest version", () => {
     const result = checkReleaseVersions({
       tag: "v1.2.3",
-      manifests: manifests(["1.2.3", "next", "1.2.3", "1.2.3"]),
+      manifests: manifests(["next", "1.2.3", "1.2.3"]),
     });
 
-    expect(result.problems).toEqual(["packages/core/package.json has a non-semver version: next"]);
+    expect(result.problems).toEqual([
+      "packages/contract/package.json has a non-semver version: next",
+    ]);
   });
+});
+
+it("checks Cargo workspace version against browser and site manifests", () => {
+  const root = mkdtempSync(join(tmpdir(), "codesesh-versions-"));
+  try {
+    writeFileSync(
+      join(root, "Cargo.toml"),
+      '[workspace.package]\nversion = "1.2.4"\n\n[workspace.dependencies]\n',
+    );
+    for (const path of VERSIONED_MANIFESTS) {
+      mkdirSync(join(root, path, ".."), { recursive: true });
+      writeFileSync(join(root, path), JSON.stringify({ version: "1.2.3" }));
+    }
+    const result = checkReleaseVersions({ tag: "v1.2.3", manifests: readManifests(root) });
+    expect(result.problems).toEqual(["Cargo.toml is 1.2.4, expected 1.2.3"]);
+    writeFileSync(join(root, "Cargo.toml"), '[workspace.package]\n[package]\nversion = "1.2.3"\n');
+    expect(() => readManifests(root)).toThrow("workspace.package version");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

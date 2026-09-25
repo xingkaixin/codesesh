@@ -31,6 +31,7 @@ describe("CS-151: documentation path check", () => {
       [
         "Run `pnpm build` then read `packages/core/src/index.ts`.",
         "See `docs/architecture.md` and `apps/web/src/App.tsx`.",
+        "Backend: `crates/codesesh-core/src/lib.rs`.",
         "Data lives in `~/.claude/projects/**/*.jsonl`.",
         "Create `packages/core/src/agents/<youragent>.ts`.",
         "Sources match `packages/core/src/**/*.ts`.",
@@ -42,6 +43,7 @@ describe("CS-151: documentation path check", () => {
       "packages/core/src/index.ts",
       "docs/architecture.md",
       "apps/web/src/App.tsx",
+      "crates/codesesh-core/src/lib.rs",
     ]);
   });
 

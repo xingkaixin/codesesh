@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import type { DashboardActiveHours } from "@codesesh/core/contract";
+import type { DashboardActiveHours } from "@codesesh/contract";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { formatInt } from "../../lib/format";

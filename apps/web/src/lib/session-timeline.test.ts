@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionHead } from "@codesesh/core/contract";
+import type { SessionHead } from "@codesesh/contract";
 import {
   buildProjectTimeline,
   getProjectTimelinePage,

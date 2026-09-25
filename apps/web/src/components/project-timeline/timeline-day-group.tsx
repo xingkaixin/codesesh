@@ -4,7 +4,7 @@ import { t } from "../../i18n/translate";
  * One calendar day on the project timeline: a right-aligned day label plus the
  * day's session cards hanging off a single axis dot.
  */
-import type { SessionReference } from "@codesesh/core/contract";
+import type { SessionReference } from "@codesesh/contract";
 import type { AgentCatalog } from "../../lib/agents";
 import {
   isRowExpanded,

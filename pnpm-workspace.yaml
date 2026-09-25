@@ -10,14 +10,12 @@ catalog:
   "@tailwindcss/vite": ^4.3.3
   "@types/node": 22.20.4
   "@typescript/native": npm:typescript@^7.0.2
-  better-sqlite3: ^13.0.3
   tailwindcss: ^4.3.3
   tsup: ^8.5.1
   typescript: npm:@typescript/typescript6@^6.0.2
   vite: ^8.3.0
 
 allowBuilds:
-  better-sqlite3: true
   esbuild: true
   sharp: true
 minimumReleaseAge: 1440

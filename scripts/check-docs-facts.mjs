@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const FACT_SPECS = [
   { document: "README.md", fact: "agents" },
   { document: "README_CN.md", fact: "agents" },
-  { document: "packages/cli/README.md", fact: "agents" },
+  { document: "crates/codesesh-cli/README.md", fact: "agents" },
   { document: "apps/www/public/llms-full.txt", fact: "agents" },
   { document: "apps/www/public/llms.txt", fact: "agents" },
   { document: "apps/www/public/index.md", fact: "agents" },
@@ -15,7 +15,7 @@ const FACT_SPECS = [
   { document: "README.md", fact: "node-version" },
   { document: "README_CN.md", fact: "node-version" },
   { document: "apps/www/public/llms-full.txt", fact: "node-version" },
-  { document: "packages/cli/README.md", fact: "node-version" },
+  { document: "crates/codesesh-cli/README.md", fact: "node-version" },
   { document: "README.md", fact: "pnpm-version" },
   { document: "README_CN.md", fact: "pnpm-version" },
   { document: "apps/www/public/llms-full.txt", fact: "pnpm-version" },
@@ -41,10 +41,10 @@ export function readPnpmVersion(repoRoot) {
 }
 
 export function readMinimumNodeVersion(repoRoot) {
-  const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/cli/package.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const match = /^>=(\d+\.\d+\.\d+)$/.exec(manifest.engines?.node ?? "");
   if (!match) {
-    throw new Error("packages/cli/package.json engines.node must be an exact >=x.y.z version");
+    throw new Error("package.json engines.node must be an exact >=x.y.z version");
   }
   return match[1];
 }
@@ -55,7 +55,7 @@ export function readRequiredCiCommands(repoRoot) {
     workflow
       .split("\n")
       .map((line) => line.trim().replace(/^(?:-\s+)?run:\s*/, ""))
-      .filter((line) => /^(?:pnpm(?:\s|$)|node (?:packages|scripts)\/)/.test(line)),
+      .filter((line) => /^(?:(?:pnpm|cargo)(?:\s|$)|node (?:packages|scripts)\/)/.test(line)),
   );
 }
 
@@ -113,7 +113,7 @@ function parseDocumentedCiCommands(region) {
     region
       .split("\n")
       .map((line) => line.trim().replace(/\s+#.*$/, ""))
-      .filter((line) => /^(?:pnpm(?:\s|$)|node (?:packages|scripts)\/)/.test(line)),
+      .filter((line) => /^(?:(?:pnpm|cargo)(?:\s|$)|node (?:packages|scripts)\/)/.test(line)),
   );
 }
 
@@ -225,23 +225,21 @@ export function findDocumentationFactMismatches(repoRoot, coreFacts) {
   return mismatches;
 }
 
-async function loadCoreRepositoryFacts(repoRoot) {
-  const modulePath = join(repoRoot, "packages/core/dist/repository-facts.mjs");
-  if (!existsSync(modulePath)) {
-    throw new Error(
-      "Core repository facts are not built; run `pnpm --filter @codesesh/core build`",
-    );
+export function loadRepositoryFacts(repoRoot) {
+  const schema = readFileSync(join(repoRoot, "crates/codesesh-core/src/storage/mod.rs"), "utf8");
+  const versions = [...schema.matchAll(/^pub const CACHE_SCHEMA_VERSION: i64 = (\d+);$/gm)];
+  if (versions.length !== 1) {
+    throw new Error("Expected exactly one Rust CACHE_SCHEMA_VERSION constant");
   }
-  const module = await import(pathToFileURL(modulePath).href);
-  return module.getCoreRepositoryFacts();
+  const agents = JSON.parse(
+    readFileSync(join(repoRoot, "crates/codesesh-core/src/agents/catalog.json"), "utf8"),
+  );
+  return { cacheSchemaVersion: Number(versions[0][1]), agents };
 }
 
 async function main() {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const mismatches = findDocumentationFactMismatches(
-    repoRoot,
-    await loadCoreRepositoryFacts(repoRoot),
-  );
+  const mismatches = findDocumentationFactMismatches(repoRoot, loadRepositoryFacts(repoRoot));
 
   if (mismatches.length > 0) {
     console.error("Documentation repository facts are out of date:");

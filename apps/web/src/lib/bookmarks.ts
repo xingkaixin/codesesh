@@ -4,7 +4,7 @@ import {
   getSessionReferenceKey,
   normalizeSessionReference,
   type SessionReference,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 
 const LEGACY_BOOKMARK_STORAGE_KEY = "codesesh:bookmarks:v1";
 

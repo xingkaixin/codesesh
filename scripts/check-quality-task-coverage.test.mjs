@@ -35,14 +35,14 @@ describe("CS-173: quality task coverage", () => {
   it("rejects NONEXISTENT and missing Turbo tasks", () => {
     const dryRun = {
       tasks: [
-        { taskId: "@codesesh/core#lint", command: "oxlint src" },
+        { taskId: "@codesesh/contract#lint", command: "oxlint src" },
         { taskId: "@codesesh/www#lint", command: "<NONEXISTENT>" },
       ],
     };
 
     expect(
-      findTurboTaskGaps(dryRun, ["@codesesh/core", "@codesesh/www", "codesesh"], "lint"),
-    ).toEqual(["@codesesh/www#lint is <NONEXISTENT>", "codesesh#lint is missing"]);
+      findTurboTaskGaps(dryRun, ["@codesesh/contract", "@codesesh/www", "@codesesh/web"], "lint"),
+    ).toEqual(["@codesesh/www#lint is <NONEXISTENT>", "@codesesh/web#lint is missing"]);
   });
 
   it("keeps both standalone and Astro-aware tools in www commands", () => {
@@ -90,15 +90,16 @@ describe("CS-173: quality task coverage", () => {
     const scripts = {
       lint: "pnpm lint:root && turbo run lint",
       "lint:root":
-        "node scripts/check-import-cycles.mjs && oxlint scripts tests playwright.config.ts vitest.config.ts",
+        "node scripts/check-import-cycles.mjs && oxlint scripts tests crates/codesesh-cli/npm playwright.config.ts vitest.config.ts",
       "lint:fix": "pnpm lint:fix:root && turbo run lint:fix",
-      "lint:fix:root": "oxlint scripts tests playwright.config.ts vitest.config.ts --fix",
+      "lint:fix:root":
+        "oxlint scripts tests crates/codesesh-cli/npm playwright.config.ts vitest.config.ts --fix",
       format: "pnpm format:root && turbo run format",
       "format:root":
-        'oxfmt --write "scripts/**/*.{js,mjs,cjs,ts,tsx}" "tests/**/*.{js,mjs,cjs,ts,tsx}" playwright.config.ts vitest.config.ts',
+        'oxfmt --write "scripts/**/*.{js,mjs,cjs,ts,tsx}" "tests/**/*.{js,mjs,cjs,ts,tsx}" "crates/codesesh-cli/npm/**/*.{js,mjs,cjs,ts,tsx}" playwright.config.ts vitest.config.ts',
       "format:check": "pnpm format:check:root && turbo run format:check",
       "format:check:root":
-        'oxfmt --check "scripts/**/*.{js,mjs,cjs,ts,tsx}" "tests/**/*.{js,mjs,cjs,ts,tsx}" playwright.config.ts vitest.config.ts',
+        'oxfmt --check "scripts/**/*.{js,mjs,cjs,ts,tsx}" "tests/**/*.{js,mjs,cjs,ts,tsx}" "crates/codesesh-cli/npm/**/*.{js,mjs,cjs,ts,tsx}" playwright.config.ts vitest.config.ts',
     };
 
     expect(findCommandCoverageGaps(scripts, ROOT_TASK_REQUIREMENTS, "codesesh-monorepo")).toEqual(
@@ -109,7 +110,7 @@ describe("CS-173: quality task coverage", () => {
         {
           ...scripts,
           "lint:root":
-            "node scripts/check-import-cycles.mjs && oxlint scripts playwright.config.ts vitest.config.ts",
+            "node scripts/check-import-cycles.mjs && oxlint scripts crates/codesesh-cli/npm playwright.config.ts vitest.config.ts",
         },
         ROOT_TASK_REQUIREMENTS,
         "codesesh-monorepo",
@@ -122,7 +123,7 @@ describe("CS-173: quality task coverage", () => {
         "codesesh-monorepo",
       ),
     ).toEqual([
-      "codesesh-monorepo#format:check:root misses scripts/**/*.{js,mjs,cjs,ts,tsx}, tests/**/*.{js,mjs,cjs,ts,tsx}, vitest.config.ts",
+      "codesesh-monorepo#format:check:root misses scripts/**/*.{js,mjs,cjs,ts,tsx}, tests/**/*.{js,mjs,cjs,ts,tsx}, crates/codesesh-cli/npm/**/*.{js,mjs,cjs,ts,tsx}, vitest.config.ts",
     ]);
   });
 

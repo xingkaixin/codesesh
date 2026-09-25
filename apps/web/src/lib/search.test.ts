@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSessionIdentity } from "@codesesh/core/contract";
+import { createSessionIdentity } from "@codesesh/contract";
 import type { SearchResult, SessionHead } from "./api";
 import type { SearchProjectOption } from "../components/app/types";
 import { buildSessionIndexes, getSessionAgentKey, type SessionIndexes } from "./session-indexes";
@@ -20,11 +20,6 @@ describe("usesServerSearch", () => {
   });
 });
 
-// Characterization: pins the CURRENT local ("recent") search path -- the
-// third re-implementation of recent-session filtering, alongside
-// packages/cli/src/api/handlers.ts's recentSearchSessions and core's
-// searchSessions("", ...) empty-query branch. Not a spec: asserts what this
-// function does today.
 describe("buildLocalRecentResults", () => {
   const projectApp = {
     kind: "git_remote" as const,

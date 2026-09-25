@@ -6,7 +6,7 @@ import { t } from "../../i18n/translate";
  * whether those sub-sessions can be revealed.
  */
 import { useId } from "react";
-import type { SessionReference } from "@codesesh/core/contract";
+import type { SessionReference } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import { formatClockTime, formatCompact, formatInt, formatUsd } from "../../lib/format";
 import type { SubSessionMode, TimelineRow } from "../../lib/session-timeline";

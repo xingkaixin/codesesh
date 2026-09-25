@@ -7,7 +7,7 @@
  * anything.
  */
 import { performance } from "node:perf_hooks";
-import { applySessionChanges, createSessionIndex } from "../packages/core/dist/contract/index.mjs";
+import { applySessionChanges, createSessionIndex } from "../packages/contract/dist/index.mjs";
 
 /**
  * The canonical path must not cost more than redundantly re-sorting on top of

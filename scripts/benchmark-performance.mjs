@@ -13,7 +13,7 @@
  *     cardinality), next to the code they protect
  *   - growth-rate checks in scripts/perf-scale.mjs
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -21,10 +21,11 @@ import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { nativeBinary } from "./lib/native-command.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const cliPath = join(repoRoot, "packages/cli/dist/index.js");
+const cliPath = nativeBinary;
 const cacheDir = join(homedir(), ".cache", "codesesh");
 const cacheFiles = ["codesesh.db", "codesesh.db-wal", "codesesh.db-shm", "scan-cache.json"];
 const activeCacheBackups = new Set();
@@ -314,19 +315,19 @@ function isRunning(pid) {
 function stopCli(child) {
   if (!child.pid || child.exitCode !== null) return;
 
-  spawnSync("kill", ["-TERM", String(child.pid)]);
+  child.kill("SIGTERM");
   sleepSync(300);
 
   if (isRunning(child.pid)) {
-    spawnSync("kill", ["-KILL", String(child.pid)]);
+    child.kill("SIGKILL");
   }
 }
 
 function spawnCli(port, days, coldStart) {
-  const args = [cliPath, "--port", String(port), "--days", String(days), "--noOpen"];
+  const args = ["--port", String(port), "--days", String(days), "--noOpen"];
   if (coldStart) args.push("--no-cache");
 
-  const child = spawn(process.execPath, args, {
+  const child = spawn(cliPath, args, {
     cwd: repoRoot,
     env: { ...process.env, FORCE_COLOR: "0" },
     stdio: ["ignore", "pipe", "pipe"],

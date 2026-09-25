@@ -10,7 +10,7 @@ It discovers sessions from supported local AI coding agents, then organizes them
 npx codesesh
 ```
 
-CodeSesh scans supported local session stores and opens a Web UI at `http://localhost:4521`. If that port is busy, it tries the next available port. The published CLI requires Node.js 22 or later.
+CodeSesh scans supported local session stores and opens a Web UI at `http://localhost:4521`. If that port is busy, it tries the next available port. The npm launcher requires Node.js 22 or later. The standalone Rust executable does not require Node.
 
 ## Product Tour
 

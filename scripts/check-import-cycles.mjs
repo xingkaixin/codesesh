@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const SOURCE_ROOTS = ["packages/core/src", "packages/cli/src", "apps/web/src", "apps/www/src"];
+const SOURCE_ROOTS = ["packages/contract/src", "apps/web/src", "apps/www/src"];
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"];
 
 function isProductionSource(path) {

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildSessionTree } from "@codesesh/core/contract";
+import { buildSessionTree } from "@codesesh/contract";
 import { createAgentCatalog } from "../../lib/agents";
 import type { TimelineRow } from "../../lib/session-timeline";
 import { TimelineSessionRow } from "./timeline-session-row";

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionHead } from "@codesesh/core/contract";
+import type { SessionHead } from "@codesesh/contract";
 import { createAgentCatalog } from "../../lib/agents";
 import { TIMELINE_CHILD_PAGE_SIZE, TIMELINE_MAIN_PAGE_SIZE } from "../../lib/session-timeline";
 import { ProjectTimeline } from "./ProjectTimeline";

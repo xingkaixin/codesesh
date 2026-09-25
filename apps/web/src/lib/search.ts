@@ -1,5 +1,5 @@
 import { t } from "../i18n/translate";
-import { buildSessionTree } from "@codesesh/core/contract";
+import { buildSessionTree } from "@codesesh/contract";
 import { type SearchRequestOptions, type SearchResult } from "./api";
 import { type SessionIndexes, getSessionAgentKey, getSessionRouteKey } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";

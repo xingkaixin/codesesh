@@ -1,5 +1,5 @@
 import { t } from "../i18n/translate";
-import { mergeSessionsUpdatedEvents } from "@codesesh/core/contract";
+import { mergeSessionsUpdatedEvents } from "@codesesh/contract";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   type ScanStatusEvent,

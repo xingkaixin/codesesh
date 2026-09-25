@@ -1,7 +1,7 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { getSessionAgentKey } from "@codesesh/core/contract";
+import { getSessionAgentKey } from "@codesesh/contract";
 import type { SessionDetail } from "../lib/api";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import {

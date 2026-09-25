@@ -3,7 +3,7 @@ import {
   SAMPLE_DASHBOARD_DATA,
   SAMPLE_SESSIONS_UPDATED_EVENT,
   SAMPLE_SESSION_HEAD,
-} from "@codesesh/core/test-fixtures";
+} from "@codesesh/contract/test-fixtures";
 import type { DashboardFilters } from "./api";
 import {
   ApiRequestError,

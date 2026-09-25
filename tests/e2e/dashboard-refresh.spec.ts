@@ -1,4 +1,4 @@
-import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/test-fixtures";
+import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/contract/test-fixtures";
 import { expect, test } from "./test-fixtures.js";
 
 for (const width of [1280, 375]) {

@@ -7,8 +7,7 @@ import { getPnpmInvocation } from "./lib/pnpm-process.mjs";
 export const QUALITY_TASKS = ["lint", "lint:fix", "format", "format:check", "typecheck"];
 export const QUALITY_PACKAGES = [
   { name: "codesesh-monorepo", manifest: "package.json", turbo: false },
-  { name: "@codesesh/core", manifest: "packages/core/package.json" },
-  { name: "codesesh", manifest: "packages/cli/package.json" },
+  { name: "@codesesh/contract", manifest: "packages/contract/package.json" },
   { name: "@codesesh/web", manifest: "apps/web/package.json" },
   { name: "@codesesh/www", manifest: "apps/www/package.json" },
 ];
@@ -31,6 +30,7 @@ export const ROOT_TASK_REQUIREMENTS = {
     "oxlint",
     "scripts",
     "tests",
+    "crates/codesesh-cli/npm",
     "playwright.config.ts",
     "vitest.config.ts",
   ],
@@ -39,6 +39,7 @@ export const ROOT_TASK_REQUIREMENTS = {
     "oxlint",
     "scripts",
     "tests",
+    "crates/codesesh-cli/npm",
     "playwright.config.ts",
     "vitest.config.ts",
     "--fix",
@@ -49,6 +50,7 @@ export const ROOT_TASK_REQUIREMENTS = {
     "--write",
     "scripts/**/*.{js,mjs,cjs,ts,tsx}",
     "tests/**/*.{js,mjs,cjs,ts,tsx}",
+    "crates/codesesh-cli/npm/**/*.{js,mjs,cjs,ts,tsx}",
     "playwright.config.ts",
     "vitest.config.ts",
   ],
@@ -58,6 +60,7 @@ export const ROOT_TASK_REQUIREMENTS = {
     "--check",
     "scripts/**/*.{js,mjs,cjs,ts,tsx}",
     "tests/**/*.{js,mjs,cjs,ts,tsx}",
+    "crates/codesesh-cli/npm/**/*.{js,mjs,cjs,ts,tsx}",
     "playwright.config.ts",
     "vitest.config.ts",
   ],
@@ -180,7 +183,7 @@ function main() {
   const rootManifest = manifests.find(({ name }) => name === "codesesh-monorepo");
   const wwwManifest = manifests.find(({ name }) => name === "@codesesh/www");
   const scriptPackageManifests = manifests.filter(({ name }) =>
-    ["@codesesh/core", "codesesh", "@codesesh/web"].includes(name),
+    ["@codesesh/contract", "@codesesh/web"].includes(name),
   );
   const gaps = [
     ...findManifestTaskGaps(manifests),

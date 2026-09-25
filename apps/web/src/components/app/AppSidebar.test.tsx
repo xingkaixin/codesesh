@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/core/test-fixtures";
+import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/contract/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { AgentInfo, ApiProjectGroup, BookmarkView, ScanStatusEvent } from "../../lib/api";

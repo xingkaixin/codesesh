@@ -3,7 +3,7 @@ import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { memo, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { formatSessionReference } from "@codesesh/core/contract";
+import { formatSessionReference } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionHead } from "../lib/api";
 import { formatCostSource, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";

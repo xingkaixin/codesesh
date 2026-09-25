@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CHECKED_FACT_DOCUMENTS,
+  loadRepositoryFacts,
   extractMarkedFactRegions,
   findDocumentationFactMismatches,
 } from "./check-docs-facts.mjs";
@@ -41,10 +42,11 @@ function fixtureRepo(packageManager = "pnpm@11.20.0", nodeEngine = ">=22.0.0") {
     "- 文件型：Claude Code\n- 单 SQLite 数据库型：Cursor",
   );
   const files = {
-    "package.json": JSON.stringify({ packageManager }),
+    "crates/codesesh-core/src/storage/mod.rs": "pub const CACHE_SCHEMA_VERSION: i64 = 21;\n",
+    "crates/codesesh-core/src/agents/catalog.json": JSON.stringify(coreFacts.agents),
+    "package.json": JSON.stringify({ packageManager, engines: { node: nodeEngine } }),
     ".github/workflows/ci.yml": "steps:\n  - name: Lint\n    run: pnpm lint\n  - run: pnpm test\n",
-    "packages/cli/package.json": JSON.stringify({ engines: { node: nodeEngine } }),
-    "packages/cli/README.md": `${agentsTable}\n${node}`,
+    "crates/codesesh-cli/README.md": `${agentsTable}\n${node}`,
     "README.md": `${agentsTable}\n${node}\n${pnpm}\n${ciCommands}`,
     "README_CN.md": `${agentsTable}\n${node}\n${pnpm}\n${ciCommands}`,
     "apps/www/public/llms-full.txt": `${agentsList}\n${node}\n${node}\n${pnpm}\n${pnpm}`,
@@ -78,6 +80,23 @@ describe("CS-172: semantic documentation facts", () => {
 
   it("accepts documents that match executable facts", () => {
     expect(findDocumentationFactMismatches(fixtureRepo(), coreFacts)).toEqual([]);
+  });
+
+  it("reads facts from Rust without a built Node backend", () => {
+    expect(loadRepositoryFacts(fixtureRepo())).toEqual(coreFacts);
+  });
+
+  it("requires Cargo CI checks in the documented checklist", () => {
+    const dir = fixtureRepo();
+    writeFileSync(
+      join(dir, ".github/workflows/ci.yml"),
+      "steps:\n  - run: cargo test --workspace --locked\n",
+    );
+    expect(findDocumentationFactMismatches(dir, coreFacts)).toContainEqual({
+      document: "README.md",
+      fact: "ci-commands",
+      message: 'missing ["cargo test --workspace --locked"]',
+    });
   });
 
   it("reports a schema bump that was not copied to documentation", () => {
@@ -164,7 +183,7 @@ describe("CS-172: semantic documentation facts", () => {
       expect.arrayContaining([
         "README.md",
         "README_CN.md",
-        "packages/cli/README.md",
+        "crates/codesesh-cli/README.md",
         "docs/architecture.md",
         "apps/www/public/llms-full.txt",
         "apps/www/public/llms.txt",

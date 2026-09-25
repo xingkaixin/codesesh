@@ -1,5 +1,5 @@
-import { SAMPLE_SESSION_HEAD } from "@codesesh/core/test-fixtures";
-import { createSessionIdentity } from "@codesesh/core/contract";
+import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
+import { createSessionIdentity } from "@codesesh/contract";
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentInfo, ApiProjectGroup, SessionHead } from "../lib/api";

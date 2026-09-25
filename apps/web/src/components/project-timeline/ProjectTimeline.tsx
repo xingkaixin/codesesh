@@ -6,7 +6,7 @@ import { t } from "../../i18n/translate";
  * carries top-level work.
  */
 import { useCallback, useMemo, useState } from "react";
-import type { SessionHead, SessionReference } from "@codesesh/core/contract";
+import type { SessionHead, SessionReference } from "@codesesh/contract";
 import type { AgentCatalog } from "../../lib/agents";
 import { formatCompact } from "../../lib/format";
 import {
