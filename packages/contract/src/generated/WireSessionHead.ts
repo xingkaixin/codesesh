@@ -5,6 +5,8 @@ import type { SmartTag } from "./SmartTag";
 import type { WireProjectIdentity } from "./WireProjectIdentity";
 
 export type WireSessionHead = {
+  version?: string | null;
+  summary_files?: unknown;
   readonly reference: SessionReference;
   title: string;
   display_title?: string;

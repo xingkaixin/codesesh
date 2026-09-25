@@ -218,7 +218,9 @@ fn many_pi(source: &AgentSource, count: usize) -> Vec<std::path::PathBuf> {
             std::fs::write(&path, &bytes).unwrap();
             let time = std::time::UNIX_EPOCH
                 + std::time::Duration::from_secs(1_700_000_000 - index as u64);
-            std::fs::File::open(&path)
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
                 .unwrap()
                 .set_times(std::fs::FileTimes::new().set_modified(time))
                 .unwrap();
@@ -287,7 +289,9 @@ fn cold_invalid_transcript_does_not_block_first_backfill_page() {
     let paths = many_pi(&source, 33);
     let cold = &paths[32];
     std::fs::write(cold, "invalid historical transcript").unwrap();
-    std::fs::File::open(cold)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(cold)
         .unwrap()
         .set_times(std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH))
         .unwrap();

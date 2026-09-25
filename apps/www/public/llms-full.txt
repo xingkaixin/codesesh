@@ -292,7 +292,7 @@ CodeSesh uses a Rust backend with a TypeScript frontend workspace managed by pnp
 
 1. Add and register a Rust adapter under `crates/codesesh-core/src/agents/`.
 2. Add source paths and environment overrides in `crates/codesesh-core/src/discovery/paths.rs`.
-3. Keep public metadata and `packages/contract/src/agent-catalog.ts` presentation capabilities aligned.
+3. Edit public metadata and presentation capabilities in `crates/codesesh-core/src/agents/catalog.json`, then run `pnpm generate:rust-contract` to generate the browser catalog.
 4. Add icons to the app and website, and register a custom tool display strategy when needed.
 5. Verify source-format fixtures, usage, tools, and incremental updates.
 

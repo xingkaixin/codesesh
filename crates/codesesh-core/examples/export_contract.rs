@@ -86,5 +86,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         )?;
     }
+    let catalog: serde_json::Value =
+        serde_json::from_str(include_str!("../src/agents/catalog.json"))?;
+    std::fs::write(
+        generated.join("agent-catalog.ts"),
+        format!(
+            "// Generated from crates/codesesh-core/src/agents/catalog.json. Do not edit.\nexport const AGENT_CATALOG = {} as const;\n",
+            serde_json::to_string_pretty(&catalog)?
+        ),
+    )?;
     Ok(())
 }

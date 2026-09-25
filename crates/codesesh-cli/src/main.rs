@@ -4,6 +4,7 @@ mod http;
 mod json_scan;
 mod logging;
 mod options;
+mod trace;
 use anyhow::{Context, Result};
 use base64::Engine;
 use clap::Parser;
@@ -104,12 +105,24 @@ async fn run() -> Result<()> {
             days: None,
             now: None,
         };
-        let result = tokio::task::spawn_blocking(move || {
-            json_scan::run(&sources, &scan_options, &pricing, &cache_path)
+        let (result, report, scan_duration) = tokio::task::spawn_blocking(move || {
+            let scan_started = std::time::Instant::now();
+            let mut report = args.trace.then(trace::Report::default);
+            let result = json_scan::run(
+                &sources,
+                &scan_options,
+                &pricing,
+                &cache_path,
+                report.as_mut(),
+            );
+            (result, report, scan_started.elapsed())
         })
         .await?;
         if let Some(path) = temporary {
             std::fs::remove_dir_all(path)?;
+        }
+        if let Some(report) = report {
+            report.print("scanSessions", scan_duration);
         }
         let result = result?;
         println!("{}", serde_json::to_string(&result)?);
@@ -141,7 +154,9 @@ async fn run() -> Result<()> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let runtime_started = std::time::Instant::now();
     let runtime = Runtime::start(cache_path, runtime_sources, 4).await?;
+    let runtime_duration = runtime_started.elapsed();
     let listener = bind(&args.host, plan.port).await?;
     let address = listener.local_addr()?;
     let mut bytes = Vec::with_capacity(32);
@@ -201,13 +216,16 @@ async fn run() -> Result<()> {
         .append_pair("access_token", &token);
     let mut advertised = startup.clone();
     advertised.set_path("/");
-    println!("{advertised}");
     if args.trace {
+        let mut report = trace::Report::default();
+        report.record("runtime.initialize", runtime_duration);
+        report.print("startup", started.elapsed());
         logger.info(
             "perf.startup",
             &serde_json::json!({"duration_ms":started.elapsed().as_secs_f64()*1000.0}),
         );
     }
+    println!("{advertised}");
     logger.flush()?;
     if !args.no_open {
         open_browser(startup.as_str());

@@ -14,13 +14,13 @@ export type WireSessionDetail = {
   project_identity_resolver_revision?: string;
   smart_tags_classifier_revision?: string;
   smart_tags_source_updated_at?: number;
-  version?: string | null;
   detail_freshness?: DetailFreshness;
-  summary_files?: unknown;
   messages: Array<WireMessage>;
   message_cursor?: string;
   message_update?: MessageUpdate;
   file_activity?: Array<WireSessionFileActivity>;
+  version?: string | null;
+  summary_files?: unknown;
   readonly reference: SessionReference;
   title: string;
   display_title?: string;

@@ -16,6 +16,15 @@ pub struct WireProjectIdentity {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct WireSessionHead {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(deserialize_with = "present_nullable")]
+    pub version: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[ts(type = "unknown")]
+    #[serde(deserialize_with = "crate::contract::present_value")]
+    pub summary_files: Option<serde_json::Value>,
     pub reference: SessionReference,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -290,16 +299,7 @@ pub struct WireSessionDetail {
     pub smart_tags_source_updated_at: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    #[serde(deserialize_with = "present_nullable")]
-    pub version: Option<Option<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub detail_freshness: Option<DetailFreshness>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    #[ts(type = "unknown")]
-    #[serde(deserialize_with = "crate::contract::present_value")]
-    pub summary_files: Option<serde_json::Value>,
     pub messages: Vec<WireMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

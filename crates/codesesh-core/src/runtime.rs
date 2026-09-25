@@ -13,7 +13,7 @@ use std::{
     collections::BTreeSet,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -107,6 +107,7 @@ struct Inner {
     writer: mpsc::Sender<writer::Command>,
     controls: Vec<Control>,
     readers: Arc<Semaphore>,
+    idle_readers: Mutex<Vec<Connection>>,
     read_queue: Arc<Semaphore>,
     stopped: Arc<AtomicBool>,
     shutdown: watch::Sender<bool>,
@@ -181,6 +182,7 @@ impl Runtime {
                 writer,
                 controls,
                 readers: Arc::new(Semaphore::new(concurrency)),
+                idle_readers: Mutex::new(Vec::with_capacity(concurrency)),
                 read_queue: Arc::new(Semaphore::new(64)),
                 stopped,
                 shutdown,
@@ -263,16 +265,43 @@ impl Runtime {
             .map_err(|_| ReadBusy)?;
         let permit = self.inner.readers.clone().acquire_owned().await?;
         drop(queued);
-        let path = self.inner.cache_path.clone();
+        let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            let connection = Connection::open_with_flags(
-                path,
-                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-            )?;
-            connection.busy_timeout(Duration::from_secs(5))?;
-            connection.execute_batch("PRAGMA query_only=ON; BEGIN DEFERRED")?;
-            query(&connection)
+            let connection = inner
+                .idle_readers
+                .lock()
+                .map_err(|_| anyhow::anyhow!("SQLite reader pool poisoned"))?
+                .pop();
+            let connection = match connection {
+                Some(connection) => connection,
+                None => {
+                    let connection = Connection::open_with_flags(
+                        &inner.cache_path,
+                        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                    )?;
+                    connection.busy_timeout(Duration::from_secs(5))?;
+                    connection.execute_batch("PRAGMA query_only=ON")?;
+                    connection
+                }
+            };
+            connection.execute_batch("BEGIN DEFERRED")?;
+            let result = query(&connection);
+            let rollback = if connection.is_autocommit() {
+                Ok(())
+            } else {
+                connection.execute_batch("ROLLBACK")
+            };
+            if rollback.is_ok() {
+                inner
+                    .idle_readers
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("SQLite reader pool poisoned"))?
+                    .push(connection);
+            }
+            let value = result?;
+            rollback.context("failed to release SQLite read snapshot")?;
+            Ok(value)
         })
         .await?
     }

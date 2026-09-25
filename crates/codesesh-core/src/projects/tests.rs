@@ -104,10 +104,15 @@ fn resolves_loose_scratch_manifest_and_fallback() {
 #[test]
 fn real_git_worktree_shares_common_directory() {
     let temp = tempfile::tempdir().unwrap();
-    let canonical = if cfg!(windows) {
-        temp.path().to_owned()
-    } else {
-        temp.path().canonicalize().unwrap()
+    let canonical = temp.path().canonicalize().unwrap();
+    #[cfg(windows)]
+    let canonical = {
+        let path = canonical.to_str().unwrap();
+        if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
+            std::path::PathBuf::from(format!(r"\\{path}"))
+        } else {
+            std::path::PathBuf::from(path.strip_prefix(r"\\?\").unwrap_or(path))
+        }
     };
     let root = canonical.join("repo");
     let worktree = canonical.join("other");

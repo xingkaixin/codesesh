@@ -255,3 +255,74 @@ test("CLI startup accepts opaque sessions, preserves proxy origins and parses po
     fixture.dispose();
   }
 });
+
+function traceReport(stdout, payloadStart) {
+  const start = stdout.indexOf("=== Performance Report ===");
+  assert.ok(start >= 0 && start < payloadStart, "trace report must precede the payload");
+  const report = stdout.slice(start, payloadStart).trim();
+  assert.match(report, /\b\d+\.\d{2}ms\b/);
+  return report.replace(/\d+\.\d{2}ms/g, "<duration>ms");
+}
+
+test("CLI trace reports actual cold and warm phases before unchanged JSON", async () => {
+  const fixture = createFixture();
+  const outputs = [];
+  try {
+    for (const command of [reference, rust]) {
+      clearCache(fixture);
+      const runs = [];
+      for (const phase of ["scan", "cache"]) {
+        const result = await runCli(
+          fixture,
+          ["--json", "--agent", "codex", "--days", "0", "--trace"],
+          command,
+        );
+        assert.equal(result.code, 0, result.stderr);
+        const report = traceReport(result.stdout, result.stdout.indexOf("{"));
+        assert.match(report, /scanSessions: <duration>ms/);
+        if (command === rust) assert.ok(report.includes(`agent:codex:${phase}: <duration>ms`));
+        runs.push(index(result.stdout));
+      }
+      assert.deepEqual(runs[1], runs[0]);
+      outputs.push(runs);
+    }
+    assert.deepEqual(outputs[1], outputs[0]);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test("CLI trace precedes the Web URL and labels asynchronous initialization honestly", async () => {
+  const fixture = createFixture();
+  try {
+    for (const command of [reference, rust]) {
+      const process = launch(
+        fixture,
+        ["--agent", "codex", "--days", "0", "--noOpen", "--port", "0", "--trace"],
+        command,
+      );
+      try {
+        await waitFor(() => {
+          assert.equal(process.child.exitCode, null, JSON.stringify(process.output()));
+          return process.output().stdout.includes("access_token=");
+        }, "trace and Web URL");
+        const stdout = process.output().stdout;
+        const url = [...stdout.matchAll(/https?:\/\/\S+/g)].find((match) =>
+          match[0].includes("access_token="),
+        );
+        const report = traceReport(stdout, url.index);
+        if (command === rust) {
+          assert.match(report, /startup: <duration>ms/);
+          assert.match(report, /runtime\.initialize: <duration>ms/);
+          assert.doesNotMatch(report, /scanSessions:/);
+        } else {
+          assert.match(report, /scanSessions: <duration>ms/);
+        }
+      } finally {
+        await stop(process);
+      }
+    }
+  } finally {
+    fixture.dispose();
+  }
+});

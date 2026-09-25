@@ -7,6 +7,8 @@ fn closed<T: serde::de::DeserializeOwned>(value: String) -> Result<T> {
 }
 pub fn head(value: core::SessionHead) -> Result<wire::WireSessionHead> {
     Ok(wire::WireSessionHead {
+        version: value.version.map(Some),
+        summary_files: value.summary_files,
         reference: value.reference,
         title: value.title,
         display_title: value.display_title,
@@ -46,8 +48,6 @@ pub fn activity(value: core::SessionFileActivity) -> Result<wire::WireSessionFil
     })
 }
 pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail> {
-    let version = value.head.version.take().map(Some);
-    let summary_files = value.head.summary_files.take();
     Ok(wire::WireSessionDetail {
         model_usage: value.head.model_usage.take(),
         project_identity_input_signature: value.head.project_identity_input_signature.take(),
@@ -55,8 +55,6 @@ pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail>
         smart_tags_classifier_revision: value.head.smart_tags_classifier_revision.take(),
         smart_tags_source_updated_at: value.head.smart_tags_source_updated_at.take(),
         head: head(value.head)?,
-        version,
-        summary_files,
         detail_freshness: Some(closed(value.detail_freshness)?),
         messages: value
             .messages

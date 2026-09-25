@@ -25,7 +25,7 @@ TypeScript 只组合 UI 需要的类型：identified 会话要求 project_identi
 
 生成器还保留旧 API 的 readonly identity 约束。ts-rs 没有 readonly 字段属性，因此 Rust exporter 对生成的 SessionReference 加 Readonly 包装，并标记公开会话的 reference 属性为 readonly；字段名称和字段类型仍由 Rust 定义生成。
 
-UI 纯函数保留 TypeScript：日期、引用与路由编码、project identity 比较、会话排序/索引/树、SSE 事件合并、message part 规范化、file activity 展示提取。Agent catalog 是前端展示元数据，仍保留现有 TS 常量；其与后端目录数据的统一不等于服务 DTO 类型生成。
+UI 纯函数保留 TypeScript：日期、引用与路由编码、project identity 比较、会话排序/索引/树、SSE 事件合并、message part 规范化、file activity 展示提取。Agent catalog 的唯一数据来源是 Rust agents/catalog.json；exporter 生成前端 as const 数组，TS 包仅重导出与提供查询函数。AgentCatalogEntry 的共用字段由 WireAgentInfo 组合，原测试同时核对完整数组，防止名称、图标、resume 命令或策略字段漂移。
 
 ## 生成与验证
 

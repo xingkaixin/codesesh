@@ -436,7 +436,8 @@ Agent source parsing and browser presentation have explicit registration points:
 
 1. Add a Rust adapter under `crates/codesesh-core/src/agents/` and register its scan entry.
 2. Add default paths and environment overrides in `crates/codesesh-core/src/discovery/paths.rs`.
-3. Keep public metadata and `packages/contract/src/agent-catalog.ts` presentation capabilities aligned.
+3. Edit public metadata and presentation capabilities in `crates/codesesh-core/src/agents/catalog.json`,
+   then run `pnpm generate:rust-contract`. The browser catalog is generated from this single source.
 4. Add its SVG to `apps/web/public/icon/agent/` and `apps/www/public/icon/agent/`.
 5. Register any custom tool display in `apps/web/src/components/session-detail/tool-strategy/`.
 

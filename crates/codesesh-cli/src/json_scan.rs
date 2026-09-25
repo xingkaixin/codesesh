@@ -11,6 +11,7 @@ use codesesh_core::{
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
+    time::Instant,
 };
 
 fn signature(source: &AgentSource, pricing: &Pricing) -> Result<String> {
@@ -67,6 +68,7 @@ pub fn run(
     options: &ScanOptions,
     pricing: &Pricing,
     path: &Path,
+    mut trace: Option<&mut crate::trace::Report>,
 ) -> Result<SessionIndex> {
     let mut cache = Cache::open(Some(path))?;
     for _ in 0..3 {
@@ -86,6 +88,7 @@ pub fn run(
         let mut needs_publication = false;
         for source in sources {
             let old = previous.remove(&source.agent).unwrap_or_default();
+            let agent_started = Instant::now();
             let read = (|| -> Result<()> {
                 if !old.is_empty() && !source_present(source)? {
                     bail!("Agent source is unavailable; retaining cached sessions");
@@ -96,9 +99,23 @@ pub fn run(
                 {
                     heads.extend(old.iter().cloned());
                     fingerprints.push((source.agent.clone(), before));
+                    if let Some(report) = trace.as_deref_mut() {
+                        report.record(
+                            format!("agent:{}:cache", source.agent),
+                            agent_started.elapsed(),
+                        );
+                    }
                     return Ok(());
                 }
-                let scanned = discovery::scan_source(source, pricing)?;
+                let scan_started = Instant::now();
+                let scanned = discovery::scan_source(source, pricing);
+                if let Some(report) = trace.as_deref_mut() {
+                    report.record(
+                        format!("agent:{}:scan", source.agent),
+                        scan_started.elapsed(),
+                    );
+                }
+                let scanned = scanned?;
                 let after = signature(source, pricing)?;
                 if before != after {
                     bail!("Agent source changed during scan; retaining cached sessions");

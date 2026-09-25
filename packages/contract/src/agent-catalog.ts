@@ -1,129 +1,17 @@
+import { AGENT_CATALOG } from "./generated/agent-catalog.js";
+import type { WireAgentInfo } from "./generated/WireAgentInfo.js";
+
+export { AGENT_CATALOG } from "./generated/agent-catalog.js";
+
 export type AgentSourceKind = "filesystem" | "sqlite";
 
 export type AgentToolStrategy = "custom" | "default";
 
-export interface AgentCatalogEntry {
-  name: string;
-  displayName: string;
-  icon: string;
-  /** Brand-colored icons render as-is instead of inheriting the current text color. */
-  iconColored?: boolean;
-  sourceKind: AgentSourceKind;
-  resumeCommandPrefix: string | null;
-  toolStrategy: AgentToolStrategy;
-}
-
-export const AGENT_CATALOG = [
-  {
-    name: "claudecode",
-    displayName: "Claude Code",
-    icon: "/icon/agent/claudecode.svg",
-    iconColored: true,
-    sourceKind: "filesystem",
-    resumeCommandPrefix: "claude --resume",
-    toolStrategy: "custom",
-  },
-  {
-    name: "cursor",
-    displayName: "Cursor",
-    icon: "/icon/agent/cursor.svg",
-    sourceKind: "sqlite",
-    resumeCommandPrefix: null,
-    toolStrategy: "custom",
-  },
-  {
-    name: "kimi",
-    displayName: "Kimi-Cli",
-    icon: "/icon/agent/kimi.svg",
-    sourceKind: "filesystem",
-    resumeCommandPrefix: "kimi -r",
-    toolStrategy: "custom",
-  },
-  {
-    name: "kimi-code",
-    displayName: "Kimi-Code",
-    icon: "/icon/agent/kimi.svg",
-    sourceKind: "filesystem",
-    resumeCommandPrefix: "kimi -r",
-    toolStrategy: "custom",
-  },
-  {
-    name: "codex",
-    displayName: "Codex",
-    icon: "/icon/agent/codex.svg",
-    sourceKind: "filesystem",
-    resumeCommandPrefix: "codex resume",
-    toolStrategy: "custom",
-  },
-  {
-    name: "grok",
-    displayName: "Grok",
-    icon: "/icon/agent/grok.svg",
-    sourceKind: "filesystem",
-    resumeCommandPrefix: "grok --resume",
-    toolStrategy: "custom",
-  },
-  {
-    name: "pi",
-    displayName: "Pi",
-    icon: "/icon/agent/pi.svg",
-    sourceKind: "filesystem",
-    resumeCommandPrefix: "pi --session",
-    toolStrategy: "custom",
-  },
-  {
-    name: "opencode",
-    displayName: "OpenCode",
-    icon: "/icon/agent/opencode.svg",
-    sourceKind: "sqlite",
-    resumeCommandPrefix: "opencode -s",
-    toolStrategy: "custom",
-  },
-  {
-    name: "zcode",
-    displayName: "ZCode",
-    icon: "/icon/agent/zcode.svg",
-    sourceKind: "sqlite",
-    resumeCommandPrefix: null,
-    toolStrategy: "custom",
-  },
-  {
-    name: "minimax-code",
-    displayName: "MiniMax Code",
-    icon: "/icon/agent/minimax-code.svg",
-    sourceKind: "sqlite",
-    resumeCommandPrefix: "mcode --session",
-    toolStrategy: "custom",
-  },
-  {
-    name: "dsh",
-    displayName: "DSH",
-    icon: "/icon/agent/dsh.svg",
-    iconColored: true,
-    sourceKind: "filesystem",
-    // DSH delegates launch arguments to installation-specific profiles.
-    resumeCommandPrefix: null,
-    toolStrategy: "custom",
-  },
-  {
-    name: "deepchat",
-    displayName: "DeepChat",
-    icon: "/icon/agent/deepchat.svg",
-    iconColored: true,
-    sourceKind: "sqlite",
-    resumeCommandPrefix: null,
-    toolStrategy: "default",
-  },
-  {
-    name: "cherrystudio",
-    displayName: "Cherry Studio",
-    icon: "/icon/agent/cherrystudio.svg",
-    iconColored: true,
-    sourceKind: "sqlite",
-    resumeCommandPrefix: null,
-    toolStrategy: "default",
-  },
-] as const satisfies readonly AgentCatalogEntry[];
+export type AgentCatalogEntry = Omit<WireAgentInfo, "count" | "icon"> &
+  Required<Pick<WireAgentInfo, "icon">> & {
+    sourceKind: AgentSourceKind;
+    toolStrategy: AgentToolStrategy;
+  };
 
 export type AgentName = (typeof AGENT_CATALOG)[number]["name"];
 

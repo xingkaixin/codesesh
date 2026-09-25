@@ -396,7 +396,8 @@ Agent 来源解析和浏览器展示分别声明：
 
 1. 在 `crates/codesesh-core/src/agents/` 添加 Rust 适配器并注册扫描入口。
 2. 在 `crates/codesesh-core/src/discovery/paths.rs` 添加默认路径和环境变量覆盖。
-3. 同步公开元数据与 `packages/contract/src/agent-catalog.ts` 的展示能力。
+3. 在 `crates/codesesh-core/src/agents/catalog.json` 修改公开元数据和展示能力，再运行
+   `pnpm generate:rust-contract`；浏览器端目录由此生成，不维护第二份值。
 4. 在 `apps/web/public/icon/agent/` 和 `apps/www/public/icon/agent/` 添加 SVG。
 5. 在 `apps/web/src/components/session-detail/tool-strategy/` 注册自定义工具展示。
 

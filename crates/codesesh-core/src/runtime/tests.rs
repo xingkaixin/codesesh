@@ -410,5 +410,69 @@ async fn query_heads_and_facts_share_a_transaction_while_writer_commits() {
     assert_eq!(fact_title, head_title);
     assert_eq!(head_count, 1);
     assert_eq!(fact_count, 1);
+    let next_title = runtime
+        .read_snapshot(|connection, heads| {
+            let title: String =
+                connection.query_row("SELECT title FROM sessions", [], |row| row.get(0))?;
+            assert_eq!(heads[0].title, title);
+            Ok(title)
+        })
+        .await
+        .unwrap();
+    assert_eq!(next_title, "after commit");
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn failed_read_releases_snapshot_before_connection_reuse() {
+    let temporary = tempfile::tempdir().unwrap();
+    let database = temporary.path().join("cache.db");
+    let runtime = Runtime::start(database.clone(), vec![], 1).await.unwrap();
+    let writer = Connection::open(database).unwrap();
+    writer
+        .execute(
+            "INSERT INTO cache_meta(key,value) VALUES('pool-test','before')",
+            [],
+        )
+        .unwrap();
+    let failed = runtime
+        .read::<()>(|connection| {
+            let value: String = connection.query_row(
+                "SELECT value FROM cache_meta WHERE key='pool-test'",
+                [],
+                |row| row.get(0),
+            )?;
+            assert_eq!(value, "before");
+            bail!("injected read failure");
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(failed.to_string(), "injected read failure");
+    {
+        let idle = runtime.inner.idle_readers.lock().unwrap();
+        assert_eq!(idle.len(), 1);
+        assert!(idle[0].is_autocommit());
+    }
+    writer
+        .execute(
+            "UPDATE cache_meta SET value='after' WHERE key='pool-test'",
+            [],
+        )
+        .unwrap();
+    let checkpoint_busy: i64 = writer
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(checkpoint_busy, 0);
+    let value = runtime
+        .read(|connection| {
+            Ok(connection.query_row(
+                "SELECT value FROM cache_meta WHERE key='pool-test'",
+                [],
+                |row| row.get::<_, String>(0),
+            )?)
+        })
+        .await
+        .unwrap();
+    assert_eq!(value, "after");
     runtime.shutdown().await.unwrap();
 }
