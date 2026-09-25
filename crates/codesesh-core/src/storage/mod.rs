@@ -1,7 +1,11 @@
 mod cursor;
+mod json;
+mod read;
 use crate::{
     agents::codex::ParsedSession,
-    contract::{Message, MessagePart, Role, SessionReference},
+    contract::{
+        CostSource, Message, MessagePart, Role, SessionDetail, SessionHead, SessionReference,
+    },
 };
 use anyhow::{Result, bail};
 use rusqlite::{Connection, params};
@@ -14,6 +18,35 @@ pub struct Cache {
 }
 
 impl Cache {
+    pub fn open_preview(path: &Path) -> Result<Self> {
+        if path.exists() {
+            let connection =
+                Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            let preview = connection
+                .query_row(
+                    "SELECT value FROM cache_meta WHERE key='rust_preview_v1'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok();
+            if preview.as_deref() != Some("1") {
+                bail!(
+                    "Rust P1 cannot open an existing Node cache; use an isolated HOME for migration testing"
+                );
+            }
+        }
+        let cache = Self::open(Some(path))?;
+        cache.connection.execute(
+            "INSERT OR REPLACE INTO cache_meta(key,value) VALUES('rust_preview_v1','1')",
+            [],
+        )?;
+        Ok(cache)
+    }
+
+    pub fn detail(&self, head: SessionHead) -> Result<Option<SessionDetail>> {
+        read::detail(&self.connection, head)
+    }
+
     pub fn open(path: Option<&Path>) -> Result<Self> {
         let connection = match path {
             Some(path) => {
@@ -65,16 +98,20 @@ impl Cache {
                 "INSERT INTO sessions(agent_name,session_id,sort_index,title,source_path,directory,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 params![reference.agent_name,reference.session_id,order as i64,head.title,session.source.to_string_lossy(),head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.stats.message_count as i64,head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cost,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision],
             )?;
+            transaction.execute(
+                "UPDATE sessions SET parent_agent_name=?, parent_session_id=?, total_cache_read_tokens=?, total_cache_create_tokens=?, cost_source=?, total_tokens=?, model_usage_json=? WHERE agent_name=? AND session_id=?",
+                params![head.parent_reference.as_ref().map(|parent| &parent.agent_name),head.parent_reference.as_ref().map(|parent| &parent.session_id),head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.cost_source.as_ref().map(CostSource::as_str),head.stats.total_tokens,head.model_usage.as_ref().map(json::stringify).transpose()?,reference.agent_name,reference.session_id],
+            )?;
             let mut digest = cursor::initial(reference);
             let mut text = head.title.clone();
             for (index, message) in session.detail.messages.iter().enumerate() {
-                let parts = serde_json::to_string(&message.parts)?;
+                let parts = json::stringify(&message.parts)?;
                 digest = cursor::advance(&digest, message, &parts)?;
                 let content = message_text(message);
                 text.push('\n');
                 text.push_str(&content);
                 transaction.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)",
-                    params![reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,message.tokens.as_ref().map(serde_json::to_string).transpose()?,message.cost,message.cost_source.as_ref().map(|v| serde_json::to_value(v).unwrap().as_str().unwrap().to_owned()),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content])?;
+                    params![reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,message.tokens.as_ref().map(json::stringify).transpose()?,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content])?;
             }
             transaction.execute("INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at) VALUES(?,?,?,?,?,?,?)", params![reference.agent_name,reference.session_id,head.title,text,"",head.stats.message_count as i64,chrono::Utc::now().timestamp_millis()])?;
             cursors.push(cursor::encode(session.detail.messages.len(), &digest)?);
@@ -148,9 +185,13 @@ mod tests {
             "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
             "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Fixture 中文 🔎\"}]}}\n"
         )).unwrap();
-        let detail = crate::agents::codex::parse(&path, &HashMap::new())
-            .unwrap()
-            .unwrap();
+        let detail = crate::agents::codex::parse(
+            &path,
+            &HashMap::new(),
+            &crate::pricing::Pricing::bundled(),
+        )
+        .unwrap()
+        .unwrap();
         ParsedSession {
             source: path,
             detail,

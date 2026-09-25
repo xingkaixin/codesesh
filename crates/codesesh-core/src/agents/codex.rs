@@ -1,3 +1,5 @@
+use super::codex_usage::Usage;
+use crate::pricing::Pricing;
 use crate::{contract::*, projects::path_identity};
 use anyhow::{Context, Result, bail};
 use chrono::DateTime;
@@ -17,7 +19,7 @@ pub struct ParsedSession {
     pub detail: SessionDetail,
 }
 
-pub fn scan(root: &Path) -> Result<Vec<ParsedSession>> {
+pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let sessions_root = root.join("sessions");
     if !sessions_root.exists() {
         return Ok(Vec::new());
@@ -43,7 +45,7 @@ pub fn scan(root: &Path) -> Result<Vec<ParsedSession>> {
         {
             continue;
         }
-        if let Some(detail) = parse(entry.path(), &titles)? {
+        if let Some(detail) = parse(entry.path(), &titles, pricing)? {
             sessions.push(ParsedSession {
                 source: entry.into_path(),
                 detail,
@@ -167,7 +169,11 @@ fn content(payload: &Value, assistant: bool) -> String {
     }
 }
 
-pub fn parse(path: &Path, titles: &HashMap<String, String>) -> Result<Option<SessionDetail>> {
+pub fn parse(
+    path: &Path,
+    titles: &HashMap<String, String>,
+    pricing: &Pricing,
+) -> Result<Option<SessionDetail>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
     let mut lines = BufReader::new(file).lines();
     let Some(line) = lines.next().transpose()? else {
@@ -198,6 +204,7 @@ pub fn parse(path: &Path, titles: &HashMap<String, String>) -> Result<Option<Ses
     let mut updated = created;
     let mut messages = Vec::<Message>::new();
     let mut model = None;
+    let mut usage = Usage::default();
     let mut message_title = None;
     let mut current = None;
     let mut latest_text = None;
@@ -223,10 +230,8 @@ pub fn parse(path: &Path, titles: &HashMap<String, String>) -> Result<Option<Ses
             continue;
         }
         if kind == "event_msg" && payload["type"] == "token_count" {
-            bail!(
-                "Rust P1 does not yet support token usage records: {}",
-                path.display()
-            );
+            usage.consume(payload, model.as_deref(), pricing, &mut messages);
+            continue;
         }
         if kind != "response_item" {
             continue;
@@ -259,7 +264,14 @@ pub fn parse(path: &Path, titles: &HashMap<String, String>) -> Result<Option<Ses
                     current = None;
                     latest_text = None;
                 } else {
-                    let target = assistant_part(&mut messages, current, part, time, model.clone());
+                    let target = assistant_part(
+                        &mut messages,
+                        current,
+                        latest_text,
+                        part,
+                        time,
+                        model.clone(),
+                    );
                     current = Some(target);
                     latest_text = Some(target);
                 }
@@ -279,6 +291,7 @@ pub fn parse(path: &Path, titles: &HashMap<String, String>) -> Result<Option<Ses
                     current = Some(assistant_part(
                         &mut messages,
                         current,
+                        latest_text,
                         MessagePart::Reasoning {
                             text,
                             time_created: time,
@@ -395,11 +408,8 @@ pub fn parse(path: &Path, titles: &HashMap<String, String>) -> Result<Option<Ses
         project_identity_input_signature: Some(signature),
         time_created: created,
         time_updated: updated,
-        stats: SessionStats {
-            message_count: messages.len(),
-            ..Default::default()
-        },
-        model_usage: None,
+        stats: usage.stats(messages.len()),
+        model_usage: usage.models(),
         smart_tags: Vec::new(),
         smart_tags_source_updated_at: Some(updated),
         smart_tags_classifier_revision: Some("smart-tags-v1".into()),
@@ -438,18 +448,14 @@ fn message(role: Role, part: MessagePart, time: i64, model: Option<String>) -> M
 fn assistant_part(
     messages: &mut Vec<Message>,
     current: Option<usize>,
+    latest_text: Option<usize>,
     part: MessagePart,
     time: i64,
     model: Option<String>,
 ) -> usize {
-    let target = current.filter(|i| {
-        let parts = &messages[*i].parts;
-        let has_tool = parts
-            .iter()
-            .any(|part| matches!(part, MessagePart::Tool { .. }));
-        let has_text = parts
-            .iter()
-            .any(|part| matches!(part, MessagePart::Text { .. }));
+    let target = current.filter(|index| {
+        let has_tool = messages[*index].mode.as_deref() == Some("tool");
+        let has_text = latest_text == Some(*index);
         !has_tool && (matches!(part, MessagePart::Text { .. }) || !has_text)
     });
     if let Some(index) = target {

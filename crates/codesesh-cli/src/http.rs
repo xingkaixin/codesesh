@@ -6,15 +6,16 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use codesesh_core::{agents, contract::SessionDetail};
+use codesesh_core::{agents, contract::SessionHead, storage::Cache};
 use serde_json::{Value, json};
 use std::{
     path::{Component, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 pub struct State {
-    pub sessions: Vec<SessionDetail>,
+    pub sessions: Vec<SessionHead>,
+    pub cache: Mutex<Cache>,
     pub token: String,
     pub days: u32,
 }
@@ -127,13 +128,13 @@ async fn sessions(
         .filter(|session| {
             query
                 .get("agent")
-                .is_none_or(|agent| *agent == session.head.reference.agent_name)
+                .is_none_or(|agent| *agent == session.reference.agent_name)
         })
         .filter(|session| {
-            from.is_none_or(|from| session.head.time_updated >= from)
-                && to.is_none_or(|to| session.head.time_updated <= to)
+            from.is_none_or(|from| session.time_updated >= from)
+                && to.is_none_or(|to| session.time_updated <= to)
         })
-        .map(|session| session.head.public())
+        .map(|session| session.public())
         .collect::<Vec<_>>();
     if sessions.len() > limit {
         return error(
@@ -148,13 +149,32 @@ async fn detail(
     AxumState(state): AxumState<Arc<State>>,
     Path((agent, id)): Path<(String, String)>,
 ) -> Response {
-    match state.sessions.iter().find(|session| {
-        session.head.reference.agent_name == agent && session.head.reference.session_id == id
-    }) {
-        Some(detail) => Json(detail.clone()).into_response(),
-        None => error(StatusCode::NOT_FOUND, "Session not found"),
+    let Some(head) = state
+        .sessions
+        .iter()
+        .find(|session| session.reference.agent_name == agent && session.reference.session_id == id)
+        .cloned()
+    else {
+        return error(StatusCode::NOT_FOUND, "Session not found");
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        state
+            .cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("cache reader lock poisoned"))?
+            .detail(head)
+    })
+    .await;
+    match result {
+        Ok(Ok(Some(detail))) => Json(detail).into_response(),
+        Ok(Ok(None)) => error(StatusCode::NOT_FOUND, "Session not found"),
+        _ => error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Session detail is not ready",
+        ),
     }
 }
+
 async fn static_file(AxumState(state): AxumState<Arc<State>>, request: Request) -> Response {
     let path = request.uri().path();
     if path.starts_with("/api/") {

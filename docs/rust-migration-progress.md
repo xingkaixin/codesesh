@@ -9,7 +9,7 @@
 | 阶段 | 状态 | 证据与剩余项 |
 | --- | --- | --- |
 | P0 | 基础验收通过 | 固定参考、进程契约及基线已建立；`a79f890c` 的三 OS × Node 22/24、smoke、制品检查全部通过；平台包权限留待 P6 核实 |
-| P1 | 实施中 | 两 crate、Codex 文本路径、schema 34 创建、DTO 生成、CLI/list/detail/cursor 差分和 React 详情页本地通过；持久缓存接线与三 OS 检查尚待完成 |
+| P1 | 实施中 | 两 crate、Codex 文本路径、schema 34 创建、DTO 生成、CLI/list/detail/cursor 差分和 React 详情页本地通过；持久缓存接线已本地通过，三 OS 最终检查待完成 |
 | P2 | 待实施 | 13 个 Agent 的完整功能矩阵 |
 | P3 | 待实施 | schema 34/state 3、搜索、统计、价格和用户状态 |
 | P4 | 待实施 | 持续同步、事务发布、快照与 SSE |
@@ -80,7 +80,7 @@ Rust 工具链固定为 1.90.0。两个 crate 和 Cargo.lock 已建立；使用 
 - 未授权请求、非法 Host、跨源 Origin 被拒绝。
 - schema 34 的 SQLite 建库、写入、关闭/重新打开、FTS5 与 trigram 查询通过；注入第二个 Session 的事务失败时，前一个 Session 不残留，也不暴露未提交游标。
 
-当前限制必须保留在验收状态中：CLI 仍使用内存 SQLite，文件缓存的真实启动/恢复路径尚未接线；只接受显式 CODEX_HOME 与 `--agent codex`。尚未支持用量、计划、复杂工具/子会话、完整 Project Identity 和 Smart Tags。非 Codex Agent、其他 API、分页和后台刷新尚未迁移。浏览器详情测试不代表 Dashboard、侧栏项目、书签或实时功能通过；这些请求目前明确返回 501。Node 仍为默认实现。
+当前限制必须保留在验收状态中：CLI 已使用隔离 home 下的磁盘 SQLite，HTTP 从已提交消息读取；启动仍重新扫描来源，完整热缓存恢复留待 P3/P4。为保护历史数据，预览版只接受空库或自身建立的缓存，拒绝既有 Node 缓存；只接受显式 CODEX_HOME 与 `--agent codex`。已加入基础用量累计去重、缓存读取费率和八位小数费用计算，并以带定价 fixture 比较 CLI/详情/游标；尚未支持计划、复杂工具/子会话、完整 Project Identity 和 Smart Tags。非 Codex Agent、其他 API、分页和后台刷新尚未迁移。浏览器详情测试不代表 Dashboard、侧栏项目、书签或实时功能通过；这些请求目前明确返回 501。Node 仍为默认实现。
 
 复现首个切面：
 

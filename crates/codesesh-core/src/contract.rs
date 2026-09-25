@@ -50,6 +50,15 @@ pub enum CostSource {
     Estimated,
 }
 
+impl CostSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Recorded => "recorded",
+            Self::Estimated => "estimated",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ProjectIdentity {
     pub kind: String,

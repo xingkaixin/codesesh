@@ -2,7 +2,10 @@ mod http;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use codesesh_core::{agents, contract::SessionIndex, storage::Cache};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Parser)]
 #[command(name = "codesesh", version, about = "Browse local AI coding sessions")]
@@ -46,13 +49,23 @@ async fn run() -> Result<()> {
     let root = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .context("Rust P1 requires an explicit CODEX_HOME")?;
-    let mut sessions = tokio::task::spawn_blocking(move || agents::codex::scan(&root)).await??;
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .context("Rust P1 requires an isolated home directory")?;
+    let pricing = codesesh_core::pricing::Pricing::load(&home);
+    let mut sessions =
+        tokio::task::spawn_blocking(move || agents::codex::scan(&root, &pricing)).await??;
     if args.days > 0 {
         let from = chrono::Utc::now().timestamp_millis() - i64::from(args.days) * 86_400_000;
         sessions.retain(|session| session.detail.head.time_updated >= from);
     }
-    let mut cache = Cache::open(None)?;
-    cache.publish(&mut sessions)?;
+    let cache_path = home.join(".cache/codesesh/codesesh.db");
+    let (cache, sessions) = tokio::task::spawn_blocking(move || -> Result<_> {
+        let mut cache = Cache::open_preview(&cache_path)?;
+        cache.publish(&mut sessions)?;
+        Ok((cache, sessions))
+    })
+    .await??;
     if args.json {
         println!(
             "{}",
@@ -73,7 +86,11 @@ async fn run() -> Result<()> {
     let token = uuid::Uuid::new_v4().to_string();
     let address = listener.local_addr()?;
     let state = Arc::new(http::State {
-        sessions: sessions.into_iter().map(|session| session.detail).collect(),
+        sessions: sessions
+            .into_iter()
+            .map(|session| session.detail.head)
+            .collect(),
+        cache: Mutex::new(cache),
         token: token.clone(),
         days: args.days,
     });

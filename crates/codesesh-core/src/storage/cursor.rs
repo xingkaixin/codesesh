@@ -27,15 +27,12 @@ pub fn advance(previous: &str, message: &Message, parts: &str) -> Result<String>
     let tokens = message
         .tokens
         .as_ref()
-        .map(serde_json::to_string)
+        .map(super::json::stringify)
         .transpose()?;
-    let cost_source = message.cost_source.as_ref().map(|value| {
-        serde_json::to_value(value)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned()
-    });
+    let cost_source = message
+        .cost_source
+        .as_ref()
+        .map(crate::contract::CostSource::as_str);
     let completed = message.time_completed.map(|value| value.to_string());
     let mut hash = Sha256::new();
     hash.update("codesesh-session-messages-chain\0");
@@ -51,7 +48,7 @@ pub fn advance(previous: &str, message: &Message, parts: &str) -> Result<String>
         message.provider.as_deref(),
         tokens.as_deref(),
         Some(&message.cost.to_string()),
-        cost_source.as_deref(),
+        cost_source,
         Some(parts),
         Some("1"),
         message.subagent_id.as_deref(),
