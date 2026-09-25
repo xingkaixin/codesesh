@@ -5,7 +5,6 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
-    sync::LazyLock,
 };
 
 mod helpers;

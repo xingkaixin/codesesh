@@ -75,43 +75,8 @@ pub fn timestamp(v: &Value) -> Option<f64> {
 pub fn mtime(path: &Path) -> anyhow::Result<f64> {
     Ok(crate::time::file_mtime_ms(path)?)
 }
-static CLEAN_PATTERNS: std::sync::LazyLock<Vec<(regex::Regex, &'static str)>> =
-    std::sync::LazyLock::new(|| {
-        let mut patterns = vec![];
-        let tags = [
-            "command-message",
-            "command-name",
-            "local-command-caveat",
-            "local-command-stdout",
-            "system-reminder",
-        ];
-        for tag in tags {
-            for (pattern, replacement) in [
-                (
-                    format!(r"(?i)(^|\r?\n)[ \t]*<{tag}\b[^>]*>[\s\S]*?</{tag}>[ \t]*(?:\r?\n|$)"),
-                    "$1",
-                ),
-                (format!(r"(?i)<{tag}\b[^>]*>[\s\S]*?</{tag}>"), ""),
-                (format!(r"(?i)\n*<{tag}\b[^>]*>[\s\S]*$"), ""),
-            ] {
-                patterns.push((regex::Regex::new(&pattern).unwrap(), replacement));
-            }
-        }
-        for tag in tags.into_iter().chain(["command-args"]) {
-            patterns.push((
-                regex::Regex::new(&format!(r"(?i)</?{tag}\b[^>]*>")).unwrap(),
-                "",
-            ));
-        }
-        patterns
-    });
 pub fn clean(s: &str) -> String {
-    let mut s = s.to_owned();
-    if s.contains('<') {
-        for (pattern, replacement) in CLEAN_PATTERNS.iter() {
-            s = pattern.replace_all(&s, *replacement).into_owned();
-        }
-    }
+    let mut s = super::super::message_text::strip_tags_in_order(s);
     s = s
         .split_inclusive('\n')
         .map(|line| {

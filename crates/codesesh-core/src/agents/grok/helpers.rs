@@ -28,41 +28,7 @@ pub(super) fn iso(v: &Value) -> Option<f64> {
         .map(|t| t.timestamp_millis() as f64)
 }
 pub(super) fn clean(s: &str) -> String {
-    static BLOCKS: LazyLock<Vec<(regex::Regex, regex::Regex, regex::Regex, regex::Regex)>> =
-        LazyLock::new(|| {
-            [
-                "command-message",
-                "command-name",
-                "local-command-caveat",
-                "local-command-stdout",
-                "system-reminder",
-            ]
-            .iter()
-            .map(|t| {
-                (
-                    regex::Regex::new(&format!(
-                        r"(?is)(^|\r?\n)[ \t]*<{t}\b[^>]*>.*?</{t}>[ \t]*(?:\r?\n|$)"
-                    ))
-                    .unwrap(),
-                    regex::Regex::new(&format!(r"(?is)<{t}\b[^>]*>.*?</{t}>")).unwrap(),
-                    regex::Regex::new(&format!(r"(?is)\n*<{t}\b[^>]*>.*$")).unwrap(),
-                    regex::Regex::new(&format!(r"(?i)</?{t}\b[^>]*>")).unwrap(),
-                )
-            })
-            .collect()
-        });
-    let mut result = s.to_owned();
-    for (line, block, open, _) in BLOCKS.iter() {
-        result = line.replace_all(&result, "$1").into();
-        result = block.replace_all(&result, "").into();
-        result = open.replace_all(&result, "").into();
-    }
-    for (_, _, _, loose) in BLOCKS.iter() {
-        result = loose.replace_all(&result, "").into();
-    }
-    static TRANSPARENT: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"(?i)</?command-args\b[^>]*>").unwrap());
-    result = TRANSPARENT.replace_all(&result, "").into();
+    let mut result = super::super::message_text::strip_tags_in_order(s);
     result = result
         .split('\n')
         .map(|line| {
