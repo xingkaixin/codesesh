@@ -215,10 +215,7 @@ impl AgentScanner {
         self.initialized = true;
         self.empty_sources
             .retain(|key| self.file_fingerprints.contains_key(key));
-        if !matches!(
-            self.source.agent.as_str(),
-            "cursor" | "opencode" | "zcode" | "deepchat" | "cherrystudio" | "minimax-code"
-        ) {
+        if !matches!(self.source.agent.as_str(), "cursor") {
             let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
             checkpoint["incremental"] = self.history_complete.into();
             checkpoint["sourceState"] = serde_json::json!({
@@ -228,6 +225,7 @@ impl AgentScanner {
                 "generation": self.pricing.generation(),
                 "root": self.source.scan_path,
                 "files": self.file_fingerprints,
+                "databaseSessions": self.fingerprints,
                 "emptySources": self.empty_sources,
             });
         }
@@ -577,10 +575,33 @@ impl AgentScanner {
         for record in &self.previous {
             by_source.entry(&record.source).or_default().push(record);
         }
+        let mut by_key: HashMap<_, Vec<_>> = HashMap::new();
+        if self.source.agent != "cursor" && selected.iter().any(|item| item.path.is_none()) {
+            for record in &self.previous {
+                let mut reference = &record.head.reference;
+                let mut seen = HashSet::new();
+                while seen.insert(reference) {
+                    let Some((Some(parent), _)) = self.baseline.get(reference) else {
+                        break;
+                    };
+                    if !self.baseline.contains_key(parent) {
+                        break;
+                    }
+                    reference = parent;
+                }
+                by_key
+                    .entry(&reference.session_id)
+                    .or_default()
+                    .push(record);
+            }
+        }
         for item in selected {
-            let records = item.path.as_ref().and_then(|path| by_source.get(path));
+            let records = match &item.path {
+                Some(path) => by_source.get(path),
+                None => by_key.get(&item.key),
+            };
             let current = (records.is_some() || self.empty_sources.contains(&item.key))
-                && item.path.is_some()
+                && self.source.agent != "cursor"
                 && self.file_fingerprints.get(&item.key) == Some(&item.fingerprint)
                 && records.into_iter().flatten().all(|record| {
                     let projection = projections
@@ -615,12 +636,11 @@ impl AgentScanner {
             consumed += 1;
         }
         let delta = self.read_selected(&changed)?;
-        for item in changed.iter().filter(|item| item.path.is_some()) {
-            if delta
-                .upserts
-                .iter()
-                .any(|session| item.path.as_ref() == Some(&session.source))
-            {
+        for item in changed.iter().filter(|_| self.source.agent != "cursor") {
+            if delta.upserts.iter().any(|session| match &item.path {
+                Some(path) => path == &session.source,
+                None => session.head.reference.session_id == item.key,
+            }) {
                 self.empty_sources.remove(&item.key);
             } else {
                 self.empty_sources.insert(item.key.clone());
@@ -718,6 +738,9 @@ impl AgentScanner {
                 serde_json::from_value(state["files"].clone()).unwrap_or_default();
             self.empty_sources =
                 serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
+            self.fingerprints =
+                serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
+            self.pricing_generation = self.pricing.generation();
         }
 
         for head in cache.agent_snapshot(&self.source.agent)? {

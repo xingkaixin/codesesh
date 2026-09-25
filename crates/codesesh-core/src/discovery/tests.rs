@@ -242,6 +242,21 @@ fn removed_zcode_database_retains_sessions_and_resumes_after_restore() {
         )
         .unwrap();
     first.on_reject.take();
+    scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut warm = scanner.refresh(None).unwrap();
+    assert!(warm.complete);
+    assert!(warm.sessions.is_empty());
+    assert!(warm.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut warm.sessions,
+            &warm.removed,
+            "zcode",
+            &warm.checkpoint,
+            warm.complete,
+        )
+        .unwrap();
+    warm.on_reject.take();
     let backup = temporary.path().join("backup.sqlite");
     std::fs::rename(&file, &backup).unwrap();
     for paths in [Some(vec![file.clone()]), None] {
