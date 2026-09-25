@@ -31,7 +31,7 @@ for (const width of [1280, 375]) {
     await expect(dashboard.locator("section").first()).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     const initialTop = await dashboard.evaluate((element) => element.getBoundingClientRect().top);
-    const notice = page.locator("p[title]").filter({ hasText: /session|history|index/i });
+    const notice = page.locator("div[title]").filter({ hasText: /session|history|index/i });
     for (const active of [true, false, true, false]) {
       await page.evaluate(
         (status) => {
