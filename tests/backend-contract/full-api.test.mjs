@@ -80,7 +80,12 @@ async function capture(fixture, command) {
     if (normalized?.nextCursor) normalized.nextCursor = normalizeCursor(normalized.nextCursor);
     if (label === "alias put" && response.status === 200) {
       assert.ok(Number.isSafeInteger(body.alias.updatedAt));
-      assert.ok(body.alias.updatedAt >= start && body.alias.updatedAt <= Date.now());
+      // Windows Node and Rust clocks can differ by one system clock tick.
+      const clockTolerance = process.platform === "win32" ? 16 : 0;
+      assert.ok(
+        body.alias.updatedAt >= start - clockTolerance &&
+          body.alias.updatedAt <= Date.now() + clockTolerance,
+      );
       normalized.alias.updatedAt = "<request-clock>";
     }
     results.push({
