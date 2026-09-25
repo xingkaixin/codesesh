@@ -1,3 +1,5 @@
+pub(crate) const PARSER_VERSION: &str = "rust-parser-v2";
+
 pub mod cherrystudio;
 pub mod claudecode;
 pub mod codex;

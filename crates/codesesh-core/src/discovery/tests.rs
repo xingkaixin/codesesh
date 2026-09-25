@@ -536,6 +536,11 @@ fn persisted_file_state_skips_bodies_and_rechecks_changes_after_restart() {
         assert!(unchanged.removed.is_empty());
         commit_page(&mut cache, &mut unchanged);
     }
+    cache.connection().execute("UPDATE cache_meta SET value=json_set(value,'$.parserVersion','old-parser') WHERE key='rust_source_state:pi'", []).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut revised = scanner.refresh(None).unwrap();
+    assert_eq!(revised.sessions.len(), 1);
+    commit_page(&mut cache, &mut revised);
     write_pi(&source, "Changed");
     let rejected = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
     assert_eq!(rejected.sessions.len(), 1);
