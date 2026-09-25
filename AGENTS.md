@@ -4,80 +4,69 @@
 
 ## 技术栈
 
-- **Monorepo**：pnpm（版本以 `package.json` 的 `packageManager` 字段为准）+ Turbo
-- **语言**：TypeScript 7（`tsc` 原生）+ TypeScript 6（`typescript` API / `tsc6`，供 tsup d.ts、Astro 等），tsup 打包
-- **Server**：Hono（HTTP API）+ Citty（CLI 解析）
-- **Web**：React 19 + React Router + Tailwind CSS 4 + Base UI
-- **Lint**：oxlint
-- **Format**：oxfmt
-- **Test**：vitest + @vitest/coverage-v8
-- **工具链**：源码开发使用 `mise.toml` 固定的 Node 24；发布后的 CLI 支持 Node.js 22+
+- **后端**：Rust Cargo workspace；Axum HTTP、Clap CLI、Tokio 运行时、rusqlite SQLite。
+- **前端**：TypeScript、React 19、React Router、Tailwind CSS 4、Base UI；产品站使用 Astro。
+- **Web workspace**：pnpm（版本以 `package.json` 为准）+ Turbo。
+- **契约**：`@codesesh/contract` 提供浏览器安全类型和纯逻辑；wire 类型由 Rust 生成。
+- **质量工具**：Rust 使用 rustfmt、Clippy、cargo test；TypeScript 使用 oxlint、oxfmt、Vitest。
+- **工具链**：Rust 版本见 `rust-toolchain.toml`；源码构建使用 `mise.toml` 固定的 Node 24。
+  npm launcher 需要 Node.js 22+，独立原生可执行文件不需要 Node。
 
-## 包结构与模块职能
+## 目录与职能
 
-- `packages/core/src/`：framework-agnostic 核心库
-  - `packages/core/src/agents/`：各 Agent 适配器、注册表与能力声明
-  - `packages/core/src/analytics/`：Dashboard 与项目聚合统计
-  - `packages/core/src/bookmarks/`：书签物化
-  - `packages/core/src/contract/`：前后端共享的 browser-safe 契约
-  - `packages/core/src/runtime/`：按领域拆分的运行时公共入口；CLI 从
-    `@codesesh/core/runtime/<domain>` 导入，浏览器端共享内容来自 `@codesesh/core/contract`
-  - `packages/core/src/discovery/`：扫描编排、路径解析与 Session Detail 加载
-  - `packages/core/src/discovery/cache/`：Session 缓存与搜索索引持久化
-  - `packages/core/src/pricing/`：模型定价、代际同步与成本计算
-  - `packages/core/src/projects/`：Project Identity、分组与作用域匹配
-  - `packages/core/src/search/`：Session 搜索
-  - `packages/core/src/state/`：书签、别名等用户状态
-  - `packages/core/src/types/`：共享类型定义
-  - `packages/core/src/utils/`：通用工具函数
-- `packages/cli/src/`：CLI 入口、HTTP 服务与后台 Worker
-  - `packages/cli/src/index.ts`：参数解析，驱动扫描并启动服务器
-  - `packages/cli/src/server.ts`：Hono 服务与生命周期管理
-  - `packages/cli/src/api/`：HTTP API 端点；其余扫描、索引与 Worker 模块保持扁平布局
-- `apps/web/src/`：React 应用
-  - `apps/web/src/App.tsx`：路由与顶层状态
-  - `apps/web/src/components/`：产品与 UI 组件
-  - `apps/web/src/hooks/`：客户端状态与数据同步 hooks
-  - `apps/web/src/lib/`：HTTP API 客户端与前端工具
-  - `apps/web/src/styles/`：全局样式
-- `apps/www/`：Astro 产品站
-  - `apps/www/src/pages/`：静态页面路由
-  - `apps/www/src/components/`：产品站组件
-  - `apps/www/public/`：静态资源
+- `crates/codesesh-core/src/agents/`：13 个 Agent 适配器、来源解析和增量读取。
+- `crates/codesesh-core/src/discovery/`：数据路径、扫描编排、窗口优先回填和 checkpoint。
+- `crates/codesesh-core/src/runtime.rs`：有界扫描、取消、刷新和状态。
+- `crates/codesesh-core/src/runtime/`：单 SQLite writer、监听和状态发布。
+- `crates/codesesh-core/src/storage/`：schema 34、迁移、消息、FTS 和成本事实。
+- `crates/codesesh-core/src/search/`：查询解析、候选召回、搜索片段和文件活动。
+- `crates/codesesh-core/src/analytics/`：Dashboard 与项目统计。
+- `crates/codesesh-core/src/pricing/`：价格缓存、代际、估价和成本来源。
+- `crates/codesesh-core/src/projects/`：项目身份、分组和路径作用域。
+- `crates/codesesh-core/src/state/`：schema 3 用户状态。
+- `crates/codesesh-cli/src/`：CLI、HTTP、安全、SSE、资源和日志。
+- `crates/codesesh-cli/npm/`：npm launcher 模板。
+- `packages/contract/src/`：浏览器安全契约；`generated/` 为生成文件。
+- `apps/web/src/`：React 应用、组件、hooks 和客户端请求。
+- `apps/www/`：Astro 产品站。
+- `scripts/rust/`：原生构建、打包、安装 smoke、制品集合检查和性能对照。
 
 ## 数据流
 
-默认 Web 模式：
-
-```
-CLI 参数 → LiveScanStore 恢复 SQLite 快照 → Hono HTTP API / SSE
-→ AgentSyncEngine 后台 refresh / backfill → SQLite / FTS 提交
-→ 内存快照 / SSE → React Web UI
+```text
+Clap 参数 → SQLite 恢复快照 → Axum HTTP / SSE
+→ AgentScanner 有界 blocking 扫描 → 单 writer 提交 SQLite / FTS / checkpoint
+→ 不可变快照 / SSE → React Web UI
 ```
 
-后续源文件或 Agent 数据库变化由 `SessionWatcher` 触发对应 Agent 的 refresh。
-`--json` 模式执行一次性扫描，输出 JSON 后退出。
+notify 事件触发对应 Agent 的后续刷新。扫描固定一个定价代际；旧代际批次不得提交。
+`--json` 一次扫描后输出并退出。业务后端不依赖 Node 或旧实现回退。
 
 ## 验证
 
-优先运行受影响 workspace 的 lint、typecheck 和相关测试。跨包或基础设施改动可运行：
-`pnpm lint && pnpm format:check && pnpm typecheck && pnpm typecheck:e2e && pnpm build && pnpm test`。
+优先运行受影响 crate/workspace 的检查。后端基本验证（涉及 CLI 的构建前先运行 `pnpm build:web`）：
 
-- `pnpm typecheck`：全 workspace 类型检查（web 单独跑最快：`pnpm --filter @codesesh/web typecheck`）。
-- `pnpm test`：turbo 单测；单包用 `pnpm --filter <pkg> test`。
-- `pnpm test:coverage`：先跑 `scripts/critical-coverage.mjs` 的覆盖率 ratchet（按 scope 设阈值，低于阈值即红），再全量覆盖率。
-- `pnpm --filter @codesesh/web test:bundle`：初始 bundle 300KB gzip 预算（`apps/web/tests/initial-bundle.test.ts`）；改动首屏依赖图时先构建再运行。
-- `pnpm test:e2e`：Playwright 端到端（`tests/e2e/`），需要先构建。
-- `pnpm test:migration`：SQLite 缓存 schema 迁移冒烟。
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+```
 
-完整 CI 以 `.github/workflows/ci.yml` 为事实源；`README_CN.md` 的“复现 CI 必需检查”
-列出完整本地执行顺序。常见专项检查：
+CLI 构建需要已有 Web 资源；仅 debug 后端检查可显式使用 `CODESESH_SKIP_WEB_ASSETS=1`，
+release 不允许跳过资源。契约类型改变后重新生成 TypeScript 并检查消费者。
+前端使用 `pnpm lint`、`pnpm format:check`、`pnpm typecheck` 和相关 Vitest 测试。
 
-- `node scripts/check-quality-task-coverage.mjs`：每个包必须声明 lint/format/typecheck 等质量脚本。
-- `node scripts/check-docs-paths.mjs`：文档（含本文件）引用的路径必须真实存在。
-- `node scripts/check-docs-facts.mjs`：README 等文档中的 repo-fact 标记块必须与源码一致；运行前先构建 Core。改了 `CACHE_SCHEMA_VERSION` 或 CI 步骤要同步改文档。
-- `node scripts/release-preflight.mjs`：包版本一致性。
-- `pnpm perf:check`：算法增长率检查。
+- `pnpm test:backend`：真实进程 CLI、HTTP、SSE 和持久化契约。
+- `pnpm prepare:reference`：获取锁定的旧 Node 参考制品，仅用于差分验收。
+- `pnpm test:backend:compare`：对照参考与候选后端。
+- `pnpm test:e2e`：Playwright 端到端，脚本先构建再运行。
+- `pnpm --filter @codesesh/web test:bundle`：构建后检查首屏 bundle 预算。
+- `node scripts/check-docs-paths.mjs`：文档路径必须存在。
+- `node scripts/check-docs-facts.mjs`：repo-fact 标记块须与源码、脚本和 CI 一致。
+- `node scripts/release-preflight.mjs`：Cargo 与前端版本一致性。
+
+完整 CI 以 `.github/workflows/ci.yml` 为事实源。验证命令不代表已经通过，报告结果必须保留
+实际运行证据。制品要求见 `docs/rust-packaging.md`，发布操作与代码迁移分开。
 
 ## Web 设计规则
 
@@ -96,11 +85,11 @@ CLI 参数 → LiveScanStore 恢复 SQLite 快照 → Hono HTTP API / SSE
 
 ## 扩展新 Agent
 
-1. 在 `packages/core/src/agents/` 新增适配器并导出数据根目录解析器。
-2. 在 `packages/core/src/contract/agent-catalog.ts` 声明公开身份、图标、来源类型、resume 命令能力与工具展示策略。
-3. 在 `packages/core/src/agents/register.ts` 添加工厂与数据根目录解析器。
-4. 在 `apps/web/public/icon/agent/` 与 `apps/www/public/icon/agent/` 添加对应 SVG。
-5. 自定义工具展示需新增 `apps/web/src/components/session-detail/tool-strategy/<agent>.ts`
-   并在同目录的 `apps/web/src/components/session-detail/tool-strategy/index.ts` 注册 builder；使用默认策略则无需新增实现。
+1. 在 `crates/codesesh-core/src/agents/` 新增 Rust 适配器，在模块注册中接入扫描。
+2. 在 `crates/codesesh-core/src/discovery/paths.rs` 声明数据根目录及环境变量覆盖。
+3. 同步公开 Agent 元数据与 `packages/contract/src/agent-catalog.ts` 的展示能力。
+4. 在 `apps/web/public/icon/agent/` 与 `apps/www/public/icon/agent/` 添加 SVG。
+5. 自定义工具展示在 `apps/web/src/components/session-detail/tool-strategy/` 添加并注册。
 
-注册完备性测试必须覆盖图标与工具展示策略声明。
+适配器测试应覆盖真实格式、用量、工具和删除/失败行为。注册检查应覆盖图标、resume 声明和
+工具展示策略；不要用额外包装层代替明确的来源解析。

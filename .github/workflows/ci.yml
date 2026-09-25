@@ -8,129 +8,160 @@ on:
 permissions:
   contents: read
 
-# Supersede in-flight runs for the same PR branch; keep every run on main.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
+    name: Web and contract (${{ matrix.os }}, Node ${{ matrix.node-version }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: [22, 24]
-
     runs-on: ${{ matrix.os }}
-
+    timeout-minutes: 30
     steps:
+      - name: Preserve repository line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
-      - name: Verify quality task coverage
-        run: node scripts/check-quality-task-coverage.mjs
-
+      - run: node scripts/check-quality-task-coverage.mjs
+      - run: pnpm build:web
       - run: pnpm lint
-
       - run: pnpm format:check
-
-      - name: Typecheck e2e and root test configs
-        run: pnpm typecheck:e2e
-
-      - name: Verify package versions agree
-        run: node scripts/release-preflight.mjs
-
-      - name: Verify documented paths exist
-        run: node scripts/check-docs-paths.mjs
-
-      # Growth-rate checks only; wall-clock benchmarks stay out of PR CI.
-      - name: Check algorithmic growth rates
-        if: matrix.node-version == 24
-        run: pnpm perf:check
-
-      - run: pnpm build
-
-      - name: Verify backend process contracts
-        run: pnpm test:backend
-
-      - name: Verify documented repository facts
-        run: node scripts/check-docs-facts.mjs
-
-      - name: Smoke test CLI on Node 22 toolchain
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
-        run: node packages/cli/dist/index.js --version
-
-      # `pnpm clean` is a documented command, so it has to work on every OS we
-      # claim to support — including a shell with no `rm`.
+      - run: pnpm typecheck
+      - run: pnpm typecheck:e2e
+      - run: node scripts/release-preflight.mjs
+      - run: node scripts/check-docs-paths.mjs
+      - run: node scripts/check-docs-facts.mjs
       - name: Smoke test clean and rebuild
         if: matrix.node-version == 24
         run: |
-          node -e "require('node:fs').writeFileSync('packages/core/dist/clean-sentinel.txt','x')"
+          node -e "require('node:fs').writeFileSync('packages/contract/dist/clean-sentinel.txt','x')"
           pnpm clean
-          node -e "if (require('node:fs').existsSync('packages/core/dist')) { console.error('dist survived pnpm clean'); process.exit(1) }"
-          pnpm build
-
+          node -e "if (require('node:fs').existsSync('packages/contract/dist')) { console.error('dist survived pnpm clean'); process.exit(1) }"
+          pnpm build:web
       - run: pnpm test
 
-  smoke:
-    runs-on: ubuntu-latest
-
+  rust:
+    name: Rust (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            executable: codesesh
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            executable: codesesh
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            executable: codesesh
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            executable: codesesh.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
     steps:
+      - name: Preserve identical npm package inputs
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm build
-
-      - run: pnpm test:coverage
-
-      - run: pnpm test:migration
-
-      - name: Prepare frozen Node reference
-        run: pnpm prepare:reference
-
-      - name: Compare backend with frozen reference
-        run: pnpm test:backend:compare
-
-      - name: Enforce the initial bundle budget
-        run: pnpm --filter @codesesh/web test:bundle
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
+      - run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
+      - name: Cache Rust dependencies and build outputs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - run: pnpm exec playwright install --with-deps chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-
-      - run: pnpm exec playwright install-deps chromium
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-
-      - run: pnpm test:e2e
-
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ matrix.target }}-1.90.0-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-${{ matrix.target }}-1.90.0-
+      - run: pnpm install --frozen-lockfile
+      - name: Verify generated contracts have no drift
+        run: |
+          pnpm generate:rust-contract
+          git diff --exit-code -- packages/contract/src/generated
+      - name: Build contract and Web assets before Rust embedding
+        run: pnpm build:web
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: pnpm build:rust
+      - run: pnpm package:artifact:test
+      - name: Prepare frozen Node reference
+        run: pnpm prepare:reference
+      - name: Verify native process and CLI contracts
+        run: |
+          pnpm test:backend
+          node --test tests/backend-contract/cli-options.test.mjs
+      - name: Compare complete API payloads with the frozen reference
+        run: |
+          pnpm test:backend:compare
+          pnpm test:rust:slice
+          pnpm test:backend:full
+      - name: Verify legacy cache migration and rollback
+        run: pnpm test:migration
+      - name: Verify database adapter payloads and cursors
+        run: |
+          node --test crates/codesesh-core/src/agents/opencode/http-parity.test.mjs
+          node --test crates/codesesh-core/src/agents/deepchat/http-parity.test.mjs
+      - name: Verify file adapter reference projections
+        run: |
+          node crates/codesesh-core/src/agents/grok/compare.mjs
+          node crates/codesesh-core/src/agents/dsh/compare.mjs
+      - name: Check algorithmic growth rates
+        if: runner.os == 'Linux'
+        run: pnpm perf:check
+      - name: Verify frontend coverage and initial bundle budget
+        if: runner.os == 'Linux'
+        run: |
+          pnpm test:coverage
+          pnpm --filter @codesesh/web test:bundle
+      - name: Install Playwright Chromium
+        if: runner.os == 'Linux'
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify Rust-backed browser flows
+        if: runner.os == 'Linux'
+        run: |
+          pnpm test:rust:browser
+          pnpm test:e2e
+      - name: Package and verify native install
+        run: |
+          node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
+          node scripts/rust/smoke.mjs --contracts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-${{ matrix.target }}
+          path: |
+            artifacts/rust-packaging/${{ matrix.target }}/*.tgz
+            artifacts/rust-packaging/${{ matrix.target }}/*.tar.gz
+            artifacts/rust-packaging/${{ matrix.target }}/manifest.json
+            artifacts/rust-packaging/${{ matrix.target }}/SHA256SUMS
+            artifacts/rust-packaging/${{ matrix.target }}/smoke-report.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload Playwright failure artifacts
-        if: ${{ failure() }}
+        if: failure() && runner.os == 'Linux'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-failure-artifacts
@@ -140,83 +171,63 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  package-artifact:
-    name: Package artifact
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm package:artifact:test
-
-      - run: pnpm package:artifact
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: npm-package
-          path: artifacts/npm/
-          if-no-files-found: error
-          retention-days: 1
-
   package-smoke:
-    name: Package smoke (Node ${{ matrix.node-version }})
-    needs: package-artifact
+    name: Native npm install (${{ matrix.target }}, Node ${{ matrix.node-version }})
+    needs: rust
     strategy:
       fail-fast: false
       matrix:
         node-version: ["22.0.0", 24]
-    runs-on: ubuntu-latest
-
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-msvc
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node-version }}
-
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: npm-package
-          path: artifacts/npm
+          name: native-${{ matrix.target }}
+          path: artifacts/rust-packaging/${{ matrix.target }}
+      - run: node scripts/rust/smoke.mjs --contracts
 
-      - run: node scripts/smoke-package-artifact.mjs artifacts/npm/codesesh-*.tgz
-
-  rust:
-    name: Rust (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  rust-release-set:
+    name: Verify native release set
+    needs: [rust, package-smoke]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: pnpm
-      - run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --locked
-      - run: cargo build --release --locked
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm prepare:reference
-      - run: pnpm test:rust:slice
-      - run: pnpm generate:rust-contract
-      - run: git diff --exit-code -- crates/codesesh-core/bindings
-      - run: pnpm build
-        if: runner.os == 'Linux'
-      - run: pnpm exec playwright install --with-deps chromium
-        if: runner.os == 'Linux'
-      - run: pnpm test:rust:browser
-        if: runner.os == 'Linux'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: native-*
+          path: artifacts/native-targets
+      - name: Assemble verification directories
+        run: |
+          mkdir -p artifacts/rust-packaging
+          for directory in artifacts/native-targets/native-*; do
+            mv "$directory" "artifacts/rust-packaging/${directory##*/native-}"
+          done
+      - run: node scripts/rust/verify-set.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-release-set
+          path: artifacts/rust-packaging/release-set.json
+          if-no-files-found: error
+          retention-days: 7

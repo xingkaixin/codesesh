@@ -95,8 +95,8 @@ More agents coming soon. See the [extension checklist](#extending).
 
 <!-- repo-fact:node-version:start -->
 
-- Node.js 22+ for the published CLI; use the Node 24 toolchain pinned in `mise.toml` when
-  building from source
+- Node.js 22+ for the npm launcher; the standalone native executable does not require Node.
+  Source builds use Node 24 from `mise.toml` and Rust from `rust-toolchain.toml`
 
 <!-- repo-fact:node-version:end -->
 
@@ -126,7 +126,8 @@ pnpm build
 pnpm serve
 ```
 
-The local server uses `packages/cli/dist/index.js` and opens the same Web UI.
+The local server runs the Rust executable with its embedded Web UI. Build the Web assets before
+compiling a release executable; `pnpm build` coordinates the repository build.
 
 ---
 
@@ -308,11 +309,10 @@ pnpm bench:perf
 pnpm --filter @codesesh/www deploy:cf
 ```
 
-`test:coverage` runs the Core and CLI suites in Node and the Web suite in
-`happy-dom`. Coverage includes all production TypeScript in Core, CLI, and Web.
-Package-level baselines prevent coverage regressions, while stricter targeted
-thresholds protect the scanning, API, live runtime, hook, and interaction paths.
-The Astro landing page is covered by Playwright rather than Vitest.
+Rust backend tests run through Cargo. `test:coverage` measures the TypeScript contract and Web
+code covered by Vitest; it does not measure Rust coverage. Playwright exercises the browser against
+the native server. Backend process contracts and the fixed Node reference provide separate
+compatibility checks.
 
 The Pages deployment uses `apps/www/public/_headers` to cache fingerprinted
 `/_astro/` assets for one year. Keep HTML and unversioned public files on the
@@ -328,60 +328,56 @@ settings if the production HTML contains multiple CF beacons. Umami is separate.
 
 ### Reproduce Required CI Checks
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs the main
-job on Node.js 22 and 24 across Linux, macOS, and Windows; the following sequence reproduces its
-gates from the repository root:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs
+Rust and frontend checks, browser contracts, and native artifact validation. The following commands
+list the workflow’s declared checks. Run them in their job order; rebuild Web after `pnpm clean`.
+The packaging line containing `${{ matrix.* }}` is a CI template: locally use `pnpm package:artifact`.
+`verify-set` needs artifacts collected from all four runners:
 
 <!-- repo-fact:ci-commands:start -->
 
 ```bash
-# Dependencies and static gates
 pnpm install --frozen-lockfile
 node scripts/check-quality-task-coverage.mjs
+pnpm build:web
 pnpm lint
 pnpm format:check
+pnpm typecheck
 pnpm typecheck:e2e
 node scripts/release-preflight.mjs
 node scripts/check-docs-paths.mjs
-
-# Algorithmic, build, documentation, and clean-rebuild gates
-pnpm perf:check
-pnpm build
-pnpm test:backend
 node scripts/check-docs-facts.mjs
-node packages/cli/dist/index.js --version
 pnpm clean
-pnpm build
-
-# Unit, coverage, migration, and browser gates
+pnpm build:web
 pnpm test
-pnpm test:coverage # includes pnpm check:coverage-scopes
-pnpm test:migration
-pnpm prepare:reference
-pnpm test:backend:compare
+pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
-cargo build --release --locked
+pnpm build:rust
+pnpm package:artifact:test
+pnpm prepare:reference
+pnpm test:backend
+pnpm test:backend:compare
 pnpm test:rust:slice
-pnpm generate:rust-contract
-pnpm test:rust:browser
+pnpm test:backend:full
+pnpm test:migration
+pnpm perf:check
+pnpm test:coverage
 pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
-pnpm exec playwright install-deps chromium
+pnpm test:rust:browser
 pnpm test:e2e
-
-# Package artifact and installed-package gates
-pnpm package:artifact:test
-pnpm package:artifact
-node scripts/smoke-package-artifact.mjs artifacts/npm/codesesh-*.tgz
+node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
+node scripts/rust/smoke.mjs --contracts
+node scripts/rust/verify-set.mjs
 ```
 
 <!-- repo-fact:ci-commands:end -->
 
-The workflow limits `perf:check` and the clean-rebuild smoke test to Node.js 24, and runs the CLI
-version smoke test on Node.js 22. A local run covers the commands; the pull request matrix remains
-the cross-platform verification.
+A local run covers the host platform. Native packaging targets macOS arm64/x64, Linux glibc x64,
+and Windows x64; each target still needs its own runner and installed-package checks. See
+[the packaging guide](docs/rust-packaging.md).
 
 ### Performance Benchmark
 
@@ -393,48 +389,41 @@ pnpm bench:perf -- --days 0 --iterations 3
 pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 ```
 
-### Dev Workflow (watch mode)
+### Dev Workflow
 
-Open two terminals:
+Build and start the native app:
 
 ```bash
-# Terminal 1 — watch & recompile on source changes
 pnpm dev
-
-# Terminal 2 — auto-restart server when dist changes
-pnpm serve
-
-# Or pass CLI flags directly:
-node --watch packages/cli/dist/index.js --cwd . --days 3
 ```
+
+After backend or embedded Web changes, rebuild and restart the process. `pnpm serve` starts an
+existing build. To pass arguments directly after a build:
+
+```bash
+./target/release/codesesh --cwd . --days 3
+```
+
+The separate Astro site supports `pnpm dev:www`.
 
 ### Project Structure
 
 ```text
-packages/core/src/agents/       Agent adapters, registry, and registration
-packages/core/src/analytics/    Dashboard aggregation
-packages/core/src/contract/     Browser-safe types and shared pure logic
-packages/core/src/discovery/    Session scanning, SQLite cache, and search index
-packages/core/src/pricing/      Model price registry and cost estimation
-packages/core/src/projects/     Project identity resolution
-packages/core/src/search/       Session search across sources
-packages/core/src/state/        Bookmarks, aliases, and preferences
-packages/core/src/types/        Shared TypeScript types
-packages/core/src/utils/        Utility functions
-
-packages/cli/src/index.ts       CLI argument parsing and startup
-packages/cli/src/server.ts      Hono server and lifecycle
-packages/cli/src/api/           HTTP routes and request handlers
-packages/cli/src/*-worker.ts    Scan, search-index, and smart-tag worker threads
-
-apps/web/src/components/        Product and UI components
-apps/web/src/hooks/             Client state and data synchronization
-apps/web/src/lib/               HTTP API client and frontend utilities
-apps/web/src/styles/            Global styles
-
-apps/www/src/pages/             Product-site routes
-apps/www/src/components/        Product-site components
-apps/www/public/                Static product-site assets
+crates/codesesh-core/src/agents/       Agent adapters and source parsing
+crates/codesesh-core/src/discovery/    Discovery, incremental scans, and backfill
+crates/codesesh-core/src/runtime/      Watcher, single writer, and publication
+crates/codesesh-core/src/storage/      SQLite schema, migrations, messages, and FTS
+crates/codesesh-core/src/pricing/      Model prices and fixed pricing generations
+crates/codesesh-core/src/analytics/    Dashboard and project aggregation
+crates/codesesh-core/src/search/       Structured search and file activity
+crates/codesesh-core/src/state/        Bookmarks and aliases
+crates/codesesh-cli/src/               Clap CLI, Axum HTTP, embedded Web, and logs
+crates/codesesh-cli/npm/               Thin npm launcher
+packages/contract/src/                Browser-safe contracts and pure logic
+packages/contract/src/generated/      Rust-generated TypeScript wire types
+apps/web/                            React application
+apps/www/                            Astro product site
+scripts/rust/                        Native build, packaging, and benchmarks
 ```
 
 `docs/architecture.md` describes how a scan flows through these; `docs/sqlite-storage.md` covers
@@ -443,12 +432,13 @@ a new guard.
 
 ### Extending
 
-Agent metadata and runtime construction have separate, explicit declarations:
+Agent source parsing and browser presentation have explicit registration points:
 
-1. Create `packages/core/src/agents/<youragent>.ts`, implement `BaseAgent`, and export its data-root resolver.
-2. Add its public identity and capabilities to `packages/core/src/contract/agent-catalog.ts`.
-3. Add its factory and data-root resolver to `packages/core/src/agents/register.ts`.
-4. Add its SVG to both `apps/web/public/icon/agent/` and `apps/www/public/icon/agent/`.
-5. For a custom tool display strategy, add `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` and register its builder in that directory's `index.ts`.
+1. Add a Rust adapter under `crates/codesesh-core/src/agents/` and register its scan entry.
+2. Add default paths and environment overrides in `crates/codesesh-core/src/discovery/paths.rs`.
+3. Keep public metadata and `packages/contract/src/agent-catalog.ts` presentation capabilities aligned.
+4. Add its SVG to `apps/web/public/icon/agent/` and `apps/www/public/icon/agent/`.
+5. Register any custom tool display in `apps/web/src/components/session-detail/tool-strategy/`.
 
-The registration completeness test rejects missing icons, undeclared resume support, and custom strategy mismatches.
+Use source-format fixtures and process contracts to verify messages, usage, tools, and incremental
+updates. Registration checks cover icons, resume declarations, and custom tool strategies.

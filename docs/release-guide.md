@@ -1,20 +1,51 @@
 # Release Guide
 
-本指南描述从上一 Git tag（例如 `v0.9.0`）发布下一补丁/次版本（例如 `v0.9.1`）时的仓库内步骤。npm 发布与 GitHub Release 由推送 tag 后的 CI 自动完成。
+本指南描述 Rust 原生 CLI、npm launcher 和 Web 资源的版本整理、构建与验收。
+代码迁移、生成候选制品和正式发布是不同动作；完成构建或安装 smoke 不代表已经发布。
 
 ## 版本与发布物
 
 | 位置 | 作用 |
 |------|------|
-| `packages/cli/package.json` | **npm 包 `codesesh` 的版本**（`pnpm publish` / Release workflow 以此为准） |
-| `packages/core/package.json` | 与 monorepo 内其他包对齐（workspace 依赖，不单独发 npm） |
-| `apps/web/package.json` | Web UI 构建时注入 `__APP_VERSION__` |
-| `apps/www/package.json` | 产品站包版本，与其余 workspace 包保持一致 |
-| Git tag `vX.Y.Z` | 触发 `.github/workflows/release.yml` |
+| `Cargo.toml` | workspace 版本，两份 Rust crate 与原生 CLI 使用此版本 |
+| `packages/contract/package.json` | 前端共享契约版本 |
+| `apps/web/package.json` | Web UI 版本 |
+| `apps/www/package.json` | 产品站版本 |
+| `crates/codesesh-cli/npm/` | npm launcher 模板，打包时生成精确版本的平台依赖 |
+| `scripts/rust/pack.mjs` | 平台 npm 包、主包和原生归档 |
 
-根目录 `package.json`（`codesesh-monorepo`）为 `private`，**无需**改版本号。
+根 `package.json` 是 private workspace，不需要发布版本号。CLI 版本来自 Cargo 编译环境，
+不要在源码中再维护独立版本常量。`node scripts/release-preflight.mjs vX.Y.Z` 检查目标版本。
 
-CLI 运行时版本来自 `packages/cli/src/version.ts`，读取 **同目录** `packages/cli/package.json`，勿手写版本常量。
+## 候选制品验证
+
+需要在对应平台构建并执行，目标是 macOS arm64/x64、Linux glibc x64 和 Windows x64。
+先构建契约与 Web，release 二进制内嵌静态资源：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:web
+node scripts/rust/build.mjs
+node scripts/rust/pack.mjs
+node scripts/rust/smoke.mjs --contracts
+```
+
+输出在 `artifacts/rust-packaging/<target>/`，包括 npm 主包、平台包、原生归档、manifest
+和 SHA256SUMS。主包和原生下载渠道中的二进制应具有相同 hash。平台包使用精确版本的
+optional dependency；launcher 不下载二进制、不调用编译器，也不回退旧后端。
+
+四个目标的目录汇总后运行：
+
+```bash
+node scripts/rust/verify-set.mjs
+```
+
+集合检查要求四目标、版本和哈希一致，但不替代各平台执行验收。独立二进制应脱离源码
+目录验证内嵌 Web；npm 安装应在带空格和中文的临时目录、禁用安装脚本后验证。
+具体目标名、命令参数与验收边界见 [rust-packaging.md](./rust-packaging.md)。
+
+正式发布前核实 npm scope 权限、目标包名、各平台兼容性和 Release workflow；本指南中的
+构建命令不执行 publish，也不创建 tag。
 
 ## 发布前：整理变更
 
@@ -61,9 +92,9 @@ CLI 运行时版本来自 `packages/cli/src/version.ts`，读取 **同目录** `
 
 - [ ] **Changelog**：更新 `CHANGELOG.md`、`CHANGELOG_CN.md` 新版本区块
 - [ ] **产品更新日志**：更新 `apps/www/src/data/changelog.ts` 的英文、中文、日文条目
-- [ ] **版本号**：将下列文件的 `"version"`  bump 到目标版本（四者保持一致）：
-  - `packages/cli/package.json`
-  - `packages/core/package.json`
+- [ ] **版本号**：将下列文件的版本更新到目标版本（与 Cargo workspace 保持一致）：
+  - `Cargo.toml`
+  - `packages/contract/package.json`
   - `apps/web/package.json`
   - `apps/www/package.json`
 
@@ -74,12 +105,11 @@ CLI 运行时版本来自 `packages/cli/src/version.ts`，读取 **同目录** `
   ```
 
   常规 CI 只做包与包之间的一致性检查（不带参数）；Release workflow 在 build 与
-  publish 之前用 tag 再校验一次，任何一处漂移都会在改动 `packages/cli/package.json`
-  之前失败。
+  publish 之前用 tag 再校验一次，版本漂移应在产出候选制品之前失败。
 - [ ] **README（按需）**：若本版有用户可见的新能力、Agent 列表或 CLI 行为变化，更新：
   - `README.md`
   - `README_CN.md`
-  - `packages/cli/README.md`  
+  - `crates/codesesh-cli/README.md`
   纯 bugfix / 内部解析修复且文档已准确时，可跳过。
 - [ ] **产品落地页（按需）**：若定位文案、Agent 列表或长期功能描述需随版本更新，修改 `apps/www/src` 下对应组件或文案。单个版本的变化只写入产品更新日志。
 

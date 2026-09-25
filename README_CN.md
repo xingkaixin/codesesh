@@ -93,7 +93,8 @@ Cherry Studio 支持 2.x 的 `Data/cherrystudio.sqlite`，包含 Agent 会话（
 
 <!-- repo-fact:node-version:start -->
 
-- 发布后的 CLI 支持 Node.js 22+；源码构建请使用 `mise.toml` 固定的 Node 24 工具链
+- npm launcher 需要 Node.js 22+；独立原生可执行文件不需要 Node。
+  源码构建使用 `mise.toml` 固定的 Node 24 和 `rust-toolchain.toml` 固定的 Rust 工具链。
 
 <!-- repo-fact:node-version:end -->
 
@@ -123,7 +124,8 @@ pnpm build
 pnpm serve
 ```
 
-本地服务使用 `packages/cli/dist/index.js`，打开同一个 Web UI。
+本地服务运行 Rust 可执行文件和内嵌 Web UI。release 编译前需要先构建 Web；
+`pnpm build` 负责仓库构建流程。
 
 ---
 
@@ -276,10 +278,9 @@ pnpm bench:perf
 pnpm --filter @codesesh/www deploy:cf
 ```
 
-`test:coverage` 会在 Node 环境运行 Core、CLI 测试，在 `happy-dom` 环境运行 Web 测试。
-覆盖率统计包括 Core、CLI、Web 的全部生产 TypeScript。各包的基线门槛用于防止覆盖率回退，
-扫描、API、实时运行时、Hook 和交互路径继续使用更严格的定向门槛。
-Astro 落地页由 Playwright 覆盖，不计入 Vitest 覆盖率。
+Rust 后端通过 Cargo 测试。`test:coverage` 统计 Vitest 覆盖的 TypeScript 契约和 Web 代码，
+不代表 Rust 覆盖率。Playwright 使用原生服务器验证浏览器流程；后端进程契约和固定 Node
+参考制品提供独立的兼容性检查。
 
 Pages 部署通过 `apps/www/public/_headers` 为文件名带内容哈希的 `/_astro/` 资源
 设置一年缓存。HTML 和未版本化的公共文件沿用 Pages 默认策略，保证部署更新及时可见。
@@ -293,58 +294,54 @@ Pages 部署通过 `apps/www/public/_headers` 为文件名带内容哈希的 `/_
 
 ### 复现 CI 必需检查
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 是事实源。CI 会在 Linux、macOS、Windows
-上分别使用 Node.js 22 和 24 运行主任务；在仓库根目录按以下顺序执行，可复现其中的检查：
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) 是事实源，包含 Rust、前端、浏览器和
+原生制品检查。下列命令列出工作流门禁，按对应 job 顺序运行；`pnpm clean` 后需重新构建 Web。
+含 `${{ matrix.* }}` 的打包行是 CI 模板，本地使用 `pnpm package:artifact`；
+`verify-set` 需要先汇总四个 runner 的制品：
 
 <!-- repo-fact:ci-commands:start -->
 
 ```bash
-# 依赖与静态门禁
 pnpm install --frozen-lockfile
 node scripts/check-quality-task-coverage.mjs
+pnpm build:web
 pnpm lint
 pnpm format:check
+pnpm typecheck
 pnpm typecheck:e2e
 node scripts/release-preflight.mjs
 node scripts/check-docs-paths.mjs
-
-# 算法、构建、文档事实与清理重建门禁
-pnpm perf:check
-pnpm build
-pnpm test:backend
 node scripts/check-docs-facts.mjs
-node packages/cli/dist/index.js --version
 pnpm clean
-pnpm build
-
-# 单元测试、覆盖率、迁移与浏览器门禁
+pnpm build:web
 pnpm test
-pnpm test:coverage # 内含 pnpm check:coverage-scopes
-pnpm test:migration
-pnpm prepare:reference
-pnpm test:backend:compare
+pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
-cargo build --release --locked
+pnpm build:rust
+pnpm package:artifact:test
+pnpm prepare:reference
+pnpm test:backend
+pnpm test:backend:compare
 pnpm test:rust:slice
-pnpm generate:rust-contract
-pnpm test:rust:browser
+pnpm test:backend:full
+pnpm test:migration
+pnpm perf:check
+pnpm test:coverage
 pnpm --filter @codesesh/web test:bundle
 pnpm exec playwright install --with-deps chromium
-pnpm exec playwright install-deps chromium
+pnpm test:rust:browser
 pnpm test:e2e
-
-# npm 制品与安装后冒烟门禁
-pnpm package:artifact:test
-pnpm package:artifact
-node scripts/smoke-package-artifact.mjs artifacts/npm/codesesh-*.tgz
+node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
+node scripts/rust/smoke.mjs --contracts
+node scripts/rust/verify-set.mjs
 ```
 
 <!-- repo-fact:ci-commands:end -->
 
-工作流只在 Node.js 24 上运行 `perf:check` 和清理重建冒烟，并在 Node.js 22 上运行 CLI
-版本冒烟。本地执行覆盖命令本身；Pull Request 矩阵继续负责跨平台验证。
+本地运行只覆盖当前主机。原生目标为 macOS arm64/x64、Linux glibc x64 和 Windows x64；
+各目标仍需要对应 runner 和安装验收。详见[制品指南](docs/rust-packaging.md)。
 
 ### 性能 Benchmark
 
@@ -356,60 +353,52 @@ pnpm bench:perf -- --days 0 --iterations 3
 pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 ```
 
-### 开发模式（监听变更）
+### 开发流程
 
-开两个终端：
+构建并启动原生应用：
 
 ```bash
-# 终端 1 — 监听源码变更并重新编译
 pnpm dev
-
-# 终端 2 — dist 变更时自动重启服务器
-pnpm serve
-
-# 或直接传入 CLI 参数：
-node --watch packages/cli/dist/index.js --cwd . --days 3
 ```
+
+修改后端或内嵌 Web 后，需要重新构建并重启进程。`pnpm serve` 启动已有构建。
+也可以直接传入 CLI 参数：
+
+```bash
+./target/release/codesesh --cwd . --days 3
+```
+
+独立 Astro 产品站使用 `pnpm dev:www` 开发。
 
 ### 项目结构
 
 ```text
-packages/core/src/agents/       Agent 适配器、注册表与能力声明
-packages/core/src/analytics/    Dashboard 聚合
-packages/core/src/contract/     浏览器安全的共享契约与纯逻辑
-packages/core/src/discovery/    会话扫描、SQLite 缓存与搜索索引
-packages/core/src/pricing/      模型定价与成本估算
-packages/core/src/projects/     项目身份解析
-packages/core/src/search/       跨来源会话搜索
-packages/core/src/state/        收藏、别名与用户偏好
-packages/core/src/types/        共享 TypeScript 类型
-packages/core/src/utils/        通用工具函数
-
-packages/cli/src/index.ts       CLI 参数解析与启动
-packages/cli/src/server.ts      Hono 服务与生命周期
-packages/cli/src/api/           HTTP 路由与请求处理器
-packages/cli/src/*-worker.ts    扫描、搜索索引与智能标签 Worker
-
-apps/web/src/components/        产品与 UI 组件
-apps/web/src/hooks/             客户端状态与数据同步 Hook
-apps/web/src/lib/               HTTP API 客户端与前端工具
-apps/web/src/styles/            全局样式
-
-apps/www/src/pages/             产品站路由
-apps/www/src/components/        产品站组件
-apps/www/public/                产品站静态资源
+crates/codesesh-core/src/agents/       Agent adapters and source parsing
+crates/codesesh-core/src/discovery/    Discovery, incremental scans, and backfill
+crates/codesesh-core/src/runtime/      Watcher, single writer, and publication
+crates/codesesh-core/src/storage/      SQLite schema, migrations, messages, and FTS
+crates/codesesh-core/src/pricing/      Model prices and fixed pricing generations
+crates/codesesh-core/src/analytics/    Dashboard and project aggregation
+crates/codesesh-core/src/search/       Structured search and file activity
+crates/codesesh-core/src/state/        Bookmarks and aliases
+crates/codesesh-cli/src/               Clap CLI, Axum HTTP, embedded Web, and logs
+crates/codesesh-cli/npm/               Thin npm launcher
+packages/contract/src/                Browser-safe contracts and pure logic
+packages/contract/src/generated/      Rust-generated TypeScript wire types
+apps/web/                            React application
+apps/www/                            Astro product site
+scripts/rust/                        Native build, packaging, and benchmarks
 ```
 
 ### 扩展新 Agent
 
-Agent 元数据与运行时构造分别显式声明：
+Agent 来源解析和浏览器展示分别声明：
 
-1. 创建 `packages/core/src/agents/<youragent>.ts`，实现 `BaseAgent` 并导出数据根目录解析器。
-2. 在 `packages/core/src/contract/agent-catalog.ts` 中添加公开身份与能力声明。
-3. 在 `packages/core/src/agents/register.ts` 中添加工厂与数据根目录解析器。
-4. 在 `apps/web/public/icon/agent/` 与 `apps/www/public/icon/agent/` 添加 SVG。
-5. 如使用自定义工具展示策略，在
-   `apps/web/src/components/session-detail/tool-strategy/<youragent>.ts` 实现，并在同目录
-   `index.ts` 注册 builder。
+1. 在 `crates/codesesh-core/src/agents/` 添加 Rust 适配器并注册扫描入口。
+2. 在 `crates/codesesh-core/src/discovery/paths.rs` 添加默认路径和环境变量覆盖。
+3. 同步公开元数据与 `packages/contract/src/agent-catalog.ts` 的展示能力。
+4. 在 `apps/web/public/icon/agent/` 和 `apps/www/public/icon/agent/` 添加 SVG。
+5. 在 `apps/web/src/components/session-detail/tool-strategy/` 注册自定义工具展示。
 
-注册完备性测试会拒绝缺失图标、未声明 resume 能力或自定义策略不匹配的注册。
+使用来源格式 fixture 和进程契约检查消息、用量、工具及增量行为。注册检查覆盖图标、
+resume 声明和工具展示策略。
