@@ -4,50 +4,6 @@ import { fileURLToPath } from "node:url";
 
 export const CRITICAL_COVERAGE_SCOPES = [
   {
-    id: "core-boundaries",
-    owners: [
-      { path: "packages/core/src/utils", kind: "directory" },
-      { path: "packages/core/src/discovery", kind: "directory" },
-      { path: "packages/core/src/agents/base.ts", kind: "file" },
-      {
-        path: "packages/core/src/agents/session-source-synchronization.ts",
-        kind: "file",
-      },
-      { path: "packages/cli/src/api", kind: "directory" },
-    ],
-    thresholds: { lines: 90 },
-  },
-  {
-    id: "agent-adapters",
-    owners: [{ path: "packages/core/src/agents", kind: "directory" }],
-    thresholds: { lines: 86 },
-  },
-  {
-    id: "cli-runtime",
-    owners: [
-      { path: "packages/cli/src/agent-operation-scheduler.ts", kind: "file" },
-      { path: "packages/cli/src/agent-sync-engine.ts", kind: "file" },
-      { path: "packages/cli/src/backfill-lifecycle.ts", kind: "file" },
-      { path: "packages/cli/src/live-scan.ts", kind: "file" },
-      { path: "packages/cli/src/live-session-index.ts", kind: "file" },
-      { path: "packages/cli/src/pending-search-index-jobs.ts", kind: "file" },
-      { path: "packages/cli/src/scan-refresh-operation.ts", kind: "file" },
-      { path: "packages/cli/src/scan-refresh-worker.ts", kind: "file" },
-      { path: "packages/cli/src/scan-status-model.ts", kind: "file" },
-      { path: "packages/cli/src/search-index-job-runner.ts", kind: "file" },
-      { path: "packages/cli/src/search-index-worker.ts", kind: "file" },
-      { path: "packages/cli/src/session-watcher.ts", kind: "file" },
-      { path: "packages/cli/src/smart-tag-worker.ts", kind: "file" },
-      { path: "packages/cli/src/worker-runner.ts", kind: "file" },
-    ],
-    thresholds: { lines: 91 },
-  },
-  {
-    id: "cli-runtime-plan",
-    owners: [{ path: "packages/cli/src/runtime-plan.ts", kind: "file" }],
-    thresholds: { statements: 100, branches: 100, functions: 100, lines: 100 },
-  },
-  {
     id: "web-hooks",
     owners: [{ path: "apps/web/src/hooks", kind: "directory" }],
     thresholds: { lines: 95 },

@@ -476,6 +476,7 @@ export const messages = {
   ],
   "Preparing full-history publication": ["正在准备完整历史发布", "全履歴の反映を準備中"],
   "Finalizing full-history metadata": ["正在完成完整历史元数据", "全履歴のメタデータを確定中"],
+  "Checking session updates": ["正在检查会话更新", "セッションの更新を確認中"],
   "Scanning full session history": ["正在扫描完整会话历史", "全セッション履歴をスキャン中"],
   " · {0} history scan queued": [" · {0} 个历史扫描已排队", " · 履歴スキャン {0} 件が待機中"],
   "Full-history refresh failed · {0}": ["完整历史刷新失败 · {0}", "全履歴の更新に失敗 · {0}"],

@@ -1,0 +1,10 @@
+{
+  "version": "1.0.12",
+  "sourceCommit": "a545f543a554421b0576058c701ef2ac4190d62e",
+  "registryIntegrity": "sha512-ti+hkn1lGQLyznq30YDEZMD/fSr1ADFEwCBaX+1bmauw1sH1IGcjDBriUuS9eZlX6mwJSU6EAxzgik0FCiPMRw==",
+  "localArtifactSha256": "4128f999b1f16841718d4026059e87c364288de3b90441e4f4ceaf8c7816e107",
+  "node": "24.21.0",
+  "pnpm": "12.4.2",
+  "cacheSchema": 34,
+  "stateSchema": 3
+}

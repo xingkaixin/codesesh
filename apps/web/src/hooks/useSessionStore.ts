@@ -1,5 +1,5 @@
 import { t } from "../i18n/translate";
-import { applySessionWindowChanges, formatSessionReference } from "@codesesh/core/contract";
+import { applySessionWindowChanges, formatSessionReference } from "@codesesh/contract";
 import {
   hashKey,
   keepPreviousData,

@@ -7,7 +7,7 @@
  * anything.
  */
 import { performance } from "node:perf_hooks";
-import { applySessionChanges, createSessionIndex } from "../packages/core/dist/contract/index.mjs";
+import { applySessionChanges, createSessionIndex } from "../packages/contract/dist/index.mjs";
 
 /**
  * The canonical path must not cost more than redundantly re-sorting on top of
@@ -20,8 +20,10 @@ const MAX_CANONICAL_RATIO = 1.05;
 const sessionCount = Number(process.env.SESSION_INDEX_BENCH_SIZE ?? 25_000);
 const changeCount = Number(process.env.SESSION_INDEX_BENCH_CHANGES ?? 100);
 const sessions = Array.from({ length: sessionCount }, (_, index) => ({
-  id: `session-${index}`,
-  slug: `${index % 2 === 0 ? "codex" : "claude"}/session-${index}`,
+  reference: {
+    agentName: index % 2 === 0 ? "codex" : "claudecode",
+    sessionId: `session-${index}`,
+  },
   title: `Session ${index}`,
   directory: `/workspace/${index % 200}`,
   project_identity: {
@@ -39,38 +41,41 @@ const sessions = Array.from({ length: sessionCount }, (_, index) => ({
   },
 }));
 const changes = Array.from({ length: changeCount }, (_, index) => ({
-  reference: {
-    agentName: index % 2 === 0 ? "codex" : "claude",
-    sessionId: sessions[index * 2].id,
-  },
+  reference: sessions[index * 2].reference,
   session: {
     ...sessions[index * 2],
     time_updated: sessionCount + index + 1,
   },
 }));
 
-function measure(run) {
-  const durations = [];
-  for (let iteration = 0; iteration < 8; iteration += 1) {
-    const startedAt = performance.now();
-    run();
-    durations.push(performance.now() - startedAt);
-  }
-  return durations.toSorted((a, b) => a - b)[Math.floor(durations.length / 2)];
-}
-
-const canonicalMs = measure(() => {
+const canonical = () => {
   const updated = applySessionChanges(sessions, changes, []);
   createSessionIndex(updated);
-});
-const repeatedSortMs = measure(() => {
+};
+const repeatedSort = () => {
   const updated = applySessionChanges(sessions, changes, []);
   const redundantlySorted = [...updated].sort(
     (a, b) => (b.time_updated ?? b.time_created) - (a.time_updated ?? a.time_created),
   );
   createSessionIndex(redundantlySorted);
-});
+};
 
+for (let iteration = 0; iteration < 4; iteration += 1) {
+  canonical();
+  repeatedSort();
+}
+const samples = [[], []];
+for (let iteration = 0; iteration < 8; iteration += 1) {
+  const order = iteration % 2 ? [1, 0] : [0, 1];
+  for (const index of order) {
+    const startedAt = performance.now();
+    (index === 0 ? canonical : repeatedSort)();
+    samples[index].push(performance.now() - startedAt);
+  }
+}
+const [canonicalMs, repeatedSortMs] = samples.map(
+  (values) => values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)],
+);
 const ratio = canonicalMs / repeatedSortMs;
 const withinBudget = ratio <= MAX_CANONICAL_RATIO;
 

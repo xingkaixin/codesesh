@@ -43,7 +43,10 @@ function main() {
     process.exit(1);
   }
 
-  for (const target of resolveCleanTargets(workspaceDir)) {
+  const targets = process.argv.includes("--native")
+    ? resolveCleanTargets(repoRoot, ["target"])
+    : resolveCleanTargets(workspaceDir);
+  for (const target of targets) {
     // Repeat runs are fine: a missing directory is already clean.
     rmSync(target, { recursive: true, force: true });
   }

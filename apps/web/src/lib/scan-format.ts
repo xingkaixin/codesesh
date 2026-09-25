@@ -53,28 +53,31 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (!status) return null;
   if (status.backfill?.active) {
     const current = status.backfill.currentAgent;
-    const pending = status.backfill.pendingAgents.length;
+    const pending = status.backfill.pendingAgents.filter((agent) => agent !== current).length;
     const progress = status.backfill.progress;
     const progressLabel =
       (progress?.phase == null ||
         progress.phase === "scanning" ||
+        progress.phase === "checking" ||
         progress.phase === "finalizing") &&
       progress?.total &&
       progress.processed != null
         ? ` · ${progress.processed}/${progress.total}`
         : "";
     const stageLabel =
-      progress?.phase === "publish-queued"
-        ? t("Full-history publication queued")
-        : progress?.phase === "committing"
-          ? t("Committing full-history publication")
-          : progress?.phase === "indexing"
-            ? t("Writing full-history search index")
-            : progress?.phase === "publishing"
-              ? t("Preparing full-history publication")
-              : progress?.phase === "finalizing"
-                ? t("Finalizing full-history metadata")
-                : t("Scanning full session history");
+      progress?.phase === "checking"
+        ? t("Checking session updates")
+        : progress?.phase === "publish-queued"
+          ? t("Full-history publication queued")
+          : progress?.phase === "committing"
+            ? t("Committing full-history publication")
+            : progress?.phase === "indexing"
+              ? t("Writing full-history search index")
+              : progress?.phase === "publishing"
+                ? t("Preparing full-history publication")
+                : progress?.phase === "finalizing"
+                  ? t("Finalizing full-history metadata")
+                  : t("Scanning full session history");
     return current
       ? `${stageLabel} · ${current}${progressLabel}${pending > 0 ? t(" · {0} history scan queued", [pending]) : ""}`
       : `${stageLabel}${progressLabel}`;

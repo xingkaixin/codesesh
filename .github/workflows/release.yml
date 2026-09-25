@@ -5,18 +5,45 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      id-token: write
-
+  native:
+    name: Build release (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
+      - name: Verify minimum supported Linux glibc
+        if: runner.os == 'Linux'
+        run: |
+          getconf GNU_LIBC_VERSION
+          test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
+      - name: Preserve package source bytes on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
@@ -24,23 +51,92 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Verify release versions
+        run: node scripts/release-preflight.mjs "${{ github.ref_name }}"
+
+      - run: rustup toolchain install 1.90.0 --profile minimal
+      - run: rustup target add ${{ matrix.target }} --toolchain 1.90.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @codesesh/web... build
+      - run: cargo test --workspace --locked
+
+      - name: Build, pack and smoke test native release
+        run: |
+          node scripts/rust/build.mjs ${{ matrix.target }}
+          node scripts/rust/pack.mjs ${{ matrix.target }}
+          node scripts/rust/smoke.mjs --contracts
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            artifacts/rust-packaging/${{ matrix.target }}/*.tgz
+            artifacts/rust-packaging/${{ matrix.target }}/*.tar.gz
+            artifacts/rust-packaging/${{ matrix.target }}/manifest.json
+            artifacts/rust-packaging/${{ matrix.target }}/SHA256SUMS
+            artifacts/rust-packaging/${{ matrix.target }}/smoke-report.json
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: native
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
-
-      # Before anything is built, rewritten or published: the tag and all four
-      # manifests must already agree.
       - name: Verify release versions
         run: node scripts/release-preflight.mjs "${GITHUB_REF_NAME}"
 
-      - name: Build npm artifact
-        run: pnpm package:artifact
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: artifacts/release-targets
 
-      - name: Smoke test npm artifact
-        run: node scripts/smoke-package-artifact.mjs "artifacts/npm/codesesh-${GITHUB_REF_NAME#v}.tgz"
+      - name: Assemble and verify all four targets
+        run: |
+          node --input-type=module <<'JS'
+          import { mkdirSync, renameSync } from "node:fs";
+          import { join } from "node:path";
+          import { output, targets } from "./scripts/rust/common.mjs";
+          mkdirSync(output, { recursive: true });
+          for (const { target } of targets) {
+            renameSync(join("artifacts/release-targets", `release-${target}`), join(output, target));
+          }
+          JS
+          node scripts/rust/verify-set.mjs
 
-      - name: Publish to npm
-        run: npm publish "artifacts/npm/codesesh-${GITHUB_REF_NAME#v}.tgz" --provenance --access public
+      - name: Assemble release assets
+        run: |
+          node --input-type=module <<'JS'
+          import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { output } from "./scripts/rust/common.mjs";
+          const { manifests } = JSON.parse(readFileSync(join(output, "release-set.json"), "utf8"));
+          mkdirSync("artifacts/release", { recursive: true });
+          for (const manifest of manifests) {
+            for (const name of [manifest.platformPackage, manifest.nativeArchive]) {
+              copyFileSync(join(output, manifest.target, name), join("artifacts/release", name));
+            }
+          }
+          const first = manifests[0];
+          copyFileSync(join(output, first.target, first.mainPackage), join("artifacts/release", first.mainPackage));
+          copyFileSync(join(output, "release-set.json"), "artifacts/release/release-set.json");
+          JS
+
+      - name: Publish native packages, then the main package
+        run: node scripts/rust/publish.mjs
         env:
           NODE_AUTH_TOKEN: ""
 
@@ -48,3 +144,5 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
+          files: artifacts/release/*
+          fail_on_unmatched_files: true

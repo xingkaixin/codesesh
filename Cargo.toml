@@ -1,0 +1,39 @@
+[workspace]
+members = ["crates/codesesh-core", "crates/codesesh-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.12"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0"
+axum = "0.8.9"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.6", features = ["derive"] }
+md5 = "0.8"
+url = "2"
+zstd = "0.13"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+ryu-js = "1"
+notify = "8"
+icu_collator = "2.2.1"
+icu_locale = "2.2.0"
+chrono-tz = "0.10"
+axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
+regex = "1.12"
+rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order", "float_roundtrip", "raw_value"] }
+sha2 = "0.10"
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
+ts-rs = { version = "12.0", features = ["serde-json-impl"] }
+uuid = { version = "1.23", features = ["v4"] }
+walkdir = "2.5"
+
+[profile.release]
+lto = "thin"
+strip = true

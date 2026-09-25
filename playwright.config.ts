@@ -57,10 +57,10 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `pnpm build && node tests/e2e/start-cli-server.mjs --port ${port} --agent claudecode,codex --days 0 --noOpen --cache false`,
+      command: `node tests/e2e/start-cli-server.mjs --port ${port} --agent claudecode,codex --days 0 --noOpen --cache false`,
       url: `http://127.0.0.1:${port}`,
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: 300_000,
       env: {
         HOME: e2eHome,
         USERPROFILE: e2eHome,

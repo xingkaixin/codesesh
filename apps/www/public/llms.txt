@@ -54,7 +54,7 @@ The product changelog explains user-visible improvements, why each release matte
 npx codesesh
 ```
 
-CodeSesh opens a local Web UI at `http://localhost:4521`. The published CLI requires Node.js 22 or later.
+CodeSesh opens a local Web UI at `http://localhost:4521`. The npm launcher requires Node.js 22 or later. The standalone Rust executable does not require Node.
 
 ## Data Boundary
 

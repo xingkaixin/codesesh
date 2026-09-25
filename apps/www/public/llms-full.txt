@@ -85,7 +85,7 @@ CodeSesh currently supports these AI coding agents:
 - MiniMax Code
 <!-- repo-fact:agents:end -->
 
-Each supported agent has an adapter in the core package. Adding support for another agent follows the same adapter pattern.
+Each supported agent has an adapter in the Rust core crate. Adding support for another agent follows the same adapter pattern.
 
 ## Install and Run
 
@@ -104,7 +104,7 @@ http://localhost:4521
 Published CLI runtime and source build toolchain:
 
 <!-- repo-fact:node-version:start -->
-- Node.js 22+ for the published CLI; use the Node 24 toolchain pinned in mise.toml for source builds
+- Node.js 22+ for the npm launcher; native executables do not require Node. Source builds use Node 24 from mise.toml and Rust from rust-toolchain.toml.
 <!-- repo-fact:node-version:end -->
 
 Source build package manager:
@@ -121,7 +121,7 @@ CodeSesh is a local developer tool for discovering, aggregating, searching, and 
 
 ### Which AI coding tools does CodeSesh support?
 
-The complete supported-agent list appears above. Each tool connects through an agent adapter in the core package, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
+The complete supported-agent list appears above. Each tool connects through an agent adapter in the Rust core crate, then contributes sessions to unified lists, project browsing, structured search indexes, file activity, smart tags, token statistics, and full replay views.
 
 ### Does CodeSesh upload local AI session data?
 
@@ -132,7 +132,7 @@ CodeSesh runs on the user's machine and uses a local SQLite index with a local W
 The fastest way to start CodeSesh is running `npx codesesh` in a terminal. CodeSesh scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`; if that default port is busy, it automatically tries the next available port.
 
 <!-- repo-fact:node-version:start -->
-The published CLI supports Node.js 22+. Source development uses the Node 24 toolchain pinned in mise.toml.
+The npm launcher supports Node.js 22+. Native executables do not require Node. Source development uses the Node 24 toolchain pinned in mise.toml and the Rust toolchain pinned in rust-toolchain.toml.
 <!-- repo-fact:node-version:end -->
 
 <!-- repo-fact:pnpm-version:start -->
@@ -271,46 +271,30 @@ After CodeSesh starts, users can navigate these main areas:
 
 ## Repository Structure
 
-CodeSesh is a TypeScript monorepo using pnpm and Turbo.
+CodeSesh uses a Rust backend with a TypeScript frontend workspace managed by pnpm and Turbo.
 
-Main areas:
-
-- `packages/core`: framework-agnostic core library.
-- `packages/core/src/agents`: supported agent adapters and registration.
-- `packages/core/src/discovery`: session path resolution, file scanning, and cache handling.
-- `packages/core/src/types`: shared TypeScript types.
-- `packages/cli`: CLI entry point and Hono HTTP server.
-- `apps/web`: React Web UI used by the local app.
-- `apps/www`: public landing page.
+- `crates/codesesh-core`: agent parsing, discovery, SQLite, search, analytics, pricing, and user state.
+- `crates/codesesh-cli`: native command line, HTTP server, embedded Web assets, and logging.
+- `crates/codesesh-cli/npm`: thin npm launcher for platform binaries.
+- `packages/contract`: browser-safe contracts, Rust-generated wire types, and pure presentation logic.
+- `apps/web`: React application.
+- `apps/www`: Astro product site.
 
 ## Technology Stack
 
-CodeSesh uses:
-
-- TypeScript
-- pnpm
-- Turbo
-- Hono for the HTTP server
-- Citty for CLI parsing
-- React
-- React Router
-- Tailwind CSS
-- Base UI in the app UI
-- SQLite for local indexing
-- Vitest for tests
-- oxlint and oxfmt for linting and formatting
+- Rust, Cargo, Clap, Axum, Tokio, rusqlite, and SQLite FTS5 for the backend.
+- TypeScript, React, React Router, Tailwind CSS, and Base UI for the app.
+- Astro for the public website.
+- Cargo tests, rustfmt, and Clippy for Rust; Vitest, oxlint, and oxfmt for TypeScript.
+- Playwright and backend process contracts for integrated behavior.
 
 ## Extending CodeSesh
 
-Adding a new AI agent follows the core adapter model:
-
-1. Create an adapter file in `packages/core/src/agents/`.
-2. Implement the required agent interface.
-3. Add its public identity and capabilities to `packages/core/src/contract/agent-catalog.ts`.
-4. Add its runtime factory and data-root resolver to `packages/core/src/agents/register.ts`.
-5. Add its icon to both app public directories.
-
-The new agent can then appear in the UI through the shared discovery and presentation pipeline.
+1. Add and register a Rust adapter under `crates/codesesh-core/src/agents/`.
+2. Add source paths and environment overrides in `crates/codesesh-core/src/discovery/paths.rs`.
+3. Edit public metadata and presentation capabilities in `crates/codesesh-core/src/agents/catalog.json`, then run `pnpm generate:rust-contract` to generate the browser catalog.
+4. Add icons to the app and website, and register a custom tool display strategy when needed.
+5. Verify source-format fixtures, usage, tools, and incremental updates.
 
 ## How CodeSesh Differs From Normal Search
 

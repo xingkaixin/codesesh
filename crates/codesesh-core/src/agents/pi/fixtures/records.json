@@ -1,0 +1,126 @@
+[
+  {
+    "type": "session",
+    "id": "header-id",
+    "timestamp": "2026-04-20T10:00:00Z",
+    "cwd": "/tmp/project"
+  },
+  {
+    "type": "message",
+    "id": "u",
+    "parentId": null,
+    "timestamp": "2026-04-20T10:00:01Z",
+    "message": {
+      "role": "user",
+      "content": "Inspect package metadata"
+    }
+  },
+  {
+    "type": "message",
+    "id": "abandoned",
+    "parentId": "u",
+    "timestamp": "2026-04-20T10:00:02Z",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Discarded branch"
+        }
+      ]
+    }
+  },
+  {
+    "type": "message",
+    "id": "a",
+    "parentId": "u",
+    "timestamp": "2026-04-20T10:00:03Z",
+    "message": {
+      "role": "assistant",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "usage": {
+        "input": 100,
+        "output": 20,
+        "cacheRead": 10,
+        "cacheWrite": 5,
+        "totalTokens": 135,
+        "cost": {
+          "total": 0.25
+        }
+      },
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "Need package.json"
+        },
+        {
+          "type": "text",
+          "text": "I will inspect it."
+        },
+        {
+          "type": "toolCall",
+          "id": "call1",
+          "name": "read",
+          "arguments": {
+            "path": "package.json"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "message",
+    "id": "r",
+    "parentId": "a",
+    "timestamp": "2026-04-20T10:00:04Z",
+    "message": {
+      "role": "toolResult",
+      "toolCallId": "call1",
+      "content": [
+        {
+          "type": "text",
+          "text": "File body"
+        }
+      ],
+      "isError": true,
+      "details": {
+        "exitCode": 1
+      }
+    }
+  },
+  {
+    "type": "custom_message",
+    "id": "custom",
+    "parentId": "r",
+    "timestamp": "2026-04-20T10:00:05Z",
+    "display": true,
+    "content": "Extension notice"
+  },
+  {
+    "type": "compaction",
+    "id": "summary",
+    "parentId": "custom",
+    "timestamp": "2026-04-20T10:00:06Z",
+    "summary": "Compaction summary"
+  },
+  {
+    "type": "message",
+    "id": "bash",
+    "parentId": "summary",
+    "timestamp": "2026-04-20T10:00:07Z",
+    "message": {
+      "role": "bashExecution",
+      "command": "pwd",
+      "output": "/tmp/project",
+      "exitCode": 0
+    }
+  },
+  {
+    "type": "session_info",
+    "id": "name",
+    "parentId": "bash",
+    "timestamp": "2026-04-20T10:00:08Z",
+    "name": "Package inspection"
+  }
+]

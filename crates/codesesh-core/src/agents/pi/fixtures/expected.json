@@ -1,0 +1,163 @@
+{
+  "head": {
+    "reference": {
+      "agentName": "pi",
+      "sessionId": "session"
+    },
+    "title": "Package inspection",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000,
+    "time_updated": 1776679208000,
+    "stats": {
+      "message_count": 5,
+      "total_input_tokens": 115,
+      "total_output_tokens": 20,
+      "total_cache_read_tokens": 10,
+      "total_cache_create_tokens": 5,
+      "total_cost": 0.25,
+      "cost_source": "recorded"
+    },
+    "model_usage": {
+      "claude-sonnet-4-5": 135
+    }
+  },
+  "detail": {
+    "reference": {
+      "agentName": "pi",
+      "sessionId": "session"
+    },
+    "title": "Package inspection",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000,
+    "time_updated": 1776679208000,
+    "stats": {
+      "message_count": 5,
+      "total_input_tokens": 115,
+      "total_output_tokens": 20,
+      "total_cache_read_tokens": 10,
+      "total_cache_create_tokens": 5,
+      "total_cost": 0.25,
+      "cost_source": "recorded"
+    },
+    "messages": [
+      {
+        "id": "u",
+        "role": "user",
+        "time_created": 1776679201000,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Inspect package metadata",
+            "time_created": 1776679201000
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "role": "assistant",
+        "agent": "pi",
+        "time_created": 1776679203000,
+        "model": "claude-sonnet-4-5",
+        "provider": "anthropic",
+        "tokens": {
+          "input": 115,
+          "output": 20,
+          "cache_read": 10,
+          "cache_create": 5
+        },
+        "cost": 0.25,
+        "cost_source": "recorded",
+        "parts": [
+          {
+            "type": "reasoning",
+            "text": "Need package.json",
+            "time_created": 1776679203000
+          },
+          {
+            "type": "text",
+            "text": "I will inspect it.",
+            "time_created": 1776679203000
+          },
+          {
+            "type": "tool",
+            "tool": "read",
+            "callID": "call1",
+            "time_created": 1776679203000,
+            "state": {
+              "status": "error",
+              "input": {
+                "path": "package.json"
+              },
+              "output": [
+                {
+                  "type": "text",
+                  "text": "File body",
+                  "time_created": 1776679204000
+                }
+              ],
+              "metadata": {
+                "exitCode": 1
+              }
+            },
+            "title": "Tool: read"
+          }
+        ]
+      },
+      {
+        "id": "custom",
+        "role": "user",
+        "time_created": 1776679205000,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Extension notice",
+            "time_created": 1776679205000
+          }
+        ],
+        "automated": true
+      },
+      {
+        "id": "summary",
+        "role": "assistant",
+        "agent": "pi",
+        "time_created": 1776679206000,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Compaction summary",
+            "time_created": 1776679206000
+          }
+        ]
+      },
+      {
+        "id": "bash",
+        "role": "tool",
+        "time_created": 1776679207000,
+        "parts": [
+          {
+            "type": "tool",
+            "tool": "bash",
+            "time_created": 1776679207000,
+            "state": {
+              "status": "completed",
+              "input": {
+                "command": "pwd"
+              },
+              "output": [
+                {
+                  "type": "text",
+                  "text": "/tmp/project",
+                  "time_created": 1776679207000
+                }
+              ],
+              "metadata": {
+                "exitCode": 0
+              }
+            },
+            "title": "Tool: bash"
+          }
+        ]
+      }
+    ]
+  }
+}

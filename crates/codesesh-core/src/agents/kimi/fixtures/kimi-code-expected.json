@@ -1,0 +1,125 @@
+{
+  "head": {
+    "reference": {
+      "agentName": "kimi-code",
+      "sessionId": "session"
+    },
+    "title": "Test a bug",
+    "directory": "/tmp/project",
+    "time_created": 1000,
+    "time_updated": 1000000,
+    "stats": {
+      "message_count": 3,
+      "total_input_tokens": 10,
+      "total_output_tokens": 4,
+      "total_cache_read_tokens": 2,
+      "total_cache_create_tokens": 3,
+      "total_cost": 0,
+      "total_tokens": 14
+    },
+    "model_usage": {
+      "unknown-model": 14
+    }
+  },
+  "detail": {
+    "reference": {
+      "agentName": "kimi-code",
+      "sessionId": "session"
+    },
+    "title": "Test a bug",
+    "directory": "/tmp/project",
+    "time_created": 1000,
+    "time_updated": 1000000,
+    "stats": {
+      "message_count": 3,
+      "total_input_tokens": 10,
+      "total_output_tokens": 4,
+      "total_cache_read_tokens": 2,
+      "total_cache_create_tokens": 3,
+      "total_cost": 0,
+      "total_tokens": 14
+    },
+    "messages": [
+      {
+        "id": "wire-2",
+        "role": "user",
+        "agent": null,
+        "time_created": 1,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Test a bug",
+            "time_created": 1
+          }
+        ]
+      },
+      {
+        "id": "wire-3",
+        "role": "assistant",
+        "agent": "kimi-code",
+        "time_created": 2,
+        "mode": "tool",
+        "model": "unknown-model",
+        "provider": "test",
+        "tokens": {
+          "input": 10,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 3
+        },
+        "cost": 0,
+        "parts": [
+          {
+            "type": "reasoning",
+            "text": "Think",
+            "time_created": 2
+          },
+          {
+            "type": "tool",
+            "tool": "Read",
+            "callID": "a",
+            "state": {
+              "status": "error",
+              "input": {
+                "path": "a.rs"
+              },
+              "output": [
+                {
+                  "type": "text",
+                  "text": "text",
+                  "time_created": 4
+                }
+              ],
+              "metadata": {
+                "note": "broken"
+              }
+            },
+            "time_created": 3,
+            "title": "read"
+          }
+        ]
+      },
+      {
+        "id": "wire-7",
+        "role": "user",
+        "agent": null,
+        "time_created": 0,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Summary",
+            "time_created": 0
+          }
+        ]
+      }
+    ]
+  }
+}

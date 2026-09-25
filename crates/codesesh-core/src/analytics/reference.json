@@ -1,0 +1,3823 @@
+[
+  {
+    "sessions": [
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s0"
+        },
+        "title": "s0",
+        "directory": "/p0",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p0",
+          "displayName": "p0"
+        },
+        "time_created": 1789473600000,
+        "time_updated": 1789473600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 0.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s1"
+        },
+        "title": "s1",
+        "directory": "/p1",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p1",
+          "displayName": "p1"
+        },
+        "time_created": 1789387200000,
+        "time_updated": 1789387200000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 1.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s2"
+        },
+        "title": "s2",
+        "directory": "/p2",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p2",
+          "displayName": "p2"
+        },
+        "time_created": 1789300800000,
+        "time_updated": 1789300800000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 2.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s3"
+        },
+        "title": "s3",
+        "directory": "/p3",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p3",
+          "displayName": "p3"
+        },
+        "time_created": 1789214400000,
+        "time_updated": 1789214400000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 3.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s4"
+        },
+        "title": "s4",
+        "directory": "/p4",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p4",
+          "displayName": "p4"
+        },
+        "time_created": 1789128000000,
+        "time_updated": 1789128000000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 4.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s5"
+        },
+        "title": "s5",
+        "directory": "/p5",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p5",
+          "displayName": "p5"
+        },
+        "time_created": 1789041600000,
+        "time_updated": 1789041600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 5.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s6"
+        },
+        "title": "s6",
+        "directory": "/p6",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p6",
+          "displayName": "p6"
+        },
+        "time_created": 1788955200000,
+        "time_updated": 1788955200000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 6.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s7"
+        },
+        "title": "s7",
+        "directory": "/p7",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p7",
+          "displayName": "p7"
+        },
+        "time_created": 1788868800000,
+        "time_updated": 1788868800000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 7.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s8"
+        },
+        "title": "s8",
+        "directory": "/p8",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p8",
+          "displayName": "p8"
+        },
+        "time_created": 1788782400000,
+        "time_updated": 1788782400000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 8.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s9"
+        },
+        "title": "s9",
+        "directory": "/p9",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p9",
+          "displayName": "p9"
+        },
+        "time_created": 1788696000000,
+        "time_updated": 1788696000000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 9.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s10"
+        },
+        "title": "s10",
+        "directory": "/p10",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p10",
+          "displayName": "p10"
+        },
+        "time_created": 1788609600000,
+        "time_updated": 1788609600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 10.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s11"
+        },
+        "title": "s11",
+        "directory": "/p11",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p11",
+          "displayName": "p11"
+        },
+        "time_created": 1788523200000,
+        "time_updated": 1788523200000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 11.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s12"
+        },
+        "title": "s12",
+        "directory": "/p12",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p12",
+          "displayName": "p12"
+        },
+        "time_created": 1788436800000,
+        "time_updated": 1788436800000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 12.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s13"
+        },
+        "title": "s13",
+        "directory": "/p13",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p13",
+          "displayName": "p13"
+        },
+        "time_created": 1788350400000,
+        "time_updated": 1788350400000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 13.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s14"
+        },
+        "title": "s14",
+        "directory": "/p14",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p14",
+          "displayName": "p14"
+        },
+        "time_created": 1788264000000,
+        "time_updated": 1788264000000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 14.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "child"
+        },
+        "title": "child",
+        "directory": "/p20",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p20",
+          "displayName": "p20"
+        },
+        "time_created": 1787745600000,
+        "time_updated": 1787745600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 20.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": [],
+        "parent_reference": {
+          "agentName": "codex",
+          "sessionId": "s0"
+        }
+      }
+    ],
+    "options": {
+      "byAgentNames": ["codex", "pi"],
+      "scope": {},
+      "from": 1787745600000,
+      "to": 1789473600000,
+      "compare": {
+        "from": 1785931200000,
+        "to": 1787745599999
+      }
+    },
+    "expected": {
+      "totals": {
+        "sessions": 15,
+        "messages": 32,
+        "tokens": 224,
+        "cost": 133,
+        "costRecorded": 80.5,
+        "costEstimated": 52.5,
+        "cacheReadTokens": 32,
+        "cost_source": "estimated",
+        "latestActivity": 1789473600000,
+        "latestActivityProject": "p0",
+        "latestActivityAgent": "codex",
+        "previous": {
+          "sessions": 0,
+          "messages": 0,
+          "tokens": 0,
+          "cost": 0
+        }
+      },
+      "scopeCounts": {
+        "projects": 15,
+        "agents": 2
+      },
+      "perAgent": [
+        {
+          "name": "codex",
+          "displayName": "codex",
+          "icon": "",
+          "sessions": 8,
+          "messages": 18,
+          "tokens": 126,
+          "cost": 80.5
+        },
+        {
+          "name": "pi",
+          "displayName": "pi",
+          "icon": "",
+          "sessions": 7,
+          "messages": 14,
+          "tokens": 98,
+          "cost": 52.5
+        }
+      ],
+      "dailyActivity": [
+        {
+          "date": "2026-08-26",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-27",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-28",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-29",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-30",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-31",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-01",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 14.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-02",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 13.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-03",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 12.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-04",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 11.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-05",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 10.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-06",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 9.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-07",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 8.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-08",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 7.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-09",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 6.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-10",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 5.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-11",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 4.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-12",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 3.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-13",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 2.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-14",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 1.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-15",
+          "sessions": 1,
+          "messages": 4,
+          "cost": 21,
+          "input": 16,
+          "output": 8,
+          "cache_read": 4,
+          "cache_create": 0
+        }
+      ],
+      "modelDistribution": [
+        {
+          "model": "model",
+          "tokens": 224,
+          "sessions": 15
+        }
+      ],
+      "modelCost": null,
+      "perProject": [
+        {
+          "identityKind": "path",
+          "identityKey": "/p0",
+          "displayName": "p0",
+          "sessions": 1,
+          "messages": 4,
+          "tokens": 28,
+          "cost": 21,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p14",
+          "displayName": "p14",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 14.5,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p13",
+          "displayName": "p13",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 13.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [13.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p12",
+          "displayName": "p12",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 12.5,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 12.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p11",
+          "displayName": "p11",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 11.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 11.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p10",
+          "displayName": "p10",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 10.5,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 10.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p9",
+          "displayName": "p9",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 9.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 9.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p8",
+          "displayName": "p8",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 8.5,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 0, 0, 8.5, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p7",
+          "displayName": "p7",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 7.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 7.5, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p6",
+          "displayName": "p6",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 6.5,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 6.5, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p5",
+          "displayName": "p5",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 5.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 5.5, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p4",
+          "displayName": "p4",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 4.5,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 4.5, 0, 0, 0, 0]
+        }
+      ],
+      "projectRollup": {
+        "projects": 3,
+        "sessions": 3,
+        "tokens": 42,
+        "cost": 7.5
+      },
+      "recentSessions": [
+        {
+          "reference": {
+            "agentName": "codex",
+            "sessionId": "s0"
+          },
+          "session": {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "s0"
+            },
+            "title": "s0",
+            "directory": "/p0",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p0",
+              "displayName": "p0"
+            },
+            "time_created": 1789473600000,
+            "time_updated": 1789473600000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 0.5,
+              "cost_source": "recorded",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s1"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s1"
+            },
+            "title": "s1",
+            "directory": "/p1",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p1",
+              "displayName": "p1"
+            },
+            "time_created": 1789387200000,
+            "time_updated": 1789387200000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 1.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "codex",
+            "sessionId": "s2"
+          },
+          "session": {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "s2"
+            },
+            "title": "s2",
+            "directory": "/p2",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p2",
+              "displayName": "p2"
+            },
+            "time_created": 1789300800000,
+            "time_updated": 1789300800000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 2.5,
+              "cost_source": "recorded",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s3"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s3"
+            },
+            "title": "s3",
+            "directory": "/p3",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p3",
+              "displayName": "p3"
+            },
+            "time_created": 1789214400000,
+            "time_updated": 1789214400000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 3.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "codex",
+            "sessionId": "s4"
+          },
+          "session": {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "s4"
+            },
+            "title": "s4",
+            "directory": "/p4",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p4",
+              "displayName": "p4"
+            },
+            "time_created": 1789128000000,
+            "time_updated": 1789128000000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 4.5,
+              "cost_source": "recorded",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s5"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s5"
+            },
+            "title": "s5",
+            "directory": "/p5",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p5",
+              "displayName": "p5"
+            },
+            "time_created": 1789041600000,
+            "time_updated": 1789041600000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 5.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "codex",
+            "sessionId": "s6"
+          },
+          "session": {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "s6"
+            },
+            "title": "s6",
+            "directory": "/p6",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p6",
+              "displayName": "p6"
+            },
+            "time_created": 1788955200000,
+            "time_updated": 1788955200000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 6.5,
+              "cost_source": "recorded",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s7"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s7"
+            },
+            "title": "s7",
+            "directory": "/p7",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p7",
+              "displayName": "p7"
+            },
+            "time_created": 1788868800000,
+            "time_updated": 1788868800000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 7.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "codex",
+            "sessionId": "s8"
+          },
+          "session": {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "s8"
+            },
+            "title": "s8",
+            "directory": "/p8",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p8",
+              "displayName": "p8"
+            },
+            "time_created": 1788782400000,
+            "time_updated": 1788782400000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 8.5,
+              "cost_source": "recorded",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s9"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s9"
+            },
+            "title": "s9",
+            "directory": "/p9",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p9",
+              "displayName": "p9"
+            },
+            "time_created": 1788696000000,
+            "time_updated": 1788696000000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 9.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        }
+      ]
+    },
+    "projects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789473600000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p1",
+        "displayName": "p1",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1789387200000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p2",
+        "displayName": "p2",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789300800000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p3",
+        "displayName": "p3",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1789214400000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p4",
+        "displayName": "p4",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789128000000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p5",
+        "displayName": "p5",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1789041600000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p6",
+        "displayName": "p6",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788955200000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p7",
+        "displayName": "p7",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788868800000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p8",
+        "displayName": "p8",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788782400000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p9",
+        "displayName": "p9",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788696000000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p10",
+        "displayName": "p10",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788609600000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p11",
+        "displayName": "p11",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788523200000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p12",
+        "displayName": "p12",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788436800000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p13",
+        "displayName": "p13",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788350400000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p14",
+        "displayName": "p14",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788264000000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p20",
+        "displayName": "p20",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1787745600000
+      }
+    ],
+    "expectedProjects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789473600000,
+        "messages": 4,
+        "tokens": 28,
+        "cost": 21,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 4,
+            "tokens": 28,
+            "cost": 21
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p1",
+        "displayName": "p1",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1789387200000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 1.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 1.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p2",
+        "displayName": "p2",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789300800000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 2.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 2.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p3",
+        "displayName": "p3",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1789214400000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 3.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 3.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p4",
+        "displayName": "p4",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789128000000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 4.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 4.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p5",
+        "displayName": "p5",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1789041600000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 5.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 5.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p6",
+        "displayName": "p6",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788955200000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 6.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 6.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p7",
+        "displayName": "p7",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788868800000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 7.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 7.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p8",
+        "displayName": "p8",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788782400000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 8.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 8.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p9",
+        "displayName": "p9",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788696000000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 9.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 9.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p10",
+        "displayName": "p10",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788609600000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 10.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 10.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p11",
+        "displayName": "p11",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788523200000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 11.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 11.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p12",
+        "displayName": "p12",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788436800000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 12.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 12.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p13",
+        "displayName": "p13",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788350400000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 13.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 13.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p14",
+        "displayName": "p14",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788264000000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 14.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 14.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p20",
+        "displayName": "p20",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1787745600000,
+        "messages": 0,
+        "tokens": 0,
+        "cost": 0,
+        "agentStats": []
+      }
+    ],
+    "expectedSummary": {
+      "projects": 16,
+      "sessions": 15,
+      "tokens": 224,
+      "cost": 133,
+      "latestActivity": 1789473600000
+    }
+  },
+  {
+    "sessions": [
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s0"
+        },
+        "title": "s0",
+        "directory": "/p0",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p0",
+          "displayName": "p0"
+        },
+        "time_created": 1789473600000,
+        "time_updated": 1789473600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 0.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s1"
+        },
+        "title": "s1",
+        "directory": "/p1",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p1",
+          "displayName": "p1"
+        },
+        "time_created": 1789387200000,
+        "time_updated": 1789387200000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 1.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s2"
+        },
+        "title": "s2",
+        "directory": "/p2",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p2",
+          "displayName": "p2"
+        },
+        "time_created": 1789300800000,
+        "time_updated": 1789300800000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 2.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s3"
+        },
+        "title": "s3",
+        "directory": "/p3",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p3",
+          "displayName": "p3"
+        },
+        "time_created": 1789214400000,
+        "time_updated": 1789214400000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 3.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s4"
+        },
+        "title": "s4",
+        "directory": "/p4",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p4",
+          "displayName": "p4"
+        },
+        "time_created": 1789128000000,
+        "time_updated": 1789128000000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 4.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s5"
+        },
+        "title": "s5",
+        "directory": "/p5",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p5",
+          "displayName": "p5"
+        },
+        "time_created": 1789041600000,
+        "time_updated": 1789041600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 5.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s6"
+        },
+        "title": "s6",
+        "directory": "/p6",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p6",
+          "displayName": "p6"
+        },
+        "time_created": 1788955200000,
+        "time_updated": 1788955200000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 6.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s7"
+        },
+        "title": "s7",
+        "directory": "/p7",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p7",
+          "displayName": "p7"
+        },
+        "time_created": 1788868800000,
+        "time_updated": 1788868800000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 7.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s8"
+        },
+        "title": "s8",
+        "directory": "/p8",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p8",
+          "displayName": "p8"
+        },
+        "time_created": 1788782400000,
+        "time_updated": 1788782400000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 8.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s9"
+        },
+        "title": "s9",
+        "directory": "/p9",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p9",
+          "displayName": "p9"
+        },
+        "time_created": 1788696000000,
+        "time_updated": 1788696000000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 9.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s10"
+        },
+        "title": "s10",
+        "directory": "/p10",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p10",
+          "displayName": "p10"
+        },
+        "time_created": 1788609600000,
+        "time_updated": 1788609600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 10.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s11"
+        },
+        "title": "s11",
+        "directory": "/p11",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p11",
+          "displayName": "p11"
+        },
+        "time_created": 1788523200000,
+        "time_updated": 1788523200000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 11.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s12"
+        },
+        "title": "s12",
+        "directory": "/p12",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p12",
+          "displayName": "p12"
+        },
+        "time_created": 1788436800000,
+        "time_updated": 1788436800000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 12.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "pi",
+          "sessionId": "s13"
+        },
+        "title": "s13",
+        "directory": "/p13",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p13",
+          "displayName": "p13"
+        },
+        "time_created": 1788350400000,
+        "time_updated": 1788350400000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 13.5,
+          "cost_source": "estimated",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "s14"
+        },
+        "title": "s14",
+        "directory": "/p14",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p14",
+          "displayName": "p14"
+        },
+        "time_created": 1788264000000,
+        "time_updated": 1788264000000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 14.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      },
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "child"
+        },
+        "title": "child",
+        "directory": "/p20",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p20",
+          "displayName": "p20"
+        },
+        "time_created": 1787745600000,
+        "time_updated": 1787745600000,
+        "stats": {
+          "message_count": 2,
+          "total_input_tokens": 10,
+          "total_output_tokens": 4,
+          "total_cost": 20.5,
+          "cost_source": "recorded",
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": [],
+        "parent_reference": {
+          "agentName": "codex",
+          "sessionId": "s0"
+        }
+      }
+    ],
+    "options": {
+      "byAgentNames": ["codex", "pi"],
+      "scope": {
+        "agent": "pi"
+      },
+      "from": 1787745600000,
+      "to": 1789473600000,
+      "compare": {
+        "from": 1785931200000,
+        "to": 1787745599999
+      }
+    },
+    "expected": {
+      "totals": {
+        "sessions": 7,
+        "messages": 14,
+        "tokens": 98,
+        "cost": 52.5,
+        "costRecorded": 0,
+        "costEstimated": 52.5,
+        "cacheReadTokens": 14,
+        "cost_source": "estimated",
+        "latestActivity": 1789387200000,
+        "latestActivityProject": "p1",
+        "latestActivityAgent": "pi",
+        "previous": {
+          "sessions": 0,
+          "messages": 0,
+          "tokens": 0,
+          "cost": 0
+        }
+      },
+      "scopeCounts": {
+        "projects": 7,
+        "agents": 1
+      },
+      "perAgent": [
+        {
+          "name": "pi",
+          "displayName": "pi",
+          "icon": "",
+          "sessions": 7,
+          "messages": 14,
+          "tokens": 98,
+          "cost": 52.5
+        }
+      ],
+      "dailyActivity": [
+        {
+          "date": "2026-08-26",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-27",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-28",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-29",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-30",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-31",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-01",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-02",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 13.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-03",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-04",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 11.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-05",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-06",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 9.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-07",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-08",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 7.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-09",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-10",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 5.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-11",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-12",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 3.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-13",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-14",
+          "sessions": 1,
+          "messages": 2,
+          "cost": 1.5,
+          "input": 8,
+          "output": 4,
+          "cache_read": 2,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-15",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        }
+      ],
+      "modelDistribution": [
+        {
+          "model": "model",
+          "tokens": 98,
+          "sessions": 7
+        }
+      ],
+      "modelCost": null,
+      "perProject": [
+        {
+          "identityKind": "path",
+          "identityKey": "/p13",
+          "displayName": "p13",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 13.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [13.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p11",
+          "displayName": "p11",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 11.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 11.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p9",
+          "displayName": "p9",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 9.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 9.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p7",
+          "displayName": "p7",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 7.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 7.5, 0, 0, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p5",
+          "displayName": "p5",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 5.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 5.5, 0, 0, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p3",
+          "displayName": "p3",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 3.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3.5, 0, 0, 0]
+        },
+        {
+          "identityKind": "path",
+          "identityKey": "/p1",
+          "displayName": "p1",
+          "sessions": 1,
+          "messages": 2,
+          "tokens": 14,
+          "cost": 1.5,
+          "cost_source": "estimated",
+          "agents": ["pi"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.5, 0]
+        }
+      ],
+      "projectRollup": {
+        "projects": 0,
+        "sessions": 0,
+        "tokens": 0,
+        "cost": 0
+      },
+      "recentSessions": [
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s1"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s1"
+            },
+            "title": "s1",
+            "directory": "/p1",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p1",
+              "displayName": "p1"
+            },
+            "time_created": 1789387200000,
+            "time_updated": 1789387200000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 1.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s3"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s3"
+            },
+            "title": "s3",
+            "directory": "/p3",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p3",
+              "displayName": "p3"
+            },
+            "time_created": 1789214400000,
+            "time_updated": 1789214400000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 3.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s5"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s5"
+            },
+            "title": "s5",
+            "directory": "/p5",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p5",
+              "displayName": "p5"
+            },
+            "time_created": 1789041600000,
+            "time_updated": 1789041600000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 5.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s7"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s7"
+            },
+            "title": "s7",
+            "directory": "/p7",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p7",
+              "displayName": "p7"
+            },
+            "time_created": 1788868800000,
+            "time_updated": 1788868800000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 7.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s9"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s9"
+            },
+            "title": "s9",
+            "directory": "/p9",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p9",
+              "displayName": "p9"
+            },
+            "time_created": 1788696000000,
+            "time_updated": 1788696000000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 9.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s11"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s11"
+            },
+            "title": "s11",
+            "directory": "/p11",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p11",
+              "displayName": "p11"
+            },
+            "time_created": 1788523200000,
+            "time_updated": 1788523200000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 11.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        },
+        {
+          "reference": {
+            "agentName": "pi",
+            "sessionId": "s13"
+          },
+          "session": {
+            "reference": {
+              "agentName": "pi",
+              "sessionId": "s13"
+            },
+            "title": "s13",
+            "directory": "/p13",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p13",
+              "displayName": "p13"
+            },
+            "time_created": 1788350400000,
+            "time_updated": 1788350400000,
+            "stats": {
+              "message_count": 2,
+              "total_input_tokens": 10,
+              "total_output_tokens": 4,
+              "total_cost": 13.5,
+              "cost_source": "estimated",
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        }
+      ]
+    },
+    "projects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789473600000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p1",
+        "displayName": "p1",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1789387200000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p2",
+        "displayName": "p2",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789300800000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p3",
+        "displayName": "p3",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1789214400000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p4",
+        "displayName": "p4",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789128000000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p5",
+        "displayName": "p5",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1789041600000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p6",
+        "displayName": "p6",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788955200000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p7",
+        "displayName": "p7",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788868800000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p8",
+        "displayName": "p8",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788782400000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p9",
+        "displayName": "p9",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788696000000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p10",
+        "displayName": "p10",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788609600000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p11",
+        "displayName": "p11",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788523200000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p12",
+        "displayName": "p12",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788436800000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p13",
+        "displayName": "p13",
+        "sources": ["pi"],
+        "sessionCount": 0,
+        "lastActivity": 1788350400000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p14",
+        "displayName": "p14",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1788264000000
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p20",
+        "displayName": "p20",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1787745600000
+      }
+    ],
+    "expectedProjects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789473600000,
+        "messages": 4,
+        "tokens": 28,
+        "cost": 21,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 4,
+            "tokens": 28,
+            "cost": 21
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p1",
+        "displayName": "p1",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1789387200000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 1.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 1.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p2",
+        "displayName": "p2",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789300800000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 2.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 2.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p3",
+        "displayName": "p3",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1789214400000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 3.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 3.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p4",
+        "displayName": "p4",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789128000000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 4.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 4.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p5",
+        "displayName": "p5",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1789041600000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 5.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 5.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p6",
+        "displayName": "p6",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788955200000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 6.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 6.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p7",
+        "displayName": "p7",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788868800000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 7.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 7.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p8",
+        "displayName": "p8",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788782400000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 8.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 8.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p9",
+        "displayName": "p9",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788696000000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 9.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 9.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p10",
+        "displayName": "p10",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788609600000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 10.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 10.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p11",
+        "displayName": "p11",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788523200000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 11.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 11.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p12",
+        "displayName": "p12",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788436800000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 12.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 12.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p13",
+        "displayName": "p13",
+        "sources": ["pi"],
+        "sessionCount": 1,
+        "lastActivity": 1788350400000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 13.5,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "pi",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 13.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p14",
+        "displayName": "p14",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1788264000000,
+        "messages": 2,
+        "tokens": 14,
+        "cost": 14.5,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 2,
+            "tokens": 14,
+            "cost": 14.5
+          }
+        ]
+      },
+      {
+        "identityKind": "path",
+        "identityKey": "/p20",
+        "displayName": "p20",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1787745600000,
+        "messages": 0,
+        "tokens": 0,
+        "cost": 0,
+        "agentStats": []
+      }
+    ],
+    "expectedSummary": {
+      "projects": 16,
+      "sessions": 15,
+      "tokens": 224,
+      "cost": 133,
+      "latestActivity": 1789473600000
+    }
+  },
+  {
+    "sessions": [
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "timed"
+        },
+        "title": "timed",
+        "directory": "/p0",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p0",
+          "displayName": "p0"
+        },
+        "time_created": 1789473600000,
+        "time_updated": 1789473600000,
+        "stats": {
+          "message_count": 1,
+          "total_input_tokens": 10,
+          "total_output_tokens": 6,
+          "total_cost": 1,
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      }
+    ],
+    "options": {
+      "byAgentNames": ["codex", "pi"],
+      "scope": {},
+      "from": 1789300800000,
+      "to": 1789387200000,
+      "compare": {
+        "from": 1785931200000,
+        "to": 1787745599999
+      },
+      "costFacts": {
+        "messages": [
+          {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "timed"
+            },
+            "time": 1789387200000,
+            "model": "m",
+            "inputTokens": 10,
+            "outputTokens": 4,
+            "reasoningTokens": 2,
+            "cacheReadTokens": 2,
+            "cacheCreateTokens": 0,
+            "cost": 1,
+            "costSource": "estimated"
+          }
+        ],
+        "sessions": [
+          {
+            "messageCount": 1,
+            "untimedMessageCount": 0,
+            "inputTokens": 10,
+            "outputTokens": 4,
+            "reasoningTokens": 2,
+            "cacheReadTokens": 2,
+            "cacheCreateTokens": 0,
+            "untimedInputTokens": 0,
+            "untimedOutputTokens": 0,
+            "untimedReasoningTokens": 0,
+            "untimedCacheReadTokens": 0,
+            "untimedCacheCreateTokens": 0,
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "timed"
+            },
+            "messageCost": 1,
+            "untimedMessageCost": 0,
+            "modelCosts": [
+              {
+                "model": "m",
+                "cost": 1,
+                "costRecorded": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expected": {
+      "totals": {
+        "sessions": 0,
+        "messages": 1,
+        "tokens": 16,
+        "cost": 1,
+        "costRecorded": 0,
+        "costEstimated": 1,
+        "cacheReadTokens": 2,
+        "cost_source": "estimated",
+        "previous": {
+          "sessions": 0,
+          "messages": 0,
+          "tokens": 0,
+          "cost": 0
+        }
+      },
+      "scopeCounts": {
+        "projects": 0,
+        "agents": 0
+      },
+      "perAgent": [
+        {
+          "name": "codex",
+          "displayName": "codex",
+          "icon": "",
+          "sessions": 0,
+          "messages": 1,
+          "tokens": 16,
+          "cost": 1
+        }
+      ],
+      "dailyActivity": [
+        {
+          "date": "2026-09-13",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-14",
+          "sessions": 0,
+          "messages": 1,
+          "cost": 1,
+          "input": 8,
+          "output": 6,
+          "cache_read": 2,
+          "cache_create": 0
+        }
+      ],
+      "modelDistribution": [
+        {
+          "model": "m",
+          "tokens": 16,
+          "sessions": 1
+        }
+      ],
+      "modelCost": [
+        {
+          "model": "m",
+          "cost": 1,
+          "costRecorded": 0,
+          "costEstimated": 1
+        }
+      ],
+      "perProject": [
+        {
+          "identityKind": "path",
+          "identityKey": "/p0",
+          "displayName": "p0",
+          "sessions": 0,
+          "messages": 1,
+          "tokens": 16,
+          "cost": 1,
+          "cost_source": "estimated",
+          "agents": [],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        }
+      ],
+      "projectRollup": {
+        "projects": 0,
+        "sessions": 0,
+        "tokens": 0,
+        "cost": 0
+      },
+      "recentSessions": []
+    },
+    "projects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789473600000
+      }
+    ],
+    "expectedProjects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789473600000,
+        "messages": 1,
+        "tokens": 16,
+        "cost": 1,
+        "cost_source": "estimated",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 0,
+            "messages": 1,
+            "tokens": 16,
+            "cost": 1
+          }
+        ]
+      }
+    ],
+    "expectedSummary": {
+      "projects": 1,
+      "sessions": 0,
+      "tokens": 16,
+      "cost": 1,
+      "latestActivity": 1789473600000
+    }
+  },
+  {
+    "sessions": [
+      {
+        "reference": {
+          "agentName": "codex",
+          "sessionId": "timed"
+        },
+        "title": "timed",
+        "directory": "/p0",
+        "project_identity": {
+          "kind": "path",
+          "key": "/p0",
+          "displayName": "p0"
+        },
+        "time_created": 1789473600000,
+        "time_updated": 1789473600000,
+        "stats": {
+          "message_count": 1,
+          "total_input_tokens": 10,
+          "total_output_tokens": 6,
+          "total_cost": 1,
+          "total_cache_read_tokens": 2
+        },
+        "model_usage": {
+          "model": 14
+        },
+        "smart_tags": []
+      }
+    ],
+    "options": {
+      "byAgentNames": ["codex", "pi"],
+      "scope": {},
+      "from": 1787745600000,
+      "to": 1789473600000,
+      "compare": {
+        "from": 1785931200000,
+        "to": 1787745599999
+      },
+      "costFacts": {
+        "messages": [
+          {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "timed"
+            },
+            "time": 1789387200000,
+            "model": "m",
+            "inputTokens": 10,
+            "outputTokens": 4,
+            "reasoningTokens": 2,
+            "cacheReadTokens": 2,
+            "cacheCreateTokens": 0,
+            "cost": 1,
+            "costSource": "estimated"
+          }
+        ],
+        "sessions": [
+          {
+            "messageCount": 3,
+            "untimedMessageCount": 0,
+            "inputTokens": 55,
+            "outputTokens": 4,
+            "reasoningTokens": 2,
+            "cacheReadTokens": 2,
+            "cacheCreateTokens": 0,
+            "untimedInputTokens": 0,
+            "untimedOutputTokens": 0,
+            "untimedReasoningTokens": 0,
+            "untimedCacheReadTokens": 0,
+            "untimedCacheCreateTokens": 0,
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "timed"
+            },
+            "messageCost": 99,
+            "untimedMessageCost": 0,
+            "modelCosts": [
+              {
+                "model": "m",
+                "cost": 99,
+                "costRecorded": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expected": {
+      "totals": {
+        "sessions": 1,
+        "messages": 1,
+        "tokens": 16,
+        "cost": 1,
+        "costRecorded": 1,
+        "costEstimated": 0,
+        "cacheReadTokens": 2,
+        "cost_source": "recorded",
+        "latestActivity": 1789473600000,
+        "latestActivityProject": "p0",
+        "latestActivityAgent": "codex",
+        "previous": {
+          "sessions": 0,
+          "messages": 0,
+          "tokens": 0,
+          "cost": 0
+        }
+      },
+      "scopeCounts": {
+        "projects": 1,
+        "agents": 1
+      },
+      "perAgent": [
+        {
+          "name": "codex",
+          "displayName": "codex",
+          "icon": "",
+          "sessions": 1,
+          "messages": 1,
+          "tokens": 16,
+          "cost": 1
+        }
+      ],
+      "dailyActivity": [
+        {
+          "date": "2026-08-26",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-27",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-28",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-29",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-30",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-08-31",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-01",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-02",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-03",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-04",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-05",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-06",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-07",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-08",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-09",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-10",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-11",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-12",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-13",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-14",
+          "sessions": 0,
+          "messages": 0,
+          "cost": 0,
+          "input": 0,
+          "output": 0,
+          "cache_read": 0,
+          "cache_create": 0
+        },
+        {
+          "date": "2026-09-15",
+          "sessions": 1,
+          "messages": 1,
+          "cost": 1,
+          "input": 8,
+          "output": 6,
+          "cache_read": 2,
+          "cache_create": 0
+        }
+      ],
+      "modelDistribution": [
+        {
+          "model": "model",
+          "tokens": 14,
+          "sessions": 1
+        }
+      ],
+      "modelCost": [],
+      "perProject": [
+        {
+          "identityKind": "path",
+          "identityKey": "/p0",
+          "displayName": "p0",
+          "sessions": 1,
+          "messages": 1,
+          "tokens": 16,
+          "cost": 1,
+          "cost_source": "recorded",
+          "agents": ["codex"],
+          "sparkline": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        }
+      ],
+      "projectRollup": {
+        "projects": 0,
+        "sessions": 0,
+        "tokens": 0,
+        "cost": 0
+      },
+      "recentSessions": [
+        {
+          "reference": {
+            "agentName": "codex",
+            "sessionId": "timed"
+          },
+          "session": {
+            "reference": {
+              "agentName": "codex",
+              "sessionId": "timed"
+            },
+            "title": "timed",
+            "directory": "/p0",
+            "project_identity": {
+              "kind": "path",
+              "key": "/p0",
+              "displayName": "p0"
+            },
+            "time_created": 1789473600000,
+            "time_updated": 1789473600000,
+            "stats": {
+              "message_count": 1,
+              "total_input_tokens": 10,
+              "total_output_tokens": 6,
+              "total_cost": 1,
+              "total_cache_read_tokens": 2
+            },
+            "model_usage": {
+              "model": 14
+            },
+            "smart_tags": []
+          }
+        }
+      ]
+    },
+    "projects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 0,
+        "lastActivity": 1789473600000
+      }
+    ],
+    "expectedProjects": [
+      {
+        "identityKind": "path",
+        "identityKey": "/p0",
+        "displayName": "p0",
+        "sources": ["codex"],
+        "sessionCount": 1,
+        "lastActivity": 1789473600000,
+        "messages": 1,
+        "tokens": 16,
+        "cost": 1,
+        "cost_source": "recorded",
+        "agentStats": [
+          {
+            "name": "codex",
+            "sessions": 1,
+            "messages": 1,
+            "tokens": 16,
+            "cost": 1
+          }
+        ]
+      }
+    ],
+    "expectedSummary": {
+      "projects": 1,
+      "sessions": 1,
+      "tokens": 16,
+      "cost": 1,
+      "latestActivity": 1789473600000
+    }
+  }
+]

@@ -2,7 +2,7 @@ import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { formatSessionReference } from "@codesesh/core/contract";
+import { formatSessionReference } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionDetail, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";

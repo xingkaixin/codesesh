@@ -13,8 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const VERSIONED_MANIFESTS = [
-  "packages/cli/package.json",
-  "packages/core/package.json",
+  "packages/contract/package.json",
   "apps/web/package.json",
   "apps/www/package.json",
 ];
@@ -51,11 +50,19 @@ export function checkReleaseVersions({ tag, manifests }) {
   return { ok: problems.length === 0, expected, problems };
 }
 
-function readManifests(repoRoot) {
-  return VERSIONED_MANIFESTS.map((path) => ({
-    path,
-    version: JSON.parse(readFileSync(join(repoRoot, path), "utf8")).version,
-  }));
+export function readManifests(repoRoot) {
+  const cargo = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
+  const workspace = cargo.split(/^\[workspace\.package\]\s*$/m)[1]?.split(/^\[/m)[0];
+  const versions = [...(workspace ?? "").matchAll(/^version\s*=\s*"([^"]+)"\s*$/gm)];
+  if (versions.length !== 1)
+    throw new Error("Cargo.toml must declare one workspace.package version");
+  return [
+    { path: "Cargo.toml", version: versions[0][1] },
+    ...VERSIONED_MANIFESTS.map((path) => ({
+      path,
+      version: JSON.parse(readFileSync(join(repoRoot, path), "utf8")).version,
+    })),
+  ];
 }
 
 function main() {

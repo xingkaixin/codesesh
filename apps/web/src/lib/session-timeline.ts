@@ -4,14 +4,14 @@ import { t } from "../i18n/translate";
  * day-grouped tree references and derives bounded row pages from it. Pure —
  * expansion state belongs to the component, never to the model.
  */
-import type { SessionHead, SessionReference, SessionTreeNode } from "@codesesh/core/contract";
+import type { SessionHead, SessionReference, SessionTreeNode } from "@codesesh/contract";
 import {
   addCalendarDays,
   buildSessionTree,
   getSessionRouteKey,
   groupSessionsByCalendarDay,
   startOfCalendarDay,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 import { formatMonthDay } from "./format";
 import { getSessionDisplayTitle } from "./session-title";
 

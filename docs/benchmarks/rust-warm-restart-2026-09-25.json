@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-25",
+  "scope": "Codex only; isolated APFS clones of the local cache; original sources read-only",
+  "cached_sessions": 4012,
+  "before": [
+    {
+      "label": "before",
+      "elapsed_ms": 24994,
+      "history_notice": true,
+      "peak_rss_mib": 148.359375,
+      "rewritten_sessions": 78,
+      "total_sessions": 4012
+    },
+    {
+      "label": "before-restart",
+      "elapsed_ms": 6891,
+      "history_notice": true,
+      "peak_rss_mib": 84.21875,
+      "rewritten_sessions": 0,
+      "total_sessions": 4012
+    }
+  ],
+  "after": [
+    {
+      "label": "after",
+      "elapsed_ms": 12718,
+      "history_notice": false,
+      "peak_rss_mib": 148,
+      "rewritten_sessions": 78,
+      "total_sessions": 4012
+    },
+    {
+      "label": "restart",
+      "elapsed_ms": 1733,
+      "history_notice": false,
+      "peak_rss_mib": 68.625,
+      "rewritten_sessions": 0,
+      "total_sessions": 4012
+    }
+  ]
+}

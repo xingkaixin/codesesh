@@ -10,7 +10,7 @@
 > - 产品能力与 CLI 参数：[`README.md`](../README.md)
 > - 扫描与缓存架构：[`docs/architecture.md`](./architecture.md)、[`docs/scanning-and-caching.md`](./scanning-and-caching.md)
 > - SQLite 存储与搜索索引：[`docs/sqlite-storage.md`](./sqlite-storage.md)
-> - 支持的 Agent 清单：`packages/core/src/contract/agent-catalog.ts`
+> - 支持的 Agent 清单：`crates/codesesh-core/src/agents/catalog.json`
 > - 发布流程：[`docs/release-guide.md`](./release-guide.md)
 
 ## 1. 概述
@@ -23,7 +23,7 @@ CodeSesh 是一个本地 CLI 工具，用于发现、聚合和可视化多种 AI
 
 当前存在两个独立项目：
 
-- **agent-dump** (Python)：从本地文件系统发现并导出 5 种 Coding Agent（Claude Code、Codex、OpenCode、Cursor、Kimi）的会话记录，统一为 JSON 格式（立项时的范围；当前支持的 Agent 以 `packages/core/src/contract/agent-catalog.ts` 为准）
+- **agent-dump** (Python)：从本地文件系统发现并导出 5 种 Coding Agent（Claude Code、Codex、OpenCode、Cursor、Kimi）的会话记录，统一为 JSON 格式（立项时的范围；当前支持的 Agent 以 `crates/codesesh-core/src/agents/catalog.json` 为准）
 - **agent-view** (React)：将导出的 JSON 会话文件可视化为网页，支持消息时间线、工具输出渲染、TOC 过滤等
 
 CodeSesh 将两者的能力整合为一个 TypeScript monorepo，提供从会话发现到可视化的端到端体验，无需 Python 环境。
@@ -122,7 +122,7 @@ CLI 启动时应有结构化的控制台输出：
 
 ---
 
-## 3. 技术架构
+## 3. 技术架构（立项选型）
 
 ### 3.1 技术栈
 
@@ -150,11 +150,11 @@ CLI 启动时应有结构化的控制台输出：
 
 ### 3.4 API 设计
 
-立项时只规划了 3 条路由。当前 API 以 `packages/cli/src/api/routes.ts` 为准。
+立项时只规划了 3 条路由。当前 API 以 `crates/codesesh-cli/src/http.rs` 为准。
 
 ### 3.5 核心类型
 
-当前类型定义以 `packages/core/src/types/` 与 `packages/core/src/contract/` 为准。
+当前类型定义以 `crates/codesesh-core/src/contract.rs` 与 `packages/contract/src/` 为准。
 
 ### 3.6 构建与发布
 
@@ -200,12 +200,12 @@ CLI 启动时应有结构化的控制台输出：
 
 ---
 
-## 5. 设计决策记录
+## 5. 设计决策记录（立项历史）
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 数据传递方式 | API 服务器（Hono） | 按需加载，服务端过滤，与 agent-view 的 fetch 模式一致 |
-| 适配器位置 | 放在 `packages/core` | 与类型和发现逻辑紧密耦合，分离会导致循环依赖 |
+| 适配器位置 | 放在当时的 packages/core 包 | 与类型和发现逻辑紧密耦合，分离会导致循环依赖 |
 | CLI 参数解析 | citty | TypeScript 原生，轻量，与 consola 配套 |
 | SQLite 库 | better-sqlite3 | 同步 API，性能好，OpenCode 和 Cursor 需要 |
 | Web 嵌入方式 | 构建时复制到 CLI dist | `npx` 一键可用，无需额外安装 |

@@ -1,4 +1,4 @@
-import { AGENT_CATALOG } from "@codesesh/core/contract";
+import { AGENT_CATALOG } from "@codesesh/contract";
 
 export const locales = ["en", "zh", "ja"] as const;
 
@@ -353,7 +353,7 @@ export const copy = {
         {
           question: "如何安装和启动 CodeSesh？",
           answer:
-            "在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4521 打开 Web UI；如果默认端口被占用，它会尝试下一个可用端口。发布版需要 Node.js 22 或更高版本。",
+            "在终端运行 npx codesesh。CodeSesh 会扫描受支持的本地 AI 编码会话，并在 http://localhost:4521 打开 Web UI；如果默认端口被占用，它会尝试下一个可用端口。npm 启动器需要 Node.js 22 或更高版本，独立原生可执行文件不需要 Node。",
           link: { href: "/zh/guides/session-history/", label: "历史会话查找指南" },
         },
         {
@@ -565,7 +565,7 @@ export const copy = {
         {
           question: "How do I install and start CodeSesh?",
           answer:
-            "Run npx codesesh in a terminal. CodeSesh scans supported local AI coding sessions and opens its Web UI at http://localhost:4521. If the default port is busy, it tries the next available port. The published CLI requires Node.js 22 or later.",
+            "Run npx codesesh in a terminal. CodeSesh scans supported local AI coding sessions and opens its Web UI at http://localhost:4521. If the default port is busy, it tries the next available port. The npm launcher requires Node.js 22 or later. The standalone native executable does not require Node.",
           link: { href: "/guides/session-history/", label: "Session history guide" },
         },
         {
@@ -787,7 +787,7 @@ export const copy = {
         {
           question: "CodeSeshをインストールして起動するには？",
           answer:
-            "ターミナルでnpx codeseshを実行してください。対応するローカルAIコーディングセッションをスキャンし、http://localhost:4521 でWeb UIを開きます。既定のポートが使用中の場合は、次に利用可能なポートを試します。公開版CLIにはNode.js 22以降が必要です。",
+            "ターミナルでnpx codeseshを実行してください。対応するローカルAIコーディングセッションをスキャンし、http://localhost:4521 でWeb UIを開きます。既定のポートが使用中の場合は、次に利用可能なポートを試します。npmランチャーにはNode.js 22以降が必要です。単体のネイティブ実行ファイルにNodeは不要です。",
           link: { href: "/ja/guides/session-history/", label: "会話履歴の検索ガイド" },
         },
         {

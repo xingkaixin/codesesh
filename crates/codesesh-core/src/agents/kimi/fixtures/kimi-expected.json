@@ -1,0 +1,96 @@
+{
+  "head": {
+    "reference": {
+      "agentName": "kimi",
+      "sessionId": "session"
+    },
+    "title": "Test a bug",
+    "directory": "",
+    "time_created": 1000,
+    "time_updated": 1000000,
+    "stats": {
+      "total_cost": 0,
+      "total_input_tokens": 4,
+      "total_output_tokens": 2,
+      "total_tokens": 0,
+      "message_count": 0
+    }
+  },
+  "detail": {
+    "reference": {
+      "agentName": "kimi",
+      "sessionId": "session"
+    },
+    "title": "Test a bug",
+    "directory": "",
+    "time_created": 1000,
+    "time_updated": 1000000,
+    "stats": {
+      "message_count": 2,
+      "total_input_tokens": 4,
+      "total_output_tokens": 2,
+      "total_cost": 0,
+      "total_tokens": 0
+    },
+    "messages": [
+      {
+        "id": "wire-1",
+        "role": "user",
+        "agent": null,
+        "time_created": 1000,
+        "mode": null,
+        "model": null,
+        "provider": null,
+        "cost": 0,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Test a bug",
+            "time_created": 1000
+          }
+        ]
+      },
+      {
+        "id": "wire-2",
+        "role": "assistant",
+        "agent": "kimi",
+        "time_created": 2000,
+        "mode": "tool",
+        "model": null,
+        "provider": null,
+        "tokens": {
+          "input": 4,
+          "output": 2
+        },
+        "cost": 0,
+        "parts": [
+          {
+            "type": "reasoning",
+            "text": "Reason",
+            "time_created": 2000
+          },
+          {
+            "type": "tool",
+            "tool": "ReadFile",
+            "callID": "a",
+            "state": {
+              "status": "completed",
+              "input": {
+                "path": "a.rs"
+              },
+              "output": [
+                {
+                  "type": "text",
+                  "text": "{\n  \"result\": \"ok\"\n}",
+                  "time_created": 4000
+                }
+              ]
+            },
+            "time_created": 3000,
+            "title": "read"
+          }
+        ]
+      }
+    ]
+  }
+}

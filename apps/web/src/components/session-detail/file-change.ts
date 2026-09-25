@@ -7,7 +7,7 @@ import {
   classifyFileTool,
   extractFileToolOperations,
   type FileActivityKind,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 import type { Message, SessionFileActivity, ToolPart } from "../../lib/api";
 import type { MessageDisplayModel } from "./display-model-types";
 import { normalizeToolLabel } from "./tool-normalize";

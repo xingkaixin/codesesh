@@ -1,0 +1,123 @@
+[
+  {
+    "type": "user",
+    "uuid": "u1",
+    "timestamp": "2026-04-20T10:00:00Z",
+    "cwd": "/tmp/project",
+    "message": {
+      "role": "user",
+      "content": "Inspect files\n<system-reminder>Hidden</system-reminder>"
+    }
+  },
+  {
+    "type": "assistant",
+    "uuid": "a1",
+    "requestId": "r1",
+    "timestamp": "2026-04-20T10:00:01Z",
+    "message": {
+      "role": "assistant",
+      "model": "claude-sonnet-4-5",
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 2,
+        "cache_read_input_tokens": 10
+      },
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "Need a file"
+        },
+        {
+          "type": "text",
+          "text": "Inspecting"
+        },
+        {
+          "type": "tool_use",
+          "id": "call1",
+          "name": "Read",
+          "input": {
+            "file_path": "package.json"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "assistant",
+    "uuid": "a2",
+    "requestId": "r1",
+    "timestamp": "2026-04-20T10:00:02Z",
+    "message": {
+      "role": "assistant",
+      "model": "claude-sonnet-4-5",
+      "usage": {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cache_read_input_tokens": 10
+      },
+      "content": []
+    }
+  },
+  {
+    "type": "user",
+    "uuid": "u2",
+    "sourceToolAssistantUUID": "a1",
+    "timestamp": "2026-04-20T10:00:03Z",
+    "toolUseResult": {
+      "success": true,
+      "commandName": "read"
+    },
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "content": [
+            {
+              "type": "text",
+              "text": "File body"
+            },
+            {
+              "type": "image",
+              "source": {
+                "data": "abcd",
+                "media_type": "image/png"
+              }
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Continue"
+        }
+      ]
+    }
+  },
+  {
+    "type": "assistant",
+    "uuid": "a3",
+    "requestId": "r2",
+    "timestamp": "2026-04-20T10:00:04Z",
+    "message": {
+      "role": "assistant",
+      "model": "claude-sonnet-4-5",
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 5
+      },
+      "content": []
+    }
+  },
+  {
+    "type": "tool_result",
+    "uuid": "detached",
+    "timestamp": "2026-04-20T10:00:05Z",
+    "message": {
+      "content": "Detached output"
+    }
+  },
+  {
+    "type": "progress",
+    "timestamp": "2026-04-22T10:00:00Z"
+  }
+]

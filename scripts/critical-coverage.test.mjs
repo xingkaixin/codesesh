@@ -27,34 +27,32 @@ describe("critical coverage owners", () => {
     const result = inspectCriticalCoverageOwners(repoRoot, [
       {
         id: "drifted-runtime",
-        owners: [{ path: "packages/cli/src/removed-coordinator.ts", kind: "file" }],
+        owners: [{ path: "apps/web/src/removed-hook.ts", kind: "file" }],
         thresholds: { lines: 91 },
       },
     ]);
 
     expect(result.gaps).toEqual([
-      "drifted-runtime: owner does not exist: packages/cli/src/removed-coordinator.ts",
+      "drifted-runtime: owner does not exist: apps/web/src/removed-hook.ts",
       "drifted-runtime: scope matches no production files",
     ]);
   });
 
   it("generates threshold keys from the same owner manifest", () => {
-    const runtime = CRITICAL_COVERAGE_SCOPES.find(({ id }) => id === "cli-runtime");
-    if (!runtime) throw new Error("cli-runtime coverage scope is missing");
-    expect(runtime.owners.map(({ path }) => path)).toContain(
-      "packages/cli/src/agent-sync-engine.ts",
-    );
-    expect(getCoverageScopePattern(runtime)).not.toContain("coordinator");
-    expect(getCriticalCoverageThresholds()).toHaveProperty(getCoverageScopePattern(runtime), {
-      lines: 91,
+    expect(
+      Object.fromEntries(CRITICAL_COVERAGE_SCOPES.map(({ id, thresholds }) => [id, thresholds])),
+    ).toEqual({
+      "web-hooks": { lines: 95 },
+      "web-api-client": { lines: 89 },
+      "web-interactions": { lines: 87 },
+      "web-route-recovery": { lines: 85 },
     });
-
-    const adapters = CRITICAL_COVERAGE_SCOPES.find(({ id }) => id === "agent-adapters");
-    if (!adapters) throw new Error("agent-adapters coverage scope is missing");
-    expect(adapters.owners).toEqual([{ path: "packages/core/src/agents", kind: "directory" }]);
-    expect(getCriticalCoverageThresholds()).toHaveProperty(getCoverageScopePattern(adapters), {
-      lines: 86,
-    });
+    for (const scope of CRITICAL_COVERAGE_SCOPES) {
+      expect(getCriticalCoverageThresholds()).toHaveProperty(
+        getCoverageScopePattern(scope),
+        scope.thresholds,
+      );
+    }
 
     const routeRecovery = CRITICAL_COVERAGE_SCOPES.find(({ id }) => id === "web-route-recovery");
     if (!routeRecovery) throw new Error("web-route-recovery coverage scope is missing");

@@ -1,4 +1,4 @@
-import { mergeSessionsUpdatedEvents } from "@codesesh/core/contract";
+import { mergeSessionsUpdatedEvents } from "@codesesh/contract";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SessionsUpdatedEvent } from "./api";
 import { queryKeys } from "./query-keys";

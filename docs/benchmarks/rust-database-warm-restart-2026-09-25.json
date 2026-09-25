@@ -1,0 +1,107 @@
+[
+  {
+    "agent": "deepchat",
+    "label": "cold",
+    "elapsed_ms": 666,
+    "history_notice": true,
+    "peak_rss_mib": 71.34375,
+    "total_sessions": 54
+  },
+  {
+    "agent": "deepchat",
+    "label": "restart",
+    "elapsed_ms": 111,
+    "history_notice": false,
+    "peak_rss_mib": 22.609375,
+    "rewritten_sessions": 0,
+    "total_sessions": 54
+  },
+  {
+    "agent": "deepchat",
+    "label": "database_changed",
+    "elapsed_ms": 793,
+    "history_notice": false,
+    "peak_rss_mib": 75.65625,
+    "rewritten_sessions": 54,
+    "total_sessions": 54
+  },
+  {
+    "agent": "deepchat",
+    "label": "restart_after_change",
+    "elapsed_ms": 59,
+    "history_notice": false,
+    "peak_rss_mib": 22.5,
+    "rewritten_sessions": 0,
+    "total_sessions": 54
+  },
+  {
+    "agent": "cherrystudio",
+    "label": "cold",
+    "elapsed_ms": 846,
+    "history_notice": true,
+    "peak_rss_mib": 85.796875,
+    "total_sessions": 348
+  },
+  {
+    "agent": "cherrystudio",
+    "label": "restart",
+    "elapsed_ms": 58,
+    "history_notice": false,
+    "peak_rss_mib": 23.59375,
+    "rewritten_sessions": 0,
+    "total_sessions": 348
+  },
+  {
+    "agent": "cherrystudio",
+    "label": "database_changed",
+    "elapsed_ms": 1213,
+    "history_notice": false,
+    "peak_rss_mib": 92.40625,
+    "rewritten_sessions": 348,
+    "total_sessions": 348
+  },
+  {
+    "agent": "cherrystudio",
+    "label": "restart_after_change",
+    "elapsed_ms": 58,
+    "history_notice": false,
+    "peak_rss_mib": 24.078125,
+    "rewritten_sessions": 0,
+    "total_sessions": 348
+  },
+  {
+    "agent": "opencode",
+    "label": "cold",
+    "elapsed_ms": 3420,
+    "history_notice": true,
+    "peak_rss_mib": 207.40625,
+    "total_sessions": 60
+  },
+  {
+    "agent": "opencode",
+    "label": "restart",
+    "elapsed_ms": 162,
+    "history_notice": false,
+    "peak_rss_mib": 19.34375,
+    "rewritten_sessions": 0,
+    "total_sessions": 60
+  },
+  {
+    "agent": "opencode",
+    "label": "database_changed",
+    "elapsed_ms": 4148,
+    "history_notice": false,
+    "peak_rss_mib": 205.96875,
+    "rewritten_sessions": 60,
+    "total_sessions": 60
+  },
+  {
+    "agent": "opencode",
+    "label": "restart_after_change",
+    "elapsed_ms": 162,
+    "history_notice": false,
+    "peak_rss_mib": 19.375,
+    "rewritten_sessions": 0,
+    "total_sessions": 60
+  }
+]

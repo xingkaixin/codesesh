@@ -1,4 +1,4 @@
-import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/core/contract";
+import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/contract";
 import type {
   AgentInfo,
   ApiProjectGroup,
@@ -15,7 +15,7 @@ import type {
   SessionHead,
   SessionListPage,
   SessionReference,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 import type {
   DashboardFilters,
   FetchOptions,

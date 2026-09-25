@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "playwright/test";
 
-const CLI_ENTRY = fileURLToPath(new URL("../../packages/cli/dist/index.js", import.meta.url));
+const CLI_ENTRY = fileURLToPath(new URL("../../scripts/run-native.mjs", import.meta.url));
 const EXIT_TIMEOUT_MS = 60_000;
 
 async function runJsonCli(home: string, args: string[]) {

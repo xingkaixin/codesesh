@@ -100,6 +100,24 @@ describe("formatScanStatusLabel", () => {
     );
   });
 
+  it("distinguishes cached-history checks from full scans", () => {
+    expect(
+      formatScanStatusLabel(
+        scanStatus({
+          active: true,
+          backfill: {
+            active: true,
+            currentAgent: "codex",
+            pendingAgents: ["codex"],
+            completedAgents: [],
+            failedAgents: [],
+            progress: { phase: "checking", processed: 64, total: 100 },
+          },
+        }),
+      ),
+    ).toBe("Checking session updates · codex · 64/100");
+  });
+
   it("shows full-history backfill progress after the main scan finishes", () => {
     expect(
       formatScanStatusLabel(

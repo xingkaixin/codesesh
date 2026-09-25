@@ -4,7 +4,7 @@ import { t } from "../../i18n/translate";
  * The sub-sessions of one timeline row, rendered inside the parent card so a
  * child never gets its own slot on the day axis.
  */
-import type { SessionReference } from "@codesesh/core/contract";
+import type { SessionReference } from "@codesesh/contract";
 import { useMemo, useState } from "react";
 import { formatClockTime, formatInt, formatUsd } from "../../lib/format";
 import {

@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSessionIdentity } from "@codesesh/core/contract";
+import { createSessionIdentity } from "@codesesh/contract";
 import type { SessionHead } from "../lib/api";
 import { buildSidebarSessionLookup, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";

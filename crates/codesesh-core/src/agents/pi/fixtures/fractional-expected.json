@@ -1,0 +1,68 @@
+{
+  "head": {
+    "reference": {
+      "agentName": "pi",
+      "sessionId": "fractional"
+    },
+    "title": "Fractional prompt",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000.125,
+    "time_updated": 1776679200000.875,
+    "stats": {
+      "message_count": 2,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_cost": 0
+    }
+  },
+  "detail": {
+    "reference": {
+      "agentName": "pi",
+      "sessionId": "fractional"
+    },
+    "title": "Fractional prompt",
+    "directory": "/tmp/project",
+    "time_created": 1776679200000.125,
+    "time_updated": 1776679200000.875,
+    "stats": {
+      "message_count": 2,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "total_cost": 0
+    },
+    "messages": [
+      {
+        "id": "u",
+        "role": "user",
+        "time_created": 1776679200000.375,
+        "parts": [
+          {
+            "type": "text",
+            "text": "Fractional prompt",
+            "time_created": 1776679200000.375
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "role": "assistant",
+        "agent": "pi",
+        "time_created": 1776679200000.875,
+        "model": null,
+        "provider": null,
+        "tokens": {
+          "input": 0,
+          "output": 0
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Fractional reply",
+            "time_created": 1776679200000.875
+          }
+        ]
+      }
+    ]
+  },
+  "cursor": "eyJ2ZXJzaW9uIjoyLCJjb3VudCI6MiwiZGlnZXN0IjoiOTA0OWVmMTAxNTg2MjQ1ZTk4MjNjODg5NzQxN2JhMDRjYzJhMzdmZDJkYjdjYWM5ZjQwMjA4ZGUzMTVhMTg0MyJ9"
+}

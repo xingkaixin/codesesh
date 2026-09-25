@@ -1,0 +1,34 @@
+[
+  {
+    "target": "aarch64-apple-darwin",
+    "platform": "darwin",
+    "arch": "arm64",
+    "package": "@codesesh/cli-darwin-arm64",
+    "executable": "codesesh",
+    "format": "Mach-O"
+  },
+  {
+    "target": "x86_64-apple-darwin",
+    "platform": "darwin",
+    "arch": "x64",
+    "package": "@codesesh/cli-darwin-x64",
+    "executable": "codesesh",
+    "format": "Mach-O"
+  },
+  {
+    "target": "x86_64-unknown-linux-gnu",
+    "platform": "linux",
+    "arch": "x64",
+    "package": "@codesesh/cli-linux-x64",
+    "executable": "codesesh",
+    "format": "ELF"
+  },
+  {
+    "target": "x86_64-pc-windows-msvc",
+    "platform": "win32",
+    "arch": "x64",
+    "package": "@codesesh/cli-win32-x64",
+    "executable": "codesesh.exe",
+    "format": "PE"
+  }
+]

@@ -1,239 +1,121 @@
 # CodeSesh 扫描与缓存
 
-## 概述
+## 启动和发布
 
-CodeSesh 的扫描链路分成两个阶段：
-
-1. 尽快从 SQLite 恢复可浏览的会话列表。
-2. 在 worker 中核对真实数据源，将变化持久化到缓存和搜索索引，再发布新快照。
-
-SQLite schema 与详情快照说明见 [sqlite-storage.md](./sqlite-storage.md)。
-
-## 运行时结构
+Web 模式先从 SQLite 恢复会话快照，再由 Rust 后台任务核对源数据。空缓存可以先返回空列表，
+客户端通过扫描状态和 SSE 接收后续结果。`--json` 完成一次扫描后输出并退出。
 
 ```text
-CLI
-  -> LiveScanStore
-       -> scanSessions() 恢复初始快照
-       -> AgentSyncEngine 协调每个 Agent 的刷新与 backfill
-       -> SessionWatcher 把文件系统事件归并为 Agent 刷新
-            -> scan-refresh worker 调用共享 Session Source synchronization module
-            -> search-index worker 持久化会话、详情与索引
-            -> LiveScanStore 发布内存快照和 SSE 更新
+Clap 参数与 PathEnvironment
+  -> AgentScanner / discovery
+  -> 有界 blocking 扫描任务
+  -> ScanBatch（upserts、removed、checkpoint、pricing ticket）
+  -> 专用 SQLite writer 提交事务
+  -> 不可变 SessionHead 快照
+  -> SSE
 ```
 
-核心边界：
-
-| 模块 | 职责 |
+| 代码 | 职责 |
 |------|------|
-| `packages/core/src/discovery/scanner.ts` | 通用扫描、缓存恢复和 one-shot 调用策略 |
-| `packages/core/src/agents/session-source-synchronization.ts` | 文件源枚举、diff、解析、last-known-good、完整性与删除事实 |
-| `packages/core/src/agents/base.ts` | Agent 原语与显式 Session Source Access 能力联合类型 |
-| `packages/cli/src/live-scan.ts` | 持有当前不可变快照，对外提供订阅 |
-| `packages/cli/src/agent-sync-engine.ts` | 串行化单个 Agent 的 refresh/backfill，并协调发布 |
-| `packages/cli/src/session-watcher.ts` | 跨平台文件监听、写入稳定性等待与事件归并 |
-| `packages/cli/src/scan-refresh-worker.ts` | 在 worker thread 中扫描和解析 |
-| `packages/cli/src/search-index-worker.ts` | 写入缓存、详情和搜索索引 |
+| `crates/codesesh-core/src/discovery.rs` | 一次性扫描、过滤与公开 Agent 信息 |
+| `crates/codesesh-core/src/discovery/paths.rs` | 各平台默认路径和环境变量覆盖 |
+| `crates/codesesh-core/src/discovery/incremental.rs` | 恢复 baseline、增量状态和回填批次 |
+| `crates/codesesh-core/src/discovery/backfill.rs` | 源清单、窗口优先顺序和可恢复 checkpoint |
+| `crates/codesesh-core/src/runtime.rs` | 单 Agent 串行、跨 Agent 有界并发、取消和状态 |
+| `crates/codesesh-core/src/runtime/watcher.rs` | notify 监听、路径归一化和监听根重建 |
+| `crates/codesesh-core/src/runtime/writer.rs` | 事务写入和提交后发布 |
 
-## Agent 并行模型
-
-`scanSessions()` 对所有选中的注册 Agent 调用 `scanAgentSmart()`，并通过 `Promise.all`
-并行等待结果；没有固定“5 个并发”的限制。
-
-当前数据源类型：
+## 数据源与增量读取
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件型：Claude Code、Codex、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
 - 单 SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio、MiniMax Code
 <!-- repo-fact:agent-source-kinds:end -->
 
-不同 Agent 可以并行刷新；同一个 Agent 的 refresh 与 backfill 由 `AgentSyncEngine`
-串行化，并为每次 operation 记录 generation。SQLite 搜索写入另由单一 job runner
-排队。
+文件事件是刷新提示，不直接修改会话。适配器根据变更路径、会话关系及源状态决定需要重读的
+会话；父子会话和共享索引变化会扩展受影响范围。无法安全缩小范围时重新扫描相关来源。
 
-主线程与 scan-refresh worker 之间使用封闭 operation union：`full-scan`、
-`source-refresh`、`recompute-derived` 和 `backfill`。checkpoint 只能在支持它的
-operation 上声明为 `durable`；协议不使用
-多个独立的同步、派生计算、回填与持久化布尔开关，以免表达非法组合。
+数据库适配器读取各自的会话键、内容签名或数据库快照。Cursor、OpenCode/ZCode 和桌面
+数据库分别保留增量状态，不把数据库 mtime 变化直接解释成某一行删除。可验证的删除才进入
+`ScanBatch.removed`；源不可用或解析失败不会作为清空缓存的理由。
 
-每个 `BaseAgent` 通过 `sessionSourceAccess` 显式声明行为能力：`enumerated` 提供统一同步操作与
-Source 计数，`aggregate` 提供整体变更检查、检查提交和增量/全量重扫入口。注册表会校验
-Catalog 的 `filesystem | sqlite` 存储事实与运行时能力一致。scanner、refresh engine 和
-worker 只读取该联合类型，不按具体类身份选择策略；包装 Agent 或测试替身因此不会被误分支。
+同一 Agent 的 scanner 由互斥锁串行访问。不同 Agent 的 blocking 工作受运行时 semaphore
+限制。SQLite 写入另由唯一 writer 排队，不跨线程共享写连接。
 
-## 启动流程
+## 监听与取消
 
-### 交互式 Web 模式
+notify 监听已存在的数据根目录；根目录尚未创建时监听最近的现有祖先。目录创建、替换、
+移动或删除后重新协调监听范围。路径会先规范化，SQLite `-shm` 变化被忽略，数据库及 WAL
+变化继续触发核对。重复路径归并为一个后续刷新请求。
 
-`LiveScanStore` 以 `deferInitialRefresh: true` 启动：
+普通文件事件安排下一轮刷新，不持续中断正在处理的批次，避免高频追加使扫描无法完成。
+显式刷新、定价代际切换和退出会使旧扫描失效。writer 在提交前检查取消状态；定价票据在
+整个数据库提交和快照发布期间持有读锁，防止定价发布与旧结果提交竞争。
 
-```text
-readCachedSessions()
-  -> 从 agent_cache + sessions 恢复 IdentifiedSessionHead[] / SessionCacheMeta
-  -> 启动 HTTP 服务
-  -> startBackgroundRefresh()
-  -> 逐 Agent 核对真实数据源并更新快照
-```
+被拒绝批次的 scanner 会丢弃未提交的增量状态，并从持久化 baseline 恢复。
 
-缓存不存在时，初始快照可以为空；服务启动后后台初始化对应 Agent。缓存存在时，UI 先
-看到已持久化快照，再通过 SSE 收到刷新结果。
-`readCachedSessions()` 用 `{ status: "success", value: null }` 表示缓存尚不存在，
-用 `{ status: "failed" }` 表示读取故障；调用方不得把两者合并处理。
+## 回填和 checkpoint
 
-### JSON 模式
+首次核对按照启动窗口优先处理源清单，再继续覆盖完整历史。回填按批次推进，checkpoint
+记录清单签名、偏移、epoch 和定价代际。只有清单及代际一致时才能恢复偏移；否则重新核对。
+批次和 checkpoint 在同一事务中提交，事务失败不能推进进度。
 
-`--json` 不延迟初始刷新。扫描与索引同步完成后才输出 JSON，并在输出阶段应用
-`--days` / `--from` / `--to` 列表窗口。
+不完整批次必须推进 checkpoint，运行时会拒绝没有进展的循环。列表默认时间窗口不等于缓存
+TTL，也不会使窗口外的历史会话自动失效。删除判断必须基于完整性信息，不能只看当前分页。
 
-## 变更检测
+## 价格与详情
 
-### 文件型 Agent：源枚举 + 指纹 diff
+价格在启动时从缓存和内置快照加载，缺失或过期时尝试远程刷新。网络失败保留可用价格。
+一个扫描批次使用固定价格快照。新代际发布后，scanner 清理依赖旧定价的增量状态并重新计算；
+已有记录成本仍优先于模型估算。价格缓存和会话缓存是独立文件。
 
-可枚举路径统一调用 `agent.sessionSourceAccess.synchronize(baseline, request)`。底层 adapter 只提供
-源枚举、单源解析、依赖扩展和 meta 访问原语；同步 module 先枚举当前
-`SessionSourceRef[]`：
-
-```typescript
-interface SessionSourceRef {
-  sessionId: string;
-  sourcePath: string;
-  fingerprint: string;
-}
-```
-
-同步 module 将当前引用与 baseline 中的会话和 `SessionCacheMeta` 比较：
-
-- 缓存中没有该会话：新增；
-- `sourcePath` 改变或 `sourceFingerprint` 不同：变更；
-- 上次在本次扫描窗口内、现在却没有对应引用：删除；
-- 其余会话保持原对象，不重新解析。
-
-指纹由各适配器生成，并纳入其解析结果所依赖的事实，例如文件大小、mtime、辅助索引
-mtime 或解析器版本。比较采用精确字符串相等；声明版本字段的适配器可通过提升版本主动
-失效旧缓存。
-
-request 是封闭状态：`inspect` 只报告 diff，`refresh` 只解析变化源，`reload` 解析所有
-枚举源，`known-changes` 应用调用方已知的变化。返回的 closed outcome 同时携带 sessions、
-meta、detected/applied ids、显式删除、source failures、finalization ids 和
-`complete | partial`，caller 不再从 payload 形状或布尔组合反推这些事实。
-
-解析失败保留 baseline 中的 Session Head 与 meta，并把 outcome 标为 `partial`；只有明确
-filtered、解析期间 missing，或完整枚举证明 source missing 时才产生显式删除。one-shot
-scanner 与 worker 都只跨 `enumerated` capability 调用该 module；Source 枚举、diff、解析和
-last-known-good 顺序不会泄漏到编排器。
-
-### 数据库型 Agent：数据库 mtime + 全量重扫
-
-`aggregate` capability 的 `checkForChanges()` 比较数据库文件 mtime 与
-`agent_cache.timestamp`，当前由 `DatabaseSessionSource` 实现。
-由于多个会话共享一个数据库文件，当前无法从文件状态安全推导行级变化：
-
-- mtime 未推进：保持缓存；
-- mtime 推进：报告数据源变化；
-- `incrementalScan()` 退化为该 Agent 的全量 `scan()`。
-
-这条路径已经实现；它不是待补充的示例逻辑。
-
-## 文件监听与事件归并
-
-`SessionWatcher` 根据每个适配器的 `getSessionWatchPlan()` 建立监听：
-
-- 平台支持时使用递归监听；
-- 不支持时遍历目录建立非递归 fallback；
-- 声明 `pollForChanges` 的目标每秒检查文件状态，覆盖持续打开文件的写入、创建和替换；MiniMax Code 对数据库、WAL、journal 使用此方式；
-- 等待写入稳定后，把路径事件归并为 Agent 名称；
-- 普通 Agent 默认 debounce 200ms，空 Agent 使用更长等待，以容纳首次创建目录/数据库。
-
-监听事件只是刷新提示，最终变化仍由指纹或数据库 mtime 验证，因此重复、合并或无关的
-文件事件不会直接修改会话状态。
-
-## 持久化与发布
-
-Agent 适配器可以先产出尚无 Project Identity 的 `SessionHead`，但扫描编排必须在计算发布
-结果前补全身份。缓存读侧会拒绝缺少身份的损坏行，`LiveSessionIndex` 也会拒绝不完整输入，
-因此 SQLite、Live Snapshot 和公开列表只包含 `IdentifiedSessionHead`。
-
-刷新结果完成身份解析后计算 `changedSessions` 和 `removedSessionIds`，再交给
-search-index worker：
-
-```text
-saveCachedSessionChanges()
-  + syncSessionSearchIndexChanges()
-  -> SQLite commit
-  -> LiveScanStore 更新内存快照
-  -> SSE sessions-updated
-```
-
-完整初始化/backfill 使用 `saveCachedSessions()` 和 `syncSessionSearchIndex()`。增量路径
-只加载需要重新索引的会话详情；未变化会话不会再次调用 `getSessionData()`。
-
-已有会话索引时，FTS 默认由触发器增量维护；只有全局索引为空且变化量达到
-`SEARCH_INDEX_BULK_SYNC_THRESHOLD` 时才自动批量重建。会话全文索引由所有 Agent 共用，
-不能仅凭单个 Agent 的变化量或文件事件数量触发全局重建。程序化调用仍可通过
-`isBulk` 或 `bulkThreshold` 显式指定重建策略。
-
-## 详情一致性
-
-详情请求由 `packages/core/src/discovery/session-detail.ts` 物化：
-
-1. 从 `sessions + messages` 读取结构化详情快照。
-2. 快照消息完整且缓存指纹与当前 `SessionCacheMeta` 一致时直接返回。
-3. 指纹不一致、消息缺失或会话待 reindex 时调用适配器 `getSessionData()` 回源。
-
-所以一致性模型是“materialized detail + 源指纹失效 + 回源兜底”，不是“详情永远实时
-读取源文件”。Project Identity 已在快照发布前完成，详情 HTTP 请求不会再执行文件系统或
-Git 身份探测。完整规则见 [sqlite-storage.md](./sqlite-storage.md#3-读取会话详情)。
-
-## 窗口扫描与 backfill
-
-交互式启动可以只扫描当前列表时间窗口，以缩短首次刷新。窗口扫描不会把窗口外、且无法
-确认已被枚举的缓存会话误删。
-
-为了最终覆盖完整历史，`AgentSyncEngine` 会为可用 Agent 安排无窗口 backfill：
-
-- 从未完成全历史同步时执行；
-- 距离上次全历史同步超过 24 小时时再次执行；
-- 不同 Agent 的 backfill 排队运行；
-- 同一个 Agent 的 backfill 与 refresh 仍保持串行。
-
-7 天是 CLI 默认列表窗口，不是 SQLite 缓存 TTL。
+详情请求读取 SQLite 中已提交的消息，索引消息数和游标用于校验与客户端增量更新。
+HTTP 不直接写源 Agent 数据。源变化由扫描提交后进入详情、搜索和统计。
 
 ## 缓存控制
 
 ```bash
-# 默认：使用缓存，Web 模式后台刷新
 codesesh
-
-# 忽略缓存执行扫描
 codesesh --no-cache
-
-# 清空 SQLite 缓存后启动
 codesesh --clear-cache
-
-# 输出扫描性能追踪
+codesesh --json --days 0
 codesesh --trace
 ```
 
-程序化入口使用 `ScanOptions` 控制 Agent、cwd、时间窗口、缓存读写和 cache-only 行为。
-具体字段以 `packages/core/src/discovery/scanner.ts` 的类型定义为准。
+`--no-cache` 使用临时缓存支持本轮查询；`--clear-cache` 清理会话缓存，书签与别名存储在
+独立用户状态库。详细表结构见 [sqlite-storage.md](./sqlite-storage.md)。
 
-## 性能验证
-
-文档不固化缺少硬件、样本规模和 commit 信息的毫秒数字。当前版本使用仓库基准脚本：
+## 验证
 
 ```bash
-pnpm bench:perf -- --iterations 3
+pnpm build:web
+cargo test --workspace --locked
+pnpm test:backend
+pnpm prepare:reference
+pnpm test:backend:compare
 ```
 
-报告性能时至少记录 commit、操作系统、Node 版本、会话规模、缓存冷热状态与迭代次数。
+单元测试检查事务、增量状态和回填不变量；进程契约检查真实 CLI、HTTP、SSE 和重启行为。
+对照工具使用固定的 Node 参考制品，不作为生产运行时依赖。性能测量方法见
+[performance.md](./performance.md)。
 
-## 正确性不变量
+## 重启、进度与源移除
 
-- 新快照只能在对应 SQLite 写入成功后发布。
-- Session Head 必须具备 Project Identity 后才能写入 SQLite 或进入 Live Snapshot。
-- 文件型会话是否变化由 source fingerprint 决定，不由全局 mtime 截断决定。
-- one-shot 与 worker 文件源路径必须消费同一 synchronization outcome，不能各自实现 diff/merge。
-- 数据库型 Agent 检测到数据库变化后必须全量重扫。
-- 未变化会话不重新解析、不重写结构化消息。
-- 缓存详情指纹过期时不得直接返回旧消息。
-- 窗口扫描不能把未枚举的历史会话当作已删除。
+启动时先验证持久化的来源状态（数据根目录、解析器版本、定价代际与源指纹）。匹配的文件
+和数据库会话直接复用已有缓存，不占用每批的解析数量预算。已完成的历史扫描恢复后，
+状态为检查更新；只有尚未完成的首次历史回填才显示完整历史扫描。
+
+文件型来源以及 OpenCode、ZCode、DeepChat、Cherry Studio、MiniMax Code 持久化来源指纹。
+数据库来源同时检查主文件、WAL 和 journal；这些文件变化时启动检查仍会保守地重新读取
+相关数据库会话，不保证每次数据库写入都只解析单个会话。Cursor 使用自己的数据库增量
+状态，不在这条持久化指纹复用路径内。旧缓存首次升级需要一轮检查来建立新增状态。
+
+进度包含当前 Agent、已提交来源数和来源总数，在 writer 完成事务后更新；百分比是来源
+数量比例，不是耗时预测。大文件或大数据库会话耗时不同，所以进度可能暂时停在某一项。
+日志中的 `scan.startup.start`、`scan.startup.agent` 和 `scan.startup.done` 可核对启动阶段耗时。
+
+用户移除 Agent 或其来源目录后，已有缓存会话继续可读，不把来源不存在视为刷新失败，
+也不据此删除历史。来源重新出现后恢复核对；实际数据库读取或解析错误仍会报告。
+
+会话详情收到追加内容时，原本停留底部的视图跟随新内容；正在阅读历史的视图保留消息
+锚点。虚拟列表沿用已测量高度，避免刷新时跳回上方。

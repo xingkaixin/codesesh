@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createSessionProjectionContext } from "../packages/core/dist/contract/index.mjs";
+import { createSessionProjectionContext } from "../packages/contract/dist/index.mjs";
 
 function session(index, parent) {
   return {

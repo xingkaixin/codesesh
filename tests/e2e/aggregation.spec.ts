@@ -1,6 +1,6 @@
 import { expect, test } from "./test-fixtures.js";
 import type { Locator } from "playwright/test";
-import type { DashboardData } from "@codesesh/core/contract";
+import type { DashboardData } from "@codesesh/contract";
 
 const CODEX_SESSION_ID = "019daaaa-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
 

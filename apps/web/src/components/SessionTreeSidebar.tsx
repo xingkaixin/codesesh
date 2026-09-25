@@ -1,7 +1,7 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { Menu } from "@base-ui/react/menu";
-import { buildSessionTree, type SessionTreeNode } from "@codesesh/core/contract";
+import { buildSessionTree, type SessionTreeNode } from "@codesesh/contract";
 import type { FileTreeSortEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import {

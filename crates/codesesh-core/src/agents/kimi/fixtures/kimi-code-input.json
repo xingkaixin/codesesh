@@ -1,0 +1,64 @@
+[
+  {
+    "type": "llm.request",
+    "model": "unknown-model",
+    "provider": "test"
+  },
+  {
+    "type": "context.append_message",
+    "time": 1,
+    "message": {
+      "role": "user",
+      "content": "Test a bug"
+    }
+  },
+  {
+    "type": "context.append_loop_event",
+    "time": 2,
+    "event": {
+      "type": "content.part",
+      "part": {
+        "type": "think",
+        "think": "Think"
+      }
+    }
+  },
+  {
+    "type": "context.append_loop_event",
+    "time": 3,
+    "event": {
+      "type": "tool.call",
+      "name": "Read",
+      "toolCallId": "a",
+      "args": {
+        "path": "a.rs"
+      }
+    }
+  },
+  {
+    "type": "context.append_loop_event",
+    "time": 4,
+    "event": {
+      "type": "tool.result",
+      "toolCallId": "a",
+      "result": {
+        "output": "text",
+        "isError": true,
+        "note": "broken"
+      }
+    }
+  },
+  {
+    "type": "usage.record",
+    "usage": {
+      "inputOther": 5,
+      "inputCacheRead": 2,
+      "inputCacheCreation": 3,
+      "output": 4
+    }
+  },
+  {
+    "type": "context.apply_compaction",
+    "summary": "Summary"
+  }
+]

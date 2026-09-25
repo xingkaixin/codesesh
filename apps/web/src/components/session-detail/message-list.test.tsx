@@ -216,7 +216,7 @@ describe("MessageList virtualization", () => {
         anchorRegistry={anchorRegistry}
       />,
     );
-    const list = view.container.firstElementChild as HTMLElement;
+    const list = view.container.querySelector(".relative") as HTMLElement;
     const initialHeight = Number.parseInt(list.style.height, 10);
     const row = view.container.querySelector("[data-message-index]")?.parentElement as HTMLElement;
     vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
@@ -230,6 +230,16 @@ describe("MessageList virtualization", () => {
     await waitFor(() => expect(Number.parseInt(list.style.height, 10)).toBe(initialHeight + 320));
 
     ResizeObserverMock.instances.forEach((observer) => observer.trigger(row));
+    expect(Number.parseInt(list.style.height, 10)).toBe(initialHeight + 320);
+    view.rerender(
+      <MessageList
+        messages={createMessages()}
+        sessionAgentKey="claudecode"
+        baseDirectory="/tmp/project"
+        apiRef={{ current: null }}
+        anchorRegistry={anchorRegistry}
+      />,
+    );
     expect(Number.parseInt(list.style.height, 10)).toBe(initialHeight + 320);
   });
 
@@ -248,7 +258,7 @@ describe("MessageList virtualization", () => {
         />
       </Profiler>,
     );
-    const list = view.container.firstElementChild as HTMLElement;
+    const list = view.container.querySelector(".relative") as HTMLElement;
     const initialHeight = Number.parseInt(list.style.height, 10);
     const rows = [...view.container.querySelectorAll("[data-message-index]")].map(
       (node) => node.parentElement as HTMLElement,

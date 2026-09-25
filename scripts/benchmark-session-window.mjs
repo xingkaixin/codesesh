@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { filterSessionTreeByActivityWindow } from "../packages/core/dist/contract/index.mjs";
+import { filterSessionTreeByActivityWindow } from "../packages/contract/dist/index.mjs";
 
 for (const size of [1_000, 10_000, 50_000]) {
   const sessions = Array.from({ length: size }, (_, index) => ({

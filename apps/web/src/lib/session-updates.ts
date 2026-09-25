@@ -1,4 +1,4 @@
-import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/core/contract";
+import type { ScanStatusEvent, SessionsUpdatedEvent } from "@codesesh/contract";
 import type { RemoteAccess } from "./remote-access";
 
 const INITIAL_RETRY_MS = 1_000;

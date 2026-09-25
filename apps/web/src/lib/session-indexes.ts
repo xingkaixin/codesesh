@@ -8,7 +8,7 @@ import {
   getSessionRoutePath,
   getSessionRouteKey,
   sessionRoutePath,
-} from "@codesesh/core/contract";
+} from "@codesesh/contract";
 import { getProjectIdentityKey } from "./projects";
 
 export type IndexedSession = SessionHead;

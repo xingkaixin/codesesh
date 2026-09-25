@@ -139,7 +139,7 @@ export const MessageItem = memo(function MessageItem({
   const childSession = msg.subagent_id ? childSessionById?.get(msg.subagent_id) : undefined;
 
   return (
-    <div>
+    <div data-message-id={msg.id}>
       {startsDay ? (
         <p className="console-mono mb-4 border-b border-[var(--console-border)] pb-2 text-xs font-medium text-[var(--console-muted)]">
           {date}

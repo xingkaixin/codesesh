@@ -8,6 +8,9 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
 
   const scanStatus = useScanStatus();
   const label = formatScanStatusLabel(scanStatus);
+  const progress = scanStatus?.backfill.active ? scanStatus.backfill.progress : undefined;
+  const total = progress?.total;
+  const processed = progress?.processed;
   const milestoneKey = scanStatus
     ? [
         scanStatus.phase,
@@ -24,12 +27,27 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
     <>
       <div className={visible && label ? "flow-root" : undefined}>
         {visible && label ? (
-          <p
+          <div
             title={label}
-            className="console-mono mt-2 w-fit max-w-full truncate rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]"
+            className="console-mono mt-2 w-fit max-w-full rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] leading-relaxed text-[var(--console-warning)]"
           >
-            {label}
-          </p>
+            <p>{label}</p>
+            {total != null && total > 0 && processed != null ? (
+              <div
+                role="progressbar"
+                aria-label={label}
+                aria-valuenow={Math.min(processed, total)}
+                aria-valuemin={0}
+                aria-valuemax={total}
+                className="mt-1 h-1.5 w-full overflow-hidden rounded-sm bg-[var(--console-warning-border)]"
+              >
+                <div
+                  className="h-full bg-[var(--console-warning)]"
+                  style={{ width: `${Math.min(100, (processed / total) * 100)}%` }}
+                />
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
       <ScanStatusAnnouncement key={milestoneKey ?? "idle"} visible={visible} label={label} />

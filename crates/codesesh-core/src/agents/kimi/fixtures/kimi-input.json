@@ -1,0 +1,60 @@
+[
+  {
+    "timestamp": 1,
+    "message": {
+      "type": "TurnBegin",
+      "payload": {
+        "user_input": [
+          {
+            "text": "Test a bug"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "timestamp": 2,
+    "message": {
+      "type": "ContentPart",
+      "payload": {
+        "type": "think",
+        "think": "Reason"
+      }
+    }
+  },
+  {
+    "timestamp": 3,
+    "message": {
+      "type": "ToolCall",
+      "payload": {
+        "id": "a",
+        "function": {
+          "name": "ReadFile",
+          "arguments": "{\"path\":\"a.rs\"}"
+        }
+      }
+    }
+  },
+  {
+    "timestamp": 4,
+    "message": {
+      "type": "ToolResult",
+      "payload": {
+        "tool_call_id": "a",
+        "return_value": {
+          "result": "ok"
+        }
+      }
+    }
+  },
+  {
+    "timestamp": 5,
+    "message": {
+      "type": "StatusUpdate",
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 2
+      }
+    }
+  }
+]
