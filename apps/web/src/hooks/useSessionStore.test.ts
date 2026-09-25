@@ -4,7 +4,7 @@ import {
   SAMPLE_SESSIONS_UPDATED_EVENT,
 } from "@codesesh/core/test-fixtures";
 import { createSessionIdentity } from "@codesesh/core/contract";
-import { useQuery } from "@tanstack/react-query";
+import { defaultScheduler, notifyManager, useQuery } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -76,6 +76,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  notifyManager.setScheduler(defaultScheduler);
   vi.useRealTimers();
   cleanup();
   vi.clearAllMocks();
@@ -365,7 +366,9 @@ describe("useSessionStore", () => {
   });
 
   it("preserves live changes and removals when an older full response finishes", async () => {
-    const { result } = await renderStore();
+    // Query completion can precede observer delivery on a busy event loop.
+    notifyManager.setScheduler((callback) => setTimeout(callback, 50));
+    const { result, client } = await renderStore();
     const response = deferred<{ sessions: SessionHead[] }>();
     vi.mocked(api.fetchSessions).mockReturnValueOnce(response.promise);
     let reload!: Promise<void>;
@@ -384,7 +387,11 @@ describe("useSessionStore", () => {
       response.resolve({ sessions: [SAMPLE_SESSION_HEAD] });
       await reload;
     });
-    expect(result.current.sessions[0]?.title).toBe("Live title");
+    expect(
+      client.getQueryData<SessionProjection>(queryKeys.sessionProjection(config.window))
+        ?.sessions[0]?.title,
+    ).toBe("Live title");
+    await waitFor(() => expect(result.current.sessions[0]?.title).toBe("Live title"));
 
     const removedResponse = deferred<{ sessions: SessionHead[] }>();
     vi.mocked(api.fetchSessions).mockReturnValueOnce(removedResponse.promise);
@@ -405,6 +412,9 @@ describe("useSessionStore", () => {
       removedResponse.resolve({ sessions: [changed] });
       await reload;
     });
+    expect(
+      client.getQueryData<SessionProjection>(queryKeys.sessionProjection(config.window))?.sessions,
+    ).toEqual([]);
     await waitFor(() => expect(result.current.sessions).toEqual([]));
   });
 
