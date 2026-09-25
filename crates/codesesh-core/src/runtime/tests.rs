@@ -576,3 +576,44 @@ async fn prefetched_batch_is_discarded_when_publication_is_locked() {
     assert_eq!(count, 0);
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn backfill_reports_durable_progress_and_clears_it_on_completion() {
+    let temporary = tempfile::tempdir().unwrap();
+    let finish = Arc::new(AtomicBool::new(false));
+    let gate = finish.clone();
+    let source = AgentSource {
+        name: "codex".into(),
+        roots: vec![],
+        scan: Arc::new(move |request| {
+            let complete = request.checkpoint.is_some();
+            if complete {
+                while !gate.load(Ordering::Acquire) {
+                    request.cancellation.check()?;
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+            Ok(ScanBatch {
+                sessions: vec![],
+                removed: vec![],
+                checkpoint: (!complete).then(|| serde_json::json!({"offset":32,"total":100})),
+                complete,
+                on_reject: None,
+                pricing: None,
+            })
+        }),
+    };
+    let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
+        .await
+        .unwrap();
+    until(|| runtime.status().backfill.progress.is_some()).await;
+    let status = runtime.status();
+    assert_eq!(status.backfill.current_agent.as_deref(), Some("codex"));
+    let progress = status.backfill.progress.as_ref().unwrap();
+    assert_eq!((progress.processed, progress.total), (32, 100));
+    finish.store(true, Ordering::Release);
+    until(|| !runtime.status().active).await;
+    assert!(!runtime.status().backfill.active);
+    assert!(runtime.status().backfill.progress.is_none());
+    runtime.shutdown().await.unwrap();
+}

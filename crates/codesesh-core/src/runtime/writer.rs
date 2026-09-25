@@ -114,6 +114,18 @@ pub(super) fn run(
                             .any(|name| name == &agent)
                     {
                         status.backfill(&agent, batch.complete);
+                        if !batch.complete
+                            && let Some(checkpoint) = &batch.checkpoint
+                            && let (Some(processed), Some(total)) =
+                                (checkpoint["offset"].as_u64(), checkpoint["total"].as_u64())
+                        {
+                            status.backfill.current_agent = Some(agent.clone());
+                            status.backfill.progress = Some(super::status::ScanProgress {
+                                phase: "scanning",
+                                processed: processed as usize,
+                                total: total as usize,
+                            });
+                        }
                     }
                     if !batch.sessions.is_empty()
                         && !status

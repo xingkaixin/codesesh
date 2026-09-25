@@ -53,7 +53,7 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
   if (!status) return null;
   if (status.backfill?.active) {
     const current = status.backfill.currentAgent;
-    const pending = status.backfill.pendingAgents.length;
+    const pending = status.backfill.pendingAgents.filter((agent) => agent !== current).length;
     const progress = status.backfill.progress;
     const progressLabel =
       (progress?.phase == null ||

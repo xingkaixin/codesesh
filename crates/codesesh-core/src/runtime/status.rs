@@ -28,6 +28,17 @@ pub struct BackgroundStatus {
     pub pending_agents: Vec<String>,
     pub completed_agents: Vec<String>,
     pub failed_agents: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<ScanProgress>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ScanProgress {
+    pub phase: &'static str,
+    pub processed: usize,
+    pub total: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -132,6 +143,10 @@ impl ScanStatus {
                 self.backfill.failed_agents.push(agent.into());
             }
             self.backfill.active = !self.backfill.pending_agents.is_empty();
+            if self.backfill.current_agent.as_deref() == Some(agent) {
+                self.backfill.current_agent = None;
+                self.backfill.progress = None;
+            }
         }
         self.agent_statuses.insert(
             agent.into(),
@@ -193,5 +208,9 @@ impl ScanStatus {
             self.backfill.pending_agents.push(agent.into());
         }
         self.backfill.active = !self.backfill.pending_agents.is_empty();
+        if complete && self.backfill.current_agent.as_deref() == Some(agent) {
+            self.backfill.current_agent = None;
+            self.backfill.progress = None;
+        }
     }
 }

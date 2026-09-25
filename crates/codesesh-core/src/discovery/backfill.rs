@@ -89,7 +89,7 @@ impl Backfill {
         }
     }
     pub fn checkpoint(&self) -> serde_json::Value {
-        serde_json::to_value(Checkpoint {
+        let mut checkpoint = serde_json::to_value(Checkpoint {
             version: 1,
             inventory: self.signature.clone(),
             offset: self.offset,
@@ -98,7 +98,9 @@ impl Backfill {
             dirty: self.dirty.clone(),
             refreshed: self.refreshed,
         })
-        .unwrap()
+        .unwrap();
+        checkpoint["total"] = self.items.len().into();
+        checkpoint
     }
 }
 fn stamp(path: &Path) -> Result<(f64, String)> {
