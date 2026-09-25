@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -29,7 +37,8 @@ function writeRecords(path, records) {
 }
 
 export function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), "codesesh-backend-"));
+  const temporary = mkdtempSync(join(tmpdir(), "codesesh-backend-"));
+  const root = process.platform === "win32" ? realpathSync.native(temporary) : temporary;
   const project = join(root, "project");
   const codex = join(root, "codex");
   const sessions = join(codex, "sessions", "2026", "09", "01");
