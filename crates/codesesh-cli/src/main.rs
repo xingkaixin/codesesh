@@ -168,6 +168,17 @@ async fn run() -> Result<()> {
     let runtime_started = std::time::Instant::now();
     let runtime = Runtime::start(cache_path, runtime_sources, 4).await?;
     let runtime_duration = runtime_started.elapsed();
+    let timings = runtime.startup_timings();
+    logger.info(
+        "perf.startup.runtime",
+        &serde_json::json!({
+            "duration_ms": runtime_duration.as_secs_f64() * 1000.0,
+            "cache_open_ms": timings.cache_open.as_secs_f64() * 1000.0,
+            "snapshot_ms": timings.snapshot.as_secs_f64() * 1000.0,
+            "watch_registration_ms": timings.watch_registration.as_secs_f64() * 1000.0,
+            "watch_snapshot_ms": timings.watch_snapshot.as_secs_f64() * 1000.0,
+        }),
+    );
     let mut scan_status = runtime.statuses();
     let mut scan_shutdown = runtime.shutdown_receiver();
     logger.info("scan.startup.start", &serde_json::json!({}));
@@ -259,11 +270,11 @@ async fn run() -> Result<()> {
         let mut report = trace::Report::default();
         report.record("runtime.initialize", runtime_duration);
         report.print("startup", started.elapsed());
-        logger.info(
-            "perf.startup",
-            &serde_json::json!({"duration_ms":started.elapsed().as_secs_f64()*1000.0}),
-        );
     }
+    logger.info(
+        "perf.startup",
+        &serde_json::json!({"duration_ms":started.elapsed().as_secs_f64()*1000.0}),
+    );
     println!("{advertised}");
     logger.flush()?;
     if !args.no_open {

@@ -7,11 +7,13 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 use tokio::sync::watch;
 
 impl Runtime {
-    pub(super) fn watch_sources(&self) -> Result<()> {
+    pub(super) fn watch_sources(&self) -> Result<(Duration, Duration)> {
+        let started = Instant::now();
         let weak = Arc::downgrade(&self.inner);
         let (reconcile, mut changes) = watch::channel(0_u64);
         let reset_watches = Arc::new(AtomicBool::new(false));
@@ -92,8 +94,11 @@ impl Runtime {
             .collect();
         let mut watched = std::collections::BTreeMap::new();
         reconcile_watches(&mut watcher, &roots, &mut watched)?;
+        let registration = started.elapsed();
+        let started = Instant::now();
         #[cfg(target_os = "macos")]
         let mut observed = metadata_snapshot(&watched);
+        let snapshot = started.elapsed();
         let mut polling = tokio::time::interval_at(
             tokio::time::Instant::now() + std::time::Duration::from_secs(2),
             std::time::Duration::from_secs(2),
@@ -132,7 +137,7 @@ impl Runtime {
                 }
             }
         });
-        Ok(())
+        Ok((registration, snapshot))
     }
 }
 
