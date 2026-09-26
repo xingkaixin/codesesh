@@ -164,7 +164,7 @@ fn filtered_json_keeps_full_cache_and_failures_preserve_last_good_data() {
 }
 
 #[test]
-fn external_publication_and_pricing_generation_invalidate_the_warm_index() {
+fn external_publication_invalidates_the_index_but_pricing_does_not() {
     let (temp, source, path) = fixture();
     let options = ScanOptions::default();
     let pricing = Pricing::bundled();
@@ -196,14 +196,64 @@ fn external_publication_and_pricing_generation_invalidate_the_warm_index() {
     let cache = Cache::open(Some(&path)).unwrap();
     cache.connection().execute_batch("CREATE TRIGGER reject_json_write BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'pricing reindex detected'); END").unwrap();
     drop(cache);
-    let error = run(
+    let repriced = run(
         std::slice::from_ref(&source),
         &options,
         &changed,
         &path,
         None,
     )
-    .err()
     .unwrap();
-    assert!(format!("{error:#}").contains("pricing reindex detected"));
+    assert_eq!(repriced.sessions[0].title, "first body");
+}
+
+#[test]
+fn price_changes_update_json_costs_without_invalidating_content_fingerprints() {
+    let (temp, source, path) = fixture();
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(source.scan_path.join("rollout-first.jsonl"))
+        .unwrap();
+    for value in [
+        serde_json::json!({"type":"turn_context","payload":{"model":"json-cost-model"}}),
+        serde_json::json!({"type":"response_item","timestamp":"2026-09-01T10:00:02Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"unchanged response"}]}}),
+        serde_json::json!({"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000000,"output_tokens":0},"total_token_usage":{"total_tokens":1000000,"input_tokens":1000000}}}}),
+    ] {
+        writeln!(file, "{value}").unwrap();
+    }
+    let options = ScanOptions::default();
+    let first = run(
+        std::slice::from_ref(&source),
+        &options,
+        &Pricing::bundled(),
+        &path,
+        None,
+    )
+    .unwrap();
+    assert_eq!(first.sessions[0].stats.total_cost, 0.0);
+    let cache = Cache::open(Some(&path)).unwrap();
+    cache.connection().execute_batch("CREATE TRIGGER reject_json_reparse BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'price update reparsed history'); END").unwrap();
+    let controller = codesesh_core::pricing::PricingController::load(temp.path());
+    controller.stage_remote(&serde_json::json!({"openai":{"models":{"json-cost-model":{"cost":{"input":12,"output":8}}}}})).unwrap();
+    controller.publish_pending().unwrap();
+    let pricing = controller.snapshot().unwrap().pricing;
+    let result = run(
+        std::slice::from_ref(&source),
+        &options,
+        &pricing,
+        &path,
+        None,
+    )
+    .unwrap();
+    assert_eq!(result.sessions[0].stats.total_cost, 12.0);
+    let stable = run(
+        std::slice::from_ref(&source),
+        &options,
+        &pricing,
+        &path,
+        None,
+    )
+    .unwrap();
+    assert_eq!(stable.sessions[0].stats.total_cost, 12.0);
 }

@@ -86,6 +86,7 @@ fn plaintext_and_zstd_preserve_prefix_fork_usage_and_tools() {
         });
         fs::write(&path, bytes).unwrap();
         let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| scan(temp.path(), pricing).unwrap());
         let d = &parsed[0].detail;
         assert_eq!(d.head.title, "Child question");
         assert_eq!(
@@ -233,7 +234,10 @@ fn matches_node_projection_for_forked_streamed_tools() {
         numeric_json(serde_json::to_value(&expected).unwrap())
     );
     let stats: SessionStats = serde_json::from_value(fixture["expected"]["stats"].clone()).unwrap();
-    assert_eq!(projected.stats, stats);
+    assert_eq!(
+        serde_json::to_value(&projected.stats).unwrap(),
+        serde_json::to_value(&stats).unwrap()
+    );
     assert_eq!(
         projected.updated,
         fixture["expected"]["time_updated"].as_f64().unwrap()

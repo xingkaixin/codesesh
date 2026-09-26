@@ -252,7 +252,7 @@ CREATE TRIGGER session_documents_ad AFTER DELETE ON session_documents BEGIN
       VALUES ('delete', old.id, old.title, old.content_text);
     END;
 
-CREATE TRIGGER session_documents_au AFTER UPDATE ON session_documents BEGIN
+CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
       INSERT INTO session_documents_fts(session_documents_fts, rowid, title, content_text)
       VALUES ('delete', old.id, old.title, old.content_text);
       INSERT INTO session_documents_fts(rowid, title, content_text)

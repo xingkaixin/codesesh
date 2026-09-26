@@ -76,3 +76,10 @@ pub fn encode(count: usize, digest: &str) -> Result<String> {
         "{{\"version\":2,\"count\":{count},\"digest\":\"{digest}\"}}"
     )))
 }
+
+pub(super) fn with_cost_revision(digest: &str, revision: u64) -> String {
+    if revision == 0 {
+        return digest.into();
+    }
+    crate::hash::hex(&Sha256::digest(format!("{digest}:pricing:{revision}")))
+}

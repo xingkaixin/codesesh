@@ -14,13 +14,12 @@ use std::{
     time::Instant,
 };
 
-fn signature(source: &AgentSource, pricing: &Pricing) -> Result<String> {
+fn signature(source: &AgentSource) -> Result<String> {
     Ok(serde_json::to_string(&(
         "json-index-v1",
         env!("CARGO_PKG_VERSION"),
         &source.scan_path,
         &source.data_root,
-        pricing.generation(),
         discovery::source_inventory_signature(source)?,
     ))?)
 }
@@ -71,6 +70,9 @@ pub fn run(
     mut trace: Option<&mut crate::trace::Report>,
 ) -> Result<SessionIndex> {
     let mut cache = Cache::open(Some(path))?;
+    for source in sources {
+        cache.reprice(&source.agent, pricing)?;
+    }
     for _ in 0..3 {
         let baseline = cache.json_baseline()?;
         let mut previous = HashMap::<String, Vec<SessionHead>>::new();
@@ -93,7 +95,7 @@ pub fn run(
                 if !old.is_empty() && !source_present(source)? {
                     bail!("Agent source is unavailable; retaining cached sessions");
                 }
-                let before = signature(source, pricing)?;
+                let before = signature(source)?;
                 if baseline.fingerprints.get(&source.agent) == Some(&before)
                     && project_identities_current(&old)
                 {
@@ -116,7 +118,7 @@ pub fn run(
                     );
                 }
                 let scanned = scanned?;
-                let after = signature(source, pricing)?;
+                let after = signature(source)?;
                 if before != after {
                     bail!("Agent source changed during scan; retaining cached sessions");
                 }

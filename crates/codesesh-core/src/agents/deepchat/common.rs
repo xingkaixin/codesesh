@@ -71,6 +71,7 @@ pub fn title(values: &[Option<&str>]) -> String {
 }
 pub fn message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Message {
     Message {
+        cost_inputs: Vec::new(),
         id,
         role,
         agent: None,

@@ -344,8 +344,14 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
                     };
                     let recorded =
                         coerced_number(&u["cost"]["total"]).filter(|v| v.is_finite() && *v != 0.0);
-                    m.cost =
-                        recorded.or_else(|| pricing.estimate(m.model.as_deref(), &tokens, 0.0));
+                    m.cost = recorded.or_else(|| {
+                        pricing.estimate_tracked(
+                            m.model.as_deref(),
+                            &tokens,
+                            0.0,
+                            &mut m.cost_inputs,
+                        )
+                    });
                     m.cost_source =
                         (m.cost.unwrap_or(0.0) > 0.0).then_some(if recorded.is_some() {
                             CostSource::Recorded
@@ -637,6 +643,7 @@ mod tests {
         )
         .unwrap();
         let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
         assert_reference(
             &sessions[0].head,
             &sessions[0].detail,

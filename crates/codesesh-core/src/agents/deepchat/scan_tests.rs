@@ -22,6 +22,7 @@ fn structured_blocks_override_stale_json_and_usage_is_counted_once() {
     drop(db);
     let before = std::fs::read(&path).unwrap();
     let parsed = scan(root.path(), &Pricing::bundled()).unwrap();
+    crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     assert_eq!(std::fs::read(path).unwrap(), before);
     let detail = &parsed[0].detail;
     assert_eq!(detail.head.time_updated, 4000.0);

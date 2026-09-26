@@ -41,7 +41,6 @@ pub struct AgentScanner {
     cursor: agents::cursor::CursorSync,
     opencode: Option<DatabaseSnapshot>,
     fingerprints: HashMap<String, String>,
-    pricing_generation: u64,
     price_dependencies: Option<PriceDependencies>,
     file_fingerprints: HashMap<String, String>,
     empty_sources: HashSet<String>,
@@ -66,7 +65,6 @@ impl AgentScanner {
             cursor: Default::default(),
             opencode: None,
             fingerprints: HashMap::new(),
-            pricing_generation: 0,
             price_dependencies: Some(HashMap::new()),
             file_fingerprints: HashMap::new(),
             empty_sources: HashSet::new(),
@@ -161,14 +159,17 @@ impl AgentScanner {
         if let Some(ticket) = &ticket {
             self.pricing = Arc::new(ticket.pricing.clone());
         }
-        if self.rejected.swap(false, Ordering::AcqRel) || pricing_changed {
+        if self.rejected.swap(false, Ordering::AcqRel) {
             self.initialized = false;
             self.backfill = None;
             self.cursor = Default::default();
             self.opencode = None;
             self.fingerprints.clear();
         }
-        if !self.initialized || self.baseline.is_empty() && !self.durable_references.is_empty() {
+        if pricing_changed
+            || !self.initialized
+            || self.baseline.is_empty() && !self.durable_references.is_empty()
+        {
             self.restore()?;
         }
         let page_mode =
@@ -697,7 +698,6 @@ impl AgentScanner {
                     _ => agents::minimax_code::scan_page(root, &self.pricing, &ids)?,
                 };
                 self.fingerprints.extend(fingerprints);
-                self.pricing_generation = self.pricing.generation();
                 upserts
             }
             _ => {
@@ -733,13 +733,15 @@ impl AgentScanner {
                 |row| row.get(0),
             )
             .optional()?;
-        if let Some(state) =
-            saved.and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+        let state = saved.and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok());
+        let pricing_changed = state.as_ref().is_some_and(|state| {
+            state["generation"].as_u64() != Some(self.pricing.generation())
+                && !serde_json::from_value::<PriceDependencies>(state["priceDependencies"].clone())
+                    .is_ok_and(|dependencies| self.pricing.matches_dependencies(&dependencies))
+        });
+        if let Some(state) = state
             && state["version"] == 1
             && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
-            && (state["generation"].as_u64() == Some(self.pricing.generation())
-                || serde_json::from_value::<PriceDependencies>(state["priceDependencies"].clone())
-                    .is_ok_and(|dependencies| self.pricing.matches_dependencies(&dependencies)))
             && state["root"].as_str() == self.source.scan_path.to_str()
         {
             self.price_dependencies =
@@ -758,16 +760,22 @@ impl AgentScanner {
                 serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
             self.fingerprints =
                 serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
-            self.pricing_generation = self.pricing.generation();
         }
 
         for head in cache.agent_snapshot(&self.source.agent)? {
             self.durable_references.insert(head.reference.clone());
-            let source: Option<String> = cache.connection().query_row(
-                "SELECT source_path FROM sessions WHERE agent_name=?1 AND session_id=?2",
+            let (source, has_cost_inputs): (Option<String>, bool) = cache.connection().query_row(
+                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE agent_name=?1 AND session_id=?2",
                 [&head.reference.agent_name, &head.reference.session_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?,row.get(1)?)),
             )?;
+            if pricing_changed && !has_cost_inputs {
+                self.file_fingerprints.remove(&head.reference.session_id);
+                self.fingerprints.remove(&head.reference.session_id);
+                if let Some(source) = &source {
+                    self.file_fingerprints.remove(source);
+                }
+            }
             self.baseline.insert(
                 head.reference.clone(),
                 (
@@ -948,13 +956,11 @@ impl AgentScanner {
             "cherrystudio" => agents::cherrystudio::fingerprints(root)?,
             _ => agents::minimax_code::fingerprints(root)?,
         };
-        let generation = self.pricing.generation();
         let changed: HashSet<_> = current
             .iter()
             .filter(|(id, hash)| {
                 eligible.is_none_or(|eligible| eligible.contains(*id))
-                    && (self.pricing_generation != generation
-                        || self.fingerprints.get(*id) != Some(*hash))
+                    && self.fingerprints.get(*id) != Some(*hash)
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -1003,7 +1009,6 @@ impl AgentScanner {
         } else {
             self.fingerprints = current;
         }
-        self.pricing_generation = generation;
         Ok(ScanDelta {
             upserts,
             removed,

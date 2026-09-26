@@ -49,17 +49,6 @@ impl CursorSync {
         let owners = child_owners(&self.composers);
         let mut fingerprints = HashMap::new();
         let mut dirty = self.dirty.clone();
-        if self
-            .pricing_generation
-            .is_some_and(|generation| generation != pricing.generation())
-        {
-            dirty.extend(
-                self.composers
-                    .values()
-                    .filter_map(|composer| composer_id(composer))
-                    .map(str::to_owned),
-            );
-        }
         let mut output = Vec::new();
         let mut bubble_query = tx.prepare(
             "SELECT key,value,rowid FROM cursorDiskKV WHERE key >= ?1 AND key < ?2 ORDER BY rowid",
@@ -151,7 +140,6 @@ impl CursorSync {
                 .map(|session| session.head.reference.session_id.clone()),
         );
         self.root = Some(root.into());
-        self.pricing_generation = Some(pricing.generation());
         self.dirty = dirty;
         Ok(output)
     }

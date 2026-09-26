@@ -243,7 +243,12 @@ impl Transcript {
                     };
                     let m = &mut self.messages[i];
                     m.model = model.map(str::to_owned);
-                    m.cost = Some(pricing.estimate(model, &tokens, 0.0).unwrap_or(0.0));
+                    m.cost_inputs.clear();
+                    m.cost = Some(
+                        pricing
+                            .estimate_tracked(model, &tokens, 0.0, &mut m.cost_inputs)
+                            .unwrap_or(0.0),
+                    );
                     m.cost_source = (m.cost.unwrap_or(0.0) > 0.0).then_some(CostSource::Estimated);
                     m.tokens = Some(tokens);
                     m.time_completed = Some(time);

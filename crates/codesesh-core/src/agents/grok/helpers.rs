@@ -271,6 +271,7 @@ pub(super) fn message(
 ) -> Message {
     let assistant = role == Role::Assistant;
     Message {
+        cost_inputs: Vec::new(),
         id,
         role,
         agent: assistant.then(|| "grok".into()),

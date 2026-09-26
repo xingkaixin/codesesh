@@ -257,6 +257,12 @@ fn merge_children(
             session.detail.head.stats.total_input_tokens += stats.total_input_tokens;
             session.detail.head.stats.total_output_tokens += stats.total_output_tokens;
             session.detail.head.stats.total_cost += stats.total_cost;
+            session
+                .detail
+                .head
+                .stats
+                .cost_inputs
+                .extend(stats.cost_inputs.iter().cloned());
             if let Some(count) = stats.total_cache_read_tokens.filter(|count| *count != 0.0) {
                 *session
                     .detail
@@ -878,6 +884,7 @@ pub fn parse(
 fn message(role: Role, part: MessagePart, time: f64, model: Option<String>) -> Message {
     let agent = (role == Role::Assistant).then(|| "codex".into());
     Message {
+        cost_inputs: Vec::new(),
         id: String::new(),
         role,
         agent,

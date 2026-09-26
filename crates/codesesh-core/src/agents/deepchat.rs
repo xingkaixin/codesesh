@@ -123,6 +123,7 @@ struct Usage {
     provider: Option<String>,
     tokens: MessageTokens,
     cost: f64,
+    cost_inputs: Vec<crate::pricing::CostInput>,
 }
 struct Projection {
     header: Value,
@@ -144,9 +145,10 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
         .as_f64()
         .unwrap_or(input + output)
         .max(0.0);
+    let mut cost_inputs = Vec::new();
     let cost = tokens
         .as_ref()
-        .and_then(|t| pricing.estimate(model.as_deref(), t, 0.0))
+        .and_then(|t| pricing.estimate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs))
         .unwrap_or(0.0);
     let tokens = tokens.unwrap_or(MessageTokens {
         input: Some(0.0),
@@ -162,6 +164,10 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
         cost,
         (cost > 0.0).then_some(CostSource::Estimated),
     );
+    projection
+        .stats
+        .cost_inputs
+        .extend(cost_inputs.iter().cloned());
     if let Some(model) = model.as_ref().filter(|_| total > 0.0) {
         *projection.models.entry(model.clone()).or_insert(0.0) += total;
     }
@@ -171,10 +177,12 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
             provider: None,
             tokens: empty_tokens(),
             cost: 0.0,
+            cost_inputs: Vec::new(),
         });
         entry.model = model;
         entry.provider = provider;
         entry.cost += cost;
+        entry.cost_inputs.extend(cost_inputs);
         add_tokens(&mut entry.tokens, &tokens);
     }
 }
@@ -348,6 +356,7 @@ fn scan_connection(
                 .or_else(|| s(&projection.header["provider_id"]));
             m.tokens = usage.map(|u| u.tokens.clone());
             m.cost = usage.map(|u| u.cost);
+            m.cost_inputs = usage.map(|u| u.cost_inputs.clone()).unwrap_or_default();
             m.cost_source = usage
                 .filter(|u| u.cost > 0.0)
                 .map(|_| CostSource::Estimated);

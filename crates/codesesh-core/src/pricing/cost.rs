@@ -44,7 +44,12 @@ impl Pricing {
             return;
         }
         if let Some(tokens) = &message.tokens
-            && let Some(cost) = self.estimate(message.model.as_deref(), tokens, 0.0)
+            && let Some(cost) = self.estimate_tracked(
+                message.model.as_deref(),
+                tokens,
+                0.0,
+                &mut message.cost_inputs,
+            )
         {
             message.cost = Some(cost);
             message.cost_source = Some(CostSource::Estimated);
@@ -81,7 +86,7 @@ impl Pricing {
             cache_read: stats.total_cache_read_tokens,
             cache_create: stats.total_cache_create_tokens,
         };
-        if let Some(cost) = self.estimate(model, &tokens, 0.0) {
+        if let Some(cost) = self.estimate_tracked(model, &tokens, 0.0, &mut stats.cost_inputs) {
             stats.total_cost = cost;
             stats.cost_source = Some(CostSource::Estimated);
         }

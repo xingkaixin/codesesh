@@ -244,10 +244,16 @@ fn durable_pricing_dependencies_reuse_unrelated_changes_and_refresh_used_prices(
             .unwrap();
         controller.publish_pending().unwrap();
         let mut repriced = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
-        assert_eq!(repriced.sessions.len(), 1);
-        assert_ne!(repriced.sessions[0].head.stats.total_cost, old_cost);
-        assert_eq!(repriced.sessions[0].head.stats.total_cost, 123.0);
+        assert!(repriced.sessions.is_empty());
+        assert!(repriced.complete);
         commit_page(&mut cache, &mut repriced);
+        let updated = cache
+            .reprice("pi", &controller.snapshot().unwrap().pricing)
+            .unwrap();
+        assert_eq!(updated.len(), 1);
+        let head = cache.head(&updated[0]).unwrap().unwrap();
+        assert_ne!(head.stats.total_cost, old_cost);
+        assert_eq!(head.stats.total_cost, 123.0);
         let mut scanner = AgentScanner::with_pricing_controller(source, db, controller).unwrap();
         let mut stable = scanner.refresh(None).unwrap();
         assert!(stable.sessions.is_empty());
@@ -269,6 +275,13 @@ fn legacy_pricing_state_stays_unknown_until_reparsed() {
     let mut initial = scanner.refresh(None).unwrap();
     commit_page(&mut cache, &mut initial);
     cache.connection().execute("UPDATE cache_meta SET value=json_remove(value,'$.priceDependencies') WHERE key='rust_source_state:pi'", []).unwrap();
+    cache
+        .connection()
+        .execute(
+            "UPDATE sessions SET meta_json=json_remove(meta_json,'$.rustPricing')",
+            [],
+        )
+        .unwrap();
     let mut scanner =
         AgentScanner::with_pricing_controller(source.clone(), db.clone(), controller.clone())
             .unwrap();

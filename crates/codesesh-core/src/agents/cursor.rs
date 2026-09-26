@@ -49,6 +49,10 @@ fn parse_composer(
         total_input_tokens: number(composer, "inputTokenCount").unwrap_or(0.0),
         total_output_tokens: number(composer, "outputTokenCount").unwrap_or(0.0),
         total_cost: scan_cost,
+        cost_inputs: messages
+            .iter()
+            .flat_map(|m| m.cost_inputs.iter().cloned())
+            .collect(),
         cost_source: (scan_cost > 0.0).then_some(CostSource::Estimated),
         ..Default::default()
     };

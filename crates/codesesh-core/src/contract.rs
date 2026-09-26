@@ -59,6 +59,9 @@ pub struct SessionReference {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct SessionStats {
+    #[serde(skip)]
+    #[ts(skip)]
+    pub cost_inputs: Vec<crate::pricing::CostInput>,
     pub message_count: usize,
     pub total_input_tokens: f64,
     pub total_output_tokens: f64,
@@ -80,6 +83,7 @@ pub struct SessionStats {
 impl Default for SessionStats {
     fn default() -> Self {
         Self {
+            cost_inputs: Vec::new(),
             message_count: 0,
             total_input_tokens: 0.0,
             total_output_tokens: 0.0,
@@ -201,6 +205,9 @@ pub enum Role {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct Message {
+    #[serde(skip)]
+    #[ts(skip)]
+    pub cost_inputs: Vec<crate::pricing::CostInput>,
     pub id: String,
     pub role: Role,
     pub agent: Option<String>,

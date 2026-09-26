@@ -258,12 +258,18 @@ fn scan_directories(
                     cache_read: None,
                     cache_create: None,
                 };
-                let cost = pricing.estimate(model.as_deref(), &tokens, 0.);
+                let cost =
+                    pricing.estimate_tracked(model.as_deref(), &tokens, 0., &mut stats.cost_inputs);
                 stats.total_input_tokens += input;
                 stats.total_output_tokens += output;
                 stats.total_cost += cost.unwrap_or(0.);
                 if !context_path.exists() && (input != 0. || output != 0.) {
-                    builder.usage(tokens, model.as_deref(), cost);
+                    builder.usage(
+                        tokens,
+                        model.as_deref(),
+                        cost,
+                        stats.cost_inputs.last().unwrap().clone(),
+                    );
                 }
             }
             if context_path.exists() {
@@ -527,6 +533,7 @@ mod tests {
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
         let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
         assert_node_golden(
             &sessions[0],
             include_str!("kimi/fixtures/kimi-expected.json"),

@@ -617,3 +617,48 @@ async fn backfill_reports_durable_progress_and_clears_it_on_completion() {
     assert!(runtime.status().backfill.progress.is_none());
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn pricing_refresh_publishes_cached_costs_without_rewriting_messages() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("pi");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("session.jsonl"), [
+        serde_json::json!({"type":"session","cwd":"/fixture","timestamp":1000}),
+        serde_json::json!({"type":"message","id":"u","message":{"role":"user","content":"Pricing fixture"}}),
+        serde_json::json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","model":"runtime-cost-model","usage":{"input":1000000},"content":[{"type":"text","text":"Body remains unchanged"}]}}),
+    ].iter().map(serde_json::Value::to_string).collect::<Vec<_>>().join("\n")).unwrap();
+    let controller = crate::pricing::PricingController::load(temporary.path());
+    let database = temporary.path().join("cache.db");
+    let source = crate::discovery::AgentSource {
+        agent: "pi".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let scanner = crate::discovery::AgentScanner::with_pricing_controller(
+        source,
+        database.clone(),
+        controller.clone(),
+    )
+    .unwrap();
+    let runtime = Runtime::start(database.clone(), vec![scanner.into_runtime_source()], 1)
+        .await
+        .unwrap();
+    until(|| runtime.status().completed_agents.len() == 1).await;
+    let cache = crate::storage::Cache::open(Some(&database)).unwrap();
+    cache.connection().execute_batch("CREATE TRIGGER reject_pricing_rescan BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'pricing rescanned messages'); END").unwrap();
+    let mut events = runtime.subscribe();
+    controller.stage_remote(&serde_json::json!({"openai":{"models":{"runtime-cost-model":{"cost":{"input":12,"output":8}}}}})).unwrap();
+    controller.publish_pending().unwrap();
+    runtime.refresh("pi").unwrap();
+    until(|| runtime.snapshot()[0].stats.total_cost == 12.0).await;
+    assert!(!runtime.status().backfill.active);
+    let mut cost_event = false;
+    while let Ok(event) = events.try_recv() {
+        if let Event::Sessions { changed, .. } = event {
+            cost_event |= changed.iter().any(|head| head.stats.total_cost == 12.0);
+        }
+    }
+    assert!(cost_event);
+    runtime.shutdown().await.unwrap();
+}

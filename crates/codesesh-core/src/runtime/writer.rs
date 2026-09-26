@@ -49,6 +49,7 @@ pub(super) fn run(
         }
     }
     let mut last_reclaim = Instant::now();
+    let mut priced_generations = std::collections::HashMap::new();
     while let Some(command) = commands.blocking_recv() {
         match command {
             Command::Publish {
@@ -61,6 +62,11 @@ pub(super) fn run(
                 let mut publish = || -> Result<()> {
                     cancellation.check()?;
                     let write_started = Instant::now();
+                    if let Some(ticket) = &pricing {
+                        for session in &mut batch.sessions {
+                            crate::storage::reprice_session(session, &ticket.pricing);
+                        }
+                    }
                     cache.apply_checkpoint(
                         &mut batch.sessions,
                         &batch.removed,
@@ -68,25 +74,44 @@ pub(super) fn run(
                         &batch.checkpoint,
                         batch.complete,
                     )?;
+                    let mut repriced = Vec::new();
+                    if let Some(ticket) = &pricing
+                        && priced_generations.get(&agent) != Some(&ticket.generation())
+                    {
+                        repriced = cache.reprice(&agent, &ticket.pricing)?;
+                        priced_generations.insert(agent.clone(), ticket.generation());
+                    }
                     let write_elapsed = write_started.elapsed();
                     let snapshot_started = Instant::now();
                     batch.on_reject.take();
-                    if !batch.sessions.is_empty() || !batch.removed.is_empty() {
-                        let changed_references: Vec<_> = batch
+                    if !batch.sessions.is_empty()
+                        || !batch.removed.is_empty()
+                        || !repriced.is_empty()
+                    {
+                        let mut changed_references: Vec<_> = batch
                             .sessions
                             .iter()
                             .map(|session| session.head.reference.clone())
                             .collect();
+                        changed_references.append(&mut repriced);
+                        changed_references.sort_by(|a, b| {
+                            a.agent_name
+                                .cmp(&b.agent_name)
+                                .then(a.session_id.cmp(&b.session_id))
+                        });
+                        changed_references.dedup();
                         let heads =
                             Arc::new(cache.refresh_snapshot(
                                 snapshots.borrow().as_ref(),
                                 &changed_references,
                             )?);
+                        let changed_references: std::collections::HashSet<_> =
+                            changed_references.iter().collect();
                         let changed = Arc::new(
-                            batch
-                                .sessions
+                            heads
                                 .iter()
-                                .map(|session| session.head.clone())
+                                .filter(|head| changed_references.contains(&head.reference))
+                                .cloned()
                                 .collect(),
                         );
                         snapshots.send_replace(heads.clone());
@@ -147,7 +172,7 @@ pub(super) fn run(
                     let _ = events.send(Event::Status(status));
                     Ok(())
                 };
-                let result = match pricing {
+                let result = match &pricing {
                     Some(ticket) => ticket.with_current(publish),
                     None => publish(),
                 };

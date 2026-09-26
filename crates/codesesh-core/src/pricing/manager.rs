@@ -14,7 +14,7 @@ use super::{
     registry::{Price, parse_models_dev, snapshot},
 };
 
-pub const CACHE_TTL_MS: u64 = 60 * 60 * 1000;
+pub const CACHE_TTL_MS: u64 = 24 * 60 * 60 * 1000;
 pub const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 #[derive(Debug)]
@@ -356,6 +356,12 @@ mod tests {
         assert_eq!(price.cache_read_cost_per_token, 0.000001 * 0.1);
         assert_eq!(price.cache_create_cost_per_token, 0.000001 * 1.25);
         assert!(stale.resolve("broken").is_none());
+        fs::write(
+            &path,
+            json!({"timestamp":now_ms() - 23.0 * 60.0 * 60.0 * 1000.0,"data":data}).to_string(),
+        )
+        .unwrap();
+        assert!(read_cache(&path, true).is_some());
         fs::write(
             &path,
             json!({"timestamp":now_ms()+100_000.0,"data":data}).to_string(),

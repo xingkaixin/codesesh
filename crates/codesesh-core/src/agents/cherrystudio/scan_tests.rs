@@ -29,6 +29,8 @@ fn topic_active_branch_omits_deleted_and_alternative_messages() {
     assert_eq!(detail.head.stats.total_tokens, Some(15.0));
 
     let db = Connection::open(root.path().join("Data/cherrystudio.sqlite")).unwrap();
+    db.execute_batch(r#"UPDATE message SET model_id='openai::gpt-4o',stats='{"inputTokens":12,"outputTokens":3,"outputTokenDetails":{"reasoningTokens":2}}' WHERE id='b'"#).unwrap();
+    crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     db.execute_batch("INSERT INTO agent_session (id,name) VALUES ('bad','Malformed'); INSERT INTO agent_session_message (id,session_id,role,data) VALUES ('bad','bad','assistant','{broken')").unwrap();
     let before = fingerprints(root.path()).unwrap();
     db.execute_batch("UPDATE topic SET created_at=1000.125,last_activity_at=4000.875 WHERE id='topic'; UPDATE message SET created_at=2000.375,updated_at=2000.625,data=replace(data,'Done','Next') WHERE id='b'")

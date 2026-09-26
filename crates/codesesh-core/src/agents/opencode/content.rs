@@ -248,6 +248,7 @@ pub(super) fn part(raw: &Value, time: f64) -> Option<MessagePart> {
 }
 fn empty_message(row: &Value) -> Message {
     Message {
+        cost_inputs: Vec::new(),
         id: string(&row["id"]),
         role: Role::Assistant,
         agent: None,
@@ -280,10 +281,11 @@ pub(super) fn v1_message(
     });
     let model = optional_string(&raw["modelID"]);
     let recorded = number(&raw["cost"]);
-    let estimated = if recorded > 0.0 {
+    let mut cost_inputs = Vec::new();
+    let estimated = if recorded != 0.0 {
         None
     } else {
-        pricing.estimate(
+        pricing.estimate_tracked(
             model.as_deref(),
             &tokens.clone().unwrap_or(MessageTokens {
                 input: Some(0.0),
@@ -293,6 +295,7 @@ pub(super) fn v1_message(
                 cache_create: None,
             }),
             0.0,
+            &mut cost_inputs,
         )
     };
     let cost = if recorded != 0.0 {
@@ -312,6 +315,7 @@ pub(super) fn v1_message(
         provider: optional_string(&raw["providerID"]),
         tokens,
         cost: Some(cost),
+        cost_inputs,
         cost_source: (cost > 0.0).then_some(if recorded > 0.0 {
             CostSource::Recorded
         } else {
@@ -329,6 +333,7 @@ pub(super) fn stats(messages: &[Message]) -> SessionStats {
     let mut estimated = false;
     for m in messages {
         stats.total_cost += m.cost.unwrap_or(0.0);
+        stats.cost_inputs.extend(m.cost_inputs.iter().cloned());
         if let Some(t) = &m.tokens {
             stats.total_input_tokens += t.input.unwrap_or(0.0);
             stats.total_output_tokens += t.output.unwrap_or(0.0);
