@@ -94,9 +94,18 @@ impl std::fmt::Display for ReadBusy {
 }
 impl std::error::Error for ReadBusy {}
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StartupTimings {
+    pub cache_open: Duration,
+    pub snapshot: Duration,
+    pub watch_registration: Duration,
+    pub watch_snapshot: Duration,
+}
+
 #[derive(Clone)]
 pub struct Runtime {
     inner: Arc<Inner>,
+    startup_timings: StartupTimings,
 }
 
 struct Inner {
@@ -158,7 +167,7 @@ impl Runtime {
                     ready_tx,
                 );
             })?;
-        ready_rx
+        let (cache_open, snapshot) = ready_rx
             .await
             .context("SQLite writer exited during startup")??;
         let controls: Vec<_> = sources
@@ -173,7 +182,12 @@ impl Runtime {
                 }
             })
             .collect();
-        let runtime = Self {
+        let mut runtime = Self {
+            startup_timings: StartupTimings {
+                cache_open,
+                snapshot,
+                ..Default::default()
+            },
             inner: Arc::new(Inner {
                 cache_path,
                 snapshots,
@@ -196,11 +210,21 @@ impl Runtime {
                 runtime.agent_loop(index, source, scans).await;
             });
         }
-        if let Err(error) = runtime.watch_sources() {
-            let _ = runtime.shutdown().await;
-            return Err(error);
+        match runtime.watch_sources() {
+            Ok((registration, snapshot)) => {
+                runtime.startup_timings.watch_registration = registration;
+                runtime.startup_timings.watch_snapshot = snapshot;
+            }
+            Err(error) => {
+                let _ = runtime.shutdown().await;
+                return Err(error);
+            }
         }
         Ok(runtime)
+    }
+
+    pub fn startup_timings(&self) -> StartupTimings {
+        self.startup_timings
     }
 
     pub fn shutdown_receiver(&self) -> watch::Receiver<bool> {

@@ -29,8 +29,9 @@ pub(super) fn run(
     snapshots: watch::Sender<Arc<Vec<SessionHead>>>,
     statuses: watch::Sender<Arc<ScanStatus>>,
     events: broadcast::Sender<Event>,
-    ready: oneshot::Sender<Result<()>>,
+    ready: oneshot::Sender<Result<(Duration, Duration)>>,
 ) {
+    let started = Instant::now();
     let mut cache = match Cache::open(Some(&path)) {
         Ok(cache) => cache,
         Err(error) => {
@@ -38,10 +39,12 @@ pub(super) fn run(
             return;
         }
     };
+    let cache_open = started.elapsed();
+    let started = Instant::now();
     match cache.snapshot() {
         Ok(heads) => {
             snapshots.send_replace(Arc::new(heads));
-            let _ = ready.send(Ok(()));
+            let _ = ready.send(Ok((cache_open, started.elapsed())));
         }
         Err(error) => {
             let _ = ready.send(Err(error));
