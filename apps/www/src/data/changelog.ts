@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.1.0",
+        date: "2026-09-26",
+        title: "Run local AI coding history with a native backend",
+        summary:
+          "CodeSesh 1.1.0 brings a native backend with the Web UI built in. Standalone executables run without Node.js, while background pricing updates let you browse saved sessions without waiting for a price download.",
+        direction:
+          "Local AI coding history should be straightforward to run, and opening saved work should not depend on a pricing service.",
+        highlights: [
+          {
+            title: "Choose a standalone executable or npm",
+            description:
+              "Use a native executable on supported macOS, Linux, and Windows systems, or keep launching with npx codesesh. The npm launcher requires Node.js 22 or later.",
+          },
+          {
+            title: "Keep browsing while prices refresh",
+            description:
+              "Model prices refresh in the background. Updated estimates use cached usage instead of rereading your conversation files.",
+          },
+          {
+            title: "Reuse work when reopening your history",
+            description:
+              "Cached session metadata, incremental scans, and reduced snapshot decoding work limit what CodeSesh needs to process again at startup.",
+          },
+        ],
+      },
+      {
         version: "1.0.12",
         date: "2026-09-24",
         title: "Keep browsing your history after moving to OpenCode V2",
@@ -357,6 +383,30 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.1.0",
+        date: "2026-09-26",
+        title: "用原生程序浏览本地 AI 编码历史",
+        summary:
+          "CodeSesh 1.1.0 使用内嵌 Web UI 的原生后端。独立可执行文件无需 Node.js，模型价格在后台刷新，打开已保存的会话不必等待价格下载。",
+        direction: "本地 AI 编码历史应该易于运行，打开已保存的工作不应依赖定价服务。",
+        highlights: [
+          {
+            title: "选择独立程序或 npm 启动",
+            description:
+              "在受支持的 macOS、Linux 和 Windows 系统上使用原生可执行文件，也可以继续运行 npx codesesh。npm 启动器需要 Node.js 22 或更高版本。",
+          },
+          {
+            title: "价格刷新不打断历史浏览",
+            description: "模型价格在后台更新，费用估算使用缓存用量重新计算，无需重新读取会话文件。",
+          },
+          {
+            title: "再次打开时复用已有工作",
+            description:
+              "通过缓存会话元数据、增量扫描和减少快照解码，降低启动时需要重复处理的工作量。",
+          },
+        ],
+      },
+      {
         version: "1.0.12",
         date: "2026-09-24",
         title: "升级到 OpenCode V2 后，继续查看会话历史",
@@ -630,6 +680,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.1.0",
+        date: "2026-09-26",
+        title: "ネイティブアプリでローカルのAIコーディング履歴を閲覧",
+        summary:
+          "CodeSesh 1.1.0は、Web UIを内蔵したネイティブバックエンドを採用しました。単体の実行ファイルにはNode.jsが不要です。モデル料金はバックグラウンドで更新されるため、料金のダウンロードを待たずに保存済みのセッションを開けます。",
+        direction:
+          "ローカルのAIコーディング履歴は手軽に閲覧できるべきです。保存済みの作業を開くために、料金サービスの応答を待つ必要はありません。",
+        highlights: [
+          {
+            title: "単体の実行ファイルでもnpmでも起動",
+            description:
+              "対応するmacOS、Linux、Windowsでネイティブ実行ファイルを使うか、引き続きnpx codeseshで起動できます。npmランチャーにはNode.js 22以降が必要です。",
+          },
+          {
+            title: "料金の更新中も履歴を閲覧",
+            description:
+              "モデル料金をバックグラウンドで更新します。推定費用はキャッシュ済みの使用量から再計算するため、会話ファイルの再読み込みは不要です。",
+          },
+          {
+            title: "再起動時に処理済みの情報を活用",
+            description:
+              "セッションのメタデータキャッシュと差分スキャンを活用し、スナップショットのデコード処理を減らすことで、起動時の重複処理を抑えます。",
+          },
+        ],
+      },
       {
         version: "1.0.12",
         date: "2026-09-24",
