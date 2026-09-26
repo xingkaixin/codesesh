@@ -358,7 +358,7 @@ dependencies = [
  "async-stream",
  "axum",
  "axum-server",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "chrono-tz",
  "clap",
@@ -387,7 +387,7 @@ name = "codesesh-core"
 version = "1.0.12"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "chrono-tz",
  "icu_collator",
