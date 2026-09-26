@@ -1,10 +1,12 @@
 mod controller;
 mod cost;
+mod dependencies;
 mod manager;
 mod registry;
 
 pub use controller::{PricingController, PricingSnapshot};
 pub use cost::{PRICING_CAPTURE_EPOCH, capture_misses};
+pub(crate) use dependencies::{PriceDependencies, capture_dependencies};
 pub use manager::{CACHE_TTL_MS, MODELS_DEV_URL, PricingManager};
 pub use registry::{Price, parse_models_dev};
 
@@ -74,6 +76,12 @@ impl Pricing {
     }
 
     pub fn resolve(&self, model: &str) -> Option<&Price> {
+        let price = self.resolve_price(model);
+        dependencies::record(model, price);
+        price
+    }
+
+    fn resolve_price(&self, model: &str) -> Option<&Price> {
         let model = normalize(model);
         if let Some(price) = self.get(&model) {
             return Some(price);
