@@ -303,7 +303,7 @@ fn fingerprints(
     }
     Ok(hashes
         .into_iter()
-        .map(|(id, hash)| (id, format!("{:x}", hash.finalize())))
+        .map(|(id, hash)| (id, crate::hash::hex(&hash.finalize())))
         .collect())
 }
 fn raw_usage(

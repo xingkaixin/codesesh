@@ -23,3 +23,5 @@ pub mod runtime;
 pub mod time;
 
 pub mod public_contract;
+
+mod hash;

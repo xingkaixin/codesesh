@@ -20,7 +20,7 @@ pub fn initial(reference: &SessionReference) -> String {
     for value in ["2", &reference.agent_name, &reference.session_id] {
         field(&mut hash, Some(value));
     }
-    format!("{:x}", hash.finalize())
+    crate::hash::hex(&hash.finalize())
 }
 
 pub fn advance(
@@ -68,7 +68,7 @@ pub fn advance(
     if message.automated == Some(true) {
         field(&mut hash, Some("automated"));
     }
-    Ok(format!("{:x}", hash.finalize()))
+    Ok(crate::hash::hex(&hash.finalize()))
 }
 
 pub fn encode(count: usize, digest: &str) -> Result<String> {

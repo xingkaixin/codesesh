@@ -135,7 +135,7 @@ fn packed_rows_rebuild_stream_and_validate_sequence() {
 fn attachments_require_verified_digest_and_keep_missing_placeholders() {
     let temp = tempfile::tempdir().unwrap();
     let bytes = b"test image";
-    let digest = format!("{:x}", Sha256::digest(bytes));
+    let digest = crate::hash::hex(&Sha256::digest(bytes));
     let attachment = json!({"type":"image","attachment":{"attachmentId":format!("sha256:{digest}"),"mediaType":"image/png","bytes":bytes.len()}});
     let mut prompt = user(0, "");
     prompt["data"]["content"] = json!([attachment]);

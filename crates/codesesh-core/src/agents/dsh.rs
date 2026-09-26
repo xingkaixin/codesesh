@@ -74,7 +74,7 @@ impl AttachmentReferences {
                     if let Ok(bytes) = STANDARD.decode(data) {
                         references
                             .digests
-                            .insert(format!("{:x}", Sha256::digest(bytes)));
+                            .insert(crate::hash::hex(&Sha256::digest(bytes)));
                     }
                 }
                 MessagePart::Text { text, .. } if text == "Image attachment unavailable" => {
