@@ -1,3 +1,5 @@
 [tools]
+mr-boxington = "latest"
 node = "24"
 pnpm = "12.4.2"
+rust = { version = "1.90.0", mr_boxington = true }
