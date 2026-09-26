@@ -3,13 +3,11 @@
 本指南描述 Rust 原生 CLI、npm launcher 和 Web 资源的版本整理、构建与验收。
 代码迁移、生成候选制品和正式发布是不同动作；完成构建或安装 smoke 不代表已经发布。
 
-## 当前迁移验证期
+## 发布准备与正式发布
 
-Rust 后端先通过 PR 合入 main，随后继续本地验证。此阶段不改版本号、不创建 `v*` tag、
-不执行发布脚本，也不新增已发布版本的 changelog。CI 生成和验证候选制品不会发布。
+v1.1.0 将 Rust 原生后端纳入版本发布准备。更新版本号与发布记录不代表已经发布。
+正式发布仍需单独授权，并完成候选制品验证、npm 权限和 Release workflow 核验。
 `.github/workflows/release.yml` 只监听 `v*` tag；合并 PR 不会触发发布。
-
-确认验证结束并单独授权发布后，再按以下清单整理版本和发布记录。
 
 ## 版本与发布物
 
@@ -63,7 +61,7 @@ node scripts/rust/verify-set.mjs
 
    ```bash
    git fetch --tags
-   git log v0.9.0..HEAD --oneline
+   git log v1.0.12..HEAD --oneline
    ```
 
 2. 按 PR / commit 归类为 **Features**、**Bug Fixes**、**Performance**、**Build**、**Documentation** 等（与 `CHANGELOG.md` 既有结构一致）。

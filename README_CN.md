@@ -360,8 +360,8 @@ pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 每个目标的 npm 安装分别使用 Node 22.0.0 和 Node 24 验证。兼容测试使用锁定的旧 Node
 参考包；该包仅用于测试，不会进入产品或作为运行时回退。
 
-本次 Rust 迁移先合入源码供本地验证，不提升版本号、不创建 tag，也不发布 npm 包。
-Release workflow 仅由 `v*` tag 触发；后续发布需单独完成[发布清单](docs/release-guide.md)。
+v1.1.0 将 Rust 原生后端纳入版本发布准备。更新版本号与发布记录不会发布包。
+Release workflow 仅由 `v*` tag 触发；正式发布需单独授权并完成[发布清单](docs/release-guide.md)。
 
 ### 开发流程
 

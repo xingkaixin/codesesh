@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.1.0] - 2026-09-26
+
+This release moves CodeSesh to a native Rust backend with an embedded Web UI, keeps model pricing updates from blocking session loading, and reduces startup snapshot decoding work. (#636, #643, #644, #645)
+
+### Features
+
+- Replaced the Node.js backend with a native Rust CLI and server, preserving all 13 supported Agent integrations, session search and replay, dashboards, bookmarks, aliases, and live updates. (#636)
+- Added standalone native distributions with embedded Web assets. The npm launcher selects the matching platform package and forwards arguments, signals, and exit status. (#636)
+
+### Performance
+
+- Restore cached session metadata and scan history in bounded batches, with persistent checkpoints and incremental source fingerprints to reuse completed work. (#636)
+- Recalculate estimated costs from cached usage when model prices change, without rereading source transcripts. Unrelated model price changes no longer invalidate session scans. (#643, #644)
+- Refresh model pricing in the background so slow or failed downloads do not block server startup and session loading. (#644)
+- Skip unused metadata when decoding startup snapshots and add startup phase timings for diagnostics. (#645)
+
+### Compatibility
+
+- Native targets are macOS arm64/x64, Linux x64 GNU with glibc 2.35 or later, and Windows x64. Standalone executables do not require Node.js; the npm launcher requires Node.js 22+. Older glibc, musl, and Linux arm64 are not supported. (#636)
+- Retain local cache and user-state migration support. The legacy Node backend is removed; the pinned reference package is used only for compatibility testing. (#636)
+
+### Build
+
+- Added native artifact packaging, embedded Web validation, platform installation smoke checks, and artifact-set verification to CI and the tag-triggered release workflow. (#636)
+- Updated HMAC, SHA-2, Base64, Zstandard, React Query, and development dependencies. (#637, #639, #640, #641, #642)
+
 ## [1.0.12] - 2026-09-24
 
 This release adds OpenCode V2 session history alongside existing V1 support, preserves session usage without double-counting copied fork history, refreshes cached sessions when the source database path changes, and updates workspace dependencies. (#631, #632, #633, #634)

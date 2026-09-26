@@ -398,9 +398,9 @@ on all four native targets; npm installation is verified on Node 22.0.0 and Node
 The pinned legacy Node package is only a compatibility-test reference, never a runtime fallback or
 part of the shipped application.
 
-The Rust migration is merged for local validation before publication. It does not bump versions,
-create a tag, or publish npm packages. The Release workflow only runs for `v*` tags; publication
-requires a separate pass through the [release checklist](docs/release-guide.md).
+Version 1.1.0 prepares the native Rust backend for release. Version and changelog updates do not
+publish packages. The Release workflow only runs for `v*` tags; publication requires separate
+authorization and completion of the [release checklist](docs/release-guide.md).
 
 ### Dev Workflow
 

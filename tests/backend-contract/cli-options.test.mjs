@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { rmSync, writeFileSync, readFileSync, utimesSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { readManifests } from "../../scripts/release-preflight.mjs";
 import { createFixture, launch, runCli, SESSION_ID, stop, waitFor } from "./harness.mjs";
 
 const reference = [
@@ -183,7 +184,7 @@ test("CLI help and version terminate successfully", async () => {
       assert.equal(actual.code, 0, flag);
       if (flag.includes("version") || flag === "-v") {
         assert.match(expected.stdout, /1\.0\.12/);
-        assert.match(actual.stdout, /1\.0\.12/);
+        assert.equal(actual.stdout.trim(), `codesesh ${readManifests(resolve("."))[0].version}`);
       } else {
         for (const option of [
           "--agent",
