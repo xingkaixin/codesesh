@@ -186,7 +186,7 @@ fn content(
                         )
                         .ok()?;
                         if a["bytes"].as_f64().is_some_and(|n| n != bytes.len() as f64)
-                            || format!("{:x}", Sha256::digest(&bytes)) != digest
+                            || crate::hash::hex(&Sha256::digest(&bytes)) != digest
                         {
                             return None;
                         }

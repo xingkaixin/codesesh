@@ -141,7 +141,7 @@ fn projection(
     ProjectIdentityProjection {
         identity,
         resolver_revision: revision.into(),
-        input_signature: format!("{:x}", Sha256::digest(serde_json::to_vec(inputs).unwrap())),
+        input_signature: crate::hash::hex(&Sha256::digest(serde_json::to_vec(inputs).unwrap())),
     }
 }
 fn identity(kind: &str, key: &str, display_name: String) -> ProjectIdentity {

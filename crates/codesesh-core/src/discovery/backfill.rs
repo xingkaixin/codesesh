@@ -62,7 +62,7 @@ impl Backfill {
         for item in &items {
             hash.update(serde_json::to_vec(&(&item.key, &item.fingerprint)).unwrap());
         }
-        let signature = format!("{:x}", hash.finalize());
+        let signature = crate::hash::hex(&hash.finalize());
         let previous = checkpoint
             .cloned()
             .and_then(|value| serde_json::from_value::<Checkpoint>(value).ok())
@@ -315,10 +315,9 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                 .to_string_lossy();
             let pieces: Vec<_> = stem.split('-').collect();
             let id = pieces[pieces.len().saturating_sub(5)..].join("-");
-            fingerprint.push_str(&format!(
-                "{:x}",
-                Sha256::digest(serde_json::to_vec(&codex_titles.get(&id))?)
-            ));
+            fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
+                &codex_titles.get(&id),
+            )?)));
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
             entry.path().parent().unwrap().to_owned()
@@ -366,7 +365,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         });
     }
     context_stamps.sort();
-    let context = format!("{:x}", Sha256::digest(serde_json::to_vec(&context_stamps)?));
+    let context = crate::hash::hex(&Sha256::digest(serde_json::to_vec(&context_stamps)?));
     for item in &mut items {
         item.fingerprint.push_str(&context);
     }

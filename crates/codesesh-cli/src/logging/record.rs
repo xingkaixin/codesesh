@@ -1,5 +1,5 @@
 use super::{Level, LogContext};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use regex::Regex;
 use serde_json::{Map, Value, json};
 use sha2::Sha256;
