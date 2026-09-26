@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     agents::{self, ParsedSession, ScanDelta, SessionRecord, opencode::DatabaseSnapshot},
-    pricing::{Pricing, PricingController},
+    pricing::{PriceDependencies, Pricing, PricingController, capture_dependencies},
     runtime,
     storage::Cache,
 };
@@ -42,6 +42,7 @@ pub struct AgentScanner {
     opencode: Option<DatabaseSnapshot>,
     fingerprints: HashMap<String, String>,
     pricing_generation: u64,
+    price_dependencies: Option<PriceDependencies>,
     file_fingerprints: HashMap<String, String>,
     empty_sources: HashSet<String>,
 }
@@ -66,6 +67,7 @@ impl AgentScanner {
             opencode: None,
             fingerprints: HashMap::new(),
             pricing_generation: 0,
+            price_dependencies: Some(HashMap::new()),
             file_fingerprints: HashMap::new(),
             empty_sources: HashSet::new(),
         }
@@ -149,9 +151,13 @@ impl AgentScanner {
             .as_ref()
             .map(PricingController::snapshot)
             .transpose()?;
-        let pricing_changed = ticket
-            .as_ref()
-            .is_some_and(|ticket| ticket.generation() != self.pricing.generation());
+        let pricing_changed = ticket.as_ref().is_some_and(|ticket| {
+            ticket.generation() != self.pricing.generation()
+                && self
+                    .price_dependencies
+                    .as_ref()
+                    .is_none_or(|dependencies| !ticket.pricing.matches_dependencies(dependencies))
+        });
         if let Some(ticket) = &ticket {
             self.pricing = Arc::new(ticket.pricing.clone());
         }
@@ -167,11 +173,17 @@ impl AgentScanner {
         }
         let page_mode =
             self.backfill.is_some() || !self.initialized || paths.is_none() || checkpoint.is_some();
-        let (mut delta, mut next_checkpoint, complete) = if page_mode {
-            self.page(paths, checkpoint)?
-        } else {
-            self.read_live(paths)?
-        };
+        let (result, dependencies) = capture_dependencies(|| {
+            if page_mode {
+                self.page(paths, checkpoint)
+            } else {
+                self.read_live(paths)
+            }
+        });
+        let (mut delta, mut next_checkpoint, complete) = result?;
+        if let Some(previous) = &mut self.price_dependencies {
+            previous.extend(dependencies);
+        }
         for session in &mut delta.upserts {
             agents::complete_projections(session);
         }
@@ -223,6 +235,7 @@ impl AgentScanner {
                 "historyComplete": self.history_complete || complete,
                 "parserVersion": agents::parser_version(&self.source.agent),
                 "generation": self.pricing.generation(),
+                "priceDependencies": self.price_dependencies,
                 "root": self.source.scan_path,
                 "files": self.file_fingerprints,
                 "databaseSessions": self.fingerprints,
@@ -707,6 +720,7 @@ impl AgentScanner {
         self.file_fingerprints.clear();
         self.empty_sources.clear();
         self.history_complete = false;
+        self.price_dependencies = Some(HashMap::new());
         if !self.cache_path.exists() {
             return Ok(());
         }
@@ -723,9 +737,13 @@ impl AgentScanner {
             saved.and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
             && state["version"] == 1
             && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
-            && state["generation"].as_u64() == Some(self.pricing.generation())
+            && (state["generation"].as_u64() == Some(self.pricing.generation())
+                || serde_json::from_value::<PriceDependencies>(state["priceDependencies"].clone())
+                    .is_ok_and(|dependencies| self.pricing.matches_dependencies(&dependencies)))
             && state["root"].as_str() == self.source.scan_path.to_str()
         {
+            self.price_dependencies =
+                serde_json::from_value(state["priceDependencies"].clone()).ok();
             self.history_complete = match state["historyComplete"].as_bool() {
                 Some(complete) => complete,
                 None => cache.connection().query_row(
