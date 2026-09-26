@@ -374,7 +374,7 @@ fn parse(
         *head_stats.total_cache_create_tokens.as_mut().unwrap() +=
             tokens.cache_create.unwrap_or(0.0);
         head_stats.total_cost += pricing
-            .estimate(model.as_deref(), tokens, 0.0)
+            .estimate_tracked(model.as_deref(), tokens, 0.0, &mut head_stats.cost_inputs)
             .unwrap_or(0.0);
         if let Some(model) = model {
             *models.entry(model.clone()).or_default() +=
@@ -584,6 +584,7 @@ mod tests {
             serde_json::from_str(include_str!("claudecode/fixtures/records.json")).unwrap();
         write(&root.path().join("project/session.jsonl"), &records);
         let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
         assert_reference(
             &sessions[0].head,
             &sessions[0].detail,

@@ -30,6 +30,7 @@ fn map_tool(tool: &str) -> &str {
 }
 fn base_message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Message {
     Message {
+        cost_inputs: Vec::new(),
         id,
         role,
         agent: Some("cursor".into()),
@@ -113,7 +114,12 @@ pub(super) fn messages(
             number(&bubble["tokenCount"], "inputTokens").unwrap_or(0.0),
             number(&bubble["tokenCount"], "outputTokens").unwrap_or(0.0),
         );
-        let cost = pricing.estimate(message.model.as_deref(), &usage, 0.0);
+        let cost = pricing.estimate_tracked(
+            message.model.as_deref(),
+            &usage,
+            0.0,
+            &mut message.cost_inputs,
+        );
         message.tokens = Some(usage);
         message.cost = Some(cost.unwrap_or(0.0));
         message.cost_source = cost.map(|_| CostSource::Estimated);
@@ -233,9 +239,18 @@ pub(super) fn detail_stats(
     if output == 0.0 {
         output = number(composer, "outputTokenCount").unwrap_or(0.0);
     }
+    let mut cost_inputs = messages
+        .iter()
+        .flat_map(|m| m.cost_inputs.iter().cloned())
+        .collect();
     if cost == 0.0 {
         cost = pricing
-            .estimate(model(composer), &tokens(input, output), 0.0)
+            .estimate_tracked(
+                model(composer),
+                &tokens(input, output),
+                0.0,
+                &mut cost_inputs,
+            )
             .unwrap_or(0.0);
     }
     SessionStats {
@@ -243,6 +258,7 @@ pub(super) fn detail_stats(
         total_input_tokens: input,
         total_output_tokens: output,
         total_cost: cost,
+        cost_inputs,
         cost_source: (cost > 0.0).then_some(CostSource::Estimated),
         ..Default::default()
     }

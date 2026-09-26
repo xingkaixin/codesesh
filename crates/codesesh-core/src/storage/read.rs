@@ -54,6 +54,9 @@ pub fn visit_detail_messages(
     } else {
         connection.query_row("SELECT content_chain_digest FROM messages WHERE agent_name=? AND session_id=? AND message_index=?",params![reference.agent_name,reference.session_id,count-1],|row|row.get::<_,Option<String>>(0)).optional()?.flatten()
     };
+    let cost_revision = connection.query_row(
+        "SELECT COALESCE(json_extract(meta_json,'$.rustPricingRevision'),0) FROM sessions WHERE agent_name=? AND session_id=?",
+        params![reference.agent_name,reference.session_id], |row| row.get::<_, i64>(0))? as u64;
     let parsed = encoded.and_then(parse_cursor);
     let mut start = 0;
     let mut append = false;
@@ -67,9 +70,12 @@ pub fn visit_detail_messages(
         } else {
             connection.query_row("SELECT content_chain_digest FROM messages WHERE agent_name=? AND session_id=? AND message_index=?",params![reference.agent_name,reference.session_id,previous_count as i64-1],|row|row.get::<_,Option<String>>(0)).optional()?.flatten()
         };
-        if actual.as_deref() == Some(expected.as_str()) {
+        if actual
+            .as_ref()
+            .is_some_and(|actual| cursor::with_cost_revision(actual, cost_revision) == expected)
+        {
             start = previous_count;
-            prefix = expected;
+            prefix = actual.unwrap();
             append = true;
         }
     }
@@ -84,6 +90,7 @@ pub fn visit_detail_messages(
             let tokens: Option<String> = row.get("tokens_json")?;
             let cost_source: Option<String> = row.get("cost_source")?;
             let message = Message {
+                cost_inputs: Vec::new(),
                 id: row.get("message_id")?,
                 role: match role.as_str() {
                     "user" => Role::User,
@@ -168,7 +175,10 @@ pub fn visit_detail_messages(
         .optional()?
         .is_some();
     Ok(Some(SessionDetail {
-        message_cursor: Some(cursor::encode(count as usize, &digest)?),
+        message_cursor: Some(cursor::encode(
+            count as usize,
+            &cursor::with_cost_revision(&digest, cost_revision),
+        )?),
         message_update: Some(if append { "append" } else { "reset" }.into()),
         head: SessionHead {
             version: None,

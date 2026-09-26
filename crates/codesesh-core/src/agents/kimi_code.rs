@@ -111,7 +111,8 @@ fn scan_directories(
                         cache_create: Some(cache_create),
                         reasoning: None,
                     };
-                    let cost = pricing.estimate(m.as_deref(), &tokens, 0.);
+                    let cost =
+                        pricing.estimate_tracked(m.as_deref(), &tokens, 0., &mut stats.cost_inputs);
                     stats.total_input_tokens += input;
                     stats.total_output_tokens += output;
                     stats.total_cost += cost.unwrap_or(0.);
@@ -120,7 +121,12 @@ fn scan_directories(
                     if let Some(m) = &m {
                         *model_usage.entry(m.clone()).or_insert(0.) += input + output;
                     }
-                    builder.usage(tokens, m.as_deref(), cost);
+                    builder.usage(
+                        tokens,
+                        m.as_deref(),
+                        cost,
+                        stats.cost_inputs.last().unwrap().clone(),
+                    );
                 }
                 "context.append_message" => {
                     let m = &r["message"];
@@ -476,6 +482,7 @@ mod tests {
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
         let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
         assert_node_golden(
             &sessions[0],
             include_str!("kimi/fixtures/kimi-code-expected.json"),

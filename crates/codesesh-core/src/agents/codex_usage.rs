@@ -14,6 +14,7 @@ pub struct Usage {
     cache_read: f64,
     cost: f64,
     models: BTreeMap<String, f64>,
+    cost_inputs: Vec<crate::pricing::CostInput>,
 }
 
 fn count(value: &Value) -> f64 {
@@ -78,7 +79,7 @@ impl Usage {
             cache_read: (cache_read > 0.0).then_some(cache_read),
             cache_create: None,
         };
-        let cost = pricing.estimate(model, &tokens, 0.0);
+        let cost = pricing.estimate_tracked(model, &tokens, 0.0, &mut self.cost_inputs);
         let model_tokens = input + output + reasoning;
         if model_tokens > 0.0
             && let Some(model) = model
@@ -96,6 +97,9 @@ impl Usage {
                 continue;
             }
             if message.tokens.is_none() {
+                message
+                    .cost_inputs
+                    .push(self.cost_inputs.last().unwrap().clone());
                 message.tokens = Some(tokens);
                 if message.model.is_none() {
                     message.model = model.map(str::to_owned);
@@ -112,6 +116,9 @@ impl Usage {
         }
         if let Some(index) = merge_target {
             let message = &mut messages[index];
+            message
+                .cost_inputs
+                .push(self.cost_inputs.last().unwrap().clone());
             let base = message.tokens.as_mut().unwrap();
             for (target, extra) in [
                 (&mut base.input, tokens.input),
@@ -136,6 +143,7 @@ impl Usage {
             total_input_tokens: self.input,
             total_output_tokens: self.output,
             total_cost: self.cost,
+            cost_inputs: self.cost_inputs.clone(),
             cost_source: (self.cost > 0.0).then_some(CostSource::Estimated),
             total_cache_read_tokens: (self.cache_read > 0.0).then_some(self.cache_read),
             ..Default::default()

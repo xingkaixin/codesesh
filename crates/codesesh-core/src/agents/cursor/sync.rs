@@ -17,7 +17,6 @@ pub struct CursorSync {
     composers: HashMap<String, Arc<Value>>,
     directories: HashMap<String, String>,
     active: HashSet<String>,
-    pricing_generation: Option<u64>,
     dirty: HashSet<String>,
 }
 pub struct CursorDelta {
@@ -118,14 +117,6 @@ impl CursorSync {
                 affected.insert(id.clone());
             }
         }
-        if self.pricing_generation != Some(pricing.generation()) {
-            affected.extend(
-                composers
-                    .values()
-                    .filter_map(|v| composer_id(v))
-                    .map(str::to_owned),
-            );
-        }
         let mut deferred = HashSet::new();
         if let Some(eligible) = eligible {
             affected.retain(|id| {
@@ -190,7 +181,6 @@ impl CursorSync {
         self.composers = composers;
         self.directories = directories;
         self.active = active;
-        self.pricing_generation = Some(pricing.generation());
         self.dirty = deferred;
         Ok(CursorDelta { upserts, removed })
     }

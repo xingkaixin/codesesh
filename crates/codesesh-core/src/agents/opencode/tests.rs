@@ -143,6 +143,20 @@ fn v1_normalizes_legacy_tool_state_and_hides_internal_parts() {
         }
         _ => panic!("expected tool"),
     }
+    db.execute(
+        "INSERT INTO message VALUES('m2','root',?1,1200)",
+        [
+            json!({"role":"assistant","modelID":"gpt-4o","tokens":{"input":1000000,"output":0}})
+                .to_string(),
+        ],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO part VALUES('p4','m2',?1,1200)",
+        [json!({"type":"text","text":"Estimated answer"}).to_string()],
+    )
+    .unwrap();
+    crate::pricing::assert_cached_repricing(|pricing| scan(temp.path(), pricing).unwrap());
 }
 
 #[test]
@@ -250,6 +264,20 @@ fn incremental_reuses_unchanged_sessions_and_handles_wal_edits_and_deletions() {
     let mut unchanged = refresh(temp.path(), &pricing, Some(&first)).unwrap();
     assert!(unchanged.decoded.is_empty());
     assert!(unchanged.upserts.is_empty());
+    let home = tempfile::tempdir().unwrap();
+    let controller = crate::pricing::PricingController::load(home.path());
+    controller
+        .stage_remote(&json!({"openai":{"models":{"gpt-4o":{"cost":{"input":123,"output":8}}}}}))
+        .unwrap();
+    controller.publish_pending().unwrap();
+    let repriced = refresh(
+        temp.path(),
+        &controller.snapshot().unwrap().pricing,
+        Some(&unchanged),
+    )
+    .unwrap();
+    assert!(repriced.decoded.is_empty());
+    assert!(repriced.upserts.is_empty());
     db.execute(
         "UPDATE session_message SET data=?1 WHERE id='one-user'",
         [json!({"text":"bbbb"}).to_string()],

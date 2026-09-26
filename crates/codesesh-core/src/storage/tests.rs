@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-fn source(root: &Path, id: &str) -> ParsedSession {
+pub(super) fn source(root: &Path, id: &str) -> ParsedSession {
     let path = root.join(format!("rollout-{id}.jsonl"));
     std::fs::write(&path, concat!(
             "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",

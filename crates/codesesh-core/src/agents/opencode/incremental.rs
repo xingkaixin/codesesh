@@ -10,7 +10,6 @@ pub struct DatabaseSnapshot {
     pub(super) fingerprints: HashMap<String, String>,
     pub(super) base_details: HashMap<String, SessionDetail>,
     pub(super) raw_usage: HashMap<String, SessionStats>,
-    pub(super) pricing_generation: u64,
     compacted: bool,
 }
 
@@ -73,10 +72,6 @@ pub(super) fn refresh_scoped(
         .with_context(|| format!("opening {agent} database {}", path.display()))?;
     db.execute_batch("BEGIN")?;
     let v2 = supports_v2 && has_v2(&db)?;
-    if selected.is_some() && previous.is_some_and(|p| p.pricing_generation != pricing.generation())
-    {
-        bail!("Pricing changed during OpenCode pagination; restart the source scan");
-    }
     let scope = selected
         .map(|selected| paging::expanded_scope(&db, v2, selected, previous))
         .transpose()?;
@@ -90,7 +85,7 @@ pub(super) fn refresh_scoped(
                 .map(|(id, hash)| (id.clone(), hash.clone())),
         );
     }
-    let reuse = previous.filter(|p| p.pricing_generation == pricing.generation());
+    let reuse = previous;
     let mut changed: HashSet<_> = fingerprints
         .iter()
         .filter(|(id, hash)| reuse.and_then(|p| p.fingerprints.get(*id)) != Some(*hash))
@@ -174,6 +169,11 @@ pub(super) fn refresh_scoped(
             }
             if let Some(children) = child_usage.get(&head.reference.session_id) {
                 detail.head.stats.total_cost += children.total_cost;
+                detail
+                    .head
+                    .stats
+                    .cost_inputs
+                    .extend(children.cost_inputs.iter().cloned());
                 detail.head.stats.total_input_tokens += children.total_input_tokens;
                 detail.head.stats.total_output_tokens += children.total_output_tokens;
                 if detail.head.stats.total_cost > 0.0 {
@@ -231,7 +231,6 @@ pub(super) fn refresh_scoped(
         fingerprints,
         base_details,
         raw_usage,
-        pricing_generation: pricing.generation(),
         compacted: false,
     })
 }

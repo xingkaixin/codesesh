@@ -208,6 +208,14 @@ pub fn ensure(db: &Connection, path: Option<&Path>) -> Result<()> {
     let result = (|| -> Result<()> {
         for (key, sql) in [
             (
+                "cost_only_publication_v1",
+                "DROP TRIGGER IF EXISTS session_documents_au;
+                 CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
+                   INSERT INTO session_documents_fts(session_documents_fts,rowid,title,content_text) VALUES('delete',old.id,old.title,old.content_text);
+                   INSERT INTO session_documents_fts(rowid,title,content_text) VALUES(new.id,new.title,new.content_text);
+                 END;",
+            ),
+            (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT agent_name,session_id FROM sessions WHERE agent_name='pi'",
             ),

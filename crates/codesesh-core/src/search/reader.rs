@@ -29,6 +29,7 @@ pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             .get::<_, Option<f64>>("time_updated")?
             .unwrap_or_default(),
         stats: SessionStats {
+            cost_inputs: Vec::new(),
             message_count: row.get::<_, i64>("message_count")? as usize,
             total_input_tokens: row.get("total_input_tokens")?,
             total_output_tokens: row.get("total_output_tokens")?,

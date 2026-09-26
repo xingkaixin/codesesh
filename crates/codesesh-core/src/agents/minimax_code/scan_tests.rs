@@ -31,6 +31,9 @@ fn turn_usage_attaches_to_last_answer_and_database_remains_unchanged() {
     assert_eq!(detail.head.time_updated, 3500.0);
 
     let db = Connection::open(root.path().join("v2/sqlite/runtime-state.sqlite")).unwrap();
+    db.execute_batch("UPDATE local_runtime_token_usage SET cost_usd=NULL WHERE input_tokens=50")
+        .unwrap();
+    crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     db.execute_batch("INSERT INTO local_runtime_sessions (session_id,title) VALUES ('bad','Malformed'); INSERT INTO local_runtime_message_rows (session_id,msg_id,role,data_json) VALUES ('bad','bad','assistant','{broken')").unwrap();
     let before = fingerprints(root.path()).unwrap();
     db.execute_batch("UPDATE local_runtime_sessions SET created_at_ms=1000.125 WHERE session_id='s'; UPDATE local_runtime_message_rows SET created_at_ms=2500.375,data_json=replace(data_json,'Done','Next') WHERE msg_id='a'; UPDATE local_runtime_token_usage SET ts=4000.875 WHERE session_id='s'").unwrap();

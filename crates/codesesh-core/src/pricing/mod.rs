@@ -1,7 +1,11 @@
 mod controller;
 mod cost;
 mod dependencies;
+mod inputs;
 mod manager;
+pub use inputs::CostInput;
+#[cfg(test)]
+pub(crate) use inputs::assert_cached_repricing;
 mod registry;
 
 pub use controller::{PricingController, PricingSnapshot};

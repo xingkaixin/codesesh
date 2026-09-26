@@ -216,6 +216,7 @@ impl Builder {
             self.current = None;
         }
         self.messages.push(Message {
+            cost_inputs: Vec::new(),
             id,
             role,
             agent: agent.map(str::to_owned),
@@ -296,7 +297,13 @@ impl Builder {
             false
         }
     }
-    pub fn usage(&mut self, tokens: MessageTokens, model: Option<&str>, cost: Option<f64>) {
+    pub fn usage(
+        &mut self,
+        tokens: MessageTokens,
+        model: Option<&str>,
+        cost: Option<f64>,
+        cost_input: crate::pricing::CostInput,
+    ) {
         let target = self
             .messages
             .iter()
@@ -308,6 +315,7 @@ impl Builder {
             });
         let Some(i) = target else { return };
         let m = &mut self.messages[i];
+        m.cost_inputs.push(cost_input);
         if let Some(base) = &mut m.tokens {
             for (base, extra) in [
                 (&mut base.input, tokens.input),

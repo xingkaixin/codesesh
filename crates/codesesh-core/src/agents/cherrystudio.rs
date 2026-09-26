@@ -176,6 +176,7 @@ fn transcript(
             .flatten()
             .filter(|v| v.is_object())
             .collect();
+        let mut cost_inputs = Vec::new();
         let (cost, source) = if !costs.is_empty() && costs.iter().all(|c| c["currency"] == "USD") {
             (
                 Some(costs.iter().map(|c| nonnegative(&c["amount"])).sum()),
@@ -192,13 +193,14 @@ fn transcript(
             )
         } else {
             let cost = tokens.as_ref().and_then(|t| {
-                pricing.estimate(
+                pricing.estimate_tracked(
                     model.as_deref(),
                     &MessageTokens {
                         reasoning: Some(0.0),
                         ..t.clone()
                     },
                     0.0,
+                    &mut cost_inputs,
                 )
             });
             (cost, cost.map(|_| CostSource::Estimated))
@@ -220,6 +222,8 @@ fn transcript(
         message.tokens = tokens.clone();
         message.cost = Some(cost.unwrap_or(0.0));
         message.cost_source = source.clone();
+        stats.cost_inputs.extend(cost_inputs.iter().cloned());
+        message.cost_inputs = cost_inputs;
         if row["status"] != "pending" {
             message.time_completed = Some(n(&row["updated_at"]));
         }

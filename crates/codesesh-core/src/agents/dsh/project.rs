@@ -231,6 +231,7 @@ fn append(event: &Value) -> Result<bool> {
 }
 fn message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Message {
     Message {
+        cost_inputs: Vec::new(),
         id,
         agent: if role == Role::Assistant {
             Some("dsh".into())
@@ -329,12 +330,15 @@ impl Projector<'_> {
                 cache_read: (read > 0.0).then_some(read),
                 cache_create: (create > 0.0).then_some(create),
             };
-            m.cost = self.pricing.estimate(m.model.as_deref(), &tokens, 0.0);
+            m.cost =
+                self.pricing
+                    .estimate_tracked(m.model.as_deref(), &tokens, 0.0, &mut m.cost_inputs);
             m.cost_source = m.cost.filter(|n| *n > 0.0).map(|_| CostSource::Estimated);
             m.tokens = Some(tokens);
             self.stats.total_input_tokens += input;
             self.stats.total_output_tokens += output;
             self.stats.total_cost += m.cost.unwrap_or(0.0);
+            self.stats.cost_inputs.extend(m.cost_inputs.iter().cloned());
             self.stats.total_cache_read_tokens =
                 Some(self.stats.total_cache_read_tokens.unwrap_or(0.0) + read);
             self.stats.total_cache_create_tokens =

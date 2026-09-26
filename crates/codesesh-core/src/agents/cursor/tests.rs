@@ -40,6 +40,7 @@ fn insertion_order_model_inheritance_and_malformed_rows() {
         ("bubbleId:empty:a", json!("not an object")),
     ]);
     let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+    crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     assert_eq!(sessions.len(), 1);
     let detail = &sessions[0].detail;
     assert_eq!(detail.head.title, "hello");
@@ -228,6 +229,18 @@ fn incremental_bubble_updates_children_and_deletions() {
     );
     assert!(
         sync.refresh(root.path(), &pricing)
+            .unwrap()
+            .upserts
+            .is_empty()
+    );
+    let home = tempfile::tempdir().unwrap();
+    let controller = crate::pricing::PricingController::load(home.path());
+    controller
+        .stage_remote(&json!({"openai":{"models":{"gpt-4o":{"cost":{"input":123,"output":8}}}}}))
+        .unwrap();
+    controller.publish_pending().unwrap();
+    assert!(
+        sync.refresh(root.path(), &controller.snapshot().unwrap().pricing)
             .unwrap()
             .upserts
             .is_empty()

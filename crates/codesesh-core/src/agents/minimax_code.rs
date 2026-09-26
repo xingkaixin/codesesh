@@ -8,7 +8,13 @@ use std::{
     path::Path,
 };
 
-type TurnUsage = (Option<String>, MessageTokens, f64, Option<CostSource>);
+type TurnUsage = (
+    Option<String>,
+    MessageTokens,
+    f64,
+    Option<CostSource>,
+    Vec<crate::pricing::CostInput>,
+);
 
 fn convert(row: &Value, agent: &str) -> Result<Message> {
     let data = strict_parse(&row["data_json"])?;
@@ -271,7 +277,11 @@ fn scan_connection(
             .flatten()
             .sum();
             let recorded = row["cost_usd"].as_f64().filter(|n| *n >= 0.0);
-            let cost = recorded.or_else(|| pricing.estimate(model.as_deref(), &tokens, 0.0));
+            let mut cost_inputs = Vec::new();
+            let cost = recorded.or_else(|| {
+                pricing.estimate_tracked(model.as_deref(), &tokens, 0.0, &mut cost_inputs)
+            });
+            stats.cost_inputs.extend(cost_inputs.iter().cloned());
             let source = if recorded.is_some() {
                 Some(CostSource::Recorded)
             } else {
@@ -294,6 +304,7 @@ fn scan_connection(
                     tokens,
                     cost.unwrap_or(0.0),
                     source,
+                    cost_inputs,
                 ));
             }
         }
@@ -309,7 +320,8 @@ fn scan_connection(
             message.cost = Some(0.0);
             message.model = usages[0].0.clone();
             let mut tokens = empty_tokens();
-            for (_, usage, cost, source) in usages {
+            for (_, usage, cost, source, cost_inputs) in usages {
+                message.cost_inputs.extend(cost_inputs);
                 add_tokens(&mut tokens, &usage);
                 message.cost = Some(message.cost.unwrap_or(0.0) + cost);
                 if source == Some(CostSource::Estimated) || message.cost_source.is_none() {

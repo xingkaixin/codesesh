@@ -371,6 +371,7 @@ fn read_v2(
         .map(|key| number(&row[key]))
         .sum::<f64>();
         let stats = SessionStats {
+            cost_inputs: Vec::new(),
             message_count: messages.len(),
             total_input_tokens: number(&row["tokens_input"]),
             total_output_tokens: number(&row["tokens_output"]),
@@ -445,6 +446,7 @@ fn descendant_usage(
             }
             if let Some(child) = own.get(&id) {
                 stats.total_cost += child.total_cost;
+                stats.cost_inputs.extend(child.cost_inputs.iter().cloned());
                 stats.total_input_tokens += child.total_input_tokens;
                 stats.total_output_tokens += child.total_output_tokens;
                 if child.cost_source == Some(CostSource::Estimated) {

@@ -45,6 +45,7 @@ pub fn title(value: &str) -> Option<String> {
 
 pub fn message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Message {
     Message {
+        cost_inputs: Vec::new(),
         id,
         role,
         agent: None,
@@ -134,6 +135,7 @@ pub fn stats(messages: &[Message]) -> SessionStats {
             create += t.cache_create.unwrap_or(0.0);
         }
         stats.total_cost += m.cost.unwrap_or(0.0);
+        stats.cost_inputs.extend(m.cost_inputs.iter().cloned());
         estimated |= m.cost_source == Some(CostSource::Estimated);
     }
     stats.total_cache_read_tokens = (read != 0.0).then_some(read);
@@ -210,8 +212,11 @@ pub fn assert_reference(head: &SessionHead, detail: &SessionDetail, expected: &s
             wanted["time_updated"].as_f64().unwrap()
         );
         assert_eq!(
-            actual.stats,
-            serde_json::from_value(wanted["stats"].clone()).unwrap()
+            serde_json::to_value(&actual.stats).unwrap(),
+            serde_json::to_value(
+                serde_json::from_value::<SessionStats>(wanted["stats"].clone()).unwrap()
+            )
+            .unwrap()
         );
     }
     assert_eq!(

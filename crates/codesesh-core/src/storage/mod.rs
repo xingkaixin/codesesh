@@ -5,6 +5,8 @@ mod facts;
 mod json;
 mod legacy_parts;
 mod read;
+mod reprice;
+pub(crate) use reprice::reprice_session;
 mod schema;
 mod snapshot;
 use crate::{
@@ -239,6 +241,7 @@ impl Cache {
             if let Some(files) = &head.summary_files {
                 metadata["rustHeadSummaryFiles"] = files.clone();
             }
+            metadata["rustPricing"] = reprice::state(session)?;
             let detail_version = json::stringify(&serde_json::json!([
                 "session-detail-v1",
                 fingerprint,
