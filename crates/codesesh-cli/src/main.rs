@@ -4,6 +4,7 @@ mod http;
 mod json_scan;
 mod logging;
 mod options;
+mod pricing_refresh;
 mod trace;
 use anyhow::{Context, Result};
 use base64::Engine;
@@ -83,14 +84,6 @@ async fn run() -> Result<()> {
     );
     let environment = PathEnvironment::current()?;
     let pricing_controller = PricingController::load(&environment.home);
-    if let Err(error) = pricing_controller.refresh().await {
-        logger.warn(
-            "pricing.refresh.error",
-            &serde_json::json!({"error":format!("{error:#}")}),
-        );
-    }
-    let publish = pricing_controller.clone();
-    tokio::task::spawn_blocking(move || publish.publish_pending()).await??;
     let pricing = Arc::new(pricing_controller.snapshot()?.pricing);
     let persistent = environment.home.join(".cache/codesesh/codesesh.db");
     if args.clear_cache {
@@ -276,6 +269,12 @@ async fn run() -> Result<()> {
     if !args.no_open {
         open_browser(startup.as_str());
     }
+    let pricing_task = pricing_refresh::spawn(
+        pricing_controller,
+        runtime.clone(),
+        logger.clone(),
+        codesesh_core::pricing::MODELS_DEV_URL,
+    );
     let result = if let (Some(cert), Some(key)) = (args.tls_cert, args.tls_key) {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key)
@@ -306,6 +305,7 @@ async fn run() -> Result<()> {
             })
             .await
     };
+    pricing_task.abort();
     runtime.shutdown().await?;
     if let Some(path) = temporary {
         std::fs::remove_dir_all(path)?;
