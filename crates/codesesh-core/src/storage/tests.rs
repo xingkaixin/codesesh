@@ -398,3 +398,58 @@ fn refreshed_snapshot_observes_other_connections() {
         serde_json::to_value(cache.snapshot().unwrap()).unwrap()
     );
 }
+
+#[test]
+fn snapshot_preserves_head_metadata_without_pricing_details() {
+    let root = tempfile::tempdir().unwrap();
+    let mut sessions = vec![source(root.path(), "metadata")];
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(&mut sessions).unwrap();
+    for summary in [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!([{"path": "src/main.rs"}])),
+    ] {
+        let mut metadata = serde_json::json!({
+            "rustHeadVersion": "fixture-version",
+            "rustPricing": {"messages": [{"nested": [true, null, {"cost": 0.5}]}]},
+        });
+        if let Some(summary) = &summary {
+            metadata["rustHeadSummaryFiles"] = summary.clone();
+        }
+        cache
+            .connection
+            .execute("UPDATE sessions SET meta_json=?", [metadata.to_string()])
+            .unwrap();
+        let heads = cache.snapshot().unwrap();
+        assert_eq!(heads[0].version.as_deref(), Some("fixture-version"));
+        assert_eq!(heads[0].summary_files, summary);
+        let head = cache.head(&heads[0].reference).unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(head).unwrap(),
+            serde_json::to_value(&heads[0]).unwrap()
+        );
+    }
+    for metadata in [
+        None,
+        Some("null"),
+        Some("{}"),
+        Some(r#"{"rustHeadVersion":42}"#),
+    ] {
+        cache
+            .connection
+            .execute("UPDATE sessions SET meta_json=?", [metadata])
+            .unwrap();
+        let heads = cache.snapshot().unwrap();
+        assert_eq!(heads[0].version, None);
+        assert_eq!(heads[0].summary_files, None);
+    }
+    cache
+        .connection
+        .execute(
+            "UPDATE sessions SET meta_json=?",
+            [r#"{"rustPricing":[invalid]}"#],
+        )
+        .unwrap();
+    assert!(cache.snapshot().is_err());
+}

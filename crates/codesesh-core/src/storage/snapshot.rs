@@ -1,6 +1,27 @@
 use crate::contract::*;
 use anyhow::Result;
 use rusqlite::{Connection, Row};
+use serde::Deserialize;
+use serde_json::Value;
+
+#[derive(Deserialize)]
+struct HeadMetadata {
+    #[serde(rename = "rustHeadVersion")]
+    version: Option<Value>,
+    #[serde(
+        rename = "rustHeadSummaryFiles",
+        default,
+        deserialize_with = "present_summary"
+    )]
+    summary_files: Option<Value>,
+}
+
+fn present_summary<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    // An explicit JSON null is distinct from an absent summary.
+    Value::deserialize(deserializer).map(Some)
+}
 
 fn optional_json<T: serde::de::DeserializeOwned>(
     row: &Row<'_>,
@@ -27,19 +48,17 @@ pub fn load(connection: &Connection) -> Result<Vec<SessionHead>> {
 }
 
 pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
-    let metadata: Option<serde_json::Value> = optional_json(row, "meta_json")?;
+    let metadata = optional_json::<Option<HeadMetadata>>(row, "meta_json")?.flatten();
     let parent_agent: Option<String> = row.get("parent_agent_name")?;
     let parent_id: Option<String> = row.get("parent_session_id")?;
     let cost_source: Option<String> = row.get("cost_source")?;
     Ok(SessionHead {
         version: metadata
             .as_ref()
-            .and_then(|meta| meta["rustHeadVersion"].as_str())
+            .and_then(|meta| meta.version.as_ref())
+            .and_then(Value::as_str)
             .map(str::to_owned),
-        summary_files: metadata
-            .as_ref()
-            .and_then(|meta| meta.get("rustHeadSummaryFiles"))
-            .cloned(),
+        summary_files: metadata.and_then(|meta| meta.summary_files),
         reference: SessionReference {
             agent_name: row.get("agent_name")?,
             session_id: row.get("session_id")?,
