@@ -34,7 +34,7 @@
     "prettier-plugin-astro": "1.0.1",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "typescript-eslint": "8.70.0",
+    "typescript-eslint": "8.70.1",
     "vite": "catalog:"
   }
 }
