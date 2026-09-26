@@ -83,6 +83,16 @@ function databaseFacts(path) {
   }
 }
 
+function assertMigrationFacts(path, expected) {
+  const actual = databaseFacts(path);
+  assert.deepEqual(
+    actual.cache_meta.find(({ key }) => key === "cost_only_publication_v1"),
+    { key: "cost_only_publication_v1", value: "1" },
+  );
+  actual.cache_meta = actual.cache_meta.filter(({ key }) => key !== "cost_only_publication_v1");
+  assert.deepEqual(actual, expected);
+}
+
 function nodeMigrate(fixture, agent) {
   execFileSync(
     process.execPath,
@@ -173,7 +183,7 @@ for (const release of RELEASE_CACHE_FIXTURES) {
         const restored = rustMigrate(fixture, rustPath);
         assert.equal(restored.heads.length, 1);
         assert.equal(restored.heads[0].time_created, seed(fixture).session.time_created);
-        assert.deepEqual(databaseFacts(rustPath), expected);
+        assertMigrationFacts(rustPath, expected);
         assert.ok(
           readdirSync(fixture.root).some((name) =>
             name.includes(`cache-migration-${release.version}-`),
@@ -230,7 +240,7 @@ const modernMigrations = [
 ];
 for (const [version, downgrade] of modernMigrations) {
   test(
-    `cache schema ${version}: actual npm cache upgrades identically in both implementations`,
+    `cache schema ${version}: npm cache facts survive the cost-only indexing migration`,
     { timeout: 180_000 },
     async () => {
       const fixture = createFixture();
@@ -250,7 +260,7 @@ for (const [version, downgrade] of modernMigrations) {
         copyFileSync(path, rustPath);
         nodeMigrate(fixture, "codex");
         rustMigrate(fixture, rustPath);
-        assert.deepEqual(databaseFacts(rustPath), databaseFacts(path));
+        assertMigrationFacts(rustPath, databaseFacts(path));
       } finally {
         if (server) await stop(server);
         fixture.dispose();
