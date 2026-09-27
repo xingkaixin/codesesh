@@ -123,12 +123,12 @@ fn paths_match_platform_and_environment_precedence() {
     let home = Path::new("/home/user");
     assert_eq!(
         state_directory(home, "darwin", |_| None),
-        home.join("Library/Application Support/codesesh")
+        home.join(".codesesh")
     );
     assert_eq!(
         state_directory(home, "linux", |k| (k == "XDG_DATA_HOME")
             .then(|| "/data".into())),
-        Path::new("/data/codesesh")
+        home.join(".codesesh")
     );
     assert_eq!(
         state_directory(home, "windows", |k| match k {
@@ -136,7 +136,7 @@ fn paths_match_platform_and_environment_precedence() {
             "LOCALAPPDATA" => Some("/local".into()),
             _ => None,
         }),
-        Path::new("/roaming/codesesh")
+        home.join(".codesesh")
     );
 }
 

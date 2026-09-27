@@ -49,7 +49,7 @@ mod tests {
         for stale in [false, true] {
             for success in [false, true] {
                 let home = tempfile::tempdir().unwrap();
-                let path = home.path().join(".cache/codesesh/models-dev-pricing.json");
+                let path = home.path().join(".codesesh/models-dev-pricing.json");
                 if stale {
                     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                     std::fs::write(&path, json!({"timestamp":1,"data":{"cached-model":{"inputCostPerToken":1,"outputCostPerToken":2}}}).to_string()).unwrap();

@@ -26,7 +26,7 @@ import { nativeBinary } from "./lib/native-command.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const cliPath = nativeBinary;
-const cacheDir = join(homedir(), ".cache", "codesesh");
+const cacheDir = join(homedir(), ".codesesh");
 const cacheFiles = ["codesesh.db", "codesesh.db-wal", "codesesh.db-shm", "scan-cache.json"];
 const activeCacheBackups = new Set();
 const PROFILE_SCENARIOS = ["typing", "sidebar", "live"];

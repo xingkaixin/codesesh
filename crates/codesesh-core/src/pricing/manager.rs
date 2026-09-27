@@ -29,7 +29,7 @@ impl PricingManager {
         Self {
             published: Pricing::load(home),
             pending: None,
-            path: home.join(".cache/codesesh/models-dev-pricing.json"),
+            path: crate::app_paths::root(home).join("models-dev-pricing.json"),
         }
     }
 
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn stale_prices_load_but_invalid_and_future_caches_do_not() {
         let home = tempfile::tempdir().unwrap();
-        let path = home.path().join(".cache/codesesh/models-dev-pricing.json");
+        let path = home.path().join(".codesesh/models-dev-pricing.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let data = json!({"cache_model":{"inputCostPerToken":0.000001,"outputCostPerToken":0.000002,
             "cacheReadCostPerToken":-1,"cacheCreateCostPerToken":"bad"},

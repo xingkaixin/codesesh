@@ -45,7 +45,7 @@ test(
   { timeout: 60_000 },
   async () => {
     const fixture = createFixture();
-    const cache = join(fixture.root, ".cache", "codesesh", "codesesh.db");
+    const cache = join(fixture.root, ".codesesh", "codesesh.db");
     const damaged = "not a sqlite database";
     let server;
     try {

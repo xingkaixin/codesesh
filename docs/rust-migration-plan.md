@@ -35,7 +35,7 @@ agent-dump 曾出现 Rust 文件同步语义更强而使批量导出变慢，说
 | --- | --- |
 | 两种生命周期 | Web 从 SQLite 恢复快照后开始后台刷新；`--json` 完成扫描和初始索引后输出退出 |
 | Agent | 13 个：7 个文件型、6 个 SQLite 型；身份和能力声明保持一致 |
-| 缓存 | `~/.cache/codesesh/codesesh.db`，当前 schema 35，含详情、成本事实、文件活动、FTS 和同步状态 |
+| 缓存 | `~/.codesesh/codesesh.db`，当前 schema 35，含详情、成本事实、文件活动、FTS 和同步状态 |
 | 用户状态 | 独立 `state.db`，当前 schema 3，保存书签和别名；路径按平台解析，支持 `CODESESH_STATE_DIR` |
 | 发布顺序 | 补全 Project Identity → 提交 SQLite → 更新 Live Snapshot → 发 SSE |
 | 刷新 | 不同 Agent 可并行，同一 Agent 的 refresh/backfill 串行；搜索写入统一排队 |

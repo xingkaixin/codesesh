@@ -232,7 +232,7 @@ npx codesesh -j
 生成新的访问 token，并将其包含在输出 URL 中。请将该 URL 视为密码，不要公开或保存到
 共享的 shell 历史记录中。
 
-模型估算价格来自 [models.dev](https://models.dev/api.json)，缓存在 `~/.cache/codesesh/models-dev-pricing.json`，有效期为 1 小时。启动时复用有效缓存；缓存过期或缺失时，在扫描前刷新，最多等待 10 秒。网络失败时继续使用旧缓存或内置价格。新模型定价可用后，后续扫描会重新计算此前缺少定价的会话。
+模型估算价格来自 [models.dev](https://models.dev/api.json)，缓存在 `~/.codesesh/models-dev-pricing.json`，有效期为 1 小时。启动时复用有效缓存；缓存过期或缺失时，在扫描前刷新，最多等待 10 秒。网络失败时继续使用旧缓存或内置价格。新模型定价可用后，后续扫描会重新计算此前缺少定价的会话。
 
 ---
 
@@ -414,3 +414,10 @@ Agent 来源解析和浏览器展示分别声明：
 
 使用来源格式 fixture 和进程契约检查消息、用量、工具及增量行为。注册检查覆盖图标、
 resume 声明和工具展示策略。
+
+
+本地数据库、模型价格缓存和日志默认统一放在 `~/.codesesh/`（Windows 为
+`%USERPROFILE%\.codesesh\`）。首次迁移前请退出旧版本，并确认终端提示；非交互运行需在
+退出旧版本后传入 `--migrate-data`。迁移校验通过后清理旧文件，所有保留路径都会逐项列出。
+已有 `CODESESH_STATE_DIR`、`CODESESH_LOG_DIR` 配置继续有效。
+详见[数据目录迁移](docs/sqlite-storage.md#数据目录迁移)。

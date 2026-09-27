@@ -29,7 +29,10 @@ import {
 
 const referenceRoot = resolve("artifacts/backend-reference/registry/node_modules/codesesh");
 const reference = [process.execPath, join(referenceRoot, "dist/index.js")];
-const rust = [resolve(`target/release/codesesh${process.platform === "win32" ? ".exe" : ""}`)];
+const rust = [
+  resolve(`target/release/codesesh${process.platform === "win32" ? ".exe" : ""}`),
+  "--migrate-data",
+];
 const requireReference = createRequire(join(referenceRoot, "package.json"));
 const Database = requireReference("better-sqlite3");
 const cacheModule = readdirSync(join(referenceRoot, "dist"))
@@ -213,7 +216,7 @@ for (const release of RELEASE_CACHE_FIXTURES) {
 
 function addPricedUsage(fixture) {
   writeFileSync(
-    join(fixture.root, ".cache/codesesh/models-dev-pricing.json"),
+    join(fixture.root, ".codesesh/models-dev-pricing.json"),
     JSON.stringify({
       timestamp: Date.now(),
       data: { "migration-fixture": { inputCostPerToken: 0.000001, outputCostPerToken: 0.000002 } },

@@ -456,8 +456,9 @@ async function serve(fixture, agent, command) {
   }
 }
 function clearCache(fixture) {
-  for (const suffix of ["", "-wal", "-shm"])
-    rmSync(join(fixture.root, `.cache/codesesh/codesesh.db${suffix}`), { force: true });
+  for (const directory of [".cache/codesesh", ".codesesh"])
+    for (const suffix of ["", "-wal", "-shm"])
+      rmSync(join(fixture.root, `${directory}/codesesh.db${suffix}`), { force: true });
 }
 async function collect(server, agent) {
   const list = await readJson(server, "/api/sessions");
@@ -490,7 +491,7 @@ for (const [agent, setup] of [
     const fixture = createFixture();
     let server;
     writeFileSync(
-      join(fixture.root, ".cache/codesesh/models-dev-pricing.json"),
+      join(fixture.root, ".codesesh/models-dev-pricing.json"),
       JSON.stringify({
         timestamp: Date.now(),
         data: {

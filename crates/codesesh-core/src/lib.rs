@@ -1,5 +1,7 @@
 pub mod agents;
+pub mod app_paths;
 pub mod contract;
+pub mod migration;
 pub mod projects;
 
 pub mod storage;

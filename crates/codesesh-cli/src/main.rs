@@ -3,6 +3,7 @@ mod cache_path;
 mod http;
 mod json_scan;
 mod logging;
+mod migration;
 mod options;
 mod pricing_refresh;
 mod trace;
@@ -40,14 +41,14 @@ async fn main_async() {
     let result = run().await;
     if let Err(error) = &result {
         eprintln!("{error:#}");
-        if let Ok(logger) = logging::initialize() {
+        if let Some(logger) = logging::current() {
             logger.error(
                 "cli.fatal",
                 &serde_json::json!({"error":format!("{error:#}")}),
             );
         }
     }
-    if let Ok(logger) = logging::initialize() {
+    if let Some(logger) = logging::current() {
         let _ = logger.shutdown();
     }
     if result.is_err() {
@@ -76,16 +77,23 @@ async fn run() -> Result<()> {
         }
     };
     let plan = args.plan()?;
+    let environment = PathEnvironment::current()?;
+    let migration_warnings = migration::run(&args, &environment.home).await?;
     let logger = logging::initialize()?;
+    for warning in migration_warnings {
+        logger.warn(
+            "migration.retained",
+            &serde_json::json!({"message": warning}),
+        );
+    }
     logger.info("cli.start",&serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"host":args.host,"json":args.json,"trace":args.trace,"log_path":logger.path()}));
     logger.debug(
         "cli.options",
         &serde_json::json!({"cache":args.cache&&!args.no_cache,"days":plan.days}),
     );
-    let environment = PathEnvironment::current()?;
     let pricing_controller = PricingController::load(&environment.home);
     let pricing = Arc::new(pricing_controller.snapshot()?.pricing);
-    let persistent = environment.home.join(".cache/codesesh/codesesh.db");
+    let persistent = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
     if args.clear_cache {
         for suffix in ["", "-wal", "-shm"] {
             let path = PathBuf::from(format!("{}{suffix}", persistent.to_string_lossy()));

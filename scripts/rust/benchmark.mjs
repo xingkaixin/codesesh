@@ -237,13 +237,14 @@ function makeFixture(config) {
 }
 
 function clearCache(fixture) {
-  for (const suffix of ["", "-wal", "-shm"])
-    rmSync(join(fixture.root, `.cache/codesesh/codesesh.db${suffix}`), { force: true });
+  for (const directory of [".cache/codesesh", ".codesesh"])
+    for (const suffix of ["", "-wal", "-shm"])
+      rmSync(join(fixture.root, `${directory}/codesesh.db${suffix}`), { force: true });
 }
 
 function engineVersion(fixture) {
   try {
-    const n = readFileSync(join(fixture.root, ".cache/codesesh/codesesh.db")).readUInt32BE(96);
+    const n = readFileSync(join(fixture.root, ".codesesh/codesesh.db")).readUInt32BE(96);
     return `${Math.floor(n / 1000000)}.${Math.floor(n / 1000) % 1000}.${n % 1000}`;
   } catch {
     return null;
@@ -524,7 +525,7 @@ async function web(fixture, config, command, hot = false, traffic = false) {
           : null,
       rssSamples,
       sqliteWriterVersion: engineVersion(fixture),
-      cacheBytes: directoryBytes(join(fixture.root, ".cache/codesesh")),
+      cacheBytes: directoryBytes(join(fixture.root, ".codesesh")),
     };
   } finally {
     clearInterval(monitor);

@@ -188,7 +188,7 @@ fn external_publication_invalidates_the_index_but_pricing_does_not() {
     )
     .unwrap();
     assert_eq!(refreshed.sessions[0].title, "first body");
-    let directory = temp.path().join(".cache/codesesh");
+    let directory = temp.path().join(".codesesh");
     fs::create_dir_all(&directory).unwrap();
     fs::write(directory.join("models-dev-pricing.json"), serde_json::json!({"timestamp":1,"data":{"json-cache-test-model":{"inputCostPerToken":1,"outputCostPerToken":2}}}).to_string()).unwrap();
     let changed = Pricing::load(temp.path());

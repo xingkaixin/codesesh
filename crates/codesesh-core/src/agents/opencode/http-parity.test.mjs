@@ -21,8 +21,9 @@ const candidate = [resolve(`target/release/codesesh${process.platform === "win32
 const created = 1788256800000.25;
 
 function clearCache(fixture) {
-  for (const suffix of ["", "-wal", "-shm"])
-    rmSync(join(fixture.root, `.cache/codesesh/codesesh.db${suffix}`), { force: true });
+  for (const directory of [".cache/codesesh", ".codesesh"])
+    for (const suffix of ["", "-wal", "-shm"])
+      rmSync(join(fixture.root, `${directory}/codesesh.db${suffix}`), { force: true });
 }
 function database(fixture, agent, v2) {
   const path =
