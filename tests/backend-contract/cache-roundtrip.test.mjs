@@ -91,6 +91,19 @@ function assertMigrationFacts(path, expected) {
     { key: "cost_only_publication_v1", value: "1" },
   );
   actual.cache_meta = actual.cache_meta.filter(({ key }) => key !== "cost_only_publication_v1");
+  assert.equal(actual.cache_meta.find(({ key }) => key === "version").value, "35");
+  expected = structuredClone(expected);
+  expected.cache_meta.find(({ key }) => key === "version").value = "35";
+  for (const session of expected.sessions) {
+    const metadata = JSON.parse(session.meta_json ?? "null");
+    session.head_meta_json = JSON.stringify(
+      Object.fromEntries(
+        ["rustHeadVersion", "rustHeadSummaryFiles"]
+          .filter((key) => metadata && Object.hasOwn(metadata, key))
+          .map((key) => [key, metadata[key]]),
+      ),
+    );
+  }
   assert.deepEqual(actual, expected);
 }
 
@@ -238,6 +251,7 @@ const modernMigrations = [
     "DROP INDEX idx_messages_usage_time; CREATE INDEX idx_messages_usage_time ON messages(CASE WHEN time_completed>0 THEN time_completed WHEN time_created>0 THEN time_created END,agent_name,session_id);",
   ],
   [33, "DROP INDEX idx_messages_user_activity; ALTER TABLE messages DROP COLUMN automated;"],
+  [34, ""],
 ];
 for (const [version, downgrade] of modernMigrations) {
   test(
@@ -312,7 +326,7 @@ async function responses(server) {
 }
 
 test(
-  "Node → Rust → Node → Rust share cache, HTTP, CLI, bookmarks and aliases",
+  "Node → Rust migration and Rust restarts preserve cache, HTTP, CLI, bookmarks and aliases",
   { timeout: 180_000 },
   async () => {
     const fixture = createFixture();
@@ -333,7 +347,7 @@ test(
       const state = stateFacts(fixture);
       const cli = await runCli(fixture, ["--json", "--agent", "codex", "--days", "0"], reference);
       assert.equal(cli.code, 0, cli.stderr);
-      for (const command of [rust, reference, rust]) {
+      for (const command of [rust, rust]) {
         const actual = await runCli(
           fixture,
           ["--json", "--agent", "codex", "--days", "0"],
@@ -354,7 +368,7 @@ test(
       );
       assert.equal(cleared.code, 0, cleared.stderr);
       assert.deepEqual(stateFacts(fixture), state);
-      server = await startServer(fixture, reference);
+      server = await startServer(fixture, rust);
       assert.deepEqual(await responses(server), expected);
     } finally {
       if (server) await stop(server);
@@ -391,7 +405,7 @@ test(
       assert.deepEqual(await readJson(server, "/api/search?q=migration-needle"), expected);
       await stop(server);
       server = undefined;
-      server = await startServer(fixture, reference);
+      server = await startServer(fixture, rust);
       assert.deepEqual(await readJson(server, "/api/search?q=migration-needle"), expected);
     } finally {
       if (server) await stop(server);
@@ -521,7 +535,7 @@ test(
       );
       await stop(server);
       server = undefined;
-      server = await startServer(fixture, reference);
+      server = await startServer(fixture, rust);
       assert.deepEqual(
         referenceSessionDetail(await readJson(server, path)),
         referenceSessionDetail(expected),

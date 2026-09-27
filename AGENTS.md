@@ -18,7 +18,7 @@
 - `crates/codesesh-core/src/discovery/`：数据路径、扫描编排、窗口优先回填和 checkpoint。
 - `crates/codesesh-core/src/runtime.rs`：有界扫描、取消、刷新和状态。
 - `crates/codesesh-core/src/runtime/`：单 SQLite writer、监听和状态发布。
-- `crates/codesesh-core/src/storage/`：schema 34、迁移、消息、FTS 和成本事实。
+- `crates/codesesh-core/src/storage/`：schema 35、迁移、消息、FTS 和成本事实。
 - `crates/codesesh-core/src/search/`：查询解析、候选召回、搜索片段和文件活动。
 - `crates/codesesh-core/src/analytics/`：Dashboard 与项目统计。
 - `crates/codesesh-core/src/pricing/`：价格缓存、代际、估价和成本来源。
