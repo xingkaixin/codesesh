@@ -9,6 +9,7 @@ import {
   stop,
   waitFor,
   readJson,
+  referenceSessionDetail,
   runCli,
 } from "../../../../../tests/backend-contract/harness.mjs";
 
@@ -190,7 +191,10 @@ for (const [agent, v2] of [
         clearCache(fixture);
         server = await start(fixture, agent, candidate);
         assert.deepEqual(await readJson(server, "/api/sessions"), expectedList);
-        assert.deepEqual(await readJson(server, `/api/sessions/${agent}/root`), expectedDetail);
+        assert.deepEqual(
+          referenceSessionDetail(await readJson(server, `/api/sessions/${agent}/root`)),
+          expectedDetail,
+        );
       } finally {
         if (server) await stop(server);
         fixture.dispose();
