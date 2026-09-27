@@ -51,6 +51,7 @@ CREATE TABLE sessions (
       smart_tags_source_updated_at INTEGER,
       smart_tags_classifier_revision TEXT,
       meta_json TEXT,
+      head_meta_json TEXT,
       publication_id TEXT,
       PRIMARY KEY (agent_name, session_id)
     );

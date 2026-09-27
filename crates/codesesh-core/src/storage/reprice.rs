@@ -223,7 +223,10 @@ impl Cache {
             };
             facts::write(&transaction, &reference, &[])?;
             let head = transaction.query_row(
-                "SELECT * FROM sessions WHERE agent_name=? AND session_id=?",
+                &format!(
+                    "SELECT {} FROM sessions WHERE agent_name=? AND session_id=?",
+                    snapshot::HEAD_COLUMNS
+                ),
                 params![agent, reference.session_id],
                 snapshot::head,
             )?;

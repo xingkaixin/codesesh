@@ -70,7 +70,7 @@ fn schema_and_materialized_messages_survive_reopen() {
             .connection
             .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
             .unwrap(),
-        34
+        CACHE_SCHEMA_VERSION
     );
     cache.connection.execute("INSERT INTO session_file_activity VALUES('codex','rollout-persisted','/fixture','/fixture/中文.txt','read',1,1)",[]).unwrap();
     let count: i64 = cache.connection.query_row("SELECT count(*) FROM session_file_activity_path_fts WHERE session_file_activity_path_fts MATCH 'fixture'",[],|row|row.get(0)).unwrap();
@@ -405,6 +405,10 @@ fn snapshot_preserves_head_metadata_without_pricing_details() {
     let mut sessions = vec![source(root.path(), "metadata")];
     let mut cache = Cache::open(None).unwrap();
     cache.publish(&mut sessions).unwrap();
+    cache
+        .connection
+        .execute("UPDATE sessions SET meta_json='invalid pricing JSON'", [])
+        .unwrap();
     for summary in [
         None,
         Some(serde_json::Value::Null),
@@ -419,7 +423,10 @@ fn snapshot_preserves_head_metadata_without_pricing_details() {
         }
         cache
             .connection
-            .execute("UPDATE sessions SET meta_json=?", [metadata.to_string()])
+            .execute(
+                "UPDATE sessions SET head_meta_json=?",
+                [metadata.to_string()],
+            )
             .unwrap();
         let heads = cache.snapshot().unwrap();
         assert_eq!(heads[0].version.as_deref(), Some("fixture-version"));
@@ -438,7 +445,7 @@ fn snapshot_preserves_head_metadata_without_pricing_details() {
     ] {
         cache
             .connection
-            .execute("UPDATE sessions SET meta_json=?", [metadata])
+            .execute("UPDATE sessions SET head_meta_json=?", [metadata])
             .unwrap();
         let heads = cache.snapshot().unwrap();
         assert_eq!(heads[0].version, None);
@@ -447,9 +454,176 @@ fn snapshot_preserves_head_metadata_without_pricing_details() {
     cache
         .connection
         .execute(
-            "UPDATE sessions SET meta_json=?",
+            "UPDATE sessions SET head_meta_json=?",
             [r#"{"rustPricing":[invalid]}"#],
         )
         .unwrap();
     assert!(cache.snapshot().is_err());
+}
+
+#[test]
+fn schema34_migration_preserves_heads_content_and_indexes_without_backup() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("cache.db");
+    let mut cache = Cache::open(Some(&path)).unwrap();
+    let mut sessions = vec![
+        source(root.path(), "absent"),
+        source(root.path(), "null"),
+        source(root.path(), "files"),
+    ];
+    sessions[1].head.version = Some("fixture-version".into());
+    sessions[1].head.summary_files = Some(serde_json::Value::Null);
+    sessions[2].head.summary_files = Some(serde_json::json!([{"path":"src/main.rs"}]));
+    cache.publish(&mut sessions).unwrap();
+    let expected = serde_json::to_value(cache.snapshot().unwrap()).unwrap();
+    let objects = |db: &rusqlite::Connection| {
+        db.prepare("SELECT name,rootpage FROM sqlite_master WHERE rootpage>0 ORDER BY name")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    };
+    let original_objects = objects(&cache.connection);
+    let content: String = cache
+        .connection
+        .query_row(
+            "SELECT group_concat(content_text) FROM messages",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    for session in &sessions {
+        let reference = &session.head.reference;
+        let metadata: String = cache
+            .connection
+            .query_row(
+                "SELECT meta_json FROM sessions WHERE agent_name=? AND session_id=?",
+                params![reference.agent_name, reference.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut metadata: serde_json::Value = serde_json::from_str(&metadata).unwrap();
+        if let Some(version) = &session.head.version {
+            metadata["rustHeadVersion"] = version.clone().into();
+        }
+        if let Some(summary) = &session.head.summary_files {
+            metadata["rustHeadSummaryFiles"] = summary.clone();
+        }
+        cache
+            .connection
+            .execute(
+                "UPDATE sessions SET meta_json=? WHERE agent_name=? AND session_id=?",
+                params![
+                    metadata.to_string(),
+                    reference.agent_name,
+                    reference.session_id
+                ],
+            )
+            .unwrap();
+    }
+    cache.connection.execute_batch("ALTER TABLE sessions DROP COLUMN head_meta_json; PRAGMA user_version=34; UPDATE cache_meta SET value='34' WHERE key='version';").unwrap();
+    drop(cache);
+    for _ in 0..2 {
+        let mut cache = Cache::open(Some(&path)).unwrap();
+        assert_eq!(
+            serde_json::to_value(cache.snapshot().unwrap()).unwrap(),
+            expected
+        );
+        assert_eq!(objects(&cache.connection), original_objects);
+        assert_eq!(
+            cache
+                .connection
+                .query_row(
+                    "SELECT group_concat(content_text) FROM messages",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            content
+        );
+        assert_eq!(cache.connection.query_row("SELECT count(*) FROM session_documents_fts WHERE session_documents_fts MATCH 'Fixture'",[],|row|row.get::<_,i64>(0)).unwrap(),3);
+        assert_eq!(
+            cache
+                .connection
+                .query_row(
+                    "SELECT value FROM cache_meta WHERE key='version'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            CACHE_SCHEMA_VERSION.to_string()
+        );
+        let baseline = cache.json_baseline().unwrap();
+        for head in baseline.heads {
+            assert_eq!(
+                serde_json::to_value(&head).unwrap(),
+                serde_json::to_value(cache.head(&head.reference).unwrap().unwrap()).unwrap()
+            );
+        }
+    }
+    assert!(!std::fs::read_dir(root.path()).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("cache-migration")
+    }));
+}
+
+#[test]
+fn schema34_failed_backfill_rolls_back_column_and_versions() {
+    let root = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache
+        .publish(&mut [source(root.path(), "valid"), source(root.path(), "invalid")])
+        .unwrap();
+    cache.connection.execute_batch("ALTER TABLE sessions DROP COLUMN head_meta_json; PRAGMA user_version=34; UPDATE cache_meta SET value='34' WHERE key='version'; UPDATE sessions SET meta_json='invalid' WHERE rowid=2;").unwrap();
+    assert!(super::schema::ensure(&cache.connection, None).is_err());
+    assert_eq!(
+        cache
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        34
+    );
+    assert_eq!(
+        cache
+            .connection
+            .query_row(
+                "SELECT value FROM cache_meta WHERE key='version'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        "34"
+    );
+    assert_eq!(
+        cache
+            .connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('sessions') WHERE name='head_meta_json'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        cache
+            .connection
+            .query_row("SELECT meta_json FROM sessions WHERE rowid=2", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap(),
+        "invalid"
+    );
+    cache
+        .connection
+        .execute("UPDATE sessions SET meta_json='{}' WHERE rowid=2", [])
+        .unwrap();
+    super::schema::ensure(&cache.connection, None).unwrap();
+    assert_eq!(cache.snapshot().unwrap().len(), 2);
 }

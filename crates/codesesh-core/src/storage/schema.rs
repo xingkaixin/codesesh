@@ -18,6 +18,39 @@ fn columns(db: &Connection, table: &str) -> Result<HashSet<String>> {
         .query_map([], |row| row.get(1))?
         .collect::<rusqlite::Result<_>>()?)
 }
+fn backfill_head_metadata(db: &Connection) -> Result<()> {
+    let mut query = db.prepare("SELECT rowid,meta_json FROM sessions")?;
+    let mut rows = query.query([])?;
+    while let Some(row) = rows.next()? {
+        let rowid: i64 = row.get(0)?;
+        let text: Option<String> = row.get(1)?;
+        let head = text
+            .as_deref()
+            .map(serde_json::from_str::<Option<super::snapshot::HeadMetadata>>)
+            .transpose()?
+            .flatten()
+            .unwrap_or_default();
+        db.execute(
+            "UPDATE sessions SET head_meta_json=? WHERE rowid=?",
+            params![serde_json::to_string(&head)?, rowid],
+        )?;
+    }
+    Ok(())
+}
+
+fn migrate_head_metadata(db: &Connection) -> Result<()> {
+    let transaction = db.unchecked_transaction()?;
+    transaction.execute_batch("ALTER TABLE sessions ADD COLUMN head_meta_json TEXT")?;
+    backfill_head_metadata(&transaction)?;
+    transaction.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
+    transaction.execute(
+        "INSERT OR REPLACE INTO cache_meta VALUES('version',?)",
+        [super::CACHE_SCHEMA_VERSION.to_string()],
+    )?;
+    transaction.commit()?;
+    Ok(())
+}
+
 fn migrate(db: &Connection, version: i64) -> Result<()> {
     let tables = [
         "cache_meta",
@@ -111,6 +144,7 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
         for (agent, id) in references {
             db.execute(include_str!("cost-summary.sql"), params![agent, id])?;
         }
+        backfill_head_metadata(db)?;
         if version < 12 {
             backfill_legacy_projections(db, version)?;
         }
@@ -124,7 +158,7 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
         );
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
         db.execute(
-            "INSERT OR REPLACE INTO cache_meta VALUES('version','34')",
+            "INSERT OR REPLACE INTO cache_meta VALUES('version','35')",
             [],
         )?;
         db.execute_batch("COMMIT")?;
@@ -160,8 +194,10 @@ pub fn ensure(db: &Connection, path: Option<&Path>) -> Result<()> {
             return Err(error.into());
         }
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
-        db.execute("INSERT INTO cache_meta VALUES('version','34')", [])?;
+        db.execute("INSERT INTO cache_meta VALUES('version','35')", [])?;
         db.execute_batch("COMMIT")?;
+    } else if version == 34 {
+        migrate_head_metadata(db)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
             let backup = path.with_extension(format!(
@@ -360,7 +396,7 @@ mod tests {
         assert_eq!(
             db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
                 .unwrap(),
-            34
+            super::super::CACHE_SCHEMA_VERSION
         );
         ensure(&db, None).unwrap();
         assert_eq!(
@@ -398,7 +434,7 @@ mod tests {
     #[test]
     fn rejects_future_schema_without_writing() {
         let db = Connection::open_in_memory().unwrap();
-        db.execute_batch("PRAGMA user_version=35").unwrap();
+        db.execute_batch("PRAGMA user_version=36").unwrap();
         assert!(ensure(&db, None).is_err());
         assert_eq!(
             db.query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| row
