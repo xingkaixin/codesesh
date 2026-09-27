@@ -120,3 +120,27 @@ pub(super) fn private_directory(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+pub(super) fn temporary(target: &Path) -> Result<tempfile::NamedTempFile> {
+    let mut name = std::ffi::OsString::from(".migration-");
+    name.push(
+        target
+            .file_name()
+            .context("Migration target has no filename")?,
+    );
+    name.push(".tmp");
+    let parent = target.parent().context("Migration target has no parent")?;
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let mut entry = name.clone();
+        entry.push(suffix);
+        let path = parent.join(entry);
+        if exists(&path)? {
+            fs::remove_file(&path)
+                .with_context(|| format!("Remove interrupted migration file {}", path.display()))?;
+        }
+    }
+    Ok(tempfile::Builder::new()
+        .prefix(&name)
+        .rand_bytes(0)
+        .tempfile_in(parent)?)
+}

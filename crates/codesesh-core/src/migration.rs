@@ -378,7 +378,7 @@ pub fn run(
 }
 
 fn save(path: &Path, journal: &Journal) -> Result<()> {
-    let mut temp = tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
+    let mut temp = files::temporary(path)?;
     temp.write_all(&serde_json::to_vec_pretty(journal)?)?;
     temp.as_file().sync_all()?;
     temp.persist(path)?;
@@ -392,7 +392,7 @@ fn migrate(candidate: &Candidate, report: &mut impl FnMut(Progress)) -> Result<V
     );
     files::private_directory(candidate.target.parent().unwrap())?;
     let before = files::fingerprints(&candidate.source, candidate.database, report)?;
-    let temp = tempfile::NamedTempFile::new_in(candidate.target.parent().unwrap())?;
+    let temp = files::temporary(&candidate.target)?;
     if candidate.database {
         database::copy(&candidate.source, temp.path(), report)?;
     } else {

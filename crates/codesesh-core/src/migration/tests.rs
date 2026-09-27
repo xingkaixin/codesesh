@@ -290,3 +290,29 @@ fn corrupt_cache_can_be_rebuilt_but_corrupt_user_state_stops_startup() {
     assert_eq!(fs::read(state).unwrap(), b"corrupt");
     assert!(!home.path().join(".codesesh/state.db").exists());
 }
+
+#[test]
+fn interrupted_copy_is_discarded_before_retry() {
+    let home = tempfile::tempdir().unwrap();
+    let source = home.path().join("source.log");
+    let target = home.path().join("target.log");
+    fs::write(&source, b"complete").unwrap();
+    fs::write(home.path().join(".migration-target.log.tmp"), b"partial").unwrap();
+    fs::write(
+        home.path().join(".migration-target.log.tmp-wal"),
+        b"partial",
+    )
+    .unwrap();
+    migrate(
+        &Candidate {
+            source,
+            target: target.clone(),
+            database: false,
+        },
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(fs::read(target).unwrap(), b"complete");
+    assert!(!home.path().join(".migration-target.log.tmp").exists());
+    assert!(!home.path().join(".migration-target.log.tmp-wal").exists());
+}
