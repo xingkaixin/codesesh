@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.1] - 2026-09-27
+
+This release adds model and usage details to session receipts, exports complete receipt PNGs, and reduces the metadata read when restoring cached session lists. (#648, #649)
+
+### Features
+
+- Show receipt usage and costs by model and provider, with uncached input, output, cache read, and cache write categories. Mark estimated costs and leave unavailable breakdowns unspecified rather than treating them as zero. (#648)
+- Add CodeSesh branding and export the complete session receipt as a PNG, including receipts longer than the visible drawer. (#648)
+
+### Performance
+
+- Store session-head metadata separately from pricing metadata so startup snapshots read only the fields needed to restore session lists. (#649)
+
+### Compatibility
+
+- Upgrade the session cache to schema 35. Schema 34 migrates in place without rebuilding messages or FTS; older releases using schema 34 cannot reopen the upgraded cache. (#649)
+
+### Build
+
+- Pin Rust 1.90.0 in mise and enable Mr. Boxington for toolchain management. (#647)
+
 ## [1.1.0] - 2026-09-26
 
 This release moves CodeSesh to a native Rust backend with an embedded Web UI, keeps model pricing updates from blocking session loading, and reduces startup snapshot decoding work. (#636, #643, #644, #645)

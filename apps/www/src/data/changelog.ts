@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.1.1",
+        date: "2026-09-27",
+        title: "Understand session costs and save the full receipt",
+        summary:
+          "CodeSesh 1.1.1 adds model and token-category details to session receipts and lets you save the complete receipt as a PNG. Reopening local AI coding history also reads less cached metadata.",
+        direction:
+          "Session costs should be easy to inspect and save, with estimates and missing details clearly identified. Browsing saved history should only load the data it needs.",
+        highlights: [
+          {
+            title: "See where session usage comes from",
+            description:
+              "Review usage and available costs by model and provider, including uncached input, output, cache reads, and cache writes. Estimated costs are labeled, and unavailable details remain unspecified.",
+          },
+          {
+            title: "Save the complete receipt",
+            description:
+              "Export a CodeSesh-branded PNG that includes the entire receipt, even when its details extend beyond the visible drawer.",
+          },
+          {
+            title: "Load less data when reopening history",
+            description:
+              "Session lists restore from compact display metadata, avoiding a read of pricing details that the list does not need.",
+          },
+        ],
+      },
+      {
         version: "1.1.0",
         date: "2026-09-26",
         title: "Run local AI coding history with a native backend",
@@ -383,6 +409,31 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.1.1",
+        date: "2026-09-27",
+        title: "看清会话费用，保存完整收据",
+        summary:
+          "CodeSesh 1.1.1 为会话收据增加模型和 Token 类别明细，支持将完整收据保存为 PNG。重新打开本地 AI 编码历史时，读取的缓存元数据也更少。",
+        direction:
+          "会话费用应当便于核对和保存，估算值与缺失明细应明确区分。浏览已保存的历史时，只加载当前视图需要的数据。",
+        highlights: [
+          {
+            title: "查看模型与用量明细",
+            description:
+              "按模型和供应商查看用量及可用费用，区分未缓存输入、输出、缓存读取与缓存写入。估算费用有明确标记，缺失明细保留为未知。",
+          },
+          {
+            title: "保存完整会话收据",
+            description:
+              "导出带有 CodeSesh 标识的 PNG，包含整张收据，即使明细超出抽屉可见区域也能完整保存。",
+          },
+          {
+            title: "重新打开历史时减少读取",
+            description: "会话列表从精简的展示元数据恢复，不再读取列表无需使用的定价明细。",
+          },
+        ],
+      },
+      {
         version: "1.1.0",
         date: "2026-09-26",
         title: "用原生程序浏览本地 AI 编码历史",
@@ -680,6 +731,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.1.1",
+        date: "2026-09-27",
+        title: "セッションの費用を確認し、レシート全体を保存",
+        summary:
+          "CodeSesh 1.1.1 では、セッションのレシートにモデル別・トークン種別の内訳が加わり、全体を PNG として保存できるようになりました。ローカルの AI コーディング履歴を開き直す際に読み込むキャッシュのメタデータも削減しました。",
+        direction:
+          "セッションの費用は確認しやすく、保存しやすい形で示し、推定値と不明な内訳を明確に区別します。保存済みの履歴を閲覧するときは、その表示に必要なデータだけを読み込みます。",
+        highlights: [
+          {
+            title: "モデルと用途ごとに使用量を確認",
+            description:
+              "モデルとプロバイダーごとに、非キャッシュ入力、出力、キャッシュ読み取り・書き込みの使用量と取得可能な費用を確認できます。推定費用にはラベルを付け、不明な内訳をゼロとして表示しません。",
+          },
+          {
+            title: "レシート全体を保存",
+            description:
+              "CodeSesh のロゴ入り PNG としてレシート全体を書き出せます。ドロワーの表示範囲を超える長い明細も含まれます。",
+          },
+          {
+            title: "履歴を開くときの読み込みを削減",
+            description:
+              "セッション一覧は表示用の小さなメタデータから復元し、一覧に不要な料金計算の詳細を読み込まなくなりました。",
+          },
+        ],
+      },
       {
         version: "1.1.0",
         date: "2026-09-26",
