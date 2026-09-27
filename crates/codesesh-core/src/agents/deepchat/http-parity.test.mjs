@@ -9,6 +9,7 @@ import {
   waitFor,
   stop,
   readJson,
+  referenceSessionDetail,
 } from "../../../../../tests/backend-contract/harness.mjs";
 
 const reference = [
@@ -472,7 +473,11 @@ async function collect(server, agent) {
       `${path}?messageCursor=${encodeURIComponent(detail.message_cursor)}`,
     );
     const reset = await readJson(server, `${path}?messageCursor=invalid`);
-    details.push({ detail, unchanged, reset });
+    details.push({
+      detail: referenceSessionDetail(detail),
+      unchanged: referenceSessionDetail(unchanged),
+      reset: referenceSessionDetail(reset),
+    });
   }
   return { list, details };
 }

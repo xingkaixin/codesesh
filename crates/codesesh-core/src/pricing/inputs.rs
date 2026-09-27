@@ -1,6 +1,37 @@
 use super::Pricing;
 use crate::contract::MessageTokens;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+pub struct TokenCostBreakdown {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_create: f64,
+}
+
+impl TokenCostBreakdown {
+    pub fn total(&self) -> f64 {
+        self.input + self.output + self.cache_read + self.cache_create
+    }
+}
+
+impl super::Price {
+    pub fn token_costs(&self, tokens: &MessageTokens) -> TokenCostBreakdown {
+        let positive =
+            |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
+        let read = positive(tokens.cache_read);
+        let create = positive(tokens.cache_create);
+        TokenCostBreakdown {
+            input: (positive(tokens.input) - read - create).max(0.0) * self.input_cost_per_token,
+            output: positive(tokens.output) * self.output_cost_per_token
+                + positive(tokens.reasoning) * self.reasoning_cost_per_token,
+            cache_read: read * self.cache_read_cost_per_token,
+            cache_create: create * self.cache_create_cost_per_token,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct CostInput {
@@ -13,6 +44,19 @@ pub struct CostInput {
 }
 
 impl Pricing {
+    pub fn message_cost_breakdown(
+        &self,
+        message: &crate::contract::Message,
+    ) -> Option<TokenCostBreakdown> {
+        if message.cost_source != Some(crate::contract::CostSource::Estimated) {
+            return None;
+        }
+        let price = self.resolve(message.model.as_deref()?)?;
+        let breakdown = price.token_costs(message.tokens.as_ref()?);
+        // Persisted estimates may predate the current price snapshot; never split a mismatching total.
+        ((message.cost? - breakdown.total()).abs() <= 1e-8).then_some(breakdown)
+    }
+
     pub fn estimate_tracked(
         &self,
         model: Option<&str>,
@@ -96,5 +140,38 @@ pub(crate) fn assert_cached_repricing(
             );
             assert_eq!(actual.cost_source, expected.cost_source);
         }
+    }
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    use crate::contract::{CostSource, Message};
+    #[test]
+    fn receipt_split_uses_prices_without_checkpoint_and_rejects_mismatched_totals() {
+        let pricing = Pricing::bundled();
+        let mut message: Message = serde_json::from_value(serde_json::json!({
+            "id":"receipt", "role":"assistant", "time_created":0, "parts":[],
+            "model":"claude-sonnet-4-6", "tokens":{"input":1000,"output":200,"reasoning":50,"cache_read":400,"cache_create":100}
+        })).unwrap();
+        pricing.apply_message_cost(&mut message);
+        let split = pricing.message_cost_breakdown(&message).unwrap();
+        let price = pricing.resolve("claude-sonnet-4-6").unwrap();
+        assert_eq!(split.input, 500.0 * price.input_cost_per_token);
+        assert_eq!(
+            split.output,
+            200.0 * price.output_cost_per_token + 50.0 * price.reasoning_cost_per_token
+        );
+        assert_eq!(split.cache_read, 400.0 * price.cache_read_cost_per_token);
+        assert_eq!(
+            split.cache_create,
+            100.0 * price.cache_create_cost_per_token
+        );
+        assert!((split.total() - message.cost.unwrap()).abs() < 1e-8);
+        message.cost_source = Some(CostSource::Recorded);
+        assert!(pricing.message_cost_breakdown(&message).is_none());
+        message.cost_source = Some(CostSource::Estimated);
+        message.cost = Some(123.0);
+        assert!(pricing.message_cost_breakdown(&message).is_none());
     }
 }

@@ -2,6 +2,7 @@
 import type { CostSource } from "./CostSource";
 import type { MessageTokens } from "./MessageTokens";
 import type { Role } from "./Role";
+import type { TokenCostBreakdown } from "./TokenCostBreakdown";
 import type { WireMessagePart } from "./WireMessagePart";
 
 export type WireMessage = {
@@ -16,6 +17,7 @@ export type WireMessage = {
   tokens?: MessageTokens;
   cost?: number;
   cost_source?: CostSource;
+  cost_breakdown?: TokenCostBreakdown;
   parts: Array<WireMessagePart>;
   subagent_id?: string;
   nickname?: string;

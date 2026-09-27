@@ -217,6 +217,7 @@ impl Builder {
         }
         self.messages.push(Message {
             cost_inputs: Vec::new(),
+            cost_breakdown: None,
             id,
             role,
             agent: agent.map(str::to_owned),

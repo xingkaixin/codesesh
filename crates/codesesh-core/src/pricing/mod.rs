@@ -3,9 +3,9 @@ mod cost;
 mod dependencies;
 mod inputs;
 mod manager;
-pub use inputs::CostInput;
 #[cfg(test)]
 pub(crate) use inputs::assert_cached_repricing;
+pub use inputs::{CostInput, TokenCostBreakdown};
 mod registry;
 
 pub use controller::{PricingController, PricingSnapshot};
@@ -148,14 +148,7 @@ impl Pricing {
                 .filter(|value| value.is_finite() && *value > 0.0)
                 .unwrap_or(0.0)
         };
-        let read = positive(tokens.cache_read);
-        let create = positive(tokens.cache_create);
-        let input = (positive(tokens.input) - read - create).max(0.0);
-        let cost = input * price.input_cost_per_token
-            + positive(tokens.output) * price.output_cost_per_token
-            + positive(tokens.reasoning) * price.reasoning_cost_per_token
-            + read * price.cache_read_cost_per_token
-            + create * price.cache_create_cost_per_token
+        let cost = price.token_costs(tokens).total()
             + positive(Some(web_search)) * price.web_search_cost_per_request;
         (cost > 0.0 && cost.is_finite()).then(|| round_cost(cost))
     }

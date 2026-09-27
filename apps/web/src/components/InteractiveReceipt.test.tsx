@@ -1,9 +1,8 @@
 import { StrictMode } from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "../lib/api";
 import { stubAnimationFrames } from "../test/canvas-stub";
-import type { SessionDetailToc } from "./session-detail/toc";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 
 interface Deferred<T> {
@@ -47,30 +46,6 @@ function createSession(title: string): SessionDetail {
       total_cost: 0.0123,
     },
     messages: [],
-  };
-}
-
-function createToc(agentMessages = 1): SessionDetailToc {
-  return {
-    filterIds: new Set(["user", "agent_message", "tool:read"]),
-    counts: {
-      user: 1,
-      agent_message: agentMessages,
-      thinking: 0,
-      plan: 0,
-      tools_all: 1,
-    },
-    tools: [
-      {
-        id: "tool:read",
-        toolKey: "read",
-        label: "Read",
-        count: 1,
-        kind: "read",
-      },
-    ],
-    maxToolCount: 1,
-    totalUnitCount: agentMessages + 2,
   };
 }
 
@@ -156,6 +131,7 @@ function installEnvironment({
   reducedMotion?: boolean;
 } = {}) {
   installFonts(fontsReady);
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue();
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
     left: 0,
@@ -246,11 +222,38 @@ afterEach(() => {
 });
 
 describe("InteractiveReceipt lifecycle", () => {
+  it("waits for the logo and downloads the full flat PNG", async () => {
+    installEnvironment();
+    const logo = createDeferred<void>();
+    vi.mocked(HTMLImageElement.prototype.decode).mockReturnValue(logo.promise);
+    const blob = new Blob(["png"], { type: "image/png" });
+    const encode = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (
+      this: HTMLCanvasElement,
+      callback,
+    ) {
+      expect(this.width).toBe(700);
+      expect(this.height).toBe(1060);
+      callback(blob);
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:receipt");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe("codesesh-receipt-session-1.png");
+    });
+    render(<InteractiveReceipt session={createSession("Download")} />);
+    const button = screen.getByRole("button", { name: "Save image" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    await act(async () => logo.resolve());
+    expect(button.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(encode).toHaveBeenCalledWith(expect.any(Function), "image/png");
+  });
+
   it("repaints payload updates without rebuilding lifecycle resources", async () => {
     const environment = installEnvironment();
-    const { rerender } = render(
-      <InteractiveReceipt session={createSession("Initial session")} toc={createToc()} />,
-    );
+    const { rerender } = render(<InteractiveReceipt session={createSession("Initial session")} />);
     await flushFonts();
 
     expect(environment.resizeObservers).toHaveLength(1);
@@ -261,7 +264,7 @@ describe("InteractiveReceipt lifecycle", () => {
     const scheduledFrames = vi.mocked(window.requestAnimationFrame).mock.calls.length;
 
     environment.context.fillText.mockClear();
-    rerender(<InteractiveReceipt session={createSession("Updated session")} toc={createToc(2)} />);
+    rerender(<InteractiveReceipt session={createSession("Updated session")} />);
 
     expect(environment.getContext).toHaveBeenCalledTimes(3);
     expect(environment.context.fillText.mock.calls.map(([value]) => value)).toContain(
@@ -281,13 +284,13 @@ describe("InteractiveReceipt lifecycle", () => {
     const environment = installEnvironment({ fontsReady: fonts.promise });
     const { rerender } = render(
       <StrictMode>
-        <InteractiveReceipt session={createSession("Initial session")} toc={createToc()} />
+        <InteractiveReceipt session={createSession("Initial session")} />
       </StrictMode>,
     );
 
     rerender(
       <StrictMode>
-        <InteractiveReceipt session={createSession("Latest session")} toc={createToc(2)} />
+        <InteractiveReceipt session={createSession("Latest session")} />
       </StrictMode>,
     );
     expect(environment.frames.pendingCount()).toBe(0);
@@ -306,9 +309,7 @@ describe("InteractiveReceipt lifecycle", () => {
 
   it("draws one stable frame and exits when reduced motion is requested", async () => {
     const environment = installEnvironment({ reducedMotion: true });
-    const { container } = render(
-      <InteractiveReceipt session={createSession("Reduced motion")} toc={createToc()} />,
-    );
+    const { container } = render(<InteractiveReceipt session={createSession("Reduced motion")} />);
     await flushFonts();
 
     const canvas = container.querySelector("canvas");
@@ -327,9 +328,7 @@ describe("InteractiveReceipt lifecycle", () => {
 
   it("releases observers, listeners, and the active frame on unmount", async () => {
     const environment = installEnvironment();
-    const view = render(
-      <InteractiveReceipt session={createSession("Cleanup")} toc={createToc()} />,
-    );
+    const view = render(<InteractiveReceipt session={createSession("Cleanup")} />);
     await flushFonts();
 
     const hitSurface = screen.getByLabelText(

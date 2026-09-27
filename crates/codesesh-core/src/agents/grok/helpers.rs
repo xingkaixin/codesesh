@@ -272,6 +272,7 @@ pub(super) fn message(
     let assistant = role == Role::Assistant;
     Message {
         cost_inputs: Vec::new(),
+        cost_breakdown: None,
         id,
         role,
         agent: assistant.then(|| "grok".into()),

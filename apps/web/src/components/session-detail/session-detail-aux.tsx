@@ -28,13 +28,7 @@ function ReceiptPlaceholder() {
   );
 }
 
-export function DeferredInteractiveReceipt({
-  session,
-  toc,
-}: {
-  session: SessionDetail;
-  toc: SessionDetailToc;
-}) {
+export function DeferredInteractiveReceipt({ session }: { session: SessionDetail }) {
   useLocale();
 
   const [open, setOpen] = useState(false);
@@ -93,7 +87,6 @@ export function DeferredInteractiveReceipt({
                 <InteractiveReceipt
                   key={formatSessionReference(session.reference)}
                   session={session}
-                  toc={toc}
                 />
               </Suspense>
             </ErrorBoundary>

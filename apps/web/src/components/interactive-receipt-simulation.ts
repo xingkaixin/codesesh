@@ -8,23 +8,7 @@ import {
   whenReceiptFontsReady,
 } from "../lib/interactive-receipt-frame-policy";
 
-export interface ReceiptPayload {
-  id: string;
-  title: string;
-  agent: string;
-  updatedAt: number;
-  subtitle: string;
-  inputTokens: number;
-  outputTokens: number;
-  messageCount: number;
-  totalCost: number;
-  items: ReceiptLineItem[];
-}
-
-export interface ReceiptLineItem {
-  label: string;
-  count: number;
-}
+import { receiptHeight, type ReceiptPayload, type ReceiptUsageRow } from "./receipt-data";
 
 interface Particle {
   x: number;
@@ -73,8 +57,7 @@ interface PointerState {
 const COLUMNS = 18;
 const ROWS = 42;
 const SOLVER_ITERATIONS = 5;
-const RECEIPT_WIDTH = 270;
-const RECEIPT_HEIGHT = 500;
+const RECEIPT_WIDTH = 350;
 const TEXTURE_SCALE = 2;
 const RECEIPT_GRAIN_ALPHA = 0.035;
 
@@ -115,7 +98,8 @@ function formatCount(value?: number) {
 }
 
 function formatMoney(value?: number) {
-  return `$${(value ?? 0).toFixed(4)}`;
+  if (value == null) return "—";
+  return value > 0 && value < 0.0001 ? "<$0.0001" : `$${value.toFixed(4)}`;
 }
 
 function formatDate(value: number) {
@@ -201,10 +185,16 @@ function wrapTitle(
   return lines.slice(0, maxLines);
 }
 
-function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamily: string) {
+function drawTexture(
+  payload: ReceiptPayload,
+  palette: ReceiptPalette,
+  monoFamily: string,
+  logo: HTMLImageElement | null,
+) {
+  const height = receiptHeight(payload);
   const texture = document.createElement("canvas");
   texture.width = RECEIPT_WIDTH * TEXTURE_SCALE;
-  texture.height = RECEIPT_HEIGHT * TEXTURE_SCALE;
+  texture.height = height * TEXTURE_SCALE;
 
   const ctx = texture.getContext("2d");
   if (!ctx) return texture;
@@ -212,19 +202,21 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
   ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
   const font = (spec: string) => `${spec} ${monoFamily}`;
 
-  const paper = ctx.createLinearGradient(0, 0, RECEIPT_WIDTH, RECEIPT_HEIGHT);
+  const paper = ctx.createLinearGradient(0, 0, RECEIPT_WIDTH, height);
   paper.addColorStop(0, palette.paperTop);
   paper.addColorStop(1, palette.paperBottom);
   ctx.fillStyle = paper;
-  ctx.fillRect(0, 0, RECEIPT_WIDTH, RECEIPT_HEIGHT);
+  ctx.fillRect(0, 0, RECEIPT_WIDTH, height);
 
   const random = createRandom(hashString(payload.id));
   ctx.fillStyle = palette.ink;
   for (let i = 0; i < 1200; i += 1) {
     ctx.globalAlpha = RECEIPT_GRAIN_ALPHA * (0.12 + random() * 0.14);
-    ctx.fillRect(random() * RECEIPT_WIDTH, random() * RECEIPT_HEIGHT, 0.7, 0.7);
+    ctx.fillRect(random() * RECEIPT_WIDTH, random() * height, 0.7, 0.7);
   }
   ctx.globalAlpha = 1;
+
+  if (logo) ctx.drawImage(logo, 18, 20, 30, 30);
 
   ctx.fillStyle = palette.ink;
   ctx.font = font("700 18px");
@@ -233,7 +225,7 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
   ctx.fillStyle = palette.inkMuted;
   ctx.font = font("11px");
   ctx.fillText(
-    fitText(ctx, payload.subtitle.toUpperCase(), RECEIPT_WIDTH - 36),
+    fitText(ctx, t("SESSION ACTIVITY RECEIPT"), RECEIPT_WIDTH - 36),
     RECEIPT_WIDTH / 2,
     51,
   );
@@ -261,50 +253,97 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.font = font("700 12px");
-  ctx.fillText(t("SESSION TOC RECEIPT LIST"), 18, 163);
+  let y = 162;
+  const divider = () => {
+    ctx.strokeStyle = palette.line;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(18, y);
+    ctx.lineTo(RECEIPT_WIDTH - 18, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    y += 24;
+  };
+  const drawRows = (rows: ReceiptUsageRow[]) => {
+    ctx.font = font("10px");
+    ctx.fillStyle = palette.inkMuted;
+    ctx.fillText(t("Usage"), 18, y);
+    ctx.textAlign = "right";
+    ctx.fillText(t("Tokens"), 230, y);
+    ctx.fillText(t("Cost") + " (USD)", RECEIPT_WIDTH - 18, y);
+    ctx.textAlign = "left";
+    y += 22;
+    ctx.font = font("11px");
+    ctx.fillStyle = palette.ink;
+    for (const row of rows) {
+      ctx.fillText(row.label, 18, y);
+      ctx.textAlign = "right";
+      ctx.fillText(row.tokens == null ? "—" : formatCount(row.tokens), 230, y);
+      ctx.fillText(formatMoney(row.cost), RECEIPT_WIDTH - 18, y);
+      ctx.textAlign = "left";
+      y += 20;
+    }
+  };
   ctx.font = font("11px");
-
-  let y = 185;
   for (const item of payload.items) {
-    const count = formatCount(item.count);
-    ctx.fillText(fitText(ctx, item.label, 168), 18, y);
-    ctx.fillText(count, RECEIPT_WIDTH - 18 - ctx.measureText(count).width, y);
-    y += 17;
+    drawMonoLine(ctx, item.label, formatCount(item.count), y, RECEIPT_WIDTH);
+    y += 20;
   }
-
-  ctx.strokeStyle = palette.line;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(18, y + 5);
-  ctx.lineTo(RECEIPT_WIDTH - 18, y + 5);
-  ctx.stroke();
-
-  y += 26;
-  drawMonoLine(ctx, t("Input tokens"), formatCount(payload.inputTokens), y, RECEIPT_WIDTH);
+  y += 4;
+  divider();
+  for (const model of payload.models) {
+    ctx.fillStyle = palette.ink;
+    ctx.font = font("700 12px");
+    ctx.fillText(fitText(ctx, model.name, RECEIPT_WIDTH - 36), 18, y);
+    y += 16;
+    ctx.font = font("10px");
+    ctx.fillStyle = palette.inkMuted;
+    ctx.fillText(fitText(ctx, model.provider || payload.agent, RECEIPT_WIDTH - 36), 18, y);
+    y += 20;
+    drawRows(model.rows);
+    ctx.font = font("700 11px");
+    drawMonoLine(
+      ctx,
+      model.estimated ? t("Estimated subtotal") : t("Subtotal"),
+      formatMoney(model.cost),
+      y,
+      RECEIPT_WIDTH,
+    );
+    y += 10;
+    divider();
+  }
+  ctx.font = font("700 12px");
+  ctx.fillStyle = palette.ink;
+  ctx.fillText(t("Session total"), 18, y);
+  y += 24;
+  drawRows(payload.rows);
+  ctx.font = font("700 12px");
+  drawMonoLine(ctx, t("Total tokens"), formatCount(payload.totalTokens), y, RECEIPT_WIDTH);
+  y += 30;
+  ctx.font = font("700 15px");
+  drawMonoLine(
+    ctx,
+    payload.estimated ? t("Estimated cost") : t("TOTAL COST"),
+    formatMoney(payload.totalCost),
+    y,
+    RECEIPT_WIDTH,
+  );
+  y += 24;
+  ctx.font = font("10px");
+  ctx.fillStyle = palette.inkMuted;
+  ctx.fillText(t("Cache is included in input; counted once."), 18, y);
   y += 16;
-  drawMonoLine(ctx, t("Output tokens"), formatCount(payload.outputTokens), y, RECEIPT_WIDTH);
-  y += 16;
-  drawMonoLine(ctx, t("Messages"), formatCount(payload.messageCount), y, RECEIPT_WIDTH);
-  y += 22;
-
-  ctx.font = font("700 13px");
-  drawMonoLine(ctx, t("TOTAL COST"), formatMoney(payload.totalCost), y, RECEIPT_WIDTH);
-
-  ctx.strokeStyle = palette.line;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(18, y + 18);
-  ctx.lineTo(RECEIPT_WIDTH - 18, y + 18);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
+  if (payload.missingCosts) {
+    ctx.fillText(t("— Price breakdown unavailable"), 18, y);
+    y += 16;
+  }
+  y += 8;
+  divider();
   ctx.font = font("10px");
   ctx.textAlign = "center";
-  ctx.fillStyle = palette.inkMuted;
   const titleLines = wrapTitle(ctx, payload.title, RECEIPT_WIDTH - 36, 2);
   titleLines.forEach((line, index) => {
-    ctx.fillText(line, RECEIPT_WIDTH / 2, y + 38 + index * 13);
+    ctx.fillText(line, RECEIPT_WIDTH / 2, y + index * 13);
   });
 
   return texture;
@@ -464,7 +503,8 @@ function drawMappedCell(
 
   const horizontalAngle = Math.atan2(topRight.y - topLeft.y, topRight.x - topLeft.x);
   const verticalStretch =
-    Math.hypot(bottomLeft.x - topLeft.x, bottomLeft.y - topLeft.y) / (RECEIPT_HEIGHT / (ROWS - 1));
+    Math.hypot(bottomLeft.x - topLeft.x, bottomLeft.y - topLeft.y) /
+    (texture.height / TEXTURE_SCALE / (ROWS - 1));
   const shade = Math.sin(horizontalAngle) * 0.08 + (verticalStretch - 1) * 0.16;
   if (Math.abs(shade) < 0.01) return;
 
@@ -516,6 +556,7 @@ function measureSheetMovement(particles: Particle[]) {
 
 export interface InteractiveReceiptSimulation {
   updatePayload: (payload: ReceiptPayload) => void;
+  exportPng: () => Promise<Blob>;
   destroy: () => void;
 }
 
@@ -525,6 +566,8 @@ interface InteractiveReceiptSimulationOptions {
   hitSurface: HTMLDivElement;
   payload: ReceiptPayload;
   minWidthQuery: string;
+  onReady?: () => void;
+  onError?: () => void;
 }
 
 export function createInteractiveReceiptSimulation({
@@ -533,11 +576,17 @@ export function createInteractiveReceiptSimulation({
   hitSurface,
   payload,
   minWidthQuery,
+  onReady,
+  onError,
 }: InteractiveReceiptSimulationOptions): InteractiveReceiptSimulation | null {
   const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) return null;
 
   let currentPayload = payload;
+  let logo: HTMLImageElement | null = null;
+  const logoImage = new Image();
+  logoImage.src = "/logo.svg?v=3";
+  const assetsReady = Promise.all([whenReceiptFontsReady(), logoImage.decode()]);
 
   const pointer: PointerState = {
     id: null,
@@ -556,7 +605,7 @@ export function createInteractiveReceiptSimulation({
   let height = 0;
   let sheet = createSheet({
     receiptWidth: RECEIPT_WIDTH,
-    receiptHeight: RECEIPT_HEIGHT,
+    receiptHeight: receiptHeight(currentPayload),
     startX: 0,
     startY: 32,
   });
@@ -577,7 +626,7 @@ export function createInteractiveReceiptSimulation({
   const repaintPaper = () => {
     const palette = readReceiptPalette(anchor);
     paper = {
-      texture: drawTexture(currentPayload, palette, readReceiptMonoFamily(anchor)),
+      texture: drawTexture(currentPayload, palette, readReceiptMonoFamily(anchor), logo),
       palette,
     };
   };
@@ -586,10 +635,10 @@ export function createInteractiveReceiptSimulation({
     const rect = anchor.getBoundingClientRect();
     const anchorWidth = Math.max(280, rect.width || 320);
     const receiptWidth = Math.min(RECEIPT_WIDTH, anchorWidth - 34);
-    const receiptHeight = Math.min(RECEIPT_HEIGHT, Math.max(320, height - 42));
+    const sheetHeight = (receiptHeight(currentPayload) * receiptWidth) / RECEIPT_WIDTH;
     return {
       receiptWidth,
-      receiptHeight,
+      receiptHeight: sheetHeight,
       startX: (anchorWidth - receiptWidth) / 2,
       startY: 32,
     };
@@ -755,7 +804,7 @@ export function createInteractiveReceiptSimulation({
     ctx.shadowColor = palette.shadow;
     ctx.shadowBlur = 24;
     ctx.shadowOffsetY = 16;
-    ctx.fillStyle = palette.shadow;
+    ctx.fillStyle = palette.paperTop;
     ctx.beginPath();
     ctx.moveTo(first.x, first.y);
     ctx.lineTo(topRight.x, topRight.y);
@@ -858,11 +907,20 @@ export function createInteractiveReceiptSimulation({
   // The texture is laid out with ctx.measureText, so painting it before the mono webfont
   // loads would bake the fallback face's metrics into the sheet. shouldRun() keeps the
   // canvas hidden and the loop idle until the texture exists.
-  void whenReceiptFontsReady().then(() => {
-    if (disposed) return;
-    repaintPaper();
-    syncLoopState();
-  });
+  void assetsReady
+    .then(() => {
+      if (disposed) return;
+      logo = logoImage;
+      repaintPaper();
+      syncLoopState();
+      onReady?.();
+    })
+    .catch(() => {
+      if (disposed) return;
+      repaintPaper();
+      syncLoopState();
+      onError?.();
+    });
   const observer = new ResizeObserver(resize);
   observer.observe(anchor);
   // The palette resolves once per texture build; toggling .dark on <html> changes the
@@ -884,6 +942,18 @@ export function createInteractiveReceiptSimulation({
   hitSurface.addEventListener("pointerup", releasePointer);
   hitSurface.addEventListener("pointercancel", releasePointer);
   return {
+    async exportPng() {
+      await assetsReady;
+      if (disposed) throw new Error("Receipt closed");
+      repaintPaper();
+      const texture = paper!.texture;
+      return new Promise<Blob>((resolve, reject) => {
+        texture.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("Receipt PNG encoding failed"));
+        }, "image/png");
+      });
+    },
     updatePayload(nextPayload) {
       currentPayload = nextPayload;
       if (disposed || !paper) return;

@@ -276,7 +276,7 @@ export function SessionDetail({
           />
         </div>
       </div>
-      <DeferredInteractiveReceipt session={session} toc={toc} />
+      <DeferredInteractiveReceipt session={session} />
     </div>
   );
 }

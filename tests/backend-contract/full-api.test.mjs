@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, readFileSync, statSync, utimesSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import { startServer, stop, openEvents, waitFor } from "./harness.mjs";
+import { startServer, stop, openEvents, waitFor, referenceSessionDetail } from "./harness.mjs";
 import {
   IDS,
   BOOKMARK_TIME,
@@ -76,7 +76,7 @@ async function capture(fixture, command) {
     const response = await server.request(path, options);
     const text = await response.text();
     const body = text ? JSON.parse(text) : null;
-    const normalized = structuredClone(body);
+    const normalized = referenceSessionDetail(structuredClone(body));
     if (normalized?.nextCursor) normalized.nextCursor = normalizeCursor(normalized.nextCursor);
     if (label === "alias put" && response.status === 200) {
       assert.ok(Number.isSafeInteger(body.alias.updatedAt));

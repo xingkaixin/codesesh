@@ -77,6 +77,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
     let runtime = Runtime::start(path, vec![], 1).await.unwrap();
     let state = Arc::new(State::new(
         runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
         Some(StateStore::memory().unwrap()),
         super::super::Options {
             token: "test".into(),

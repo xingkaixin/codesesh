@@ -3,7 +3,15 @@ import { resolve, join } from "node:path";
 import { rmSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { request } from "node:http";
 import { test } from "node:test";
-import { createFixture, DETAIL_PATH, readJson, runCli, startServer, stop } from "./harness.mjs";
+import {
+  createFixture,
+  DETAIL_PATH,
+  referenceSessionDetail,
+  readJson,
+  runCli,
+  startServer,
+  stop,
+} from "./harness.mjs";
 
 const reference = [
   process.execPath,
@@ -213,14 +221,14 @@ for (const scenario of [
       assert.equal(migrated.code, 0, migrated.stderr);
       assert.deepEqual(JSON.parse(migrated.stdout), JSON.parse(expected.stdout));
       server = await startServer(fixture, reference);
-      assert.deepEqual(await readJson(server, DETAIL_PATH), expectedDetail);
+      assert.deepEqual(referenceSessionDetail(await readJson(server, DETAIL_PATH)), expectedDetail);
       await stop(server);
       server = await startServer(fixture, rust);
       assert.deepEqual(await readJson(server, "/api/sessions"), expectedList);
-      assert.deepEqual(await readJson(server, DETAIL_PATH), expectedDetail);
+      assert.deepEqual(referenceSessionDetail(await readJson(server, DETAIL_PATH)), expectedDetail);
       await stop(server);
       server = await startServer(fixture, rust);
-      assert.deepEqual(await readJson(server, DETAIL_PATH), expectedDetail);
+      assert.deepEqual(referenceSessionDetail(await readJson(server, DETAIL_PATH)), expectedDetail);
       assert.equal((await fetch(`${server.origin}/api/sessions`)).status, 401);
       const rejectedHost = await new Promise((resolve, reject) => {
         const req = request(

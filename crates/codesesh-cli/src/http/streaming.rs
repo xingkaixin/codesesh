@@ -39,6 +39,7 @@ where
 
 pub async fn detail(
     runtime: codesesh_core::runtime::Runtime,
+    pricing: codesesh_core::pricing::Pricing,
     reference: codesesh_core::contract::SessionReference,
     cursor: Option<String>,
     aliases: std::collections::HashMap<codesesh_core::contract::SessionReference, String>,
@@ -61,7 +62,8 @@ pub async fn detail(
                     connection,
                     head,
                     cursor.as_deref(),
-                    |message| {
+                    |mut message| {
+                        message.cost_breakdown = pricing.message_cost_breakdown(&message);
                         let message = super::wire::message(message)?;
                         if !first {
                             writer.write_all(b",")?;

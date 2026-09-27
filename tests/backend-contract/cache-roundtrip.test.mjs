@@ -21,6 +21,7 @@ import {
   DETAIL_PATH,
   REFERENCE,
   readJson,
+  referenceSessionDetail,
   runCli,
   startServer,
   stop,
@@ -305,7 +306,8 @@ const responsePaths = [
 
 async function responses(server) {
   const output = {};
-  for (const path of responsePaths) output[path] = await readJson(server, path);
+  for (const path of responsePaths)
+    output[path] = referenceSessionDetail(await readJson(server, path));
   return output;
 }
 
@@ -513,11 +515,17 @@ test(
       const published = await runCli(fixture, ["--json", "--agent", "codex", "--days", "0"], rust);
       assert.equal(published.code, 0, published.stderr);
       server = await startServer(fixture, rust);
-      assert.deepEqual(await readJson(server, path), expected);
+      assert.deepEqual(
+        referenceSessionDetail(await readJson(server, path)),
+        referenceSessionDetail(expected),
+      );
       await stop(server);
       server = undefined;
       server = await startServer(fixture, reference);
-      assert.deepEqual(await readJson(server, path), expected);
+      assert.deepEqual(
+        referenceSessionDetail(await readJson(server, path)),
+        referenceSessionDetail(expected),
+      );
     } finally {
       if (server) await stop(server);
       fixture.dispose();

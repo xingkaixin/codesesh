@@ -91,6 +91,7 @@ pub fn visit_detail_messages(
             let cost_source: Option<String> = row.get("cost_source")?;
             let message = Message {
                 cost_inputs: Vec::new(),
+                cost_breakdown: None,
                 id: row.get("message_id")?,
                 role: match role.as_str() {
                     "user" => Role::User,

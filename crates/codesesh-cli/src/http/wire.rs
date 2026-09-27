@@ -85,6 +85,7 @@ pub(super) fn message(value: core::Message) -> Result<wire::WireMessage> {
         tokens: value.tokens,
         cost: value.cost,
         cost_source: value.cost_source,
+        cost_breakdown: value.cost_breakdown,
         parts: value.parts.into_iter().map(part).collect::<Result<_>>()?,
         subagent_id: value.subagent_id,
         nickname: value.nickname,

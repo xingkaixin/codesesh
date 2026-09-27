@@ -232,6 +232,7 @@ fn append(event: &Value) -> Result<bool> {
 fn message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Message {
     Message {
         cost_inputs: Vec::new(),
+        cost_breakdown: None,
         id,
         agent: if role == Role::Assistant {
             Some("dsh".into())
