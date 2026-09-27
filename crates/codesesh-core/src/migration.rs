@@ -155,7 +155,7 @@ pub fn run(
         database: false,
     });
     let old_state = crate::app_paths::legacy_state(&options.home, std::env::consts::OS, |k| {
-        std::env::var_os(k)
+        options.environment.get(k).cloned()
     });
     if options.state
         && options

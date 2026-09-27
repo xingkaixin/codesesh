@@ -141,8 +141,20 @@ fn corrupted_record_is_not_treated_as_first_start() {
 fn real_cache_and_state_schemas_survive_backup() {
     let home = tempfile::tempdir().unwrap();
     let old_cache = home.path().join(".cache/codesesh/codesesh.db");
-    let old_state = crate::app_paths::legacy_state(home.path(), std::env::consts::OS, |_| None)
-        .join("state.db");
+    let mut configuration = options(home.path());
+    configuration.state = true;
+    configuration.environment.insert(
+        "APPDATA".into(),
+        home.path().join("configured-roaming").into_os_string(),
+    );
+    configuration.environment.insert(
+        "XDG_DATA_HOME".into(),
+        home.path().join("configured-data").into_os_string(),
+    );
+    let old_state = crate::app_paths::legacy_state(home.path(), std::env::consts::OS, |key| {
+        configuration.environment.get(key).cloned()
+    })
+    .join("state.db");
     drop(crate::storage::Cache::open(Some(&old_cache)).unwrap());
     let state = crate::state::StateStore::open(&old_state).unwrap();
     state
@@ -152,8 +164,6 @@ fn real_cache_and_state_schemas_survive_backup() {
         })
         .unwrap();
     drop(state);
-    let mut configuration = options(home.path());
-    configuration.state = true;
     run(configuration, |_| Ok(()), |_| {}).unwrap();
     let target = crate::state::StateStore::open(&home.path().join(".codesesh/state.db")).unwrap();
     assert_eq!(target.list_bookmarks().unwrap().len(), 1);
