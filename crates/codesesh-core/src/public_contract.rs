@@ -250,6 +250,9 @@ pub struct WireMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cost_source: Option<CostSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cost_breakdown: Option<crate::pricing::TokenCostBreakdown>,
     pub parts: Vec<WireMessagePart>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

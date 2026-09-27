@@ -31,6 +31,7 @@ fn map_tool(tool: &str) -> &str {
 fn base_message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Message {
     Message {
         cost_inputs: Vec::new(),
+        cost_breakdown: None,
         id,
         role,
         agent: Some("cursor".into()),

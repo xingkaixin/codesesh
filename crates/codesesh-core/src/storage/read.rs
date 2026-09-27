@@ -80,6 +80,17 @@ pub fn visit_detail_messages(
         }
     }
 
+    let prices: std::collections::HashMap<String, Option<crate::pricing::Price>> = connection
+        .query_row(
+            "SELECT json_extract(value, '$.priceDependencies') FROM cache_meta WHERE key=?",
+            [format!("rust_source_state:{}", reference.agent_name)],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+
     let mut statement = connection.prepare(
         "SELECT * FROM messages WHERE agent_name=? AND session_id=? AND message_index>=? ORDER BY message_index",
     )?;
@@ -91,6 +102,7 @@ pub fn visit_detail_messages(
             let cost_source: Option<String> = row.get("cost_source")?;
             let message = Message {
                 cost_inputs: Vec::new(),
+                cost_breakdown: None,
                 id: row.get("message_id")?,
                 role: match role.as_str() {
                     "user" => Role::User,
@@ -141,7 +153,21 @@ pub fn visit_detail_messages(
     let mut emitted = 0;
     let mut digest = prefix;
     for row in rows {
-        let (message, next, raw_parts, format, raw_tokens) = row?;
+        let (mut message, next, raw_parts, format, raw_tokens) = row?;
+        if message.cost_source == Some(CostSource::Estimated)
+            && let Some(tokens) = &message.tokens
+            && let Some(model) = &message.model
+            && let Some(Some(price)) = prices.get(model)
+        {
+            let breakdown = price.token_costs(tokens);
+            // Only expose a split that reconciles with the persisted estimate.
+            if message
+                .cost
+                .is_some_and(|cost| (cost - breakdown.total()).abs() <= 0.00000001)
+            {
+                message.cost_breakdown = Some(breakdown);
+            }
+        }
         digest = match next {
             Some(next) => next,
             None => cursor::advance(&digest, &message, &raw_parts, raw_tokens.as_deref(), format)?,

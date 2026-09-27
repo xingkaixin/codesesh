@@ -1,6 +1,37 @@
 use super::Pricing;
 use crate::contract::MessageTokens;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+pub struct TokenCostBreakdown {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_create: f64,
+}
+
+impl TokenCostBreakdown {
+    pub fn total(&self) -> f64 {
+        self.input + self.output + self.cache_read + self.cache_create
+    }
+}
+
+impl super::Price {
+    pub fn token_costs(&self, tokens: &MessageTokens) -> TokenCostBreakdown {
+        let positive =
+            |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
+        let read = positive(tokens.cache_read);
+        let create = positive(tokens.cache_create);
+        TokenCostBreakdown {
+            input: (positive(tokens.input) - read - create).max(0.0) * self.input_cost_per_token,
+            output: positive(tokens.output) * self.output_cost_per_token
+                + positive(tokens.reasoning) * self.reasoning_cost_per_token,
+            cache_read: read * self.cache_read_cost_per_token,
+            cache_create: create * self.cache_create_cost_per_token,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct CostInput {

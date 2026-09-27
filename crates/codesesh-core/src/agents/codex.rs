@@ -885,6 +885,7 @@ fn message(role: Role, part: MessagePart, time: f64, model: Option<String>) -> M
     let agent = (role == Role::Assistant).then(|| "codex".into());
     Message {
         cost_inputs: Vec::new(),
+        cost_breakdown: None,
         id: String::new(),
         role,
         agent,

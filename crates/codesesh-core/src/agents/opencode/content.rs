@@ -249,6 +249,7 @@ pub(super) fn part(raw: &Value, time: f64) -> Option<MessagePart> {
 fn empty_message(row: &Value) -> Message {
     Message {
         cost_inputs: Vec::new(),
+        cost_breakdown: None,
         id: string(&row["id"]),
         role: Role::Assistant,
         agent: None,
