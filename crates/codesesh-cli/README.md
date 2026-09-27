@@ -35,6 +35,7 @@ Your browser will open at `http://localhost:4521` with all your sessions ready t
 - **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details
 - **Resumable History Indexing** — Checkpoint large backfills, resume interrupted scans, and show durable progress
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
+- **Session Receipts** — Inspect model and token-category usage with available cost breakdowns, then export the complete receipt as a PNG
 - **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
 - **100% Local & Private** — Your data stays on your machine. No accounts, no cloud sync, no cloud telemetry
