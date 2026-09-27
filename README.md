@@ -264,7 +264,7 @@ listener directly. The printed and automatically opened startup URL uses `--publ
 Using `--remote-access` without either TLS option still starts on a non-loopback address and prints
 a warning that the transport is unencrypted.
 
-Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.cache/codesesh/models-dev-pricing.json` for one hour. Startup reuses valid cached prices; missing or expired prices are refreshed before scanning, with a 10-second timeout. Network failures fall back to stale cached or bundled prices. Subsequent scans recalculate previously unpriced sessions when their model prices become available.
+Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.codesesh/models-dev-pricing.json` for one hour. Startup reuses valid cached prices; missing or expired prices are refreshed before scanning, with a 10-second timeout. Network failures fall back to stale cached or bundled prices. Subsequent scans recalculate previously unpriced sessions when their model prices become available.
 
 ---
 
@@ -457,3 +457,10 @@ Agent source parsing and browser presentation have explicit registration points:
 
 Use source-format fixtures and process contracts to verify messages, usage, tools, and incremental
 updates. Registration checks cover icons, resume declarations, and custom tool strategies.
+
+
+Local databases, model prices, and logs now default to `~/.codesesh/` (`%USERPROFILE%\.codesesh\`
+on Windows). On the first migration, stop older CodeSesh instances and confirm the terminal prompt.
+For non-interactive runs, pass `--migrate-data` after stopping older instances. Migration verifies data
+before removing old files and reports every retained path. Existing `CODESESH_STATE_DIR` and
+`CODESESH_LOG_DIR` overrides remain supported. See [data migration](docs/sqlite-storage.md#数据目录迁移).

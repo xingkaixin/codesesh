@@ -1,6 +1,6 @@
 # CodeSesh SQLite 存储
 
-会话列表、结构化详情、搜索索引和扫描进度存储在 `~/.cache/codesesh/codesesh.db`。
+会话列表、结构化详情、搜索索引和扫描进度存储在 `~/.codesesh/codesesh.db`。
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
@@ -83,13 +83,13 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 需要手动压缩时，应先停止 CodeSesh，再运行：
 
 ```bash
-sqlite3 ~/.cache/codesesh/codesesh.db 'VACUUM'
+sqlite3 ~/.codesesh/codesesh.db 'VACUUM'
 ```
 
 ## 用户状态
 
 书签和别名由 `crates/codesesh-core/src/state/` 保存到独立状态库，使用 schema 3。
-状态目录支持 `CODESESH_STATE_DIR` 覆盖；默认路径按操作系统解析。清空会话缓存不应清除
+状态目录支持 `CODESESH_STATE_DIR` 覆盖；默认位于 `~/.codesesh/state.db`（Windows 为 `%USERPROFILE%\.codesesh\state.db`）。清空会话缓存不应清除
 用户状态。书签物化逻辑在 `crates/codesesh-core/src/bookmarks.rs`。
 
 ## 验证
@@ -103,3 +103,30 @@ pnpm test:backend
 
 存储测试检查事务回滚、重启恢复、FTS、游标及迁移行为。运行时发布和取消测试位于
 `crates/codesesh-core/src/runtime/tests.rs`。
+
+
+## 数据目录迁移
+
+默认会话数据库、用户状态数据库、模型价格缓存和日志统一存放在 `~/.codesesh/`。
+Windows 使用 `%USERPROFILE%\.codesesh\`。`CODESESH_STATE_DIR` 和 `CODESESH_LOG_DIR`
+继续覆盖对应目录；`CODESESH_STATE_STORE=memory` 不迁移磁盘状态。
+`XDG_DATA_HOME`、`XDG_CACHE_HOME`、`APPDATA` 和 `LOCALAPPDATA` 仅用于定位旧默认文件。
+
+首次发现需要迁移的数据时，CLI 列出来源并要求确认旧版本已经退出，默认取消。
+无交互终端时不会等待输入：先退出旧版本，再传入 `--migrate-data` 明确确认。
+`--help` 和 `--version` 不创建目录或迁移。JSON 模式的所有提示只写 stderr。
+
+迁移、校验、清理分别显示进度；无法取得可靠总量的数据库完整性检查显示等待指示和耗时。
+SQLite 使用 Backup API 保留 WAL 中的数据，随后检查完整性、schema 和表内容；普通文件比较
+SHA-256。目标正式发布并持久化迁移记录后，才删除已验证的旧文件。只删除空的旧目录，
+未知文件、变化的源文件以及删除失败的具体路径都会列出。旧版本不遵守新迁移锁，用户必须
+先退出旧版本；文件检查不能证明旧进程不会在之后继续写入。
+
+`migration-v1.json` 按目标文件记录处理结果与清理状态。清理失败不会重复迁移；下次启动
+只核验残留源文件并尝试删除。源文件变化时转为手动处理。新文件后来被删除时，不重新导入
+旧副本。迁移记录缺失但目标已存在时，始终使用目标，保留旧文件并补写记录，不自动比较、
+覆盖或合并。若同时删除记录和目标而保留旧文件，下次启动会将其识别为尚未迁移的数据。
+
+`--clear-cache` 跳过旧会话库导入并保留它供手动清理；`--no-cache` 使用临时会话库，
+以后启用持久缓存时再处理旧库。JSON 模式不迁移用户状态库。迁移失败时源数据保留，错误
+包含具体路径；清理失败不阻止使用已验证的新数据。
