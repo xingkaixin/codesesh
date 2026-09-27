@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,7 @@ async function runJsonCli(home: string, args: string[]) {
       LOCALAPPDATA: join(home, "AppData", "Local"),
       CODESESH_LOG_DIR: join(home, "logs"),
       CODESESH_STATE_STORE: "memory",
+      OPENCODE_DB: join(home, "opencode.db"),
     },
     stdio: ["ignore", "pipe", "pipe"],
     timeout: EXIT_TIMEOUT_MS,
@@ -76,14 +77,29 @@ test("exits after printing the session index as JSON", async () => {
   }
 });
 
-test("flushes the fatal event when startup fails", async () => {
+test("flushes the fatal event when a source scan fails", async () => {
   const home = mkdtempSync(join(tmpdir(), "codesesh-json-failure-"));
   try {
-    const result = await runJsonCli(home, ["--from", "2026-01-02", "--to", "2026-01-01"]);
+    writeFileSync(join(home, "opencode.db"), "not a sqlite database");
+    const result = await runJsonCli(home, ["--agent", "opencode", "--days", "0"]);
 
     expect(result.signal).toBeNull();
     expect(result.code).not.toBe(0);
     expect(readLogEvents(home)).toContain("cli.fatal");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("reports invalid arguments without creating data or logs", async () => {
+  const home = mkdtempSync(join(tmpdir(), "codesesh-invalid-args-"));
+  try {
+    const result = await runJsonCli(home, ["--from", "2026-01-02", "--to", "2026-01-01"]);
+    expect(result.signal).toBeNull();
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("Invalid time window");
+    expect(existsSync(join(home, "logs"))).toBe(false);
+    expect(existsSync(join(home, ".codesesh"))).toBe(false);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
