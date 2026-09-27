@@ -10,9 +10,19 @@ use std::{
 pub async fn run(args: &crate::options::Args, home: &Path) -> Result<Vec<String>> {
     let options = Options {
         home: home.to_owned(),
-        environment: std::env::vars_os()
-            .filter_map(|(k, v)| k.into_string().ok().map(|k| (k, v)))
-            .collect(),
+        environment: [
+            "HOME",
+            "USERPROFILE",
+            "XDG_CACHE_HOME",
+            "XDG_DATA_HOME",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "CODESESH_STATE_DIR",
+            "CODESESH_LOG_DIR",
+        ]
+        .into_iter()
+        .filter_map(|key| std::env::var_os(key).map(|value| (key.to_owned(), value)))
+        .collect(),
         state: !args.json && std::env::var("CODESESH_STATE_STORE").as_deref() != Ok("memory"),
         cache: args.cache && !args.no_cache,
         clear_cache: args.clear_cache,
