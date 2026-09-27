@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   appendFileSync,
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -72,7 +73,7 @@ export function createFixture() {
       },
     },
   ]);
-  const cache = join(root, ".cache", "codesesh");
+  const cache = join(root, ".codesesh");
   mkdirSync(cache, { recursive: true });
   writeFileSync(
     join(cache, "models-dev-pricing.json"),
@@ -143,6 +144,14 @@ export async function waitFor(read, description, timeoutMs = 20_000) {
 }
 
 export function launch(fixture, args, command = backendCommand()) {
+  if (command.some((part) => part.includes("backend-reference"))) {
+    const legacy = join(fixture.root, ".cache", "codesesh");
+    mkdirSync(legacy, { recursive: true });
+    copyFileSync(
+      join(fixture.root, ".codesesh/models-dev-pricing.json"),
+      join(legacy, "models-dev-pricing.json"),
+    );
+  }
   const child = spawn(command[0], [...command.slice(1), ...args], {
     cwd: fixture.project,
     env: fixture.env,

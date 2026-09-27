@@ -49,6 +49,9 @@ pub struct Args {
     pub cache: bool,
     #[arg(long)]
     pub clear_cache: bool,
+    /// Confirm that older CodeSesh instances have stopped before migrating data.
+    #[arg(long)]
+    pub migrate_data: bool,
 }
 
 pub struct Plan {

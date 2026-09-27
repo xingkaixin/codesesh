@@ -16,18 +16,8 @@ pub fn state_directory(
     if let Some(value) = env("CODESESH_STATE_DIR").filter(|v| !v.is_empty()) {
         return value.into();
     }
-    match platform {
-        "darwin" | "macos" => home.join("Library/Application Support/codesesh"),
-        "win32" | "windows" => env("APPDATA")
-            .or_else(|| env("LOCALAPPDATA"))
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("AppData/Roaming"))
-            .join("codesesh"),
-        _ => env("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".local/share"))
-            .join("codesesh"),
-    }
+    let _ = platform;
+    crate::app_paths::root(home)
 }
 
 pub(super) fn open(path: Option<&Path>) -> Result<Connection> {

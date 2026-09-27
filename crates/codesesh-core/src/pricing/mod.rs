@@ -57,8 +57,11 @@ impl Pricing {
     }
 
     pub fn load(home: &Path) -> Self {
-        manager::read_cache(&home.join(".cache/codesesh/models-dev-pricing.json"), false)
-            .unwrap_or_else(Self::bundled)
+        manager::read_cache(
+            &crate::app_paths::root(home).join("models-dev-pricing.json"),
+            false,
+        )
+        .unwrap_or_else(Self::bundled)
     }
 
     pub fn generation(&self) -> u64 {

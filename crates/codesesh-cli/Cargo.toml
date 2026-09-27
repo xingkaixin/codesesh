@@ -10,6 +10,7 @@ name = "codesesh"
 path = "src/main.rs"
 
 [dependencies]
+indicatif = "0.18"
 codesesh-core = { path = "../codesesh-core" }
 anyhow.workspace = true
 axum.workspace = true

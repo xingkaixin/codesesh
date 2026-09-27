@@ -12,8 +12,9 @@ const reference = [
 const rust = [resolve(`target/release/codesesh${process.platform === "win32" ? ".exe" : ""}`)];
 
 function clearCache(fixture) {
-  for (const suffix of ["", "-wal", "-shm"])
-    rmSync(join(fixture.root, `.cache/codesesh/codesesh.db${suffix}`), { force: true });
+  for (const directory of [".cache/codesesh", ".codesesh"])
+    for (const suffix of ["", "-wal", "-shm"])
+      rmSync(join(fixture.root, `${directory}/codesesh.db${suffix}`), { force: true });
 }
 
 function index(output) {

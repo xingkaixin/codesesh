@@ -125,19 +125,12 @@ impl AppLogger {
         Self::new(LoggerOptions::default())
     }
     pub fn new(options: LoggerOptions) -> io::Result<Self> {
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
         let directory = options
             .log_dir
-            .or_else(|| std::env::var_os("CODESESH_LOG_DIR").map(PathBuf::from))
-            .unwrap_or_else(|| {
-                std::env::var_os("XDG_CACHE_HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| home.join(".cache"))
-                    .join("codesesh/logs")
-            });
+            .unwrap_or_else(|| codesesh_core::app_paths::logs(&home));
         let run_id = uuid::Uuid::new_v4().to_string();
         let prefix = format!("codesesh-{}-{run_id}", std::process::id());
         let path = directory.join(format!("{prefix}-active.log"));
