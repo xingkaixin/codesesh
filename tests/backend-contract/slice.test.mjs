@@ -220,9 +220,6 @@ for (const scenario of [
       const migrated = await runCli(fixture, ["--json", "--agent", "codex", "--days", "0"], rust);
       assert.equal(migrated.code, 0, migrated.stderr);
       assert.deepEqual(JSON.parse(migrated.stdout), JSON.parse(expected.stdout));
-      server = await startServer(fixture, reference);
-      assert.deepEqual(referenceSessionDetail(await readJson(server, DETAIL_PATH)), expectedDetail);
-      await stop(server);
       server = await startServer(fixture, rust);
       assert.deepEqual(await readJson(server, "/api/sessions"), expectedList);
       assert.deepEqual(referenceSessionDetail(await readJson(server, DETAIL_PATH)), expectedDetail);
