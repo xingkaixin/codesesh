@@ -101,8 +101,13 @@ pub async fn detail(
     };
     let query = Params::new(raw.as_deref());
     let cursor = query.optional("messageCursor").map(str::to_owned);
+    let pricing = match state.pricing.snapshot() {
+        Ok(snapshot) => snapshot.pricing,
+        Err(_) => return retry("Pricing unavailable; retry later"),
+    };
     super::streaming::detail(
         state.runtime.clone(),
+        pricing,
         reference,
         cursor,
         state.aliases().await,

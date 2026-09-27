@@ -48,6 +48,7 @@ pub struct Options {
 
 pub struct State {
     runtime: Runtime,
+    pricing: codesesh_core::pricing::PricingController,
     saved: Arc<Mutex<Option<StateStore>>>,
     options: Options,
     session_pages: Mutex<SnapshotPaginator<SessionHead, ()>>,
@@ -59,7 +60,12 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(runtime: Runtime, saved: Option<StateStore>, options: Options) -> Self {
+    pub fn new(
+        runtime: Runtime,
+        pricing: codesesh_core::pricing::PricingController,
+        saved: Option<StateStore>,
+        options: Options,
+    ) -> Self {
         let query_scope = codesesh_core::search::QueryScope {
             agents: options.enabled_agents.clone(),
             project_scope: options
@@ -69,6 +75,7 @@ impl State {
         };
         Self {
             runtime,
+            pricing,
             query_scope,
             saved: Arc::new(Mutex::new(saved)),
             options,

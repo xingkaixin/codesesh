@@ -26,6 +26,7 @@ async fn app() -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
     (
         router(Arc::new(State::new(
             runtime.clone(),
+            codesesh_core::pricing::PricingController::load(dir.path()),
             Some(StateStore::memory().unwrap()),
             options,
         ))),
@@ -300,6 +301,7 @@ async fn remote_proxy_accepts_public_authority_but_requires_https() {
         .unwrap();
     let app = router(Arc::new(State::new(
         runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
         None,
         Options {
             token: "secret".into(),

@@ -89,6 +89,13 @@ describe("session receipt", () => {
     expect(result.totalTokens).toBe(1750);
   });
 
+  it("shows zero cache writes in the total when every model reports none", () => {
+    const value = session();
+    delete value.stats.total_cache_create_tokens;
+    value.messages[1]!.tokens!.cache_create = 0;
+    expect(createReceiptPayload(value).rows[3]?.tokens).toBe(0);
+  });
+
   it("keeps recorded totals without inventing price splits or merging providers", () => {
     const value = session();
     value.messages[2]!.model = "model-a";

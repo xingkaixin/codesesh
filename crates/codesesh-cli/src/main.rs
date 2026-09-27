@@ -228,6 +228,7 @@ async fn run() -> Result<()> {
         };
     let state = Arc::new(http::State::new(
         runtime.clone(),
+        pricing_controller.clone(),
         saved,
         http::Options {
             token: token.clone(),

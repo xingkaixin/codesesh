@@ -101,8 +101,10 @@ export function createReceiptPayload(session: SessionDetail) {
         (stats.total_cache_create_tokens ?? 0),
     ),
     stats.total_output_tokens,
-    stats.total_cache_read_tokens,
-    stats.total_cache_create_tokens,
+    stats.total_cache_read_tokens ??
+      (models.length > 0 && models.every((model) => model.rows[2]?.tokens === 0) ? 0 : undefined),
+    stats.total_cache_create_tokens ??
+      (models.length > 0 && models.every((model) => model.rows[3]?.tokens === 0) ? 0 : undefined),
   ];
   const completeCosts =
     models.length > 0 && models.every((model) => model.rows.every((row) => row.cost != null));
