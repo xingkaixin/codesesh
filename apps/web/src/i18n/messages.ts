@@ -366,6 +366,12 @@ export const messages = {
   Subtotal: ["小计", "小計"],
   Usage: ["用量类型", "使用量"],
   "Tool calls": ["工具调用", "ツール呼び出し"],
+  "Could not save receipt image. Reopen the receipt to retry.": [
+    "图片保存失败，请重新打开小票后重试。",
+    "画像を保存できませんでした。レシートを開き直して再試行してください。",
+  ],
+  "Saving image\u2026": ["正在保存…", "保存中…"],
+  "Save image": ["保存图片", "画像を保存"],
   "Open session receipt": ["打开会话小票", "セッションのレシートを開く"],
   Receipt: ["小票", "レシート"],
   "Session Receipt": ["会话小票", "セッションのレシート"],

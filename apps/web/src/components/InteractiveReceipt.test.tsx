@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "../lib/api";
 import { stubAnimationFrames } from "../test/canvas-stub";
@@ -131,6 +131,7 @@ function installEnvironment({
   reducedMotion?: boolean;
 } = {}) {
   installFonts(fontsReady);
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockResolvedValue();
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
     left: 0,
@@ -221,6 +222,35 @@ afterEach(() => {
 });
 
 describe("InteractiveReceipt lifecycle", () => {
+  it("waits for the logo and downloads the full flat PNG", async () => {
+    installEnvironment();
+    const logo = createDeferred<void>();
+    vi.mocked(HTMLImageElement.prototype.decode).mockReturnValue(logo.promise);
+    const blob = new Blob(["png"], { type: "image/png" });
+    const encode = vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (
+      this: HTMLCanvasElement,
+      callback,
+    ) {
+      expect(this.width).toBe(700);
+      expect(this.height).toBe(1060);
+      callback(blob);
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:receipt");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe("codesesh-receipt-session-1.png");
+    });
+    render(<InteractiveReceipt session={createSession("Download")} />);
+    const button = screen.getByRole("button", { name: "Save image" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    await act(async () => logo.resolve());
+    expect(button.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(encode).toHaveBeenCalledWith(expect.any(Function), "image/png");
+  });
+
   it("repaints payload updates without rebuilding lifecycle resources", async () => {
     const environment = installEnvironment();
     const { rerender } = render(<InteractiveReceipt session={createSession("Initial session")} />);

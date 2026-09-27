@@ -185,7 +185,12 @@ function wrapTitle(
   return lines.slice(0, maxLines);
 }
 
-function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamily: string) {
+function drawTexture(
+  payload: ReceiptPayload,
+  palette: ReceiptPalette,
+  monoFamily: string,
+  logo: HTMLImageElement | null,
+) {
   const height = receiptHeight(payload);
   const texture = document.createElement("canvas");
   texture.width = RECEIPT_WIDTH * TEXTURE_SCALE;
@@ -210,6 +215,8 @@ function drawTexture(payload: ReceiptPayload, palette: ReceiptPalette, monoFamil
     ctx.fillRect(random() * RECEIPT_WIDTH, random() * height, 0.7, 0.7);
   }
   ctx.globalAlpha = 1;
+
+  if (logo) ctx.drawImage(logo, 18, 20, 30, 30);
 
   ctx.fillStyle = palette.ink;
   ctx.font = font("700 18px");
@@ -549,6 +556,7 @@ function measureSheetMovement(particles: Particle[]) {
 
 export interface InteractiveReceiptSimulation {
   updatePayload: (payload: ReceiptPayload) => void;
+  exportPng: () => Promise<Blob>;
   destroy: () => void;
 }
 
@@ -558,6 +566,8 @@ interface InteractiveReceiptSimulationOptions {
   hitSurface: HTMLDivElement;
   payload: ReceiptPayload;
   minWidthQuery: string;
+  onReady?: () => void;
+  onError?: () => void;
 }
 
 export function createInteractiveReceiptSimulation({
@@ -566,11 +576,17 @@ export function createInteractiveReceiptSimulation({
   hitSurface,
   payload,
   minWidthQuery,
+  onReady,
+  onError,
 }: InteractiveReceiptSimulationOptions): InteractiveReceiptSimulation | null {
   const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) return null;
 
   let currentPayload = payload;
+  let logo: HTMLImageElement | null = null;
+  const logoImage = new Image();
+  logoImage.src = "/logo.svg?v=3";
+  const assetsReady = Promise.all([whenReceiptFontsReady(), logoImage.decode()]);
 
   const pointer: PointerState = {
     id: null,
@@ -610,7 +626,7 @@ export function createInteractiveReceiptSimulation({
   const repaintPaper = () => {
     const palette = readReceiptPalette(anchor);
     paper = {
-      texture: drawTexture(currentPayload, palette, readReceiptMonoFamily(anchor)),
+      texture: drawTexture(currentPayload, palette, readReceiptMonoFamily(anchor), logo),
       palette,
     };
   };
@@ -891,11 +907,20 @@ export function createInteractiveReceiptSimulation({
   // The texture is laid out with ctx.measureText, so painting it before the mono webfont
   // loads would bake the fallback face's metrics into the sheet. shouldRun() keeps the
   // canvas hidden and the loop idle until the texture exists.
-  void whenReceiptFontsReady().then(() => {
-    if (disposed) return;
-    repaintPaper();
-    syncLoopState();
-  });
+  void assetsReady
+    .then(() => {
+      if (disposed) return;
+      logo = logoImage;
+      repaintPaper();
+      syncLoopState();
+      onReady?.();
+    })
+    .catch(() => {
+      if (disposed) return;
+      repaintPaper();
+      syncLoopState();
+      onError?.();
+    });
   const observer = new ResizeObserver(resize);
   observer.observe(anchor);
   // The palette resolves once per texture build; toggling .dark on <html> changes the
@@ -917,6 +942,18 @@ export function createInteractiveReceiptSimulation({
   hitSurface.addEventListener("pointerup", releasePointer);
   hitSurface.addEventListener("pointercancel", releasePointer);
   return {
+    async exportPng() {
+      await assetsReady;
+      if (disposed) throw new Error("Receipt closed");
+      repaintPaper();
+      const texture = paper!.texture;
+      return new Promise<Blob>((resolve, reject) => {
+        texture.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("Receipt PNG encoding failed"));
+        }, "image/png");
+      });
+    },
     updatePayload(nextPayload) {
       currentPayload = nextPayload;
       if (disposed || !paper) return;
