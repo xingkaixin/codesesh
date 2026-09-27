@@ -3,7 +3,6 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetail } from "../lib/api";
 import { stubAnimationFrames } from "../test/canvas-stub";
-import type { SessionDetailToc } from "./session-detail/toc";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 
 interface Deferred<T> {
@@ -47,30 +46,6 @@ function createSession(title: string): SessionDetail {
       total_cost: 0.0123,
     },
     messages: [],
-  };
-}
-
-function createToc(agentMessages = 1): SessionDetailToc {
-  return {
-    filterIds: new Set(["user", "agent_message", "tool:read"]),
-    counts: {
-      user: 1,
-      agent_message: agentMessages,
-      thinking: 0,
-      plan: 0,
-      tools_all: 1,
-    },
-    tools: [
-      {
-        id: "tool:read",
-        toolKey: "read",
-        label: "Read",
-        count: 1,
-        kind: "read",
-      },
-    ],
-    maxToolCount: 1,
-    totalUnitCount: agentMessages + 2,
   };
 }
 
@@ -248,9 +223,7 @@ afterEach(() => {
 describe("InteractiveReceipt lifecycle", () => {
   it("repaints payload updates without rebuilding lifecycle resources", async () => {
     const environment = installEnvironment();
-    const { rerender } = render(
-      <InteractiveReceipt session={createSession("Initial session")} toc={createToc()} />,
-    );
+    const { rerender } = render(<InteractiveReceipt session={createSession("Initial session")} />);
     await flushFonts();
 
     expect(environment.resizeObservers).toHaveLength(1);
@@ -261,7 +234,7 @@ describe("InteractiveReceipt lifecycle", () => {
     const scheduledFrames = vi.mocked(window.requestAnimationFrame).mock.calls.length;
 
     environment.context.fillText.mockClear();
-    rerender(<InteractiveReceipt session={createSession("Updated session")} toc={createToc(2)} />);
+    rerender(<InteractiveReceipt session={createSession("Updated session")} />);
 
     expect(environment.getContext).toHaveBeenCalledTimes(3);
     expect(environment.context.fillText.mock.calls.map(([value]) => value)).toContain(
@@ -281,13 +254,13 @@ describe("InteractiveReceipt lifecycle", () => {
     const environment = installEnvironment({ fontsReady: fonts.promise });
     const { rerender } = render(
       <StrictMode>
-        <InteractiveReceipt session={createSession("Initial session")} toc={createToc()} />
+        <InteractiveReceipt session={createSession("Initial session")} />
       </StrictMode>,
     );
 
     rerender(
       <StrictMode>
-        <InteractiveReceipt session={createSession("Latest session")} toc={createToc(2)} />
+        <InteractiveReceipt session={createSession("Latest session")} />
       </StrictMode>,
     );
     expect(environment.frames.pendingCount()).toBe(0);
@@ -306,9 +279,7 @@ describe("InteractiveReceipt lifecycle", () => {
 
   it("draws one stable frame and exits when reduced motion is requested", async () => {
     const environment = installEnvironment({ reducedMotion: true });
-    const { container } = render(
-      <InteractiveReceipt session={createSession("Reduced motion")} toc={createToc()} />,
-    );
+    const { container } = render(<InteractiveReceipt session={createSession("Reduced motion")} />);
     await flushFonts();
 
     const canvas = container.querySelector("canvas");
@@ -327,9 +298,7 @@ describe("InteractiveReceipt lifecycle", () => {
 
   it("releases observers, listeners, and the active frame on unmount", async () => {
     const environment = installEnvironment();
-    const view = render(
-      <InteractiveReceipt session={createSession("Cleanup")} toc={createToc()} />,
-    );
+    const view = render(<InteractiveReceipt session={createSession("Cleanup")} />);
     await flushFonts();
 
     const hitSurface = screen.getByLabelText(
