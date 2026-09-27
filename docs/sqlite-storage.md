@@ -4,7 +4,7 @@
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 34`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 35`
 <!-- repo-fact:cache-schema-version:end -->
 
 入口是 `crates/codesesh-core/src/storage/mod.rs`，建表定义在
@@ -38,6 +38,9 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 schema 33 的消息用量时间索引覆盖顺序、模型、tokens 和成本字段。schema 34 保存
 `automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
 
+schema 35 将展示版本和文件摘要保存在 `head_meta_json`，快照不再读取包含定价明细的
+`meta_json`。展示元数据与会话在同一事务发布；定价元数据由定价路径校验。
+
 ## 读写与发布
 
 Web 运行时只有一个专用 SQLite writer。Agent 扫描线程产出完整批次，不直接修改缓存。
@@ -66,14 +69,15 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 
 打开数据库时先读取 `PRAGMA user_version`，兼容旧库的 `cache_meta.version`：
 
-1. 新库直接创建 schema 34。
-2. 旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份。
+1. 新库直接创建 schema 35。
+2. schema 34 通过事务增加并回填 `head_meta_json`，不备份整库或重建消息、FTS。更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
 5. 缺失的 FTS 虚表通过建表和 rebuild 恢复。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。与固定 Node 参考
-制品的往返检查是独立验收，不能仅凭 schema 号相同推断双向兼容。
+制品的正向迁移与 Rust 重启检查是独立验收。schema 35 不支持再由 schema 34 的旧版本
+打开；用户状态仍使用 schema 3。
 
 旧表删除后的空间进入 SQLite freelist，后续写入可以复用。启动不自动压缩整个缓存。
 需要手动压缩时，应先停止 CodeSesh，再运行：

@@ -78,7 +78,7 @@ impl Cache {
             fingerprints.remove(&agent?);
         }
         drop(query);
-        let mut query=transaction.prepare("SELECT * FROM sessions WHERE publication_id IS NULL ORDER BY agent_name,sort_index,rowid")?;
+        let mut query=transaction.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL ORDER BY agent_name,sort_index,rowid", snapshot::HEAD_COLUMNS))?;
         let heads = query
             .query_map([], snapshot::head)?
             .collect::<rusqlite::Result<Vec<_>>>()?;

@@ -19,7 +19,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
-pub const CACHE_SCHEMA_VERSION: i64 = 34;
+pub const CACHE_SCHEMA_VERSION: i64 = 35;
 
 pub use read::{detail as detail_from_connection, detail_with_cursor, visit_detail_messages};
 pub use snapshot::load as snapshot_from_connection;
@@ -29,7 +29,7 @@ pub fn head_from_connection(
 ) -> Result<Option<SessionHead>> {
     Ok(connection
         .query_row(
-            "SELECT * FROM sessions WHERE agent_name=? AND session_id=? AND publication_id IS NULL",
+            &format!("SELECT {} FROM sessions WHERE agent_name=? AND session_id=? AND publication_id IS NULL", snapshot::HEAD_COLUMNS),
             params![reference.agent_name, reference.session_id],
             snapshot::head,
         )
@@ -103,14 +103,14 @@ impl Cache {
     }
 
     pub fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
-        let mut query = self.connection.prepare("SELECT * FROM sessions WHERE publication_id IS NULL AND agent_name=? ORDER BY activity_time DESC,session_id")?;
+        let mut query = self.connection.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL AND agent_name=? ORDER BY activity_time DESC,session_id", snapshot::HEAD_COLUMNS))?;
         Ok(query
             .query_map([agent], snapshot::head)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     pub fn head(&self, reference: &SessionReference) -> Result<Option<SessionHead>> {
-        Ok(self.connection.query_row("SELECT * FROM sessions WHERE agent_name=? AND session_id=? AND publication_id IS NULL",params![reference.agent_name,reference.session_id],snapshot::head).optional()?)
+        Ok(self.connection.query_row(&format!("SELECT {} FROM sessions WHERE agent_name=? AND session_id=? AND publication_id IS NULL", snapshot::HEAD_COLUMNS),params![reference.agent_name,reference.session_id],snapshot::head).optional()?)
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
@@ -235,11 +235,12 @@ impl Cache {
                 file_meta.as_ref().map(|meta| meta.len())
             ]))?;
             let mut metadata = serde_json::json!({"sourcePath":session.source.to_string_lossy(),"sourceFingerprint":fingerprint,"parserVersion":crate::agents::parser_version(&reference.agent_name)});
+            let mut head_metadata = serde_json::json!({});
             if let Some(version) = &head.version {
-                metadata["rustHeadVersion"] = serde_json::Value::String(version.clone());
+                head_metadata["rustHeadVersion"] = serde_json::Value::String(version.clone());
             }
             if let Some(files) = &head.summary_files {
-                metadata["rustHeadSummaryFiles"] = files.clone();
+                head_metadata["rustHeadSummaryFiles"] = files.clone();
             }
             metadata["rustPricing"] = reprice::state(session)?;
             let detail_version = json::stringify(&serde_json::json!([
@@ -301,9 +302,10 @@ impl Cache {
                 transaction.execute("INSERT INTO session_file_activity(agent_name,session_id,project_identity_key,path,kind,count,latest_time) VALUES(?,?,?,?,?,?,?)",params![reference.agent_name,reference.session_id,activity.project_identity_key,activity.path,activity.kind,activity.count as i64,activity.latest_time])?;
             }
             transaction.execute(
-                "UPDATE sessions SET meta_json=? WHERE agent_name=? AND session_id=?",
+                "UPDATE sessions SET meta_json=?,head_meta_json=? WHERE agent_name=? AND session_id=?",
                 params![
                     json::stringify(&metadata)?,
+                    json::stringify(&head_metadata)?,
                     reference.agent_name,
                     reference.session_id
                 ],

@@ -1,16 +1,19 @@
 use crate::contract::*;
 use anyhow::Result;
 use rusqlite::{Connection, Row};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Deserialize)]
-struct HeadMetadata {
-    #[serde(rename = "rustHeadVersion")]
+pub(super) const HEAD_COLUMNS: &str = "agent_name,session_id,title,directory,parent_agent_name,parent_session_id,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,message_count,total_input_tokens,total_output_tokens,total_cost,total_cache_read_tokens,total_cache_create_tokens,total_tokens,cost_source,model_usage_json,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision,head_meta_json";
+
+#[derive(Default, Deserialize, Serialize)]
+pub(super) struct HeadMetadata {
+    #[serde(rename = "rustHeadVersion", skip_serializing_if = "Option::is_none")]
     version: Option<Value>,
     #[serde(
         rename = "rustHeadSummaryFiles",
         default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "present_summary"
     )]
     summary_files: Option<Value>,
@@ -41,14 +44,14 @@ fn optional_json<T: serde::de::DeserializeOwned>(
 }
 
 pub fn load(connection: &Connection) -> Result<Vec<SessionHead>> {
-    let mut query=connection.prepare("SELECT * FROM sessions WHERE publication_id IS NULL ORDER BY activity_time DESC,agent_name,session_id")?;
+    let mut query=connection.prepare(&format!("SELECT {HEAD_COLUMNS} FROM sessions WHERE publication_id IS NULL ORDER BY activity_time DESC,agent_name,session_id"))?;
     Ok(query
         .query_map([], head)?
         .collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
-    let metadata = optional_json::<Option<HeadMetadata>>(row, "meta_json")?.flatten();
+    let metadata = optional_json::<Option<HeadMetadata>>(row, "head_meta_json")?.flatten();
     let parent_agent: Option<String> = row.get("parent_agent_name")?;
     let parent_id: Option<String> = row.get("parent_session_id")?;
     let cost_source: Option<String> = row.get("cost_source")?;
