@@ -189,7 +189,10 @@ pub async fn run(
             identity.trim() == grant.hub_id,
             "Hub returned a local source belonging to another installation"
         );
-        if collector.store.next_upload()?.is_none() && collector.store.recovery()?.is_none() {
+        if collector.store.history_choice()?.as_deref() != Some("local")
+            && collector.store.next_upload()?.is_none()
+            && collector.store.recovery()?.is_none()
+        {
             eprintln!(
                 "Same-machine Hub verified; adopting existing local scan progress (no history import)."
             );
