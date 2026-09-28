@@ -135,6 +135,11 @@ jobs:
           copyFileSync(join(output, "release-set.json"), "artifacts/release/release-set.json");
           JS
 
+      - name: Generate public native archive checksums
+        run: |
+          node scripts/rust/distribution.mjs artifacts/release artifacts/distribution
+          cp artifacts/distribution/SHA256SUMS artifacts/release/SHA256SUMS
+
       - name: Publish native packages, then the main package
         run: node scripts/rust/publish.mjs
         env:
@@ -146,3 +151,13 @@ jobs:
           generate_release_notes: true
           files: artifacts/release/*
           fail_on_unmatched_files: true
+
+  distribution:
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/distribution.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      DISTRIBUTION_TOKEN: ${{ secrets.DISTRIBUTION_TOKEN }}
