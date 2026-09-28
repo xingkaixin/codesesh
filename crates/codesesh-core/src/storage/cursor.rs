@@ -17,6 +17,9 @@ fn field(hash: &mut Sha256, value: Option<&str>) {
 pub fn initial(reference: &SessionReference) -> String {
     let mut hash = Sha256::new();
     hash.update("codesesh-session-messages\0");
+    if reference.source_node_id != crate::contract::LOCAL_SOURCE_NODE_ID {
+        field(&mut hash, Some(&reference.source_node_id));
+    }
     for value in ["2", &reference.agent_name, &reference.session_id] {
         field(&mut hash, Some(value));
     }

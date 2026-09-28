@@ -368,7 +368,7 @@ describe("AppRouteContent", () => {
     const sessionLink = screen.getByRole("link", { name: /Claude opaque session/ });
     expect(sessionLink.getAttribute("href")).toBe("/claudecode/shared%2Fid%3Fx%23y%25");
     expect(screen.queryByText("Codex twin session")).toBeNull();
-    expect(bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", sessionId);
+    expect(bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", sessionId, undefined);
 
     fireEvent.click(screen.getByRole("button", { name: "Add bookmark" }));
     expect(bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
@@ -405,7 +405,11 @@ describe("AppRouteContent", () => {
     const recoveryLink = screen.getByRole("link", { name: /Claude recovery session/ });
     expect(recoveryLink.getAttribute("href")).toBe("/claudecode/recovery%2Fid%3F%23%25");
     expect(screen.queryByText("Codex recovery session")).toBeNull();
-    expect(route.bookmarks.isBookmarked).toHaveBeenCalledWith("claudecode", recoverySessionId);
+    expect(route.bookmarks.isBookmarked).toHaveBeenCalledWith(
+      "claudecode",
+      recoverySessionId,
+      undefined,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Add bookmark" }));
     expect(route.bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");

@@ -156,6 +156,7 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
     let parent = string(&summary["parent_session_id"])
         .filter(|p| p != &id)
         .map(|session_id| SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "grok".into(),
             session_id,
         });
@@ -163,6 +164,7 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
         version: None,
         summary_files: None,
         reference: SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "grok".into(),
             session_id: id,
         },

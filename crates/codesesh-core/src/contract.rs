@@ -53,6 +53,12 @@ pub enum PlanApprovalStatus {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionReference {
+    #[serde(
+        default = "local_source_node_id",
+        skip_serializing_if = "is_local_source_node"
+    )]
+    #[ts(as = "Option<String>", optional)]
+    pub source_node_id: String,
     pub agent_name: String,
     pub session_id: String,
 }
@@ -381,6 +387,16 @@ pub struct AgentInfo {
 pub struct SessionIndex {
     pub agents: Vec<AgentInfo>,
     pub sessions: Vec<SessionHead>,
+}
+
+pub const LOCAL_SOURCE_NODE_ID: &str = "local";
+
+pub fn local_source_node_id() -> String {
+    LOCAL_SOURCE_NODE_ID.to_owned()
+}
+
+fn is_local_source_node(value: &str) -> bool {
+    value == LOCAL_SOURCE_NODE_ID
 }
 
 #[cfg(test)]

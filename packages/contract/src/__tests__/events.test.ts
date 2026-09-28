@@ -21,6 +21,15 @@ function event(
 }
 
 describe("mergeSessionsUpdatedEvents", () => {
+  it("does not remove another source's same-ID update", () => {
+    const local = { agentName: "codex", sessionId: "same" };
+    const remote = { ...local, sourceNodeId: "worker-a" };
+    const head = { reference: remote, session: { title: "Remote" } } as ReferencedSessionHead;
+    const merged = mergeSessionsUpdatedEvents(event([head]), event([], [local]));
+    expect(merged.changedSessionHeads).toEqual([head]);
+    expect(merged.removedSessionRefs).toEqual([local]);
+  });
+
   it("keeps the latest change for each session", () => {
     const reference = { agentName: "claudecode", sessionId: "session-1" };
     const first = {

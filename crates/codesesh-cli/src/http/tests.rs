@@ -63,6 +63,37 @@ async fn request(
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     )
 }
+
+#[tokio::test]
+async fn source_qualified_alias_routes_preserve_identity() {
+    let (app, runtime, _dir) = app().await;
+    let headers = [
+        ("authorization", "Bearer secret"),
+        ("origin", "http://localhost:4521"),
+        ("content-type", "application/json"),
+    ];
+    let (status, remote) = request(
+        &app,
+        Method::PUT,
+        "/api/session-aliases/nodes/worker-a/codex/shared",
+        &headers,
+        r#"{"alias":"Remote"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(remote["alias"]["reference"]["sourceNodeId"], "worker-a");
+    let (status, local) = request(
+        &app,
+        Method::PUT,
+        "/api/session-aliases/codex/shared",
+        &headers,
+        r#"{"alias":"Local"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(local["alias"]["reference"].get("sourceNodeId").is_none());
+    runtime.shutdown().await.unwrap();
+}
 #[tokio::test]
 async fn api_auth_transport_and_write_boundaries() {
     let (app, runtime, _dir) = app().await;

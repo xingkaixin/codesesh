@@ -98,8 +98,9 @@ pub(super) fn run(
                             .collect();
                         changed_references.append(&mut repriced);
                         changed_references.sort_by(|a, b| {
-                            a.agent_name
-                                .cmp(&b.agent_name)
+                            a.source_node_id
+                                .cmp(&b.source_node_id)
+                                .then(a.agent_name.cmp(&b.agent_name))
                                 .then(a.session_id.cmp(&b.session_id))
                         });
                         changed_references.dedup();

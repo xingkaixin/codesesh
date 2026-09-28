@@ -10,12 +10,22 @@ export const UNKNOWN_AGENT_NAME = "unknown";
 
 export function normalizeSessionReference(reference: SessionReference): SessionReference {
   return {
+    ...(reference.sourceNodeId && reference.sourceNodeId !== "local"
+      ? { sourceNodeId: reference.sourceNodeId }
+      : {}),
     agentName: reference.agentName.trim().toLowerCase(),
     sessionId: reference.sessionId,
   };
 }
 
 export function parseSessionReference(value: string): SessionReference | null {
+  if (value.startsWith("@")) {
+    const nodeEnd = value.indexOf("/");
+    if (nodeEnd <= 1) return null;
+    const reference = parseSessionReference(value.slice(nodeEnd + 1));
+    if (!reference || reference.sourceNodeId) return null;
+    return { ...reference, sourceNodeId: value.slice(1, nodeEnd) };
+  }
   const separatorIndex = value.indexOf("/");
   if (separatorIndex <= 0 || separatorIndex === value.length - 1) return null;
 
@@ -29,7 +39,8 @@ export function parseSessionReference(value: string): SessionReference | null {
 
 export function formatSessionReference(reference: SessionReference): string {
   const normalized = normalizeSessionReference(reference);
-  return `${normalized.agentName}/${normalized.sessionId}`;
+  const prefix = normalized.sourceNodeId ? `@${normalized.sourceNodeId}/` : "";
+  return `${prefix}${normalized.agentName}/${normalized.sessionId}`;
 }
 
 /** Canonical key for maps and sets keyed by session identity. */
@@ -76,7 +87,10 @@ export function agentRoutePath(agentName: string): string {
  */
 export function sessionRoutePath(reference: SessionReference): string {
   const normalized = normalizeSessionReference(reference);
-  return `${agentRoutePath(normalized.agentName)}/${encodeURIComponent(normalized.sessionId)}`;
+  const prefix = normalized.sourceNodeId
+    ? `/nodes/${encodeURIComponent(normalized.sourceNodeId)}`
+    : "";
+  return `${prefix}${agentRoutePath(normalized.agentName)}/${encodeURIComponent(normalized.sessionId)}`;
 }
 
 /** Same as {@link sessionRoutePath}, for callers holding a session head. */

@@ -4,6 +4,7 @@ import { deleteSessionAlias, upsertSessionAlias } from "../lib/api";
 import { invalidateSessionDerivedQueries } from "../lib/session-query-consistency";
 
 export interface SessionAliasIdentity {
+  sourceNodeId?: string;
   agentKey: string;
   sessionId: string;
 }
@@ -20,13 +21,17 @@ export function useSessionAliasMutations(refreshSessionSnapshot: () => Promise<v
   }, [queryClient, refreshSessionSnapshot]);
 
   const { mutateAsync: mutateAlias } = useMutation({
-    mutationFn: ({ agentKey, sessionId, alias }: SaveAliasVariables) =>
-      upsertSessionAlias(agentKey, sessionId, alias),
+    mutationFn: ({ agentKey, sessionId, alias, sourceNodeId }: SaveAliasVariables) =>
+      sourceNodeId
+        ? upsertSessionAlias(agentKey, sessionId, alias, sourceNodeId)
+        : upsertSessionAlias(agentKey, sessionId, alias),
     onSuccess: refreshAliasConsumers,
   });
   const { mutateAsync: mutateAliasRemoval } = useMutation({
-    mutationFn: ({ agentKey, sessionId }: SessionAliasIdentity) =>
-      deleteSessionAlias(agentKey, sessionId),
+    mutationFn: ({ agentKey, sessionId, sourceNodeId }: SessionAliasIdentity) =>
+      sourceNodeId
+        ? deleteSessionAlias(agentKey, sessionId, sourceNodeId)
+        : deleteSessionAlias(agentKey, sessionId),
     onSuccess: refreshAliasConsumers,
   });
 

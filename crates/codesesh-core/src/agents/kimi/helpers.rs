@@ -392,6 +392,7 @@ pub fn finish(
         version: None,
         summary_files: None,
         reference: SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: agent.into(),
             session_id: id,
         },

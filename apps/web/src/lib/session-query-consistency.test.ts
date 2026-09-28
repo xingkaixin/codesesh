@@ -20,6 +20,26 @@ function makeClient(): QueryClient {
   return client;
 }
 
+it("invalidates only the source whose same-ID session changed", async () => {
+  const client = makeClient();
+  const localKey = queryKeys.sessionDetail("codex", "same");
+  const remoteKey = queryKeys.sessionDetail("codex", "same", "worker-a");
+  client.setQueryData(localKey, { title: "Local" });
+  client.setQueryData(remoteKey, { title: "Remote" });
+  await invalidateLiveSessionDerivedQueries(client, {
+    ...SAMPLE_SESSIONS_UPDATED_EVENT,
+    changedSessionHeads: [
+      {
+        ...changedHead("codex", "same"),
+        reference: { agentName: "codex", sessionId: "same", sourceNodeId: "worker-a" },
+      },
+    ],
+    removedSessionRefs: [],
+  });
+  expect(client.getQueryState(localKey)?.isInvalidated).toBe(false);
+  expect(client.getQueryState(remoteKey)?.isInvalidated).toBe(true);
+});
+
 function changedHead(
   agentName: string,
   sessionId: string,

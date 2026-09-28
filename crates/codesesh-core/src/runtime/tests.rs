@@ -60,6 +60,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                 Ok(ScanBatch {
                     sessions: vec![],
                     removed: vec![SessionReference {
+                        source_node_id: crate::contract::local_source_node_id(),
                         agent_name: "codex".into(),
                         session_id: "rollout-fixture".into(),
                     }],
@@ -125,6 +126,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                 Ok(ScanBatch {
                     sessions: vec![],
                     removed: vec![SessionReference {
+                        source_node_id: crate::contract::local_source_node_id(),
                         agent_name: "codex".into(),
                         session_id: "rollout-fixture".into(),
                     }],

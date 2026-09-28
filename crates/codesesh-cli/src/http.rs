@@ -119,6 +119,10 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/projects", get(catalog::projects))
         .route("/api/sessions", get(sessions::list))
         .route("/api/sessions/{agent}/{id}", get(sessions::detail))
+        .route(
+            "/api/sessions/nodes/{source}/{agent}/{id}",
+            get(sessions::detail),
+        )
         .route("/api/search", get(search::search))
         .route("/api/file-activity", get(search::file_activity))
         .route("/api/dashboard", get(catalog::dashboard))
@@ -126,7 +130,15 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/bookmarks/import", post(saved::import))
         .route("/api/bookmarks/{agent}/{id}", delete(saved::delete))
         .route(
+            "/api/bookmarks/nodes/{source}/{agent}/{id}",
+            delete(saved::delete),
+        )
+        .route(
             "/api/session-aliases/{agent}/{id}",
+            put(saved::alias_put).delete(saved::alias_delete),
+        )
+        .route(
+            "/api/session-aliases/nodes/{source}/{agent}/{id}",
             put(saved::alias_put).delete(saved::alias_delete),
         )
         .route("/api/events", get(events::events))

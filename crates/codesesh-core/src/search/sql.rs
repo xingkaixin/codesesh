@@ -105,7 +105,7 @@ pub fn build(options: &SearchOptions) -> Filters {
     for tool in &options.tools {
         let tool = tool.trim().to_lowercase();
         if !tool.is_empty() {
-            filters.text("EXISTS (SELECT 1 FROM message_tools mt WHERE mt.tool_name = ? AND mt.agent_name = s.agent_name AND mt.session_id = s.session_id)",&tool);
+            filters.text("EXISTS (SELECT 1 FROM message_tools mt WHERE mt.tool_name = ? AND mt.source_node_id = s.source_node_id AND mt.agent_name = s.agent_name AND mt.session_id = s.session_id)",&tool);
         }
     }
     if options.file.is_some() || options.file_kind.is_some() {
@@ -153,7 +153,7 @@ pub fn build(options: &SearchOptions) -> Filters {
         filters.params.push(value.into());
     }
     if !costs.is_empty() {
-        filters.clauses.push(format!("EXISTS (WITH RECURSIVE session_subtree(agent_name,session_id,own_cost) AS (SELECT s.agent_name,s.session_id,s.total_cost UNION SELECT child.agent_name,child.session_id,child.total_cost FROM sessions child JOIN session_subtree parent ON child.parent_agent_name = parent.agent_name AND child.parent_session_id = parent.session_id WHERE child.publication_id IS NULL) SELECT SUM(own_cost) FROM session_subtree HAVING {})",costs.join(" AND ")));
+        filters.clauses.push(format!("EXISTS (WITH RECURSIVE session_subtree(source_node_id,agent_name,session_id,own_cost) AS (SELECT s.source_node_id,s.agent_name,s.session_id,s.total_cost UNION SELECT child.source_node_id,child.agent_name,child.session_id,child.total_cost FROM sessions child JOIN session_subtree parent ON child.source_node_id = parent.source_node_id AND child.parent_agent_name = parent.agent_name AND child.parent_session_id = parent.session_id WHERE child.publication_id IS NULL) SELECT SUM(own_cost) FROM session_subtree HAVING {})",costs.join(" AND ")));
     }
     filters
 }

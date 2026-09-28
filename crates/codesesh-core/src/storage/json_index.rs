@@ -78,18 +78,19 @@ impl Cache {
             fingerprints.remove(&agent?);
         }
         drop(query);
-        let mut query=transaction.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL ORDER BY agent_name,sort_index,rowid", snapshot::HEAD_COLUMNS))?;
+        let mut query=transaction.prepare(&format!("SELECT {} FROM sessions WHERE source_node_id='local' AND publication_id IS NULL ORDER BY agent_name,sort_index,rowid", snapshot::HEAD_COLUMNS))?;
         let heads = query
             .query_map([], snapshot::head)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(query);
         let mut query = transaction.prepare(
-            "SELECT agent_name,session_id,source_path FROM sessions WHERE publication_id IS NULL AND source_path IS NOT NULL",
+            "SELECT agent_name,session_id,source_path FROM sessions WHERE source_node_id='local' AND publication_id IS NULL AND source_path IS NOT NULL",
         )?;
         let source_paths = query
             .query_map([], |row| {
                 Ok((
                     SessionReference {
+                        source_node_id: crate::contract::local_source_node_id(),
                         agent_name: row.get(0)?,
                         session_id: row.get(1)?,
                     },

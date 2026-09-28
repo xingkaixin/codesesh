@@ -192,6 +192,7 @@ async fn missing_detail_returns_retry_before_streaming_and_releases_permit() {
         .unwrap();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
     let reference = codesesh_core::contract::SessionReference {
+        source_node_id: codesesh_core::contract::local_source_node_id(),
         agent_name: "codex".into(),
         session_id: "missing".into(),
     };

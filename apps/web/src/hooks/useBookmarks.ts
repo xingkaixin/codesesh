@@ -166,8 +166,8 @@ export function useBookmarks() {
   );
 
   const isSessionBookmarked = useCallback(
-    (agentKey: string, sessionId: string): boolean =>
-      bookmarkKeySet.has(getSessionBookmarkKey({ agentName: agentKey, sessionId })),
+    (agentKey: string, sessionId: string, sourceNodeId?: string): boolean =>
+      bookmarkKeySet.has(getSessionBookmarkKey({ agentName: agentKey, sessionId, sourceNodeId })),
     [bookmarkKeySet],
   );
 

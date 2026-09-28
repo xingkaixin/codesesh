@@ -8,7 +8,7 @@ export type { BackfillStatus } from "./generated/BackfillStatus.js";
 export type { SearchIndexMaintenanceStatus } from "./generated/SearchIndexMaintenanceStatus.js";
 export type { ScanStatusEvent } from "./generated/ScanStatusEvent.js";
 import type { PublicReferencedSessionHead } from "./session.js";
-import type { SessionReference } from "./session-reference.js";
+import { getSessionReferenceKey, type SessionReference } from "./session-reference.js";
 
 export function mergeSessionsUpdatedEvents(
   previous: SessionsUpdatedEvent,
@@ -19,30 +19,29 @@ export function mergeSessionsUpdatedEvents(
   const projectionSessionOrder = new Map<string, SessionReference>();
   const newSessionRefs = new Map<string, SessionReference>();
   const removedSessionRefs = new Map<string, SessionReference>();
-  const sessionKey = (agentName: string, sessionId: string) => `${agentName}\0${sessionId}`;
   const addChanged = (item: PublicReferencedSessionHead) => {
-    const key = sessionKey(item.reference.agentName, item.reference.sessionId);
+    const key = getSessionReferenceKey(item.reference);
     removedSessionRefs.delete(key);
     projectionRelatedSessionHeads.delete(key);
     changedSessionHeads.set(key, item);
   };
   const addProjectionRelated = (item: PublicReferencedSessionHead) => {
-    const key = sessionKey(item.reference.agentName, item.reference.sessionId);
+    const key = getSessionReferenceKey(item.reference);
     if (changedSessionHeads.has(key) || removedSessionRefs.has(key)) return;
     projectionRelatedSessionHeads.set(key, item);
   };
   const addNew = (item: SessionReference) => {
-    const key = sessionKey(item.agentName, item.sessionId);
+    const key = getSessionReferenceKey(item);
     removedSessionRefs.delete(key);
     newSessionRefs.set(key, item);
   };
   const addProjectionOrder = (item: SessionReference) => {
-    const key = sessionKey(item.agentName, item.sessionId);
+    const key = getSessionReferenceKey(item);
     projectionSessionOrder.delete(key);
     projectionSessionOrder.set(key, item);
   };
   const addRemoved = (item: SessionReference) => {
-    const key = sessionKey(item.agentName, item.sessionId);
+    const key = getSessionReferenceKey(item);
     changedSessionHeads.delete(key);
     projectionRelatedSessionHeads.delete(key);
     projectionSessionOrder.delete(key);

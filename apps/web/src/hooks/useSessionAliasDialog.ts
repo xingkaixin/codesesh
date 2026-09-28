@@ -10,6 +10,7 @@ export function useSessionAliasDialog(refreshViews: () => Promise<void>) {
 
   const openSession = useCallback((session: SessionHead) => {
     setTarget({
+      ...(session.reference.sourceNodeId ? { sourceNodeId: session.reference.sourceNodeId } : {}),
       agentKey: getSessionAgentKey(session),
       sessionId: session.reference.sessionId,
       title: session.title,
@@ -19,6 +20,7 @@ export function useSessionAliasDialog(refreshViews: () => Promise<void>) {
 
   const openBookmark = useCallback((bookmark: BookmarkView) => {
     setTarget({
+      ...(bookmark.reference.sourceNodeId ? { sourceNodeId: bookmark.reference.sourceNodeId } : {}),
       agentKey: bookmark.reference.agentName,
       sessionId: bookmark.reference.sessionId,
       title:

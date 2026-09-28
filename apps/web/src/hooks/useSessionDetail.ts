@@ -28,6 +28,7 @@ function sessionRoute(viewState: ViewState) {
   return {
     agent: viewState.activeAgentKey,
     sessionId: viewState.activeSessionId,
+    sourceNodeId: viewState.sourceNodeId,
   };
 }
 
@@ -43,7 +44,11 @@ function createOperationId(): string {
 export function useSessionDetail(viewState: ViewState) {
   const queryClient = useQueryClient();
   const route = sessionRoute(viewState);
-  const queryKey = queryKeys.sessionDetail(route?.agent ?? "", route?.sessionId ?? "");
+  const queryKey = queryKeys.sessionDetail(
+    route?.agent ?? "",
+    route?.sessionId ?? "",
+    route?.sourceNodeId,
+  );
   const query = useQuery({
     queryKey,
     enabled: route !== null,
@@ -76,6 +81,7 @@ export function useSessionDetail(viewState: ViewState) {
         const previous = queryClient.getQueryData<SessionDetail>(queryKey);
         const response = await fetchSessionData(route.agent, route.sessionId, {
           signal,
+          ...(route.sourceNodeId ? { sourceNodeId: route.sourceNodeId } : {}),
           messageCursor: previous?.message_cursor,
           operationId,
         });

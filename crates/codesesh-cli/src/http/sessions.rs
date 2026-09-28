@@ -6,7 +6,6 @@ use axum::{
 };
 use codesesh_core::public_contract::WireSessionListPage;
 use codesesh_core::{
-    contract::SessionReference,
     projects,
     query::{PaginationError, SessionFilter, filter_sessions},
 };
@@ -86,18 +85,18 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
 
 pub async fn detail(
     AxumState(state): AxumState<Arc<State>>,
-    Path((agent, id)): Path<(String, String)>,
+    Path(path): Path<super::params::SessionPath>,
     RawQuery(raw): RawQuery,
 ) -> Response {
-    if !state.options.enabled_agents.contains(&agent) {
-        return error(StatusCode::NOT_FOUND, &format!("Unknown agent: {agent}"));
+    let reference = path.reference();
+    if !state.options.enabled_agents.contains(&reference.agent_name) {
+        return error(
+            StatusCode::NOT_FOUND,
+            &format!("Unknown agent: {}", reference.agent_name),
+        );
     }
     let Ok(_permit) = state.details.clone().try_acquire_owned() else {
         return retry("Session details busy; retry later");
-    };
-    let reference = SessionReference {
-        agent_name: agent,
-        session_id: id,
     };
     let query = Params::new(raw.as_deref());
     let cursor = query.optional("messageCursor").map(str::to_owned);

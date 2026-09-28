@@ -35,8 +35,10 @@ export const queryKeys = {
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
   searches: ["search"] as const,
   sessionDetails: ["session-detail"] as const,
-  sessionDetail: (agent: string, sessionId: string) =>
-    ["session-detail", agent, sessionId] as const,
+  sessionDetail: (agent: string, sessionId: string, sourceNodeId?: string) =>
+    sourceNodeId && sourceNodeId !== "local"
+      ? (["session-detail", agent, sessionId, sourceNodeId] as const)
+      : (["session-detail", agent, sessionId] as const),
   sessionProjections: ["session-projection"] as const,
   sessionProjection: (window: TimeWindow) =>
     ["session-projection", normalizeWindow(window)] as const,

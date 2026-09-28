@@ -66,8 +66,12 @@ export function mergeSortedSessions<T extends SessionHead>(shards: T[][]): T[] {
 }
 
 /** @deprecated Pass a SessionReference to getSessionReferenceKey instead. */
-export function getSessionRouteKey(agentName: string, sessionId: string): string {
-  return getSessionReferenceKey({ agentName, sessionId });
+export function getSessionRouteKey(
+  agentName: string,
+  sessionId: string,
+  sourceNodeId?: string,
+): string {
+  return getSessionReferenceKey({ agentName, sessionId, sourceNodeId });
 }
 
 function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {

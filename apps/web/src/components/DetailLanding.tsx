@@ -31,7 +31,7 @@ interface DetailLandingProps {
   attemptedAgentKey?: string;
   attemptedSessionId?: string | null;
   loadFailureMessage?: string;
-  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  isBookmarked: (agentKey: string, sessionId: string, sourceNodeId?: string) => boolean;
   onToggleBookmark: (session: IndexedSession) => void;
   onRetry?: () => void;
 }
@@ -158,7 +158,7 @@ function RecentSessions({
   onToggleBookmark,
 }: {
   sessions: IndexedSession[];
-  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  isBookmarked: (agentKey: string, sessionId: string, sourceNodeId?: string) => boolean;
   onToggleBookmark: (session: IndexedSession) => void;
 }) {
   useLocale();
@@ -174,17 +174,15 @@ function RecentSessions({
       <PanelHeader title={t("Recent Sessions")} meta={t("{0} items", [sessions.length])} />
       <ul className="mt-3 space-y-2">
         {sessions.map((session) => {
-          const bookmarked = isBookmarked(session.reference.agentName, session.reference.sessionId);
+          const bookmarked = isBookmarked(
+            session.reference.agentName,
+            session.reference.sessionId,
+            session.reference.sourceNodeId,
+          );
           return (
             <li key={formatSessionReference(session.reference)}>
               <div className="flex items-start gap-2 rounded-sm border border-transparent px-2 py-1.5 motion-hover hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)]">
-                <Link
-                  to={sessionRoutePath({
-                    agentName: session.reference.agentName,
-                    sessionId: session.reference.sessionId,
-                  })}
-                  className="min-w-0 flex-1"
-                >
+                <Link to={sessionRoutePath(session.reference)} className="min-w-0 flex-1">
                   <p className="line-clamp-1 text-sm text-[var(--console-text)]">
                     {getSessionDisplayTitle(session)}
                   </p>

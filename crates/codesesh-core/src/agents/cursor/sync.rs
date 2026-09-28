@@ -190,6 +190,7 @@ fn references(ids: impl Iterator<Item = String>) -> Vec<SessionReference> {
     ids.sort();
     ids.into_iter()
         .map(|session_id| SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "cursor".into(),
             session_id,
         })

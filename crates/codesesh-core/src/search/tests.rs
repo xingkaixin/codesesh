@@ -20,9 +20,9 @@ fn database() -> Connection {
         db.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex',?,0,'m','user',100,'[]',?)",params![id,body]).unwrap();
         db.execute("INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at) VALUES('codex',?,?,?,'',1,200)",params![id,title,body]).unwrap();
     }
-    db.execute("INSERT INTO session_file_activity VALUES('codex','one','/work/app','src/Widget.ts','edit',2,200)",[]).unwrap();
+    db.execute("INSERT INTO session_file_activity VALUES('local','codex','one','/work/app','src/Widget.ts','edit',2,200)",[]).unwrap();
     db.execute(
-        "INSERT INTO message_tools VALUES('codex','one',0,'apply_patch')",
+        "INSERT INTO message_tools VALUES('local','codex','one',0,'apply_patch')",
         [],
     )
     .unwrap();
@@ -303,7 +303,7 @@ fn pending_publications_and_query_scope_do_not_leak_into_search() {
 #[test]
 fn file_activity_uses_event_time_and_orders_before_limit() {
     let db = database();
-    db.execute("INSERT INTO session_file_activity VALUES('codex','three','/work/app','src/Other.ts','read',3,250)",[]).unwrap();
+    db.execute("INSERT INTO session_file_activity VALUES('local','codex','three','/work/app','src/Other.ts','read',3,250)",[]).unwrap();
     let rows = list_file_activity(
         &db,
         &FileActivityOptions {

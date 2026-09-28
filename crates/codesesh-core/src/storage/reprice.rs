@@ -179,18 +179,18 @@ impl Cache {
     pub fn reprice(&mut self, agent: &str, pricing: &Pricing) -> Result<Vec<SessionReference>> {
         let transaction = self.connection.transaction()?;
         let entries = {
-            let mut query = transaction.prepare("SELECT session_id FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?")?;
+            let mut query = transaction.prepare("SELECT source_node_id,session_id FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?")?;
             query
                 .query_map(params![agent, pricing.generation() as i64], |row| {
-                    row.get::<_, String>(0)
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?
         };
         let mut changed = Vec::new();
-        for id in entries {
+        for (node, id) in entries {
             let raw: String = transaction.query_row(
-                "SELECT meta_json FROM sessions WHERE agent_name=? AND session_id=?",
-                params![agent, id],
+                "SELECT meta_json FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
+                params![node, agent, id],
                 |row| row.get(0),
             )?;
             let mut metadata: serde_json::Value = serde_json::from_str(&raw)?;
@@ -198,41 +198,42 @@ impl Cache {
             let mut updated = state.head.reprice(pricing);
             for (index, basis) in &mut state.messages {
                 if basis.reprice(pricing) {
-                    transaction.execute("UPDATE messages SET cost=?,cost_source=? WHERE agent_name=? AND session_id=? AND message_index=?", params![basis.cost,basis.source.as_ref().map(CostSource::as_str),agent,id,*index as i64])?;
+                    transaction.execute("UPDATE messages SET cost=?,cost_source=? WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?", params![basis.cost,basis.source.as_ref().map(CostSource::as_str),node,agent,id,*index as i64])?;
                     updated = true;
                 }
             }
             state.generation = Some(pricing.generation());
             if !updated {
-                transaction.execute("UPDATE sessions SET meta_json=json_set(meta_json,'$.rustPricing',json(?)) WHERE agent_name=? AND session_id=?", params![serde_json::to_string(&state)?,agent,id])?;
+                transaction.execute("UPDATE sessions SET meta_json=json_set(meta_json,'$.rustPricing',json(?)) WHERE source_node_id=? AND agent_name=? AND session_id=?", params![serde_json::to_string(&state)?,node,agent,id])?;
                 continue;
             }
             metadata["rustPricing"] = serde_json::to_value(&state)?;
             metadata["rustPricingRevision"] =
                 (metadata["rustPricingRevision"].as_u64().unwrap_or(0) + 1).into();
-            transaction.execute("UPDATE sessions SET total_cost=?,cost_source=?,meta_json=? WHERE agent_name=? AND session_id=?", params![state.head.cost.unwrap_or(0.0),state.head.source.as_ref().map(CostSource::as_str),serde_json::to_string(&metadata)?,agent,id])?;
+            transaction.execute("UPDATE sessions SET total_cost=?,cost_source=?,meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?", params![state.head.cost.unwrap_or(0.0),state.head.source.as_ref().map(CostSource::as_str),serde_json::to_string(&metadata)?,node,agent,id])?;
             for table in ["session_model_cost", "session_cost_summary"] {
                 transaction.execute(
-                    &format!("DELETE FROM {table} WHERE agent_name=? AND session_id=?"),
-                    params![agent, id],
+                    &format!("DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"),
+                    params![node, agent, id],
                 )?;
             }
             let reference = SessionReference {
+                source_node_id: node.clone(),
                 agent_name: agent.into(),
                 session_id: id,
             };
             facts::write(&transaction, &reference, &[])?;
             let head = transaction.query_row(
                 &format!(
-                    "SELECT {} FROM sessions WHERE agent_name=? AND session_id=?",
+                    "SELECT {} FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
                     snapshot::HEAD_COLUMNS
                 ),
-                params![agent, reference.session_id],
+                params![node, agent, reference.session_id],
                 snapshot::head,
             )?;
             transaction.execute(
-                "UPDATE session_documents SET content_hash=? WHERE agent_name=? AND session_id=?",
-                params![facts::content_hash(&head)?, agent, reference.session_id],
+                "UPDATE session_documents SET content_hash=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
+                params![facts::content_hash(&head)?, node, agent, reference.session_id],
             )?;
             changed.push(reference);
         }

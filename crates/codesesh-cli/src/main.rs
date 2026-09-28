@@ -165,6 +165,7 @@ async fn run() -> Result<()> {
                     .with_startup_window(plan.from, plan.to)
                     .with_target_session(plan.session.as_ref().map(|(agent, id)| {
                         codesesh_core::contract::SessionReference {
+                            source_node_id: codesesh_core::contract::local_source_node_id(),
                             agent_name: agent.clone(),
                             session_id: id.clone(),
                         }

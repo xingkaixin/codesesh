@@ -765,7 +765,7 @@ impl AgentScanner {
         for head in cache.agent_snapshot(&self.source.agent)? {
             self.durable_references.insert(head.reference.clone());
             let (source, has_cost_inputs): (Option<String>, bool) = cache.connection().query_row(
-                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE agent_name=?1 AND session_id=?2",
+                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE source_node_id='local' AND agent_name=?1 AND session_id=?2",
                 [&head.reference.agent_name, &head.reference.session_id],
                 |row| Ok((row.get(0)?,row.get(1)?)),
             )?;

@@ -217,7 +217,11 @@ export function AppSidebar({
 
   const activeSessionReference =
     viewState.mode === "session"
-      ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
+      ? getSessionRouteKey(
+          viewState.activeAgentKey,
+          viewState.activeSessionId,
+          viewState.sourceNodeId,
+        )
       : null;
   const isOverviewSelected = viewState.mode === "root";
   const isProjectsSelected = viewState.mode === "projects";
@@ -338,7 +342,8 @@ export function AppSidebar({
                 const isActive =
                   viewState.mode === "session" &&
                   viewState.activeAgentKey === reference.agentName &&
-                  viewState.activeSessionId === reference.sessionId;
+                  viewState.activeSessionId === reference.sessionId &&
+                  (viewState.sourceNodeId ?? "local") === (reference.sourceNodeId ?? "local");
                 const agent = findAgent(agentCatalog, reference.agentName);
                 const available = bookmark.availability === "available";
                 const unavailableTitle = available ? undefined : bookmark.display_title;

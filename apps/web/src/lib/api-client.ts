@@ -150,7 +150,7 @@ export function createApiClient(access: RemoteAccess) {
     sessionId: string,
     options?: SessionDetailFetchOptions,
   ): Promise<SessionDetail> {
-    const path = `/api/sessions${sessionRoutePath({ agentName: agent, sessionId })}`;
+    const path = `/api/sessions${sessionRoutePath({ agentName: agent, sessionId, sourceNodeId: options?.sourceNodeId })}`;
     const fetchOptions: RequestInit | undefined = options
       ? {
           signal: options.signal,
@@ -240,18 +240,29 @@ export function createApiClient(access: RemoteAccess) {
     agentKey: string,
     sessionId: string,
     alias: string,
+    sourceNodeId?: string,
   ): Promise<void> {
-    await fetchJson(`/api/session-aliases${sessionRoutePath({ agentName: agentKey, sessionId })}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ alias }),
-    });
+    await fetchJson(
+      `/api/session-aliases${sessionRoutePath({ agentName: agentKey, sessionId, sourceNodeId })}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alias }),
+      },
+    );
   }
 
-  async function deleteSessionAlias(agentKey: string, sessionId: string): Promise<void> {
-    await fetchJson(`/api/session-aliases${sessionRoutePath({ agentName: agentKey, sessionId })}`, {
-      method: "DELETE",
-    });
+  async function deleteSessionAlias(
+    agentKey: string,
+    sessionId: string,
+    sourceNodeId?: string,
+  ): Promise<void> {
+    await fetchJson(
+      `/api/session-aliases${sessionRoutePath({ agentName: agentKey, sessionId, sourceNodeId })}`,
+      {
+        method: "DELETE",
+      },
+    );
   }
 
   return Object.freeze({

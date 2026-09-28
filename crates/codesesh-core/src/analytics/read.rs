@@ -8,6 +8,7 @@ fn nonnegative(row: &Row<'_>, name: &str) -> rusqlite::Result<f64> {
 }
 fn reference(row: &Row<'_>) -> rusqlite::Result<SessionReference> {
     Ok(SessionReference {
+        source_node_id: row.get("source_node_id")?,
         agent_name: row.get("agent_name")?,
         session_id: row.get("session_id")?,
     })
@@ -24,7 +25,7 @@ pub fn load_cost_facts(
     } else {
         None
     };
-    let mut summaries=connection.prepare("SELECT c.* FROM session_cost_summary c JOIN sessions s ON s.agent_name=c.agent_name AND s.session_id=c.session_id AND s.publication_id IS NULL ORDER BY c.agent_name,c.session_id")?;
+    let mut summaries=connection.prepare("SELECT c.* FROM session_cost_summary c JOIN sessions s ON s.source_node_id=c.source_node_id AND s.agent_name=c.agent_name AND s.session_id=c.session_id AND s.publication_id IS NULL ORDER BY c.agent_name,c.session_id")?;
     let mut sessions = summaries
         .query_map([], |r| {
             Ok(SessionCostSummary {
@@ -54,7 +55,7 @@ pub fn load_cost_facts(
             .enumerate()
             .map(|(i, s)| (s.reference.clone(), i))
             .collect();
-        let mut models=connection.prepare("SELECT m.* FROM session_model_cost m JOIN sessions s ON s.agent_name=m.agent_name AND s.session_id=m.session_id AND s.publication_id IS NULL ORDER BY m.agent_name,m.session_id,m.model")?;
+        let mut models=connection.prepare("SELECT m.* FROM session_model_cost m JOIN sessions s ON s.source_node_id=m.source_node_id AND s.agent_name=m.agent_name AND s.session_id=m.session_id AND s.publication_id IS NULL ORDER BY m.agent_name,m.session_id,m.model")?;
         for row in models.query_map([], |r| {
             Ok((
                 reference(r)?,
@@ -82,7 +83,7 @@ pub fn load_cost_facts(
         conditions.push(format!("{effective} <= ?"));
         values.push(to);
     }
-    let mut query=connection.prepare(&format!("SELECT m.agent_name,m.session_id,{effective} AS cost_time,m.model,CAST(COALESCE(json_extract(m.tokens_json,'$.input'),0) AS INTEGER) AS input_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.output'),0) AS INTEGER) AS output_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.reasoning'),0) AS INTEGER) AS reasoning_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.cache_read'),0) AS INTEGER) AS cache_read_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.cache_create'),0) AS INTEGER) AS cache_create_tokens,m.cost,m.cost_source FROM messages m INDEXED BY idx_messages_usage_time JOIN sessions s ON s.agent_name=m.agent_name AND s.session_id=m.session_id AND s.publication_id IS NULL WHERE {} ORDER BY cost_time,m.agent_name,m.session_id,m.message_index",conditions.join(" AND ")))?;
+    let mut query=connection.prepare(&format!("SELECT m.source_node_id,m.agent_name,m.session_id,{effective} AS cost_time,m.model,CAST(COALESCE(json_extract(m.tokens_json,'$.input'),0) AS INTEGER) AS input_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.output'),0) AS INTEGER) AS output_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.reasoning'),0) AS INTEGER) AS reasoning_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.cache_read'),0) AS INTEGER) AS cache_read_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.cache_create'),0) AS INTEGER) AS cache_create_tokens,m.cost,m.cost_source FROM messages m INDEXED BY idx_messages_usage_time JOIN sessions s ON s.source_node_id=m.source_node_id AND s.agent_name=m.agent_name AND s.session_id=m.session_id AND s.publication_id IS NULL WHERE {} ORDER BY cost_time,m.agent_name,m.session_id,m.message_index",conditions.join(" AND ")))?;
     let messages = query
         .query_map(rusqlite::params_from_iter(values), |r| {
             let model: Option<String> = r.get("model")?;

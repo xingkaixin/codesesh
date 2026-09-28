@@ -38,19 +38,6 @@ fn backfill_head_metadata(db: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn migrate_head_metadata(db: &Connection) -> Result<()> {
-    let transaction = db.unchecked_transaction()?;
-    transaction.execute_batch("ALTER TABLE sessions ADD COLUMN head_meta_json TEXT")?;
-    backfill_head_metadata(&transaction)?;
-    transaction.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
-    transaction.execute(
-        "INSERT OR REPLACE INTO cache_meta VALUES('version',?)",
-        [super::CACHE_SCHEMA_VERSION.to_string()],
-    )?;
-    transaction.commit()?;
-    Ok(())
-}
-
 fn migrate(db: &Connection, version: i64) -> Result<()> {
     let tables = [
         "cache_meta",
@@ -128,23 +115,29 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
         }
         db.execute_batch("DROP TABLE IF EXISTS cached_sessions; DROP TABLE IF EXISTS project_sessions; DROP TABLE IF EXISTS search_index_publication_entries;")?;
         if version < 22 {
-            db.execute_batch("INSERT OR IGNORE INTO pending_reindex SELECT agent_name,session_id FROM sessions; UPDATE session_documents SET content_hash='';")?;
+            db.execute_batch("INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions; UPDATE session_documents SET content_hash='';")?;
         }
         if version < 14 {
-            db.execute_batch("UPDATE session_documents SET indexed_message_count=(SELECT COUNT(*) FROM messages WHERE messages.agent_name=session_documents.agent_name AND messages.session_id=session_documents.session_id)")?;
+            db.execute_batch("UPDATE session_documents SET indexed_message_count=(SELECT COUNT(*) FROM messages WHERE messages.source_node_id=session_documents.source_node_id AND messages.agent_name=session_documents.agent_name AND messages.session_id=session_documents.session_id)")?;
         }
-        db.execute_batch("DELETE FROM session_model_cost; DELETE FROM session_cost_summary; INSERT INTO session_model_cost SELECT agent_name,session_id,model,SUM(COALESCE(cost,0)),SUM(CASE WHEN cost_source='recorded' THEN COALESCE(cost,0) ELSE 0 END) FROM messages WHERE model IS NOT NULL AND model<>'' GROUP BY agent_name,session_id,model;")?;
-        let mut query = db.prepare("SELECT agent_name,session_id FROM sessions")?;
+        db.execute_batch("DELETE FROM session_model_cost; DELETE FROM session_cost_summary; INSERT INTO session_model_cost SELECT source_node_id,agent_name,session_id,model,SUM(COALESCE(cost,0)),SUM(CASE WHEN cost_source='recorded' THEN COALESCE(cost,0) ELSE 0 END) FROM messages WHERE model IS NOT NULL AND model<>'' GROUP BY source_node_id,agent_name,session_id,model;")?;
+        let mut query = db.prepare("SELECT source_node_id,agent_name,session_id FROM sessions")?;
         let references = query
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(query);
-        for (agent, id) in references {
-            db.execute(include_str!("cost-summary.sql"), params![agent, id])?;
+        for (node, agent, id) in references {
+            db.execute(include_str!("cost-summary.sql"), params![node, agent, id])?;
         }
-        backfill_head_metadata(db)?;
+        if version < 35 {
+            backfill_head_metadata(db)?;
+        }
         if version < 12 {
             backfill_legacy_projections(db, version)?;
         }
@@ -158,7 +151,7 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
         );
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
         db.execute(
-            "INSERT OR REPLACE INTO cache_meta VALUES('version','35')",
+            "INSERT OR REPLACE INTO cache_meta VALUES('version','36')",
             [],
         )?;
         db.execute_batch("COMMIT")?;
@@ -194,10 +187,8 @@ pub fn ensure(db: &Connection, path: Option<&Path>) -> Result<()> {
             return Err(error.into());
         }
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
-        db.execute("INSERT INTO cache_meta VALUES('version','35')", [])?;
+        db.execute("INSERT INTO cache_meta VALUES('version','36')", [])?;
         db.execute_batch("COMMIT")?;
-    } else if version == 34 {
-        migrate_head_metadata(db)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
             let backup = path.with_extension(format!(
@@ -253,11 +244,11 @@ pub fn ensure(db: &Connection, path: Option<&Path>) -> Result<()> {
             ),
             (
                 "pi_automated_messages_v1",
-                "INSERT OR IGNORE INTO pending_reindex SELECT agent_name,session_id FROM sessions WHERE agent_name='pi'",
+                "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
             ),
             (
                 "codex_exec_decode_migrated_v3",
-                "INSERT OR IGNORE INTO pending_reindex SELECT agent_name,session_id FROM sessions WHERE agent_name='codex'",
+                "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='codex'",
             ),
             (
                 "opencode_subagent_fold_v1",
@@ -308,7 +299,7 @@ fn restore_legacy_heads(db: &Connection) -> Result<()> {
         let updated = value["time_updated"].as_f64().unwrap_or(created);
         let stats = &value["stats"];
         db.execute("INSERT INTO sessions(agent_name,session_id,sort_index,title,source_path,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,meta_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",params![agent,id,order,value["title"].as_str().unwrap_or(""),meta.as_ref().and_then(|text|serde_json::from_str::<serde_json::Value>(text).ok()).and_then(|value|value["sourcePath"].as_str().map(str::to_owned)),directory,identity.kind,identity.key,identity.display_name,created,updated,updated,stats["message_count"].as_i64().unwrap_or(0),stats["total_input_tokens"].as_f64().unwrap_or(0.0),stats["total_output_tokens"].as_f64().unwrap_or(0.0),stats["total_cost"].as_f64().unwrap_or(0.0),meta])?;
-        db.execute("UPDATE sessions SET parent_agent_name=?,parent_session_id=?,total_cache_read_tokens=?,total_cache_create_tokens=?,cost_source=?,total_tokens=?,model_usage_json=?,smart_tags_json=?,smart_tags_source_updated_at=?,smart_tags_classifier_revision=? WHERE agent_name=? AND session_id=?",params![value["parent_reference"]["agentName"].as_str(),value["parent_reference"]["sessionId"].as_str(),stats["total_cache_read_tokens"].as_f64(),stats["total_cache_create_tokens"].as_f64(),stats["cost_source"].as_str(),stats["total_tokens"].as_f64(),value.get("model_usage").filter(|v|!v.is_null()).map(super::json::stringify).transpose()?,value.get("smart_tags").filter(|v|!v.is_null()).map(super::json::stringify).transpose()?,value["smart_tags_source_updated_at"].as_f64(),value["smart_tags_classifier_revision"].as_str(),agent,id])?;
+        db.execute("UPDATE sessions SET parent_agent_name=?,parent_session_id=?,total_cache_read_tokens=?,total_cache_create_tokens=?,cost_source=?,total_tokens=?,model_usage_json=?,smart_tags_json=?,smart_tags_source_updated_at=?,smart_tags_classifier_revision=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![value["parent_reference"]["agentName"].as_str(),value["parent_reference"]["sessionId"].as_str(),stats["total_cache_read_tokens"].as_f64(),stats["total_cache_create_tokens"].as_f64(),stats["cost_source"].as_str(),stats["total_tokens"].as_f64(),value.get("model_usage").filter(|v|!v.is_null()).map(super::json::stringify).transpose()?,value.get("smart_tags").filter(|v|!v.is_null()).map(super::json::stringify).transpose()?,value["smart_tags_source_updated_at"].as_f64(),value["smart_tags_classifier_revision"].as_str(),"local",agent,id])?;
     }
     Ok(())
 }
@@ -318,19 +309,24 @@ fn backfill_legacy_projections(db: &Connection, version: i64) -> Result<()> {
         let identity = crate::projects::compute_identity(&head.directory);
         head.project_identity = identity;
         let reference = &head.reference;
-        db.execute("UPDATE sessions SET project_identity_kind=?,project_identity_key=?,project_display_name=? WHERE agent_name=? AND session_id=?",params![head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,reference.agent_name,reference.session_id])?;
-        db.execute("UPDATE session_file_activity SET project_identity_key=? WHERE agent_name=? AND session_id=?",params![head.project_identity.key,reference.agent_name,reference.session_id])?;
+        db.execute("UPDATE sessions SET project_identity_kind=?,project_identity_key=?,project_display_name=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,reference.source_node_id,reference.agent_name,reference.session_id])?;
+        db.execute("UPDATE session_file_activity SET project_identity_key=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![head.project_identity.key,reference.source_node_id,reference.agent_name,reference.session_id])?;
         if version >= 11 {
             continue;
         }
         let Some(detail) = super::read::detail(db, head.clone())? else {
             continue;
         };
-        let mut query=db.prepare("SELECT message_index,tool_metadata_json FROM messages WHERE agent_name=? AND session_id=? AND tool_metadata_json IS NOT NULL")?;
+        let mut query=db.prepare("SELECT message_index,tool_metadata_json FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND tool_metadata_json IS NOT NULL")?;
         let rows = query
-            .query_map(params![reference.agent_name, reference.session_id], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })?
+            .query_map(
+                params![
+                    reference.source_node_id,
+                    reference.agent_name,
+                    reference.session_id
+                ],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         for (index, text) in rows {
             if let Ok(serde_json::Value::Array(tools)) = serde_json::from_str(&text) {
@@ -341,8 +337,9 @@ fn backfill_legacy_projections(db: &Connection, version: i64) -> Result<()> {
                         .filter(|name| !name.is_empty())
                     {
                         db.execute(
-                            "INSERT OR IGNORE INTO message_tools VALUES(?,?,?,?)",
+                            "INSERT OR IGNORE INTO message_tools VALUES(?,?,?,?,?)",
                             params![
+                                reference.source_node_id,
                                 reference.agent_name,
                                 reference.session_id,
                                 index,
@@ -361,13 +358,14 @@ fn backfill_legacy_projections(db: &Connection, version: i64) -> Result<()> {
             };
             crate::agents::complete_projections(&mut parsed);
             db.execute(
-                "DELETE FROM session_file_activity WHERE agent_name=? AND session_id=?",
-                params![reference.agent_name, reference.session_id],
+                "DELETE FROM session_file_activity WHERE source_node_id=? AND agent_name=? AND session_id=?",
+                params![reference.source_node_id, reference.agent_name, reference.session_id],
             )?;
             for activity in parsed.detail.file_activity {
                 db.execute(
-                    "INSERT INTO session_file_activity VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO session_file_activity VALUES(?,?,?,?,?,?,?,?)",
                     params![
+                        reference.source_node_id,
                         reference.agent_name,
                         reference.session_id,
                         head.project_identity.key,
@@ -434,7 +432,7 @@ mod tests {
     #[test]
     fn rejects_future_schema_without_writing() {
         let db = Connection::open_in_memory().unwrap();
-        db.execute_batch("PRAGMA user_version=36").unwrap();
+        db.execute_batch("PRAGMA user_version=999").unwrap();
         assert!(ensure(&db, None).is_err());
         assert_eq!(
             db.query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| row

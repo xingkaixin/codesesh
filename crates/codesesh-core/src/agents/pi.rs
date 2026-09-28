@@ -487,6 +487,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
         .unwrap_or_else(|| "Untitled Session".into());
     Ok(Some(detail(
         SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "pi".into(),
             session_id: id,
         },

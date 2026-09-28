@@ -150,12 +150,9 @@ pub async fn import(AxumState(state): AxumState<Arc<State>>, bytes: Bytes) -> Re
 }
 pub async fn delete(
     AxumState(state): AxumState<Arc<State>>,
-    Path((agent, id)): Path<(String, String)>,
+    Path(path): Path<super::params::SessionPath>,
 ) -> Response {
-    let reference = SessionReference {
-        agent_name: agent,
-        session_id: id,
-    };
+    let reference = path.reference();
     if let Err(e) = known(&state, &reference) {
         return error(StatusCode::BAD_REQUEST, &e);
     }
@@ -166,17 +163,14 @@ pub async fn delete(
 }
 pub async fn alias_put(
     AxumState(state): AxumState<Arc<State>>,
-    Path((agent, id)): Path<(String, String)>,
+    Path(path): Path<super::params::SessionPath>,
     bytes: Bytes,
 ) -> Response {
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let Some(alias) = body["alias"].as_str() else {
         return error(StatusCode::BAD_REQUEST, "Invalid session alias payload");
     };
-    let reference = SessionReference {
-        agent_name: agent,
-        session_id: id,
-    };
+    let reference = path.reference();
     if let Err(e) = known(&state, &reference) {
         return error(StatusCode::BAD_REQUEST, &e);
     }
@@ -193,12 +187,9 @@ pub async fn alias_put(
 }
 pub async fn alias_delete(
     AxumState(state): AxumState<Arc<State>>,
-    Path((agent, id)): Path<(String, String)>,
+    Path(path): Path<super::params::SessionPath>,
 ) -> Response {
-    let reference = SessionReference {
-        agent_name: agent,
-        session_id: id,
-    };
+    let reference = path.reference();
     if let Err(e) = known(&state, &reference) {
         return error(StatusCode::BAD_REQUEST, &e);
     }

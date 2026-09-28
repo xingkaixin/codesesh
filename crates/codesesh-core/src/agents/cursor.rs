@@ -70,6 +70,7 @@ fn parse_composer(
         version: None,
         summary_files: None,
         reference: SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "cursor".into(),
             session_id: id.into(),
         },

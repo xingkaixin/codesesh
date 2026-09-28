@@ -7,6 +7,7 @@ export const APP_ROUTE_IDS = {
   projects: "projects",
   root: "root",
   session: "session",
+  sourceSession: "source-session",
 } as const;
 
 export const appRouteChildren: RouteObject[] = [
@@ -23,6 +24,7 @@ export const appRouteChildren: RouteObject[] = [
     id: APP_ROUTE_IDS.agent,
     children: [{ path: ":sessionId", id: APP_ROUTE_IDS.session }],
   },
+  { path: "nodes/:sourceNodeId/:agentKey/:sessionId", id: APP_ROUTE_IDS.sourceSession },
   { path: "*", id: APP_ROUTE_IDS.notFound },
 ];
 

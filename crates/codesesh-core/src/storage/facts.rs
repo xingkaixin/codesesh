@@ -69,10 +69,14 @@ pub fn write(
     reference: &SessionReference,
     messages: &[Message],
 ) -> Result<()> {
-    connection.execute("INSERT INTO session_model_cost(agent_name,session_id,model,cost,cost_recorded) SELECT agent_name,session_id,model,SUM(COALESCE(cost,0)),SUM(CASE WHEN cost_source='recorded' THEN COALESCE(cost,0) ELSE 0 END) FROM messages WHERE agent_name=? AND session_id=? AND model IS NOT NULL AND model<>'' GROUP BY agent_name,session_id,model",params![reference.agent_name,reference.session_id])?;
+    connection.execute("INSERT INTO session_model_cost(source_node_id,agent_name,session_id,model,cost,cost_recorded) SELECT source_node_id,agent_name,session_id,model,SUM(COALESCE(cost,0)),SUM(CASE WHEN cost_source='recorded' THEN COALESCE(cost,0) ELSE 0 END) FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND model IS NOT NULL AND model<>'' GROUP BY source_node_id,agent_name,session_id,model",params![reference.source_node_id,reference.agent_name,reference.session_id])?;
     connection.execute(
         include_str!("cost-summary.sql"),
-        params![reference.agent_name, reference.session_id],
+        params![
+            reference.source_node_id,
+            reference.agent_name,
+            reference.session_id
+        ],
     )?;
     for (index, message) in messages.iter().enumerate() {
         for part in &message.parts {
@@ -80,8 +84,9 @@ pub fn write(
                 let name = tool.trim().to_lowercase();
                 if !name.is_empty() {
                     connection
-                        .prepare_cached("INSERT OR IGNORE INTO message_tools VALUES(?,?,?,?)")?
+                        .prepare_cached("INSERT OR IGNORE INTO message_tools VALUES(?,?,?,?,?)")?
                         .execute(params![
+                            reference.source_node_id,
                             reference.agent_name,
                             reference.session_id,
                             index as i64,

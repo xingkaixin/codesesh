@@ -4,7 +4,7 @@
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 35`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 36`
 <!-- repo-fact:cache-schema-version:end -->
 
 入口是 `crates/codesesh-core/src/storage/mod.rs`，建表定义在
@@ -69,15 +69,15 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 
 打开数据库时先读取 `PRAGMA user_version`，兼容旧库的 `cache_meta.version`：
 
-1. 新库直接创建 schema 35。
-2. schema 34 通过事务增加并回填 `head_meta_json`，不备份整库或重建消息、FTS。更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份。
+1. 新库直接创建 schema 36。
+2. schema 35 及更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份；迁移重建带来源维度的键，早于 schema 35 的库同时回填 `head_meta_json`。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
 5. 缺失的 FTS 虚表通过建表和 rebuild 恢复。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。与固定 Node 参考
-制品的正向迁移与 Rust 重启检查是独立验收。schema 35 不支持再由 schema 34 的旧版本
-打开；用户状态仍使用 schema 3。
+制品的正向迁移与 Rust 重启检查是独立验收。schema 36 不支持再由 schema 35 的旧版本
+打开；用户状态使用 schema 4。
 
 旧表删除后的空间进入 SQLite freelist，后续写入可以复用。启动不自动压缩整个缓存。
 需要手动压缩时，应先停止 CodeSesh，再运行：
@@ -130,3 +130,9 @@ SHA-256。目标正式发布并持久化迁移记录后，才删除已验证的�
 `--clear-cache` 跳过旧会话库导入并保留它供手动清理；`--no-cache` 使用临时会话库，
 以后启用持久缓存时再处理旧库。JSON 模式不迁移用户状态库。迁移失败时源数据保留，错误
 包含具体路径；清理失败不阻止使用已验证的新数据。
+
+## Hub 来源身份
+
+schema 36 在会话及关联表的复合键中加入 `source_node_id`。旧数据归属保留的本地来源 `local`，远程来源使用独立身份。同一 Agent 的相同会话 ID 可存在于不同来源中。
+
+schema 35 及更早版本升级前保留数据库备份，事务重建关联键并检查外键完整性。已经存在的 `head_meta_json` 不重新生成。用户状态 schema 4 同样扩展收藏和自定义标题的键，不改变原有本地映射。升级后的库不支持用旧版本直接打开。
