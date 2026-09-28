@@ -1,6 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AGENT_CATALOG, sessionRoutePath } from "@codesesh/contract";
 import { useLocale } from "../../hooks/useLocale";
@@ -23,15 +23,16 @@ const button =
 const input =
   "rounded-sm border border-[var(--console-border)] bg-[var(--console-bg)] px-2 py-1.5 text-sm text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]";
 
-function nodeStatus(node: SourceNode) {
+function nodeStatus(node: SourceNode, now: number) {
   if (node.revoked) return t("Access revoked");
+  if (node.lastSeen && now - node.lastSeen > 60000)
+    return t("Offline. Saved history remains available.");
   if (node.error?.includes("WORKER_TOO_NEW"))
     return t("Upgrade Hub first. Collection and uploads are paused.");
   if (node.error?.includes("WORKER_TOO_OLD"))
     return t("Upgrade this Worker. Collection and uploads are paused.");
   if (node.error) return t("Worker reported an error. Check its logs.");
   if (!node.lastSeen) return t("Waiting for first connection");
-  if (Date.now() - node.lastSeen > 60000) return t("Offline. Saved history remains available.");
   if (!node.collectionComplete) return t("Collecting history");
   return node.queue?.batches ? t("Connected, uploading") : t("Connected, up to date");
 }
@@ -52,6 +53,7 @@ function taskLabel(status: string) {
 
 function NodeRow({
   node,
+  now,
   task,
   busy,
   run,
@@ -59,6 +61,7 @@ function NodeRow({
   rescanAgents,
 }: {
   node: SourceNode;
+  now: number;
   task?: NodeTask;
   busy: boolean;
   run: (operation: () => Promise<unknown>) => void;
@@ -102,7 +105,7 @@ function NodeRow({
             <span className="text-xs text-[var(--console-muted)]">v{node.version}</span>
           </div>
         )}
-        <p className="mt-1 text-sm text-[var(--console-muted)]">{nodeStatus(node)}</p>
+        <p className="mt-1 text-sm text-[var(--console-muted)]">{nodeStatus(node, now)}</p>
         <p className="mt-1 break-all text-xs text-[var(--console-muted)]">{node.id}</p>
         {node.error && (
           <details className="mt-2 text-xs text-[var(--console-error)]">
@@ -204,6 +207,11 @@ function NodeRow({
 export function NodePanel({ onClose }: { onClose: () => void }) {
   useLocale();
   const nodes = useNodes();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState<{ token: string; expires: number } | null>(null);
@@ -350,6 +358,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
               <NodeRow
                 key={node.id}
                 node={node}
+                now={now}
                 task={nodes.data?.tasks.find((task) => task.nodeId === node.id)}
                 busy={busy}
                 run={run}

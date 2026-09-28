@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, cleanup, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../../lib/api";
@@ -54,10 +54,30 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
 describe("NodePanel", () => {
+  it("marks an unchanged node offline as time passes and online after a heartbeat", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(node.lastSeen);
+    panel();
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(screen.getByText("Connected, uploading")).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(65000));
+    expect(screen.getByText("Offline. Saved history remains available.")).toBeTruthy();
+    vi.mocked(api.fetchNodes).mockResolvedValue({
+      nodes: [{ ...node, lastSeen: Date.now() }],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    });
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByText("Connected, uploading")).toBeTruthy();
+  });
+
   it("targets one node for rescanning and surfaces rejected management actions", async () => {
     panel();
     await screen.findByRole("heading", { name: "Office worker" });
