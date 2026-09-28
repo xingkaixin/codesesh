@@ -10,7 +10,7 @@
 
 | 检查 | 命令或方式 | 结果 |
 | --- | --- | --- |
-| Rust 工作区回归 | `cargo test --workspace --locked` | 259 通过，3 个原有忽略项；39 CLI、4 迁移、3 真实进程、213 core |
+| Rust 工作区回归 | `cargo test --workspace --locked` | 261 通过，3 个原有忽略项；39 CLI、4 迁移、4 真实进程、214 core |
 | Rust 格式 | `cargo fmt --all --check` | 通过 |
 | Rust 静态检查 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 通过 |
 | 浏览器契约 | `pnpm generate:rust-contract` | 通过，生成结果已纳入变更 |
@@ -37,6 +37,17 @@
 - core 回归覆盖备份中断保留原库和 `.partial`、升级完成后不重复备份，以及接收同机 Worker 积压后保持来源 ID。
 
 本轮没有对用户实际约 13 GiB 数据库执行升级，也没有重新执行用户已验证完成的 PR #651 目录迁移。自动验证使用独立数据目录。日志前缀 `/tmp/codesesh-services-*`，原生进程验证为 `/tmp/codesesh-both-services-smoke.log` 和 `/tmp/codesesh-progress-smoke-release.log`。
+
+## Hub 与 Worker 分离：已执行
+
+- 移除 Hub `--scan-local`。真实进程验证 Hub 启动后新增本机源文件不会自行采集，独立 Worker 接入后才出现。
+- 同机来源证明绑定 Hub 身份、配对令牌与上传流；错误证明或挪用流不能占用 `local`。无本机证明的配对仍分配独立来源。
+- 先启动单机、保存会话/收藏/自定义标题，再启动纯 Hub 与同机 Worker（不传 `--history`）：旧历史不重复，来源和项目键不变，收藏与自定义标题保留。
+- Worker 上传新增会话及旧会话正文变化；节点列表不再同时显示同一来源的旧本机条目和 Worker 条目。
+- 同机 Worker 读取旧库建立基线时不生成导入积压，Hub 数据代号变化时交回既有恢复流程。重新配对更换凭据并保留本机来源历史。
+- 所有数据测试在临时目录进行，没有重启用户实际 Hub 或改写用户实际历史库。此前旧实现产生的不同来源重复记录不会自动删除或合并。
+
+日志：`/tmp/codesesh-pure-final-tests.log`、`/tmp/codesesh-pure-process-final.log`、`/tmp/codesesh-pure-clippy-last.log`。使用前先重启新版 Hub，再启动同机 Worker。Windows/Linux 实机验证仍待分配。
 
 ## 已覆盖的故障与行为
 
