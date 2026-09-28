@@ -1,3 +1,4 @@
+mod local;
 use super::{CapturedSession, Operation, PAYLOAD_VERSION};
 use crate::{
     agents::{SessionRecord, dsh::AttachmentReferences},

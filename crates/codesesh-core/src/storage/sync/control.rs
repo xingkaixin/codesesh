@@ -113,6 +113,50 @@ impl Cache {
         version: &str,
         stream_id: &str,
     ) -> Result<PairingGrant> {
+        self.pair_worker_with_origin(token, name, version, stream_id, None)
+    }
+
+    pub fn configure_local_worker(&mut self, key: &str) -> Result<()> {
+        self.connection.execute("INSERT INTO hub_meta VALUES('local_worker_key',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key])?;
+        Ok(())
+    }
+
+    pub fn pair_worker_with_origin(
+        &mut self,
+        token: &str,
+        name: &str,
+        version: &str,
+        stream_id: &str,
+        proof: Option<(&str, &str)>,
+    ) -> Result<PairingGrant> {
+        let local = if let Some((claimed_hub, proof)) = proof {
+            let hub_id: String = self.connection.query_row(
+                "SELECT value FROM hub_meta WHERE key='hub_id'",
+                [],
+                |r| r.get(0),
+            )?;
+            let key: Option<String> = self
+                .connection
+                .query_row(
+                    "SELECT value FROM hub_meta WHERE key='local_worker_key'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if claimed_hub == hub_id {
+                ensure!(
+                    key.is_some_and(|key| crate::sync::verify_local_worker_proof(
+                        &key, &hub_id, token, stream_id, proof
+                    )),
+                    "Invalid local Worker proof; restart or upgrade Hub and retry"
+                );
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         ensure!(
             !name.trim().is_empty() && name.len() <= 128,
             "Invalid node name"
@@ -130,9 +174,13 @@ impl Cache {
             used == 1,
             "Pairing token is invalid, expired, or already used"
         );
-        let node_id = uuid::Uuid::new_v4().to_string();
+        let node_id = if local {
+            crate::contract::LOCAL_SOURCE_NODE_ID.to_owned()
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        };
         let credential = secret();
-        tx.execute("INSERT INTO hub_nodes(id,name,version,credential_hash,stream_id,paired_at) VALUES(?,?,?,?,?,?)", params![node_id,name,version,digest(credential.as_bytes()),stream_id,chrono::Utc::now().timestamp_millis()])?;
+        tx.execute("INSERT INTO hub_nodes(id,name,version,credential_hash,stream_id,paired_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,credential_hash=excluded.credential_hash,stream_id=excluded.stream_id,revoked=0,confirmed_sequence=0,confirmed_digest=NULL,confirmed_reference=NULL,recovery_epoch=NULL,instance_id=NULL,lease_until=NULL,queue=NULL,error=NULL,collection_complete=0", params![node_id,name,version,digest(credential.as_bytes()),stream_id,chrono::Utc::now().timestamp_millis()])?;
         let hub_id = tx.query_row("SELECT value FROM hub_meta WHERE key='hub_id'", [], |r| {
             r.get(0)
         })?;
@@ -140,7 +188,7 @@ impl Cache {
             r.get(0)
         })?;
         tx.commit()?;
-        self.connection.execute("INSERT INTO hub_control.nodes(id,name,version,credential_hash,stream_id,paired_at) SELECT id,name,version,credential_hash,stream_id,paired_at FROM hub_nodes WHERE id=?",[&node_id])?;
+        self.connection.execute("INSERT INTO hub_control.nodes(id,name,version,credential_hash,stream_id,paired_at) SELECT id,name,version,credential_hash,stream_id,paired_at FROM hub_nodes WHERE id=? ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,credential_hash=excluded.credential_hash,stream_id=excluded.stream_id,revoked=0",[&node_id])?;
         Ok(PairingGrant {
             node_id,
             credential,

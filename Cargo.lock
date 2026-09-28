@@ -398,6 +398,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "chrono-tz",
+ "hmac",
  "icu_collator",
  "icu_locale",
  "md5",

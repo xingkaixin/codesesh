@@ -458,3 +458,101 @@ fn local_worker_resume_drains_pending_content_without_changing_source_identity()
         .unwrap();
     assert_eq!(cache.snapshot().unwrap().len(), 1);
 }
+
+#[test]
+fn local_pairing_requires_bound_proof_and_preserves_existing_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    let mut original = super::super::tests::source(dir.path(), "existing");
+    let reference = original.head.reference.clone();
+    let project = original.head.project_identity.clone();
+    cache.publish(std::slice::from_mut(&mut original)).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    cache.configure_local_worker("private-local-key").unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let stream = worker.stream_id().unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let proof = crate::sync::local_worker_proof("private-local-key", "hub", &token, &stream);
+    assert!(
+        cache
+            .pair_worker_with_origin(
+                &token,
+                "Local",
+                "1.1.1",
+                &stream,
+                Some(("hub", "wrong-proof"))
+            )
+            .is_err()
+    );
+    let other_stream = uuid::Uuid::new_v4().to_string();
+    assert!(
+        cache
+            .pair_worker_with_origin(
+                &token,
+                "Local",
+                "1.1.1",
+                &other_stream,
+                Some(("hub", &proof))
+            )
+            .is_err()
+    );
+    let grant = cache
+        .pair_worker_with_origin(&token, "Local", "1.1.1", &stream, Some(("hub", &proof)))
+        .unwrap();
+    assert_eq!(grant.node_id, "local");
+    worker.bind("http://127.0.0.1/", &grant).unwrap();
+    assert_eq!(worker.adopt_local_history(&cache, &grant).unwrap(), Some(1));
+    assert_eq!(worker.queue_status().unwrap().batches, 0);
+    assert_eq!(
+        worker.baseline("codex").unwrap().sessions[0].head.reference,
+        reference
+    );
+    original.head.title = "Updated locally".into();
+    original.detail.head = original.head.clone();
+    let mut batch = ScanBatch {
+        sessions: vec![original],
+        removed: vec![],
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+    let head = cache.head(&reference).unwrap().unwrap();
+    assert_eq!(head.title, "Updated locally");
+    assert_eq!(head.project_identity, project);
+    let token = cache.create_pairing_token().unwrap();
+    let remote = cache
+        .pair_worker(&token, "Remote", "1.1.1", &other_stream)
+        .unwrap();
+    assert_ne!(remote.node_id, "local");
+    let mut stale = grant.clone();
+    stale.epoch = "old-epoch".into();
+    assert!(
+        worker
+            .adopt_local_history(&cache, &stale)
+            .unwrap()
+            .is_none()
+    );
+    cache.revoke_worker("local").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let proof = crate::sync::local_worker_proof("private-local-key", "hub", &token, &other_stream);
+    let repaired = cache
+        .pair_worker_with_origin(
+            &token,
+            "Restored local",
+            "1.1.1",
+            &other_stream,
+            Some(("hub", &proof)),
+        )
+        .unwrap();
+    assert_eq!(repaired.node_id, "local");
+    assert!(cache.authenticate_worker(&grant.credential).is_err());
+    assert_eq!(
+        cache.authenticate_worker(&repaired.credential).unwrap(),
+        "local"
+    );
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+}

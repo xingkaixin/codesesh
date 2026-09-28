@@ -19,7 +19,9 @@ fn namespace(head: &mut SessionHead, node: &str) -> Result<()> {
         );
         parent.source_node_id = node.into();
     }
-    head.project_identity.key = format!("@{node}/{}", head.project_identity.key);
+    if node != crate::contract::LOCAL_SOURCE_NODE_ID {
+        head.project_identity.key = format!("@{node}/{}", head.project_identity.key);
+    }
     head.display_title = None;
     Ok(())
 }
