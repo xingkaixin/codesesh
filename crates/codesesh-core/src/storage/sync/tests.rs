@@ -230,3 +230,187 @@ async fn uploaded_sessions_publish_through_runtime_writer() {
     }
     runtime.shutdown().await.unwrap();
 }
+
+#[test]
+fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
+    let dir = tempfile::tempdir().unwrap();
+    let worker_path = dir.path().join("worker.db");
+    let mut worker = WorkerStore::open(&worker_path).unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub-fixture").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+        .unwrap();
+    let mut batch = ScanBatch {
+        sessions: vec![super::super::tests::source(dir.path(), "shared")],
+        removed: vec![],
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    let task = cache
+        .request_rescan(std::slice::from_ref(&grant.node_id), &[], "manual")
+        .unwrap()
+        .remove(0);
+    assert!(worker.begin_rescan(&task, &["codex".into()]).unwrap());
+    assert!(!worker.begin_rescan(&task, &["codex".into()]).unwrap());
+    worker.save_batch("codex", &mut batch).unwrap();
+    let hello = crate::sync::WorkerHello {
+        collection_complete: true,
+        collection_error: None,
+        epoch: Some(grant.epoch.clone()),
+        confirmed_sequence: worker.confirmed_sequence().unwrap(),
+        version: "1.1.1".into(),
+        protocol_version: 1,
+        payload_version: 1,
+        stream_id: worker.stream_id().unwrap(),
+        queue: worker.queue_status().unwrap(),
+        rescan: worker.rescan_progress().unwrap(),
+    };
+    assert!(hello.rescan.as_ref().unwrap().target_sequence.is_some());
+    cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
+    assert_eq!(cache.rescan_tasks().unwrap()[0].status, "uploading");
+    drop(worker);
+    let mut worker = WorkerStore::open(&worker_path).unwrap();
+    assert!(!worker.begin_rescan(&task, &["codex".into()]).unwrap());
+    transfer(&mut cache, &mut worker, &grant);
+    cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
+    assert_eq!(cache.rescan_tasks().unwrap()[0].status, "completed");
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+}
+
+#[test]
+fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let mut grant = cache
+        .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+        .unwrap();
+    worker.bind("https://hub.example/", &grant).unwrap();
+    let mut batch = ScanBatch {
+        sessions: vec![super::super::tests::source(dir.path(), "shared")],
+        removed: vec![],
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    let pending = worker.next_upload().unwrap().unwrap();
+    let old = Upload {
+        epoch: grant.epoch.clone(),
+        stream_id: worker.stream_id().unwrap(),
+        sequence: pending.sequence,
+        payload_version: pending.payload_version,
+        digest: pending.digest,
+        operation: pending.operation,
+    };
+    cache
+        .receive_upload(&grant.node_id, &old, &Pricing::bundled())
+        .unwrap();
+    worker
+        .acknowledge(&old.stream_id, old.sequence, &old.digest)
+        .unwrap();
+    grant.epoch = cache.rotate_data_epoch().unwrap();
+    let recovery = worker.prepare_recovery(&grant.epoch).unwrap();
+    assert_eq!(worker.queue_status().unwrap().batches, 2);
+    assert_eq!(
+        worker.prepare_recovery(&grant.epoch).unwrap().new_stream,
+        recovery.new_stream
+    );
+    cache.recover_worker(&grant.node_id, &recovery).unwrap();
+    cache.recover_worker(&grant.node_id, &recovery).unwrap();
+    assert_eq!(cache.rescan_tasks().unwrap().len(), 1);
+    worker
+        .finish_recovery("https://hub.example/", &grant)
+        .unwrap();
+    assert!(
+        worker
+            .acknowledge(&old.stream_id, old.sequence, &old.digest)
+            .is_err()
+    );
+    assert!(
+        cache
+            .receive_upload(&grant.node_id, &old, &Pricing::bundled())
+            .is_err()
+    );
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+}
+
+#[test]
+fn recovery_retains_orphaned_metadata_until_a_snapshot_repairs_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let mut grant = cache
+        .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+        .unwrap();
+    worker.bind("https://hub.example/", &grant).unwrap();
+    let mut batch = ScanBatch {
+        sessions: vec![super::super::tests::source(dir.path(), "shared")],
+        removed: vec![],
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    let reference = cache.snapshot().unwrap()[0].reference.clone();
+    cache.remove(&[reference]).unwrap();
+    batch.sessions[0].head.title = "New title".into();
+    worker.save_batch("codex", &mut batch).unwrap();
+    grant.epoch = cache.rotate_data_epoch().unwrap();
+    let recovery = worker.prepare_recovery(&grant.epoch).unwrap();
+    cache.recover_worker(&grant.node_id, &recovery).unwrap();
+    worker
+        .finish_recovery("https://hub.example/", &grant)
+        .unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(cache.nodes().unwrap()[0].incomplete_sessions, 1);
+    let task = cache.rescan_tasks().unwrap()[0].request.clone();
+    worker.begin_rescan(&task, &["codex".into()]).unwrap();
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(cache.nodes().unwrap()[0].incomplete_sessions, 0);
+    assert_eq!(cache.snapshot().unwrap()[0].title, "New title");
+}
+
+#[test]
+fn cloned_worker_instances_cannot_share_an_active_node() {
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "node", "1.1.1", &uuid::Uuid::new_v4().to_string())
+        .unwrap();
+    let first = uuid::Uuid::new_v4().to_string();
+    let second = uuid::Uuid::new_v4().to_string();
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+    assert!(
+        cache
+            .claim_worker_instance(&grant.node_id, &second)
+            .unwrap_err()
+            .to_string()
+            .contains("WORKER_INSTANCE_CONFLICT")
+    );
+    cache
+        .connection
+        .execute("UPDATE hub_nodes SET lease_until=0", [])
+        .unwrap();
+    cache
+        .claim_worker_instance(&grant.node_id, &second)
+        .unwrap();
+    assert!(cache.claim_worker_instance(&grant.node_id, &first).is_err());
+}

@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryScope {
+    pub source_node_id: Option<String>,
     pub agents: Vec<String>,
     pub project_scope: Option<ProjectScope>,
 }

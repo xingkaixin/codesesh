@@ -97,6 +97,7 @@ async fn run() -> Result<()> {
         hub,
         name,
         pair_token,
+        pair_token_stdin,
         history,
     }) = &args.command
     {
@@ -106,12 +107,19 @@ async fn run() -> Result<()> {
             hub,
             name.as_deref(),
             pair_token.as_deref(),
+            *pair_token_stdin,
             *history,
         )
         .await;
     }
     let hub_enabled = matches!(args.command, Some(options::Role::Hub { .. }));
-    let scan_local = !matches!(args.command, Some(options::Role::Hub { scan_local: false }));
+    let scan_local = !matches!(
+        args.command,
+        Some(options::Role::Hub {
+            scan_local: false,
+            ..
+        })
+    );
     let _hub_lock = (!args.json)
         .then(|| node_identity::lock(&environment.home, "hub.lock"))
         .transpose()?;
@@ -189,7 +197,10 @@ async fn run() -> Result<()> {
         );
         return Ok(());
     }
-    let enabled_agents = plan.agents.clone();
+    let enabled_agents = discovery::selected_sources(&environment, &plan.agents)
+        .into_iter()
+        .map(|source| source.agent)
+        .collect();
     let runtime_sources = sources
         .into_iter()
         .map(|source| {
@@ -220,8 +231,21 @@ async fn run() -> Result<()> {
     };
     if hub_enabled {
         let hub_id = node_identity::hub_id(&environment.home)?;
+        let recover = matches!(
+            args.command,
+            Some(options::Role::Hub {
+                recover_data: true,
+                ..
+            })
+        );
         runtime
-            .hub_control(move |cache| cache.initialize_hub(&hub_id))
+            .hub_control(move |cache| {
+                cache.initialize_hub(&hub_id)?;
+                if recover {
+                    cache.rotate_data_epoch()?;
+                }
+                Ok(())
+            })
             .await?;
     }
     let runtime_duration = runtime_started.elapsed();

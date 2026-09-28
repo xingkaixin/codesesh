@@ -45,8 +45,6 @@ fn hub(home: &Path, port: u16) -> (Process, url::Url, String) {
                 "--no-open",
                 "--port",
                 &port.to_string(),
-                "--agent",
-                "codex",
                 "--days",
                 "0",
             ])
@@ -94,26 +92,27 @@ fn source(home: &Path, id: &str, text: &str) {
 async fn wait_for_sessions(client: &reqwest::Client, url: &url::Url, token: &str, count: usize) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
-        let result: Value = client
-            .get(url.join("api/sessions?days=0").unwrap())
-            .bearer_auth(token)
-            .send()
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        if result["sessions"]
-            .as_array()
-            .is_some_and(|sessions| sessions.len() == count)
-        {
+        let result = async {
+            client
+                .get(url.join("api/sessions?days=0").unwrap())
+                .bearer_auth(token)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await
+        }
+        .await;
+        if result.as_ref().is_ok_and(|value| {
+            value["sessions"]
+                .as_array()
+                .is_some_and(|sessions| sessions.len() == count)
+        }) {
             return;
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "Expected {count} sessions: {result}"
+            "Expected {count} sessions: {result:?}"
         );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
@@ -186,6 +185,29 @@ async fn real_worker_uploads_and_recovers_after_hub_restart() {
     assert_eq!(nodes["nodes"].as_array().unwrap().len(), 1);
     assert!(worker_home.path().join(".codesesh/worker.db").exists());
     assert!(!worker_home.path().join(".codesesh/codesesh.db").exists());
+    let original_node = nodes["nodes"][0]["id"].clone();
+    drop(_server);
+    for suffix in ["", "-wal", "-shm"] {
+        let path = hub_home
+            .path()
+            .join(format!(".codesesh/codesesh.db{suffix}"));
+        if path.exists() {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+    let (_rebuilt, rebuilt_url, rebuilt_token) = hub(hub_home.path(), url.port().unwrap());
+    wait_for_sessions(&client, &rebuilt_url, &rebuilt_token, 2).await;
+    let nodes: Value = client
+        .get(rebuilt_url.join("api/nodes").unwrap())
+        .bearer_auth(&rebuilt_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nodes["nodes"][0]["id"], original_node);
+    assert_eq!(nodes["nodes"].as_array().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -255,4 +277,84 @@ async fn worker_imports_archived_history_without_deleting_standalone_data() {
         preserved.snapshot().unwrap()[0].reference.source_node_id,
         "local"
     );
+    let other_home = tempfile::tempdir().unwrap();
+    source(other_home.path(), "archived", "Other archived conversation");
+    let pair: Value = client
+        .post(url.join("api/nodes/pairing-token").unwrap())
+        .bearer_auth(&token)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let _other = Process(
+        command(other_home.path())
+            .args([
+                "worker",
+                "--hub",
+                url.as_str(),
+                "--agent",
+                "codex",
+                "--pair-token",
+                pair["token"].as_str().unwrap(),
+            ])
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_sessions(&client, &url, &token, 2).await;
+    let nodes: Value = client
+        .get(url.join("api/nodes").unwrap())
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nodes["nodes"].as_array().unwrap().len(), 2);
+    for node in nodes["nodes"].as_array().unwrap() {
+        let id = node["id"].as_str().unwrap();
+        let sessions: Value = client
+            .get(
+                url.join(&format!("api/sessions?days=0&sourceNodeId={id}"))
+                    .unwrap(),
+            )
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(sessions["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(sessions["sessions"][0]["reference"]["sourceNodeId"], id);
+        let search: Value = client
+            .get(
+                url.join(&format!("api/search?q=archived&days=0&sourceNodeId={id}"))
+                    .unwrap(),
+            )
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(search["results"].as_array().unwrap().len(), 1, "{search}");
+        let dashboard: Value = client
+            .get(
+                url.join(&format!("api/dashboard?days=0&sourceNodeId={id}"))
+                    .unwrap(),
+            )
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(dashboard["totals"]["sessions"], 1, "{dashboard}");
+    }
 }

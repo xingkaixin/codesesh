@@ -62,6 +62,9 @@ pub enum Role {
     Hub {
         #[arg(long)]
         scan_local: bool,
+        /// Rotate the data epoch after restoring a stopped Hub backup.
+        #[arg(long)]
+        recover_data: bool,
     },
     /// Collect this machine's sessions and upload them to one Hub.
     Worker {
@@ -71,6 +74,8 @@ pub enum Role {
         name: Option<String>,
         #[arg(long)]
         pair_token: Option<String>,
+        #[arg(long, conflicts_with = "pair_token")]
+        pair_token_stdin: bool,
         #[arg(long, value_enum)]
         history: Option<History>,
     },

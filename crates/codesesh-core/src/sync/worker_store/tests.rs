@@ -162,3 +162,36 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
             .unwrap();
     }
 }
+
+#[test]
+fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
+    let (dir, mut store, mut scanner) = setup();
+    let mut batch = scanner.refresh(None).unwrap();
+    store.save_batch("codex", &mut batch).unwrap();
+    let old_stream = store.stream_id().unwrap();
+    let chunk = store.next_upload().unwrap().unwrap();
+    store
+        .acknowledge(&old_stream, chunk.sequence, &chunk.digest)
+        .unwrap();
+    store.set_pause(Some("CREDENTIAL_REVOKED")).unwrap();
+    let grant = super::super::PairingGrant {
+        node_id: "new-node".into(),
+        credential: "new-credential".into(),
+        hub_id: "new-hub".into(),
+        epoch: "new-epoch".into(),
+    };
+    store.rebind("https://new-hub.example/", &grant).unwrap();
+    drop(store);
+    let mut store = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    assert_eq!(store.queue_status().unwrap().batches, 2);
+    assert_eq!(store.next_upload().unwrap().unwrap().digest, chunk.digest);
+    assert_eq!(store.confirmed_sequence().unwrap(), 0);
+    assert!(store.pause_reason().unwrap().is_none());
+    let recovery = store.recovery().unwrap().unwrap();
+    assert_eq!(recovery.previous_stream, old_stream);
+    assert_ne!(recovery.new_stream, old_stream);
+    assert_eq!(store.binding().unwrap().unwrap().1.node_id, "new-node");
+    store.update_origin("https://renamed-hub.example/").unwrap();
+    assert_eq!(store.binding().unwrap().unwrap().1.node_id, "new-node");
+    assert_eq!(store.stream_id().unwrap(), recovery.new_stream);
+}

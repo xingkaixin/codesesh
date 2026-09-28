@@ -61,6 +61,7 @@ pub async fn guard(
                     | "projectKind"
                     | "q"
                     | "sessionId"
+                    | "sourceNodeId"
                     | "tag"
                     | "to"
                     | "tool"
@@ -135,7 +136,7 @@ fn validate(state: &State, request: &Request) -> Result<(), (StatusCode, &'stati
     }
     let worker_route = matches!(
         request.uri().path(),
-        "/api/worker/pair" | "/api/worker/hello" | "/api/worker/upload"
+        "/api/worker/pair" | "/api/worker/hello" | "/api/worker/upload" | "/api/worker/recover"
     );
     if worker_route && !state.hub_enabled {
         return Err((StatusCode::NOT_FOUND, "Hub mode is not enabled"));

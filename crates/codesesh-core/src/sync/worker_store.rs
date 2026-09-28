@@ -24,11 +24,14 @@ pub struct PendingUpload {
     pub digest: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueStatus {
+    #[ts(type = "number")]
     pub batches: i64,
+    #[ts(type = "number")]
     pub bytes: i64,
+    #[ts(type = "number | null")]
     pub oldest_at: Option<i64>,
 }
 
@@ -116,6 +119,149 @@ impl WorkerStore {
         Ok(Self { db })
     }
 
+    pub fn collection_complete(&self, agents: &[String]) -> Result<bool> {
+        for agent in agents {
+            let complete: bool = self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM worker_sources WHERE agent=? AND complete=1)",
+                [agent],
+                |r| r.get(0),
+            )?;
+            if !complete {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn pause_reason(&self) -> Result<Option<String>> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='pause_reason'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn set_pause(&mut self, reason: Option<&str>) -> Result<()> {
+        if let Some(reason) = reason {
+            self.db.execute("INSERT INTO worker_meta VALUES('pause_reason',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[reason])?;
+        } else {
+            self.db
+                .execute("DELETE FROM worker_meta WHERE key='pause_reason'", [])?;
+        }
+        Ok(())
+    }
+
+    pub fn recovery(&self) -> Result<Option<super::Recovery>> {
+        let raw: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='recovery'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn prepare_recovery(&mut self, epoch: &str) -> Result<super::Recovery> {
+        if let Some(recovery) = self.recovery()? {
+            ensure!(
+                recovery.epoch == epoch,
+                "Hub changed again during recovery; queue preserved"
+            );
+            return Ok(recovery);
+        }
+        let recovery = super::Recovery {
+            epoch: epoch.into(),
+            previous_stream: self.stream_id()?,
+            new_stream: uuid::Uuid::new_v4().to_string(),
+        };
+        let tx = self.db.transaction()?;
+        reset_queue(&tx, &recovery.new_stream)?;
+        tx.execute("DELETE FROM worker_meta WHERE key='rescan'", [])?;
+        tx.execute(
+            "INSERT INTO worker_meta VALUES('recovery',?)",
+            [serde_json::to_string(&recovery)?],
+        )?;
+        tx.commit()?;
+        Ok(recovery)
+    }
+
+    pub fn finish_recovery(&mut self, origin: &str, grant: &super::PairingGrant) -> Result<()> {
+        let recovery = self.recovery()?.context("No pending recovery")?;
+        ensure!(recovery.epoch == grant.epoch, "Recovery epoch mismatch");
+        let tx = self.db.transaction()?;
+        tx.execute(
+            "UPDATE worker_meta SET value=? WHERE key='binding'",
+            [serde_json::to_string(&(origin, grant))?],
+        )?;
+        tx.execute("DELETE FROM worker_meta WHERE key='recovery'", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn rescan_progress(&self) -> Result<Option<super::RescanProgress>> {
+        let raw: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='rescan'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn begin_rescan(
+        &mut self,
+        request: &super::RescanRequest,
+        enabled: &[String],
+    ) -> Result<bool> {
+        if self
+            .rescan_progress()?
+            .is_some_and(|progress| progress.id == request.id)
+        {
+            return Ok(false);
+        }
+        let agents = if request.agents.is_empty() {
+            enabled.to_vec()
+        } else {
+            request.agents.clone()
+        };
+        let unavailable = agents.iter().find(|agent| {
+            !enabled.contains(agent)
+                || request
+                    .required_revisions
+                    .get(*agent)
+                    .is_none_or(|revision| revision != crate::agents::parser_version(agent))
+        });
+        let progress = super::RescanProgress {
+            id: request.id.clone(),
+            pending_agents: agents.clone(),
+            target_sequence: None,
+            error: unavailable
+                .map(|agent| format!("Agent {agent} is disabled or requires a Worker upgrade")),
+        };
+        let tx = self.db.transaction()?;
+        if progress.error.is_none() {
+            for agent in &agents {
+                tx.execute("DELETE FROM worker_sources WHERE agent=?", [agent])?;
+                tx.execute(
+                    "UPDATE worker_sessions SET content_hash='',metadata_hash='' WHERE agent=?",
+                    [agent],
+                )?;
+            }
+        }
+        tx.execute("INSERT INTO worker_meta VALUES('rescan',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[serde_json::to_string(&progress)?])?;
+        tx.commit()?;
+        Ok(progress.error.is_none())
+    }
+
     pub fn history_choice(&self) -> Result<Option<String>> {
         Ok(self
             .db
@@ -158,6 +304,39 @@ impl WorkerStore {
             "INSERT INTO worker_meta VALUES('binding',?)",
             [serde_json::to_string(&(origin, grant))?],
         )?;
+        Ok(())
+    }
+
+    pub fn update_origin(&mut self, origin: &str) -> Result<()> {
+        let (_, grant) = self.binding()?.context("Worker is not paired")?;
+        self.db.execute(
+            "UPDATE worker_meta SET value=? WHERE key='binding'",
+            [serde_json::to_string(&(origin, grant))?],
+        )?;
+        Ok(())
+    }
+
+    pub fn rebind(&mut self, origin: &str, grant: &super::PairingGrant) -> Result<()> {
+        let recovery = super::Recovery {
+            epoch: grant.epoch.clone(),
+            previous_stream: self.stream_id()?,
+            new_stream: uuid::Uuid::new_v4().to_string(),
+        };
+        let tx = self.db.transaction()?;
+        reset_queue(&tx, &recovery.new_stream)?;
+        tx.execute(
+            "DELETE FROM worker_meta WHERE key IN ('rescan','recovery','pause_reason')",
+            [],
+        )?;
+        tx.execute(
+            "INSERT INTO worker_meta VALUES('recovery',?)",
+            [serde_json::to_string(&recovery)?],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO worker_meta VALUES('binding',?)",
+            [serde_json::to_string(&(origin, grant))?],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -307,6 +486,26 @@ impl WorkerStore {
         };
         tx.execute("INSERT INTO worker_sources VALUES(?,?,?,?) ON CONFLICT(agent) DO UPDATE SET state=COALESCE(excluded.state,worker_sources.state),checkpoint=excluded.checkpoint,complete=excluded.complete",
             params![agent,source_state,checkpoint,batch.complete])?;
+        let progress: Option<String> = tx
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='rescan'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(raw) = progress {
+            let mut progress: super::RescanProgress = serde_json::from_str(&raw)?;
+            if batch.complete && progress.error.is_none() && progress.target_sequence.is_none() {
+                progress.pending_agents.retain(|pending| pending != agent);
+                if progress.pending_agents.is_empty() {
+                    progress.target_sequence = Some(tx.query_row("SELECT COALESCE((SELECT MAX(sequence) FROM worker_outbox),CAST((SELECT value FROM worker_meta WHERE key='confirmed_sequence') AS INTEGER))",[],|r|r.get(0))?);
+                }
+                tx.execute(
+                    "UPDATE worker_meta SET value=? WHERE key='rescan'",
+                    [serde_json::to_string(&progress)?],
+                )?;
+            }
+        }
         tx.commit()?;
         batch.on_reject.take();
         Ok(())
@@ -361,6 +560,19 @@ impl WorkerStore {
             },
         )?)
     }
+}
+
+fn reset_queue(tx: &rusqlite::Transaction<'_>, stream: &str) -> Result<()> {
+    tx.execute_batch("CREATE TEMP TABLE recovery_queue AS SELECT payload_version,payload,digest,created_at FROM worker_outbox ORDER BY sequence; DELETE FROM worker_outbox; DELETE FROM sqlite_sequence WHERE name='worker_outbox'; INSERT INTO worker_outbox(payload_version,payload,digest,created_at) SELECT payload_version,payload,digest,created_at FROM recovery_queue ORDER BY rowid; DROP TABLE recovery_queue;")?;
+    tx.execute(
+        "UPDATE worker_meta SET value=? WHERE key='stream_id'",
+        [stream],
+    )?;
+    tx.execute(
+        "UPDATE worker_meta SET value='0' WHERE key='confirmed_sequence'",
+        [],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

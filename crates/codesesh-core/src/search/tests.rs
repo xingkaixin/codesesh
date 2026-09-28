@@ -264,6 +264,7 @@ fn pending_publications_and_query_scope_do_not_leak_into_search() {
             "hello",
             &SearchOptions {
                 query_scope: Some(QueryScope {
+                    source_node_id: None,
                     agents: vec!["pi".into()],
                     project_scope: None
                 }),

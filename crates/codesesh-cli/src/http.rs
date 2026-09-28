@@ -56,6 +56,8 @@ pub struct State {
     session_pages: Mutex<SnapshotPaginator<SessionHead, ()>>,
     project_pages: Mutex<SnapshotPaginator<Value, Value>>,
     streams: Arc<Semaphore>,
+    upload_slots: Arc<Semaphore>,
+    node_uploads: Mutex<HashMap<String, Arc<Semaphore>>>,
     details: Arc<Semaphore>,
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
     query_scope: codesesh_core::search::QueryScope,
@@ -74,6 +76,7 @@ impl State {
         options: Options,
     ) -> Self {
         let query_scope = codesesh_core::search::QueryScope {
+            source_node_id: None,
             agents: options.enabled_agents.clone(),
             project_scope: options
                 .cwd
@@ -90,6 +93,8 @@ impl State {
             session_pages: Mutex::new(SnapshotPaginator::default()),
             project_pages: Mutex::new(SnapshotPaginator::default()),
             streams: Arc::new(Semaphore::new(32)),
+            upload_slots: Arc::new(Semaphore::new(8)),
+            node_uploads: Mutex::new(HashMap::new()),
             details: Arc::new(Semaphore::new(2)),
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
         }
@@ -112,6 +117,12 @@ impl State {
         .await
         .unwrap_or_default()
     }
+    fn scope(&self, source: Option<&str>) -> codesesh_core::search::QueryScope {
+        codesesh_core::search::QueryScope {
+            source_node_id: source.map(str::to_owned),
+            ..self.query_scope.clone()
+        }
+    }
     fn known(&self, agent: &str) -> bool {
         codesesh_core::agents::catalog(0)
             .iter()
@@ -123,8 +134,11 @@ pub fn router(state: Arc<State>) -> Router {
     Router::new()
         .route("/api/worker/pair", post(sync::pair))
         .route("/api/worker/hello", post(sync::hello))
+        .route("/api/worker/recover", post(sync::recover))
         .route("/api/worker/upload", post(sync::upload))
         .route("/api/nodes", get(sync::nodes))
+        .route("/api/nodes/rescan", post(sync::rescan))
+        .route("/api/nodes/{node}/name", put(sync::rename))
         .route("/api/nodes/pairing-token", post(sync::pairing_token))
         .route("/api/nodes/{node}/revoke", post(sync::revoke))
         .route("/api/config", get(catalog::config))
@@ -199,7 +213,11 @@ fn scoped_heads(
     heads
         .iter()
         .filter(|s| {
-            scope.agents.contains(&s.reference.agent_name)
+            scope
+                .source_node_id
+                .as_ref()
+                .is_none_or(|source| source == &s.reference.source_node_id)
+                && scope.agents.contains(&s.reference.agent_name)
                 && scope
                     .project_scope
                     .as_ref()

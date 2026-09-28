@@ -13,6 +13,7 @@ struct Collector {
     store: WorkerStore,
     scanners: Vec<AgentScanner>,
     agents: Vec<String>,
+    error: Option<String>,
 }
 
 impl Collector {
@@ -27,11 +28,16 @@ impl Collector {
 
     fn hello(&self) -> Result<WorkerHello> {
         Ok(WorkerHello {
+            collection_complete: self.store.collection_complete(&self.agents)?,
+            collection_error: self.error.clone().or(self.store.pause_reason()?),
+            epoch: self.store.binding()?.map(|(_, grant)| grant.epoch),
+            confirmed_sequence: self.store.confirmed_sequence()?,
             version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: PROTOCOL_VERSION,
             payload_version: PAYLOAD_VERSION,
             stream_id: self.store.stream_id()?,
             queue: self.store.queue_status()?,
+            rescan: self.store.rescan_progress()?,
         })
     }
 }
@@ -60,12 +66,14 @@ pub async fn run(
     hub: &str,
     name: Option<&str>,
     pair_token: Option<&str>,
+    pair_token_stdin: bool,
     history: Option<crate::options::History>,
 ) -> Result<()> {
     let origin = hub_url(hub)?;
     let _lock = crate::node_identity::lock(&environment.home, "collector.lock")?;
     let path = codesesh_core::app_paths::root(&environment.home).join("worker.db");
     let sources = discovery::selected_sources(environment, agents);
+    let restart_sources = sources.clone();
     let names = sources.iter().map(|s| s.agent.clone()).collect();
     let mut collector = Collector {
         store: WorkerStore::open(&path)?,
@@ -74,6 +82,7 @@ pub async fn run(
             .map(|source| AgentScanner::for_worker(source, path.clone()))
             .collect(),
         agents: names,
+        error: None,
     };
     if collector.store.history_choice()?.is_none() {
         let archive = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
@@ -112,20 +121,54 @@ pub async fn run(
             collector.store.finish_history_import("ignore")?;
         }
     }
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        "x-codesesh-worker-instance",
+        uuid::Uuid::new_v4().to_string().parse()?,
+    );
     let client = Client::builder()
+        .default_headers(headers)
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let grant = match collector.store.binding()? {
-        Some((saved, grant)) => {
-            ensure!(
-                saved == origin.as_str(),
-                "Worker is already paired with another Hub URL; preserve its pending queue"
-            );
+    let existing = collector.store.binding()?;
+    let explicit_pairing = pair_token.is_some() || pair_token_stdin;
+    let mut grant = match existing {
+        Some((saved, grant)) if !explicit_pairing => {
+            if saved != origin.as_str() {
+                let response = client
+                    .post(origin.join("api/worker/hello")?)
+                    .bearer_auth(&grant.credential)
+                    .json(&collector.hello()?)
+                    .send()
+                    .await?;
+                ensure!(
+                    response.status().is_success(),
+                    "Cannot verify the new Hub URL; existing binding and queue preserved"
+                );
+                let hello: HubHello = response.json().await?;
+                ensure!(
+                    hello.hub_id == grant.hub_id,
+                    "HUB_IDENTITY_CHANGED: supply a new pairing token explicitly; queue preserved"
+                );
+                collector.store.update_origin(origin.as_str())?;
+            }
             grant
         }
-        None => {
-            let token=pair_token.map(str::to_owned).or_else(||std::env::var("CODESESH_PAIRING_TOKEN").ok()).context("Pairing required: create a token in the Hub, then provide --pair-token or CODESESH_PAIRING_TOKEN")?;
+        existing => {
+            let token = if pair_token_stdin {
+                eprintln!("Pairing token:");
+                tokio::task::spawn_blocking(|| -> Result<String> {
+                    use std::io::{BufRead, Read};
+                    let mut value = String::new();
+                    std::io::stdin().lock().take(513).read_line(&mut value)?;
+                    ensure!(value.trim().len() == 64, "Invalid pairing token length");
+                    Ok(value.trim().to_owned())
+                })
+                .await??
+            } else {
+                pair_token.map(str::to_owned).or_else(||std::env::var("CODESESH_PAIRING_TOKEN").ok()).context("Pairing required: create a token in the Hub, then use --pair-token-stdin or CODESESH_PAIRING_TOKEN")?
+            };
             let response=client.post(origin.join("api/worker/pair")?).json(&serde_json::json!({"token":token,"name":name.unwrap_or("Worker"),"hello":collector.hello()?})).send().await?;
             ensure!(
                 response.status().is_success(),
@@ -134,7 +177,11 @@ pub async fn run(
                 response.text().await?
             );
             let grant: PairingGrant = response.json().await?;
-            collector.store.bind(origin.as_str(), &grant)?;
+            if existing.is_some() {
+                collector.store.rebind(origin.as_str(), &grant)?;
+            } else {
+                collector.store.bind(origin.as_str(), &grant)?;
+            }
             grant
         }
     };
@@ -142,7 +189,7 @@ pub async fn run(
     let mut next_hello = Instant::now();
     let mut next_scan = Instant::now();
     let mut next_upload = Instant::now();
-    let mut paused = false;
+    let mut paused = collector.store.pause_reason()?.is_some();
     let mut online = false;
     let mut retry_seconds = 1u64;
     let mut shutdown = Box::pin(crate::shutdown_signal());
@@ -152,6 +199,33 @@ pub async fn run(
             _ = tokio::time::sleep(Duration::from_millis(100)) => {}
         }
         if Instant::now() >= next_hello {
+            if let Some(recovery) = collector.store.recovery()? {
+                let response = client
+                    .post(origin.join("api/worker/recover")?)
+                    .bearer_auth(&grant.credential)
+                    .header("x-codesesh-worker-version", env!("CARGO_PKG_VERSION"))
+                    .header("x-codesesh-protocol-version", PROTOCOL_VERSION)
+                    .json(&recovery)
+                    .send()
+                    .await;
+                match response {
+                    Ok(response) if response.status().is_success() => {
+                        grant.epoch = recovery.epoch;
+                        collector.store.finish_recovery(origin.as_str(), &grant)?;
+                        next_hello = Instant::now();
+                    }
+                    Ok(response) => {
+                        eprintln!("Worker recovery pending: {}", response.text().await?);
+                        next_hello = Instant::now() + backoff(15);
+                    }
+                    Err(_) => {
+                        next_hello = Instant::now() + backoff(5);
+                    }
+                }
+                online = false;
+                paused = true;
+                continue;
+            }
             let result = client
                 .post(origin.join("api/worker/hello")?)
                 .bearer_auth(&grant.credential)
@@ -165,11 +239,32 @@ pub async fn run(
                         hello.hub_id == grant.hub_id,
                         "HUB_IDENTITY_CHANGED: stop and pair explicitly with the new Hub"
                     );
-                    ensure!(
-                        hello.epoch == grant.epoch,
-                        "HUB_EPOCH_CHANGED: reconciliation is required; queue preserved"
-                    );
+                    if hello.error.is_none()
+                        && (hello.epoch != grant.epoch
+                            || hello.confirmed_sequence < collector.store.confirmed_sequence()?
+                            || collector.store.recovery()?.is_some())
+                    {
+                        collector.store.prepare_recovery(&hello.epoch)?;
+                        next_hello = Instant::now();
+                        online = false;
+                        paused = true;
+                        continue;
+                    }
+                    if hello.error.is_none()
+                        && let Some(task) = &hello.rescan
+                        && collector.store.begin_rescan(task, &collector.agents)?
+                    {
+                        collector.scanners = restart_sources
+                            .iter()
+                            .cloned()
+                            .map(|source| AgentScanner::for_worker(source, path.clone()))
+                            .collect();
+                        next_scan = Instant::now();
+                    }
                     paused = hello.error.is_some();
+                    collector
+                        .store
+                        .set_pause(hello.error.map(|_| "VERSION_INCOMPATIBLE"))?;
                     online = !paused;
                     if let Some(reason) = hello.error {
                         eprintln!(
@@ -185,10 +280,17 @@ pub async fn run(
                         });
                     retry_seconds = 1;
                 }
-                Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {
+                Ok(response)
+                    if matches!(
+                        response.status(),
+                        StatusCode::UNAUTHORIZED | StatusCode::CONFLICT
+                    ) =>
+                {
                     paused = true;
                     online = false;
-                    eprintln!("Worker paused: credential was rejected or revoked");
+                    let reason = response.text().await?;
+                    collector.store.set_pause(Some(&reason))?;
+                    eprintln!("Worker paused: {reason}");
                     next_hello = Instant::now() + Duration::from_secs(60);
                 }
                 _ => {
@@ -205,6 +307,12 @@ pub async fn run(
             })
             .await?;
             collector = returned;
+            collector.error = result.as_ref().err().map(|error| {
+                format!("SOURCE_OR_STORAGE_ERROR: {error:#}")
+                    .chars()
+                    .take(2048)
+                    .collect()
+            });
             if let Err(error) = result {
                 eprintln!("Worker scan failed; progress retained: {error:#}");
             }
@@ -250,7 +358,9 @@ pub async fn run(
                 {
                     paused = true;
                     online = false;
-                    eprintln!("Worker upload paused: {}", response.text().await?);
+                    let error = response.text().await?;
+                    collector.store.set_pause(Some(&error))?;
+                    eprintln!("Worker upload paused: {error}");
                     next_hello = Instant::now() + Duration::from_secs(60);
                 }
                 Ok(response) => {

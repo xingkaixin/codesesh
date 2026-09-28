@@ -73,6 +73,7 @@ pub async fn config(
     AxumState(state): AxumState<Arc<State>>,
 ) -> Json<codesesh_core::public_contract::AppConfig> {
     Json(codesesh_core::public_contract::AppConfig {
+        hub_enabled: state.hub_enabled.then_some(true),
         window: codesesh_core::public_contract::SessionWindow {
             from: state.options.default_from,
             to: state.options.default_to,
@@ -91,7 +92,11 @@ pub async fn agents(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
     };
     let selected = query::filter_activity_window(&state.snapshot(), from, to);
     let mut counts = HashMap::new();
-    for s in selected {
+    for s in selected.into_iter().filter(|session| {
+        query
+            .optional("sourceNodeId")
+            .is_none_or(|source| source == session.reference.source_node_id)
+    }) {
         *counts.entry(s.reference.agent_name).or_insert(0) += 1;
     }
     Json(agent_info(&counts)).into_response()
@@ -113,30 +118,40 @@ pub async fn projects(
         Ok(v) => v,
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
-    let query_scope = state.query_scope.clone();
+    let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
     let result = state
         .runtime
         .read(move |conn| {
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
-            let value = cached_catalog(&cache, revision, json!(["projects", from, to]), || {
-                let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
-                let sessions = super::scoped_heads(&heads, &query_scope);
-                let groups = projects::build_project_groups(&sessions)
-                    .into_iter()
-                    .map(serde_json::to_value)
-                    .collect::<serde_json::Result<Vec<_>>>()?;
-                let facts = analytics::load_cost_facts(conn, from, to, false)?;
-                let mut groups =
-                    analytics::attach_project_metrics(&groups, &sessions, from, to, Some(&facts));
-                groups.retain(|g| {
-                    ["sessionCount", "messages", "tokens", "cost"]
-                        .iter()
-                        .any(|k| g[*k].as_f64().unwrap_or(0.0) > 0.0)
-                });
-                Ok(Value::Array(groups))
-            })?;
+            let value = cached_catalog(
+                &cache,
+                revision,
+                json!(["projects", from, to, query_scope.source_node_id]),
+                || {
+                    let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                    let sessions = super::scoped_heads(&heads, &query_scope);
+                    let groups = projects::build_project_groups(&sessions)
+                        .into_iter()
+                        .map(serde_json::to_value)
+                        .collect::<serde_json::Result<Vec<_>>>()?;
+                    let facts = analytics::load_cost_facts(conn, from, to, false)?;
+                    let mut groups = analytics::attach_project_metrics(
+                        &groups,
+                        &sessions,
+                        from,
+                        to,
+                        Some(&facts),
+                    );
+                    groups.retain(|g| {
+                        ["sessionCount", "messages", "tokens", "cost"]
+                            .iter()
+                            .any(|k| g[*k].as_f64().unwrap_or(0.0) > 0.0)
+                    });
+                    Ok(Value::Array(groups))
+                },
+            )?;
             let Value::Array(mut groups) = value else {
                 anyhow::bail!("invalid project aggregate");
             };
@@ -230,12 +245,13 @@ pub async fn dashboard(
         project_key: project.map(|(_, key)| key.to_owned()),
     };
     let names = state.options.enabled_agents.clone();
-    let query_scope = state.query_scope.clone();
+    let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
     // The Node backend reuses open-ended windows until the next local calendar day.
     let cache_to = base_to.unwrap_or_else(|| start_day(to));
     let key = json!([
         "dashboard",
+        query_scope.source_node_id,
         scope.agent,
         scope.project_kind,
         scope.project_key,

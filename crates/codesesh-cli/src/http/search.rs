@@ -39,7 +39,7 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
         project_kind: project.map(|(k, _)| k.to_owned()),
         project_key: project.map(|(_, k)| k.to_owned()),
         cwd: params.optional("cwd").map(str::to_owned),
-        query_scope: Some(state.query_scope.clone()),
+        query_scope: Some(state.scope(params.optional("sourceNodeId"))),
         tags: params
             .values(&["tag", "tags", "signal"])
             .into_iter()
@@ -83,7 +83,7 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
         ..Default::default()
     };
     let aliases = state.aliases().await;
-    let query_scope = state.query_scope.clone();
+    let query_scope = state.scope(params.optional("sourceNodeId"));
     let result=state.runtime.read_snapshot(move |conn,heads| {
         let snapshot=super::scoped_heads(heads,&query_scope);
         let ranked=search::execute_with_snapshot(conn,&query,&options,&snapshot)?;
@@ -136,7 +136,7 @@ pub async fn file_activity(
         project_kind: project.map(|(k, _)| k.to_owned()),
         project_key: project.map(|(_, k)| k.to_owned()),
         project: params.optional("project").map(str::to_owned),
-        query_scope: Some(state.query_scope.clone()),
+        query_scope: Some(state.scope(params.optional("sourceNodeId"))),
         path: params.optional("path").map(str::to_owned),
         kind: kind(params.optional("kind")),
         from,

@@ -330,6 +330,13 @@ pub struct SessionWindow {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct AppConfig {
+    #[serde(
+        default,
+        rename = "hubEnabled",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub hub_enabled: Option<bool>,
     pub window: SessionWindow,
 }
 

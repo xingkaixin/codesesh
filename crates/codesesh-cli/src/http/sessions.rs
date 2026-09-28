@@ -49,6 +49,14 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
     } else {
         snapshot.as_ref().clone()
     };
+    let selected: Vec<_> = selected
+        .into_iter()
+        .filter(|session| {
+            query
+                .optional("sourceNodeId")
+                .is_none_or(|source| source == session.reference.source_node_id)
+        })
+        .collect();
     let filter = SessionFilter {
         agent: query.get("agent"),
         project,

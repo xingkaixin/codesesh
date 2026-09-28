@@ -22,3 +22,7 @@ export * from "./session-index.js";
 export * from "./session-tree.js";
 export type * from "./api.js";
 export { CODESESH_OPERATION_ID_HEADER, CODESESH_REQUEST_ID_HEADER } from "./api.js";
+
+export type { HubNodes } from "./generated/HubNodes.js";
+export type { Node as SourceNode } from "./generated/Node.js";
+export type { NodeTask } from "./generated/NodeTask.js";

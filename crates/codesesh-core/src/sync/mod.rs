@@ -9,4 +9,7 @@ pub use protocol::{
 };
 pub use worker_store::{PendingUpload, QueueStatus, WorkerStore};
 
-pub use hub_types::{HubHello, Node, PairingGrant, Receipt, Upload, WorkerHello};
+pub use hub_types::{
+    HubHello, HubNodes, LocalNode, Node, NodeTask, PairingGrant, Receipt, Recovery, RescanProgress,
+    RescanRequest, Upload, WorkerHello,
+};

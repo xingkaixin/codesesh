@@ -66,6 +66,9 @@ fn project_scope(filters: &mut Filters, scope: &ProjectScope) {
 pub fn build(options: &SearchOptions) -> Filters {
     let mut filters = Filters::default();
     if let Some(scope) = &options.query_scope {
+        if let Some(source) = &scope.source_node_id {
+            filters.text("s.source_node_id = ?", source);
+        }
         if !scope.agents.is_empty() {
             filters.clauses.push(format!(
                 "s.agent_name IN ({})",

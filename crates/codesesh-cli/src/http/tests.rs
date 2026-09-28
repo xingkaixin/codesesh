@@ -394,6 +394,10 @@ async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
     let credential = format!("Bearer {}", grant["credential"].as_str().unwrap());
     let headers = [
         ("authorization", credential.as_str()),
+        (
+            "x-codesesh-worker-instance",
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        ),
         ("content-type", "application/json"),
     ];
     assert_eq!(
@@ -442,6 +446,10 @@ async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
         "/api/worker/upload",
         &[
             ("authorization", credential.as_str()),
+            (
+                "x-codesesh-worker-instance",
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            ),
             ("content-type", "application/json"),
             ("x-codesesh-worker-version", "999.0.0"),
             ("x-codesesh-protocol-version", "1"),
