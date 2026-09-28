@@ -94,9 +94,21 @@ function assertMigrationFacts(path, expected) {
     { key: "cost_only_publication_v1", value: "1" },
   );
   actual.cache_meta = actual.cache_meta.filter(({ key }) => key !== "cost_only_publication_v1");
-  assert.equal(actual.cache_meta.find(({ key }) => key === "version").value, "35");
+  assert.equal(actual.cache_meta.find(({ key }) => key === "version").value, "36");
   expected = structuredClone(expected);
-  expected.cache_meta.find(({ key }) => key === "version").value = "35";
+  expected.cache_meta.find(({ key }) => key === "version").value = "36";
+  for (const table of [
+    "pending_reindex",
+    "sessions",
+    "messages",
+    "message_tools",
+    "session_documents",
+    "session_file_activity",
+    "session_model_cost",
+    "session_cost_summary",
+  ]) {
+    for (const row of expected[table]) row.source_node_id = "local";
+  }
   for (const session of expected.sessions) {
     const metadata = JSON.parse(session.meta_json ?? "null");
     session.head_meta_json = JSON.stringify(
@@ -348,6 +360,9 @@ test(
       await stop(server);
       server = undefined;
       const state = stateFacts(fixture);
+      state.state_meta.find(({ key }) => key === "version").value = "4";
+      for (const row of [...state.bookmarks, ...state.session_aliases])
+        row.source_node_id = "local";
       const cli = await runCli(fixture, ["--json", "--agent", "codex", "--days", "0"], reference);
       assert.equal(cli.code, 0, cli.stderr);
       for (const command of [rust, rust]) {

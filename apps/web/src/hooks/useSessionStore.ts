@@ -177,6 +177,7 @@ async function refreshLiveSnapshotAggregates(
       { throwOnError: true, cancelRefetch: false },
     ),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
   ]);
 }
 

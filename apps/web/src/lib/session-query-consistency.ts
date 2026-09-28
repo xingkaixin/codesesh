@@ -1,4 +1,4 @@
-import { mergeSessionsUpdatedEvents } from "@codesesh/contract";
+import { getSessionReferenceKey, mergeSessionsUpdatedEvents } from "@codesesh/contract";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SessionsUpdatedEvent } from "./api";
 import { queryKeys } from "./query-keys";
@@ -39,6 +39,7 @@ function invalidateSessionCollections(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.agentCatalogs }),
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
   ];
 }
 
@@ -46,6 +47,7 @@ export async function invalidateLiveSessionCollections(queryClient: QueryClient)
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
   ]);
 }
 
@@ -61,35 +63,30 @@ export async function invalidateLiveSessionDerivedQueries(
   queryClient: QueryClient,
   event: SessionsUpdatedEvent,
 ): Promise<void> {
-  const changedSessionsByAgent = new Map<string, Set<string>>();
-  const addChangedSession = (agentName: string, sessionId: string) => {
-    const normalizedAgent = agentName.toLowerCase();
-    const sessionIds = changedSessionsByAgent.get(normalizedAgent) ?? new Set<string>();
-    sessionIds.add(sessionId);
-    changedSessionsByAgent.set(normalizedAgent, sessionIds);
-  };
-
-  for (const item of event.changedSessionHeads) {
-    const { agentName, sessionId } = item.reference;
-    addChangedSession(agentName, sessionId);
-  }
-  for (const { agentName, sessionId } of event.removedSessionRefs) {
-    addChangedSession(agentName, sessionId);
-  }
-  if (changedSessionsByAgent.size === 0) return;
+  const changed = new Set([
+    ...event.changedSessionHeads.map((item) => getSessionReferenceKey(item.reference)),
+    ...event.removedSessionRefs.map(getSessionReferenceKey),
+  ]);
+  if (changed.size === 0) return;
 
   await queryClient.invalidateQueries({
     predicate: ({ queryKey }) => {
       if (queryKey.length === 1 && queryKey[0] === queryKeys.bookmarks[0]) return true;
       if (
-        queryKey.length !== 3 ||
+        (queryKey.length !== 3 && queryKey.length !== 4) ||
         queryKey[0] !== queryKeys.sessionDetails[0] ||
         typeof queryKey[1] !== "string" ||
         typeof queryKey[2] !== "string"
       ) {
         return false;
       }
-      return changedSessionsByAgent.get(queryKey[1])?.has(queryKey[2]) ?? false;
+      return changed.has(
+        getSessionReferenceKey({
+          agentName: queryKey[1],
+          sessionId: queryKey[2],
+          sourceNodeId: typeof queryKey[3] === "string" ? queryKey[3] : undefined,
+        }),
+      );
     },
   });
 }

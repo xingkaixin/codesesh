@@ -78,7 +78,7 @@ pub fn list_file_activity(
         }
     }
     let query = format!(
-        "SELECT s.*,fa.project_identity_key AS file_project_identity_key,fa.path,fa.kind,fa.count,fa.latest_time FROM session_file_activity fa JOIN sessions s ON s.agent_name=fa.agent_name AND s.session_id=fa.session_id AND s.publication_id IS NULL WHERE 1=1 {} ORDER BY fa.latest_time DESC,fa.count DESC,fa.path LIMIT ?",
+        "SELECT s.*,fa.project_identity_key AS file_project_identity_key,fa.path,fa.kind,fa.count,fa.latest_time FROM session_file_activity fa JOIN sessions s ON s.source_node_id=fa.source_node_id AND s.agent_name=fa.agent_name AND s.session_id=fa.session_id AND s.publication_id IS NULL WHERE 1=1 {} ORDER BY fa.latest_time DESC,fa.count DESC,fa.path LIMIT ?",
         filters.where_sql()
     );
     filters

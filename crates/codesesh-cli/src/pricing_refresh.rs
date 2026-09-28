@@ -12,28 +12,37 @@ pub fn spawn(
     let url = url.to_owned();
     tokio::spawn(async move {
         let mut shutdown = runtime.shutdown_receiver();
-        let refresh = async {
-            let previous = pricing.generation();
-            if pricing.refresh_from(&url, Duration::from_secs(10)).await? {
-                let publish = pricing.clone();
-                tokio::task::spawn_blocking(move || publish.publish_pending()).await??;
-                if pricing.generation() != previous {
-                    runtime.refresh_all();
-                }
+        loop {
+            let result = tokio::select! {
+                result = refresh_once(&pricing, &runtime, &url) => result,
+                _ = shutdown.changed() => return,
+            };
+            if let Err(error) = result {
+                logger.warn(
+                    "pricing.refresh.error",
+                    &serde_json::json!({"error":format!("{error:#}")}),
+                );
             }
-            Ok::<_, anyhow::Error>(())
-        };
-        let result: Result<()> = tokio::select! {
-            result = refresh => result,
-            _ = shutdown.changed() => return,
-        };
-        if let Err(error) = result {
-            logger.warn(
-                "pricing.refresh.error",
-                &serde_json::json!({"error":format!("{error:#}")}),
-            );
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(6*60*60)) => {},
+                _ = shutdown.changed() => return,
+            }
         }
     })
+}
+
+async fn refresh_once(pricing: &PricingController, runtime: &Runtime, url: &str) -> Result<()> {
+    runtime.reprice_all(pricing.snapshot()?).await?;
+    let previous = pricing.generation();
+    if pricing.refresh_from(url, Duration::from_secs(10)).await? {
+        let publish = pricing.clone();
+        tokio::task::spawn_blocking(move || publish.publish_pending()).await??;
+    }
+    runtime.reprice_all(pricing.snapshot()?).await?;
+    if pricing.generation() != previous {
+        runtime.refresh_all();
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -75,7 +84,11 @@ mod tests {
                 .unwrap();
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let url = format!("http://{}/prices", listener.local_addr().unwrap());
-                let task = spawn(pricing.clone(), runtime.clone(), logger.clone(), &url);
+                let refresh_pricing = pricing.clone();
+                let refresh_runtime = runtime.clone();
+                let task = tokio::spawn(async move {
+                    refresh_once(&refresh_pricing, &refresh_runtime, &url).await
+                });
                 let (mut stream, _) =
                     tokio::time::timeout(Duration::from_secs(5), listener.accept())
                         .await
@@ -92,7 +105,7 @@ mod tests {
                 let status = if success { "200 OK" } else { "503 Unavailable" };
                 let body = json!({"openai":{"models":{"downloaded-model":{"cost":{"input":7,"output":11}}}}}).to_string();
                 stream.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
-                task.await.unwrap();
+                let _ = task.await.unwrap();
                 assert_eq!(pricing.generation() != generation, success);
                 assert_eq!(
                     Pricing::load(home.path()).generation(),

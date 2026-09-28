@@ -19,6 +19,7 @@ export function buildSearchRequestOptions(
 ): SearchRequestOptions {
   return {
     agent: filters.agent,
+    sourceNodeId: filters.sourceNodeId,
     projectKind: filters.project?.kind,
     projectKey: filters.project?.key,
     tag: filters.tag,
@@ -29,7 +30,10 @@ export function buildSearchRequestOptions(
 }
 
 export function usesServerSearch(activeQuery: string, filters: SearchFilterState): boolean {
-  return activeQuery.trim().length > 0 || Boolean(filters.tool || filters.fileKind);
+  return (
+    activeQuery.trim().length > 0 ||
+    Boolean(filters.tool || filters.fileKind || filters.sourceNodeId)
+  );
 }
 
 export function buildLocalRecentResults(
@@ -64,8 +68,13 @@ export function buildLocalRecentResults(
     }
     if (filters.tag && !sessionItem.smart_tags?.includes(filters.tag)) continue;
     const cost =
-      inclusiveCosts?.get(getSessionRouteKey(agentKey, sessionItem.reference.sessionId))
-        ?.inclusiveStats.cost ?? sessionItem.stats.total_cost;
+      inclusiveCosts?.get(
+        getSessionRouteKey(
+          agentKey,
+          sessionItem.reference.sessionId,
+          sessionItem.reference.sourceNodeId,
+        ),
+      )?.inclusiveStats.cost ?? sessionItem.stats.total_cost;
     if (costMin !== undefined && cost < costMin) continue;
 
     results.push({

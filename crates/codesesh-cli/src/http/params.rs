@@ -1,6 +1,24 @@
 use super::Options;
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 
+#[derive(serde::Deserialize)]
+pub struct SessionPath {
+    #[serde(default = "codesesh_core::contract::local_source_node_id")]
+    source: String,
+    agent: String,
+    id: String,
+}
+
+impl SessionPath {
+    pub fn reference(self) -> codesesh_core::contract::SessionReference {
+        codesesh_core::contract::SessionReference {
+            source_node_id: self.source,
+            agent_name: self.agent,
+            session_id: self.id,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Params {
     pub pairs: Vec<(String, String)>,

@@ -462,3 +462,22 @@ fn refresh_selected_defers_history_without_losing_its_changes() {
         matches!(&completed.upserts[0].detail.messages[0].parts[0],MessagePart::Text{text,..} if text=="changed history")
     );
 }
+
+#[test]
+fn unpriced_capture_preserves_nonzero_cursor_estimates() {
+    let root = fixture(&[
+        (
+            "composerData:priced",
+            json!({"composerId":"priced","model":"claude-sonnet-4"}),
+        ),
+        (
+            "bubbleId:priced:a",
+            json!({"type":2,"text":"answer","modelInfo":{"modelName":"claude-sonnet-4"},"tokenCount":{"inputTokens":1000,"outputTokens":100}}),
+        ),
+    ]);
+    assert!(Pricing::bundled().resolve("claude-sonnet-4").is_some());
+    let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert!(sessions[0].head.stats.total_cost > 0.0);
+    crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
+}

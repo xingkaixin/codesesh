@@ -16,12 +16,14 @@ CREATE TABLE cache_initialization (
     );
 
 CREATE TABLE pending_reindex (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
-      PRIMARY KEY (agent_name, session_id)
+      PRIMARY KEY (source_node_id, agent_name, session_id)
     );
 
 CREATE TABLE sessions (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       sort_index INTEGER NOT NULL DEFAULT 0,
@@ -53,7 +55,7 @@ CREATE TABLE sessions (
       meta_json TEXT,
       head_meta_json TEXT,
       publication_id TEXT,
-      PRIMARY KEY (agent_name, session_id)
+      PRIMARY KEY (source_node_id, agent_name, session_id)
     );
 
 CREATE INDEX idx_sessions_agent_activity_order
@@ -66,9 +68,10 @@ CREATE INDEX idx_sessions_project
       ON sessions(project_identity_kind, project_identity_key, activity_time);
 
 CREATE INDEX idx_sessions_parent
-      ON sessions(parent_agent_name, parent_session_id);
+      ON sessions(source_node_id, parent_agent_name, parent_session_id);
 
 CREATE TABLE messages (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       message_index INTEGER NOT NULL,
@@ -91,14 +94,14 @@ CREATE TABLE messages (
       automated INTEGER NOT NULL DEFAULT 0,
       content_text TEXT NOT NULL,
       tool_metadata_json TEXT,
-      PRIMARY KEY (agent_name, session_id, message_index),
-      FOREIGN KEY (agent_name, session_id)
-        REFERENCES sessions(agent_name, session_id)
+      PRIMARY KEY (source_node_id, agent_name, session_id, message_index),
+      FOREIGN KEY (source_node_id, agent_name, session_id)
+        REFERENCES sessions(source_node_id, agent_name, session_id)
         ON DELETE CASCADE
     );
 
 CREATE INDEX idx_messages_session
-      ON messages(agent_name, session_id, message_index);
+      ON messages(source_node_id, agent_name, session_id, message_index);
 
 CREATE INDEX idx_messages_usage_time
       ON messages(
@@ -116,18 +119,20 @@ CREATE INDEX idx_messages_usage_time
       );
 
 CREATE TABLE session_model_cost (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       model TEXT NOT NULL,
       cost REAL NOT NULL,
       cost_recorded REAL NOT NULL,
-      PRIMARY KEY (agent_name, session_id, model),
-      FOREIGN KEY (agent_name, session_id)
-        REFERENCES sessions(agent_name, session_id)
+      PRIMARY KEY (source_node_id, agent_name, session_id, model),
+      FOREIGN KEY (source_node_id, agent_name, session_id)
+        REFERENCES sessions(source_node_id, agent_name, session_id)
         ON DELETE CASCADE
     );
 
 CREATE TABLE session_cost_summary (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       message_count INTEGER NOT NULL DEFAULT 0,
@@ -144,20 +149,21 @@ CREATE TABLE session_cost_summary (
       untimed_cache_create_tokens INTEGER NOT NULL DEFAULT 0,
       message_cost REAL NOT NULL,
       untimed_message_cost REAL NOT NULL,
-      PRIMARY KEY (agent_name, session_id),
-      FOREIGN KEY (agent_name, session_id)
-        REFERENCES sessions(agent_name, session_id)
+      PRIMARY KEY (source_node_id, agent_name, session_id),
+      FOREIGN KEY (source_node_id, agent_name, session_id)
+        REFERENCES sessions(source_node_id, agent_name, session_id)
         ON DELETE CASCADE
     );
 
 CREATE TABLE message_tools (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       message_index INTEGER NOT NULL,
       tool_name TEXT NOT NULL,
-      PRIMARY KEY (agent_name, session_id, message_index, tool_name),
-      FOREIGN KEY (agent_name, session_id, message_index)
-        REFERENCES messages(agent_name, session_id, message_index)
+      PRIMARY KEY (source_node_id, agent_name, session_id, message_index, tool_name),
+      FOREIGN KEY (source_node_id, agent_name, session_id, message_index)
+        REFERENCES messages(source_node_id, agent_name, session_id, message_index)
         ON DELETE CASCADE
     );
 
@@ -165,6 +171,7 @@ CREATE INDEX idx_message_tools_filter
       ON message_tools(tool_name, agent_name, session_id);
 
 CREATE TABLE session_file_activity (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       project_identity_key TEXT NOT NULL,
@@ -172,9 +179,9 @@ CREATE TABLE session_file_activity (
       kind TEXT NOT NULL,
       count INTEGER NOT NULL,
       latest_time INTEGER NOT NULL,
-      PRIMARY KEY (agent_name, session_id, project_identity_key, path, kind),
-      FOREIGN KEY (agent_name, session_id)
-        REFERENCES sessions(agent_name, session_id)
+      PRIMARY KEY (source_node_id, agent_name, session_id, project_identity_key, path, kind),
+      FOREIGN KEY (source_node_id, agent_name, session_id)
+        REFERENCES sessions(source_node_id, agent_name, session_id)
         ON DELETE CASCADE
     );
 
@@ -224,6 +231,7 @@ CREATE TRIGGER session_file_activity_path_au
     END;
 
 CREATE TABLE session_documents (
+      source_node_id TEXT NOT NULL DEFAULT 'local',
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
@@ -233,7 +241,7 @@ CREATE TABLE session_documents (
       indexed_message_count INTEGER NOT NULL,
       detail_version TEXT NOT NULL DEFAULT '',
       indexed_at INTEGER NOT NULL,
-      UNIQUE(agent_name, session_id)
+      UNIQUE(source_node_id, agent_name, session_id)
     );
 
 CREATE VIRTUAL TABLE session_documents_fts USING fts5(

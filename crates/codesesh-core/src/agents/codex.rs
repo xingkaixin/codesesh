@@ -21,6 +21,17 @@ pub struct ParsedSession {
     pub detail: SessionDetail,
 }
 
+impl ParsedSession {
+    pub fn set_source_node(&mut self, node: &str) {
+        self.head.set_source_node(node);
+        self.detail.head = self.head.clone();
+        for activity in &mut self.detail.file_activity {
+            activity.reference = self.head.reference.clone();
+            activity.project_identity_key = self.head.project_identity.key.clone();
+        }
+    }
+}
+
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let sessions_root = root.join("sessions");
     if !sessions_root.exists() {
@@ -846,6 +857,7 @@ pub fn parse(
         version: None,
         summary_files: None,
         reference: SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "codex".into(),
             session_id: id,
         },
@@ -856,6 +868,7 @@ pub fn parse(
             .then(|| first["payload"]["parent_thread_id"].as_str())
             .flatten()
             .map(|id| SessionReference {
+                source_node_id: crate::contract::local_source_node_id(),
                 agent_name: "codex".into(),
                 session_id: id.into(),
             }),

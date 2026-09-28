@@ -56,7 +56,7 @@ pub fn scan_changed(
     })
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentReferences {
     digests: HashSet<String>,
     unavailable: bool,
@@ -220,6 +220,7 @@ fn scan_selected(
             version: None,
             summary_files: None,
             reference: SessionReference {
+                source_node_id: crate::contract::local_source_node_id(),
                 agent_name: "dsh".into(),
                 session_id: id,
             },
@@ -230,6 +231,7 @@ fn scan_selected(
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(|id| SessionReference {
+                    source_node_id: crate::contract::local_source_node_id(),
                     agent_name: "dsh".into(),
                     session_id: id.into(),
                 }),

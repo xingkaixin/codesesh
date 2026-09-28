@@ -22,6 +22,8 @@ pub mod discovery;
 
 pub mod runtime;
 
+pub mod sync;
+
 pub mod time;
 
 pub mod public_contract;

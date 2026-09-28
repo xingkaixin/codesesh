@@ -6,6 +6,9 @@ use axum::{
 use tower::ServiceExt;
 
 async fn app() -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
+    app_mode(false).await
+}
+async fn app_mode(hub: bool) -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let runtime = codesesh_core::runtime::Runtime::start(dir.path().join("cache.db"), vec![], 1)
         .await
@@ -23,16 +26,22 @@ async fn app() -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
         enabled_agents: vec!["codex".into()],
         cwd: None,
     };
-    (
-        router(Arc::new(State::new(
-            runtime.clone(),
-            codesesh_core::pricing::PricingController::load(dir.path()),
-            Some(StateStore::memory().unwrap()),
-            options,
-        ))),
-        runtime,
-        dir,
-    )
+    let state = State::new(
+        runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(StateStore::memory().unwrap()),
+        options,
+    );
+    let state = if hub {
+        runtime
+            .hub_control(|cache| cache.initialize_hub("fixture-hub"))
+            .await
+            .unwrap();
+        state.with_hub()
+    } else {
+        state
+    };
+    (router(Arc::new(state)), runtime, dir)
 }
 async fn request(
     app: &Router,
@@ -62,6 +71,37 @@ async fn request(
         status,
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     )
+}
+
+#[tokio::test]
+async fn source_qualified_alias_routes_preserve_identity() {
+    let (app, runtime, _dir) = app().await;
+    let headers = [
+        ("authorization", "Bearer secret"),
+        ("origin", "http://localhost:4521"),
+        ("content-type", "application/json"),
+    ];
+    let (status, remote) = request(
+        &app,
+        Method::PUT,
+        "/api/session-aliases/nodes/worker-a/codex/shared",
+        &headers,
+        r#"{"alias":"Remote"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(remote["alias"]["reference"]["sourceNodeId"], "worker-a");
+    let (status, local) = request(
+        &app,
+        Method::PUT,
+        "/api/session-aliases/codex/shared",
+        &headers,
+        r#"{"alias":"Local"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(local["alias"]["reference"].get("sourceNodeId").is_none());
+    runtime.shutdown().await.unwrap();
 }
 #[tokio::test]
 async fn api_auth_transport_and_write_boundaries() {
@@ -327,5 +367,114 @@ async fn remote_proxy_accepts_public_authority_but_requires_https() {
             .unwrap();
         assert_eq!(app.clone().oneshot(request).await.unwrap().status(), status);
     }
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
+    let (app, runtime, _dir) = app_mode(true).await;
+    let admin = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+    let (status, token) =
+        request(&app, Method::POST, "/api/nodes/pairing-token", &admin, "{}").await;
+    assert_eq!(status, StatusCode::OK);
+    let hello = json!({"version":env!("CARGO_PKG_VERSION"),"protocolVersion":1,"payloadVersion":1,"streamId":uuid::Uuid::new_v4().to_string(),"queue":{"batches":0,"bytes":0,"oldestAt":null}});
+    let pair = json!({"token":token["token"],"name":"Test worker","hello":hello});
+    let (status, grant) = request(
+        &app,
+        Method::POST,
+        "/api/worker/pair",
+        &[("content-type", "application/json")],
+        &pair.to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{grant}");
+    let credential = format!("Bearer {}", grant["credential"].as_str().unwrap());
+    let headers = [
+        ("authorization", credential.as_str()),
+        (
+            "x-codesesh-worker-instance",
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        ),
+        ("content-type", "application/json"),
+    ];
+    assert_eq!(
+        request(&app, Method::GET, "/api/sessions", &headers, "")
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        request(
+            &app,
+            Method::POST,
+            "/api/worker/hello",
+            &admin,
+            &hello.to_string()
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, result) = request(
+        &app,
+        Method::POST,
+        "/api/worker/hello",
+        &headers,
+        &hello.to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(result["error"].is_null());
+    let mut newer = hello.clone();
+    newer["version"] = json!("999.0.0");
+    let (_, result) = request(
+        &app,
+        Method::POST,
+        "/api/worker/hello",
+        &headers,
+        &newer.to_string(),
+    )
+    .await;
+    assert_eq!(result["error"], "WORKER_TOO_NEW");
+    let upload = json!({"epoch":grant["epoch"],"streamId":hello["streamId"],"sequence":1,"payloadVersion":1,"digest":"invalid","operation":{"type":"snapshot-chunk","transfer_id":uuid::Uuid::new_v4().to_string(),"index":0,"data":"eA=="}});
+    let (status, result) = request(
+        &app,
+        Method::POST,
+        "/api/worker/upload",
+        &[
+            ("authorization", credential.as_str()),
+            (
+                "x-codesesh-worker-instance",
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            ),
+            ("content-type", "application/json"),
+            ("x-codesesh-worker-version", "999.0.0"),
+            ("x-codesesh-protocol-version", "1"),
+        ],
+        &upload.to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(result["error"], "WORKER_TOO_NEW");
+    let path = format!("/api/nodes/{}/revoke", grant["nodeId"].as_str().unwrap());
+    assert_eq!(
+        request(&app, Method::POST, &path, &admin, "{}").await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(
+            &app,
+            Method::POST,
+            "/api/worker/hello",
+            &headers,
+            &hello.to_string()
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
     runtime.shutdown().await.unwrap();
 }

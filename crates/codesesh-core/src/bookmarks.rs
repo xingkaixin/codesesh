@@ -117,6 +117,7 @@ mod tests {
     #[test]
     fn resolves_missing_bookmarks_once_and_preserves_availability() {
         let reference = |id: &str, agent: &str| SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: agent.into(),
             session_id: id.into(),
         };

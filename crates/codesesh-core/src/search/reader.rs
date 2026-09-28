@@ -10,6 +10,7 @@ pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
         version: None,
         summary_files: None,
         reference: SessionReference {
+            source_node_id: row.get("source_node_id")?,
             agent_name: row.get("agent_name")?,
             session_id: row.get("session_id")?,
         },
@@ -71,7 +72,7 @@ pub(super) fn search_prepared(
         }
         filters.params.insert(0, fts.into());
         format!(
-            "SELECT s.*, COALESCE(NULLIF(snippet(session_documents_fts,1,'','',' … ',18),''),highlight(session_documents_fts,0,'','')) AS snippet FROM session_documents_fts JOIN session_documents d ON d.id = session_documents_fts.rowid JOIN sessions s ON s.agent_name = d.agent_name AND s.session_id = d.session_id WHERE session_documents_fts MATCH ? AND s.publication_id IS NULL {} ORDER BY bm25(session_documents_fts,8.0,1.0),s.activity_time DESC LIMIT ?",
+            "SELECT s.*, COALESCE(NULLIF(snippet(session_documents_fts,1,'','',' … ',18),''),highlight(session_documents_fts,0,'','')) AS snippet FROM session_documents_fts JOIN session_documents d ON d.id = session_documents_fts.rowid JOIN sessions s ON s.source_node_id=d.source_node_id AND s.agent_name = d.agent_name AND s.session_id = d.session_id WHERE session_documents_fts MATCH ? AND s.publication_id IS NULL {} ORDER BY bm25(session_documents_fts,8.0,1.0),s.activity_time DESC LIMIT ?",
             filters.where_sql()
         )
     };
@@ -143,15 +144,22 @@ fn first_message_matches(
             Ok(owned_terms.matches(text.as_deref().unwrap_or_default()))
         },
     )?;
-    let values = vec!["(?, ?)"; candidates.len()].join(",");
+    let values = vec!["(?, ?, ?)"; candidates.len()].join(",");
     let params: Vec<Value> = candidates
         .iter()
-        .flat_map(|r| [r.agent_name.clone().into(), r.session_id.clone().into()])
+        .flat_map(|r| {
+            [
+                r.source_node_id.clone().into(),
+                r.agent_name.clone().into(),
+                r.session_id.clone().into(),
+            ]
+        })
         .collect();
-    let mut query=connection.prepare(&format!("WITH candidate_sessions(agent_name,session_id) AS (VALUES {values}), first_message_matches AS MATERIALIZED (SELECT c.agent_name,c.session_id,(SELECT m.rowid FROM messages m INDEXED BY idx_messages_session WHERE m.agent_name=c.agent_name AND m.session_id=c.session_id AND codesesh_message_matches_terms(m.content_text) ORDER BY m.message_index LIMIT 1) AS message_rowid FROM candidate_sessions c) SELECT m.agent_name,m.session_id,m.role,m.mode,m.tool_metadata_json,m.content_text FROM first_message_matches f JOIN messages m ON m.rowid=f.message_rowid"))?;
+    let mut query=connection.prepare(&format!("WITH candidate_sessions(source_node_id,agent_name,session_id) AS (VALUES {values}), first_message_matches AS MATERIALIZED (SELECT c.source_node_id,c.agent_name,c.session_id,(SELECT m.rowid FROM messages m INDEXED BY idx_messages_session WHERE m.source_node_id=c.source_node_id AND m.agent_name=c.agent_name AND m.session_id=c.session_id AND codesesh_message_matches_terms(m.content_text) ORDER BY m.message_index LIMIT 1) AS message_rowid FROM candidate_sessions c) SELECT m.source_node_id,m.agent_name,m.session_id,m.role,m.mode,m.tool_metadata_json,m.content_text FROM first_message_matches f JOIN messages m ON m.rowid=f.message_rowid"))?;
     let mut rows = query.query(params_from_iter(params))?;
     while let Some(row) = rows.next()? {
         let reference = SessionReference {
+            source_node_id: row.get("source_node_id")?,
             agent_name: row.get("agent_name")?,
             session_id: row.get("session_id")?,
         };
@@ -190,7 +198,7 @@ pub(super) fn search_files(
         filters.text("fa.kind = ?", kind);
     }
     let statement = format!(
-        "SELECT s.*,fa.path,fa.kind,fa.count FROM (SELECT fa.rowid AS activity_rowid,ROW_NUMBER() OVER (PARTITION BY fa.agent_name,fa.session_id ORDER BY fa.latest_time DESC,fa.count DESC,fa.path) AS session_rank FROM session_file_activity fa JOIN sessions s ON s.agent_name=fa.agent_name AND s.session_id=fa.session_id AND s.publication_id IS NULL WHERE 1=1 {}) ranked JOIN session_file_activity fa ON fa.rowid=ranked.activity_rowid JOIN sessions s ON s.agent_name=fa.agent_name AND s.session_id=fa.session_id WHERE ranked.session_rank=1 ORDER BY fa.latest_time DESC,fa.count DESC,fa.path LIMIT ?",
+        "SELECT s.*,fa.path,fa.kind,fa.count FROM (SELECT fa.rowid AS activity_rowid,ROW_NUMBER() OVER (PARTITION BY fa.source_node_id,fa.agent_name,fa.session_id ORDER BY fa.latest_time DESC,fa.count DESC,fa.path) AS session_rank FROM session_file_activity fa JOIN sessions s ON s.source_node_id=fa.source_node_id AND s.agent_name=fa.agent_name AND s.session_id=fa.session_id AND s.publication_id IS NULL WHERE 1=1 {}) ranked JOIN session_file_activity fa ON fa.rowid=ranked.activity_rowid JOIN sessions s ON s.source_node_id=fa.source_node_id AND s.agent_name=fa.agent_name AND s.session_id=fa.session_id WHERE ranked.session_rank=1 ORDER BY fa.latest_time DESC,fa.count DESC,fa.path LIMIT ?",
         filters.where_sql()
     );
     filters

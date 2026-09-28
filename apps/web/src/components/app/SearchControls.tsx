@@ -39,7 +39,7 @@ export const SearchControls = forwardRef<
   return (
     <RenderProfiler id="SearchControls">
       <form
-        className="order-3 col-span-2 flex w-full items-center justify-center gap-2 sm:order-none sm:col-span-1 sm:mx-auto sm:max-w-[560px]"
+        className="order-3 col-span-2 flex min-w-0 w-full items-center justify-center gap-2 lg:order-none lg:col-span-1 lg:mx-auto lg:max-w-[440px]"
         onSubmit={submit}
       >
         <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--brand-line)] focus-within:ring-2 focus-within:ring-[var(--brand)]">

@@ -1,3 +1,4 @@
+import { SourceBadge } from "../nodes/SourceFilter";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { Link } from "react-router-dom";
@@ -18,6 +19,7 @@ interface SessionLoadNotice {
 }
 
 export interface AppPageHeaderModel {
+  sourceNodeId?: string;
   mobileNavigationOpen: boolean;
   sidebarCollapsed: boolean;
   route: RouteHeaderModel;
@@ -45,6 +47,7 @@ export function AppPageHeader({
     shortcutHintVisible,
     sessionBackHintVisible,
     resumeSession,
+    sourceNodeId,
     sessionCopyNotice,
     liveNotice,
     scanStatusVisible,
@@ -146,6 +149,7 @@ export function AppPageHeader({
               {t("Esc back")}
             </span>
           ) : null}
+          {sourceNodeId && <SourceBadge sourceNodeId={sourceNodeId} />}
           {resumeSession ? <CopyResumeButton {...resumeSession} /> : null}
         </div>
         <div aria-live="polite">

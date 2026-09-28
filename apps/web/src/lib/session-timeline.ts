@@ -118,7 +118,7 @@ function toChildRow(node: SessionTreeNode): TimelineChildRow {
   const { session } = node;
   const reference = referenceOf(session);
   return {
-    routeKey: getSessionRouteKey(reference.agentName, reference.sessionId),
+    routeKey: getSessionRouteKey(reference.agentName, reference.sessionId, reference.sourceNodeId),
     reference,
     time: activityTime(session),
     title: getSessionDisplayTitle(session),
@@ -166,7 +166,7 @@ function toRow(node: SessionTreeNode, isOrphan: boolean): TimelineRow {
   const reference = referenceOf(session);
 
   return {
-    routeKey: getSessionRouteKey(reference.agentName, reference.sessionId),
+    routeKey: getSessionRouteKey(reference.agentName, reference.sessionId, reference.sourceNodeId),
     reference,
     time: activityTime(session),
     title: getSessionDisplayTitle(session),

@@ -43,8 +43,8 @@ pub fn visit_detail_messages(
     let reference = &head.reference;
     let count = connection
         .query_row(
-            "SELECT indexed_message_count FROM session_documents WHERE agent_name=? AND session_id=?",
-            params![reference.agent_name, reference.session_id],
+            "SELECT indexed_message_count FROM session_documents WHERE source_node_id=? AND agent_name=? AND session_id=?",
+            params![reference.source_node_id,reference.agent_name,reference.session_id],
             |row| row.get::<_, i64>(0),
         )
         .optional()?;
@@ -52,11 +52,11 @@ pub fn visit_detail_messages(
     let stored_tail = if count == 0 {
         Some(cursor::initial(reference))
     } else {
-        connection.query_row("SELECT content_chain_digest FROM messages WHERE agent_name=? AND session_id=? AND message_index=?",params![reference.agent_name,reference.session_id,count-1],|row|row.get::<_,Option<String>>(0)).optional()?.flatten()
+        connection.query_row("SELECT content_chain_digest FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?",params![reference.source_node_id,reference.agent_name,reference.session_id,count-1],|row|row.get::<_,Option<String>>(0)).optional()?.flatten()
     };
     let cost_revision = connection.query_row(
-        "SELECT COALESCE(json_extract(meta_json,'$.rustPricingRevision'),0) FROM sessions WHERE agent_name=? AND session_id=?",
-        params![reference.agent_name,reference.session_id], |row| row.get::<_, i64>(0))? as u64;
+        "SELECT COALESCE(json_extract(meta_json,'$.rustPricingRevision'),0) FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
+        params![reference.source_node_id,reference.agent_name,reference.session_id], |row| row.get::<_, i64>(0))? as u64;
     let parsed = encoded.and_then(parse_cursor);
     let mut start = 0;
     let mut append = false;
@@ -68,7 +68,7 @@ pub fn visit_detail_messages(
         let actual = if previous_count == 0 {
             Some(prefix.clone())
         } else {
-            connection.query_row("SELECT content_chain_digest FROM messages WHERE agent_name=? AND session_id=? AND message_index=?",params![reference.agent_name,reference.session_id,previous_count as i64-1],|row|row.get::<_,Option<String>>(0)).optional()?.flatten()
+            connection.query_row("SELECT content_chain_digest FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?",params![reference.source_node_id,reference.agent_name,reference.session_id,previous_count as i64-1],|row|row.get::<_,Option<String>>(0)).optional()?.flatten()
         };
         if actual
             .as_ref()
@@ -81,10 +81,15 @@ pub fn visit_detail_messages(
     }
 
     let mut statement = connection.prepare(
-        "SELECT * FROM messages WHERE agent_name=? AND session_id=? AND message_index>=? ORDER BY message_index",
+        "SELECT * FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? ORDER BY message_index",
     )?;
     let rows = statement.query_map(
-        params![reference.agent_name, reference.session_id, start as i64],
+        params![
+            reference.source_node_id,
+            reference.agent_name,
+            reference.session_id,
+            start as i64
+        ],
         |row| {
             let role: String = row.get("role")?;
             let tokens: Option<String> = row.get("tokens_json")?;
@@ -154,23 +159,30 @@ pub fn visit_detail_messages(
         emitted + start as i64 == count,
         "materialized message count is inconsistent"
     );
-    let mut query = connection.prepare("SELECT project_identity_key,path,kind,count,latest_time FROM session_file_activity WHERE agent_name=? AND session_id=? ORDER BY latest_time DESC,path")?;
+    let mut query = connection.prepare("SELECT project_identity_key,path,kind,count,latest_time FROM session_file_activity WHERE source_node_id=? AND agent_name=? AND session_id=? ORDER BY latest_time DESC,path")?;
     let file_activity = query
-        .query_map(params![reference.agent_name, reference.session_id], |row| {
-            Ok(SessionFileActivity {
-                reference: reference.clone(),
-                project_identity_key: row.get(0)?,
-                path: row.get(1)?,
-                kind: row.get(2)?,
-                count: row.get::<_, i64>(3)? as usize,
-                latest_time: row.get(4)?,
-            })
-        })?
+        .query_map(
+            params![
+                reference.source_node_id,
+                reference.agent_name,
+                reference.session_id
+            ],
+            |row| {
+                Ok(SessionFileActivity {
+                    reference: reference.clone(),
+                    project_identity_key: row.get(0)?,
+                    path: row.get(1)?,
+                    kind: row.get(2)?,
+                    count: row.get::<_, i64>(3)? as usize,
+                    latest_time: row.get(4)?,
+                })
+            },
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let pending = connection
         .query_row(
-            "SELECT 1 FROM pending_reindex WHERE agent_name=? AND session_id=?",
-            params![reference.agent_name, reference.session_id],
+            "SELECT 1 FROM pending_reindex WHERE source_node_id=? AND agent_name=? AND session_id=?",
+            params![reference.source_node_id,reference.agent_name,reference.session_id],
             |_| Ok(()),
         )
         .optional()?

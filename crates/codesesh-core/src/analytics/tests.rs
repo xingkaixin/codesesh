@@ -6,6 +6,7 @@ fn head(id: &str, parent: Option<&str>, time: i64) -> SessionHead {
         version: None,
         summary_files: None,
         reference: SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "codex".into(),
             session_id: id.into(),
         },
@@ -13,6 +14,7 @@ fn head(id: &str, parent: Option<&str>, time: i64) -> SessionHead {
         directory: "/project".into(),
         display_title: None,
         parent_reference: parent.map(|id| SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "codex".into(),
             session_id: id.into(),
         }),

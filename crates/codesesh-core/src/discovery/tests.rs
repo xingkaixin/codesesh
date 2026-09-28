@@ -639,6 +639,7 @@ fn target_session_is_parsed_in_first_page_even_outside_startup_window() {
     )
     .with_startup_window(Some(1_700_000_000_000.0), None)
     .with_target_session(Some(crate::contract::SessionReference {
+        source_node_id: crate::contract::local_source_node_id(),
         agent_name: "pi".into(),
         session_id: "history-0064".into(),
     }));

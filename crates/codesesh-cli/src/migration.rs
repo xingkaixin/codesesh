@@ -48,6 +48,7 @@ pub async fn run(args: &crate::options::Args, home: &Path) -> Result<Vec<String>
                 Ok(())
             })
         }, |progress: Progress| {
+            crate::service::report("directory-migration", &format!("{}: {}", progress.phase, progress.path.display()), progress.total.map(|total| (progress.done, total)), None);
             let key = (progress.phase, progress.path.clone(), progress.total.is_some());
             if previous.as_ref() != Some(&key) {
                 if !animate { eprintln!("{}: {}", progress.phase, progress.path.display()); }

@@ -100,7 +100,7 @@ interface SearchContentModel {
 }
 
 interface BookmarkContentModel {
-  isBookmarked: (agentKey: string, sessionId: string) => boolean;
+  isBookmarked: (agentKey: string, sessionId: string, sourceNodeId?: string) => boolean;
   toggleSessionBookmark: (session: SessionHead, agentKey: string) => void;
 }
 
@@ -312,7 +312,11 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
       if (!currentSessionAgentName || !currentSessionId) return [];
       return (
         route.childSessionsByParentRouteKey.get(
-          getSessionRouteKey(currentSessionAgentName, currentSessionId),
+          getSessionRouteKey(
+            currentSessionAgentName,
+            currentSessionId,
+            currentSession?.reference.sourceNodeId,
+          ),
         ) ?? []
       );
     },
@@ -369,7 +373,11 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
     >
       <LazySurface>
         <SessionDetailView
-          key={`${currentSession.reference.agentName}/${currentSession.reference.sessionId}`}
+          key={getSessionRouteKey(
+            currentSession.reference.agentName,
+            currentSession.reference.sessionId,
+            currentSession.reference.sourceNodeId,
+          )}
           session={currentSession}
           agentCatalog={route.agentCatalog}
           highlightQuery={route.detailHighlightQuery}

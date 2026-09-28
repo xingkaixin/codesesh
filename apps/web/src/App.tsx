@@ -390,7 +390,9 @@ export default function App() {
   }, [dismissShortcutHint]);
   const sessionRouteActive = !isSearchMode && viewState.mode === "session";
   const resumeSession =
-    sessionRouteActive && session
+    sessionRouteActive &&
+    session &&
+    (!session.reference.sourceNodeId || session.reference.sourceNodeId === "local")
       ? {
           resumeCommandPrefix:
             findAgent(agentCatalog, viewState.activeAgentKey)?.resumeCommandPrefix ?? null,
@@ -413,6 +415,7 @@ export default function App() {
           {t("Skip to content")}
         </a>
         <AppToolbar
+          hubEnabled={appConfig.config?.hubEnabled}
           searchControlsRef={searchControlsRef}
           onSubmitSearch={submitSearch}
           theme={theme}
@@ -477,6 +480,10 @@ export default function App() {
                 shortcutHintVisible: !shortcutHintDismissed,
                 sessionBackHintVisible: sessionRouteActive,
                 resumeSession,
+                sourceNodeId:
+                  sessionRouteActive && session
+                    ? (session.reference.sourceNodeId ?? "local")
+                    : undefined,
                 sessionCopyNotice,
                 liveNotice,
                 scanStatusVisible: viewState.mode === "root",

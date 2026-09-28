@@ -4,6 +4,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useRef, useState } from "react";
 
 export interface SessionAliasTarget {
+  sourceNodeId?: string;
   agentKey: string;
   sessionId: string;
   title: string;

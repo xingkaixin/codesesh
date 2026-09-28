@@ -18,15 +18,16 @@ pub fn active_hours(
         .filter(|s| scope.matches(s))
         .map(|s| &s.reference)
         .collect();
-    let mut query=connection.prepare("SELECT m.agent_name,m.session_id,m.time_created FROM messages m INDEXED BY idx_messages_user_activity JOIN sessions s ON s.agent_name=m.agent_name AND s.session_id=m.session_id WHERE s.publication_id IS NULL AND s.parent_agent_name IS NULL AND s.parent_session_id IS NULL AND m.role='user' AND m.automated=0 AND m.time_created>0 AND m.time_created<=?1 AND (?2 IS NULL OR m.time_created>=?2)")?;
+    let mut query=connection.prepare("SELECT m.source_node_id,m.agent_name,m.session_id,m.time_created FROM messages m INDEXED BY idx_messages_user_activity JOIN sessions s ON s.source_node_id=m.source_node_id AND s.agent_name=m.agent_name AND s.session_id=m.session_id WHERE s.publication_id IS NULL AND s.parent_agent_name IS NULL AND s.parent_session_id IS NULL AND m.role='user' AND m.automated=0 AND m.time_created>0 AND m.time_created<=?1 AND (?2 IS NULL OR m.time_created>=?2)")?;
     let mut counts = vec![0_u64; 84];
     for row in query.query_map(rusqlite::params![to, from], |r| {
         Ok((
             SessionReference {
-                agent_name: r.get(0)?,
-                session_id: r.get(1)?,
+                source_node_id: r.get("source_node_id")?,
+                agent_name: r.get("agent_name")?,
+                session_id: r.get("session_id")?,
             },
-            r.get::<_, f64>(2)?,
+            r.get::<_, f64>("time_created")?,
         ))
     })? {
         let (reference, time) = row?;

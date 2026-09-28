@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryScope {
+    pub source_node_id: Option<String>,
     pub agents: Vec<String>,
     pub project_scope: Option<ProjectScope>,
 }
@@ -328,15 +329,24 @@ pub fn filter_indexed_references(
     let filters = sql::build(&options);
     let mut found = HashSet::new();
     for chunk in references.chunks(200) {
-        let conditions = vec!["(s.agent_name=? AND s.session_id=?)"; chunk.len()].join(" OR ");
+        let conditions =
+            vec!["(s.source_node_id=? AND s.agent_name=? AND s.session_id=?)"; chunk.len()]
+                .join(" OR ");
         let mut params: Vec<Value> = chunk
             .iter()
-            .flat_map(|r| [r.agent_name.clone().into(), r.session_id.clone().into()])
+            .flat_map(|r| {
+                [
+                    r.source_node_id.clone().into(),
+                    r.agent_name.clone().into(),
+                    r.session_id.clone().into(),
+                ]
+            })
             .collect();
         params.extend(filters.params.clone());
-        let mut statement = connection.prepare(&format!("SELECT s.agent_name,s.session_id FROM sessions s WHERE ({conditions}) AND s.publication_id IS NULL {}",filters.where_sql()))?;
+        let mut statement = connection.prepare(&format!("SELECT s.agent_name,s.session_id,s.source_node_id FROM sessions s WHERE ({conditions}) AND s.publication_id IS NULL {}",filters.where_sql()))?;
         for row in statement.query_map(params_from_iter(params), |r| {
             Ok(SessionReference {
+                source_node_id: r.get(2)?,
                 agent_name: r.get(0)?,
                 session_id: r.get(1)?,
             })

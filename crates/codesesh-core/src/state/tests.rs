@@ -1,9 +1,35 @@
 use super::*;
 fn reference(id: &str) -> SessionReference {
     SessionReference {
+        source_node_id: crate::contract::local_source_node_id(),
         agent_name: " CoDeX ".into(),
         session_id: id.into(),
     }
+}
+
+#[test]
+fn source_nodes_keep_bookmarks_and_aliases_separate_after_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.db");
+    let local = reference("same");
+    let mut remote = local.clone();
+    remote.source_node_id = "worker-a".into();
+    let state = StateStore::open(&path).unwrap();
+    state.upsert_bookmark(&local).unwrap();
+    state.upsert_bookmark(&remote).unwrap();
+    state.upsert_alias(&local, "Local").unwrap();
+    state.upsert_alias(&remote, "Remote").unwrap();
+    drop(state);
+    let state = StateStore::open(&path).unwrap();
+    assert_eq!(state.list_bookmarks().unwrap().len(), 2);
+    assert_eq!(state.list_aliases().unwrap().len(), 2);
+    state.delete_bookmark(&remote).unwrap();
+    state.delete_alias(&remote).unwrap();
+    assert_eq!(
+        state.list_bookmarks().unwrap()[0].reference,
+        normalize_reference(&local)
+    );
+    assert_eq!(state.list_aliases().unwrap()[0].alias, "Local");
 }
 
 #[test]

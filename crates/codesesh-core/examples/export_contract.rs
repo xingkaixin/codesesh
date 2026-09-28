@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wire::WireSessionDetail::export_all(&config)?;
     wire::SessionWindow::export_all(&config)?;
     wire::AppConfig::export_all(&config)?;
+    codesesh_core::sync::HubNodes::export_all(&config)?;
     wire::ApiProjectAgentStat::export_all(&config)?;
     wire::ApiProjectGroup::export_all(&config)?;
     wire::ApiProjectSummary::export_all(&config)?;

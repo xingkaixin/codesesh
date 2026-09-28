@@ -13,7 +13,7 @@ export type ViewState =
       activeProjectKey: string;
     }
   | { mode: "agent"; activeAgentKey: string; activeSessionId: null }
-  | { mode: "session"; activeAgentKey: string; activeSessionId: string }
+  | { mode: "session"; activeAgentKey: string; activeSessionId: string; sourceNodeId?: string }
   | { mode: "missingAgent"; activeAgentKey: null; activeSessionId: null; attemptedKey: string }
   // An unknown session id keeps mode "session"; the 404 is resolved later by
   // useSessionDetail and rendered by the session surface itself.
@@ -55,7 +55,11 @@ export function viewStateFromRouteMatches(
       activeProjectKey: key,
     };
   }
-  if (match.id === APP_ROUTE_IDS.agent || match.id === APP_ROUTE_IDS.session) {
+  if (
+    match.id === APP_ROUTE_IDS.agent ||
+    match.id === APP_ROUTE_IDS.session ||
+    match.id === APP_ROUTE_IDS.sourceSession
+  ) {
     const agentKey = match.params.agentKey?.toLowerCase();
     if (!agentKey || !validAgentKeys.has(agentKey)) {
       return {
@@ -70,7 +74,12 @@ export function viewStateFromRouteMatches(
     }
     const sessionId = match.params.sessionId;
     if (!sessionId) return invalidRoute;
-    return { mode: "session", activeAgentKey: agentKey, activeSessionId: sessionId };
+    return {
+      mode: "session",
+      activeAgentKey: agentKey,
+      activeSessionId: sessionId,
+      ...(match.params.sourceNodeId ? { sourceNodeId: match.params.sourceNodeId } : {}),
+    };
   }
   return invalidRoute;
 }

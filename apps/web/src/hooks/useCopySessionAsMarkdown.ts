@@ -20,11 +20,15 @@ export function useCopySessionAsMarkdown() {
 
   const copySessionAsMarkdown = useCallback(
     async (sessionHead: SessionHead) => {
-      const { agentName, sessionId } = sessionHead.reference;
+      const { agentName, sessionId, sourceNodeId } = sessionHead.reference;
       try {
         const detail = await queryClient.fetchQuery({
-          queryKey: queryKeys.sessionDetail(agentName, sessionId),
-          queryFn: ({ signal }) => fetchSessionData(agentName, sessionId, { signal }),
+          queryKey: queryKeys.sessionDetail(agentName, sessionId, sourceNodeId),
+          queryFn: ({ signal }) =>
+            fetchSessionData(agentName, sessionId, {
+              signal,
+              ...(sourceNodeId ? { sourceNodeId } : {}),
+            }),
           staleTime: Infinity,
         });
         const copied = await writeToClipboard(formatSessionAsMarkdown(detail));

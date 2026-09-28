@@ -1,6 +1,7 @@
 
     WITH normalized AS (
       SELECT
+        source_node_id,
         agent_name,
         session_id,
         COALESCE(time_completed, 0) <= 0 AND COALESCE(time_created, 0) <= 0 AS untimed,
@@ -11,9 +12,10 @@
         MAX(CAST(COALESCE(json_extract(tokens_json, '$.cache_create'), 0) AS INTEGER), 0) AS cache_create_tokens,
         CASE WHEN cost > 0 THEN cost ELSE 0 END AS normalized_cost
       FROM messages
-      WHERE agent_name = ? AND session_id = ?
+      WHERE source_node_id = ? AND agent_name = ? AND session_id = ?
     )
     INSERT INTO session_cost_summary(
+      source_node_id,
       agent_name,
       session_id,
       message_count,
@@ -32,6 +34,7 @@
       untimed_message_cost
     )
     SELECT
+      source_node_id,
       agent_name,
       session_id,
       COUNT(*),
@@ -49,5 +52,5 @@
       SUM(normalized_cost),
       SUM(CASE WHEN untimed THEN normalized_cost ELSE 0 END)
     FROM normalized
-    GROUP BY agent_name, session_id
+    GROUP BY source_node_id,agent_name, session_id
   

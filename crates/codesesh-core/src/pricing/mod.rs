@@ -44,6 +44,10 @@ fn alias(model: &str) -> &str {
 }
 
 impl Pricing {
+    pub fn capture_only() -> Self {
+        Self::from_prices(HashMap::new())
+    }
+
     pub fn bundled() -> Self {
         Self::from_prices(registry::snapshot())
     }

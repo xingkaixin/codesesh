@@ -53,6 +53,10 @@ impl Publication<'_> {
 }
 impl Cache {
     pub fn json_baseline(&mut self) -> Result<JsonBaseline> {
+        self.source_json_baseline(crate::contract::LOCAL_SOURCE_NODE_ID)
+    }
+
+    pub fn source_json_baseline(&mut self, node: &str) -> Result<JsonBaseline> {
         let transaction = self.connection.transaction()?;
         let revision = revision(&transaction)?;
         let mut query = transaction
@@ -78,18 +82,19 @@ impl Cache {
             fingerprints.remove(&agent?);
         }
         drop(query);
-        let mut query=transaction.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL ORDER BY agent_name,sort_index,rowid", snapshot::HEAD_COLUMNS))?;
+        let mut query=transaction.prepare(&format!("SELECT {} FROM sessions WHERE source_node_id=? AND publication_id IS NULL ORDER BY agent_name,sort_index,rowid", snapshot::HEAD_COLUMNS))?;
         let heads = query
-            .query_map([], snapshot::head)?
+            .query_map([node], snapshot::head)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(query);
         let mut query = transaction.prepare(
-            "SELECT agent_name,session_id,source_path FROM sessions WHERE publication_id IS NULL AND source_path IS NOT NULL",
+            "SELECT agent_name,session_id,source_path FROM sessions WHERE source_node_id=? AND publication_id IS NULL AND source_path IS NOT NULL",
         )?;
         let source_paths = query
-            .query_map([], |row| {
+            .query_map([node], |row| {
                 Ok((
                     SessionReference {
+                        source_node_id: node.into(),
                         agent_name: row.get(0)?,
                         session_id: row.get(1)?,
                     },

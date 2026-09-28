@@ -21,7 +21,7 @@ interface UseSidebarModelOptions {
   agents: AgentInfo[];
   projects: ApiProjectGroup[];
   selectedProjectAgent?: string;
-  isSessionBookmarked: (agentKey: string, sessionId: string) => boolean;
+  isSessionBookmarked: (agentKey: string, sessionId: string, sourceNodeId?: string) => boolean;
 }
 
 export interface ProjectNavigationModel {
@@ -89,13 +89,18 @@ export function useSidebarModel({
     const openedSessionHead =
       viewState.mode === "session"
         ? (sessionIndexes.byRouteKey.get(
-            getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId),
+            getSessionRouteKey(
+              viewState.activeAgentKey,
+              viewState.activeSessionId,
+              viewState.sourceNodeId,
+            ),
           ) ?? null)
         : null;
     const openedSessionData =
       viewState.mode === "session" &&
       session?.reference.agentName === viewState.activeAgentKey &&
-      session.reference.sessionId === viewState.activeSessionId
+      session.reference.sessionId === viewState.activeSessionId &&
+      (session.reference.sourceNodeId ?? "local") === (viewState.sourceNodeId ?? "local")
         ? session
         : null;
     const openedSessionProjectIdentity =
@@ -144,7 +149,11 @@ export function useSidebarModel({
       new Set(
         model.sidebarSessions
           .filter((sessionItem) =>
-            isSessionBookmarked(sessionItem.reference.agentName, sessionItem.reference.sessionId),
+            isSessionBookmarked(
+              sessionItem.reference.agentName,
+              sessionItem.reference.sessionId,
+              sessionItem.reference.sourceNodeId,
+            ),
           )
           .map(getSessionReferenceKey),
       ),

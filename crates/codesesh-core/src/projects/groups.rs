@@ -14,11 +14,7 @@ pub struct ProjectGroup {
     pub last_activity: Option<f64>,
 }
 fn key(reference: &SessionReference) -> String {
-    format!(
-        "{}/{}",
-        reference.agent_name.trim().to_lowercase(),
-        reference.session_id
-    )
+    crate::state::reference_key(reference)
 }
 
 pub fn build_project_groups(sessions: &[SessionHead]) -> Vec<ProjectGroup> {

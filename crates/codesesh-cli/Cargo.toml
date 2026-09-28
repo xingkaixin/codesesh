@@ -13,13 +13,14 @@ path = "src/main.rs"
 indicatif = "0.18"
 codesesh-core = { path = "../codesesh-core" }
 anyhow.workspace = true
+reqwest.workspace = true
 axum.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 uuid.workspace = true
 
 axum-server.workspace = true

@@ -121,6 +121,7 @@ fn data(row: &Value) -> Result<Value> {
 }
 fn reference(agent: &str, id: String) -> SessionReference {
     SessionReference {
+        source_node_id: crate::contract::local_source_node_id(),
         agent_name: agent.into(),
         session_id: id,
     }

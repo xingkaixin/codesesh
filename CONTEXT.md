@@ -22,11 +22,11 @@ _Avoid_: Agent class type, storage class
 _Avoid_: Conversation, chat
 
 **Session ID**:
-Agent 在自身命名空间内为 Session 提供的不透明标识；它必须与 Agent 组合后才能唯一定位 Session。
+Agent 在自身命名空间内为 Session 提供的不透明标识；它必须与来源节点及 Agent 组合后才能唯一定位 Session。
 _Avoid_: Session slug, global session ID
 
 **Session Reference**:
-在 CodeSesh 中唯一标识 Session 的复合身份，由 Agent 与该 Agent 内不透明的 Session ID 共同构成；Session ID 本身不全局唯一，也不应被拆解解释。
+在 CodeSesh 中唯一标识 Session 的复合身份，由来源节点、Agent 与该 Agent 内不透明的 Session ID 共同构成；Session ID 本身不全局唯一，也不应被拆解解释。
 _Avoid_: Session slug, session path
 
 **Session Hierarchy**:
@@ -78,3 +78,12 @@ _Avoid_: Label, manual tag
 **File Activity**:
 Session 中对文件路径发生的读取、编辑、写入或删除活动的归一化汇总。
 _Avoid_: File change, tool call
+
+**Hub**:
+集中保存、查询和展示多个来源节点的 Session，并维护用户状态的运行角色。
+
+**来源节点（Source Node）**:
+Session 来源的持久身份。它独立于采集进程是否运行；离线或未启用采集时，其历史仍然属于该来源。
+
+**Worker**:
+在来源机器采集 Session 并可靠上传到已配对 Hub 的运行角色。

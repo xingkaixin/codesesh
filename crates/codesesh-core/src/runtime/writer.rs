@@ -20,6 +20,17 @@ pub(super) enum Command {
         state: String,
         error: Option<String>,
     },
+    HubControl(Box<dyn FnOnce(&mut Cache) + Send>),
+    Reprice {
+        pricing: crate::pricing::PricingSnapshot,
+        response: oneshot::Sender<Result<()>>,
+    },
+    Upload {
+        node: String,
+        upload: crate::sync::Upload,
+        pricing: crate::pricing::PricingSnapshot,
+        response: oneshot::Sender<Result<crate::sync::Receipt>>,
+    },
     Stop(oneshot::Sender<Result<()>>),
 }
 
@@ -30,6 +41,7 @@ pub(super) fn run(
     statuses: watch::Sender<Arc<ScanStatus>>,
     events: broadcast::Sender<Event>,
     ready: oneshot::Sender<Result<(Duration, Duration)>>,
+    retain_history: bool,
 ) {
     let started = Instant::now();
     let mut cache = match Cache::open(Some(&path)) {
@@ -55,12 +67,46 @@ pub(super) fn run(
     let mut priced_generations = std::collections::HashMap::new();
     while let Some(command) = commands.blocking_recv() {
         match command {
+            Command::HubControl(operation) => operation(&mut cache),
+            Command::Reprice { pricing, response } => {
+                let result = pricing.with_current(|| {
+                    let mut references = Vec::new();
+                    for agent in crate::agents::catalog(0) {
+                        references.extend(cache.reprice(&agent.name, &pricing.pricing)?);
+                    }
+                    publish_changes(&cache, &snapshots, &events, &references)
+                });
+                let _ = response.send(result);
+            }
+            Command::Upload {
+                node,
+                upload,
+                pricing,
+                response,
+            } => {
+                let result = pricing.with_current(|| {
+                    let receipt = cache.receive_upload(&node, &upload, &pricing.pricing)?;
+                    if let Some(reference) = &receipt.changed {
+                        publish_changes(
+                            &cache,
+                            &snapshots,
+                            &events,
+                            std::slice::from_ref(reference),
+                        )?;
+                    }
+                    Ok(receipt)
+                });
+                let _ = response.send(result);
+            }
             Command::Publish {
                 agent,
                 mut batch,
                 cancellation,
                 response,
             } => {
+                if retain_history {
+                    batch.removed.clear();
+                }
                 let pricing = batch.pricing.take();
                 let mut publish = || -> Result<()> {
                     cancellation.check()?;
@@ -98,8 +144,9 @@ pub(super) fn run(
                             .collect();
                         changed_references.append(&mut repriced);
                         changed_references.sort_by(|a, b| {
-                            a.agent_name
-                                .cmp(&b.agent_name)
+                            a.source_node_id
+                                .cmp(&b.source_node_id)
+                                .then(a.agent_name.cmp(&b.agent_name))
                                 .then(a.session_id.cmp(&b.session_id))
                         });
                         changed_references.dedup();
@@ -226,4 +273,31 @@ fn release_unused_memory() {
             malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
         }
     }
+}
+
+fn publish_changes(
+    cache: &Cache,
+    snapshots: &watch::Sender<Arc<Vec<SessionHead>>>,
+    events: &broadcast::Sender<Event>,
+    references: &[crate::contract::SessionReference],
+) -> Result<()> {
+    if references.is_empty() {
+        return Ok(());
+    }
+    let heads = Arc::new(cache.refresh_snapshot(snapshots.borrow().as_ref(), references)?);
+    let references: std::collections::HashSet<_> = references.iter().collect();
+    let changed = Arc::new(
+        heads
+            .iter()
+            .filter(|head| references.contains(&head.reference))
+            .cloned()
+            .collect(),
+    );
+    snapshots.send_replace(heads.clone());
+    let _ = events.send(Event::Sessions {
+        snapshot: heads,
+        changed,
+        removed: Arc::new(Vec::new()),
+    });
+    Ok(())
 }

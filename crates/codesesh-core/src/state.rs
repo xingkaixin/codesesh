@@ -31,6 +31,7 @@ pub struct StateStore {
 
 pub fn normalize_reference(reference: &SessionReference) -> SessionReference {
     SessionReference {
+        source_node_id: reference.source_node_id.clone(),
         agent_name: js_trim(&reference.agent_name).to_lowercase(),
         session_id: reference.session_id.clone(),
     }
@@ -38,7 +39,11 @@ pub fn normalize_reference(reference: &SessionReference) -> SessionReference {
 
 pub fn reference_key(reference: &SessionReference) -> String {
     let r = normalize_reference(reference);
-    format!("{}/{}", r.agent_name, r.session_id)
+    if r.source_node_id == crate::contract::LOCAL_SOURCE_NODE_ID {
+        format!("{}/{}", r.agent_name, r.session_id)
+    } else {
+        format!("@{}/{}/{}", r.source_node_id, r.agent_name, r.session_id)
+    }
 }
 
 pub fn js_trim(value: &str) -> &str {
@@ -51,13 +56,18 @@ pub fn normalize_session_alias(value: &str) -> Option<String> {
 }
 
 pub fn parse_bookmark_reference(value: &Value) -> Option<SessionReference> {
-    let parse = |agent: &Value, session: &Value| {
+    let parse = |agent: &Value, session: &Value, node: &Value| {
         let agent = agent.as_str()?;
         let session = session.as_str()?;
         if js_trim(agent).is_empty() || session.is_empty() {
             return None;
         }
         Some(normalize_reference(&SessionReference {
+            source_node_id: match node {
+                Value::Null => crate::contract::local_source_node_id(),
+                Value::String(node) if !node.is_empty() => node.clone(),
+                _ => return None,
+            },
             agent_name: agent.into(),
             session_id: session.into(),
         }))
@@ -65,8 +75,9 @@ pub fn parse_bookmark_reference(value: &Value) -> Option<SessionReference> {
     parse(
         &value["reference"]["agentName"],
         &value["reference"]["sessionId"],
+        &value["reference"]["sourceNodeId"],
     )
-    .or_else(|| parse(&value["agentKey"], &value["sessionId"]))
+    .or_else(|| parse(&value["agentKey"], &value["sessionId"], &Value::Null))
 }
 
 pub fn parse_bookmark_import(value: &Value, now: i64) -> Option<BookmarkRecord> {
@@ -109,9 +120,9 @@ impl StateStore {
     }
     pub fn list_bookmarks(&self) -> Result<Vec<BookmarkRecord>> {
         let sql = if self.memory {
-            "SELECT agent_name,session_id,bookmarked_at FROM bookmarks ORDER BY rowid"
+            "SELECT agent_name,session_id,bookmarked_at,source_node_id FROM bookmarks ORDER BY rowid"
         } else {
-            "SELECT agent_name,session_id,bookmarked_at FROM bookmarks ORDER BY bookmarked_at DESC,agent_name ASC,session_id ASC"
+            "SELECT agent_name,session_id,bookmarked_at,source_node_id FROM bookmarks ORDER BY bookmarked_at DESC,agent_name ASC,session_id ASC"
         };
         let mut bookmarks: Vec<BookmarkRecord> = self
             .db
@@ -122,7 +133,7 @@ impl StateStore {
             bookmarks.sort_by(|a, b| {
                 b.bookmarked_at.total_cmp(&a.bookmarked_at).then_with(|| {
                     let key = |r: &SessionReference| {
-                        serde_json::to_string(&[&r.agent_name, &r.session_id])
+                        serde_json::to_string(&[&r.source_node_id, &r.agent_name, &r.session_id])
                             .expect("string array serialization")
                     };
                     crate::locale::compare(&key(&a.reference), &key(&b.reference))
@@ -133,7 +144,7 @@ impl StateStore {
     }
     pub fn upsert_bookmark(&self, reference: &SessionReference) -> Result<BookmarkRecord> {
         let r = normalize_reference(reference);
-        Ok(self.db.query_row("INSERT INTO bookmarks(agent_name,session_id,bookmarked_at) VALUES (?,?,?) ON CONFLICT(agent_name,session_id) DO UPDATE SET bookmarked_at=bookmarks.bookmarked_at RETURNING agent_name,session_id,bookmarked_at", params![r.agent_name,r.session_id,chrono::Utc::now().timestamp_millis()], bookmark_row)?)
+        Ok(self.db.query_row("INSERT INTO bookmarks(source_node_id,agent_name,session_id,bookmarked_at) VALUES (?,?,?,?) ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET bookmarked_at=bookmarks.bookmarked_at RETURNING agent_name,session_id,bookmarked_at,source_node_id", params![r.source_node_id,r.agent_name,r.session_id,chrono::Utc::now().timestamp_millis()], bookmark_row)?)
     }
     pub fn import_bookmarks(
         &mut self,
@@ -144,7 +155,7 @@ impl StateStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         for b in bookmarks {
             let r = normalize_reference(&b.reference);
-            tx.execute("INSERT INTO bookmarks(agent_name,session_id,bookmarked_at) VALUES (?,?,?) ON CONFLICT(agent_name,session_id) DO NOTHING", params![r.agent_name,r.session_id,b.bookmarked_at])?;
+            tx.execute("INSERT INTO bookmarks(source_node_id,agent_name,session_id,bookmarked_at) VALUES (?,?,?,?) ON CONFLICT(source_node_id,agent_name,session_id) DO NOTHING", params![r.source_node_id,r.agent_name,r.session_id,b.bookmarked_at])?;
         }
         tx.commit()?;
         self.list_bookmarks()
@@ -152,16 +163,16 @@ impl StateStore {
     pub fn delete_bookmark(&self, reference: &SessionReference) -> Result<()> {
         let r = normalize_reference(reference);
         self.db.execute(
-            "DELETE FROM bookmarks WHERE agent_name=? AND session_id=?",
-            params![r.agent_name, r.session_id],
+            "DELETE FROM bookmarks WHERE source_node_id=? AND agent_name=? AND session_id=?",
+            params![r.source_node_id, r.agent_name, r.session_id],
         )?;
         Ok(())
     }
     pub fn list_aliases(&self) -> Result<Vec<SessionAlias>> {
         let sql = if self.memory {
-            "SELECT agent_name,session_id,alias,updated_at FROM session_aliases ORDER BY rowid"
+            "SELECT agent_name,session_id,alias,updated_at,source_node_id FROM session_aliases ORDER BY rowid"
         } else {
-            "SELECT agent_name,session_id,alias,updated_at FROM session_aliases ORDER BY updated_at DESC"
+            "SELECT agent_name,session_id,alias,updated_at,source_node_id FROM session_aliases ORDER BY updated_at DESC"
         };
         Ok(self
             .db
@@ -169,6 +180,7 @@ impl StateStore {
             .query_map([], |r| {
                 Ok(SessionAlias {
                     reference: normalize_reference(&SessionReference {
+                        source_node_id: r.get(4)?,
                         agent_name: r.get(0)?,
                         session_id: r.get(1)?,
                     }),
@@ -187,14 +199,14 @@ impl StateStore {
             alias,
             updated_at: chrono::Utc::now().timestamp_millis(),
         };
-        self.db.execute("INSERT INTO session_aliases(agent_name,session_id,alias,updated_at) VALUES (?,?,?,?) ON CONFLICT(agent_name,session_id) DO UPDATE SET alias=excluded.alias,updated_at=excluded.updated_at", params![saved.reference.agent_name,saved.reference.session_id,saved.alias,saved.updated_at])?;
+        self.db.execute("INSERT INTO session_aliases(source_node_id,agent_name,session_id,alias,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET alias=excluded.alias,updated_at=excluded.updated_at", params![saved.reference.source_node_id,saved.reference.agent_name,saved.reference.session_id,saved.alias,saved.updated_at])?;
         Ok(saved)
     }
     pub fn delete_alias(&self, reference: &SessionReference) -> Result<()> {
         let r = normalize_reference(reference);
         self.db.execute(
-            "DELETE FROM session_aliases WHERE agent_name=? AND session_id=?",
-            params![r.agent_name, r.session_id],
+            "DELETE FROM session_aliases WHERE source_node_id=? AND agent_name=? AND session_id=?",
+            params![r.source_node_id, r.agent_name, r.session_id],
         )?;
         Ok(())
     }
@@ -202,6 +214,7 @@ impl StateStore {
 fn bookmark_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookmarkRecord> {
     Ok(BookmarkRecord {
         reference: normalize_reference(&SessionReference {
+            source_node_id: row.get(3)?,
             agent_name: row.get(0)?,
             session_id: row.get(1)?,
         }),

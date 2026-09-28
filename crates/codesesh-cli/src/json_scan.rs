@@ -26,8 +26,11 @@ fn signature(source: &AgentSource) -> Result<String> {
 fn project_identities_current(heads: &[SessionHead]) -> bool {
     let mut projections = HashMap::new();
     heads.iter().all(|head| {
+        let mut local = head.clone();
+        local.set_source_node("local");
+        let head = &local;
         let projection = projections
-            .entry(&head.directory)
+            .entry(head.directory.clone())
             .or_insert_with(|| compute_identity_projection(&head.directory));
         projection.identity == head.project_identity
             && head.project_identity_resolver_revision.as_deref()
@@ -62,19 +65,31 @@ fn output(mut heads: Vec<SessionHead>, options: &ScanOptions) -> SessionIndex {
         sessions: heads,
     }
 }
+#[cfg(test)]
 pub fn run(
     sources: &[AgentSource],
     options: &ScanOptions,
     pricing: &Pricing,
     path: &Path,
+    trace: Option<&mut crate::trace::Report>,
+) -> Result<SessionIndex> {
+    run_for_source(sources, options, pricing, path, trace, "local")
+}
+
+pub fn run_for_source(
+    sources: &[AgentSource],
+    options: &ScanOptions,
+    pricing: &Pricing,
+    path: &Path,
     mut trace: Option<&mut crate::trace::Report>,
+    node: &str,
 ) -> Result<SessionIndex> {
     let mut cache = Cache::open(Some(path))?;
     for source in sources {
         cache.reprice(&source.agent, pricing)?;
     }
     for _ in 0..3 {
-        let baseline = cache.json_baseline()?;
+        let baseline = cache.source_json_baseline(node)?;
         let mut previous = HashMap::<String, Vec<SessionHead>>::new();
         for head in baseline.heads {
             previous
@@ -95,7 +110,7 @@ pub fn run(
                 if !old.is_empty() && !source_present(source)? {
                     bail!("Agent source is unavailable; retaining cached sessions");
                 }
-                let before = signature(source)?;
+                let before = format!("{node}:{}", signature(source)?);
                 if baseline.fingerprints.get(&source.agent) == Some(&before)
                     && project_identities_current(&old)
                 {
@@ -117,8 +132,11 @@ pub fn run(
                         scan_started.elapsed(),
                     );
                 }
-                let scanned = scanned?;
-                let after = signature(source)?;
+                let mut scanned = scanned?;
+                for session in &mut scanned.sessions {
+                    session.set_source_node(node);
+                }
+                let after = format!("{node}:{}", signature(source)?);
                 if before != after {
                     bail!("Agent source changed during scan; retaining cached sessions");
                 }

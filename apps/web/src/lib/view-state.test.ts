@@ -9,6 +9,16 @@ import { viewStateFromRouteMatches } from "./view-state";
 const agents = new Set(["claudecode", "codex"]);
 const routes: RouteObject[] = [{ path: "/", children: appRouteChildren }];
 
+it("keeps the source node when opening a remote session", () => {
+  const reference = { sourceNodeId: "worker-a", agentName: "codex", sessionId: "same/id" };
+  expect(viewState(sessionRoutePath(reference))).toEqual({
+    mode: "session",
+    sourceNodeId: "worker-a",
+    activeAgentKey: "codex",
+    activeSessionId: "same/id",
+  });
+});
+
 function viewState(path: string) {
   const matches = (matchRoutes(routes, path) ?? []).map(({ params, route }) => ({
     id: route.id ?? "",

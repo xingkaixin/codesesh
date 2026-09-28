@@ -9,6 +9,7 @@ mod search;
 mod security;
 mod sessions;
 mod streaming;
+mod sync;
 mod wire;
 
 use axum::{
@@ -47,6 +48,7 @@ pub struct Options {
 }
 
 pub struct State {
+    hub_enabled: bool,
     runtime: Runtime,
     pricing: codesesh_core::pricing::PricingController,
     saved: Arc<Mutex<Option<StateStore>>>,
@@ -54,12 +56,19 @@ pub struct State {
     session_pages: Mutex<SnapshotPaginator<SessionHead, ()>>,
     project_pages: Mutex<SnapshotPaginator<Value, Value>>,
     streams: Arc<Semaphore>,
+    upload_slots: Arc<Semaphore>,
+    node_uploads: Mutex<HashMap<String, Arc<Semaphore>>>,
     details: Arc<Semaphore>,
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
     query_scope: codesesh_core::search::QueryScope,
 }
 
 impl State {
+    pub fn with_hub(mut self) -> Self {
+        self.hub_enabled = true;
+        self
+    }
+
     pub fn new(
         runtime: Runtime,
         pricing: codesesh_core::pricing::PricingController,
@@ -67,6 +76,7 @@ impl State {
         options: Options,
     ) -> Self {
         let query_scope = codesesh_core::search::QueryScope {
+            source_node_id: None,
             agents: options.enabled_agents.clone(),
             project_scope: options
                 .cwd
@@ -74,6 +84,7 @@ impl State {
                 .map(codesesh_core::projects::create_project_scope_matcher),
         };
         Self {
+            hub_enabled: false,
             runtime,
             pricing,
             query_scope,
@@ -82,6 +93,8 @@ impl State {
             session_pages: Mutex::new(SnapshotPaginator::default()),
             project_pages: Mutex::new(SnapshotPaginator::default()),
             streams: Arc::new(Semaphore::new(32)),
+            upload_slots: Arc::new(Semaphore::new(8)),
+            node_uploads: Mutex::new(HashMap::new()),
             details: Arc::new(Semaphore::new(2)),
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
         }
@@ -104,6 +117,12 @@ impl State {
         .await
         .unwrap_or_default()
     }
+    fn scope(&self, source: Option<&str>) -> codesesh_core::search::QueryScope {
+        codesesh_core::search::QueryScope {
+            source_node_id: source.map(str::to_owned),
+            ..self.query_scope.clone()
+        }
+    }
     fn known(&self, agent: &str) -> bool {
         codesesh_core::agents::catalog(0)
             .iter()
@@ -113,12 +132,25 @@ impl State {
 
 pub fn router(state: Arc<State>) -> Router {
     Router::new()
+        .route("/api/worker/pair", post(sync::pair))
+        .route("/api/worker/hello", post(sync::hello))
+        .route("/api/worker/recover", post(sync::recover))
+        .route("/api/worker/upload", post(sync::upload))
+        .route("/api/nodes", get(sync::nodes))
+        .route("/api/nodes/rescan", post(sync::rescan))
+        .route("/api/nodes/{node}/name", put(sync::rename))
+        .route("/api/nodes/pairing-token", post(sync::pairing_token))
+        .route("/api/nodes/{node}/revoke", post(sync::revoke))
         .route("/api/config", get(catalog::config))
         .route("/api/status", get(catalog::status))
         .route("/api/agents", get(catalog::agents))
         .route("/api/projects", get(catalog::projects))
         .route("/api/sessions", get(sessions::list))
         .route("/api/sessions/{agent}/{id}", get(sessions::detail))
+        .route(
+            "/api/sessions/nodes/{source}/{agent}/{id}",
+            get(sessions::detail),
+        )
         .route("/api/search", get(search::search))
         .route("/api/file-activity", get(search::file_activity))
         .route("/api/dashboard", get(catalog::dashboard))
@@ -126,7 +158,15 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/bookmarks/import", post(saved::import))
         .route("/api/bookmarks/{agent}/{id}", delete(saved::delete))
         .route(
+            "/api/bookmarks/nodes/{source}/{agent}/{id}",
+            delete(saved::delete),
+        )
+        .route(
             "/api/session-aliases/{agent}/{id}",
+            put(saved::alias_put).delete(saved::alias_delete),
+        )
+        .route(
+            "/api/session-aliases/nodes/{source}/{agent}/{id}",
             put(saved::alias_put).delete(saved::alias_delete),
         )
         .route("/api/events", get(events::events))
@@ -173,7 +213,11 @@ fn scoped_heads(
     heads
         .iter()
         .filter(|s| {
-            scope.agents.contains(&s.reference.agent_name)
+            scope
+                .source_node_id
+                .as_ref()
+                .is_none_or(|source| source == &s.reference.source_node_id)
+                && scope.agents.contains(&s.reference.agent_name)
                 && scope
                     .project_scope
                     .as_ref()

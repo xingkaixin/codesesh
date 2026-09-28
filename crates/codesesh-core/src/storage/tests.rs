@@ -19,6 +19,93 @@ pub(super) fn source(root: &Path, id: &str) -> ParsedSession {
 }
 
 #[test]
+fn source_nodes_isolate_content_search_and_updates() {
+    let root = tempfile::tempdir().unwrap();
+    let mut local = source(root.path(), "shared");
+    let mut remote = local.clone();
+    remote.head.reference.source_node_id = "worker-a".into();
+    remote.detail.head.reference = remote.head.reference.clone();
+    remote.head.title = "Remote title".into();
+    remote.detail.head.title = remote.head.title.clone();
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut local)).unwrap();
+    cache.publish(std::slice::from_mut(&mut remote)).unwrap();
+    let snapshot = cache.snapshot().unwrap();
+    assert_eq!(snapshot.len(), 2);
+    assert_eq!(cache.agent_snapshot("codex").unwrap().len(), 1);
+    assert_eq!(cache.json_baseline().unwrap().heads.len(), 1);
+    assert_eq!(cache.messages(&local.head.reference).unwrap(), 1);
+    assert_eq!(cache.messages(&remote.head.reference).unwrap(), 1);
+    let results =
+        crate::search::search_sessions(cache.connection(), "Fixture", &Default::default()).unwrap();
+    assert_eq!(results.len(), 2);
+    assert_ne!(results[0].reference, results[1].reference);
+    remote.head.title = "Updated remote".into();
+    remote.detail.head.title = remote.head.title.clone();
+    cache.publish(std::slice::from_mut(&mut remote)).unwrap();
+    let updated = cache
+        .refresh_snapshot(&snapshot, &[remote.head.reference.clone()])
+        .unwrap();
+    assert_eq!(updated.len(), 2);
+    assert_eq!(
+        cache.head(&local.head.reference).unwrap().unwrap().title,
+        local.head.title
+    );
+    assert_eq!(
+        cache.head(&remote.head.reference).unwrap().unwrap().title,
+        "Updated remote"
+    );
+    let facts = crate::analytics::load_cost_facts(cache.connection(), None, None, true).unwrap();
+    assert_eq!(facts.sessions.len(), 2);
+    cache.remove(&[remote.head.reference.clone()]).unwrap();
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+    assert!(cache.head(&local.head.reference).unwrap().is_some());
+}
+
+#[test]
+fn schema35_history_migrates_to_local_without_losing_messages() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("cache.db");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch(include_str!("fixtures/schema-35.sql"))
+        .unwrap();
+    db.execute_batch("PRAGMA user_version=35;
+        INSERT INTO cache_meta VALUES('version','35');
+        INSERT INTO sessions(agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost)
+        VALUES('codex','old','Old history','/project','path','/project','project',100,100,1,0,0,0);
+        INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
+        VALUES('codex','old',0,'message','user',100,'[]','Archived body');
+        UPDATE sessions SET head_meta_json='{\"rustHeadVersion\":\"preserved\"}';
+        INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at)
+        VALUES('codex','old','Old history','Archived body','old',1,100);").unwrap();
+    drop(db);
+    for _ in 0..2 {
+        let cache = Cache::open(Some(&path)).unwrap();
+        let head = cache.snapshot().unwrap().pop().unwrap();
+        assert_eq!(head.reference.source_node_id, "local");
+        assert_eq!(head.reference.session_id, "old");
+        assert_eq!(head.version.as_deref(), Some("preserved"));
+        assert_eq!(cache.messages(&head.reference).unwrap(), 1);
+        assert_eq!(
+            crate::search::search_sessions(cache.connection(), "Archived", &Default::default())
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            cache
+                .connection
+                .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
+                    .get::<_, i64>(
+                    0
+                ))
+                .unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
 fn publication_rolls_back_without_exposing_cursors() {
     let root = tempfile::tempdir().unwrap();
     let mut sessions = vec![source(root.path(), "first"), source(root.path(), "second")];
@@ -72,7 +159,7 @@ fn schema_and_materialized_messages_survive_reopen() {
             .unwrap(),
         CACHE_SCHEMA_VERSION
     );
-    cache.connection.execute("INSERT INTO session_file_activity VALUES('codex','rollout-persisted','/fixture','/fixture/中文.txt','read',1,1)",[]).unwrap();
+    cache.connection.execute("INSERT INTO session_file_activity VALUES('local','codex','rollout-persisted','/fixture','/fixture/中文.txt','read',1,1)",[]).unwrap();
     let count: i64 = cache.connection.query_row("SELECT count(*) FROM session_file_activity_path_fts WHERE session_file_activity_path_fts MATCH 'fixture'",[],|row|row.get(0)).unwrap();
     assert_eq!(count, 1);
 }
@@ -462,7 +549,7 @@ fn snapshot_preserves_head_metadata_without_pricing_details() {
 }
 
 #[test]
-fn schema34_migration_preserves_heads_content_and_indexes_without_backup() {
+fn schema34_migration_preserves_heads_content_and_indexes() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("cache.db");
     let mut cache = Cache::open(Some(&path)).unwrap();
@@ -477,7 +564,7 @@ fn schema34_migration_preserves_heads_content_and_indexes_without_backup() {
     cache.publish(&mut sessions).unwrap();
     let expected = serde_json::to_value(cache.snapshot().unwrap()).unwrap();
     let objects = |db: &rusqlite::Connection| {
-        db.prepare("SELECT name,rootpage FROM sqlite_master WHERE rootpage>0 ORDER BY name")
+        db.prepare("SELECT name,0 FROM sqlite_master WHERE rootpage>0 ORDER BY name")
             .unwrap()
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
@@ -564,7 +651,7 @@ fn schema34_migration_preserves_heads_content_and_indexes_without_backup() {
             );
         }
     }
-    assert!(!std::fs::read_dir(root.path()).unwrap().any(|entry| {
+    assert!(std::fs::read_dir(root.path()).unwrap().any(|entry| {
         entry
             .unwrap()
             .file_name()
@@ -626,4 +713,86 @@ fn schema34_failed_backfill_rolls_back_column_and_versions() {
         .unwrap();
     super::schema::ensure(&cache.connection, None).unwrap();
     assert_eq!(cache.snapshot().unwrap().len(), 2);
+}
+
+#[test]
+fn schema_backup_reports_real_page_progress_and_is_not_repeated() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.db");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch(include_str!("fixtures/schema-35.sql"))
+        .unwrap();
+    db.execute_batch("PRAGMA user_version=35; INSERT INTO cache_meta VALUES('version','35');")
+        .unwrap();
+    drop(db);
+    let mut events = Vec::new();
+    let cache = Cache::open_with_progress(Some(&path), |event| {
+        events.push(event);
+        Ok(())
+    })
+    .unwrap();
+    assert!(events.iter().any(|event| {
+        event.phase.starts_with("Backing up schema 35")
+            && event
+                .total
+                .is_some_and(|total| total > 0 && event.done == total)
+    }));
+    drop(cache);
+    let count = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|file| {
+            file.file_name()
+                .to_string_lossy()
+                .contains("cache-migration")
+        })
+        .count();
+    assert_eq!(count, 1);
+    let mut events = Vec::new();
+    Cache::open_with_progress(Some(&path), |event| {
+        events.push(event);
+        Ok(())
+    })
+    .unwrap();
+    assert!(events.is_empty());
+}
+
+#[test]
+fn cancelled_backup_preserves_original_and_is_not_a_completed_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.db");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch(include_str!("fixtures/schema-35.sql"))
+        .unwrap();
+    db.execute_batch("PRAGMA user_version=35; INSERT INTO cache_meta VALUES('version','35');")
+        .unwrap();
+    drop(db);
+    let result = Cache::open_with_progress(Some(&path), |event| {
+        anyhow::ensure!(event.total.is_none(), "cancelled after backup page copy");
+        Ok(())
+    });
+    assert!(result.is_err());
+    let db = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        35
+    );
+    assert_eq!(
+        db.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+            .unwrap(),
+        "ok"
+    );
+    let backups: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains("cache-migration")
+        })
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert!(backups[0].path().to_string_lossy().ends_with(".partial"));
 }

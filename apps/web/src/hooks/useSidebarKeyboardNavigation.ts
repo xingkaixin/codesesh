@@ -29,7 +29,11 @@ export function useSidebarKeyboardNavigation({
 }: SidebarKeyboardNavigationOptions) {
   const routeSessionReference =
     viewState.mode === "session"
-      ? getSessionRouteKey(viewState.activeAgentKey, viewState.activeSessionId)
+      ? getSessionRouteKey(
+          viewState.activeAgentKey,
+          viewState.activeSessionId,
+          viewState.sourceNodeId,
+        )
       : null;
   const selectionScope = routeSessionReference ?? viewState.mode;
   const [selection, setSelection] = useState<{ scope: string; reference: string } | null>(null);

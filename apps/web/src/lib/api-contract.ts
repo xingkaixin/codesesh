@@ -1,4 +1,7 @@
 export type {
+  HubNodes,
+  SourceNode,
+  NodeTask,
   AgentInfo,
   SmartTag,
   FileActivityKind,
@@ -58,6 +61,7 @@ import type {
 } from "@codesesh/contract";
 
 export interface SearchRequestOptions {
+  sourceNodeId?: string;
   agent?: string;
   projectKind?: ProjectIdentityKind;
   projectKey?: string;
@@ -75,6 +79,7 @@ export interface FetchOptions {
 }
 
 export interface SessionDetailFetchOptions extends FetchOptions {
+  sourceNodeId?: string;
   messageCursor?: string;
   operationId?: string;
 }
@@ -89,6 +94,7 @@ export interface SessionFetchProgress {
 }
 
 export interface DashboardFilters {
+  sourceNodeId?: string;
   timeZone?: string;
   project?: { kind: ProjectIdentityKind; key: string };
   agent?: string;

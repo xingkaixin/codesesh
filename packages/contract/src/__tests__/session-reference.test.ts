@@ -12,6 +12,15 @@ import {
   sessionRoutePath,
 } from "../session-reference.js";
 
+it("keeps remote identities distinct while preserving local links", () => {
+  const local = { agentName: "codex", sessionId: "same/path" };
+  const remote = { ...local, sourceNodeId: "worker-a" };
+  expect(getSessionReferenceKey(remote)).not.toBe(getSessionReferenceKey(local));
+  expect(parseSessionReference(formatSessionReference(remote))).toEqual(remote);
+  expect(sessionRoutePath(remote)).toBe("/nodes/worker-a/codex/same%2Fpath");
+  expect(sessionRoutePath({ ...local, sourceNodeId: "local" })).toBe(sessionRoutePath(local));
+});
+
 /** Ids whose characters carry URL meaning, so a raw path would split or truncate. */
 const OPAQUE_IDS = [
   "plain-session",

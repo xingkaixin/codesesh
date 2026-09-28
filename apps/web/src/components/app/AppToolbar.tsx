@@ -3,16 +3,22 @@ import { t } from "../../i18n/translate";
 
 declare const __APP_VERSION__: string;
 
-import type { Ref } from "react";
+import { lazy, Suspense, useState, type Ref } from "react";
 import { Link } from "react-router-dom";
 import type { Theme } from "../../hooks/useUiPreferences";
 import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
 import { TimeWindowControl } from "../TimeWindowControl";
 import { SearchControls, type SearchControlsHandle } from "./SearchControls";
 import { LanguageControl } from "./LanguageControl";
+import { NodeStatusButton } from "../nodes/NodeStatusButton";
 import { ThemeToggle } from "./ThemeToggle";
 
+const NodePanel = lazy(() =>
+  import("../nodes/NodePanel").then((module) => ({ default: module.NodePanel })),
+);
+
 export interface AppToolbarProps {
+  hubEnabled?: boolean;
   searchControlsRef: Ref<SearchControlsHandle>;
   onSubmitSearch: (query: string) => void;
   theme: Theme;
@@ -29,6 +35,7 @@ export interface AppToolbarProps {
 }
 
 export function AppToolbar({
+  hubEnabled,
   searchControlsRef,
   onSubmitSearch,
   theme,
@@ -37,10 +44,11 @@ export function AppToolbar({
   timeWindow,
 }: AppToolbarProps) {
   useLocale();
+  const [nodesOpen, setNodesOpen] = useState(false);
 
   return (
     <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
-      <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
+      <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:py-0">
         <div className="flex items-center gap-2">
           <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
             <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
@@ -51,6 +59,7 @@ export function AppToolbar({
         </div>
         <SearchControls ref={searchControlsRef} onSubmit={onSubmitSearch} />
         <div className="flex items-center flex-wrap justify-end gap-2">
+          {hubEnabled && <NodeStatusButton onClick={() => setNodesOpen(true)} />}
           <LanguageControl />
           <ThemeToggle theme={theme} onChange={onChangeTheme} />
           <button
@@ -76,6 +85,11 @@ export function AppToolbar({
           </span>
         </div>
       </div>
+      {nodesOpen && (
+        <Suspense fallback={null}>
+          <NodePanel onClose={() => setNodesOpen(false)} />
+        </Suspense>
+      )}
     </header>
   );
 }

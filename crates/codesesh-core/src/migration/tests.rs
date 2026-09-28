@@ -159,6 +159,7 @@ fn real_cache_and_state_schemas_survive_backup() {
     let state = crate::state::StateStore::open(&old_state).unwrap();
     state
         .upsert_bookmark(&crate::contract::SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "codex".into(),
             session_id: "kept".into(),
         })

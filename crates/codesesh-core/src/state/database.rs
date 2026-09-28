@@ -90,7 +90,10 @@ fn ensure_schema(db: &mut Connection, path: Option<&Path>) -> Result<()> {
     if version == 0 && bookmarks {
         version = 1;
     }
-    if version >= 3 {
+    if version > 4 {
+        bail!("Unsupported future state schema {version}");
+    }
+    if version == 4 {
         return Ok(());
     }
     if version < 0 {
@@ -117,6 +120,9 @@ fn ensure_schema(db: &mut Connection, path: Option<&Path>) -> Result<()> {
         tx.pragma_update(None, "user_version", next)?;
         tx.commit()?;
     }
+    if version == 3 {
+        backup_populated(db, path)?;
+    }
     set_schema(db)
 }
 
@@ -126,8 +132,29 @@ fn set_schema(db: &Connection) -> Result<()> {
     )?;
     db.execute_batch(BOOKMARKS)?;
     db.execute_batch(ALIASES)?;
-    db.execute("INSERT INTO state_meta(key,value) VALUES ('version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value", [])?;
-    db.pragma_update(None, "user_version", 3)?;
+    let tx = db.unchecked_transaction()?;
+    for (table, fields) in [
+        ("bookmarks", "bookmarked_at INTEGER NOT NULL"),
+        (
+            "session_aliases",
+            "alias TEXT NOT NULL, updated_at INTEGER NOT NULL",
+        ),
+    ] {
+        let values = if table == "bookmarks" {
+            "bookmarked_at"
+        } else {
+            "alias,updated_at"
+        };
+        tx.execute_batch(&format!(
+            "ALTER TABLE {table} RENAME TO local_{table};
+             CREATE TABLE {table}(source_node_id TEXT NOT NULL DEFAULT 'local',agent_name TEXT NOT NULL,session_id TEXT NOT NULL,{fields},PRIMARY KEY(source_node_id,agent_name,session_id));
+             INSERT INTO {table}(agent_name,session_id,{values}) SELECT agent_name,session_id,{values} FROM local_{table};
+             DROP TABLE local_{table};"
+        ))?;
+    }
+    tx.execute("INSERT INTO state_meta(key,value) VALUES ('version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value", [])?;
+    tx.pragma_update(None, "user_version", 4)?;
+    tx.commit()?;
     Ok(())
 }
 

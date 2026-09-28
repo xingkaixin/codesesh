@@ -384,6 +384,7 @@ fn parse(
     finish_messages(&mut transcript.messages);
     let mut detail = detail(
         SessionReference {
+            source_node_id: crate::contract::local_source_node_id(),
             agent_name: "claudecode".into(),
             session_id: id,
         },
@@ -398,6 +399,7 @@ fn parse(
         child
             .and_then(|c| c.parent.as_ref())
             .map(|id| SessionReference {
+                source_node_id: crate::contract::local_source_node_id(),
                 agent_name: "claudecode".into(),
                 session_id: id.clone(),
             });
