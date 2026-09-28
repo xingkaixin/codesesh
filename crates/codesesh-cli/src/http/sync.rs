@@ -16,7 +16,16 @@ fn compatibility(version: &str, protocol: u32, payload: u32) -> Option<Response>
     check_compatibility(version,env!("CARGO_PKG_VERSION"),MINIMUM_WORKER_VERSION,protocol,payload).err().map(|reason| (StatusCode::CONFLICT,Json(json!({"error":reason,"hubVersion":env!("CARGO_PKG_VERSION"),"minimumWorkerVersion":MINIMUM_WORKER_VERSION}))).into_response())
 }
 
-async fn authenticate(state: &State, headers: &HeaderMap) -> Result<String, Response> {
+enum InstanceLease {
+    Claim,
+    Release,
+}
+
+async fn authenticate(
+    state: &State,
+    headers: &HeaderMap,
+    lease: InstanceLease,
+) -> Result<String, Response> {
     let credential = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -33,7 +42,10 @@ async fn authenticate(state: &State, headers: &HeaderMap) -> Result<String, Resp
         .runtime
         .hub_control(move |cache| {
             let node = cache.authenticate_worker(&credential)?;
-            cache.claim_worker_instance(&node, &instance)?;
+            match lease {
+                InstanceLease::Claim => cache.claim_worker_instance(&node, &instance)?,
+                InstanceLease::Release => cache.release_worker_instance(&node, &instance)?,
+            }
             Ok(node)
         })
         .await
@@ -49,6 +61,13 @@ async fn authenticate(state: &State, headers: &HeaderMap) -> Result<String, Resp
                 )
             }
         })
+}
+
+pub async fn goodbye(AxumState(state): AxumState<Arc<State>>, headers: HeaderMap) -> Response {
+    match authenticate(&state, &headers, InstanceLease::Release).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(response) => response,
+    }
 }
 
 #[derive(Deserialize)]
@@ -109,7 +128,7 @@ pub async fn hello(
     headers: HeaderMap,
     Json(request): Json<WorkerHello>,
 ) -> Response {
-    let node = match authenticate(&state, &headers).await {
+    let node = match authenticate(&state, &headers, InstanceLease::Claim).await {
         Ok(node) => node,
         Err(response) => return response,
     };
@@ -141,7 +160,7 @@ pub async fn upload(
     if let Some(response) = compatibility(version, protocol, request.payload_version) {
         return response;
     }
-    let node = match authenticate(&state, &headers).await {
+    let node = match authenticate(&state, &headers, InstanceLease::Claim).await {
         Ok(node) => node,
         Err(response) => return response,
     };
@@ -301,7 +320,7 @@ pub async fn recover(
     if let Some(response) = compatibility(version, protocol, PAYLOAD_VERSION) {
         return response;
     }
-    let node = match authenticate(&state, &headers).await {
+    let node = match authenticate(&state, &headers, InstanceLease::Claim).await {
         Ok(node) => node,
         Err(response) => return response,
     };

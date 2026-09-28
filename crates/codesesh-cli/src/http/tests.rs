@@ -459,6 +459,68 @@ async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(result["error"], "WORKER_TOO_NEW");
+    assert_eq!(
+        request(&app, Method::POST, "/api/worker/goodbye", &admin, "")
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let mut replacement = headers;
+    replacement[1].1 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    assert_eq!(
+        request(&app, Method::POST, "/api/worker/goodbye", &replacement, "")
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        request(
+            &app,
+            Method::POST,
+            "/api/worker/hello",
+            &replacement,
+            &hello.to_string()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        request(&app, Method::POST, "/api/worker/goodbye", &headers, "")
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        request(
+            &app,
+            Method::POST,
+            "/api/worker/hello",
+            &replacement,
+            &hello.to_string()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        request(&app, Method::POST, "/api/worker/goodbye", &headers, "")
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        request(
+            &app,
+            Method::POST,
+            "/api/worker/hello",
+            &headers,
+            &hello.to_string()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
     let path = format!("/api/nodes/{}/revoke", grant["nodeId"].as_str().unwrap());
     assert_eq!(
         request(&app, Method::POST, &path, &admin, "{}").await.0,
