@@ -298,6 +298,7 @@ test("CLI trace precedes the Web URL and labels asynchronous initialization hone
   const fixture = createFixture();
   try {
     for (const command of [reference, rust]) {
+      clearCache(fixture);
       const process = launch(
         fixture,
         ["--agent", "codex", "--days", "0", "--noOpen", "--port", "0", "--trace"],
