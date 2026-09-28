@@ -3,7 +3,7 @@ use chrono::{Days, Local, NaiveDate, NaiveDateTime, TimeZone};
 use clap::Parser;
 use std::{net::Ipv4Addr, path::PathBuf};
 
-#[derive(Parser)]
+#[derive(Parser, Clone, serde::Serialize, serde::Deserialize)]
 #[command(
     name = "codesesh",
     args_override_self = true,
@@ -13,6 +13,10 @@ use std::{net::Ipv4Addr, path::PathBuf};
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Role>,
+    #[arg(long, hide = true)]
+    pub service_run: Option<crate::service::ServiceRole>,
+    #[arg(long, global = true)]
+    pub watch: bool,
     #[arg(global = true, short = 'j', long)]
     pub json: bool,
     #[arg(global = true, short = 'a', long)]
@@ -56,10 +60,12 @@ pub struct Args {
     pub migrate_data: bool,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Role {
     /// Serve collected history without scanning this machine by default.
     Hub {
+        #[arg(value_enum)]
+        action: Option<crate::service::Action>,
         #[arg(long)]
         scan_local: bool,
         /// Rotate the data epoch after restoring a stopped Hub backup.
@@ -68,8 +74,10 @@ pub enum Role {
     },
     /// Collect this machine's sessions and upload them to one Hub.
     Worker {
+        #[arg(value_enum)]
+        action: Option<crate::service::Action>,
         #[arg(long)]
-        hub: String,
+        hub: Option<String>,
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
@@ -81,7 +89,7 @@ pub enum Role {
     },
 }
 
-#[derive(Clone, Copy, clap::ValueEnum)]
+#[derive(Clone, Copy, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 pub enum History {
     Import,
     Ignore,
@@ -110,6 +118,13 @@ pub fn loopback(host: &str) -> bool {
 
 impl Args {
     pub fn plan(&self) -> Result<Plan> {
+        if matches!(&self.command, Some(Role::Worker { hub: None, .. })) {
+            bail!("Worker requires --hub for its initial configuration");
+        }
+        if self.watch {
+            bail!("--watch is only supported with hub/worker status");
+        }
+
         if self.command.is_some() && (self.json || self.no_cache || !self.cache || self.clear_cache)
         {
             bail!(

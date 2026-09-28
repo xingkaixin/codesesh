@@ -39,3 +39,30 @@ pub fn hub_id(home: &Path) -> Result<String> {
     file.sync_all()?;
     Ok(identity)
 }
+
+pub fn mode_lock(home: &Path, distributed: bool) -> Result<File> {
+    let root = codesesh_core::app_paths::root(home);
+    let switch =
+        private_file(&root.join("mode-switch.lock"))?.open(root.join("mode-switch.lock"))?;
+    switch.lock()?;
+    anyhow::ensure!(
+        distributed
+            || !(root.join("services/hub.enabled").exists()
+                || root.join("services/worker.enabled").exists()),
+        "Hub or Worker service is enabled. Run codesesh hub stop and codesesh worker stop before returning to standalone mode."
+    );
+    let (own, other) = if distributed {
+        ("distributed-mode.lock", "standalone-mode.lock")
+    } else {
+        ("standalone-mode.lock", "distributed-mode.lock")
+    };
+    let other = private_file(&root.join(other))?.open(root.join(other))?;
+    other.try_lock().context(if distributed {
+        "Standalone CodeSesh is running. Stop it before starting Hub or Worker."
+    } else {
+        "Hub or Worker is running. Stop both before returning to standalone mode."
+    })?;
+    let own = private_file(&root.join(own))?.open(root.join(own))?;
+    own.try_lock_shared()?;
+    Ok(own)
+}

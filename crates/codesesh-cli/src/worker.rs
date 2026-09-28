@@ -94,7 +94,7 @@ pub async fn run(
         if matches!(choice, crate::options::History::Import) {
             let mut store = collector.store;
             collector.store = tokio::task::spawn_blocking(move || -> Result<WorkerStore> {
-                let cache = codesesh_core::storage::Cache::open(Some(&archive))?;
+                let cache = crate::cache_path::open(&archive)?;
                 for head in cache.snapshot()? {
                     if head.reference.source_node_id
                         != codesesh_core::contract::LOCAL_SOURCE_NODE_ID
@@ -185,7 +185,10 @@ pub async fn run(
             grant
         }
     };
+    crate::service::paired();
     eprintln!("Worker {} paired with {}", grant.node_id, origin);
+    crate::service::report("starting", "Worker paired; connecting to Hub", None, None);
+    let mut next_status = Instant::now();
     let mut next_hello = Instant::now();
     let mut next_scan = Instant::now();
     let mut next_upload = Instant::now();
@@ -198,8 +201,36 @@ pub async fn run(
             _ = &mut shutdown => break,
             _ = tokio::time::sleep(Duration::from_millis(100)) => {}
         }
+        if Instant::now() >= next_status {
+            let queue = collector.store.queue_status()?;
+            let phase = if paused {
+                "paused"
+            } else if online {
+                "connected"
+            } else {
+                "offline"
+            };
+            let detail = format!(
+                "{} pending batches, {} bytes{}",
+                queue.batches,
+                queue.bytes,
+                collector
+                    .store
+                    .pause_reason()?
+                    .map(|reason| format!("; {reason}"))
+                    .unwrap_or_default()
+            );
+            crate::service::report(phase, &detail, None, None);
+            next_status = Instant::now() + Duration::from_secs(5);
+        }
         if Instant::now() >= next_hello {
             if let Some(recovery) = collector.store.recovery()? {
+                crate::service::report(
+                    "recovering",
+                    "Reconciling the Hub data epoch; pending queue preserved",
+                    None,
+                    None,
+                );
                 let response = client
                     .post(origin.join("api/worker/recover")?)
                     .bearer_auth(&grant.credential)

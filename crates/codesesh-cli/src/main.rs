@@ -7,6 +7,7 @@ mod migration;
 mod node_identity;
 mod options;
 mod pricing_refresh;
+mod service;
 mod trace;
 mod worker;
 use anyhow::{Context, Result};
@@ -35,12 +36,18 @@ fn main() {
         eprintln!("codesesh: cannot initialize the allocator: {error}");
         std::process::exit(1);
     }
+    if let Err(error) = service::prepare_process() {
+        eprintln!("{error:#}");
+        std::process::exit(1);
+    }
     main_async();
 }
 
 #[tokio::main]
 async fn main_async() {
     let result = run().await;
+    let result = if service::stopping() { Ok(()) } else { result };
+    service::finished(result.as_ref().err());
     if let Err(error) = &result {
         eprintln!("{error:#}");
         if let Some(logger) = logging::current() {
@@ -63,7 +70,7 @@ async fn run() -> Result<()> {
     let raw: Vec<_> = std::env::args_os()
         .map(|arg| if arg == "-v" { "--version".into() } else { arg })
         .collect();
-    let args = match options::Args::try_parse_from(raw) {
+    let mut args = match options::Args::try_parse_from(raw) {
         Ok(args) => args,
         Err(error) => {
             let code = if matches!(
@@ -78,8 +85,14 @@ async fn run() -> Result<()> {
             std::process::exit(code);
         }
     };
-    let plan = args.plan()?;
     let environment = PathEnvironment::current()?;
+    if let Some(role) = args.service_run {
+        args = service::boot(role, &environment.home).await?;
+    } else if service::dispatch(&args, &environment.home).await? {
+        return Ok(());
+    }
+    let plan = args.plan()?;
+    let _mode_lock = node_identity::mode_lock(&environment.home, args.command.is_some())?;
     let migration_warnings = migration::run(&args, &environment.home).await?;
     let logger = logging::initialize()?;
     for warning in migration_warnings {
@@ -99,12 +112,13 @@ async fn run() -> Result<()> {
         pair_token,
         pair_token_stdin,
         history,
+        ..
     }) = &args.command
     {
         return worker::run(
             &environment,
             &plan.agents,
-            hub,
+            hub.as_deref().context("Worker requires --hub")?,
             name.as_deref(),
             pair_token.as_deref(),
             *pair_token_stdin,
@@ -123,9 +137,13 @@ async fn run() -> Result<()> {
     let _hub_lock = (!args.json)
         .then(|| node_identity::lock(&environment.home, "hub.lock"))
         .transpose()?;
-    let _collector_lock = (scan_local && !args.json)
-        .then(|| node_identity::lock(&environment.home, "collector.lock"))
-        .transpose()?;
+    let _collector_lock = (scan_local
+        && (!args.json
+            || codesesh_core::app_paths::root(&environment.home)
+                .join("worker.db")
+                .exists()))
+    .then(|| node_identity::lock(&environment.home, "collector.lock"))
+    .transpose()?;
     let pricing_controller = PricingController::load(&environment.home);
     let pricing = Arc::new(pricing_controller.snapshot()?.pricing);
     let persistent = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
@@ -148,7 +166,7 @@ async fn run() -> Result<()> {
         .unwrap_or(persistent);
     let (cache_path, fallback_cleanup) = tokio::task::spawn_blocking(move || {
         if hub_enabled {
-            codesesh_core::storage::Cache::open(Some(&cache_path))?;
+            cache_path::open(&cache_path)?;
             Ok((cache_path, None))
         } else {
             cache_path::choose(&cache_path)
@@ -156,6 +174,33 @@ async fn run() -> Result<()> {
     })
     .await??;
     let temporary = fallback_cleanup.or(temporary);
+    let local_source = if scan_local {
+        let home = environment.home.clone();
+        let path = cache_path.clone();
+        let pricing = pricing.clone();
+        tokio::task::spawn_blocking(move || -> Result<String> {
+            let root = codesesh_core::app_paths::root(&home);
+            if root.join("worker.db").exists() && root.join("hub-identity").exists() {
+                let mut worker = codesesh_core::sync::WorkerStore::open(&root.join("worker.db"))?;
+                let mut cache = codesesh_core::storage::Cache::open(Some(&path))?;
+                if let Some(node) = cache.resume_local_worker(
+                    &mut worker,
+                    &node_identity::hub_id(&home)?,
+                    &pricing,
+                )? {
+                    eprintln!("Continuing this machine's existing Worker source: {node}");
+                    return Ok(node);
+                }
+            }
+            Ok(codesesh_core::contract::local_source_node_id())
+        })
+        .await??
+    } else {
+        codesesh_core::contract::local_source_node_id()
+    };
+    if service::stopping() {
+        return Ok(());
+    }
     let sources = if scan_local {
         discovery::selected_sources(&environment, &plan.agents)
     } else {
@@ -173,12 +218,13 @@ async fn run() -> Result<()> {
         let (result, report, scan_duration) = tokio::task::spawn_blocking(move || {
             let scan_started = std::time::Instant::now();
             let mut report = args.trace.then(trace::Report::default);
-            let result = json_scan::run(
+            let result = json_scan::run_for_source(
                 &sources,
                 &scan_options,
                 &pricing,
                 &cache_path,
                 report.as_mut(),
+                &local_source,
             );
             (result, report, scan_started.elapsed())
         })
@@ -211,6 +257,7 @@ async fn run() -> Result<()> {
             )
             .map(|scanner| {
                 scanner
+                    .with_source_node(&local_source)
                     .with_startup_window(plan.from, plan.to)
                     .with_target_session(plan.session.as_ref().map(|(agent, id)| {
                         codesesh_core::contract::SessionReference {
@@ -360,8 +407,16 @@ async fn run() -> Result<()> {
     );
     println!("{advertised}");
     logger.flush()?;
-    if !args.no_open {
-        open_browser(startup.as_str());
+    service::report(
+        "ready",
+        &format!("Hub listening at {origin}"),
+        None,
+        Some(startup.as_str()),
+    );
+    if (!args.no_open || service::take_open_request(&environment.home))
+        && let Err(error) = open_browser(startup.as_str()).await
+    {
+        eprintln!("Unable to open browser: {error:#}. Open the URL printed above.");
     }
     let pricing_task = pricing_refresh::spawn(
         pricing_controller,
@@ -423,18 +478,29 @@ async fn bind(host: &str, port: Option<u16>) -> Result<tokio::net::TcpListener> 
     }
     unreachable!()
 }
-fn open_browser(url: &str) {
+async fn open_browser(url: &str) -> Result<()> {
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(url).spawn();
+    let mut command = tokio::process::Command::new("open");
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("rundll32.exe")
-        .args(["url.dll,FileProtocolHandler", url])
-        .spawn();
+    let mut command = {
+        let mut command = tokio::process::Command::new("rundll32.exe");
+        command.arg("url.dll,FileProtocolHandler");
+        command
+    };
     #[cfg(all(unix, not(target_os = "macos")))]
-    let result = std::process::Command::new("xdg-open").arg(url).spawn();
-    if let Err(error) = result {
-        eprintln!("Unable to open browser: {error}");
-    }
+    let mut command = tokio::process::Command::new("xdg-open");
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        command.arg(url).kill_on_drop(true).output(),
+    )
+    .await
+    .context("Browser launcher timed out")??;
+    anyhow::ensure!(
+        output.status.success(),
+        "Browser launcher failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(())
 }
 async fn shutdown_signal() {
     #[cfg(unix)]
@@ -442,10 +508,10 @@ async fn shutdown_signal() {
         use tokio::signal::unix::{SignalKind, signal};
         let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
         let mut hup = signal(SignalKind::hangup()).expect("install SIGHUP handler");
-        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=term.recv()=>{},_=hup.recv()=>{}}
+        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=term.recv()=>{},_=hup.recv()=>{},_=service::shutdown_requested()=>{}}
     }
     #[cfg(not(unix))]
     {
-        let _ = tokio::signal::ctrl_c().await;
+        tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = service::shutdown_requested() => {} }
     }
 }

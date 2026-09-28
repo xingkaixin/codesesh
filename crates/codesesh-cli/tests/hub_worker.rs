@@ -38,16 +38,15 @@ fn command(home: &Path) -> Command {
     command
 }
 fn hub(home: &Path, port: u16) -> (Process, url::Url, String) {
+    server(home, port, true)
+}
+fn server(home: &Path, port: u16, hub_mode: bool) -> (Process, url::Url, String) {
+    let mut cmd = command(home);
+    if hub_mode {
+        cmd.arg("hub");
+    }
     let mut process = Process(
-        command(home)
-            .args([
-                "hub",
-                "--no-open",
-                "--port",
-                &port.to_string(),
-                "--days",
-                "0",
-            ])
+        cmd.args(["--no-open", "--port", &port.to_string(), "--days", "0"])
             .spawn()
             .unwrap(),
     );
@@ -357,4 +356,98 @@ async fn worker_imports_archived_history_without_deleting_standalone_data() {
             .unwrap();
         assert_eq!(dashboard["totals"]["sessions"], 1, "{dashboard}");
     }
+}
+
+#[tokio::test]
+async fn modes_are_exclusive_and_standalone_reuses_its_local_worker_identity() {
+    let home = tempfile::tempdir().unwrap();
+    source(home.path(), "same", "Local Worker history");
+    let (hub, url, token) = server(home.path(), 0, true);
+    let client = reqwest::Client::new();
+    let pair: Value = client
+        .post(url.join("api/nodes/pairing-token").unwrap())
+        .bearer_auth(&token)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let worker = Process(
+        command(home.path())
+            .args([
+                "worker",
+                "--hub",
+                url.as_str(),
+                "--pair-token",
+                pair["token"].as_str().unwrap(),
+                "--history",
+                "ignore",
+                "--agent",
+                "codex",
+            ])
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_sessions(&client, &url, &token, 1).await;
+    let before: Value = client
+        .get(url.join("api/sessions?days=0").unwrap())
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let reference = before["sessions"][0]["reference"].clone();
+    assert!(reference["sourceNodeId"].is_string());
+    let blocked = command(home.path())
+        .stderr(Stdio::piped())
+        .args(["--json", "--days", "0"])
+        .output()
+        .unwrap();
+    assert!(!blocked.status.success());
+    assert!(String::from_utf8_lossy(&blocked.stderr).contains("Hub or Worker is running"));
+    drop(worker);
+    drop(hub);
+    let (standalone, url, token) = server(home.path(), 0, false);
+    wait_for_sessions(&client, &url, &token, 1).await;
+    let after: Value = client
+        .get(url.join("api/sessions?days=0").unwrap())
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after["sessions"][0]["reference"], reference);
+    for args in [
+        vec!["hub", "--no-open"],
+        vec!["worker", "--hub", url.as_str()],
+    ] {
+        let blocked = command(home.path())
+            .stderr(Stdio::piped())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!blocked.status.success());
+        assert!(
+            String::from_utf8_lossy(&blocked.stderr).contains("Standalone CodeSesh is running")
+        );
+    }
+    drop(standalone);
+    let json = command(home.path())
+        .args(["--json", "--agent", "codex", "--days", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        json.status.success(),
+        "{}",
+        String::from_utf8_lossy(&json.stderr)
+    );
+    let after: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(after["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(after["sessions"][0]["reference"], reference);
 }
