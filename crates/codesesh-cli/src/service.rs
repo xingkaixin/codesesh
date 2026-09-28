@@ -173,14 +173,23 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
             match request(home, role, false).await {
                 Ok(report) => display(role, &report),
                 Err(_) => {
-                    println!("{}: stopped or not responding", role.name());
-                    println!("{}", native::status(home, role).await?);
+                    let enabled = path(home, role, "enabled").exists();
+                    if enabled {
+                        println!("{}: not responding", role.name());
+                        println!("{}", native::status(home, role).await?);
+                    } else {
+                        println!("{}: stopped", role.name());
+                        println!("Start with: codesesh {} start", role.name());
+                    }
                     if let Ok(bytes) = std::fs::read(path(home, role, "last.json"))
                         && let Ok(last) = serde_json::from_slice::<Report>(&bytes)
+                        && last.phase == "failed"
                     {
                         println!("Last exit: {} — {}", last.phase, last.detail);
+                        println!("Log: {}", path(home, role, "log").display());
+                    } else if enabled {
+                        println!("Log: {}", path(home, role, "log").display());
                     }
-                    println!("Log: {}", path(home, role, "log").display());
                 }
             }
         }
