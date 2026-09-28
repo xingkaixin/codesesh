@@ -1,7 +1,7 @@
 ---
 import { copy, type Locale } from "../data/landing";
 import HeadingText from "./HeadingText.astro";
-import InstallCommand from "./InstallCommand.astro";
+import InstallOptions from "./InstallOptions.astro";
 import SectionBackground from "./SectionBackground.astro";
 
 interface Props {
@@ -30,8 +30,8 @@ const t = copy[locale].cta;
       </p>
     </div>
 
-    <div class="flex shrink-0 flex-col items-start gap-3 sm:flex-row sm:items-center">
-      <InstallCommand locale={locale} />
+    <div class="flex w-full min-w-0 max-w-xl flex-col items-start gap-3">
+      <InstallOptions locale={locale} id="cta-install" />
       <a
         href="https://github.com/xingkaixin/codesesh"
         target="_blank"
