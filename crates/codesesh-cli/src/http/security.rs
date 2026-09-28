@@ -133,6 +133,13 @@ fn validate(state: &State, request: &Request) -> Result<(), (StatusCode, &'stati
             "Requests must arrive over TLS through the trusted proxy",
         ));
     }
+    let worker_route = matches!(
+        request.uri().path(),
+        "/api/worker/pair" | "/api/worker/hello" | "/api/worker/upload"
+    );
+    if worker_route && !state.hub_enabled {
+        return Err((StatusCode::NOT_FOUND, "Hub mode is not enabled"));
+    }
     let bearer = text("authorization")
         .and_then(|v| v.strip_prefix("Bearer "))
         .filter(|v| !v.is_empty());
@@ -144,7 +151,9 @@ fn validate(state: &State, request: &Request) -> Result<(), (StatusCode, &'stati
                 .flatten()
         })
         .unwrap_or("");
-    if token.is_empty() || !bool::from(token.as_bytes().ct_eq(state.options.token.as_bytes())) {
+    if !worker_route
+        && (token.is_empty() || !bool::from(token.as_bytes().ct_eq(state.options.token.as_bytes())))
+    {
         return Err((StatusCode::UNAUTHORIZED, "API access token required"));
     }
     if matches!(

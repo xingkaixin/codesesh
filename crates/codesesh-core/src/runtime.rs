@@ -141,6 +141,23 @@ impl Runtime {
         sources: Vec<AgentSource>,
         concurrency: usize,
     ) -> Result<Self> {
+        Self::start_with_retention(cache_path, sources, concurrency, false).await
+    }
+
+    pub async fn start_hub(
+        cache_path: PathBuf,
+        sources: Vec<AgentSource>,
+        concurrency: usize,
+    ) -> Result<Self> {
+        Self::start_with_retention(cache_path, sources, concurrency, true).await
+    }
+
+    async fn start_with_retention(
+        cache_path: PathBuf,
+        sources: Vec<AgentSource>,
+        concurrency: usize,
+        retain_history: bool,
+    ) -> Result<Self> {
         if concurrency == 0 {
             bail!("runtime concurrency must be positive");
         }
@@ -165,6 +182,7 @@ impl Runtime {
                     statuses_tx,
                     writer_events,
                     ready_tx,
+                    retain_history,
                 );
             })?;
         let (cache_open, snapshot) = ready_rx
@@ -275,6 +293,16 @@ impl Runtime {
             query(connection, &heads)
         })
         .await
+    }
+
+    pub async fn reprice_all(&self, pricing: crate::pricing::PricingSnapshot) -> Result<()> {
+        let (response, result) = oneshot::channel();
+        self.inner
+            .writer
+            .send(writer::Command::Reprice { pricing, response })
+            .await
+            .map_err(|_| anyhow::anyhow!("SQLite writer stopped"))?;
+        result.await?
     }
 
     pub async fn hub_control<T: Send + 'static>(

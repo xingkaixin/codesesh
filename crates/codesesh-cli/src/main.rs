@@ -4,9 +4,11 @@ mod http;
 mod json_scan;
 mod logging;
 mod migration;
+mod node_identity;
 mod options;
 mod pricing_refresh;
 mod trace;
+mod worker;
 use anyhow::{Context, Result};
 use base64::Engine;
 use clap::Parser;
@@ -91,6 +93,31 @@ async fn run() -> Result<()> {
         "cli.options",
         &serde_json::json!({"cache":args.cache&&!args.no_cache,"days":plan.days}),
     );
+    if let Some(options::Role::Worker {
+        hub,
+        name,
+        pair_token,
+        history,
+    }) = &args.command
+    {
+        return worker::run(
+            &environment,
+            &plan.agents,
+            hub,
+            name.as_deref(),
+            pair_token.as_deref(),
+            *history,
+        )
+        .await;
+    }
+    let hub_enabled = matches!(args.command, Some(options::Role::Hub { .. }));
+    let scan_local = !matches!(args.command, Some(options::Role::Hub { scan_local: false }));
+    let _hub_lock = (!args.json)
+        .then(|| node_identity::lock(&environment.home, "hub.lock"))
+        .transpose()?;
+    let _collector_lock = (scan_local && !args.json)
+        .then(|| node_identity::lock(&environment.home, "collector.lock"))
+        .transpose()?;
     let pricing_controller = PricingController::load(&environment.home);
     let pricing = Arc::new(pricing_controller.snapshot()?.pricing);
     let persistent = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
@@ -111,10 +138,21 @@ async fn run() -> Result<()> {
         .as_ref()
         .map(|dir| dir.join("codesesh.db"))
         .unwrap_or(persistent);
-    let (cache_path, fallback_cleanup) =
-        tokio::task::spawn_blocking(move || cache_path::choose(&cache_path)).await??;
+    let (cache_path, fallback_cleanup) = tokio::task::spawn_blocking(move || {
+        if hub_enabled {
+            codesesh_core::storage::Cache::open(Some(&cache_path))?;
+            Ok((cache_path, None))
+        } else {
+            cache_path::choose(&cache_path)
+        }
+    })
+    .await??;
     let temporary = fallback_cleanup.or(temporary);
-    let sources = discovery::selected_sources(&environment, &plan.agents);
+    let sources = if scan_local {
+        discovery::selected_sources(&environment, &plan.agents)
+    } else {
+        Vec::new()
+    };
     if args.json {
         let scan_options = ScanOptions {
             agents: plan.agents,
@@ -151,7 +189,7 @@ async fn run() -> Result<()> {
         );
         return Ok(());
     }
-    let enabled_agents = sources.iter().map(|source| source.agent.clone()).collect();
+    let enabled_agents = plan.agents.clone();
     let runtime_sources = sources
         .into_iter()
         .map(|source| {
@@ -175,7 +213,17 @@ async fn run() -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
     let runtime_started = std::time::Instant::now();
-    let runtime = Runtime::start(cache_path, runtime_sources, 4).await?;
+    let runtime = if hub_enabled {
+        Runtime::start_hub(cache_path, runtime_sources, 4).await?
+    } else {
+        Runtime::start(cache_path, runtime_sources, 4).await?
+    };
+    if hub_enabled {
+        let hub_id = node_identity::hub_id(&environment.home)?;
+        runtime
+            .hub_control(move |cache| cache.initialize_hub(&hub_id))
+            .await?;
+    }
     let runtime_duration = runtime_started.elapsed();
     let timings = runtime.startup_timings();
     logger.info(
@@ -235,7 +283,7 @@ async fn run() -> Result<()> {
                 None
             }
         };
-    let state = Arc::new(http::State::new(
+    let state = http::State::new(
         runtime.clone(),
         pricing_controller.clone(),
         saved,
@@ -252,7 +300,8 @@ async fn run() -> Result<()> {
             enabled_agents,
             cwd: plan.cwd,
         },
-    ));
+    );
+    let state = Arc::new(if hub_enabled { state.with_hub() } else { state });
     let router = http::router(state);
     let origin = plan.public_origin.unwrap_or_else(|| {
         format!(

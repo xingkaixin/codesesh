@@ -11,47 +11,75 @@ use std::{net::Ipv4Addr, path::PathBuf};
     about = "Discover, aggregate, and visualize AI coding agent sessions"
 )]
 pub struct Args {
-    #[arg(short = 'j', long)]
+    #[command(subcommand)]
+    pub command: Option<Role>,
+    #[arg(global = true, short = 'j', long)]
     pub json: bool,
-    #[arg(short = 'a', long)]
+    #[arg(global = true, short = 'a', long)]
     pub agent: Option<String>,
-    #[arg(short = 'd', long, default_value = "7", default_missing_value="", num_args=0..=1, allow_negative_numbers = true)]
+    #[arg(global = true, short = 'd', long, default_value = "7", default_missing_value="", num_args=0..=1, allow_negative_numbers = true)]
     pub days: String,
-    #[arg(short = 'p', long, allow_negative_numbers = true)]
+    #[arg(global = true, short = 'p', long, allow_negative_numbers = true)]
     pub port: Option<String>,
-    #[arg(long, default_value = "127.0.0.1")]
+    #[arg(global = true, long, default_value = "127.0.0.1")]
     pub host: String,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub remote_access: bool,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub tls_cert: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub tls_key: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub trust_proxy: bool,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub public_url: Option<String>,
-    #[arg(long = "noOpen", alias = "no-open")]
+    #[arg(global = true, long = "noOpen", alias = "no-open")]
     pub no_open: bool,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub cwd: Option<String>,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub from: Option<String>,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub to: Option<String>,
-    #[arg(short = 's', long)]
+    #[arg(global = true, short = 's', long)]
     pub session: Option<String>,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub trace: bool,
-    #[arg(long = "no-cache", overrides_with = "cache")]
+    #[arg(global = true, long = "no-cache", overrides_with = "cache")]
     pub no_cache: bool,
-    #[arg(long, default_value="true", default_missing_value="true", num_args=0..=1, action=clap::ArgAction::Set, overrides_with="no_cache")]
+    #[arg(global = true, long, default_value="true", default_missing_value="true", num_args=0..=1, action=clap::ArgAction::Set, overrides_with="no_cache")]
     pub cache: bool,
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub clear_cache: bool,
     /// Confirm that older CodeSesh instances have stopped before migrating data.
-    #[arg(long)]
+    #[arg(global = true, long)]
     pub migrate_data: bool,
+}
+
+#[derive(clap::Subcommand)]
+pub enum Role {
+    /// Serve collected history without scanning this machine by default.
+    Hub {
+        #[arg(long)]
+        scan_local: bool,
+    },
+    /// Collect this machine's sessions and upload them to one Hub.
+    Worker {
+        #[arg(long)]
+        hub: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        pair_token: Option<String>,
+        #[arg(long, value_enum)]
+        history: Option<History>,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum History {
+    Import,
+    Ignore,
 }
 
 pub struct Plan {
@@ -77,6 +105,12 @@ pub fn loopback(host: &str) -> bool {
 
 impl Args {
     pub fn plan(&self) -> Result<Plan> {
+        if self.command.is_some() && (self.json || self.no_cache || !self.cache || self.clear_cache)
+        {
+            bail!(
+                "Hub/Worker requires persistent state and does not support --json, --no-cache, --cache=false, or --clear-cache."
+            );
+        }
         if self.tls_cert.is_some() != self.tls_key.is_some() {
             bail!("TLS requires both --tls-cert and --tls-key.");
         }

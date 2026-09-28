@@ -9,6 +9,7 @@ mod search;
 mod security;
 mod sessions;
 mod streaming;
+mod sync;
 mod wire;
 
 use axum::{
@@ -47,6 +48,7 @@ pub struct Options {
 }
 
 pub struct State {
+    hub_enabled: bool,
     runtime: Runtime,
     pricing: codesesh_core::pricing::PricingController,
     saved: Arc<Mutex<Option<StateStore>>>,
@@ -60,6 +62,11 @@ pub struct State {
 }
 
 impl State {
+    pub fn with_hub(mut self) -> Self {
+        self.hub_enabled = true;
+        self
+    }
+
     pub fn new(
         runtime: Runtime,
         pricing: codesesh_core::pricing::PricingController,
@@ -74,6 +81,7 @@ impl State {
                 .map(codesesh_core::projects::create_project_scope_matcher),
         };
         Self {
+            hub_enabled: false,
             runtime,
             pricing,
             query_scope,
@@ -113,6 +121,12 @@ impl State {
 
 pub fn router(state: Arc<State>) -> Router {
     Router::new()
+        .route("/api/worker/pair", post(sync::pair))
+        .route("/api/worker/hello", post(sync::hello))
+        .route("/api/worker/upload", post(sync::upload))
+        .route("/api/nodes", get(sync::nodes))
+        .route("/api/nodes/pairing-token", post(sync::pairing_token))
+        .route("/api/nodes/{node}/revoke", post(sync::revoke))
         .route("/api/config", get(catalog::config))
         .route("/api/status", get(catalog::status))
         .route("/api/agents", get(catalog::agents))

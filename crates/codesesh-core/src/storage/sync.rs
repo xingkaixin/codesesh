@@ -44,6 +44,28 @@ fn namespace(head: &mut SessionHead, node: &str) -> Result<()> {
 }
 
 impl Cache {
+    pub fn capture_session(&self, reference: &SessionReference) -> Result<Option<CapturedSession>> {
+        let Some(head) = self.head(reference)? else {
+            return Ok(None);
+        };
+        let Some(detail) = self.detail(head.clone())? else {
+            return Ok(None);
+        };
+        let raw: String = self.connection.query_row("SELECT meta_json FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",params![reference.source_node_id,reference.agent_name,reference.session_id],|r|r.get(0))?;
+        let metadata: serde_json::Value = serde_json::from_str(&raw)?;
+        let source = metadata["sourcePath"]
+            .as_str()
+            .context("Stored session is missing its source path")?
+            .into();
+        let mut session = crate::agents::ParsedSession {
+            head,
+            detail,
+            source,
+        };
+        super::reprice::restore_inputs(&mut session, &metadata["rustPricing"])?;
+        Ok(Some(CapturedSession::from_parsed(session)))
+    }
+
     pub fn initialize_hub(&mut self, hub_id: &str) -> Result<String> {
         let tx = self.connection.transaction()?;
         tx.execute_batch("CREATE TABLE IF NOT EXISTS hub_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);

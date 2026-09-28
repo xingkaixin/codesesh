@@ -100,3 +100,26 @@ fn concurrent_new_processes_share_the_migration_lock() {
         }
     });
 }
+
+#[test]
+fn hub_and_worker_require_legacy_migration_before_role_startup() {
+    for role in ["hub", "worker"] {
+        let home = tempfile::tempdir().unwrap();
+        old_price(home.path());
+        let args = if role == "hub" {
+            vec![role, "--no-open"]
+        } else {
+            vec![role, "--hub", "http://127.0.0.1:1"]
+        };
+        let result = cli(home.path(), &args);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("--migrate-data"));
+        assert!(!home.path().join(".codesesh/worker.db").exists());
+        assert!(!home.path().join(".codesesh/hub-identity").exists());
+        assert!(
+            home.path()
+                .join(".cache/codesesh/models-dev-pricing.json")
+                .exists()
+        );
+    }
+}

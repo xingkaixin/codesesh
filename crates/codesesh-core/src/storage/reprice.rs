@@ -175,6 +175,24 @@ pub(crate) fn reprice_session(session: &mut ParsedSession, pricing: &Pricing) {
     }
 }
 
+pub(super) fn restore_inputs(session: &mut ParsedSession, value: &serde_json::Value) -> Result<()> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let state: PricingState = serde_json::from_value(value.clone())?;
+    session.head.stats.cost_inputs = state.head.inputs;
+    session.detail.head.stats.cost_inputs = session.head.stats.cost_inputs.clone();
+    for (index, basis) in state.messages {
+        let message = session
+            .detail
+            .messages
+            .get_mut(index)
+            .ok_or_else(|| anyhow::anyhow!("Stored pricing references a missing message"))?;
+        message.cost_inputs = basis.inputs;
+    }
+    Ok(())
+}
+
 pub(super) fn reprice_head(
     head: &mut crate::contract::SessionHead,
     pricing: &Pricing,

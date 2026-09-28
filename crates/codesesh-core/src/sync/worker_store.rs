@@ -116,6 +116,51 @@ impl WorkerStore {
         Ok(Self { db })
     }
 
+    pub fn history_choice(&self) -> Result<Option<String>> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='history_choice'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn finish_history_import(&mut self, choice: &str) -> Result<()> {
+        ensure!(
+            matches!(choice, "import" | "ignore"),
+            "Invalid history choice"
+        );
+        self.db.execute("INSERT INTO worker_meta VALUES('history_choice',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[choice])?;
+        Ok(())
+    }
+
+    pub fn binding(&self) -> Result<Option<(String, super::PairingGrant)>> {
+        let raw: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='binding'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn bind(&mut self, origin: &str, grant: &super::PairingGrant) -> Result<()> {
+        ensure!(
+            self.binding()?.is_none(),
+            "Worker is already paired; retain its queue and binding"
+        );
+        self.db.execute(
+            "INSERT INTO worker_meta VALUES('binding',?)",
+            [serde_json::to_string(&(origin, grant))?],
+        )?;
+        Ok(())
+    }
+
     pub fn stream_id(&self) -> Result<String> {
         Ok(self.db.query_row(
             "SELECT value FROM worker_meta WHERE key='stream_id'",
@@ -204,11 +249,16 @@ impl WorkerStore {
                 cost_inputs: captured.head_cost_inputs.clone(),
                 source_path: captured.source_path.clone(),
             };
-            let metadata_hash = digest(&serde_json::to_vec(&metadata)?);
+            let metadata_bytes = serde_json::to_vec(&metadata)?;
+            let metadata_hash = digest(&metadata_bytes);
             let previous: Option<(String,String)> = tx.query_row("SELECT content_hash,metadata_hash FROM worker_sessions WHERE agent=? AND session_id=?", params![agent,session.head.reference.session_id], |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
             if previous
                 .as_ref()
                 .is_none_or(|(content, _)| *content != content_hash)
+                || previous
+                    .as_ref()
+                    .is_some_and(|(_, hash)| *hash != metadata_hash)
+                    && metadata_bytes.len() > CHUNK_BYTES
             {
                 let payload = serde_json::to_vec(&captured)?;
                 let transfer_id = uuid::Uuid::new_v4().to_string();

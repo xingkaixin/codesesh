@@ -21,6 +21,10 @@ pub(super) enum Command {
         error: Option<String>,
     },
     HubControl(Box<dyn FnOnce(&mut Cache) + Send>),
+    Reprice {
+        pricing: crate::pricing::PricingSnapshot,
+        response: oneshot::Sender<Result<()>>,
+    },
     Upload {
         node: String,
         upload: crate::sync::Upload,
@@ -37,6 +41,7 @@ pub(super) fn run(
     statuses: watch::Sender<Arc<ScanStatus>>,
     events: broadcast::Sender<Event>,
     ready: oneshot::Sender<Result<(Duration, Duration)>>,
+    retain_history: bool,
 ) {
     let started = Instant::now();
     let mut cache = match Cache::open(Some(&path)) {
@@ -63,6 +68,16 @@ pub(super) fn run(
     while let Some(command) = commands.blocking_recv() {
         match command {
             Command::HubControl(operation) => operation(&mut cache),
+            Command::Reprice { pricing, response } => {
+                let result = pricing.with_current(|| {
+                    let mut references = Vec::new();
+                    for agent in crate::agents::catalog(0) {
+                        references.extend(cache.reprice(&agent.name, &pricing.pricing)?);
+                    }
+                    publish_changes(&cache, &snapshots, &events, &references)
+                });
+                let _ = response.send(result);
+            }
             Command::Upload {
                 node,
                 upload,
@@ -72,23 +87,12 @@ pub(super) fn run(
                 let result = pricing.with_current(|| {
                     let receipt = cache.receive_upload(&node, &upload, &pricing.pricing)?;
                     if let Some(reference) = &receipt.changed {
-                        let heads = Arc::new(cache.refresh_snapshot(
-                            snapshots.borrow().as_ref(),
+                        publish_changes(
+                            &cache,
+                            &snapshots,
+                            &events,
                             std::slice::from_ref(reference),
-                        )?);
-                        let changed = Arc::new(
-                            heads
-                                .iter()
-                                .filter(|head| head.reference == *reference)
-                                .cloned()
-                                .collect(),
-                        );
-                        snapshots.send_replace(heads.clone());
-                        let _ = events.send(Event::Sessions {
-                            snapshot: heads,
-                            changed,
-                            removed: Arc::new(Vec::new()),
-                        });
+                        )?;
                     }
                     Ok(receipt)
                 });
@@ -100,6 +104,9 @@ pub(super) fn run(
                 cancellation,
                 response,
             } => {
+                if retain_history {
+                    batch.removed.clear();
+                }
                 let pricing = batch.pricing.take();
                 let mut publish = || -> Result<()> {
                     cancellation.check()?;
@@ -266,4 +273,31 @@ fn release_unused_memory() {
             malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
         }
     }
+}
+
+fn publish_changes(
+    cache: &Cache,
+    snapshots: &watch::Sender<Arc<Vec<SessionHead>>>,
+    events: &broadcast::Sender<Event>,
+    references: &[crate::contract::SessionReference],
+) -> Result<()> {
+    if references.is_empty() {
+        return Ok(());
+    }
+    let heads = Arc::new(cache.refresh_snapshot(snapshots.borrow().as_ref(), references)?);
+    let references: std::collections::HashSet<_> = references.iter().collect();
+    let changed = Arc::new(
+        heads
+            .iter()
+            .filter(|head| references.contains(&head.reference))
+            .cloned()
+            .collect(),
+    );
+    snapshots.send_replace(heads.clone());
+    let _ = events.send(Event::Sessions {
+        snapshot: heads,
+        changed,
+        removed: Arc::new(Vec::new()),
+    });
+    Ok(())
 }
