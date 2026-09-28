@@ -154,6 +154,51 @@ async fn real_worker_uploads_and_recovers_after_hub_restart() {
             .unwrap(),
     );
     wait_for_sessions(&client, &url, &token, 1).await;
+    #[cfg(unix)]
+    let _worker = {
+        let mut worker = _worker;
+        assert!(
+            Command::new("kill")
+                .args(["-TERM", &worker.0.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = worker.0.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "Worker did not exit gracefully"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        source(
+            worker_home.path(),
+            "after-restart",
+            "Collected after graceful restart",
+        );
+        let restarted = Process(
+            command(worker_home.path())
+                .args(["worker", "--hub", url.as_str(), "--agent", "codex"])
+                .spawn()
+                .unwrap(),
+        );
+        let synced = tokio::time::timeout(
+            Duration::from_secs(20),
+            wait_for_sessions(&client, &url, &token, 2),
+        )
+        .await;
+        assert!(
+            synced.is_ok(),
+            "Worker restart failed: {}",
+            std::fs::read_to_string(worker_home.path().join("process.log")).unwrap()
+        );
+        restarted
+    };
     drop(server);
     source(worker_home.path(), "second", "Collected during outage");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
@@ -171,7 +216,13 @@ async fn real_worker_uploads_and_recovers_after_hub_restart() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let (_server, restarted, new_token) = hub(hub_home.path(), url.port().unwrap());
-    wait_for_sessions(&client, &restarted, &new_token, 2).await;
+    wait_for_sessions(
+        &client,
+        &restarted,
+        &new_token,
+        if cfg!(unix) { 3 } else { 2 },
+    )
+    .await;
     let nodes: Value = client
         .get(restarted.join("api/nodes").unwrap())
         .bearer_auth(new_token)
@@ -195,7 +246,13 @@ async fn real_worker_uploads_and_recovers_after_hub_restart() {
         }
     }
     let (_rebuilt, rebuilt_url, rebuilt_token) = hub(hub_home.path(), url.port().unwrap());
-    wait_for_sessions(&client, &rebuilt_url, &rebuilt_token, 2).await;
+    wait_for_sessions(
+        &client,
+        &rebuilt_url,
+        &rebuilt_token,
+        if cfg!(unix) { 3 } else { 2 },
+    )
+    .await;
     let nodes: Value = client
         .get(rebuilt_url.join("api/nodes").unwrap())
         .bearer_auth(&rebuilt_token)

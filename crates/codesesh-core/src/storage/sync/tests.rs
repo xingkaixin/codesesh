@@ -406,6 +406,28 @@ fn cloned_worker_instances_cannot_share_an_active_node() {
             .contains("WORKER_INSTANCE_CONFLICT")
     );
     cache
+        .release_worker_instance(&grant.node_id, &second)
+        .unwrap();
+    assert!(
+        cache
+            .claim_worker_instance(&grant.node_id, &second)
+            .is_err()
+    );
+    cache
+        .release_worker_instance(&grant.node_id, &first)
+        .unwrap();
+    cache
+        .claim_worker_instance(&grant.node_id, &second)
+        .unwrap();
+    cache
+        .release_worker_instance(&grant.node_id, &first)
+        .unwrap();
+    assert!(cache.claim_worker_instance(&grant.node_id, &first).is_err());
+    cache
+        .release_worker_instance(&grant.node_id, &second)
+        .unwrap();
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+    cache
         .connection
         .execute("UPDATE hub_nodes SET lease_until=0", [])
         .unwrap();

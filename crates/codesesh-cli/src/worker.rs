@@ -476,6 +476,19 @@ pub async fn run(
             }
         }
     }
+    match client
+        .post(origin.join("api/worker/goodbye")?)
+        .bearer_auth(&grant.credential)
+        .json(&serde_json::json!({}))
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => {}
+        _ => eprintln!(
+            "Worker stopped; Hub lease could not be released and will expire automatically."
+        ),
+    }
     Ok(())
 }
 

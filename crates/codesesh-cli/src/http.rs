@@ -134,6 +134,7 @@ pub fn router(state: Arc<State>) -> Router {
     Router::new()
         .route("/api/worker/pair", post(sync::pair))
         .route("/api/worker/hello", post(sync::hello))
+        .route("/api/worker/goodbye", post(sync::goodbye))
         .route("/api/worker/recover", post(sync::recover))
         .route("/api/worker/upload", post(sync::upload))
         .route("/api/nodes", get(sync::nodes))

@@ -214,7 +214,16 @@ impl Cache {
         ensure!(self.connection.execute(
             "UPDATE hub_nodes SET instance_id=?,lease_until=? WHERE id=? AND (instance_id IS NULL OR instance_id=? OR lease_until<=?)",
             params![instance, now + 60_000, node, instance, now],
-        )? == 1, "WORKER_INSTANCE_CONFLICT: another process owns this node; stop the duplicate and wait 60 seconds");
+        )? == 1, "WORKER_INSTANCE_CONFLICT: another Worker instance still holds this node lease; waiting for release or expiry (up to 60 seconds)");
+        Ok(())
+    }
+
+    pub fn release_worker_instance(&mut self, node: &str, instance: &str) -> Result<()> {
+        uuid::Uuid::parse_str(instance).context("Invalid Worker instance")?;
+        self.connection.execute(
+            "UPDATE hub_nodes SET instance_id=NULL,lease_until=0 WHERE id=? AND instance_id=?",
+            params![node, instance],
+        )?;
         Ok(())
     }
 
