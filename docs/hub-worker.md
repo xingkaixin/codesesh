@@ -27,14 +27,58 @@ codesesh worker --hub https://history.example.com
 
 配对令牌有效期 10 分钟，仅使用一次。建议通过标准输入粘贴，避免写进 shell 历史。首次配对也可使用 `CODESESH_PAIRING_TOKEN` 环境变量。长期凭据保存在本机 `worker.db`，Hub 只保存凭据摘要。
 
+## 后台服务与终端进度
+
+不带动作的 `codesesh hub` / `worker --hub ...` 保持前台运行。后台运行使用：
+
+```bash
+codesesh hub start
+codesesh hub status
+codesesh hub status --watch
+codesesh hub open
+codesesh hub restart
+codesesh hub stop
+
+codesesh worker start --hub https://history.example.com --name laptop --pair-token-stdin
+codesesh worker status
+codesesh worker restart
+codesesh worker stop
+```
+
+`start` 注册当前用户的后台任务，保存当前可执行文件路径、工作目录、参数和允许的来源环境变量。配对令牌独立临时保存，配对成功后删除，不写入服务参数文件。后台日志在 `~/.codesesh/services/hub.log` 或 `worker.log`。迁移、初始化失败可通过 `status` 查看最后一次退出原因。
+
+`start` 最多等待约 10 秒并显示进度，较长初始化继续在后台执行；`status --watch` 跟随初始化，直到就绪或 Worker 进入已连接、离线、暂停状态。Ctrl+C 退出观察，不停止服务。备份进度来自 SQLite 实际复制页数；迁移显示当前表和索引重建阶段，没有可靠百分比的阶段只显示活动指示与耗时。非交互输出保留阶段、周期进度和完成信息。完成的备份以 `.db` 结尾，未完成副本为 `.db.partial`。
+
+Hub Web 服务在数据库初始化后才就绪并尝试打开浏览器；浏览器启动失败会输出原因，控制台地址仍可使用。`--no-open` 禁止自动打开，`hub open` 可稍后打开已运行后台 Hub。进程自动重启不会重复弹出浏览器。
+
+`restart` 复用保存的配置；停止后不带配置参数的 `hub start` / `worker start` 也复用配置。修改服务配置时先 `stop`，再用完整参数执行 `start`。升级可执行文件后，同样执行 `stop` 和新二进制的 `start`，重新注册路径。
+
+| 平台 | 当前实现 | 运行边界 |
+| --- | --- | --- |
+| macOS | 当前登录用户的 launchd job | 退出终端后继续；异常退出后重启；需要 GUI 用户会话 |
+| Linux | systemd user unit | 需要可用的用户 systemd 会话；异常退出后重启 |
+| Windows | 当前用户 Task Scheduler，InteractiveToken，最低权限 | PowerShell 隐藏窗口启动并保存日志；用户必须已登录；不需要管理员权限 |
+
+这些命令不启用开机或登录自启动。Windows 不是跨用户 Windows Service，注销后持续运行不在当前支持范围。`stop` 优先请求进程正常退出；正在执行的数据库操作可能需要等待，超时会明确报告，不能据此认为已经停止。Windows 控制端失联但任务仍运行时，会拒绝报告停止成功。
+
+后台控制端只绑定随机回环端口并校验独立令牌。不要分享 `services/*.json` 文件，它们可能包含访问凭据和本机路径。Unix 文件按当前用户私有权限创建；Windows 沿用用户目录 ACL。
+
+## 模式切换
+
+同一数据目录中，单机模式与 Hub/Worker 模式互斥。检查发生在迁移之前，`--json` 也不能绕过。Hub 和同机独立 Worker 可以并行，但 `hub --scan-local` 与独立 Worker 不能同时采集。已注册后台服务即使暂时退出等待重启，也会阻止单机启动；先运行对应 `stop`。
+
+停止 Hub 和 Worker 后可以直接运行 `codesesh`。Hub 上已保存的历史与用户映射保留。若同机 Worker 配对的正是本机 Hub，会先接收该 Worker 的未确认队列，再使用其来源 ID 和扫描基线继续采集，避免创建一套重复来源。没有同机 Worker 的 Hub 使用原 `local` 来源。只有 Worker 的机器从仍存在的源日志重建本地历史，原待上传队列保留，不承诺找回已删除且已确认上传的源正文。
+
 ## 旧用户升级
 
 启动角色前先执行既有的旧路径检测和迁移，这是 PR #651 的流程。若发现旧目录，非交互启动会提示停止旧版本后使用 `--migrate-data` 确认；Hub 与 Worker 都不能绕过这一步。迁移失败时不会启动角色。
 
+旧路径迁移完成标记与数据库 schema 版本分别判断。已经完成 PR #651 的机器不会重复旧目录迁移，但仍可能需要后续 schema 升级；当前 schema 再次启动不重复备份。
+
 迁移后：
 
 - Hub 复用 `codesesh.db` 和用户状态库，存储 schema 分别升级到 36 和 4。旧会话、收藏、自定义标题都归属于 `local`。纯 Hub 也能浏览这些历史，但不会自动扫描。
-- `hub --scan-local` 在同一个 `local` 来源上继续采集。关闭本机采集不会改变已有会话来源。
+- `hub --scan-local` 默认在同一个 `local` 来源上继续采集；已有同机配对 Worker 时复用其来源。关闭本机采集不会改变已有会话来源。
 - Worker 若发现旧单机数据库，第一次启动必须明确使用 `--history import` 或 `--history ignore`。导入会把旧数据库中的本机来源会话写入待上传队列，即使源日志已不存在也可以上传。忽略只跳过该旧归档，仍采集可发现的源日志。
 - 两个选择都保留旧数据库和用户状态文件。Worker 不上传旧收藏、自定义标题或项目分组，也不自动清理用户旧文件。上传确认只清理 Worker 自己的待确认内容。
 
@@ -103,4 +147,4 @@ Worker 产品版本必须在 Hub 声明的最低版本与 Hub 当前版本之间
 
 Worker 入口为 `POST /api/worker/pair`、`hello`、`upload`、`recover`。管理入口为 `/api/nodes`、`/api/nodes/pairing-token`、`/api/nodes/rescan`、`/api/nodes/{node}/name`、`/api/nodes/{node}/revoke`。Worker 与浏览器使用不同授权边界。
 
-所有长驻角色仍是前台进程。系统服务安装、通用消息中间件、多 Hub、副本选举、附件传输、远程 shell、自动删除旧归档均不在第一版范围内。
+系统级常驻服务、开机自启动、通用消息中间件、多 Hub、副本选举、附件传输、远程 shell、自动删除旧归档均不在第一版范围内。

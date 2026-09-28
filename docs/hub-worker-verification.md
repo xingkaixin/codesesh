@@ -10,7 +10,7 @@
 
 | 检查 | 命令或方式 | 结果 |
 | --- | --- | --- |
-| Rust 工作区回归 | `cargo test --workspace --locked` | 254 通过，3 个原有忽略项；38 CLI、4 迁移、2 真实进程、210 core |
+| Rust 工作区回归 | `cargo test --workspace --locked` | 259 通过，3 个原有忽略项；39 CLI、4 迁移、3 真实进程、213 core |
 | Rust 格式 | `cargo fmt --all --check` | 通过 |
 | Rust 静态检查 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 通过 |
 | 浏览器契约 | `pnpm generate:rust-contract` | 通过，生成结果已纳入变更 |
@@ -25,6 +25,18 @@
 | 实际界面 | 本机临时 Hub + 两个隔离 Worker，通过浏览器操作 | 两个同会话 ID 分别归档；按来源筛选只显示目标 Worker。发现并修复默认 Agent 范围为空的问题 |
 
 测试输出在本开发机 `/tmp/codesesh-hub-*.log`。临时日志不是长期制品，复验应以这里的命令和仓库测试为准。
+
+## 后续启动与服务改动：已执行
+
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo fmt --all --check` 通过；更新后的服务定义测试通过。
+- `pnpm build:web` 与 `cargo build --release -p codesesh-cli --locked` 通过，`target/release/codesesh` 已更新。
+- 4 项既有 HTTP/CLI/SSE 后端契约再次通过。
+- macOS launchd：使用隔离 HOME 验证 Hub 后台 start/status/restart/stop、Worker 配对 start/status/stop；控制接口未授权停止请求返回 401；配对令牌临时文件成功清理；全部测试任务已停止。
+- 服务存在时拒绝单机；停止后可以运行单机。真实进程回归覆盖前台角色双向互斥，以及同机 Worker 归档切回单机/JSON 后保持一个来源。
+- 小型 schema 35 SQLite 库验证真实备份页数、迁移阶段、浏览器调用（替代 opener 记录调用，不打开真实浏览器）；release 输出包含 `1333/1333 (100%)`。
+- core 回归覆盖备份中断保留原库和 `.partial`、升级完成后不重复备份，以及接收同机 Worker 积压后保持来源 ID。
+
+本轮没有对用户实际约 13 GiB 数据库执行升级，也没有重新执行用户已验证完成的 PR #651 目录迁移。自动验证使用独立数据目录。日志前缀 `/tmp/codesesh-services-*`，原生进程验证为 `/tmp/codesesh-both-services-smoke.log` 和 `/tmp/codesesh-progress-smoke-release.log`。
 
 ## 已覆盖的故障与行为
 
@@ -64,6 +76,8 @@
 | E13 | 移动窄屏、键盘、中文/日文、长节点名、大量节点 | 实际浏览器/设备 | 控件不溢出，焦点可用，错误及升级方向可理解，来源不混淆 | 待分配 |
 | E14 | 独立二进制/npm launcher、Windows/Linux release 构建与安装 smoke | 各平台 CI/测试机 | 制品可启动三种模式，迁移参数可传递，静态资源与版本匹配 | 待分配 |
 | E15 | 同机两个 Worker、复制 `worker.db` 到另一台同时启动，Hub 换地址 | 两台隔离机器与可改地址的 Hub | 同机锁拒绝，跨机实例冲突明确；租约到期后可恢复；换地址不变来源身份 | 待分配 |
+| E16 | Windows Task Scheduler、Linux systemd 用户服务完整生命周期、异常重启、关闭终端、注销 | Windows/Linux 实机与当前 release 制品 | start/status/restart/stop 正确；Windows 隐藏窗口与日志可用；不误报停止成功；不默认开机自启 | 待分配 |
+| E17 | 大型 schema 35 库首次启动、后台 status --watch、停止及重新启动 | 实际库副本、足够磁盘空间；不要直接故障注入用户原库 | 备份页数真实、迁移阶段可见；完成后浏览器打开；原库可恢复；已升级不重复迁移 | 待分配 |
 
 ## 可直接交给 Codex 的后续工作
 
@@ -89,4 +103,4 @@ Worker 系统 / 版本：
 后续问题：
 ```
 
-完整 release、跨平台 CI、长稳、负载及真实 TLS 均没有因为本机单元/进程测试通过而视为通过。当前没有自动发布、合并或连接用户其他机器。
+本机 release 已构建并完成隔离进程验证；跨平台 CI、长稳、负载及真实 TLS 尚未验收。当前没有自动发布、合并或连接用户其他机器。
