@@ -24,6 +24,7 @@ pub struct AgentScanner {
     source: AgentSource,
     cache_path: PathBuf,
     worker: bool,
+    source_node_id: String,
     pricing: Arc<Pricing>,
     controller: Option<PricingController>,
     previous: Vec<SessionRecord>,
@@ -52,6 +53,7 @@ impl AgentScanner {
             source,
             cache_path,
             worker: false,
+            source_node_id: crate::contract::local_source_node_id(),
             pricing,
             controller: None,
             previous: Vec::new(),
@@ -72,6 +74,11 @@ impl AgentScanner {
             empty_sources: HashSet::new(),
         }
     }
+    pub fn with_source_node(mut self, node: &str) -> Self {
+        self.source_node_id = node.into();
+        self
+    }
+
     pub fn for_worker(source: AgentSource, state_path: PathBuf) -> Self {
         let mut scanner = Self::new(source, state_path, Arc::new(Pricing::capture_only()));
         scanner.worker = true;
@@ -152,6 +159,12 @@ impl AgentScanner {
         paths: Option<&[PathBuf]>,
         checkpoint: Option<&serde_json::Value>,
     ) -> Result<runtime::ScanBatch> {
+        let checkpoint = checkpoint.filter(|value| {
+            value["sourceNodeId"]
+                .as_str()
+                .unwrap_or(crate::contract::LOCAL_SOURCE_NODE_ID)
+                == self.source_node_id
+        });
         let ticket = self
             .controller
             .as_ref()
@@ -241,6 +254,7 @@ impl AgentScanner {
             checkpoint["incremental"] = self.history_complete.into();
             checkpoint["sourceState"] = serde_json::json!({
                 "version": 1,
+                "sourceNodeId": self.source_node_id,
                 "historyComplete": self.history_complete || complete,
                 "parserVersion": agents::parser_version(&self.source.agent),
                 "generation": self.pricing.generation(),
@@ -256,10 +270,23 @@ impl AgentScanner {
             self.previous = Vec::new();
             self.baseline = HashMap::new();
         }
+        if let Some(checkpoint) = &mut next_checkpoint {
+            checkpoint["sourceNodeId"] = self.source_node_id.clone().into();
+        }
+        for session in &mut delta.upserts {
+            session.set_source_node(&self.source_node_id);
+        }
+        let removed = removed
+            .into_iter()
+            .map(|mut reference| {
+                reference.source_node_id = self.source_node_id.clone();
+                reference
+            })
+            .collect();
         let rejected = self.rejected.clone();
         Ok(runtime::ScanBatch {
             sessions: delta.upserts,
-            removed: removed.into_iter().collect(),
+            removed,
             checkpoint: next_checkpoint,
             pricing: ticket,
             complete,
@@ -772,13 +799,24 @@ impl AgentScanner {
         )?;
         self.restore_source_state(state.as_ref(), complete);
 
-        for head in cache.agent_snapshot(&self.source.agent)? {
-            self.durable_references.insert(head.reference.clone());
+        for mut head in cache.source_agent_snapshot(&self.source_node_id, &self.source.agent)? {
             let (source, has_cost_inputs): (Option<String>, bool) = cache.connection().query_row(
-                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE source_node_id='local' AND agent_name=?1 AND session_id=?2",
-                [&head.reference.agent_name, &head.reference.session_id],
+                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE source_node_id=?1 AND agent_name=?2 AND session_id=?3",
+                [&self.source_node_id, &head.reference.agent_name, &head.reference.session_id],
                 |row| Ok((row.get(0)?,row.get(1)?)),
             )?;
+            let attachments = if head.reference.agent_name == "dsh" {
+                cache
+                    .detail(head.clone())?
+                    .map(|detail| {
+                        agents::dsh::AttachmentReferences::from_messages(&detail.messages)
+                    })
+                    .unwrap_or_default()
+            } else {
+                Default::default()
+            };
+            head.set_source_node(crate::contract::LOCAL_SOURCE_NODE_ID);
+            self.durable_references.insert(head.reference.clone());
             if pricing_changed && !has_cost_inputs {
                 self.file_fingerprints.remove(&head.reference.session_id);
                 self.fingerprints.remove(&head.reference.session_id);
@@ -794,16 +832,6 @@ impl AgentScanner {
                 ),
             );
             if let Some(source) = source {
-                let attachments = if head.reference.agent_name == "dsh" {
-                    cache
-                        .detail(head.clone())?
-                        .map(|detail| {
-                            agents::dsh::AttachmentReferences::from_messages(&detail.messages)
-                        })
-                        .unwrap_or_default()
-                } else {
-                    Default::default()
-                };
                 self.previous.push(SessionRecord {
                     head,
                     source: source.into(),
@@ -815,6 +843,10 @@ impl AgentScanner {
     }
     fn restore_source_state(&mut self, state: Option<&serde_json::Value>, complete: bool) {
         if let Some(state) = state
+            && state["sourceNodeId"]
+                .as_str()
+                .unwrap_or(crate::contract::LOCAL_SOURCE_NODE_ID)
+                == self.source_node_id
             && state["version"] == 1
             && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
             && state["root"].as_str() == self.source.scan_path.to_str()

@@ -21,6 +21,17 @@ pub struct ParsedSession {
     pub detail: SessionDetail,
 }
 
+impl ParsedSession {
+    pub fn set_source_node(&mut self, node: &str) {
+        self.head.set_source_node(node);
+        self.detail.head = self.head.clone();
+        for activity in &mut self.detail.file_activity {
+            activity.reference = self.head.reference.clone();
+            activity.project_identity_key = self.head.project_identity.key.clone();
+        }
+    }
+}
+
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let sessions_root = root.join("sessions");
     if !sessions_root.exists() {

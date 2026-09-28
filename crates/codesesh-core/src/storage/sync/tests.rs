@@ -414,3 +414,47 @@ fn cloned_worker_instances_cannot_share_an_active_node() {
         .unwrap();
     assert!(cache.claim_worker_instance(&grant.node_id, &first).is_err());
 }
+
+#[test]
+fn local_worker_resume_drains_pending_content_without_changing_source_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Local", "1.1.1", &worker.stream_id().unwrap())
+        .unwrap();
+    worker.bind("https://hub.example/", &grant).unwrap();
+    let mut batch = ScanBatch {
+        sessions: vec![super::super::tests::source(dir.path(), "shared")],
+        removed: vec![],
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert!(worker.queue_status().unwrap().batches > 0);
+    assert!(
+        cache
+            .resume_local_worker(&mut worker, "other-hub", &Pricing::bundled())
+            .unwrap()
+            .is_none()
+    );
+    assert!(worker.queue_status().unwrap().batches > 0);
+    assert_eq!(
+        cache
+            .resume_local_worker(&mut worker, "hub", &Pricing::bundled())
+            .unwrap(),
+        Some(grant.node_id.clone())
+    );
+    assert_eq!(worker.queue_status().unwrap().batches, 0);
+    let snapshot = cache.snapshot().unwrap();
+    assert_eq!(snapshot.len(), 1);
+    assert_eq!(snapshot[0].reference.source_node_id, grant.node_id);
+    cache
+        .resume_local_worker(&mut worker, "hub", &Pricing::bundled())
+        .unwrap();
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+}

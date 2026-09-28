@@ -38,7 +38,11 @@ fn backfill_head_metadata(db: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn migrate(db: &Connection, version: i64) -> Result<()> {
+fn migrate(
+    db: &Connection,
+    version: i64,
+    progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
+) -> Result<()> {
     let tables = [
         "cache_meta",
         "agent_cache",
@@ -88,6 +92,11 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
             restore_legacy_heads(db)?;
         }
         for table in &saved {
+            progress(super::StorageProgress {
+                phase: format!("Migrating table {table}"),
+                done: 0,
+                total: None,
+            })?;
             let old = columns(db, &format!("migration_{table}"))?;
             let new = columns(db, table)?;
             let mut common: Vec<_> = old.intersection(&new).cloned().collect();
@@ -120,6 +129,11 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
         if version < 14 {
             db.execute_batch("UPDATE session_documents SET indexed_message_count=(SELECT COUNT(*) FROM messages WHERE messages.source_node_id=session_documents.source_node_id AND messages.agent_name=session_documents.agent_name AND messages.session_id=session_documents.session_id)")?;
         }
+        progress(super::StorageProgress {
+            phase: "Rebuilding cost summaries and indexes".into(),
+            done: 0,
+            total: None,
+        })?;
         db.execute_batch("DELETE FROM session_model_cost; DELETE FROM session_cost_summary; INSERT INTO session_model_cost SELECT source_node_id,agent_name,session_id,model,SUM(COALESCE(cost,0)),SUM(CASE WHEN cost_source='recorded' THEN COALESCE(cost,0) ELSE 0 END) FROM messages WHERE model IS NOT NULL AND model<>'' GROUP BY source_node_id,agent_name,session_id,model;")?;
         let mut query = db.prepare("SELECT source_node_id,agent_name,session_id FROM sessions")?;
         let references = query
@@ -164,7 +178,16 @@ fn migrate(db: &Connection, version: i64) -> Result<()> {
     result
 }
 
+#[cfg(test)]
 pub fn ensure(db: &Connection, path: Option<&Path>) -> Result<()> {
+    ensure_with_progress(db, path, &mut |_| Ok(()))
+}
+
+pub fn ensure_with_progress(
+    db: &Connection,
+    path: Option<&Path>,
+    progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
+) -> Result<()> {
     let mut version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version == 0 && exists(db, "cache_meta")? {
         version = db
@@ -195,9 +218,55 @@ pub fn ensure(db: &Connection, path: Option<&Path>) -> Result<()> {
                 "cache-migration-{version}-{}.db",
                 chrono::Utc::now().timestamp_millis()
             ));
-            db.execute("VACUUM INTO ?", [backup.to_string_lossy().as_ref()])?;
+            let phase = format!("Backing up schema {version} to {}", backup.display());
+            progress(super::StorageProgress {
+                phase: phase.clone(),
+                done: 0,
+                total: None,
+            })?;
+            let partial = backup.with_extension("db.partial");
+            let mut destination = Connection::open(&partial)?;
+            let copy = rusqlite::backup::Backup::new(db, &mut destination)?;
+            let mut busy_since = None;
+            loop {
+                let step = copy.step(512)?;
+                let status = copy.progress();
+                progress(super::StorageProgress {
+                    phase: phase.clone(),
+                    done: (status.pagecount - status.remaining).max(0) as u64,
+                    total: Some(status.pagecount.max(0) as u64),
+                })?;
+                match step {
+                    rusqlite::backup::StepResult::Done => break,
+                    rusqlite::backup::StepResult::More => busy_since = None,
+                    _ => {
+                        let started = busy_since.get_or_insert_with(std::time::Instant::now);
+                        ensure!(
+                            started.elapsed() < std::time::Duration::from_secs(5),
+                            "Database backup is busy; stop older CodeSesh processes and retry"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+            }
+            drop(copy);
+            destination.close().map_err(|(_, error)| error)?;
+            std::fs::rename(&partial, &backup)?;
+            progress(super::StorageProgress {
+                phase: format!(
+                    "Backup complete; upgrading schema {version} to {}",
+                    super::CACHE_SCHEMA_VERSION
+                ),
+                done: 0,
+                total: None,
+            })?;
         }
-        migrate(db, version)?;
+        migrate(db, version, progress)?;
+        progress(super::StorageProgress {
+            phase: "Database schema upgrade complete".into(),
+            done: 0,
+            total: None,
+        })?;
     }
     let documents_missing = !exists(db, "session_documents_fts")?;
     let paths_missing = !exists(db, "session_file_activity_path_fts")?;

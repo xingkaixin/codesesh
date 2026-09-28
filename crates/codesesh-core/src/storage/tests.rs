@@ -714,3 +714,85 @@ fn schema34_failed_backfill_rolls_back_column_and_versions() {
     super::schema::ensure(&cache.connection, None).unwrap();
     assert_eq!(cache.snapshot().unwrap().len(), 2);
 }
+
+#[test]
+fn schema_backup_reports_real_page_progress_and_is_not_repeated() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.db");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch(include_str!("fixtures/schema-35.sql"))
+        .unwrap();
+    db.execute_batch("PRAGMA user_version=35; INSERT INTO cache_meta VALUES('version','35');")
+        .unwrap();
+    drop(db);
+    let mut events = Vec::new();
+    let cache = Cache::open_with_progress(Some(&path), |event| {
+        events.push(event);
+        Ok(())
+    })
+    .unwrap();
+    assert!(events.iter().any(|event| {
+        event.phase.starts_with("Backing up schema 35")
+            && event
+                .total
+                .is_some_and(|total| total > 0 && event.done == total)
+    }));
+    drop(cache);
+    let count = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|file| {
+            file.file_name()
+                .to_string_lossy()
+                .contains("cache-migration")
+        })
+        .count();
+    assert_eq!(count, 1);
+    let mut events = Vec::new();
+    Cache::open_with_progress(Some(&path), |event| {
+        events.push(event);
+        Ok(())
+    })
+    .unwrap();
+    assert!(events.is_empty());
+}
+
+#[test]
+fn cancelled_backup_preserves_original_and_is_not_a_completed_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.db");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch(include_str!("fixtures/schema-35.sql"))
+        .unwrap();
+    db.execute_batch("PRAGMA user_version=35; INSERT INTO cache_meta VALUES('version','35');")
+        .unwrap();
+    drop(db);
+    let result = Cache::open_with_progress(Some(&path), |event| {
+        anyhow::ensure!(event.total.is_none(), "cancelled after backup page copy");
+        Ok(())
+    });
+    assert!(result.is_err());
+    let db = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        35
+    );
+    assert_eq!(
+        db.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+            .unwrap(),
+        "ok"
+    );
+    let backups: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains("cache-migration")
+        })
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert!(backups[0].path().to_string_lossy().ends_with(".partial"));
+}

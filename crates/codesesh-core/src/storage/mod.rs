@@ -22,6 +22,12 @@ use std::path::Path;
 
 pub const CACHE_SCHEMA_VERSION: i64 = 36;
 
+pub struct StorageProgress {
+    pub phase: String,
+    pub done: u64,
+    pub total: Option<u64>,
+}
+
 pub use read::{detail as detail_from_connection, detail_with_cursor, visit_detail_messages};
 pub use snapshot::load as snapshot_from_connection;
 pub fn head_from_connection(
@@ -105,9 +111,13 @@ impl Cache {
     }
 
     pub fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
-        let mut query = self.connection.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL AND source_node_id='local' AND agent_name=? ORDER BY activity_time DESC,session_id", snapshot::HEAD_COLUMNS))?;
+        self.source_agent_snapshot(crate::contract::LOCAL_SOURCE_NODE_ID, agent)
+    }
+
+    pub fn source_agent_snapshot(&self, node: &str, agent: &str) -> Result<Vec<SessionHead>> {
+        let mut query = self.connection.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL AND source_node_id=? AND agent_name=? ORDER BY activity_time DESC,session_id", snapshot::HEAD_COLUMNS))?;
         Ok(query
-            .query_map([agent], snapshot::head)?
+            .query_map([node, agent], snapshot::head)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -139,6 +149,13 @@ impl Cache {
     }
 
     pub fn open(path: Option<&Path>) -> Result<Self> {
+        Self::open_with_progress(path, |_| Ok(()))
+    }
+
+    pub fn open_with_progress(
+        path: Option<&Path>,
+        mut progress: impl FnMut(StorageProgress) -> Result<()>,
+    ) -> Result<Self> {
         let connection = match path {
             Some(path) => {
                 if let Some(parent) = path.parent() {
@@ -150,7 +167,7 @@ impl Cache {
         };
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA temp_store=FILE;")?;
-        schema::ensure(&connection, path)?;
+        schema::ensure_with_progress(&connection, path, &mut progress)?;
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA cache_size=-16384")?;
         Ok(Self {
             connection,
