@@ -10,6 +10,7 @@ import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
 import { TimeWindowControl } from "../TimeWindowControl";
 import { SearchControls, type SearchControlsHandle } from "./SearchControls";
 import { LanguageControl } from "./LanguageControl";
+import { NodeStatusButton } from "../nodes/NodeStatusButton";
 import { ThemeToggle } from "./ThemeToggle";
 
 const NodePanel = lazy(() =>
@@ -47,7 +48,7 @@ export function AppToolbar({
 
   return (
     <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
-      <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 sm:grid-cols-[auto_1fr_auto] sm:py-0">
+      <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:py-0">
         <div className="flex items-center gap-2">
           <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
             <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
@@ -58,15 +59,7 @@ export function AppToolbar({
         </div>
         <SearchControls ref={searchControlsRef} onSubmit={onSubmitSearch} />
         <div className="flex items-center flex-wrap justify-end gap-2">
-          {hubEnabled && (
-            <button
-              type="button"
-              onClick={() => setNodesOpen(true)}
-              className="rounded-sm border border-[var(--console-border)] px-2 py-1 text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
-            >
-              {t("Source nodes")}
-            </button>
-          )}
+          {hubEnabled && <NodeStatusButton onClick={() => setNodesOpen(true)} />}
           <LanguageControl />
           <ThemeToggle theme={theme} onChange={onChangeTheme} />
           <button

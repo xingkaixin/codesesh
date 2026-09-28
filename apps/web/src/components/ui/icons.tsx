@@ -31,6 +31,7 @@ import {
   IdeaIcon,
   ImageIcon,
   Loading02Icon,
+  LanguageSkillIcon,
   Message01Icon,
   MessageCancel01Icon,
   MinusSignIcon,
@@ -106,3 +107,5 @@ export const Users = toIcon(UserMultipleIcon);
 export const Wrench = toIcon(WrenchIcon);
 export const X = toIcon(Cancel01Icon);
 export const XCircle = toIcon(CancelCircleIcon);
+
+export const Languages = toIcon(LanguageSkillIcon);

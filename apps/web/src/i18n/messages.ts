@@ -1,5 +1,11 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Node status unavailable": ["暂时无法获取节点状态", "ノードの状態を取得できません"],
+  "{0}/{1} online": ["{0}/{1} 在线", "{0}/{1} オンライン"],
+  "{0} online / {1} paired Workers; {2} reporting errors": [
+    "{0} 个在线 / {1} 个已配对 Worker；{2} 个上报错误",
+    "オンライン {0} / ペアリング済み Worker {1}、エラー報告 {2}",
+  ],
   "Rescan Agent": ["重采集 Agent 范围", "再収集する Agent"],
   "Error details": ["错误详情", "エラー詳細"],
   "Last confirmed: {0}": ["最近确认：{0}", "最終確認：{0}"],

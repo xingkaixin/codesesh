@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../../lib/api";
 import { createQueryWrapper } from "../../test/query-wrapper";
+import { NodeStatusButton } from "./NodeStatusButton";
 import { NodePanel } from "./NodePanel";
 
 // oxlint-disable-next-line anti-slop/no-module-mocking -- Exercise node actions and failure feedback with controlled server responses.
@@ -59,6 +60,33 @@ afterEach(() => {
 });
 
 describe("NodePanel", () => {
+  it("keeps the toolbar count current and excludes revoked Workers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(node.lastSeen);
+    vi.mocked(api.fetchNodes).mockResolvedValue({
+      nodes: [
+        node,
+        { ...node, id: "revoked", revoked: true },
+        { ...node, id: "offline", lastSeen: 1 },
+      ],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    });
+    const { client, Wrapper } = createQueryWrapper();
+    client.setQueryData(["config"], { window: {}, hubEnabled: true });
+    render(<NodeStatusButton onClick={vi.fn()} />, { wrapper: Wrapper });
+    await act(() => vi.advanceTimersByTimeAsync(10));
+    expect(screen.getByText("1/2 online")).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(65000));
+    expect(screen.getByText("0/2 online")).toBeTruthy();
+    vi.mocked(api.fetchNodes).mockRejectedValue(new Error("unreachable"));
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(
+      screen.getByRole("button", { name: "Source nodes: Node status unavailable" }),
+    ).toBeTruthy();
+  });
   it("marks an unchanged node offline as time passes and online after a heartbeat", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(node.lastSeen);

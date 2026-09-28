@@ -1,10 +1,10 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AGENT_CATALOG, sessionRoutePath } from "@codesesh/contract";
 import { useLocale } from "../../hooks/useLocale";
-import { useNodes } from "../../hooks/useNodes";
+import { isNodeOnline, useNodeClock, useNodes } from "../../hooks/useNodes";
 import { t } from "../../i18n/translate";
 import {
   createPairingToken,
@@ -25,7 +25,7 @@ const input =
 
 function nodeStatus(node: SourceNode, now: number) {
   if (node.revoked) return t("Access revoked");
-  if (node.lastSeen && now - node.lastSeen > 60000)
+  if (node.lastSeen != null && !isNodeOnline(node, now))
     return t("Offline. Saved history remains available.");
   if (node.error?.includes("WORKER_TOO_NEW"))
     return t("Upgrade Hub first. Collection and uploads are paused.");
@@ -207,11 +207,7 @@ function NodeRow({
 export function NodePanel({ onClose }: { onClose: () => void }) {
   useLocale();
   const nodes = useNodes();
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 5000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useNodeClock();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState<{ token: string; expires: number } | null>(null);
