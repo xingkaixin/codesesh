@@ -135,7 +135,7 @@ test("copies the install command with the clipboard API", async ({ page }) => {
     .poll(() =>
       page.evaluate(() => ("__copiedCommand" in window ? window.__copiedCommand : undefined)),
     )
-    .toBe("npx codesesh");
+    .toBe("npx codesesh@latest");
 });
 
 test("reports copy failure without an unhandled rejection", async ({ page }) => {

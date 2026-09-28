@@ -1,0 +1,84 @@
+name: Sync installation channels
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      DISTRIBUTION_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag (for example v1.1.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: installation-channels
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Verify published release and generate manifests
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          latest=$(gh release view --repo xingkaixin/codesesh --json tagName --jq .tagName)
+          test "$RELEASE_TAG" = "$latest"
+          gh release download "$RELEASE_TAG" --repo xingkaixin/codesesh --pattern 'release-set.json' --pattern '*.tar.gz' --dir artifacts/distribution-source
+          node scripts/rust/distribution.mjs artifacts/distribution-source artifacts/distribution
+          node --input-type=module -e 'import fs from "node:fs"; const release = JSON.parse(fs.readFileSync("artifacts/distribution-source/release-set.json")); if (`v${release.version}` !== process.env.RELEASE_TAG) throw new Error("Release tag/version mismatch");'
+      - name: Publish missing checksums for existing releases
+        run: |
+          if gh release view "$RELEASE_TAG" --repo xingkaixin/codesesh --json assets --jq '.assets[].name' | grep -qx SHA256SUMS; then
+            gh release download "$RELEASE_TAG" --repo xingkaixin/codesesh --pattern SHA256SUMS --dir artifacts/distribution-source
+            cmp artifacts/distribution-source/SHA256SUMS artifacts/distribution/SHA256SUMS
+          else
+            gh release upload "$RELEASE_TAG" artifacts/distribution/SHA256SUMS --repo xingkaixin/codesesh
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: xingkaixin/homebrew-tap
+          token: ${{ secrets.DISTRIBUTION_TOKEN }}
+          path: distribution/homebrew-tap
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: xingkaixin/scoop-bucket
+          token: ${{ secrets.DISTRIBUTION_TOKEN }}
+          path: distribution/scoop-bucket
+      - name: Update channel repositories
+        run: |
+          mkdir -p distribution/homebrew-tap/Formula distribution/scoop-bucket/bucket
+          cp artifacts/distribution/codesesh.rb distribution/homebrew-tap/Formula/codesesh.rb
+          cp artifacts/distribution/codesesh.json distribution/scoop-bucket/bucket/codesesh.json
+          for channel in homebrew-tap scoop-bucket; do
+            (
+              cd "distribution/$channel"
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git add Formula/codesesh.rb 2>/dev/null || git add bucket/codesesh.json
+              if ! git diff --cached --quiet; then
+                git commit -m "chore: Update CodeSesh to $RELEASE_TAG"
+                git push
+              fi
+            )
+          done

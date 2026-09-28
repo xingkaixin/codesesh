@@ -1,0 +1,254 @@
+---
+import type { Locale } from "../data/landing";
+import InstallCommand from "./InstallCommand.astro";
+
+interface Props {
+  locale: Locale;
+  id: string;
+}
+
+const { locale, id } = Astro.props;
+const labels = {
+  en: {
+    method: "Installation method",
+    npm: "macOS / Linux / Windows · Node.js 22+",
+    curl: "macOS / Linux x64 (glibc 2.35+) · No Node.js required",
+    brew: "macOS · Homebrew required · No Node.js required",
+    scoop: "Windows x64 · Scoop required · No Node.js required",
+    start:
+      "After installing, run codesesh. Stop CodeSesh before updating, then restart it.",
+    update: "Update:",
+    rerun: "Run the install command again.",
+  },
+  zh: {
+    method: "安装方式",
+    npm: "macOS / Linux / Windows · 需要 Node.js 22+",
+    curl: "macOS / Linux x64（glibc 2.35+）· 无需 Node.js",
+    brew: "macOS · 需要 Homebrew · 无需 Node.js",
+    scoop: "Windows x64 · 需要 Scoop · 无需 Node.js",
+    start: "安装后运行 codesesh。更新前停止 CodeSesh，完成后重新启动。",
+    update: "更新：",
+    rerun: "再次运行安装命令。",
+  },
+  ja: {
+    method: "インストール方法",
+    npm: "macOS / Linux / Windows · Node.js 22以降が必要",
+    curl: "macOS / Linux x64（glibc 2.35以降）· Node.js不要",
+    brew: "macOS · Homebrewが必要 · Node.js不要",
+    scoop: "Windows x64 · Scoopが必要 · Node.js不要",
+    start:
+      "インストール後、codeseshを実行。更新前にCodeSeshを停止し、更新後に再起動してください。",
+    update: "更新：",
+    rerun: "インストールコマンドを再実行。",
+  },
+}[locale];
+const methods = [
+  {
+    id: "npm",
+    name: "npm",
+    command: "npx codesesh@latest",
+    note: labels.npm,
+    update: "npx codesesh@latest",
+  },
+  {
+    id: "curl",
+    name: "curl",
+    command: "curl -sSfL https://codesesh.xingkaixin.me/install.sh | sh",
+    note: labels.curl,
+    update: labels.rerun,
+  },
+  {
+    id: "brew",
+    name: "brew",
+    command: "brew install xingkaixin/tap/codesesh",
+    note: labels.brew,
+    update: "brew upgrade codesesh",
+  },
+  {
+    id: "scoop",
+    name: "scoop",
+    command:
+      "scoop bucket add xingkaixin https://github.com/xingkaixin/scoop-bucket\nscoop install xingkaixin/codesesh",
+    note: labels.scoop,
+    update: "scoop update codesesh",
+  },
+];
+---
+
+<div class="install-options" data-install-options>
+  <div
+    class="install-options__tabs console-mono"
+    role="tablist"
+    aria-label={labels.method}
+  >
+    {methods.map((method, index) => (
+      <button
+        type="button"
+        role="tab"
+        id={`${id}-tab-${method.id}`}
+        aria-controls={`${id}-panel-${method.id}`}
+        aria-selected={index === 0}
+        tabindex={index === 0 ? 0 : -1}
+        data-install-method={method.id}
+      >
+        {method.name}
+      </button>
+    ))}
+  </div>
+  {methods.map((method, index) => (
+    <div
+      class="install-options__panel"
+      role="tabpanel"
+      id={`${id}-panel-${method.id}`}
+      aria-labelledby={`${id}-tab-${method.id}`}
+      data-install-panel={method.id}
+      hidden={index !== 0}
+    >
+      <InstallCommand locale={locale} command={method.command} />
+      <div class="install-options__details">
+        <p>{method.note}</p>
+        {method.id !== "npm" && <p>{labels.start}</p>}
+        <p>
+          {labels.update} <span class="console-mono">{method.update}</span>
+        </p>
+      </div>
+    </div>
+  ))}
+</div>
+
+<script>
+  document
+    .querySelectorAll<HTMLElement>("[data-install-options]")
+    .forEach((group) => {
+      const tabs = Array.from(
+        group.querySelectorAll<HTMLButtonElement>("[role=tab]"),
+      );
+      const panels = group.querySelectorAll<HTMLElement>(
+        "[data-install-panel]",
+      );
+      function selectTab(selected: HTMLButtonElement) {
+        tabs.forEach((tab) => {
+          const active = tab === selected;
+          tab.setAttribute("aria-selected", String(active));
+          tab.tabIndex = active ? 0 : -1;
+        });
+        panels.forEach((panel) => {
+          panel.hidden =
+            panel.dataset.installPanel !== selected.dataset.installMethod;
+        });
+      }
+
+      tabs.forEach((tab, index) => {
+        tab.addEventListener("click", () => selectTab(tab));
+        tab.addEventListener("keydown", (event) => {
+          let next: number;
+          switch (event.key) {
+            case "ArrowRight":
+              next = (index + 1) % tabs.length;
+              break;
+            case "ArrowLeft":
+              next = (index + tabs.length - 1) % tabs.length;
+              break;
+            case "Home":
+              next = 0;
+              break;
+            case "End":
+              next = tabs.length - 1;
+              break;
+            default:
+              return;
+          }
+          event.preventDefault();
+          const nextTab = tabs[next];
+          if (!nextTab) return;
+          selectTab(nextTab);
+          nextTab.focus();
+        });
+      });
+    });
+</script>
+
+<style>
+  .install-options {
+    width: 100%;
+    min-width: 0;
+    max-width: 36rem;
+    border: 1px solid var(--console-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--console-surface);
+  }
+
+  .install-options__tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0 0.75rem;
+    border-bottom: 1px solid var(--console-border);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    background: var(--console-surface-muted);
+  }
+
+  [role="tab"] {
+    position: relative;
+    min-height: 2.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--console-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+
+  [role="tab"]:hover {
+    color: var(--console-text);
+  }
+
+  [role="tab"][aria-selected="true"] {
+    color: var(--console-text);
+  }
+
+  [role="tab"][aria-selected="true"]::after {
+    position: absolute;
+    right: 0.75rem;
+    bottom: -1px;
+    left: 0.75rem;
+    height: 2px;
+    background: var(--brand);
+    content: "";
+  }
+
+  [role="tab"]:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: -4px;
+    border-radius: var(--radius-sm);
+  }
+
+  .install-options__panel {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .install-options__panel :global(.install-command__box) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .install-options__details {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--console-border);
+    color: var(--console-text-secondary);
+    font-size: 0.6875rem;
+    line-height: 1.65;
+  }
+
+  .install-options__details p {
+    margin: 0;
+  }
+
+  .install-options__details p + p {
+    margin-top: 0.25rem;
+  }
+</style>

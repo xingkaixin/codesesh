@@ -135,3 +135,33 @@ pnpm --filter @codesesh/www build
 - **补丁** `x.y.Z`：bugfix、小改进、文档/落地页仅版本展示更新
 - **次版本** `x.Y.0`：新功能、新 Agent、明显行为或 API 变化
 - 发次版本时，changelog 中保留上一 minor 的完整历史即可；不必改旧 tag
+
+## curl、Homebrew 和 Scoop 分发
+
+三个渠道复用 GitHub Release 的原生归档，不增加编译目标。安装脚本源文件位于
+`apps/www/public/install.sh`，随产品站发布到 `/install.sh`。curl 支持 macOS arm64/x64
+与 Linux x64 glibc 2.35+；Homebrew tap 首版仅支持 macOS；Scoop 支持 Windows x64。
+
+`node scripts/rust/distribution.mjs <release-directory> <output-directory>` 读取
+`release-set.json`，重新计算四份原生归档的 SHA-256，验证后生成统一 `SHA256SUMS`、
+`codesesh.rb` 与 `codesesh.json`。Release workflow 在发布前生成公开校验文件。
+不要手填哈希，也不要替换已发布的二进制。
+
+发布完成后，`distribution.yml` 将清单同步到 `xingkaixin/homebrew-tap` 的
+`Formula/codesesh.rb` 和 `xingkaixin/scoop-bucket` 的 `bucket/codesesh.json`。
+需要先创建这两个公开仓库并推送初始提交，然后在 CodeSesh 仓库配置
+`DISTRIBUTION_TOKEN`：仅授权这两个仓库 Contents 读写的 fine-grained token。
+默认 GITHUB_TOKEN 只负责 CodeSesh Release，不具有跨仓库写入权限。
+
+同步失败不会撤销已发布的 npm 包或 GitHub Release。修复后可手动运行
+“Sync installation channels”，传入最新稳定版 tag。该工作流只允许最新稳定版，
+防止重跑旧版本意外降级两个渠道；生成文件无变化时不创建提交。
+
+首次接入 v1.1.1：先下载该 Release 的四份 `.tar.gz` 和 `release-set.json`，运行上述
+生成命令并验收本地清单；公开仓库就绪后运行同步工作流，补发缺失的 `SHA256SUMS`。
+已有校验文件必须与重新计算的结果一致，不会覆盖。最后部署包含安装脚本的产品站，
+再验证公开安装命令。所有入口就绪前不要部署宣传这些渠道的落地页。
+
+验证：`node --test scripts/rust/install.test.mjs` 覆盖安装、重复安装、升级、失败保留旧文件、
+符号链接保护、Linux glibc 下限与清单哈希验证。还需在真实 macOS / Windows 上分别运行
+Homebrew / Scoop 安装验收，确认 `codesesh --version`、`codesesh --help` 和更新行为。

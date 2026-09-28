@@ -120,6 +120,45 @@ npx codesesh
 
 Your browser will open at `http://localhost:4521` with all your sessions ready to browse. If that default port is busy, CodeSesh automatically tries the next available port.
 
+### Native installation (no Node.js required)
+
+macOS / Linux x64 (glibc 2.35+):
+
+```sh
+curl -sSfL https://codesesh.xingkaixin.me/install.sh | sh
+codesesh
+```
+
+The default directory is `~/.local/bin`. Run the installer again to update. To select a version or directory:
+
+```sh
+curl -sSfL https://codesesh.xingkaixin.me/install.sh | CODESESH_VERSION=1.1.1 CODESESH_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+macOS (Homebrew):
+
+```sh
+brew install xingkaixin/tap/codesesh
+codesesh
+# Update
+brew upgrade codesesh
+```
+
+Windows x64 (install Scoop first):
+
+```powershell
+scoop bucket add xingkaixin https://github.com/xingkaixin/scoop-bucket
+scoop install xingkaixin/codesesh
+codesesh
+# Update
+scoop update codesesh
+```
+
+Stop CodeSesh before updating, then restart it. Each channel manages its own installation; check PATH
+if you have installed through multiple channels. The shell installer does not edit shell configuration
+or overwrite symlinks. Uninstall with `brew uninstall codesesh`, `scoop uninstall codesesh`, or remove
+`codesesh` from the shell installer's directory. User configuration and indexes are retained.
+
 ### Build from Source
 
 ```bash

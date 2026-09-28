@@ -117,6 +117,45 @@ npx codesesh
 
 浏览器会自动打开 `http://localhost:4521`，你的所有会话已就绪。如果默认端口被占用，CodeSesh 会自动尝试下一个可用端口。
 
+### 原生安装（无需 Node.js）
+
+macOS / Linux x64（glibc 2.35+）：
+
+```sh
+curl -sSfL https://codesesh.xingkaixin.me/install.sh | sh
+codesesh
+```
+
+默认安装到 `~/.local/bin`。再次运行安装命令即可更新。指定版本或安装目录：
+
+```sh
+curl -sSfL https://codesesh.xingkaixin.me/install.sh | CODESESH_VERSION=1.1.1 CODESESH_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+macOS（Homebrew）：
+
+```sh
+brew install xingkaixin/tap/codesesh
+codesesh
+# 更新
+brew upgrade codesesh
+```
+
+Windows x64（先安装 Scoop）：
+
+```powershell
+scoop bucket add xingkaixin https://github.com/xingkaixin/scoop-bucket
+scoop install xingkaixin/codesesh
+codesesh
+# 更新
+scoop update codesesh
+```
+
+更新前停止正在运行的 CodeSesh，更新后重新启动。各渠道独立管理；如果安装过多个渠道，
+请检查 PATH 中实际使用的命令。安装脚本不修改 shell 配置，也不覆盖符号链接。
+卸载使用 `brew uninstall codesesh`、`scoop uninstall codesesh`，或删除 curl 安装目录中的
+`codesesh` 文件；用户配置和索引保留。
+
 ### 从源码构建
 
 ```bash
