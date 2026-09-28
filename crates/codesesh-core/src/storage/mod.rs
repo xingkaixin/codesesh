@@ -1,5 +1,6 @@
 mod cursor;
 mod json_index;
+mod sync;
 pub use json_index::JsonBaseline;
 mod facts;
 mod json;
@@ -204,13 +205,29 @@ impl Cache {
         checkpoint: Option<(&str, &Option<serde_json::Value>, bool)>,
         index: Option<&json_index::Publication<'_>>,
     ) -> Result<()> {
+        let transaction = self.connection.transaction()?;
+        let cursors = Self::write_sessions(&transaction, sessions, removed, checkpoint, index)?;
+        transaction.commit()?;
+        for (session, cursor) in sessions.iter_mut().zip(cursors) {
+            session.detail.message_cursor = Some(cursor);
+            session.detail.message_update = Some("reset".into());
+        }
+        Ok(())
+    }
+
+    fn write_sessions(
+        transaction: &rusqlite::Transaction<'_>,
+        sessions: &[ParsedSession],
+        removed: &[SessionReference],
+        checkpoint: Option<(&str, &Option<serde_json::Value>, bool)>,
+        index: Option<&json_index::Publication<'_>>,
+    ) -> Result<Vec<String>> {
         let profile = std::env::var_os("CODESESH_PROFILE_SCAN").is_some();
         let mut message_time = std::time::Duration::ZERO;
         let mut document_time = std::time::Duration::ZERO;
         let mut facts_time = std::time::Duration::ZERO;
-        let transaction = self.connection.transaction()?;
         if let Some(index) = index {
-            index.validate(&transaction)?;
+            index.validate(transaction)?;
         }
         for reference in removed {
             for table in ["pending_reindex", "session_documents", "sessions"] {
@@ -326,7 +343,7 @@ impl Cache {
                     reference.session_id
                 ],
             )?;
-            facts::write(&transaction, reference, &session.detail.messages)?;
+            facts::write(transaction, reference, &session.detail.messages)?;
             transaction.execute(
                 "DELETE FROM pending_reindex WHERE source_node_id=? AND agent_name=? AND session_id=?",
                 params![reference.source_node_id,reference.agent_name,reference.session_id],
@@ -357,24 +374,17 @@ impl Cache {
             transaction.execute("INSERT INTO cache_meta VALUES('analytics_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1",[])?;
         }
         if let Some(index) = index {
-            index.publish(&transaction)?;
+            index.publish(transaction)?;
         }
-        let commit_started = std::time::Instant::now();
-        transaction.commit()?;
         if profile {
             eprintln!(
-                "scan-profile storage messages_ms={:.3} document_ms={:.3} facts_ms={:.3} commit_ms={:.3}",
+                "scan-profile storage messages_ms={:.3} document_ms={:.3} facts_ms={:.3}",
                 message_time.as_secs_f64() * 1000.0,
                 document_time.as_secs_f64() * 1000.0,
-                facts_time.as_secs_f64() * 1000.0,
-                commit_started.elapsed().as_secs_f64() * 1000.0
+                facts_time.as_secs_f64() * 1000.0
             );
         }
-        for (session, cursor) in sessions.iter_mut().zip(cursors) {
-            session.detail.message_cursor = Some(cursor);
-            session.detail.message_update = Some("reset".into());
-        }
-        Ok(())
+        Ok(cursors)
     }
 
     pub fn remove(&mut self, references: &[SessionReference]) -> Result<()> {

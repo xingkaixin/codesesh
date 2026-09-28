@@ -23,6 +23,7 @@ use std::{
 pub struct AgentScanner {
     source: AgentSource,
     cache_path: PathBuf,
+    worker: bool,
     pricing: Arc<Pricing>,
     controller: Option<PricingController>,
     previous: Vec<SessionRecord>,
@@ -50,6 +51,7 @@ impl AgentScanner {
         Self {
             source,
             cache_path,
+            worker: false,
             pricing,
             controller: None,
             previous: Vec::new(),
@@ -70,6 +72,12 @@ impl AgentScanner {
             empty_sources: HashSet::new(),
         }
     }
+    pub fn for_worker(source: AgentSource, state_path: PathBuf) -> Self {
+        let mut scanner = Self::new(source, state_path, Arc::new(Pricing::capture_only()));
+        scanner.worker = true;
+        scanner
+    }
+
     pub fn with_pricing_controller(
         source: AgentSource,
         cache_path: PathBuf,
@@ -724,6 +732,24 @@ impl AgentScanner {
         if !self.cache_path.exists() {
             return Ok(());
         }
+        if self.worker {
+            let baseline =
+                crate::sync::WorkerStore::open(&self.cache_path)?.baseline(&self.source.agent)?;
+            self.restore_source_state(baseline.state.as_ref(), baseline.complete);
+            for record in baseline.sessions {
+                self.durable_references
+                    .insert(record.head.reference.clone());
+                self.baseline.insert(
+                    record.head.reference.clone(),
+                    (
+                        record.head.parent_reference.clone(),
+                        Some(record.source.clone()),
+                    ),
+                );
+                self.previous.push(record);
+            }
+            return Ok(());
+        }
         let cache = Cache::open_read_only(&self.cache_path)?;
         let saved: Option<String> = cache
             .connection()
@@ -739,28 +765,12 @@ impl AgentScanner {
                 && !serde_json::from_value::<PriceDependencies>(state["priceDependencies"].clone())
                     .is_ok_and(|dependencies| self.pricing.matches_dependencies(&dependencies))
         });
-        if let Some(state) = state
-            && state["version"] == 1
-            && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
-            && state["root"].as_str() == self.source.scan_path.to_str()
-        {
-            self.price_dependencies =
-                serde_json::from_value(state["priceDependencies"].clone()).ok();
-            self.history_complete = match state["historyComplete"].as_bool() {
-                Some(complete) => complete,
-                None => cache.connection().query_row(
-                    "SELECT EXISTS(SELECT 1 FROM cache_initialization WHERE agent_name=?)",
-                    [&self.source.agent],
-                    |row| row.get(0),
-                )?,
-            };
-            self.file_fingerprints =
-                serde_json::from_value(state["files"].clone()).unwrap_or_default();
-            self.empty_sources =
-                serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
-            self.fingerprints =
-                serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
-        }
+        let complete = cache.connection().query_row(
+            "SELECT EXISTS(SELECT 1 FROM cache_initialization WHERE agent_name=?)",
+            [&self.source.agent],
+            |row| row.get(0),
+        )?;
+        self.restore_source_state(state.as_ref(), complete);
 
         for head in cache.agent_snapshot(&self.source.agent)? {
             self.durable_references.insert(head.reference.clone());
@@ -803,6 +813,24 @@ impl AgentScanner {
         }
         Ok(())
     }
+    fn restore_source_state(&mut self, state: Option<&serde_json::Value>, complete: bool) {
+        if let Some(state) = state
+            && state["version"] == 1
+            && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
+            && state["root"].as_str() == self.source.scan_path.to_str()
+        {
+            self.price_dependencies =
+                serde_json::from_value(state["priceDependencies"].clone()).ok();
+            self.history_complete = state["historyComplete"].as_bool().unwrap_or(complete);
+            self.file_fingerprints =
+                serde_json::from_value(state["files"].clone()).unwrap_or_default();
+            self.empty_sources =
+                serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
+            self.fingerprints =
+                serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
+        }
+    }
+
     fn full(&self) -> Result<ScanDelta> {
         let result = scan_source(&self.source, &self.pricing)?;
         if !result.available && (!self.previous.is_empty() || !self.durable_references.is_empty()) {

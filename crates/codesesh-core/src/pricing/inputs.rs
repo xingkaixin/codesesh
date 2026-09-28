@@ -86,6 +86,51 @@ pub(crate) fn assert_cached_repricing(
     use std::collections::HashSet;
 
     let mut sessions = scan(&Pricing::bundled());
+    for captured in scan(&Pricing::capture_only()) {
+        let encoded =
+            serde_json::to_vec(&crate::sync::CapturedSession::from_parsed(captured)).unwrap();
+        let mut restored = serde_json::from_slice::<crate::sync::CapturedSession>(&encoded)
+            .unwrap()
+            .into_parsed()
+            .unwrap();
+        crate::storage::reprice_session(&mut restored, &Pricing::bundled());
+        let expected = sessions
+            .iter()
+            .find(|session| session.head.reference == restored.head.reference)
+            .unwrap();
+        assert!(
+            (restored.head.stats.total_cost - expected.head.stats.total_cost).abs() < 1e-8,
+            "unpriced capture {:?}: {} != {}",
+            restored.head.reference,
+            restored.head.stats.total_cost,
+            expected.head.stats.total_cost
+        );
+        assert_eq!(
+            restored.head.stats.cost_source,
+            expected.head.stats.cost_source
+        );
+        assert_eq!(
+            restored.detail.messages.len(),
+            expected.detail.messages.len()
+        );
+        for (actual, expected) in restored
+            .detail
+            .messages
+            .iter()
+            .zip(&expected.detail.messages)
+        {
+            assert!(
+                (actual.cost.unwrap_or_default() - expected.cost.unwrap_or_default()).abs() < 1e-8,
+                "captured message {}: {:?} != {:?}",
+                actual.id,
+                actual.cost,
+                expected.cost
+            );
+            assert_eq!(actual.tokens, expected.tokens);
+            assert_eq!(actual.cost_source, expected.cost_source);
+            assert_eq!(actual.parts, expected.parts);
+        }
+    }
     let mut models = serde_json::Map::new();
     for session in &sessions {
         for input in session.head.stats.cost_inputs.iter().chain(

@@ -175,6 +175,23 @@ pub(crate) fn reprice_session(session: &mut ParsedSession, pricing: &Pricing) {
     }
 }
 
+pub(super) fn reprice_head(
+    head: &mut crate::contract::SessionHead,
+    pricing: &Pricing,
+    value: &mut serde_json::Value,
+) -> Result<()> {
+    let mut state: PricingState = serde_json::from_value(value.clone())?;
+    state.head.cost = Some(head.stats.total_cost);
+    state.head.source = head.stats.cost_source.clone();
+    state.head.inputs = std::mem::take(&mut head.stats.cost_inputs);
+    state.head.reprice(pricing);
+    head.stats.total_cost = state.head.cost.unwrap_or_default();
+    head.stats.cost_source = state.head.source.clone();
+    head.stats.cost_inputs = state.head.inputs.clone();
+    *value = serde_json::to_value(state)?;
+    Ok(())
+}
+
 impl Cache {
     pub fn reprice(&mut self, agent: &str, pricing: &Pricing) -> Result<Vec<SessionReference>> {
         let transaction = self.connection.transaction()?;

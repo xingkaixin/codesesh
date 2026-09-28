@@ -20,6 +20,13 @@ pub(super) enum Command {
         state: String,
         error: Option<String>,
     },
+    HubControl(Box<dyn FnOnce(&mut Cache) + Send>),
+    Upload {
+        node: String,
+        upload: crate::sync::Upload,
+        pricing: crate::pricing::PricingSnapshot,
+        response: oneshot::Sender<Result<crate::sync::Receipt>>,
+    },
     Stop(oneshot::Sender<Result<()>>),
 }
 
@@ -55,6 +62,38 @@ pub(super) fn run(
     let mut priced_generations = std::collections::HashMap::new();
     while let Some(command) = commands.blocking_recv() {
         match command {
+            Command::HubControl(operation) => operation(&mut cache),
+            Command::Upload {
+                node,
+                upload,
+                pricing,
+                response,
+            } => {
+                let result = pricing.with_current(|| {
+                    let receipt = cache.receive_upload(&node, &upload, &pricing.pricing)?;
+                    if let Some(reference) = &receipt.changed {
+                        let heads = Arc::new(cache.refresh_snapshot(
+                            snapshots.borrow().as_ref(),
+                            std::slice::from_ref(reference),
+                        )?);
+                        let changed = Arc::new(
+                            heads
+                                .iter()
+                                .filter(|head| head.reference == *reference)
+                                .cloned()
+                                .collect(),
+                        );
+                        snapshots.send_replace(heads.clone());
+                        let _ = events.send(Event::Sessions {
+                            snapshot: heads,
+                            changed,
+                            removed: Arc::new(Vec::new()),
+                        });
+                    }
+                    Ok(receipt)
+                });
+                let _ = response.send(result);
+            }
             Command::Publish {
                 agent,
                 mut batch,

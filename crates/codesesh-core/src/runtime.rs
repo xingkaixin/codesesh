@@ -277,6 +277,39 @@ impl Runtime {
         .await
     }
 
+    pub async fn hub_control<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce(&mut crate::storage::Cache) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let (response, result) = oneshot::channel();
+        self.inner
+            .writer
+            .try_send(writer::Command::HubControl(Box::new(move |cache| {
+                let _ = response.send(operation(cache));
+            })))
+            .map_err(|_| ReadBusy)?;
+        result.await?
+    }
+
+    pub async fn receive_upload(
+        &self,
+        node: String,
+        upload: crate::sync::Upload,
+        pricing: crate::pricing::PricingSnapshot,
+    ) -> Result<crate::sync::Receipt> {
+        let (response, result) = oneshot::channel();
+        self.inner
+            .writer
+            .try_send(writer::Command::Upload {
+                node,
+                upload,
+                pricing,
+                response,
+            })
+            .map_err(|_| ReadBusy)?;
+        result.await?
+    }
+
     pub async fn read<T: Send + 'static>(
         &self,
         query: impl FnOnce(&Connection) -> Result<T> + Send + 'static,

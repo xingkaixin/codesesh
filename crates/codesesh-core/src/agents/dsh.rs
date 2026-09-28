@@ -56,7 +56,7 @@ pub fn scan_changed(
     })
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentReferences {
     digests: HashSet<String>,
     unavailable: bool,
