@@ -14,6 +14,7 @@ export type SearchLoadState =
   | { status: "failed"; error: string };
 
 export interface SearchFilterState {
+  sourceNodeId?: string;
   agent?: string;
   project?: {
     kind: ProjectIdentityKind;

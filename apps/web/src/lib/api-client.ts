@@ -1,5 +1,6 @@
 import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/contract";
 import type {
+  HubNodes,
   AgentInfo,
   ApiProjectGroup,
   ApiProjectPage,
@@ -56,6 +57,49 @@ export function createApiClient(access: RemoteAccess) {
     return res.json() as Promise<T>;
   }
 
+  async function fetchNodes(options?: FetchOptions): Promise<HubNodes> {
+    return fetchJson("/api/nodes", options);
+  }
+
+  async function createPairingToken(): Promise<{ token: string; expiresInSeconds: number }> {
+    return fetchJson("/api/nodes/pairing-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+  }
+
+  async function updateNode(
+    nodeId: string,
+    action: "revoke" | "name",
+    name?: string,
+  ): Promise<void> {
+    await fetchJson(`/api/nodes/${encodeURIComponent(nodeId)}/${action}`, {
+      method: action === "name" ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(name == null ? {} : { name }),
+    });
+  }
+
+  async function requestRescan(nodeIds: string[], agents: string[] = []): Promise<void> {
+    await fetchJson("/api/nodes/rescan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeIds, agents }),
+    });
+  }
+
+  async function fetchSourceSessions(
+    sourceNodeId?: string,
+    cursor?: string,
+    signal?: AbortSignal,
+  ): Promise<SessionListPage> {
+    const params = new URLSearchParams({ days: "0", limit: "50" });
+    if (sourceNodeId) params.set("sourceNodeId", sourceNodeId);
+    if (cursor) params.set("cursor", cursor);
+    return fetchJson(`/api/sessions?${params}`, { signal });
+  }
+
   async function fetchConfig(options?: FetchOptions): Promise<AppConfig> {
     return fetchJson("/api/config", options);
   }
@@ -103,6 +147,7 @@ export function createApiClient(access: RemoteAccess) {
   async function fetchSessions(
     options: {
       agent?: string;
+      sourceNodeId?: string;
       projectKind?: ProjectIdentityKind;
       projectKey?: string;
       from?: number;
@@ -113,6 +158,7 @@ export function createApiClient(access: RemoteAccess) {
   ): Promise<{ sessions: SessionHead[] }> {
     const baseParams = new URLSearchParams();
     if (options.agent) baseParams.set("agent", options.agent);
+    if (options.sourceNodeId) baseParams.set("sourceNodeId", options.sourceNodeId);
     if (options.projectKind) baseParams.set("projectKind", options.projectKind);
     if (options.projectKey) baseParams.set("projectKey", options.projectKey);
     appendTimeWindow(baseParams, options);
@@ -184,6 +230,7 @@ export function createApiClient(access: RemoteAccess) {
       params.set("projectKey", filters.project.key);
     }
     if (filters.agent) params.set("agent", filters.agent);
+    if (filters.sourceNodeId) params.set("sourceNodeId", filters.sourceNodeId);
     params.set("timeZone", filters.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
     const suffix = params.toString();
     return fetchJson(suffix ? `/api/dashboard?${suffix}` : "/api/dashboard", options);
@@ -197,6 +244,7 @@ export function createApiClient(access: RemoteAccess) {
     const params = new URLSearchParams();
     params.set("q", query);
     if (options.agent) params.set("agent", options.agent);
+    if (options.sourceNodeId) params.set("sourceNodeId", options.sourceNodeId);
     if (options.projectKind) params.set("projectKind", options.projectKind);
     if (options.projectKey) params.set("projectKey", options.projectKey);
     if (options.tag) params.set("tag", options.tag);
@@ -266,6 +314,11 @@ export function createApiClient(access: RemoteAccess) {
   }
 
   return Object.freeze({
+    fetchNodes,
+    createPairingToken,
+    updateNode,
+    requestRescan,
+    fetchSourceSessions,
     fetchConfig,
     fetchScanStatus,
     fetchAgents,

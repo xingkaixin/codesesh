@@ -14,11 +14,13 @@ function normalizeDashboardFilters(filters: DashboardFilters): DashboardFilters 
   return {
     ...(filters.project ? { project: filters.project } : {}),
     ...(filters.agent ? { agent: filters.agent } : {}),
+    ...(filters.sourceNodeId ? { sourceNodeId: filters.sourceNodeId } : {}),
     timeZone: filters.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 
 export const queryKeys = {
+  nodeSessions: ["node-sessions"] as const,
   bookmarks: ["bookmarks"] as const,
   config: ["config"] as const,
   dashboards: ["dashboard"] as const,

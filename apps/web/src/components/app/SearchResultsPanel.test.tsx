@@ -1,3 +1,4 @@
+import { createQueryWrapper } from "../../test/query-wrapper";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -46,6 +47,7 @@ function renderPanel(
       <MemoryRouter>
         <SearchResultsPanel {...props} />
       </MemoryRouter>,
+      { wrapper: createQueryWrapper().Wrapper },
     ),
     props,
   };

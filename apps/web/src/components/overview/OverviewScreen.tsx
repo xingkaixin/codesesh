@@ -1,3 +1,4 @@
+import { SourceFilter } from "../nodes/SourceFilter";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 /**
@@ -52,14 +53,16 @@ export function OverviewScreen({
 }) {
   useLocale();
 
+  const [sourceNodeId, setSourceNodeId] = useState<string | undefined>(undefined);
   const [ownAgent, setOwnAgent] = useState<string | undefined>(undefined);
   const agent = onAgentChange ? controlledAgent : ownAgent;
 
-  const filters: DashboardFilters = { project, agent };
+  const filters: DashboardFilters = { project, agent, sourceNodeId };
   const { dashboard, error, retry } = useDashboard(window, filters);
 
   return (
     <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-4">
+      {!project && <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />}
       <OverviewFilterBar
         agent={agent}
         onAgentChange={onAgentChange ? undefined : setOwnAgent}

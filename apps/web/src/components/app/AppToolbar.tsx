@@ -3,7 +3,7 @@ import { t } from "../../i18n/translate";
 
 declare const __APP_VERSION__: string;
 
-import type { Ref } from "react";
+import { lazy, Suspense, useState, type Ref } from "react";
 import { Link } from "react-router-dom";
 import type { Theme } from "../../hooks/useUiPreferences";
 import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
@@ -12,7 +12,12 @@ import { SearchControls, type SearchControlsHandle } from "./SearchControls";
 import { LanguageControl } from "./LanguageControl";
 import { ThemeToggle } from "./ThemeToggle";
 
+const NodePanel = lazy(() =>
+  import("../nodes/NodePanel").then((module) => ({ default: module.NodePanel })),
+);
+
 export interface AppToolbarProps {
+  hubEnabled?: boolean;
   searchControlsRef: Ref<SearchControlsHandle>;
   onSubmitSearch: (query: string) => void;
   theme: Theme;
@@ -29,6 +34,7 @@ export interface AppToolbarProps {
 }
 
 export function AppToolbar({
+  hubEnabled,
   searchControlsRef,
   onSubmitSearch,
   theme,
@@ -37,6 +43,7 @@ export function AppToolbar({
   timeWindow,
 }: AppToolbarProps) {
   useLocale();
+  const [nodesOpen, setNodesOpen] = useState(false);
 
   return (
     <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
@@ -51,6 +58,15 @@ export function AppToolbar({
         </div>
         <SearchControls ref={searchControlsRef} onSubmit={onSubmitSearch} />
         <div className="flex items-center flex-wrap justify-end gap-2">
+          {hubEnabled && (
+            <button
+              type="button"
+              onClick={() => setNodesOpen(true)}
+              className="rounded-sm border border-[var(--console-border)] px-2 py-1 text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+            >
+              {t("Source nodes")}
+            </button>
+          )}
           <LanguageControl />
           <ThemeToggle theme={theme} onChange={onChangeTheme} />
           <button
@@ -76,6 +92,11 @@ export function AppToolbar({
           </span>
         </div>
       </div>
+      {nodesOpen && (
+        <Suspense fallback={null}>
+          <NodePanel onClose={() => setNodesOpen(false)} />
+        </Suspense>
+      )}
     </header>
   );
 }

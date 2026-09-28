@@ -1,3 +1,4 @@
+import { SourceFilter } from "../nodes/SourceFilter";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import type { Dispatch, SetStateAction } from "react";
@@ -49,6 +50,10 @@ export function SearchFilterBar({
 
   return (
     <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-3 shadow-[var(--shadow-raised)]">
+      <SourceFilter
+        value={filters.sourceNodeId}
+        onChange={(sourceNodeId) => onChangeFilters((current) => ({ ...current, sourceNodeId }))}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">{t("Scope")}</span>
         <FilterChip

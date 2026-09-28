@@ -39,6 +39,7 @@ function invalidateSessionCollections(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.agentCatalogs }),
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
   ];
 }
 
@@ -46,6 +47,7 @@ export async function invalidateLiveSessionCollections(queryClient: QueryClient)
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
   ]);
 }
 

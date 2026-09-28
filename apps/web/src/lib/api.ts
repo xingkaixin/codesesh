@@ -10,6 +10,11 @@ const remoteAccess = resolveRemoteAccess();
 export const apiClient = createApiClient(remoteAccess);
 
 export const {
+  fetchNodes,
+  createPairingToken,
+  updateNode,
+  requestRescan,
+  fetchSourceSessions,
   fetchConfig,
   fetchScanStatus,
   fetchAgents,
