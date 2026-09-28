@@ -44,6 +44,7 @@ pub(super) fn environment() -> BTreeMap<String, String> {
     .filter_map(|key| std::env::var(key).ok().map(|value| (key.to_owned(), value)))
     .collect()
 }
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn xml(value: &str) -> String {
     value
         .replace('&', "&amp;")
