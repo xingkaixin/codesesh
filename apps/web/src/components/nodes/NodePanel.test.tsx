@@ -110,6 +110,8 @@ describe("NodePanel", () => {
     panel();
     await screen.findByRole("heading", { name: "Office worker" });
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
+    expect(api.requestRescan).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm rescan" }));
     await waitFor(() => expect(api.requestRescan).toHaveBeenCalledWith(["worker-one"], []));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Revoke access" }).hasAttribute("disabled")).toBe(
@@ -119,12 +121,18 @@ describe("NodePanel", () => {
     vi.mocked(api.updateNode).mockRejectedValueOnce(new Error("Hub disconnected"));
     fireEvent.click(screen.getByRole("button", { name: "Revoke access" }));
     expect(api.updateNode).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Confirm revoke" })).toBeNull(),
+    );
+    expect(api.updateNode).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke access" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm revoke" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Hub disconnected");
     expect(api.updateNode).toHaveBeenCalledWith("worker-one", "revoke");
   });
 
-  it("shows an upgrade direction and applies the chosen source to session browsing", async () => {
+  it("shows an upgrade direction without loading session content", async () => {
     vi.mocked(api.fetchNodes).mockResolvedValue({
       nodes: [{ ...node, error: '"WORKER_TOO_NEW"' }],
       tasks: [],
@@ -134,13 +142,35 @@ describe("NodePanel", () => {
     });
     panel();
     await screen.findByText("Upgrade Hub first. Collection and uploads are paused.");
-    fireEvent.click(screen.getByRole("button", { name: "Browse sessions" }));
-    await waitFor(() =>
-      expect(api.fetchSourceSessions).toHaveBeenCalledWith(
-        "worker-one",
-        undefined,
-        expect.any(AbortSignal),
-      ),
-    );
+    expect(api.fetchSourceSessions).not.toHaveBeenCalled();
+    expect(screen.queryByText("Sessions by source")).toBeNull();
+  });
+
+  it("selects an Agent only inside rescan confirmation and cancels safely", async () => {
+    panel();
+    await screen.findByRole("heading", { name: "Office worker" });
+    expect(screen.queryByRole("combobox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Rescan all Workers" }));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "codex" } });
+    expect(api.requestRescan).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm rescan" }));
+    await waitFor(() => expect(api.requestRescan).toHaveBeenCalledWith(["worker-one"], ["codex"]));
+  });
+
+  it("reports successful and failed token copies", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    vi.mocked(api.createPairingToken).mockResolvedValue({
+      token: "preview-token",
+      expiresInSeconds: 600,
+    });
+    panel();
+    fireEvent.click(await screen.findByRole("button", { name: "Pair a Worker" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Copy token" }));
+    await screen.findByRole("button", { name: "Copied" });
+    expect(writeText).toHaveBeenCalledWith("preview-token");
+    writeText.mockRejectedValue(new Error("Denied"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Copy failed");
   });
 });

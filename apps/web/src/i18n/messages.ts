@@ -1,5 +1,54 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Connect your machines. Keep your sessions together.": [
+    "连接你的机器，集中保存会话。",
+    "マシンを接続してセッションを一か所に。",
+  ],
+  "Needs attention": ["需要处理", "要確認"],
+  Online: ["在线", "オンライン"],
+  Offline: ["离线", "オフライン"],
+  "Worker version": ["Worker 版本", "Worker バージョン"],
+  "Last heartbeat": ["最近心跳", "最終ハートビート"],
+  "Pending uploads": ["待上传", "アップロード待ち"],
+  "Sync status": ["同步状态", "同期状態"],
+  "Copying…": ["正在复制…", "コピー中…"],
+  "Copy command": ["复制命令", "コマンドをコピー"],
+  "Copy failed. Select and copy the text manually.": [
+    "复制失败，请选中文字手动复制。",
+    "コピーできませんでした。テキストを選択して手動でコピーしてください。",
+  ],
+  "Revoke access to {0}?": ["撤销 {0} 的访问？", "{0} のアクセスを取り消しますか？"],
+  "Rescan {0}": ["重新采集 {0}", "{0} を再収集"],
+  "Run this command on the Worker machine, then paste the one-time token.": [
+    "在 Worker 所在机器执行命令，然后粘贴一次性配对码。",
+    "Worker のマシンでコマンドを実行し、ワンタイムトークンを貼り付けてください。",
+  ],
+  "Choose a name to identify this machine.": [
+    "设置便于识别这台机器的名称。",
+    "このマシンを識別する名前を設定します。",
+  ],
+  "This Worker will stop uploading. Saved history remains. Reconnecting requires pairing again.": [
+    "此 Worker 将无法继续上传。已保存的会话会保留，重新连接需要再次配对。",
+    "この Worker はアップロードできなくなります。保存済みの履歴は保持され、再接続には再ペアリングが必要です。",
+  ],
+  "Re-read source files and update existing sessions. Offline Workers will run this task when they reconnect.":
+    [
+      "重新读取源文件并更新已有会话。离线 Worker 将在重新连接后执行。",
+      "ソースファイルを再読み込みし、既存セッションを更新します。オフラインの Worker は再接続後に実行します。",
+    ],
+  "For another machine, replace the Hub URL with an address reachable from that Worker.": [
+    "在其他机器上使用时，请将命令中的 Hub 地址替换为该 Worker 可访问的地址。",
+    "別のマシンでは、コマンド内の Hub URL をその Worker からアクセスできるアドレスに置き換えてください。",
+  ],
+  "Token expired. Close this dialog and create a new token.": [
+    "配对码已过期，请关闭窗口并重新生成。",
+    "トークンの期限が切れました。閉じて新しく生成してください。",
+  ],
+  "Target Workers: {0}": ["目标 Worker：{0}", "対象 Worker：{0}"],
+  "Working…": ["处理中…", "処理中…"],
+  "Confirm rescan": ["确认重新采集", "再収集を確認"],
+  "Rescan requested.": ["已下发重采集任务。", "再収集をリクエストしました。"],
+  "Node updated.": ["节点已更新。", "ノードを更新しました。"],
   "Node status unavailable": ["暂时无法获取节点状态", "ノードの状態を取得できません"],
   "{0}/{1} online": ["{0}/{1} 在线", "{0}/{1} オンライン"],
   "{0} online / {1} paired Workers; {2} reporting errors": [

@@ -1,449 +1,286 @@
-import { Dialog } from "@base-ui/react/dialog";
-import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { AGENT_CATALOG, sessionRoutePath } from "@codesesh/contract";
 import { useLocale } from "../../hooks/useLocale";
 import { isNodeOnline, useNodeClock, useNodes } from "../../hooks/useNodes";
 import { t } from "../../i18n/translate";
-import {
-  createPairingToken,
-  fetchSourceSessions,
-  requestRescan,
-  updateNode,
-  type SourceNode,
-  type NodeTask,
-} from "../../lib/api";
-import { queryKeys } from "../../lib/query-keys";
-import { writeToClipboard } from "../../lib/clipboard";
-import { NativeSelect } from "../ui/native-select";
-import { X } from "../ui/icons";
+import { createPairingToken } from "../../lib/api";
+import { Monitor, Plug, Pencil, ChevronUp } from "../ui/icons";
+import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
+import { NodeActions, type NodeAction } from "./NodeActions";
+import { nodeStatus, taskLabel } from "./node-status";
 
-const button =
-  "rounded-sm border border-[var(--console-border)] px-3 py-1.5 text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] disabled:opacity-50";
-const input =
-  "rounded-sm border border-[var(--console-border)] bg-[var(--console-bg)] px-2 py-1.5 text-sm text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]";
-
-function nodeStatus(node: SourceNode, now: number) {
-  if (node.revoked) return t("Access revoked");
-  if (node.lastSeen != null && !isNodeOnline(node, now))
-    return t("Offline. Saved history remains available.");
-  if (node.error?.includes("WORKER_TOO_NEW"))
-    return t("Upgrade Hub first. Collection and uploads are paused.");
-  if (node.error?.includes("WORKER_TOO_OLD"))
-    return t("Upgrade this Worker. Collection and uploads are paused.");
-  if (node.error) return t("Worker reported an error. Check its logs.");
-  if (!node.lastSeen) return t("Waiting for first connection");
-  if (!node.collectionComplete) return t("Collecting history");
-  return node.queue?.batches ? t("Connected, uploading") : t("Connected, up to date");
-}
-
-function taskLabel(status: string) {
-  const labels: Record<string, string> = {
-    waiting: t("Waiting for node"),
-    running: t("Scanning"),
-    uploading: t("Waiting for upload confirmation"),
-    paused: t("Paused"),
-    failed: t("Failed"),
-    completed: t("Completed"),
-    partial: t("Source content is missing"),
-    superseded: t("Replaced by recovery"),
+export function NodePanel({ onClose }: { onClose: () => void }) {
+  useLocale();
+  const query = useNodes();
+  const now = useNodeClock();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [action, setAction] = useState<NodeAction | null>(null);
+  const [pairing, setPairing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const nodes = query.data?.nodes ?? [];
+  const active = nodes.filter((node) => !node.revoked);
+  const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0];
+  const task = query.data?.tasks.find((task) => task.nodeId === selected?.id);
+  const pair = async () => {
+    setPairing(true);
+    setError(null);
+    try {
+      const value = await createPairingToken();
+      setAction({
+        kind: "pair",
+        token: value.token,
+        expires: Date.now() + value.expiresInSeconds * 1000,
+      });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : t("Unable to update node."));
+    } finally {
+      setPairing(false);
+    }
   };
-  return labels[status] ?? status;
-}
-
-function NodeRow({
-  node,
-  now,
-  task,
-  busy,
-  run,
-  onBrowse,
-  rescanAgents,
-}: {
-  node: SourceNode;
-  now: number;
-  task?: NodeTask;
-  busy: boolean;
-  run: (operation: () => Promise<unknown>) => void;
-  onBrowse: () => void;
-  rescanAgents: string[];
-}) {
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(node.name);
-  const [revoking, setRevoking] = useState(false);
   return (
-    <li className="grid gap-3 border-b border-[var(--console-border)] py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <div className="min-w-0">
-        {renaming ? (
-          <form
-            className="flex gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              run(async () => {
-                await updateNode(node.id, "name", name);
-                setRenaming(false);
-              });
+    <NodeDialog
+      wide
+      title={t("Source nodes")}
+      description={t("Connect your machines. Keep your sessions together.")}
+      onClose={onClose}
+      busy={pairing}
+      headerAction={
+        <button
+          className={nodePrimary}
+          disabled={pairing || query.isError}
+          onClick={() => {
+            void pair();
+          }}
+        >
+          <Plug aria-hidden="true" className="size-4" />
+          {pairing ? t("Working…") : t("Pair a Worker")}
+        </button>
+      }
+    >
+      {(error || query.isError) && (
+        <p role="alert" className="mt-4 text-sm text-[var(--console-error)]">
+          {error ?? t("Unable to load nodes. Check the Hub connection.")}
+          <button
+            className={`${nodeButton} ml-2`}
+            onClick={() => {
+              void query.refetch();
             }}
           >
-            <input
-              aria-label={t("Node name")}
-              className={input}
-              value={name}
-              maxLength={128}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <button className={button} disabled={busy || !name.trim()}>
-              {t("Save")}
-            </button>
-            <button type="button" className={button} onClick={() => setRenaming(false)}>
-              {t("Cancel")}
-            </button>
-          </form>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-[var(--console-text)]">{node.name}</h3>
-            <span className="text-xs text-[var(--console-muted)]">v{node.version}</span>
-          </div>
-        )}
-        <p className="mt-1 text-sm text-[var(--console-muted)]">{nodeStatus(node, now)}</p>
-        <p className="mt-1 break-all text-xs text-[var(--console-muted)]">{node.id}</p>
-        {node.error && (
-          <details className="mt-2 text-xs text-[var(--console-error)]">
-            <summary>{t("Error details")}</summary>
-            <p className="mt-1 break-words">{node.error}</p>
-          </details>
-        )}
-        {task && (
-          <p className="mt-2 text-xs text-[var(--console-text)]">
-            {t("Rescan")}: {taskLabel(task.status)}
-            {task.progress?.error ? ` — ${task.progress.error}` : ""}
+            {t("Retry")}
+          </button>
+        </p>
+      )}
+      {query.isPending && (
+        <p role="status" className="py-8 text-center text-sm text-[var(--console-muted)]">
+          {t("Loading...")}
+        </p>
+      )}
+      <div className="mx-auto mt-3 flex w-fit items-center gap-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] px-6 py-4">
+        <Plug aria-hidden="true" className="size-6 text-[var(--console-muted)]" />
+        <div>
+          <p className="font-semibold">Hub</p>
+          <p className="console-mono text-xs text-[var(--console-muted)]">
+            v{query.data?.version ?? "…"}
           </p>
-        )}
-        {node.incompleteSessions > 0 && (
-          <p role="status" className="mt-2 text-sm text-[var(--console-error)]">
-            {t("{0} sessions need source content or a backup.", [node.incompleteSessions])}
-          </p>
-        )}
+        </div>
       </div>
-      <div className="space-y-2">
-        <p className="text-sm text-[var(--console-text)]">
-          {node.queue
-            ? t("{0} pending batches · {1} MB", [
-                node.queue.batches,
-                (node.queue.bytes / 1048576).toFixed(1),
-              ])
-            : t("Queue status unavailable")}
-        </p>
-        <p className="text-xs text-[var(--console-muted)]">
-          {node.lastSeen
-            ? t("Last seen: {0}", [new Date(node.lastSeen).toLocaleString()])
-            : t("Not connected yet")}
-        </p>
-        {node.queue?.oldestAt && (
-          <p className="text-xs text-[var(--console-muted)]">
-            {t("Oldest pending: {0}", [new Date(node.queue.oldestAt).toLocaleString()])}
-          </p>
-        )}
-        {node.lastConfirmedAt && (
-          <p className="text-xs text-[var(--console-muted)]">
-            {t("Last confirmed: {0}", [new Date(node.lastConfirmedAt).toLocaleString()])}
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={button} onClick={onBrowse}>
-            {t("Browse sessions")}
-          </button>
-          <button
-            type="button"
-            className={button}
-            onClick={() => setRenaming(true)}
-            disabled={busy}
+      {nodes.length > 0 && (
+        <div className="relative pt-9">
+          <div
+            aria-hidden="true"
+            className="absolute left-1/2 top-0 h-9 border-l border-[var(--console-border-strong)]"
           >
-            {t("Rename")}
-          </button>
-          {!node.revoked && (
-            <>
+            <ChevronUp className="absolute -left-1.5 top-0 size-3 text-[var(--console-muted)]" />
+          </div>
+          <ul
+            aria-label={t("Source nodes")}
+            className={`mx-auto grid grid-cols-1 gap-x-3 gap-y-4 ${nodes.length === 1 ? "max-w-sm" : nodes.length === 2 ? "max-w-2xl border-t border-[var(--console-border-strong)] sm:grid-cols-2" : "border-t border-[var(--console-border-strong)] sm:grid-cols-2 lg:grid-cols-3"}`}
+          >
+            {nodes.map((node) => (
+              <li key={node.id} className="relative pt-5">
+                <span
+                  aria-hidden="true"
+                  className="absolute left-1/2 top-0 h-5 border-l border-[var(--console-border-strong)]"
+                />
+                <button
+                  aria-pressed={selected?.id === node.id}
+                  onClick={() => {
+                    setSelectedId(node.id);
+                    setNotice(null);
+                  }}
+                  className={`motion-hover motion-press flex h-full w-full items-center gap-3 rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] ${selected?.id === node.id ? "border-[var(--brand)] bg-[var(--brand-soft)]" : "border-[var(--console-border)] bg-[var(--console-surface)] hover:border-[var(--console-border-strong)]"}`}
+                >
+                  <Monitor
+                    aria-hidden="true"
+                    className="size-6 shrink-0 text-[var(--console-muted)]"
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">{node.name}</span>
+                    <span className="mt-1 flex items-center gap-1.5 text-xs text-[var(--console-muted)]">
+                      <span
+                        aria-hidden="true"
+                        className={`size-1.5 shrink-0 rounded-full ${node.error ? "bg-[var(--console-warning)]" : isNodeOnline(node, now) && !query.isError ? "bg-[var(--console-success)]" : "bg-[var(--console-muted)]"}`}
+                      />
+                      {query.isError
+                        ? t("Node status unavailable")
+                        : node.revoked
+                          ? t("Access revoked")
+                          : node.error
+                            ? t("Needs attention")
+                            : isNodeOnline(node, now)
+                              ? t("Online")
+                              : t("Offline")}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {query.isSuccess && nodes.length === 0 && (
+        <p className="py-8 text-center text-sm text-[var(--console-muted)]">
+          {t("No Workers paired. Create a token to connect your first machine.")}
+        </p>
+      )}
+      {selected && (
+        <section
+          key={selected.id}
+          className="mt-6 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 sm:p-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="break-words text-lg font-semibold">{selected.name}</h3>
+              <p className="console-mono mt-1 break-all text-xs text-[var(--console-muted)]">
+                {selected.id === "local" ? t("Local source") : selected.id}
+              </p>
+            </div>
+            <button
+              className={nodeButton}
+              onClick={() => setAction({ kind: "rename", node: selected })}
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+              {t("Rename")}
+            </button>
+          </div>
+          <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-[var(--console-muted)]">{t("Worker version")}</dt>
+              <dd className="mt-1 text-sm">v{selected.version}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--console-muted)]">{t("Last heartbeat")}</dt>
+              <dd className="mt-1 text-sm">
+                {selected.lastSeen
+                  ? new Date(selected.lastSeen).toLocaleString()
+                  : t("Not connected yet")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--console-muted)]">{t("Pending uploads")}</dt>
+              <dd className="mt-1 text-sm">
+                {selected.queue
+                  ? t("{0} pending batches · {1} MB", [
+                      selected.queue.batches,
+                      (selected.queue.bytes / 1048576).toFixed(1),
+                    ])
+                  : t("Queue status unavailable")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--console-muted)]">{t("Sync status")}</dt>
+              <dd className="mt-1 text-sm">
+                {query.isError ? t("Node status unavailable") : nodeStatus(selected, now)}
+              </dd>
+            </div>
+          </dl>
+          {selected.lastConfirmedAt && (
+            <p className="mt-4 text-xs text-[var(--console-muted)]">
+              {t("Last confirmed: {0}", [new Date(selected.lastConfirmedAt).toLocaleString()])}
+            </p>
+          )}
+          {selected.queue?.oldestAt && (
+            <p className="mt-2 text-xs text-[var(--console-muted)]">
+              {t("Oldest pending: {0}", [new Date(selected.queue.oldestAt).toLocaleString()])}
+            </p>
+          )}
+          {selected.error && (
+            <details className="mt-3 text-xs text-[var(--console-error)]">
+              <summary>{t("Error details")}</summary>
+              <p className="mt-2 break-words">{selected.error}</p>
+            </details>
+          )}
+          {selected.incompleteSessions > 0 && (
+            <p className="mt-3 text-sm text-[var(--console-error)]">
+              {t("{0} sessions need source content or a backup.", [selected.incompleteSessions])}
+            </p>
+          )}
+          {task && (
+            <p className="mt-3 text-sm">
+              {t("Rescan")}: {taskLabel(task.status)}
+              {task.progress?.error ? ` — ${task.progress.error}` : ""}
+            </p>
+          )}
+          {!selected.revoked && (
+            <div className="mt-5 flex flex-wrap justify-between gap-3 border-t border-[var(--console-border)] pt-4">
               <button
-                type="button"
-                className={button}
-                disabled={busy}
-                onClick={() => run(() => requestRescan([node.id], rescanAgents))}
+                className={nodeButton}
+                disabled={query.isError}
+                onClick={() => setAction({ kind: "rescan", nodes: [selected], all: false })}
               >
                 {t("Rescan")}
               </button>
               <button
-                type="button"
-                className={button}
-                disabled={busy}
-                onClick={() => setRevoking(!revoking)}
+                className={`${nodeButton} text-[var(--console-muted)]`}
+                disabled={query.isError}
+                onClick={() => setAction({ kind: "revoke", node: selected })}
               >
                 {t("Revoke access")}
               </button>
-            </>
+            </div>
           )}
-        </div>
-        {revoking && (
-          <div className="text-sm text-[var(--console-text)]">
-            <p>{t("Stop this node from uploading? Saved history will remain.")}</p>
-            <button
-              className={button}
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await updateNode(node.id, "revoke");
-                  setRevoking(false);
-                })
-              }
-            >
-              {t("Confirm revoke")}
-            </button>
-          </div>
-        )}
-      </div>
-    </li>
-  );
-}
-
-export function NodePanel({ onClose }: { onClose: () => void }) {
-  useLocale();
-  const nodes = useNodes();
-  const now = useNodeClock();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pairing, setPairing] = useState<{ token: string; expires: number } | null>(null);
-  const [source, setSource] = useState("");
-  const [rescanAgent, setRescanAgent] = useState("");
-  const rescanAgents = rescanAgent ? [rescanAgent] : [];
-  const sessions = useInfiniteQuery({
-    queryKey: [...queryKeys.nodeSessions, source],
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) => fetchSourceSessions(source || undefined, pageParam, signal),
-    getNextPageParam: (last) => last.nextCursor,
-    retry: false,
-  });
-  const run = (operation: () => Promise<unknown>) => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    void operation()
-      .then(() => nodes.refetch())
-      .catch((failure: unknown) =>
-        setError(failure instanceof Error ? failure.message : t("Unable to update node.")),
-      )
-      .finally(() => setBusy(false));
-  };
-  return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-[70] bg-[var(--scrim)]" />
-        <Dialog.Popup className="console-scrollbar fixed left-1/2 top-1/2 z-[71] max-h-[90vh] w-[min(96vw,1000px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] p-5 shadow-[var(--shadow-drawer)] focus:outline-none sm:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <Dialog.Title className="text-xl font-semibold text-[var(--console-text)]">
-                {t("Source nodes")}
-              </Dialog.Title>
-              <Dialog.Description className="mt-1 text-sm text-[var(--console-muted)]">
-                {t("Workers collect sessions. This Hub keeps your history.")}
-              </Dialog.Description>
-            </div>
-            <Dialog.Close aria-label={t("Close")} className={button}>
-              <X className="size-4" />
-            </Dialog.Close>
-          </div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--console-border)] pb-4">
-            <p className="text-sm text-[var(--console-text)]">
-              Hub v{nodes.data?.version ?? "…"} ·{" "}
-              {t("Minimum Worker version: {0}", [nodes.data?.minimumWorkerVersion ?? "…"])}
-            </p>
-            <div className="flex gap-2">
-              <button
-                className={button}
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    const value = await createPairingToken();
-                    setPairing({
-                      token: value.token,
-                      expires: Date.now() + value.expiresInSeconds * 1000,
-                    });
-                  })
-                }
-              >
-                {t("Pair a Worker")}
-              </button>
-              <button
-                className={button}
-                disabled={busy || !nodes.data?.nodes.some((node) => !node.revoked)}
-                onClick={() => run(() => requestRescan([], rescanAgents))}
-              >
-                {t("Rescan all Workers")}
-              </button>
-            </div>
-          </div>
-          <label className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[var(--console-muted)]">
-            {t("Rescan Agent")}
-            <NativeSelect
-              value={rescanAgent}
-              onChange={(event) => setRescanAgent(event.target.value)}
-            >
-              <option value="">{t("All agents")}</option>
-              {AGENT_CATALOG.map((agent) => (
-                <option key={agent.name} value={agent.name}>
-                  {agent.displayName}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          {pairing && (
-            <section className="mt-4 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-              <h3 className="font-semibold text-[var(--console-text)]">
-                {t("One-time pairing token")}
-              </h3>
-              <p className="mt-1 text-sm text-[var(--console-muted)]">
-                {t("Expires at {0}. Paste it into the Worker prompt.", [
-                  new Date(pairing.expires).toLocaleTimeString(),
+        </section>
+      )}
+      {query.data?.local && (
+        <p className="mt-4 text-xs text-[var(--console-muted)]">
+          {t("Local collection is disabled. Saved history remains available.")}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="mt-3 text-sm text-[var(--console-success)]">
+          {notice}
+        </p>
+      )}
+      <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--console-border)] pt-4 text-xs text-[var(--console-muted)]">
+        <div className="space-y-1">
+          <p>
+            {query.isError
+              ? t("Node status unavailable")
+              : t("{0}/{1} online", [
+                  active.filter((node) => isNodeOnline(node, now)).length,
+                  active.length,
                 ])}
-              </p>
-              <textarea
-                readOnly
-                aria-label={t("One-time pairing token")}
-                className={`${input} mt-2 w-full break-all`}
-                value={pairing.token}
-              />
-              <button
-                className={`${button} mt-2`}
-                onClick={() => {
-                  void writeToClipboard(pairing.token);
-                }}
-              >
-                {t("Copy token")}
-              </button>
-              <pre className="mt-3 overflow-x-auto text-xs text-[var(--console-text)]">
-                codesesh worker --hub {window.location.origin} --pair-token-stdin
-              </pre>
-            </section>
-          )}
-          {(error || nodes.isError) && (
-            <p role="alert" className="mt-4 text-sm text-[var(--console-error)]">
-              {error ?? t("Unable to load nodes. Check the Hub connection.")}
-            </p>
-          )}
-          {nodes.isPending && (
-            <p role="status" className="mt-4 text-[var(--console-muted)]">
-              {t("Loading...")}
-            </p>
-          )}
-          {nodes.data?.local && (
-            <div className="border-b border-[var(--console-border)] py-4">
-              <h3 className="font-semibold text-[var(--console-text)]">{t("Local source")}</h3>
-              <p className="mt-1 text-sm text-[var(--console-muted)]">
-                {nodes.data.local.enabled
-                  ? t("Local collection is enabled.")
-                  : t("Local collection is disabled. Saved history remains available.")}
-              </p>
-            </div>
-          )}
-          <ul className="pl-3 sm:pl-5">
-            {nodes.data?.nodes.map((node) => (
-              <NodeRow
-                key={node.id}
-                node={node}
-                now={now}
-                task={nodes.data?.tasks.find((task) => task.nodeId === node.id)}
-                busy={busy}
-                run={run}
-                onBrowse={() => setSource(node.id)}
-                rescanAgents={rescanAgents}
-              />
-            ))}
-          </ul>
-          {nodes.data?.nodes.length === 0 && (
-            <p className="py-6 text-sm text-[var(--console-muted)]">
-              {t("No Workers paired. Create a token to connect your first machine.")}
-            </p>
-          )}
-          <section className="mt-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-[var(--console-text)]">
-                {t("Sessions by source")}
-              </h2>
-              <NativeSelect
-                aria-label={t("Source node")}
-                value={source}
-                onChange={(event) => setSource(event.target.value)}
-              >
-                <option value="">{t("All sources")}</option>
-                {nodes.data?.local && <option value="local">{t("Local source")}</option>}
-                {nodes.data?.nodes.map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            {sessions.isError && (
-              <p role="alert" className="mt-3 text-sm text-[var(--console-error)]">
-                {t("Unable to load sessions.")}{" "}
-                <button
-                  className={button}
-                  onClick={() => {
-                    void sessions.refetch();
-                  }}
-                >
-                  {t("Retry")}
-                </button>
-              </p>
-            )}
-            {sessions.isPending && (
-              <p role="status" className="mt-3 text-sm text-[var(--console-muted)]">
-                {t("Loading recent sessions")}
-              </p>
-            )}
-            {sessions.isSuccess &&
-              sessions.data.pages.every((page) => page.sessions.length === 0) && (
-                <p className="mt-3 text-sm text-[var(--console-muted)]">{t("No sessions yet")}</p>
-              )}
-            <ul className="mt-3 divide-y divide-[var(--console-border)]">
-              {sessions.data?.pages
-                .flatMap((page) => page.sessions)
-                .map((session) => (
-                  <li key={sessionRoutePath(session.reference)}>
-                    <Link
-                      to={sessionRoutePath(session.reference)}
-                      onClick={onClose}
-                      className="block rounded-sm py-3 text-sm text-[var(--console-text)] hover:text-[var(--brand)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
-                    >
-                      <span>{session.display_title ?? session.title}</span>
-                      <span className="ml-2 text-xs text-[var(--console-muted)]">
-                        {session.reference.agentName} ·{" "}
-                        {nodes.data?.nodes.find(
-                          (node) => node.id === session.reference.sourceNodeId,
-                        )?.name ?? t("Local source")}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-            </ul>
-            {sessions.hasNextPage && (
-              <button
-                className={`${button} mt-3`}
-                disabled={sessions.isFetchingNextPage}
-                onClick={() => {
-                  void sessions.fetchNextPage();
-                }}
-              >
-                {t("Load more")}
-              </button>
-            )}
-          </section>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </p>
+          <p>{t("Minimum Worker version: {0}", [query.data?.minimumWorkerVersion ?? "…"])}</p>
+        </div>
+        <button
+          className={nodeButton}
+          disabled={!active.length || query.isError}
+          onClick={() => setAction({ kind: "rescan", nodes: active, all: true })}
+        >
+          {t("Rescan all Workers")}
+        </button>
+      </footer>
+      {action && (
+        <NodeActions
+          action={action}
+          onClose={() => setAction(null)}
+          onUpdated={() => {
+            setNotice(action.kind === "rescan" ? t("Rescan requested.") : t("Node updated."));
+            void query.refetch();
+          }}
+        />
+      )}
+    </NodeDialog>
   );
 }
