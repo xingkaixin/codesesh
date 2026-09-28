@@ -66,8 +66,6 @@ pub enum Role {
     Hub {
         #[arg(value_enum)]
         action: Option<crate::service::Action>,
-        #[arg(long)]
-        scan_local: bool,
         /// Rotate the data epoch after restoring a stopped Hub backup.
         #[arg(long)]
         recover_data: bool,

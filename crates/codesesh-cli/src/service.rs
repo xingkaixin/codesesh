@@ -318,17 +318,6 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
             "collector.lock"
         },
     )?;
-    let collector_lock = if matches!(
-        &configured.command,
-        Some(crate::options::Role::Hub {
-            scan_local: true,
-            ..
-        })
-    ) {
-        Some(crate::node_identity::lock(home, "collector.lock")?)
-    } else {
-        None
-    };
     let config = Configuration {
         version: 1,
         args: configured,
@@ -364,7 +353,6 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    drop(collector_lock);
     drop(role_lock);
     native::start(home, role).await?;
     write_private(&path(home, role, "enabled"), b"enabled")?;

@@ -401,7 +401,7 @@ async fn modes_are_exclusive_and_standalone_reuses_its_local_worker_identity() {
         .await
         .unwrap();
     let reference = before["sessions"][0]["reference"].clone();
-    assert!(reference["sourceNodeId"].is_string());
+    assert!(reference["sourceNodeId"].is_null() || reference["sourceNodeId"] == "local");
     let blocked = command(home.path())
         .stderr(Stdio::piped())
         .args(["--json", "--days", "0"])
@@ -450,4 +450,132 @@ async fn modes_are_exclusive_and_standalone_reuses_its_local_worker_identity() {
     let after: Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(after["sessions"].as_array().unwrap().len(), 1);
     assert_eq!(after["sessions"][0]["reference"], reference);
+}
+
+#[tokio::test]
+async fn standalone_history_is_continued_by_a_separate_local_worker() {
+    let home = tempfile::tempdir().unwrap();
+    source(home.path(), "same", "Original local conversation");
+    let client = reqwest::Client::new();
+    let (standalone, url, token) = server(home.path(), 0, false);
+    wait_for_sessions(&client, &url, &token, 1).await;
+    client
+        .put(url.join("api/bookmarks").unwrap())
+        .bearer_auth(&token)
+        .json(&json!({"reference":{"agentName":"codex","sessionId":"rollout-same"}}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    client
+        .put(url.join("api/session-aliases/codex/rollout-same").unwrap())
+        .bearer_auth(&token)
+        .json(&json!({"alias":"Keep my title"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    drop(standalone);
+    let (_hub, url, token) = server(home.path(), 0, true);
+    source(home.path(), "new", "Created after Hub started");
+    tokio::time::sleep(Duration::from_millis(750)).await;
+    wait_for_sessions(&client, &url, &token, 1).await;
+    let pair: Value = client
+        .post(url.join("api/nodes/pairing-token").unwrap())
+        .bearer_auth(&token)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let _worker = Process(
+        command(home.path())
+            .args([
+                "worker",
+                "--hub",
+                url.as_str(),
+                "--pair-token",
+                pair["token"].as_str().unwrap(),
+                "--agent",
+                "codex",
+            ])
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_sessions(&client, &url, &token, 2).await;
+    let nodes: Value = client
+        .get(url.join("api/nodes").unwrap())
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(nodes["local"].is_null());
+    assert_eq!(nodes["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(nodes["nodes"][0]["id"], "local");
+    let sessions: Value = client
+        .get(url.join("api/sessions?days=0").unwrap())
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let original = sessions["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|head| head["reference"]["sessionId"] == "rollout-same")
+        .unwrap_or_else(|| panic!("Missing original: {sessions}"));
+    assert_eq!(original["display_title"], "Keep my title");
+    let bookmarks: Value = client
+        .get(url.join("api/bookmarks").unwrap())
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(bookmarks["bookmarks"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        bookmarks["bookmarks"][0]["reference"]["sessionId"],
+        "rollout-same"
+    );
+    source(
+        home.path(),
+        "same",
+        "Original conversation with changed content",
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let found: Value = client
+            .get(url.join("api/search?q=changed&days=0").unwrap())
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if found["results"]
+            .as_array()
+            .is_some_and(|results| results.len() == 1)
+        {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Updated local content was not received: {found}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    wait_for_sessions(&client, &url, &token, 2).await;
 }

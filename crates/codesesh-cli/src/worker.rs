@@ -84,43 +84,6 @@ pub async fn run(
         agents: names,
         error: None,
     };
-    if collector.store.history_choice()?.is_none() {
-        let archive = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
-        let choice = if archive.exists() {
-            history.context("Existing standalone history found. Choose --history import to upload it, or --history ignore to leave it untouched. Neither option deletes the original database.")?
-        } else {
-            crate::options::History::Ignore
-        };
-        if matches!(choice, crate::options::History::Import) {
-            let mut store = collector.store;
-            collector.store = tokio::task::spawn_blocking(move || -> Result<WorkerStore> {
-                let cache = crate::cache_path::open(&archive)?;
-                for head in cache.snapshot()? {
-                    if head.reference.source_node_id
-                        != codesesh_core::contract::LOCAL_SOURCE_NODE_ID
-                    {
-                        continue;
-                    }
-                    if let Some(captured) = cache.capture_session(&head.reference)? {
-                        let mut batch = codesesh_core::runtime::ScanBatch {
-                            sessions: vec![captured.into_parsed()?],
-                            removed: Vec::new(),
-                            checkpoint: None,
-                            complete: false,
-                            on_reject: None,
-                            pricing: None,
-                        };
-                        store.save_batch(&head.reference.agent_name, &mut batch)?;
-                    }
-                }
-                store.finish_history_import("import")?;
-                Ok(store)
-            })
-            .await??;
-        } else {
-            collector.store.finish_history_import("ignore")?;
-        }
-    }
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         "x-codesesh-worker-instance",
@@ -169,7 +132,32 @@ pub async fn run(
             } else {
                 pair_token.map(str::to_owned).or_else(||std::env::var("CODESESH_PAIRING_TOKEN").ok()).context("Pairing required: create a token in the Hub, then use --pair-token-stdin or CODESESH_PAIRING_TOKEN")?
             };
-            let response=client.post(origin.join("api/worker/pair")?).json(&serde_json::json!({"token":token,"name":name.unwrap_or("Worker"),"hello":collector.hello()?})).send().await?;
+            let root = codesesh_core::app_paths::root(&environment.home);
+            let local_identity =
+                if root.join("local-worker-key").exists() && root.join("hub-identity").exists() {
+                    Some((
+                        std::fs::read_to_string(root.join("hub-identity"))?,
+                        std::fs::read_to_string(root.join("local-worker-key"))?,
+                    ))
+                } else {
+                    None
+                };
+            let stream = collector.store.stream_id()?;
+            let mut request = client.post(origin.join("api/worker/pair")?).json(&serde_json::json!({"token":token,"name":name.unwrap_or("Worker"),"hello":collector.hello()?}));
+            if let Some((hub_id, key)) = &local_identity {
+                request = request
+                    .header("x-codesesh-local-hub-id", hub_id.trim())
+                    .header(
+                        "x-codesesh-local-proof",
+                        codesesh_core::sync::local_worker_proof(
+                            key,
+                            hub_id.trim(),
+                            &token,
+                            &stream,
+                        ),
+                    );
+            }
+            let response = request.send().await?;
             ensure!(
                 response.status().is_success(),
                 "Hub rejected pairing (HTTP {}): {}",
@@ -177,6 +165,13 @@ pub async fn run(
                 response.text().await?
             );
             let grant: PairingGrant = response.json().await?;
+            if let Ok(identity) = std::fs::read_to_string(root.join("hub-identity")) {
+                ensure!(
+                    identity.trim() != grant.hub_id
+                        || grant.node_id == codesesh_core::contract::LOCAL_SOURCE_NODE_ID,
+                    "This machine's Hub did not confirm the local source. Restart Hub with this version before pairing again; no history was uploaded."
+                );
+            }
             if existing.is_some() {
                 collector.store.rebind(origin.as_str(), &grant)?;
             } else {
@@ -186,6 +181,74 @@ pub async fn run(
         }
     };
     crate::service::paired();
+    if grant.node_id == codesesh_core::contract::LOCAL_SOURCE_NODE_ID {
+        let root = codesesh_core::app_paths::root(&environment.home);
+        let identity = std::fs::read_to_string(root.join("hub-identity"))
+            .context("Local Worker requires this Hub's installation identity")?;
+        ensure!(
+            identity.trim() == grant.hub_id,
+            "Hub returned a local source belonging to another installation"
+        );
+        if collector.store.next_upload()?.is_none() && collector.store.recovery()?.is_none() {
+            eprintln!(
+                "Same-machine Hub verified; adopting existing local scan progress (no history import)."
+            );
+            crate::service::report(
+                "starting",
+                "Adopting existing local scan progress",
+                None,
+                None,
+            );
+            let archive = root.join("codesesh.db");
+            let mut store = collector.store;
+            let local_grant = grant.clone();
+            collector.store = tokio::task::spawn_blocking(move || -> Result<WorkerStore> {
+                let cache = codesesh_core::storage::Cache::open_read_only(&archive)?;
+                if let Some(count) = store.adopt_local_history(&cache, &local_grant)? {
+                    eprintln!("Local Worker ready: {count} existing sessions retained under the same source.");
+                }
+                Ok(store)
+            })
+            .await??;
+        }
+    } else if collector.store.history_choice()?.is_none() {
+        let archive = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
+        let choice = if archive.exists() {
+            history.context("Existing standalone history found. Worker is paired; rerun without a pairing token and choose --history import to upload it, or --history ignore to leave it untouched. Neither option deletes the original database.")?
+        } else {
+            crate::options::History::Ignore
+        };
+        if matches!(choice, crate::options::History::Import) {
+            let mut store = collector.store;
+            collector.store = tokio::task::spawn_blocking(move || -> Result<WorkerStore> {
+                let cache = crate::cache_path::open(&archive)?;
+                for head in cache.snapshot()? {
+                    if head.reference.source_node_id
+                        != codesesh_core::contract::LOCAL_SOURCE_NODE_ID
+                    {
+                        continue;
+                    }
+                    if let Some(captured) = cache.capture_session(&head.reference)? {
+                        let mut batch = codesesh_core::runtime::ScanBatch {
+                            sessions: vec![captured.into_parsed()?],
+                            removed: Vec::new(),
+                            checkpoint: None,
+                            complete: false,
+                            on_reject: None,
+                            pricing: None,
+                        };
+                        store.save_batch(&head.reference.agent_name, &mut batch)?;
+                    }
+                }
+                store.finish_history_import("import")?;
+                Ok(store)
+            })
+            .await??;
+        } else {
+            collector.store.finish_history_import("ignore")?;
+        }
+    }
+
     eprintln!("Worker {} paired with {}", grant.node_id, origin);
     crate::service::report("starting", "Worker paired; connecting to Hub", None, None);
     let mut next_status = Instant::now();

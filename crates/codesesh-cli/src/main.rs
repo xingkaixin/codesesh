@@ -127,13 +127,7 @@ async fn run() -> Result<()> {
         .await;
     }
     let hub_enabled = matches!(args.command, Some(options::Role::Hub { .. }));
-    let scan_local = !matches!(
-        args.command,
-        Some(options::Role::Hub {
-            scan_local: false,
-            ..
-        })
-    );
+    let scan_local = !hub_enabled;
     let _hub_lock = (!args.json)
         .then(|| node_identity::lock(&environment.home, "hub.lock"))
         .transpose()?;
@@ -278,6 +272,7 @@ async fn run() -> Result<()> {
     };
     if hub_enabled {
         let hub_id = node_identity::hub_id(&environment.home)?;
+        let local_key = node_identity::local_worker_key(&environment.home)?;
         let recover = matches!(
             args.command,
             Some(options::Role::Hub {
@@ -288,6 +283,7 @@ async fn run() -> Result<()> {
         runtime
             .hub_control(move |cache| {
                 cache.initialize_hub(&hub_id)?;
+                cache.configure_local_worker(&local_key)?;
                 if recover {
                     cache.rotate_data_epoch()?;
                 }

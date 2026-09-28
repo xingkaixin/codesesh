@@ -59,7 +59,22 @@ pub struct Pair {
     hello: WorkerHello,
 }
 
-pub async fn pair(AxumState(state): AxumState<Arc<State>>, Json(request): Json<Pair>) -> Response {
+pub async fn pair(
+    AxumState(state): AxumState<Arc<State>>,
+    headers: HeaderMap,
+    Json(request): Json<Pair>,
+) -> Response {
+    let local_hub_id = headers
+        .get("x-codesesh-local-hub-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let local_proof = headers
+        .get("x-codesesh-local-proof")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    if local_proof.is_some() != local_hub_id.is_some() {
+        return error(StatusCode::BAD_REQUEST, "Incomplete local Worker proof");
+    }
     if let Some(response) = compatibility(
         &request.hello.version,
         request.hello.protocol_version,
@@ -70,11 +85,12 @@ pub async fn pair(AxumState(state): AxumState<Arc<State>>, Json(request): Json<P
     match state
         .runtime
         .hub_control(move |cache| {
-            cache.pair_worker(
+            cache.pair_worker_with_origin(
                 &request.token,
                 &request.name,
                 &request.hello.version,
                 &request.hello.stream_id,
+                local_hub_id.as_deref().zip(local_proof.as_deref()),
             )
         })
         .await
@@ -174,9 +190,9 @@ pub async fn nodes(AxumState(state): AxumState<Arc<State>>) -> Response {
         .await
     {
         Ok((nodes, tasks)) => Json(codesesh_core::sync::HubNodes {
+            local: local.filter(|_| !nodes.iter().any(|node| node.id == "local")),
             nodes,
             tasks,
-            local,
             version: env!("CARGO_PKG_VERSION").into(),
             minimum_worker_version: MINIMUM_WORKER_VERSION.into(),
         })

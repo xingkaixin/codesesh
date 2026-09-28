@@ -66,3 +66,24 @@ pub fn mode_lock(home: &Path, distributed: bool) -> Result<File> {
     own.try_lock_shared()?;
     Ok(own)
 }
+
+pub fn local_worker_key(home: &Path) -> Result<String> {
+    let path = codesesh_core::app_paths::root(home).join("local-worker-key");
+    if path.exists() {
+        let value = std::fs::read_to_string(&path)?;
+        anyhow::ensure!(
+            value.len() == 64,
+            "Invalid local Worker key; preserve the file for recovery"
+        );
+        return Ok(value);
+    }
+    let value = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    let mut file = private_file(&path)?.create_new(true).open(path)?;
+    file.write_all(value.as_bytes())?;
+    file.sync_all()?;
+    Ok(value)
+}
