@@ -23,7 +23,7 @@ impl WorkerStore {
             hub_id == grant.hub_id,
             "Local Hub belongs to another installation"
         );
-        if epoch != grant.epoch {
+        if epoch != grant.epoch || self.history_choice()?.as_deref() == Some("local") {
             return Ok(None);
         }
         ensure!(

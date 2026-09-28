@@ -523,6 +523,23 @@ fn local_pairing_requires_bound_proof_and_preserves_existing_history() {
     let head = cache.head(&reference).unwrap().unwrap();
     assert_eq!(head.title, "Updated locally");
     assert_eq!(head.project_identity, project);
+    drop(worker);
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    assert_eq!(worker.adopt_local_history(&cache, &grant).unwrap(), None);
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert_eq!(worker.queue_status().unwrap().batches, 0);
+    batch.sessions[0].head.title = "Changed after restart".into();
+    worker.save_batch("codex", &mut batch).unwrap();
+    let pending = worker.queue_status().unwrap().batches;
+    assert!(pending > 0);
+    assert_eq!(worker.adopt_local_history(&cache, &grant).unwrap(), None);
+    assert_eq!(worker.queue_status().unwrap().batches, pending);
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+    assert_eq!(
+        cache.head(&reference).unwrap().unwrap().title,
+        "Changed after restart"
+    );
     let token = cache.create_pairing_token().unwrap();
     let remote = cache
         .pair_worker(&token, "Remote", "1.1.1", &other_stream)
