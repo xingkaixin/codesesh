@@ -153,11 +153,8 @@ fn display(role: ServiceRole, report: &Report) {
             done as f64 * 100.0 / total.max(1) as f64
         );
     }
-    if let Some(url) = &report.url
-        && let Ok(mut url) = url::Url::parse(url)
-    {
-        url.set_query(None);
-        println!("Console: {url} (use codesesh hub open to sign in)");
+    if let Some(url) = &report.url {
+        println!("Console: {url}");
     }
 }
 
