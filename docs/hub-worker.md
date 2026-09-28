@@ -51,7 +51,7 @@ codesesh worker stop
 
 Hub Web 服务在数据库初始化后才就绪并尝试打开浏览器；浏览器启动失败会输出原因，控制台地址仍可使用。`start` 和 `status` 输出包含访问 token 的完整控制台链接，可直接点击。`--no-open` 禁止自动打开，`hub open` 可稍后打开已运行后台 Hub。进程自动重启不会重复弹出浏览器。
 
-`restart` 复用保存的配置；停止后不带配置参数的 `hub start` / `worker start` 也复用配置。修改服务配置时先 `stop`，再用完整参数执行 `start`。升级可执行文件后，同样执行 `stop` 和新二进制的 `start`，重新注册路径。
+`restart` 复用保存的后台配置；停止后不带配置参数的 `hub start` / `worker start` 也复用配置。Worker 之前只在前台配对、尚无后台配置时，`worker start` 和 `worker restart` 会自动复用 `worker.db` 中的 Hub 地址与配对凭据，创建后台配置，不必重新配对。旧的前台命令参数没有保存；首次转后台时按本次参数和默认值配置采集范围，需限制 Agent 时显式传 `--agent`。修改服务配置时先 `stop`，再用完整参数执行 `start`。升级可执行文件后，同样执行 `stop` 和新二进制的 `start`，重新注册路径。
 
 | 平台 | 当前实现 | 运行边界 |
 | --- | --- | --- |

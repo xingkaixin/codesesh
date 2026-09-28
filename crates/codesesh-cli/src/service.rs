@@ -246,6 +246,15 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
         return Ok(true);
     }
     let _mode = crate::node_identity::mode_lock(home, true)?;
+    let role_lock = crate::node_identity::lock(
+        home,
+        if role == ServiceRole::Hub {
+            "hub.lock"
+        } else {
+            "collector.lock"
+        },
+    )?;
+
     let default_hub_start = {
         use clap::Parser;
         let mut defaults = crate::options::Args::parse_from(["codesesh", "hub", "start"]);
@@ -258,7 +267,11 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
             &args.command,
             Some(crate::options::Role::Worker { hub: None, .. })
         ) {
-        Some(load(home, role)?)
+        if role == ServiceRole::Worker && !path(home, role, "json").exists() {
+            None
+        } else {
+            Some(load(home, role)?)
+        }
     } else {
         None
     };
@@ -285,11 +298,23 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
         }
         crate::options::Role::Worker {
             action,
+            hub,
             pair_token,
             pair_token_stdin,
             ..
         } => {
             *action = None;
+            if hub.is_none() {
+                let worker_path = codesesh_core::app_paths::root(home).join("worker.db");
+                let binding = if worker_path.exists() {
+                    codesesh_core::sync::WorkerStore::open(&worker_path)?.binding()?
+                } else {
+                    None
+                };
+                let (origin, _) = binding.context("Worker has not been paired yet. Start with: codesesh worker start --hub <Hub URL> --pair-token-stdin")?;
+                eprintln!("Using existing Worker pairing: {origin}");
+                *hub = Some(origin);
+            }
             pairing = pair_token
                 .take()
                 .or_else(|| std::env::var("CODESESH_PAIRING_TOKEN").ok());
@@ -310,14 +335,6 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
     configured.service_run = None;
     configured.no_open = true;
     configured.plan()?;
-    let role_lock = crate::node_identity::lock(
-        home,
-        if role == ServiceRole::Hub {
-            "hub.lock"
-        } else {
-            "collector.lock"
-        },
-    )?;
     let config = Configuration {
         version: 1,
         args: configured,
