@@ -1,3 +1,4 @@
+import { NativeSelect } from "../ui/native-select";
 import { useNodes } from "../../hooks/useNodes";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
@@ -14,9 +15,8 @@ export function SourceFilter({
   if (!nodes.data) return null;
   return (
     <label className="flex items-center gap-2 text-xs text-[var(--console-muted)]">
-      {t("Source node")}
-      <select
-        className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1.5 text-sm text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+      <span className="shrink-0">{t("Source node")}</span>
+      <NativeSelect
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value || undefined)}
       >
@@ -27,7 +27,7 @@ export function SourceFilter({
             {node.name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </label>
   );
 }

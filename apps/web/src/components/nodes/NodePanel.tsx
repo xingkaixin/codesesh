@@ -16,6 +16,7 @@ import {
 } from "../../lib/api";
 import { queryKeys } from "../../lib/query-keys";
 import { writeToClipboard } from "../../lib/clipboard";
+import { NativeSelect } from "../ui/native-select";
 import { X } from "../ui/icons";
 
 const button =
@@ -287,8 +288,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
           </div>
           <label className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[var(--console-muted)]">
             {t("Rescan Agent")}
-            <select
-              className={input}
+            <NativeSelect
               value={rescanAgent}
               onChange={(event) => setRescanAgent(event.target.value)}
             >
@@ -298,7 +298,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                   {agent.displayName}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           {pairing && (
             <section className="mt-4 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
@@ -373,8 +373,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
               <h2 className="text-base font-semibold text-[var(--console-text)]">
                 {t("Sessions by source")}
               </h2>
-              <select
-                className={input}
+              <NativeSelect
                 aria-label={t("Source node")}
                 value={source}
                 onChange={(event) => setSource(event.target.value)}
@@ -386,7 +385,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                     {node.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             {sessions.isError && (
               <p role="alert" className="mt-3 text-sm text-[var(--console-error)]">
