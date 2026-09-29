@@ -157,7 +157,8 @@ fn validate(state: &State, request: &Request) -> Result<(), (StatusCode, &'stati
         })
         .unwrap_or("");
     if !worker_route
-        && (token.is_empty() || !bool::from(token.as_bytes().ct_eq(state.options.token.as_bytes())))
+        && let Some(expected) = &state.options.token
+        && (token.is_empty() || !bool::from(token.as_bytes().ct_eq(expected.as_bytes())))
     {
         return Err((StatusCode::UNAUTHORIZED, "API access token required"));
     }

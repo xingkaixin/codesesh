@@ -3,25 +3,25 @@ import { expect, test as base, type BrowserContext, type Page } from "playwright
 
 const ACCESS_TOKEN_STORAGE_KEY = "codesesh:remote-access-token";
 
-async function readServerAccessToken(): Promise<string> {
+async function readServerAccessToken(): Promise<string | null> {
   const path = process.env.CODESESH_E2E_STARTUP_URL_PATH;
   if (!path) throw new Error("Missing CODESESH_E2E_STARTUP_URL_PATH");
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
-      const token = new URL(await readFile(path, "utf8")).searchParams.get("access_token");
-      if (token) return token;
+      return new URL(await readFile(path, "utf8")).searchParams.get("access_token");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  throw new Error("Timed out waiting for the CodeSesh startup access token");
+  throw new Error("Timed out waiting for the CodeSesh startup URL");
 }
 
 export async function configureApiAccess(context: BrowserContext): Promise<void> {
   const token = await readServerAccessToken();
+  if (!token) return;
   await context.setExtraHTTPHeaders({ Authorization: `Bearer ${token}` });
   await context.addInitScript(({ key, value }) => window.sessionStorage.setItem(key, value), {
     key: ACCESS_TOKEN_STORAGE_KEY,

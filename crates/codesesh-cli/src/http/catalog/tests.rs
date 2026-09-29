@@ -80,7 +80,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         codesesh_core::pricing::PricingController::load(dir.path()),
         Some(StateStore::memory().unwrap()),
         super::super::Options {
-            token: "test".into(),
+            token: Some("test".into()),
             hostname: "127.0.0.1".into(),
             port: 4521,
             tls: false,

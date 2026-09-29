@@ -46,9 +46,16 @@ fn server(home: &Path, port: u16, hub_mode: bool) -> (Process, url::Url, String)
         cmd.arg("hub");
     }
     let mut process = Process(
-        cmd.args(["--no-open", "--port", &port.to_string(), "--days", "0"])
-            .spawn()
-            .unwrap(),
+        cmd.args([
+            "--auth",
+            "--no-open",
+            "--port",
+            &port.to_string(),
+            "--days",
+            "0",
+        ])
+        .spawn()
+        .unwrap(),
     );
     let stdout = process.0.stdout.take().unwrap();
     let (send, receive) = std::sync::mpsc::channel();

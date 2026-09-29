@@ -22,7 +22,6 @@ child.stdout.on("data", (chunk) => {
   output = `${output}${chunk}`.slice(-8_192);
   for (const match of output.matchAll(/https?:\/\/\S+/g)) {
     const url = new URL(match[0]);
-    if (!url.searchParams.has("access_token")) continue;
     writeFileSync(startupUrlPath, url.href, { mode: 0o600 });
     captured = true;
     break;

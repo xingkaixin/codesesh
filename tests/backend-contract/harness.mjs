@@ -199,10 +199,10 @@ export async function runCli(fixture, args, command) {
   }
 }
 
-export async function startServer(fixture, command) {
+export async function startServer(fixture, command, flags = []) {
   const process = launch(
     fixture,
-    ["--agent", "codex", "--days", "0", "--noOpen", "--host", "127.0.0.1", "--port", "0"],
+    ["--agent", "codex", "--days", "0", "--noOpen", "--host", "127.0.0.1", "--port", "0", ...flags],
     command,
   );
   try {
@@ -210,7 +210,7 @@ export async function startServer(fixture, command) {
       assert.equal(process.child.exitCode, null, JSON.stringify(process.output()));
       return [...process.output().stdout.matchAll(/https?:\/\/\S+/g)]
         .map((match) => new URL(match[0]))
-        .find((url) => url.searchParams.has("access_token"));
+        .find((url) => ["http:", "https:"].includes(url.protocol));
     }, "server startup URL");
     startup.hostname = "127.0.0.1";
     const request = (path, options = {}) =>
@@ -218,7 +218,9 @@ export async function startServer(fixture, command) {
         ...options,
         signal: options.signal ?? AbortSignal.timeout(10_000),
         headers: {
-          Authorization: `Bearer ${startup.searchParams.get("access_token")}`,
+          ...(startup.searchParams.has("access_token")
+            ? { Authorization: `Bearer ${startup.searchParams.get("access_token")}` }
+            : {}),
           "Content-Type": "application/json",
           ...options.headers,
         },

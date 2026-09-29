@@ -227,7 +227,7 @@ for (const scenario of [
       await stop(server);
       server = await startServer(fixture, rust);
       assert.deepEqual(referenceSessionDetail(await readJson(server, DETAIL_PATH)), expectedDetail);
-      assert.equal((await fetch(`${server.origin}/api/sessions`)).status, 401);
+      assert.equal((await fetch(`${server.origin}/api/sessions`)).status, 200);
       const rejectedHost = await new Promise((resolve, reject) => {
         const req = request(
           `${server.origin}/`,
