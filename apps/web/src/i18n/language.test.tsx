@@ -137,6 +137,14 @@ describe("message catalog", () => {
     }
   });
 
+  it("uses deferred feature translations without changing global messages", () => {
+    const feature = { "Connected to {0}": ["已连接 {0}", "{0} に接続済み"] } as const;
+    expect(t("Connected to {0}", ["Worker"], "zh-CN", feature)).toBe("已连接 Worker");
+    expect(t("Connected to {0}", ["Worker"], "ja", feature)).toBe("Worker に接続済み");
+    expect(t("Dashboard", [], "zh-CN", feature)).toBe("概览");
+    expect(t("Connected to {0}", ["Worker"], "zh-CN")).toBe("Connected to Worker");
+  });
+
   it("interpolates user data literally, without translating or recursively substituting it", () => {
     expect(t('Searching for "{0}"', ["Dashboard <script>{1}</script>"], "zh-CN")).toBe(
       "正在搜索“Dashboard <script>{1}</script>”",

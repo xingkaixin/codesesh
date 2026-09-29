@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppConfig } from "@codesesh/contract";
 import { createPairingToken, fetchPairingStatus } from "../../lib/api";
 import { useNodeClock } from "../../hooks/useNodes";
-import { t } from "../../i18n/translate";
+import { t } from "./pairing-messages";
 import { NativeSelect } from "../ui/native-select";
 import { nodeButton } from "./NodeDialog";
 import { CopyButton } from "./CopyButton";
