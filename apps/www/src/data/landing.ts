@@ -348,7 +348,7 @@ export const copy = {
         {
           question: "CodeSesh 会上传本地 AI 会话数据吗？",
           answer:
-            "不会上传会话数据。CodeSesh 在本机使用 SQLite 索引，并通过 localhost 上的 Web UI 浏览历史。会话内容、文件路径、Token 统计和成本记录留在本机；产品不要求账号、云同步或会话遥测。",
+            "默认单机模式下，会话数据留在本机，通过本地 SQLite 索引和 Web UI 浏览。可选的 Worker 模式会将会话正文、文件路径、用量和成本等元数据发送到你配置的自托管 Hub，不传输附件或来源文件。无需账号，不采集会话遥测。",
         },
         {
           question: "如何安装和启动 CodeSesh？",
@@ -560,7 +560,7 @@ export const copy = {
         {
           question: "Does CodeSesh upload local AI session data?",
           answer:
-            "No session data is uploaded. CodeSesh uses a local SQLite index and a Web UI served on localhost. Session content, file paths, token statistics, and recorded costs remain on the computer. The product requires no account, cloud sync, or session telemetry.",
+            "In default standalone mode, session data stays on your computer in a local SQLite index. Optional Workers send session content and metadata, including paths, usage, and costs, to your configured self-hosted Hub. Attachments and source files are not transferred. No account is required, and no session telemetry is collected.",
         },
         {
           question: "How do I install and start CodeSesh?",
@@ -782,7 +782,7 @@ export const copy = {
         {
           question: "CodeSeshはローカルのAIセッションデータをアップロードしますか？",
           answer:
-            "いいえ。CodeSeshはローカルSQLiteインデックスとlocalhostで動作するWeb UIを使用します。セッション内容、ファイルパス、トークン統計、記録済みコストは端末内に保持されます。アカウント、クラウド同期、セッションのテレメトリは必要ありません。",
+            "既定の単体モードでは、セッションデータは端末内のSQLiteインデックスに保持されます。任意のWorkerモードでは、本文、パス、使用量、コストなどのメタデータを、設定したセルフホストのHubへ送信します。添付ファイルや元のファイルは転送しません。アカウントは不要で、セッションのテレメトリも収集しません。",
         },
         {
           question: "CodeSeshをインストールして起動するには？",
