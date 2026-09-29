@@ -1,6 +1,8 @@
+mod scanning;
+
 use anyhow::{Context, Result, ensure};
 use codesesh_core::{
-    discovery::{self, AgentScanner, PathEnvironment},
+    discovery::{self, PathEnvironment},
     sync::{
         HubHello, PAYLOAD_VERSION, PROTOCOL_VERSION, PairingGrant, Receipt, Upload, WorkerHello,
         WorkerStore,
@@ -11,25 +13,15 @@ use std::time::{Duration, Instant};
 
 struct Collector {
     store: WorkerStore,
-    scanners: Vec<AgentScanner>,
+    scanning: scanning::Scanning,
     agents: Vec<String>,
-    error: Option<String>,
 }
 
 impl Collector {
-    fn scan(&mut self) -> Result<()> {
-        for (scanner, agent) in self.scanners.iter_mut().zip(&self.agents) {
-            let checkpoint = self.store.checkpoint(agent)?;
-            let mut batch = scanner.refresh_with_checkpoint(None, checkpoint.as_ref())?;
-            self.store.save_batch(agent, &mut batch)?;
-        }
-        Ok(())
-    }
-
     fn hello(&self) -> Result<WorkerHello> {
         Ok(WorkerHello {
             collection_complete: self.store.collection_complete(&self.agents)?,
-            collection_error: self.error.clone().or(self.store.pause_reason()?),
+            collection_error: self.scanning.error().or(self.store.pause_reason()?),
             epoch: self.store.binding()?.map(|(_, grant)| grant.epoch),
             confirmed_sequence: self.store.confirmed_sequence()?,
             version: env!("CARGO_PKG_VERSION").into(),
@@ -73,16 +65,11 @@ pub async fn run(
     let _lock = crate::node_identity::lock(&environment.home, "collector.lock")?;
     let path = codesesh_core::app_paths::root(&environment.home).join("worker.db");
     let sources = discovery::selected_sources(environment, agents);
-    let restart_sources = sources.clone();
     let names = sources.iter().map(|s| s.agent.clone()).collect();
     let mut collector = Collector {
         store: WorkerStore::open(&path)?,
-        scanners: sources
-            .into_iter()
-            .map(|source| AgentScanner::for_worker(source, path.clone()))
-            .collect(),
+        scanning: scanning::Scanning::new(sources, path.clone()),
         agents: names,
-        error: None,
     };
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
@@ -256,7 +243,6 @@ pub async fn run(
     crate::service::report("starting", "Worker paired; connecting to Hub", None, None);
     let mut next_status = Instant::now();
     let mut next_hello = Instant::now();
-    let mut next_scan = Instant::now();
     let mut next_upload = Instant::now();
     let mut paused = collector.store.pause_reason()?.is_some();
     let mut online = false;
@@ -341,6 +327,7 @@ pub async fn run(
                             || hello.confirmed_sequence < collector.store.confirmed_sequence()?
                             || collector.store.recovery()?.is_some())
                     {
+                        collector.scanning.reset();
                         collector.store.prepare_recovery(&hello.epoch)?;
                         next_hello = Instant::now();
                         online = false;
@@ -351,12 +338,7 @@ pub async fn run(
                         && let Some(task) = &hello.rescan
                         && collector.store.begin_rescan(task, &collector.agents)?
                     {
-                        collector.scanners = restart_sources
-                            .iter()
-                            .cloned()
-                            .map(|source| AgentScanner::for_worker(source, path.clone()))
-                            .collect();
-                        next_scan = Instant::now();
+                        collector.scanning.reset();
                     }
                     paused = hello.error.is_some();
                     collector
@@ -397,24 +379,10 @@ pub async fn run(
                 }
             }
         }
-        if !paused && Instant::now() >= next_scan {
-            let (returned, result) = tokio::task::spawn_blocking(move || {
-                let result = collector.scan();
-                (collector, result)
-            })
+        collector
+            .scanning
+            .tick(&mut collector.store, paused)
             .await?;
-            collector = returned;
-            collector.error = result.as_ref().err().map(|error| {
-                format!("SOURCE_OR_STORAGE_ERROR: {error:#}")
-                    .chars()
-                    .take(2048)
-                    .collect()
-            });
-            if let Err(error) = result {
-                eprintln!("Worker scan failed; progress retained: {error:#}");
-            }
-            next_scan = Instant::now() + Duration::from_secs(5);
-        }
         if online
             && Instant::now() >= next_upload
             && let Some(pending) = collector.store.next_upload()?
