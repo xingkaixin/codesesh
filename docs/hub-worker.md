@@ -45,7 +45,14 @@ codesesh worker restart
 codesesh worker stop
 ```
 
-`start` 注册当前用户的后台任务，保存当前可执行文件路径、工作目录、参数和允许的来源环境变量。配对令牌独立临时保存，配对成功后删除，不写入服务参数文件。后台日志在 `~/.codesesh/services/hub.log` 或 `worker.log`。迁移、初始化失败可通过 `status` 查看最后一次退出原因。
+`start` 注册当前用户的后台任务，保存当前可执行文件路径、工作目录、参数和允许的来源环境变量。配对令牌独立临时保存，配对成功后删除，不写入服务参数文件。迁移、初始化失败可通过 `status` 查看最后一次退出原因。
+
+`start` 和 `status` 会显示两类日志的位置：
+
+- `Service stdout/stderr`：`~/.codesesh/services/hub.log` 或 `worker.log`，收集后台进程的标准输出和标准错误，主要包含启动提示、配对信息和部分错误。正常运行时内容较少是预期行为。
+- `Application logs`：默认在 `~/.codesesh/logs/`，保存应用 logger 写入的结构化日志。Hub 和 Worker 都使用 `codesesh-<PID>-<运行ID>-active.log` 命名，各进程分别写入，并自动轮转。设置 `CODESESH_LOG_DIR` 后，后台服务使用启动时保存的目录配置；相对路径以保存的工作目录为基准。
+
+排查运行问题时应同时查看这两类日志。
 
 `start` 最多等待约 10 秒并显示进度，较长初始化继续在后台执行；`status --watch` 跟随初始化，直到就绪或 Worker 进入已连接、离线、暂停状态。Ctrl+C 退出观察，不停止服务。备份进度来自 SQLite 实际复制页数；迁移显示当前表和索引重建阶段，没有可靠百分比的阶段只显示活动指示与耗时。非交互输出保留阶段、周期进度和完成信息。完成的备份以 `.db` 结尾，未完成副本为 `.db.partial`。
 
