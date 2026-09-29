@@ -332,6 +332,13 @@ pub struct SessionWindow {
 pub struct AppConfig {
     #[serde(
         default,
+        rename = "publicHubUrl",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub public_hub_url: Option<String>,
+    #[serde(
+        default,
         rename = "hubEnabled",
         skip_serializing_if = "Option::is_none"
     )]

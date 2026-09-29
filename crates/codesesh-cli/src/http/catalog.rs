@@ -74,6 +74,10 @@ pub async fn config(
 ) -> Json<codesesh_core::public_contract::AppConfig> {
     Json(codesesh_core::public_contract::AppConfig {
         hub_enabled: state.hub_enabled.then_some(true),
+        public_hub_url: state
+            .hub_enabled
+            .then(|| state.options.public_origin.clone())
+            .flatten(),
         window: codesesh_core::public_contract::SessionWindow {
             from: state.options.default_from,
             to: state.options.default_to,

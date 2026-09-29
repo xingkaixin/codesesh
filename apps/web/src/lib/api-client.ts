@@ -78,6 +78,14 @@ export function createApiClient(access: RemoteAccess) {
     );
   }
 
+  async function fetchPairingStatus(token: string): Promise<{ nodeId: string | null }> {
+    return fetchJson("/api/nodes/pairing-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+  }
+
   async function createPairingToken(): Promise<{ token: string; expiresInSeconds: number }> {
     return fetchJson("/api/nodes/pairing-token", {
       method: "POST",
@@ -335,6 +343,7 @@ export function createApiClient(access: RemoteAccess) {
     fetchRescanHistory,
     cancelRescan,
     createPairingToken,
+    fetchPairingStatus,
     updateNode,
     requestRescan,
     fetchSourceSessions,

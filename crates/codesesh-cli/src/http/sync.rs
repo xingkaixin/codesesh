@@ -378,3 +378,26 @@ pub async fn cancel_task(
         Err(_) => retry("Hub is busy"),
     }
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PairingStatusRequest {
+    token: String,
+}
+
+pub async fn pairing_status(
+    AxumState(state): AxumState<Arc<State>>,
+    Json(request): Json<PairingStatusRequest>,
+) -> Response {
+    if !state.hub_enabled {
+        return error(StatusCode::NOT_FOUND, "Hub mode is not enabled");
+    }
+    match state
+        .runtime
+        .hub_control(move |cache| cache.pairing_status(&request.token))
+        .await
+    {
+        Ok(node_id) => Json(json!({"nodeId": node_id})).into_response(),
+        Err(_) => retry("Pairing status is temporarily unavailable"),
+    }
+}

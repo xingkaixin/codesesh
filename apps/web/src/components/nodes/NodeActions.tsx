@@ -1,10 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AGENT_CATALOG } from "@codesesh/contract";
-import { useNodeClock } from "../../hooks/useNodes";
 import { t } from "../../i18n/translate";
 import { requestRescan, updateNode, type SourceNode } from "../../lib/api";
-import { writeToClipboard } from "../../lib/clipboard";
-import { Check, Copy } from "../ui/icons";
+import { NodePairing } from "./NodePairing";
 import { NativeSelect } from "../ui/native-select";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
 
@@ -13,52 +11,6 @@ export type NodeAction =
   | { kind: "rescan"; nodes: SourceNode[]; all: boolean }
   | { kind: "revoke"; node: SourceNode }
   | { kind: "rename"; node: SourceNode };
-
-function CopyButton({
-  value,
-  label,
-  disabled = false,
-}: {
-  value: string;
-  label: string;
-  disabled?: boolean;
-}) {
-  const [status, setStatus] = useState<"idle" | "copying" | "copied" | "failed">("idle");
-  useEffect(() => {
-    if (status !== "copied") return;
-    const timer = window.setTimeout(() => setStatus("idle"), 2000);
-    return () => window.clearTimeout(timer);
-  }, [status]);
-  return (
-    <div>
-      <button
-        className={nodeButton}
-        disabled={disabled || status === "copying"}
-        onClick={async () => {
-          setStatus("copying");
-          setStatus((await writeToClipboard(value)) ? "copied" : "failed");
-        }}
-      >
-        <span className="relative size-4" aria-hidden="true">
-          <Copy
-            className={`absolute inset-0 size-4 transition-[opacity,transform] duration-150 motion-reduce:transition-none ${status === "copied" ? "scale-75 opacity-0" : "scale-100 opacity-100"}`}
-          />
-          <Check
-            className={`absolute inset-0 size-4 text-[var(--console-success)] transition-[opacity,transform] duration-150 motion-reduce:transition-none ${status === "copied" ? "scale-100 opacity-100" : "scale-75 opacity-0"}`}
-          />
-        </span>
-        <span aria-live="polite">
-          {status === "copied" ? t("Copied") : status === "copying" ? t("Copying…") : label}
-        </span>
-      </button>
-      {status === "failed" && (
-        <p role="alert" className="mt-2 text-xs text-[var(--console-error)]">
-          {t("Copy failed. Select and copy the text manually.")}
-        </p>
-      )}
-    </div>
-  );
-}
 
 export function NodeActions({
   action,
@@ -74,8 +26,6 @@ export function NodeActions({
   const [name, setName] = useState(action.kind === "rename" ? action.node.name : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const now = useNodeClock();
-  const command = `codesesh worker --hub ${window.location.origin} --pair-token-stdin`;
   const title =
     action.kind === "pair"
       ? t("Pair a Worker")
@@ -127,37 +77,7 @@ export function NodeActions({
       closeRequested={finished}
     >
       {action.kind === "pair" ? (
-        <div className="mt-6 space-y-5">
-          <div className="space-y-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4">
-            <code className="block break-all text-xs">{command}</code>
-            <p className="text-xs text-[var(--console-muted)]">
-              {t(
-                "For another machine, replace the Hub URL with an address reachable from that Worker.",
-              )}
-            </p>
-            <CopyButton value={command} label={t("Copy command")} />
-          </div>
-          <label className="block space-y-2 text-sm">
-            <span>{t("One-time pairing token")}</span>
-            <textarea
-              readOnly
-              value={action.token}
-              className="console-mono w-full resize-none rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-3 text-xs"
-            />
-          </label>
-          <CopyButton
-            value={action.token}
-            label={t("Copy token")}
-            disabled={now >= action.expires}
-          />
-          <p role="status" className="text-xs text-[var(--console-muted)]">
-            {now >= action.expires
-              ? t("Token expired. Close this dialog and create a new token.")
-              : t("Expires at {0}. Paste it into the Worker prompt.", [
-                  new Date(action.expires).toLocaleTimeString(),
-                ])}
-          </p>
-        </div>
+        <NodePairing token={action.token} expires={action.expires} />
       ) : (
         <form
           onSubmit={(event) => {

@@ -362,6 +362,7 @@ async fn run() -> Result<()> {
             port: address.port(),
             tls: args.tls_cert.is_some(),
             trust_proxy: args.trust_proxy,
+            public_origin: plan.public_origin.clone(),
             loopback_authority: options::loopback(&args.host) && !args.remote_access,
             default_from: plan.from,
             default_to: plan.to,
