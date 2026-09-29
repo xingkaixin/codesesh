@@ -14,6 +14,7 @@ export const {
   fetchRescanHistory,
   cancelRescan,
   createPairingToken,
+  fetchPairingStatus,
   updateNode,
   requestRescan,
   fetchSourceSessions,

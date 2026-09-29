@@ -85,6 +85,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
             port: 4521,
             tls: false,
             trust_proxy: false,
+            public_origin: None,
             loopback_authority: true,
             default_from: None,
             default_to: None,

@@ -29,10 +29,15 @@ fn pairing_is_one_time_and_revocation_keeps_history() {
     let mut cache = Cache::open(None).unwrap();
     cache.initialize_hub("hub-fixture").unwrap();
     let token = cache.create_pairing_token().unwrap();
+    assert!(cache.pairing_status(&token).unwrap().is_none());
     let stream = uuid::Uuid::new_v4().to_string();
     let grant = cache
         .pair_worker(&token, "Laptop", "1.1.1", &stream)
         .unwrap();
+    assert_eq!(
+        cache.pairing_status(&token).unwrap().as_deref(),
+        Some(grant.node_id.as_str())
+    );
     assert!(
         cache
             .pair_worker(&token, "Other", "1.1.1", &stream)

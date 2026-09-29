@@ -1,3 +1,4 @@
+mod connection;
 mod scanning;
 
 use anyhow::{Context, Result, ensure};
@@ -8,7 +9,7 @@ use codesesh_core::{
         WorkerStore,
     },
 };
-use reqwest::{Client, StatusCode};
+use reqwest::StatusCode;
 use std::time::{Duration, Instant};
 
 struct Collector {
@@ -35,24 +36,6 @@ impl Collector {
     }
 }
 
-fn hub_url(value: &str) -> Result<url::Url> {
-    let url = url::Url::parse(value).context("Invalid Hub URL")?;
-    ensure!(
-        url.username().is_empty()
-            && url.password().is_none()
-            && url.query().is_none()
-            && url.fragment().is_none()
-            && url.path() == "/",
-        "Hub URL must contain only the origin, without credentials or a path"
-    );
-    ensure!(
-        url.scheme() == "https"
-            || url.scheme() == "http" && url.host_str().is_some_and(crate::options::loopback),
-        "Remote Worker connections require HTTPS; HTTP is allowed only on loopback"
-    );
-    Ok(url)
-}
-
 pub async fn run(
     environment: &PathEnvironment,
     agents: &[String],
@@ -62,7 +45,7 @@ pub async fn run(
     pair_token_stdin: bool,
     history: Option<crate::options::History>,
 ) -> Result<()> {
-    let origin = hub_url(hub)?;
+    let origin = connection::hub_url(hub)?;
     let _lock = crate::node_identity::lock(&environment.home, "collector.lock")?;
     let path = codesesh_core::app_paths::root(&environment.home).join("worker.db");
     let sources = discovery::selected_sources(environment, agents);
@@ -77,11 +60,7 @@ pub async fn run(
         "x-codesesh-worker-instance",
         uuid::Uuid::new_v4().to_string().parse()?,
     );
-    let client = Client::builder()
-        .default_headers(headers)
-        .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    let client = connection::client(&origin, headers).await?;
     let existing = collector.store.binding()?;
     let explicit_pairing = pair_token.is_some() || pair_token_stdin;
     let mut grant = match existing {

@@ -64,6 +64,7 @@ impl Cache {
         let tx = self.connection.transaction()?;
         tx.execute_batch("CREATE TABLE IF NOT EXISTS hub_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS hub_pairing(token_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS hub_pairing_results(token_hash TEXT PRIMARY KEY,node_id TEXT NOT NULL,expires_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS hub_nodes(id TEXT PRIMARY KEY,name TEXT NOT NULL,version TEXT NOT NULL,credential_hash TEXT NOT NULL UNIQUE,stream_id TEXT NOT NULL,confirmed_sequence INTEGER NOT NULL DEFAULT 0,confirmed_digest TEXT,confirmed_reference TEXT,recovery_epoch TEXT,paired_at INTEGER NOT NULL,last_seen INTEGER,last_confirmed_at INTEGER,collection_complete INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0,queue TEXT,error TEXT,instance_id TEXT,lease_until INTEGER);
             CREATE TABLE IF NOT EXISTS hub_orphans(node_id TEXT NOT NULL REFERENCES hub_nodes(id),agent TEXT NOT NULL,session_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(node_id,agent,session_id));
             CREATE TABLE IF NOT EXISTS hub_node_health(node_id TEXT PRIMARY KEY REFERENCES hub_nodes(id),payload TEXT NOT NULL);
@@ -99,12 +100,27 @@ impl Cache {
         let now = chrono::Utc::now().timestamp_millis();
         let tx = self.connection.transaction()?;
         tx.execute("DELETE FROM hub_pairing WHERE expires_at<=?", [now])?;
+        tx.execute("DELETE FROM hub_pairing_results WHERE expires_at<=?", [now])?;
         tx.execute(
             "INSERT INTO hub_pairing VALUES(?,?)",
             params![digest(token.as_bytes()), now + 10 * 60 * 1000],
         )?;
         tx.commit()?;
         Ok(token)
+    }
+
+    pub fn pairing_status(&self, token: &str) -> Result<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT node_id FROM hub_pairing_results WHERE token_hash=? AND expires_at>?",
+                params![
+                    digest(token.as_bytes()),
+                    chrono::Utc::now().timestamp_millis()
+                ],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
     }
 
     pub fn pair_worker(
@@ -181,6 +197,14 @@ impl Cache {
             uuid::Uuid::new_v4().to_string()
         };
         let credential = secret();
+        tx.execute(
+            "INSERT INTO hub_pairing_results VALUES(?,?,?)",
+            params![
+                digest(token.as_bytes()),
+                node_id,
+                chrono::Utc::now().timestamp_millis() + 10 * 60 * 1000
+            ],
+        )?;
         tx.execute("INSERT INTO hub_nodes(id,name,version,credential_hash,stream_id,paired_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,credential_hash=excluded.credential_hash,stream_id=excluded.stream_id,revoked=0,confirmed_sequence=0,confirmed_digest=NULL,confirmed_reference=NULL,recovery_epoch=NULL,instance_id=NULL,lease_until=NULL,queue=NULL,error=NULL,collection_complete=0", params![node_id,name,version,digest(credential.as_bytes()),stream_id,chrono::Utc::now().timestamp_millis()])?;
         let hub_id = tx.query_row("SELECT value FROM hub_meta WHERE key='hub_id'", [], |r| {
             r.get(0)
@@ -188,8 +212,8 @@ impl Cache {
         let epoch = tx.query_row("SELECT value FROM hub_meta WHERE key='epoch'", [], |r| {
             r.get(0)
         })?;
+        tx.execute("INSERT INTO hub_control.nodes(id,name,version,credential_hash,stream_id,paired_at) SELECT id,name,version,credential_hash,stream_id,paired_at FROM hub_nodes WHERE id=? ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,credential_hash=excluded.credential_hash,stream_id=excluded.stream_id,revoked=0",[&node_id])?;
         tx.commit()?;
-        self.connection.execute("INSERT INTO hub_control.nodes(id,name,version,credential_hash,stream_id,paired_at) SELECT id,name,version,credential_hash,stream_id,paired_at FROM hub_nodes WHERE id=? ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,credential_hash=excluded.credential_hash,stream_id=excluded.stream_id,revoked=0",[&node_id])?;
         Ok(PairingGrant {
             node_id,
             credential,

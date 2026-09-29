@@ -16,6 +16,7 @@ vi.mock("../../lib/api", async (original) => ({
   requestRescan: vi.fn(),
   updateNode: vi.fn(),
   createPairingToken: vi.fn(),
+  fetchPairingStatus: vi.fn(),
 }));
 
 const node = {
@@ -44,6 +45,7 @@ function panel() {
 }
 
 beforeEach(() => {
+  vi.mocked(api.fetchPairingStatus).mockResolvedValue({ nodeId: null });
   vi.mocked(api.fetchNodes).mockResolvedValue({
     nodes: [node],
     tasks: [],
@@ -224,6 +226,30 @@ describe("NodePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Task history" }));
     await screen.findByText("No completed tasks yet.");
     expect(api.fetchRescanHistory).toHaveBeenCalledWith(node.id, undefined);
+  });
+
+  it("confirms pairing against the token rather than another newly connected node", async () => {
+    vi.mocked(api.createPairingToken).mockResolvedValue({
+      token: "paired-token",
+      expiresInSeconds: 600,
+    });
+    vi.mocked(api.fetchPairingStatus).mockResolvedValue({ nodeId: "new-worker" });
+    panel();
+    fireEvent.click(await screen.findByRole("button", { name: "Pair a Worker" }));
+    await screen.findByText("Worker paired successfully");
+    expect(screen.getByText("Source node: new-worker")).toBeTruthy();
+    expect(api.fetchPairingStatus).toHaveBeenCalledWith("paired-token");
+  });
+
+  it("renews an expired token without closing the pairing flow", async () => {
+    vi.mocked(api.createPairingToken)
+      .mockResolvedValueOnce({ token: "expired-token", expiresInSeconds: 0 })
+      .mockResolvedValueOnce({ token: "fresh-token", expiresInSeconds: 600 });
+    panel();
+    fireEvent.click(await screen.findByRole("button", { name: "Pair a Worker" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Generate new token" }));
+    await screen.findByDisplayValue("fresh-token");
+    expect(screen.queryByRole("button", { name: "Generate new token" })).toBeNull();
   });
 
   it("reports successful and failed token copies", async () => {

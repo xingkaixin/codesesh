@@ -21,7 +21,9 @@ codesesh worker --hub https://history.example.com --name laptop --pair-token-std
 codesesh worker --hub https://history.example.com
 ```
 
-生产部署应固定 Hub 地址。默认仍监听回环地址；对外监听沿用现有 `--host`、`--remote-access`、`--tls-cert`、`--tls-key` 或 `--trust-proxy`、`--public-url` 配置。远程 Worker 必须使用 HTTPS，HTTP 只允许回环地址。Worker 不跳过证书校验，不跟随重定向。
+生产部署应固定 Hub 地址。默认仍监听回环地址；对外监听沿用现有 `--host`、`--remote-access`、`--tls-cert`、`--tls-key` 或 `--trust-proxy`、`--public-url` 配置。本机和可信局域网 Worker 可以使用 HTTP；公网 Worker 必须使用 HTTPS。HTTP 地址必须是回环、私有 IPv4、IPv6 ULA 或链路本地地址；内网域名的全部解析结果也必须满足该条件。Worker 固定已校验的 HTTP 解析地址并绕过代理，域名地址变更后需重启 Worker。Worker 不跳过 HTTPS 证书校验，不跟随重定向。
+
+局域网示例：Hub 执行 `codesesh hub --host 0.0.0.0 --remote-access`，其他机器的 Worker 使用 `http://<Hub 内网 IP>:4521`。仍需配对和凭据验证，防火墙需允许该端口；HTTP 连接未加密。
 
 `--agent codex,claudecode` 可以限制采集范围；不指定时启用全部受支持 Agent。Worker 会采集其可发现的全部历史，Hub 的时间窗口控制查询范围。Worker 不提供 Web UI，也不下载价格表。
 
@@ -133,7 +135,7 @@ Worker 产品版本必须在 Hub 声明的最低版本与 Hub 当前版本之间
 
 收藏、自定义标题和项目分组由 Hub 管理；来源标题更新和重采集不能覆盖用户映射。路径只是来源机器的描述，不传输实际图片、附件或路径文件。远程会话隐藏在 Hub 本机继续会话的按钮。
 
-来源节点面板以 Hub / Worker 连接概览展示状态，选中节点可查看积压、最近心跳、兼容性和重采集任务。会话浏览保留在主页面，通过来源筛选切换。重采集操作在确认窗口中选择 Agent 范围并确认目标节点；批量重采集和撤销访问也必须确认。配对码复制成功显示“已复制”，失败显示手动复制提示，过期后禁用复制。
+来源节点面板以 Hub / Worker 连接概览展示状态，选中节点可查看积压、最近心跳、兼容性和重采集任务。会话浏览保留在主页面，通过来源筛选切换。重采集操作在确认窗口中选择 Agent 范围并确认目标节点；批量重采集和撤销访问也必须确认。配对窗口区分本机、局域网和公网，公开地址已配置时优先预填。可选择前台运行或后台服务，生成对应命令，不启用自启动。窗口通过当前令牌对应的配对结果确认成功并显示来源 ID；令牌过期可直接重新生成。配对码复制成功显示“已复制”，失败显示手动复制提示，过期后禁用复制。
 
 节点改名不改变身份。Hub 地址改变时，使用新 `--hub` 地址启动 Worker；Worker 使用原凭据验证仍是同一个 Hub，验证成功后保存新地址。
 

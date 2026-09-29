@@ -39,6 +39,7 @@ pub struct Options {
     pub port: u16,
     pub tls: bool,
     pub trust_proxy: bool,
+    pub public_origin: Option<String>,
     pub loopback_authority: bool,
     pub default_from: Option<f64>,
     pub default_to: Option<f64>,
@@ -146,6 +147,7 @@ pub fn router(state: Arc<State>) -> Router {
         )
         .route("/api/nodes/{node}/name", put(sync::rename))
         .route("/api/nodes/pairing-token", post(sync::pairing_token))
+        .route("/api/nodes/pairing-status", post(sync::pairing_status))
         .route("/api/nodes/{node}/revoke", post(sync::revoke))
         .route("/api/config", get(catalog::config))
         .route("/api/status", get(catalog::status))
