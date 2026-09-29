@@ -41,10 +41,14 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Session Receipts** — Inspect model and token-category usage with available cost breakdowns, then export the complete receipt as a PNG
 - **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
 - **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
-- **100% Local & Private** — Your data stays on your machine. No accounts, no cloud sync, no cloud telemetry
+- **Local by Default** — Standalone history stays on your machine. Optional Workers send sessions to your self-hosted Hub; no account or cloud telemetry is required
 - **Live Refresh** — File changes are picked up automatically, and the UI stays in sync without a restart
 
 ---
+
+## Multiple machines with Hub and Worker
+
+Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh worker` on each machine you want to collect from. The source-node panel guides pairing, shows collection health, and manages rescans and Worker replacement. User-level background service commands are available on macOS, Linux, and Windows. See the [Hub/Worker guide](docs/hub-worker.md) for setup, migration, and recovery.
 
 ## Supported Agents
 
