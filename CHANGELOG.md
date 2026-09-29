@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1] - 2026-09-29
+
+This patch fixes Worker synchronization when a session's message count changes without changing its replayable messages. (#664)
+
+### Bug Fixes
+
+- Accept metadata-only updates with a changed message count at the Hub, avoiding an unnecessary `SNAPSHOT_REQUIRED` rejection that blocks queued uploads. Update the stored count while preserving existing messages and search content. (#664)
+
 ## [1.2.0] - 2026-09-29
 
 This release adds self-hosted Hub/Worker deployment to collect AI coding history from multiple machines, with source-aware browsing, guided pairing, collection health, and persistent rescan tasks. It also consolidates local data and adds native installation channels. (#651–#662)
