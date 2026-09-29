@@ -165,3 +165,10 @@ pub struct HubNodes {
     pub version: String,
     pub minimum_worker_version: String,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanHistory {
+    pub tasks: Vec<NodeTask>,
+    pub next_cursor: Option<String>,
+}

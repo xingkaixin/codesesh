@@ -8,14 +8,16 @@ impl Cache {
         reason: &str,
     ) -> Result<Vec<crate::sync::RescanRequest>> {
         let catalog = crate::agents::catalog(0);
-        let agents = agents.to_vec();
+        let mut agents = agents.to_vec();
+        agents.sort();
+        agents.dedup();
         ensure!(
             agents
                 .iter()
                 .all(|agent| catalog.iter().any(|entry| entry.name == *agent)),
             "Unknown rescan Agent"
         );
-        let nodes = if nodes.is_empty() {
+        let mut nodes = if nodes.is_empty() {
             self.nodes()?
                 .into_iter()
                 .filter(|node| !node.revoked)
@@ -24,6 +26,8 @@ impl Cache {
         } else {
             nodes.to_vec()
         };
+        nodes.sort();
+        nodes.dedup();
         let tx = self.connection.transaction()?;
         let mut requests = Vec::new();
         for node in nodes {
@@ -35,6 +39,23 @@ impl Cache {
                 )? == 1,
                 "Unknown or revoked node"
             );
+            let mut existing = tx.prepare("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading') ORDER BY rowid")?;
+            let requests_for_node = existing
+                .query_map([&node], |r| r.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let existing = requests_for_node
+                .into_iter()
+                .map(|raw| serde_json::from_str::<crate::sync::RescanRequest>(&raw))
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if let Some(request) = existing.into_iter().find(|request| {
+                let mut scope = request.agents.clone();
+                scope.sort();
+                scope.dedup();
+                scope == agents && request.reason == reason
+            }) {
+                requests.push(request);
+                continue;
+            }
             let request = crate::sync::RescanRequest {
                 id: uuid::Uuid::new_v4().to_string(),
                 agents: agents.clone(),
@@ -62,7 +83,7 @@ impl Cache {
 
     pub fn rescan_tasks(&self) -> Result<Vec<crate::sync::NodeTask>> {
         let mut query = self.connection.prepare(
-            "SELECT node_id,request,status,progress FROM hub_rescans ORDER BY rowid DESC",
+            "SELECT node_id,request,status,progress FROM hub_rescans WHERE status IN ('waiting','dispatched','running','paused','uploading') OR rowid IN (SELECT MAX(rowid) FROM hub_rescans WHERE status NOT IN ('waiting','dispatched','running','paused','uploading') GROUP BY node_id) ORDER BY rowid DESC",
         )?;
         let rows = query
             .query_map([], |r| {
@@ -84,6 +105,42 @@ impl Cache {
                 })
             })
             .collect()
+    }
+
+    pub fn cancel_rescan(&mut self, node: &str, task: &str) -> Result<bool> {
+        Ok(self.connection.execute("UPDATE hub_rescans SET status='cancelled' WHERE id=? AND node_id=? AND status='waiting'", params![task, node])? == 1)
+    }
+
+    pub fn rescan_history(
+        &self,
+        node: &str,
+        before: Option<i64>,
+    ) -> Result<crate::sync::RescanHistory> {
+        let mut query = self.connection.prepare("SELECT rowid,request,status,progress FROM hub_rescans WHERE node_id=? AND status NOT IN ('waiting','dispatched','running','paused','uploading') AND rowid<? ORDER BY rowid DESC LIMIT 21")?;
+        let rows = query
+            .query_map(params![node, before.unwrap_or(i64::MAX)], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let next_cursor = (rows.len() > 20).then(|| rows[19].0.to_string());
+        let tasks = rows
+            .into_iter()
+            .take(20)
+            .map(|(_, request, status, progress)| {
+                Ok(crate::sync::NodeTask {
+                    node_id: node.into(),
+                    request: serde_json::from_str(&request)?,
+                    status,
+                    progress: progress.map(|raw| serde_json::from_str(&raw)).transpose()?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(crate::sync::RescanHistory { tasks, next_cursor })
     }
 
     pub fn rotate_data_epoch(&mut self) -> Result<String> {
@@ -111,7 +168,7 @@ impl Cache {
         );
         tx.execute("DELETE FROM hub_chunks WHERE node_id=?", [node])?;
         tx.execute("UPDATE hub_nodes SET stream_id=?,confirmed_sequence=0,confirmed_digest=NULL,confirmed_reference=NULL,recovery_epoch=? WHERE id=?",params![recovery.new_stream,epoch,node])?;
-        tx.execute("UPDATE hub_rescans SET status='superseded' WHERE node_id=? AND status IN ('waiting','running','paused','uploading')",[node])?;
+        tx.execute("UPDATE hub_rescans SET status='superseded' WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading')",[node])?;
         let task = crate::sync::RescanRequest {
             id: recovery.new_stream.clone(),
             agents: Vec::new(),
@@ -230,9 +287,20 @@ impl Cache {
             } else {
                 "running"
             };
-            tx.execute("UPDATE hub_rescans SET status=?,progress=? WHERE id=? AND node_id=? AND status<>'completed'",params![status,serde_json::to_string(progress)?,progress.id,node])?;
+            tx.execute("UPDATE hub_rescans SET status=?,progress=? WHERE id=? AND node_id=? AND status IN ('waiting','dispatched','running','paused','uploading')",params![status,serde_json::to_string(progress)?,progress.id,node])?;
         }
-        let rescan: Option<String> = tx.query_row("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','running','paused','uploading') ORDER BY rowid LIMIT 1",[node],|r|r.get(0)).optional()?;
+        let rescan: Option<String> = tx.query_row("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading') ORDER BY rowid LIMIT 1",[node],|r|r.get(0)).optional()?;
+        let rescan: Option<crate::sync::RescanRequest> = if error.is_none() {
+            rescan.map(|raw| serde_json::from_str(&raw)).transpose()?
+        } else {
+            None
+        };
+        if let Some(request) = &rescan {
+            tx.execute(
+                "UPDATE hub_rescans SET status='dispatched' WHERE id=? AND status='waiting'",
+                [&request.id],
+            )?;
+        }
         let result = crate::sync::HubHello {
             hub_id: tx.query_row("SELECT value FROM hub_meta WHERE key='hub_id'", [], |r| {
                 r.get(0)
@@ -248,7 +316,7 @@ impl Cache {
             confirmed_sequence,
             heartbeat_seconds: 15,
             max_in_flight: 1,
-            rescan: rescan.map(|raw| serde_json::from_str(&raw)).transpose()?,
+            rescan,
         };
         tx.commit()?;
         Ok(result)

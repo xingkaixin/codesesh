@@ -10,6 +10,8 @@ import { NodePanel } from "./NodePanel";
 vi.mock("../../lib/api", async (original) => ({
   ...(await original<typeof import("../../lib/api")>()),
   fetchNodes: vi.fn(),
+  fetchRescanHistory: vi.fn(),
+  cancelRescan: vi.fn(),
   fetchSourceSessions: vi.fn(),
   requestRescan: vi.fn(),
   updateNode: vi.fn(),
@@ -187,6 +189,41 @@ describe("NodePanel", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Scanning claudecode")).toBeNull();
+  });
+
+  it("prioritizes a dispatched task and loads history only when requested", async () => {
+    const request = {
+      id: "active",
+      agents: ["codex"],
+      reason: "manual",
+      requiredRevisions: {},
+      createdAt: 1,
+    };
+    const active = { nodeId: node.id, request, status: "dispatched", progress: null };
+    vi.mocked(api.fetchNodes).mockResolvedValue({
+      nodes: [node],
+      tasks: [
+        { ...active, request: { ...request, id: "queued", createdAt: 2 }, status: "waiting" },
+        active,
+      ],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    });
+    vi.mocked(api.cancelRescan).mockResolvedValue(undefined);
+    vi.mocked(api.fetchRescanHistory).mockResolvedValue({ tasks: [], nextCursor: null });
+    panel();
+    await screen.findByText("Dispatched to Worker · codex");
+    const region = screen.getByRole("region", { name: "Rescan tasks" });
+    expect(region.textContent!.indexOf("Dispatched to Worker")).toBeLessThan(
+      region.textContent!.indexOf("Waiting for node"),
+    );
+    expect(api.fetchRescanHistory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel queued task" }));
+    await waitFor(() => expect(api.cancelRescan).toHaveBeenCalledWith(node.id, "queued"));
+    fireEvent.click(screen.getByRole("button", { name: "Task history" }));
+    await screen.findByText("No completed tasks yet.");
+    expect(api.fetchRescanHistory).toHaveBeenCalledWith(node.id, undefined);
   });
 
   it("reports successful and failed token copies", async () => {

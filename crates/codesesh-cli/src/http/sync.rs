@@ -1,7 +1,7 @@
 use super::{State, error, retry};
 use axum::{
     Json,
-    extract::{Path, State as AxumState},
+    extract::{Path, Query, State as AxumState},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -332,5 +332,49 @@ pub async fn recover(
         Ok(()) => Json(json!({"recovered":true})).into_response(),
         Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
         Err(failure) => error(StatusCode::CONFLICT, &failure.to_string()),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct TaskHistoryQuery {
+    before: Option<i64>,
+}
+
+pub async fn task_history(
+    AxumState(state): AxumState<Arc<State>>,
+    Path(node): Path<String>,
+    Query(query): Query<TaskHistoryQuery>,
+) -> Response {
+    if !state.hub_enabled {
+        return error(StatusCode::NOT_FOUND, "Hub mode is not enabled");
+    }
+    match state
+        .runtime
+        .hub_control(move |cache| cache.rescan_history(&node, query.before))
+        .await
+    {
+        Ok(page) => Json(page).into_response(),
+        Err(_) => retry("Task history is temporarily unavailable"),
+    }
+}
+
+pub async fn cancel_task(
+    AxumState(state): AxumState<Arc<State>>,
+    Path((node, task)): Path<(String, String)>,
+) -> Response {
+    if !state.hub_enabled {
+        return error(StatusCode::NOT_FOUND, "Hub mode is not enabled");
+    }
+    match state
+        .runtime
+        .hub_control(move |cache| cache.cancel_rescan(&node, &task))
+        .await
+    {
+        Ok(true) => Json(json!({"cancelled":true})).into_response(),
+        Ok(false) => error(
+            StatusCode::CONFLICT,
+            "Only tasks not yet dispatched can be cancelled. Refresh node state.",
+        ),
+        Err(_) => retry("Hub is busy"),
     }
 }

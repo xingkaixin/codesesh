@@ -20,6 +20,8 @@ export function nodeStatus(node: SourceNode, now: number) {
 export function taskLabel(status: string) {
   const labels: Record<string, string> = {
     waiting: t("Waiting for node"),
+    dispatched: t("Dispatched to Worker"),
+    cancelled: t("Cancelled"),
     running: t("Scanning"),
     uploading: t("Waiting for upload confirmation"),
     paused: t("Paused"),
