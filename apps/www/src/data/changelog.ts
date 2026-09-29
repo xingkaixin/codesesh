@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.0",
+        date: "2026-09-29",
+        title: "Browse AI coding history across your machines",
+        summary:
+          "CodeSesh 1.2.0 adds an optional self-hosted Hub and Workers. Collect local AI coding history from multiple machines into one searchable Web UI while keeping each source distinct.",
+        direction:
+          "History should remain searchable as work moves between machines, with explicit control over where sessions are sent and clear visibility into collection problems.",
+        highlights: [
+          {
+            title: "Bring multiple machines into one view",
+            description:
+              "Pair Workers with your Hub and filter sessions by source. Standalone mode remains available; Workers send session content and metadata to the Hub you choose.",
+          },
+          {
+            title: "See collection problems and request rescans",
+            description:
+              "Inspect queue status and Agent errors, queue rescans for selected Agents, and review task history. Offline Workers can collect changes for later upload.",
+          },
+          {
+            title: "Replace a Worker without losing its identity",
+            description:
+              "Guided pairing covers local, LAN, and public HTTPS connections. Replace a Worker while retaining its archived history, bookmarks, aliases, and project groups.",
+          },
+          {
+            title: "Install and manage local data more easily",
+            description:
+              "New native installation channels include curl, Homebrew, and Scoop. Databases, pricing cache, and logs move into ~/.codesesh/ with a guided migration from older locations.",
+          },
+        ],
+      },
+      {
         version: "1.1.1",
         date: "2026-09-27",
         title: "Understand session costs and save the full receipt",
@@ -409,6 +440,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.0",
+        date: "2026-09-29",
+        title: "在一个界面浏览多台机器的 AI 编码历史",
+        summary:
+          "CodeSesh 1.2.0 新增可选的自托管 Hub 与 Worker，将多台机器的本地 AI 编码历史汇总到同一个可搜索的 Web UI，同时保留各自的来源身份。",
+        direction:
+          "工作在不同机器间切换时，历史仍应便于检索。会话发送到哪里由使用者明确配置，采集问题也应清楚可查。",
+        highlights: [
+          {
+            title: "汇总多台机器，按来源浏览",
+            description:
+              "将 Worker 与自己的 Hub 配对，按来源筛选会话。单机模式继续保留；Worker 会向你选择的 Hub 发送会话正文和元数据。",
+          },
+          {
+            title: "查看采集问题并安排重采集",
+            description:
+              "查看队列和各 Agent 错误，按 Agent 范围排队重采集，并查阅任务历史。Worker 离线时仍可采集变化，恢复连接后再上传。",
+          },
+          {
+            title: "替换 Worker，保留原有历史",
+            description:
+              "配对引导覆盖同机、局域网和公网 HTTPS 连接。更换 Worker 时保留归档历史、收藏、别名和项目分组。",
+          },
+          {
+            title: "简化安装与本地数据管理",
+            description:
+              "新增 curl、Homebrew 和 Scoop 原生安装渠道。数据库、价格缓存和日志统一到 ~/.codesesh/，并引导旧目录迁移。",
+          },
+        ],
+      },
+      {
         version: "1.1.1",
         date: "2026-09-27",
         title: "看清会话费用，保存完整收据",
@@ -731,6 +793,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.0",
+        date: "2026-09-29",
+        title: "複数のマシンのAIコーディング履歴を一か所で確認",
+        summary:
+          "CodeSesh 1.2.0では、任意で利用できるセルフホストのHubとWorkerを追加しました。複数のマシンのローカル履歴を、取得元を区別したまま一つのWeb UIで検索できます。",
+        direction:
+          "作業するマシンが変わっても、履歴を検索できることを重視しています。セッションの送信先は利用者が設定し、収集の問題も確認できるようにします。",
+        highlights: [
+          {
+            title: "複数のマシンの履歴をまとめて表示",
+            description:
+              "Workerを自分のHubとペアリングし、取得元でセッションを絞り込めます。単体モードも引き続き利用可能です。Workerは選択したHubへセッション本文とメタデータを送信します。",
+          },
+          {
+            title: "収集状況を確認し、再収集を依頼",
+            description:
+              "キューやAgentごとのエラーを確認し、対象Agentを指定して再収集を予約できます。タスク履歴も確認でき、オフライン中の変更は再接続後にアップロードされます。",
+          },
+          {
+            title: "履歴を引き継いでWorkerを交換",
+            description:
+              "同一マシン、LAN、公開HTTPS接続のペアリングを案内します。Workerを交換しても、保存済み履歴、ブックマーク、別名、プロジェクトグループを維持できます。",
+          },
+          {
+            title: "インストールとデータ管理を簡単に",
+            description:
+              "curl、Homebrew、Scoopによるネイティブ版のインストールに対応しました。データベース、価格キャッシュ、ログを ~/.codesesh/ にまとめ、旧ディレクトリからの移行を案内します。",
+          },
+        ],
+      },
       {
         version: "1.1.1",
         date: "2026-09-27",

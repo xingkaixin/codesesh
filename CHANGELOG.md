@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.2.0] - 2026-09-29
+
+This release adds self-hosted Hub/Worker deployment to collect AI coding history from multiple machines, with source-aware browsing, guided pairing, collection health, and persistent rescan tasks. It also consolidates local data and adds native installation channels. (#651–#662)
+
+### Features
+
+- Add a query-only Hub and independent Workers, source filters, source-scoped session identities, offline upload queues, and user-level background service commands for macOS, Linux, and Windows. Keep standalone mode available. (#653)
+- Guide Worker pairing for the same machine, a trusted LAN, or a public HTTPS Hub. Show actionable collection health, queue status, per-Agent errors, and stale reports. (#659, #661)
+- Queue rescans for selected Agents, cancel undispatched tasks, and browse paginated task history. Replace a Worker while preserving its source identity, archived sessions, bookmarks, aliases, and project groups. (#660, #662)
+- Consolidate databases, pricing cache, and logs under `~/.codesesh/`, with migration from legacy locations. (#651)
+- Add curl installation, Homebrew tap and Scoop bucket support, plus release checksum generation and distribution synchronization. (#652)
+
+### Bug Fixes
+
+- Preserve Worker progress across restarts and release active leases on graceful shutdown. Keep scans off the sync loop so collection does not block heartbeats or queued uploads. (#654, #655, #658)
+- Distinguish service stdout/stderr from structured application logs in background service output. (#657)
+
+### Compatibility
+
+- Local API authentication is now opt-in with `--auth`; `--remote-access` still requires authentication. Without local authentication, other users and processes on the same machine can access indexed sessions and write APIs. (#656)
+- Upgrade the session cache to schema 36 and user state to schema 4. Legacy-directory migration requires confirmation; non-interactive upgrades use `--migrate-data`. Restore the complete pre-upgrade backup before returning to an older release. (#651, #653)
+- Workers upload session content and metadata to the Hub you configure. Attachments and source files are not transferred. Public Worker connections require HTTPS; trusted local and LAN HTTP connections still require pairing credentials. (#653, #661)
+
 ## [1.1.1] - 2026-09-27
 
 This release adds model and usage details to session receipts, exports complete receipt PNGs, and reduces the metadata read when restoring cached session lists. (#648, #649)
