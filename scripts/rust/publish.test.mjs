@@ -25,129 +25,219 @@ function fixture() {
   return { packages, metadata, bytes };
 }
 
-test("publish all native packages and verify downloads before publishing main", async () => {
+function clock() {
+  let elapsed = 0;
+  const delays = [];
+  const logs = [];
+  return {
+    delays,
+    logs,
+    now: () => elapsed,
+    sleep: async (delay) => {
+      delays.push(delay);
+      elapsed += delay;
+    },
+    log: (message) => logs.push(message),
+  };
+}
+
+test("uploads every platform before polling and waits before each visibility phase", async () => {
   const { packages, metadata, bytes } = fixture();
+  const time = clock();
   const published = new Set();
   const events = [];
   await publishPackages(packages, {
+    ...time,
     registry: {
       metadata: async (name) => {
         const item = packages.find((candidate) => candidate.name === name);
-        return published.has(item.path) ? metadata(item) : null;
+        if (!published.has(item.path)) return null;
+        events.push(`read:${item.path}:${time.now()}`);
+        return metadata(item);
       },
-      download: async (url) => {
-        events.push(`download:${url.split("/").at(-1)}`);
-        return bytes(url);
-      },
+      download: async (url) => bytes(url),
     },
     publish: async (path) => {
-      events.push(`publish:${path}`);
+      events.push(`publish:${path}:${time.now()}`);
       published.add(path);
     },
-    sleep: async () => assert.fail("No retry expected"),
   });
-  assert.deepEqual(
-    events,
-    packages.flatMap(({ path }) => [`publish:${path}`, `download:${path}`]),
-  );
+  assert.deepEqual(events, [
+    ...packages.slice(0, 4).map(({ path }) => `publish:${path}:0`),
+    ...packages.slice(0, 4).map(({ path }) => `read:${path}:10000`),
+    "publish:codesesh.tgz:10000",
+    "read:codesesh.tgz:20000",
+  ]);
+  assert.deepEqual(time.delays, [10_000, 10_000]);
 });
 
-test("rerun skips identical existing versions only after checking actual tarballs", async () => {
+test("rerun verifies existing tarballs and publishes only missing packages", async () => {
   const { packages, metadata, bytes } = fixture();
-  let downloads = 0;
-  await publishPackages(packages, {
-    registry: {
-      metadata: async (name) => metadata(packages.find((item) => item.name === name)),
-      download: async (url) => {
-        downloads++;
-        return bytes(url);
+  for (const existingCount of [2, 5]) {
+    const existing = new Set(packages.slice(0, existingCount).map((item) => item.path));
+    const published = [];
+    const downloads = [];
+    await publishPackages(packages, {
+      ...clock(),
+      registry: {
+        metadata: async (name) => {
+          const item = packages.find((candidate) => candidate.name === name);
+          return existing.has(item.path) ? metadata(item) : null;
+        },
+        download: async (url) => {
+          downloads.push(url);
+          return bytes(url);
+        },
       },
-    },
-    publish: async () => assert.fail("Existing version must not publish"),
-  });
-  assert.equal(downloads, 5);
+      publish: async (path) => {
+        published.push(path);
+        existing.add(path);
+      },
+    });
+    assert.deepEqual(
+      published,
+      packages.slice(existingCount).map((item) => item.path),
+    );
+    assert.equal(downloads.length, 5);
+  }
 });
 
-test("existing integrity or tarball mismatch stops before any publication", async () => {
+test("preflight rejects a later existing package mismatch before any publication", async () => {
   const { packages, metadata, bytes } = fixture();
   for (const corruptMetadata of [true, false]) {
-    let reads = 0;
     await assert.rejects(
       publishPackages(packages, {
+        ...clock(),
         registry: {
-          metadata: async () => {
-            reads++;
-            const found = metadata(packages[0]);
+          metadata: async (name) => {
+            if (name !== packages[3].name) return null;
+            const found = metadata(packages[3]);
             if (corruptMetadata) found.dist.integrity = integrity(Buffer.from("different"));
             return found;
           },
           download: async (url) => (corruptMetadata ? bytes(url) : Buffer.from("different")),
         },
         publish: async () => assert.fail("Mismatch must not publish"),
-        sleep: async () => assert.fail("Mismatch must not retry"),
       }),
       /(?:integrity|tarball) mismatch/,
     );
-    assert.equal(reads, 1);
   }
 });
 
-test("bounded read retries wait for metadata and tarball visibility without republishing", async () => {
+test("polls only pending packages through transient errors without republishing", async () => {
   const { packages, metadata, bytes } = fixture();
-  let publishes = 0;
-  let reads = 0;
-  let downloads = 0;
-  const delays = [];
-  await publishPackages(packages.slice(0, 1), {
+  const time = clock();
+  const published = new Set();
+  const downloads = new Map();
+  let preflightFailed = false;
+  await publishPackages(packages, {
+    ...time,
     registry: {
-      metadata: async () => {
-        reads++;
-        if (reads === 1) throw new RegistryReadError("HTTP 503", true);
-        if (reads <= 3) return null;
-        return metadata(packages[0]);
+      metadata: async (name) => {
+        if (!preflightFailed) {
+          preflightFailed = true;
+          throw new RegistryReadError("HTTP 503", true);
+        }
+        const item = packages.find((candidate) => candidate.name === name);
+        if (!published.has(item.path)) return null;
+        if (item === packages[0] && time.now() < 40_000) return null;
+        if (item === packages[0] && time.now() < 50_000)
+          throw new RegistryReadError("HTTP 429", true);
+        return metadata(item);
       },
       download: async (url) => {
-        if (++downloads === 1) throw new RegistryReadError("Tarball not visible", true);
+        downloads.set(url, (downloads.get(url) ?? 0) + 1);
+        if (url.endsWith(packages[0].path) && time.now() < 60_000)
+          throw new RegistryReadError("Tarball not visible", true);
         return bytes(url);
       },
     },
-    publish: async () => {
-      publishes++;
+    publish: async (path) => {
+      assert.ok(!published.has(path));
+      published.add(path);
     },
-    sleep: async (delay) => {
-      delays.push(delay);
-    },
-    attempts: 4,
   });
-  assert.equal(publishes, 1);
-  assert.equal(reads, 5);
-  assert.equal(downloads, 2);
-  assert.deepEqual(delays, [1000, 1000, 2000]);
+  assert.equal(published.size, 5);
+  assert.equal(time.now(), 70_000);
+  for (const item of packages.slice(1)) assert.equal(downloads.get(metadata(item).dist.tarball), 1);
+  assert.ok(time.logs.some((line) => line.includes("HTTP 429")));
 });
 
-test("exhausted visibility reads prevent main publication", async () => {
+test("platforms share one five-minute deadline and timeout prevents main publication", async () => {
   const { packages } = fixture();
+  const time = clock();
   const published = [];
-  let reads = 0;
   await assert.rejects(
     publishPackages(packages, {
+      ...time,
       registry: {
-        metadata: async () => {
-          reads++;
-          return null;
-        },
+        metadata: async () => null,
         download: async () => assert.fail("No tarball available"),
       },
-      publish: async (path) => {
-        published.push(path);
-      },
-      sleep: async () => {},
-      attempts: 3,
+      publish: async (path) => published.push(path),
     }),
-    /not yet visible/,
+    (error) => {
+      assert.match(error.message, /Timed out after 5 minutes.*Platform packages: 300s/);
+      for (const item of packages.slice(0, 4)) assert.ok(error.message.includes(item.name));
+      assert.match(error.message, /not yet visible/);
+      return true;
+    },
   );
-  assert.deepEqual(published, [packages[0].path]);
-  assert.equal(reads, 4);
+  assert.deepEqual(
+    published,
+    packages.slice(0, 4).map((item) => item.path),
+  );
+  assert.equal(time.now(), 300_000);
+});
+
+test("main gets its own deadline after slow platform visibility", async () => {
+  const { packages, metadata, bytes } = fixture();
+  const time = clock();
+  const published = new Set();
+  await assert.rejects(
+    publishPackages(packages, {
+      ...time,
+      registry: {
+        metadata: async (name) => {
+          const item = packages.find((candidate) => candidate.name === name);
+          if (!published.has(item.path) || time.now() < 290_000 || name === "codesesh") return null;
+          return metadata(item);
+        },
+        download: async (url) => bytes(url),
+      },
+      publish: async (path) => published.add(path),
+    }),
+    /Timed out after 5 minutes.*Main package: 300s.*codesesh@1.2.3/,
+  );
+  assert.equal(time.now(), 590_000);
+  assert.equal(published.size, 5);
+});
+
+test("request time counts toward the deadline and late success cannot publish main", async () => {
+  const { packages, metadata, bytes } = fixture();
+  const time = clock();
+  const published = [];
+  await assert.rejects(
+    publishPackages(packages, {
+      ...time,
+      registry: {
+        metadata: async (name, version, signal) => {
+          assert.ok(signal instanceof AbortSignal);
+          if (published.length === 0) return null;
+          await time.sleep(290_000);
+          return metadata(packages.find((item) => item.name === name));
+        },
+        download: async (url, signal) => {
+          assert.ok(signal instanceof AbortSignal);
+          return bytes(url);
+        },
+      },
+      publish: async (path) => published.push(path),
+    }),
+    /Timed out after 5 minutes/,
+  );
+  assert.equal(time.now(), 300_000);
+  assert.equal(published.length, 4);
 });
 
 test("failed or ambiguous publish is never retried", async () => {
@@ -155,6 +245,7 @@ test("failed or ambiguous publish is never retried", async () => {
   let publishes = 0;
   await assert.rejects(
     publishPackages(packages, {
+      ...clock(),
       registry: {
         metadata: async () => null,
         download: async () => assert.fail("Publish failed"),
@@ -163,7 +254,6 @@ test("failed or ambiguous publish is never retried", async () => {
         publishes++;
         throw new Error("Connection lost during publish");
       },
-      sleep: async () => assert.fail("Publish must not retry"),
     }),
     /Connection lost/,
   );
@@ -174,6 +264,7 @@ test("registry authorization failure is not treated as an absent version", async
   const { packages } = fixture();
   await assert.rejects(
     publishPackages(packages, {
+      ...clock(),
       registry: {
         metadata: async () => {
           throw new RegistryReadError("HTTP 403", false);
