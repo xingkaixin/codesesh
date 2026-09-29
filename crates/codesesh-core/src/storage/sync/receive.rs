@@ -189,7 +189,7 @@ fn apply_operation(
         } => {
             let mut head = head.as_ref().clone();
             namespace(&mut head, node)?;
-            let Some(previous) = crate::storage::head_from_connection(tx, &head.reference)? else {
+            if crate::storage::head_from_connection(tx, &head.reference)?.is_none() {
                 let recovering: bool = tx.query_row(
                     "SELECT recovery_epoch IS NOT NULL FROM hub_nodes WHERE id=?",
                     [node],
@@ -198,11 +198,7 @@ fn apply_operation(
                 ensure!(recovering, "SNAPSHOT_REQUIRED");
                 tx.execute("INSERT INTO hub_orphans VALUES(?,?,?,?) ON CONFLICT(node_id,agent,session_id) DO UPDATE SET payload=excluded.payload",params![node,head.reference.agent_name,head.reference.session_id,serde_json::to_string(operation)?])?;
                 return Ok(None);
-            };
-            ensure!(
-                head.stats.message_count == previous.stats.message_count,
-                "SNAPSHOT_REQUIRED"
-            );
+            }
             head.stats.cost_inputs = cost_inputs.clone();
             update_metadata(tx, &mut head, source_path, pricing)?;
             let reference = head.reference;
@@ -225,8 +221,8 @@ fn update_metadata(
     metadata["sourcePath"] = source.into();
     let reference = &head.reference;
     let head_metadata = serde_json::json!({"rustHeadVersion":head.version,"rustHeadSummaryFiles":head.summary_files});
-    tx.execute("UPDATE sessions SET title=?,source_path=?,directory=?,project_identity_kind=?,project_identity_key=?,project_display_name=?,project_identity_resolver_revision=?,project_identity_input_signature=?,time_created=?,time_updated=?,activity_time=?,parent_agent_name=?,parent_session_id=?,total_input_tokens=?,total_output_tokens=?,total_cache_read_tokens=?,total_cache_create_tokens=?,total_tokens=?,total_cost=?,cost_source=?,model_usage_json=?,smart_tags_json=?,smart_tags_source_updated_at=?,smart_tags_classifier_revision=?,meta_json=?,head_meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
-        params![head.title,source,head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.parent_reference.as_ref().map(|p|&p.agent_name),head.parent_reference.as_ref().map(|p|&p.session_id),head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.total_tokens,head.stats.total_cost,head.stats.cost_source.as_ref().map(|v|v.as_str()),head.model_usage.as_ref().map(serde_json::to_string).transpose()?,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision,serde_json::to_string(&metadata)?,serde_json::to_string(&head_metadata)?,reference.source_node_id,reference.agent_name,reference.session_id])?;
+    tx.execute("UPDATE sessions SET message_count=?,title=?,source_path=?,directory=?,project_identity_kind=?,project_identity_key=?,project_display_name=?,project_identity_resolver_revision=?,project_identity_input_signature=?,time_created=?,time_updated=?,activity_time=?,parent_agent_name=?,parent_session_id=?,total_input_tokens=?,total_output_tokens=?,total_cache_read_tokens=?,total_cache_create_tokens=?,total_tokens=?,total_cost=?,cost_source=?,model_usage_json=?,smart_tags_json=?,smart_tags_source_updated_at=?,smart_tags_classifier_revision=?,meta_json=?,head_meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
+        params![head.stats.message_count as i64,head.title,source,head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.parent_reference.as_ref().map(|p|&p.agent_name),head.parent_reference.as_ref().map(|p|&p.session_id),head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.total_tokens,head.stats.total_cost,head.stats.cost_source.as_ref().map(|v|v.as_str()),head.model_usage.as_ref().map(serde_json::to_string).transpose()?,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision,serde_json::to_string(&metadata)?,serde_json::to_string(&head_metadata)?,reference.source_node_id,reference.agent_name,reference.session_id])?;
     tx.execute("UPDATE session_documents SET title=?,content_hash=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![head.title,crate::storage::facts::content_hash(head)?,reference.source_node_id,reference.agent_name,reference.session_id])?;
     tx.execute("UPDATE session_file_activity SET project_identity_key=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![head.project_identity.key,reference.source_node_id,reference.agent_name,reference.session_id])?;
     for table in ["session_model_cost", "session_cost_summary"] {
