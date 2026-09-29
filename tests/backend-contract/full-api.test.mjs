@@ -98,7 +98,7 @@ async function capture(fixture, command) {
   const put = (body) => ({ method: "PUT", body: JSON.stringify(body) });
   const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
   try {
-    server = await startServer(fixture, command);
+    server = await startServer(fixture, command, command === candidate ? ["--auth"] : []);
     await take("unauthenticated", "/api/sessions", { headers: { Authorization: "" } });
     await take("foreign origin", "/api/sessions", {
       headers: { Origin: "https://attacker.invalid" },
@@ -275,7 +275,7 @@ async function capture(fixture, command) {
     await stream.close();
     stream = undefined;
     await stop(server);
-    server = await startServer(fixture, command);
+    server = await startServer(fixture, command, command === candidate ? ["--auth"] : []);
     await take("bookmarks after restart", "/api/bookmarks");
     await take("alias after restart", detailOf(IDS[0]));
     await take("alias delete", `/api/session-aliases/codex/${IDS[0]}`, { method: "DELETE" });
