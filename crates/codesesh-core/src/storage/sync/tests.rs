@@ -86,11 +86,36 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     );
     let detail = cache.detail(head.clone()).unwrap().unwrap();
     cache.connection.execute_batch("CREATE TRIGGER forbid_message_rewrite BEFORE DELETE ON messages BEGIN SELECT RAISE(ABORT,'unexpected rewrite'); END;").unwrap();
+    let source = &batch.sessions[0].source;
+    let mut transcript = std::fs::read_to_string(source).unwrap();
+    transcript.push_str(concat!(
+        "{\"timestamp\":\"2026-09-01T10:00:02Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"<environment_context>Updated environment</environment_context>\"}]}}\n",
+        "{\"timestamp\":\"2026-09-01T10:00:03Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"developer\",\"content\":[{\"text\":\"Updated instructions\"}]}}\n"
+    ));
+    std::fs::write(source, transcript).unwrap();
+    let updated = crate::agents::codex::parse(source, &Default::default(), &Pricing::bundled())
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated.messages, session.detail.messages);
+    assert_eq!(
+        updated.head.stats.message_count,
+        head.stats.message_count + 2
+    );
+    batch.sessions[0].head = updated.head.clone();
+    batch.sessions[0].detail = updated;
     batch.sessions[0].head.title = "Renamed".into();
     worker.save_batch("codex", &mut batch).unwrap();
+    assert!(matches!(
+        worker.next_upload().unwrap().unwrap().operation,
+        Operation::Metadata { .. }
+    ));
+    drop(worker);
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
     transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(worker.queue_status().unwrap().batches, 0);
     let renamed = cache.head(&head.reference).unwrap().unwrap();
     assert_eq!(renamed.title, "Renamed");
+    assert_eq!(renamed.stats.message_count, head.stats.message_count + 2);
     assert_eq!(
         cache.detail(renamed).unwrap().unwrap().messages,
         detail.messages
@@ -427,6 +452,22 @@ fn recovery_retains_orphaned_metadata_until_a_snapshot_repairs_it() {
     cache.remove(&[reference]).unwrap();
     batch.sessions[0].head.title = "New title".into();
     worker.save_batch("codex", &mut batch).unwrap();
+    let pending = worker.next_upload().unwrap().unwrap();
+    let upload = Upload {
+        epoch: grant.epoch.clone(),
+        stream_id: worker.stream_id().unwrap(),
+        sequence: pending.sequence,
+        payload_version: pending.payload_version,
+        digest: pending.digest,
+        operation: pending.operation,
+    };
+    assert_eq!(
+        cache
+            .receive_upload(&grant.node_id, &upload, &Pricing::bundled())
+            .unwrap_err()
+            .to_string(),
+        "SNAPSHOT_REQUIRED"
+    );
     grant.epoch = cache.rotate_data_epoch().unwrap();
     let recovery = worker.prepare_recovery(&grant.epoch).unwrap();
     cache.recover_worker(&grant.node_id, &recovery).unwrap();
