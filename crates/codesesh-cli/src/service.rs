@@ -158,6 +158,23 @@ fn display(role: ServiceRole, report: &Report) {
     }
 }
 
+fn display_logs(home: &Path, role: ServiceRole) {
+    let directory = load(home, role)
+        .ok()
+        .and_then(|config| {
+            config
+                .environment
+                .get("CODESESH_LOG_DIR")
+                .map(|directory| config.directory.join(directory))
+        })
+        .unwrap_or_else(|| codesesh_core::app_paths::root(home).join("logs"));
+    println!(
+        "Service stdout/stderr: {}",
+        path(home, role, "log").display()
+    );
+    println!("Application logs: {} (codesesh-*.log)", directory.display());
+}
+
 pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> {
     let Some((role, action)) = selection(args) else {
         return Ok(false);
@@ -167,6 +184,7 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
         "--watch is only supported with status"
     );
     if action == Action::Status {
+        display_logs(home, role);
         if args.watch && request(home, role, false).await.is_ok() {
             watch_status(home, role, None).await?;
         } else {
@@ -186,9 +204,6 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
                         && last.phase == "failed"
                     {
                         println!("Last exit: {} — {}", last.phase, last.detail);
-                        println!("Log: {}", path(home, role, "log").display());
-                    } else if enabled {
-                        println!("Log: {}", path(home, role, "log").display());
                     }
                 }
             }
@@ -373,11 +388,8 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
     drop(role_lock);
     native::start(home, role).await?;
     write_private(&path(home, role, "enabled"), b"enabled")?;
-    println!(
-        "{}: starting in the background. Log: {}",
-        role.name(),
-        path(home, role, "log").display()
-    );
+    println!("{}: starting in the background.", role.name());
+    display_logs(home, role);
     watch_status(home, role, Some(Duration::from_secs(10))).await?;
     Ok(true)
 }
@@ -448,7 +460,7 @@ async fn watch_status(home: &Path, role: ServiceRole, limit: Option<Duration>) -
                     display(role, &last);
                     ensure!(
                         last.phase != "failed",
-                        "Service failed. Log: {}",
+                        "Service failed. Service stdout/stderr: {}",
                         path(home, role, "log").display()
                     );
                     return Ok(());
