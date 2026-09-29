@@ -1,5 +1,21 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Dispatched to Worker": ["已派发给 Worker", "Worker に送信済み"],
+  Cancelled: ["已取消", "キャンセル済み"],
+  "Unable to cancel. The task may already be dispatched; check its updated status.": [
+    "无法取消，任务可能已经派发，请查看更新后的状态。",
+    "キャンセルできません。送信済みの可能性があります。更新後の状態を確認してください。",
+  ],
+  "Pending Agents: {0}": ["待完成 Agent：{0}", "未完了の Agent: {0}"],
+  "Cancel queued task": ["取消排队任务", "待機タスクをキャンセル"],
+  "Rescan tasks": ["重采集任务", "再収集タスク"],
+  "Hide task history": ["收起任务历史", "タスク履歴を閉じる"],
+  "Task history": ["任务历史", "タスク履歴"],
+  "Queued tasks: {0}": ["{0} 个任务排队中", "{0} 件のタスクが待機中"],
+  "Unable to load task history.": ["无法加载任务历史。", "タスク履歴を読み込めません。"],
+  "No completed tasks yet.": ["暂无已结束任务。", "終了したタスクはありません。"],
+  "Load older tasks": ["加载更早任务", "以前のタスクを読み込む"],
+
   "Collection status": ["采集状态", "収集状態"],
   "Last successful scan": ["最近完整扫描成功时间", "最終スキャン成功日時"],
   "Not reported yet": ["尚未上报", "未報告"],

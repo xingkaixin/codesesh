@@ -1,6 +1,7 @@
 import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/contract";
 import type {
   HubNodes,
+  RescanHistory,
   AgentInfo,
   ApiProjectGroup,
   ApiProjectPage,
@@ -59,6 +60,22 @@ export function createApiClient(access: RemoteAccess) {
 
   async function fetchNodes(options?: FetchOptions): Promise<HubNodes> {
     return fetchJson("/api/nodes", options);
+  }
+
+  async function fetchRescanHistory(nodeId: string, before?: string): Promise<RescanHistory> {
+    const query = before ? `?before=${encodeURIComponent(before)}` : "";
+    return fetchJson(`/api/nodes/${encodeURIComponent(nodeId)}/tasks${query}`);
+  }
+
+  async function cancelRescan(nodeId: string, taskId: string): Promise<void> {
+    await fetchJson(
+      `/api/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
   }
 
   async function createPairingToken(): Promise<{ token: string; expiresInSeconds: number }> {
@@ -315,6 +332,8 @@ export function createApiClient(access: RemoteAccess) {
 
   return Object.freeze({
     fetchNodes,
+    fetchRescanHistory,
+    cancelRescan,
     createPairingToken,
     updateNode,
     requestRescan,

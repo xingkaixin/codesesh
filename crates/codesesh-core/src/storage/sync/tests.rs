@@ -611,3 +611,129 @@ fn local_pairing_requires_bound_proof_and_preserves_existing_history() {
     );
     assert_eq!(cache.snapshot().unwrap().len(), 1);
 }
+
+#[test]
+fn rescans_deduplicate_cancel_before_dispatch_and_keep_terminal_states() {
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let stream = uuid::Uuid::new_v4().to_string();
+    let grant = cache
+        .pair_worker(&token, "Worker", "1.1.1", &stream)
+        .unwrap();
+    let nodes = vec![grant.node_id.clone()];
+    let first = cache
+        .request_rescan(&nodes, &["codex".into(), "claudecode".into()], "manual")
+        .unwrap()
+        .remove(0);
+    let duplicate = cache
+        .request_rescan(
+            &nodes,
+            &["claudecode".into(), "codex".into(), "codex".into()],
+            "manual",
+        )
+        .unwrap()
+        .remove(0);
+    assert_eq!(first.id, duplicate.id);
+    assert!(!cache.cancel_rescan("another-node", &first.id).unwrap());
+    assert!(cache.cancel_rescan(&grant.node_id, &first.id).unwrap());
+    let next = cache
+        .request_rescan(&nodes, &[], "manual")
+        .unwrap()
+        .remove(0);
+    let mut hello = crate::sync::WorkerHello {
+        collection_status: None,
+        collection_complete: false,
+        collection_error: None,
+        epoch: Some(grant.epoch.clone()),
+        confirmed_sequence: 0,
+        version: "1.1.1".into(),
+        protocol_version: 1,
+        payload_version: 1,
+        stream_id: stream,
+        queue: crate::sync::QueueStatus {
+            batches: 0,
+            bytes: 0,
+            oldest_at: None,
+        },
+        rescan: None,
+    };
+    let offered = cache
+        .worker_hello(&grant.node_id, &hello, "1.1.1")
+        .unwrap()
+        .rescan
+        .unwrap();
+    assert_eq!(offered.id, next.id);
+    assert!(!cache.cancel_rescan(&grant.node_id, &next.id).unwrap());
+    assert_eq!(
+        cache
+            .worker_hello(&grant.node_id, &hello, "1.1.1")
+            .unwrap()
+            .rescan
+            .unwrap()
+            .id,
+        next.id
+    );
+    hello.rescan = Some(crate::sync::RescanProgress {
+        id: first.id.clone(),
+        pending_agents: vec![],
+        target_sequence: Some(0),
+        error: None,
+    });
+    cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
+    let tasks = cache.rescan_tasks().unwrap();
+    assert_eq!(
+        tasks
+            .iter()
+            .find(|task| task.request.id == first.id)
+            .unwrap()
+            .status,
+        "cancelled"
+    );
+    assert_eq!(
+        tasks
+            .iter()
+            .find(|task| task.request.id == next.id)
+            .unwrap()
+            .status,
+        "dispatched"
+    );
+}
+
+#[test]
+fn rescan_history_is_bounded_and_paginates_without_duplicates() {
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Worker", "1.1.1", &uuid::Uuid::new_v4().to_string())
+        .unwrap();
+    let mut ids = Vec::new();
+    for _ in 0..25 {
+        let task = cache
+            .request_rescan(std::slice::from_ref(&grant.node_id), &[], "manual")
+            .unwrap()
+            .remove(0);
+        cache.cancel_rescan(&grant.node_id, &task.id).unwrap();
+        ids.push(task.id);
+    }
+    assert_eq!(cache.rescan_tasks().unwrap().len(), 1);
+    let first = cache.rescan_history(&grant.node_id, None).unwrap();
+    assert_eq!(first.tasks.len(), 20);
+    let next = cache
+        .rescan_history(
+            &grant.node_id,
+            Some(first.next_cursor.unwrap().parse().unwrap()),
+        )
+        .unwrap();
+    assert_eq!(next.tasks.len(), 5);
+    assert!(next.next_cursor.is_none());
+    let actual: Vec<_> = first
+        .tasks
+        .into_iter()
+        .chain(next.tasks)
+        .map(|task| task.request.id)
+        .collect();
+    ids.reverse();
+    assert_eq!(actual, ids);
+}

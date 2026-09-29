@@ -11,7 +11,7 @@ pub use worker_store::{PendingUpload, QueueStatus, WorkerStore};
 
 pub use hub_types::{
     CollectionStatus, HubHello, HubNodes, LocalNode, Node, NodeHealth, NodeTask, PairingGrant,
-    Receipt, Recovery, RescanProgress, RescanRequest, Upload, WorkerHello,
+    Receipt, Recovery, RescanHistory, RescanProgress, RescanRequest, Upload, WorkerHello,
 };
 
 fn local_worker_mac(

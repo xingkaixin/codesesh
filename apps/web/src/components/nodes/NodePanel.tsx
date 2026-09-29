@@ -6,7 +6,8 @@ import { createPairingToken } from "../../lib/api";
 import { Monitor, Plug, Pencil, ChevronUp } from "../ui/icons";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
 import { NodeActions, type NodeAction } from "./NodeActions";
-import { collectionStatus, nodeRecoveryHint, nodeStatus, taskLabel } from "./node-status";
+import { NodeTasks } from "./NodeTasks";
+import { collectionStatus, nodeRecoveryHint, nodeStatus } from "./node-status";
 
 export function NodePanel({ onClose }: { onClose: () => void }) {
   useLocale();
@@ -21,7 +22,6 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
   const active = nodes.filter((node) => !node.revoked);
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0];
   const recoveryHint = selected ? nodeRecoveryHint(selected) : null;
-  const task = query.data?.tasks.find((task) => task.nodeId === selected?.id);
   const pair = async () => {
     setPairing(true);
     setError(null);
@@ -247,12 +247,12 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
               {t("{0} sessions need source content or a backup.", [selected.incompleteSessions])}
             </p>
           )}
-          {task && (
-            <p className="mt-3 text-sm">
-              {t("Rescan")}: {taskLabel(task.status)}
-              {task.progress?.error ? ` — ${task.progress.error}` : ""}
-            </p>
-          )}
+          <NodeTasks
+            key={selected.id}
+            nodeId={selected.id}
+            tasks={query.data?.tasks ?? []}
+            unavailable={query.isError}
+          />
           {!selected.revoked && (
             <div className="mt-5 flex flex-wrap justify-between gap-3 border-t border-[var(--console-border)] pt-4">
               <button

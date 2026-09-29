@@ -11,6 +11,8 @@ export const apiClient = createApiClient(remoteAccess);
 
 export const {
   fetchNodes,
+  fetchRescanHistory,
+  cancelRescan,
   createPairingToken,
   updateNode,
   requestRescan,
