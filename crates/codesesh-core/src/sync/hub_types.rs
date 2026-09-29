@@ -25,7 +25,27 @@ pub struct Receipt {
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+pub struct CollectionStatus {
+    pub active_agent: Option<String>,
+    #[ts(type = "number | null")]
+    pub last_success_at: Option<i64>,
+    pub errors: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeHealth {
+    #[ts(type = "number")]
+    pub reported_at: i64,
+    pub collection: CollectionStatus,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
 pub struct Node {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub health: Option<NodeHealth>,
     pub id: String,
     pub name: String,
     pub version: String,
@@ -55,6 +75,8 @@ pub struct PairingGrant {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkerHello {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection_status: Option<CollectionStatus>,
     #[serde(default)]
     pub collection_complete: bool,
     #[serde(default)]

@@ -186,6 +186,15 @@ impl Cache {
                 node
             ],
         )?;
+        if let Some(collection) = &hello.collection_status {
+            let health = crate::sync::NodeHealth {
+                reported_at: chrono::Utc::now().timestamp_millis(),
+                collection: collection.clone(),
+            };
+            tx.execute("INSERT INTO hub_node_health VALUES(?,?) ON CONFLICT(node_id) DO UPDATE SET payload=excluded.payload", params![node, serde_json::to_string(&health)?])?;
+        } else {
+            tx.execute("DELETE FROM hub_node_health WHERE node_id=?", [node])?;
+        }
         if hello
             .epoch
             .as_ref()

@@ -120,6 +120,25 @@ impl WorkerStore {
         Ok(Self { db })
     }
 
+    pub fn last_scan_success(&self) -> Result<Option<i64>> {
+        let value: Option<String> = self
+            .db
+            .query_row(
+                "SELECT value FROM worker_meta WHERE key='last_scan_success'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        value
+            .map(|value| value.parse().map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn record_scan_success(&mut self) -> Result<()> {
+        self.db.execute("INSERT INTO worker_meta VALUES('last_scan_success',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [chrono::Utc::now().timestamp_millis().to_string()])?;
+        Ok(())
+    }
+
     pub fn collection_complete(&self, agents: &[String]) -> Result<bool> {
         for agent in agents {
             let complete: bool = self.db.query_row(

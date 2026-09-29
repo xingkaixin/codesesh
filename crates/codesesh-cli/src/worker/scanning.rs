@@ -55,6 +55,21 @@ impl Scanning {
         self.next_scan = Instant::now();
     }
 
+    pub(super) fn status(
+        &self,
+        store: &WorkerStore,
+    ) -> Result<codesesh_core::sync::CollectionStatus> {
+        Ok(codesesh_core::sync::CollectionStatus {
+            active_agent: self
+                .pending
+                .as_ref()
+                .filter(|(_, generation, _)| *generation == self.generation)
+                .map(|(index, _, _)| self.sources[*index].agent.clone()),
+            last_success_at: store.last_scan_success()?,
+            errors: self.errors.clone(),
+        })
+    }
+
     pub(super) fn error(&self) -> Option<String> {
         (!self.errors.is_empty()).then(|| {
             self.errors
@@ -98,7 +113,11 @@ impl Scanning {
                             self.errors.remove(agent);
                         }
                         Err(error) => {
-                            let message = format!("SOURCE_OR_STORAGE_ERROR [{agent}]: {error:#}");
+                            let message: String =
+                                format!("SOURCE_OR_STORAGE_ERROR [{agent}]: {error:#}")
+                                    .chars()
+                                    .take(2048)
+                                    .collect();
                             eprintln!("Worker scan failed; progress retained: {message}");
                             self.errors.insert(agent.clone(), message);
                             scanner = AgentScanner::for_worker(
@@ -111,6 +130,9 @@ impl Scanning {
                 }
                 self.cursor = (index + 1) % self.sources.len();
                 if self.cursor == 0 {
+                    if !paused && self.errors.is_empty() {
+                        store.record_scan_success()?;
+                    }
                     self.next_scan = Instant::now() + Duration::from_secs(5);
                 }
             }

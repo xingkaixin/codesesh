@@ -20,6 +20,7 @@ struct Collector {
 impl Collector {
     fn hello(&self) -> Result<WorkerHello> {
         Ok(WorkerHello {
+            collection_status: Some(self.scanning.status(&self.store)?),
             collection_complete: self.store.collection_complete(&self.agents)?,
             collection_error: self.scanning.error().or(self.store.pause_reason()?),
             epoch: self.store.binding()?.map(|(_, grant)| grant.epoch),
