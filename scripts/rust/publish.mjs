@@ -17,60 +17,88 @@ export class RegistryReadError extends Error {
   }
 }
 
-async function request(url) {
-  let response;
+async function request(url, signal, read) {
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    const response = await fetch(url, {
+      signal: AbortSignal.any([AbortSignal.timeout(20_000), ...(signal ? [signal] : [])]),
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new RegistryReadError(
+        `Registry returned HTTP ${response.status}: ${url}`,
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    return await read(response);
   } catch (cause) {
+    if (cause instanceof RegistryReadError) throw cause;
     throw new RegistryReadError(`Registry request failed: ${cause.message}`, true);
   }
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new RegistryReadError(
-      `Registry returned HTTP ${response.status}: ${url}`,
-      response.status === 429 || response.status >= 500,
-    );
-  }
-  return response;
 }
 
 export const registry = {
-  async metadata(name, packageVersion) {
-    const response = await request(
+  async metadata(name, packageVersion, signal) {
+    return request(
       `https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(packageVersion)}`,
+      signal,
+      (response) => response.json(),
     );
-    return response ? response.json() : null;
   },
-  async download(url) {
+  async download(url, signal) {
     assert.equal(new URL(url).protocol, "https:", "Registry tarball must use HTTPS");
-    const response = await request(url);
-    if (!response) throw new RegistryReadError(`Tarball is not yet visible: ${url}`, true);
-    return Buffer.from(await response.arrayBuffer());
+    const bytes = await request(url, signal, async (response) =>
+      Buffer.from(await response.arrayBuffer()),
+    );
+    if (!bytes) throw new RegistryReadError(`Tarball is not yet visible: ${url}`, true);
+    return bytes;
   },
 };
 
 export async function publishPackages(packages, options = {}) {
+  const main = packages.find((item) => item.name === "codesesh");
+  const platforms = packages.filter((item) => item.name !== "codesesh");
+  assert.ok(main && platforms.length > 0 && platforms.length === packages.length - 1);
   const client = options.registry ?? registry;
   const publish =
     options.publish ??
     ((path) => npm(["publish", path, "--provenance", "--access", "public"], { stdio: "inherit" }));
   const sleep = options.sleep ?? setTimeout;
-  const attempts = options.attempts ?? 6;
-  assert.ok(Number.isInteger(attempts) && attempts > 0);
+  const now = options.now ?? (() => performance.now());
+  const log = options.log ?? console.log;
 
-  async function retryRead(read) {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await read();
-      } catch (error) {
-        if (!(error instanceof RegistryReadError) || !error.retryable || attempt + 1 >= attempts)
-          throw error;
-        await sleep(1000 * 2 ** attempt);
+  async function poll(items, label, check, delayFirst = false) {
+    if (items.length === 0) return;
+    const started = now();
+    const deadline = started + 300_000;
+    const pending = new Map(items.map((item) => [item, "Not checked yet"]));
+    const status = () =>
+      `${label}: ${Math.round((now() - started) / 1000)}s elapsed; pending: ${[...pending]
+        .map(([item, error]) => `${item.name}@${item.version} (${error})`)
+        .join(", ")}`;
+    if (delayFirst) await sleep(10_000);
+    while (now() < deadline) {
+      for (const item of pending.keys()) {
+        if (now() >= deadline) break;
+        const signal = AbortSignal.timeout(Math.ceil(deadline - now()));
+        try {
+          await check(item, signal);
+          if (now() >= deadline) break;
+          pending.delete(item);
+          log(`${label}: checked ${item.name}@${item.version}`);
+        } catch (error) {
+          if (!(error instanceof RegistryReadError) || !error.retryable) throw error;
+          pending.set(item, error.message);
+        }
       }
+      if (pending.size === 0) return;
+      log(status());
+      const remaining = deadline - now();
+      if (remaining > 0) await sleep(Math.min(10_000, remaining));
     }
+    throw new Error(`Timed out after 5 minutes. ${status()}`);
   }
 
-  async function verify(item, metadata) {
+  async function verify(item, metadata, signal) {
     assert.equal(metadata.name, item.name, "Registry package name mismatch");
     assert.equal(metadata.version, item.version, "Registry package version mismatch");
     assert.equal(
@@ -78,7 +106,7 @@ export async function publishPackages(packages, options = {}) {
       item.integrity,
       `${item.name}: registry integrity mismatch`,
     );
-    const downloaded = await client.download(metadata.dist.tarball);
+    const downloaded = await client.download(metadata.dist.tarball, signal);
     assert.equal(
       integrity(downloaded),
       item.integrity,
@@ -86,19 +114,30 @@ export async function publishPackages(packages, options = {}) {
     );
   }
 
-  for (const item of packages) {
-    const existing = await retryRead(() => client.metadata(item.name, item.version));
-    if (existing) {
-      await retryRead(() => verify(item, existing));
-      continue;
-    }
-    await publish(item.path);
-    await retryRead(async () => {
-      const metadata = await client.metadata(item.name, item.version);
-      if (!metadata)
-        throw new RegistryReadError(`${item.name}: published version is not yet visible`, true);
-      await verify(item, metadata);
-    });
+  const existing = new Set();
+  await poll(packages, "Check existing versions", async (item, signal) => {
+    const metadata = await client.metadata(item.name, item.version, signal);
+    if (!metadata) return;
+    await verify(item, metadata, signal);
+    existing.add(item);
+  });
+
+  for (const [label, items] of [
+    ["Platform packages", platforms],
+    ["Main package", [main]],
+  ]) {
+    const missing = items.filter((item) => !existing.has(item));
+    for (const item of missing) await publish(item.path);
+    await poll(
+      missing,
+      label,
+      async (item, signal) => {
+        const metadata = await client.metadata(item.name, item.version, signal);
+        if (!metadata) throw new RegistryReadError("Published version is not yet visible", true);
+        await verify(item, metadata, signal);
+      },
+      true,
+    );
   }
 }
 

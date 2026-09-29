@@ -140,7 +140,7 @@ jobs:
           node scripts/rust/distribution.mjs artifacts/release artifacts/distribution
           cp artifacts/distribution/SHA256SUMS artifacts/release/SHA256SUMS
 
-      - name: Publish native packages, then the main package
+      - name: Publish platforms, wait for availability, then publish main
         run: node scripts/rust/publish.mjs
         env:
           NODE_AUTH_TOKEN: ""
