@@ -86,12 +86,19 @@ export function createApiClient(access: RemoteAccess) {
     });
   }
 
-  async function createPairingToken(): Promise<{ token: string; expiresInSeconds: number }> {
-    return fetchJson("/api/nodes/pairing-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
+  async function createPairingToken(
+    nodeId?: string,
+  ): Promise<{ token: string; expiresInSeconds: number }> {
+    return fetchJson(
+      nodeId
+        ? `/api/nodes/${encodeURIComponent(nodeId)}/replacement-token`
+        : "/api/nodes/pairing-token",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
   }
 
   async function updateNode(

@@ -16,6 +16,11 @@ fn compatibility(version: &str, protocol: u32, payload: u32) -> Option<Response>
     check_compatibility(version,env!("CARGO_PKG_VERSION"),MINIMUM_WORKER_VERSION,protocol,payload).err().map(|reason| (StatusCode::CONFLICT,Json(json!({"error":reason,"hubVersion":env!("CARGO_PKG_VERSION"),"minimumWorkerVersion":MINIMUM_WORKER_VERSION}))).into_response())
 }
 
+struct AuthenticatedWorker {
+    node: String,
+    credential: String,
+}
+
 enum InstanceLease {
     Claim,
     Release,
@@ -25,7 +30,7 @@ async fn authenticate(
     state: &State,
     headers: &HeaderMap,
     lease: InstanceLease,
-) -> Result<String, Response> {
+) -> Result<AuthenticatedWorker, Response> {
     let credential = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -46,7 +51,7 @@ async fn authenticate(
                 InstanceLease::Claim => cache.claim_worker_instance(&node, &instance)?,
                 InstanceLease::Release => cache.release_worker_instance(&node, &instance)?,
             }
-            Ok(node)
+            Ok(AuthenticatedWorker { node, credential })
         })
         .await
         .map_err(|failure| {
@@ -128,13 +133,16 @@ pub async fn hello(
     headers: HeaderMap,
     Json(request): Json<WorkerHello>,
 ) -> Response {
-    let node = match authenticate(&state, &headers, InstanceLease::Claim).await {
-        Ok(node) => node,
+    let auth = match authenticate(&state, &headers, InstanceLease::Claim).await {
+        Ok(auth) => auth,
         Err(response) => return response,
     };
     match state
         .runtime
-        .hub_control(move |cache| cache.worker_hello(&node, &request, MINIMUM_WORKER_VERSION))
+        .hub_control(move |cache| {
+            let node = cache.authenticate_worker(&auth.credential)?;
+            cache.worker_hello(&node, &request, MINIMUM_WORKER_VERSION)
+        })
         .await
     {
         Ok(hello) => Json(hello).into_response(),
@@ -160,8 +168,8 @@ pub async fn upload(
     if let Some(response) = compatibility(version, protocol, request.payload_version) {
         return response;
     }
-    let node = match authenticate(&state, &headers, InstanceLease::Claim).await {
-        Ok(node) => node,
+    let auth = match authenticate(&state, &headers, InstanceLease::Claim).await {
+        Ok(auth) => auth,
         Err(response) => return response,
     };
     let Ok(_global) = state.upload_slots.clone().try_acquire_owned() else {
@@ -169,7 +177,7 @@ pub async fn upload(
     };
     let node_slot = match state.node_uploads.lock() {
         Ok(mut slots) => slots
-            .entry(node.clone())
+            .entry(auth.node.clone())
             .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(1)))
             .clone(),
         Err(_) => return retry("Node upload state is unavailable"),
@@ -181,7 +189,11 @@ pub async fn upload(
         Ok(pricing) => pricing,
         Err(_) => return retry("Pricing is temporarily unavailable"),
     };
-    match state.runtime.receive_upload(node, request, pricing).await {
+    match state
+        .runtime
+        .receive_upload(auth.credential, request, pricing)
+        .await
+    {
         Ok(receipt) => Json(receipt).into_response(),
         Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
         Err(failure) => error(StatusCode::CONFLICT, &failure.to_string()),
@@ -320,13 +332,16 @@ pub async fn recover(
     if let Some(response) = compatibility(version, protocol, PAYLOAD_VERSION) {
         return response;
     }
-    let node = match authenticate(&state, &headers, InstanceLease::Claim).await {
-        Ok(node) => node,
+    let auth = match authenticate(&state, &headers, InstanceLease::Claim).await {
+        Ok(auth) => auth,
         Err(response) => return response,
     };
     match state
         .runtime
-        .hub_control(move |cache| cache.recover_worker(&node, &request))
+        .hub_control(move |cache| {
+            let node = cache.authenticate_worker(&auth.credential)?;
+            cache.recover_worker(&node, &request)
+        })
         .await
     {
         Ok(()) => Json(json!({"recovered":true})).into_response(),
@@ -399,5 +414,23 @@ pub async fn pairing_status(
     {
         Ok(node_id) => Json(json!({"nodeId": node_id})).into_response(),
         Err(_) => retry("Pairing status is temporarily unavailable"),
+    }
+}
+
+pub async fn replacement_token(
+    AxumState(state): AxumState<Arc<State>>,
+    Path(node): Path<String>,
+) -> Response {
+    if !state.hub_enabled {
+        return error(StatusCode::NOT_FOUND, "Hub mode is not enabled");
+    }
+    match state
+        .runtime
+        .hub_control(move |cache| cache.create_replacement_token(&node))
+        .await
+    {
+        Ok(token) => Json(json!({"token":token,"expiresInSeconds":600})).into_response(),
+        Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
+        Err(_) => error(StatusCode::NOT_FOUND, "Unknown node"),
     }
 }

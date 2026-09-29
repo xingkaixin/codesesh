@@ -149,6 +149,10 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/nodes/pairing-token", post(sync::pairing_token))
         .route("/api/nodes/pairing-status", post(sync::pairing_status))
         .route("/api/nodes/{node}/revoke", post(sync::revoke))
+        .route(
+            "/api/nodes/{node}/replacement-token",
+            post(sync::replacement_token),
+        )
         .route("/api/config", get(catalog::config))
         .route("/api/status", get(catalog::status))
         .route("/api/agents", get(catalog::agents))

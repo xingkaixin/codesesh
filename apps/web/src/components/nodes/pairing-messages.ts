@@ -1,6 +1,24 @@
 import { t as translate } from "../../i18n/translate";
 
 const messages = {
+  "Replace Worker for {0}?": ["替换 {0} 的 Worker？", "{0} の Worker を置き換えますか？"],
+  "Keep this source identity, history, bookmarks, and titles. The old Worker's credentials stop working when the replacement pairs successfully.":
+    [
+      "保留此来源身份、历史、收藏和标题。替代 Worker 配对成功后，旧 Worker 的凭据将失效。",
+      "ソース ID、履歴、ブックマーク、タイトルを保持します。置き換え先のペアリング成功後、旧 Worker の認証情報は無効になります。",
+    ],
+  "The local source can only be replaced from this Hub's data directory. Other machines must be added as new Workers.":
+    [
+      "本机来源只能在此 Hub 的数据目录中替换。其他机器应添加为新 Worker。",
+      "ローカルソースの置き換えには、この Hub のデータディレクトリが必要です。他のマシンは新しい Worker として追加してください。",
+    ],
+  "Run the pairing command only on the machine that should continue this source. A new token replaces any earlier replacement token for this node.":
+    [
+      "请只在应接续此来源的机器上执行配对命令。新令牌会替代该节点之前生成的替换令牌。",
+      "このソースを引き継ぐマシンでのみペアリングコマンドを実行してください。新しいトークンは、このノードの以前の置き換えトークンを無効にします。",
+    ],
+  "Create replacement token": ["生成替换令牌", "置き換えトークンを発行"],
+
   Connection: ["连接方式", "接続方法"],
   "This machine": ["本机", "このマシン"],
   "Local network": ["局域网", "ローカルネットワーク"],

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AGENT_CATALOG } from "@codesesh/contract";
-import { t } from "../../i18n/translate";
-import { requestRescan, updateNode, type SourceNode } from "../../lib/api";
+import { t } from "./pairing-messages";
+import { createPairingToken, requestRescan, updateNode, type SourceNode } from "../../lib/api";
 import { NodePairing } from "./NodePairing";
 import { NativeSelect } from "../ui/native-select";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
@@ -10,6 +10,7 @@ export type NodeAction =
   | { kind: "pair"; token: string; expires: number }
   | { kind: "rescan"; nodes: SourceNode[]; all: boolean }
   | { kind: "revoke"; node: SourceNode }
+  | { kind: "replace"; node: SourceNode }
   | { kind: "rename"; node: SourceNode };
 
 export function NodeActions({
@@ -21,6 +22,7 @@ export function NodeActions({
   onClose: () => void;
   onUpdated: () => void;
 }) {
+  const [replacement, setReplacement] = useState<{ token: string; expires: number } | null>(null);
   const [finished, setFinished] = useState(false);
   const [agent, setAgent] = useState("");
   const [name, setName] = useState(action.kind === "rename" ? action.node.name : "");
@@ -29,30 +31,41 @@ export function NodeActions({
   const title =
     action.kind === "pair"
       ? t("Pair a Worker")
-      : action.kind === "rename"
-        ? t("Rename")
-        : action.kind === "revoke"
-          ? t("Revoke access to {0}?", [action.node.name])
-          : action.all
-            ? t("Rescan all Workers")
-            : t("Rescan {0}", [action.nodes[0]?.name ?? "Worker"]);
+      : action.kind === "replace"
+        ? t("Replace Worker for {0}?", [action.node.name])
+        : action.kind === "rename"
+          ? t("Rename")
+          : action.kind === "revoke"
+            ? t("Revoke access to {0}?", [action.node.name])
+            : action.all
+              ? t("Rescan all Workers")
+              : t("Rescan {0}", [action.nodes[0]?.name ?? "Worker"]);
   const description =
     action.kind === "pair"
       ? t("Run this command on the Worker machine, then paste the one-time token.")
-      : action.kind === "rename"
-        ? t("Choose a name to identify this machine.")
-        : action.kind === "revoke"
-          ? t(
-              "This Worker will stop uploading. Saved history remains. Reconnecting requires pairing again.",
-            )
-          : t(
-              "Re-read source files and update existing sessions. Offline Workers will run this task when they reconnect.",
-            );
+      : action.kind === "replace"
+        ? t(
+            "Keep this source identity, history, bookmarks, and titles. The old Worker's credentials stop working when the replacement pairs successfully.",
+          )
+        : action.kind === "rename"
+          ? t("Choose a name to identify this machine.")
+          : action.kind === "revoke"
+            ? t(
+                "This Worker will stop uploading. Saved history remains. Reconnecting requires pairing again.",
+              )
+            : t(
+                "Re-read source files and update existing sessions. Offline Workers will run this task when they reconnect.",
+              );
   const submit = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
+      if (action.kind === "replace") {
+        const value = await createPairingToken(action.node.id);
+        setReplacement({ token: value.token, expires: Date.now() + value.expiresInSeconds * 1000 });
+        return;
+      }
       if (action.kind === "rescan")
         await requestRescan(
           action.nodes.map((node) => node.id),
@@ -78,6 +91,12 @@ export function NodeActions({
     >
       {action.kind === "pair" ? (
         <NodePairing token={action.token} expires={action.expires} />
+      ) : action.kind === "replace" && replacement ? (
+        <NodePairing
+          token={replacement.token}
+          expires={replacement.expires}
+          replacementNodeId={action.node.id}
+        />
       ) : (
         <form
           onSubmit={(event) => {
@@ -86,6 +105,17 @@ export function NodeActions({
           }}
           className="mt-6 space-y-5"
         >
+          {action.kind === "replace" && (
+            <p className="break-words text-sm">
+              {action.node.id === "local"
+                ? t(
+                    "The local source can only be replaced from this Hub's data directory. Other machines must be added as new Workers.",
+                  )
+                : t(
+                    "Run the pairing command only on the machine that should continue this source. A new token replaces any earlier replacement token for this node.",
+                  )}
+            </p>
+          )}
           {action.kind === "rescan" && (
             <>
               <p className="text-sm">
@@ -144,9 +174,11 @@ export function NodeActions({
                 ? t("Working…")
                 : action.kind === "revoke"
                   ? t("Confirm revoke")
-                  : action.kind === "rename"
-                    ? t("Save")
-                    : t("Confirm rescan")}
+                  : action.kind === "replace"
+                    ? t("Create replacement token")
+                    : action.kind === "rename"
+                      ? t("Save")
+                      : t("Confirm rescan")}
             </button>
           </div>
         </form>

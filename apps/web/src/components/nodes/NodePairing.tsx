@@ -9,7 +9,15 @@ import { nodeButton } from "./NodeDialog";
 import { CopyButton } from "./CopyButton";
 import { pairingCommand, type ConnectionScope } from "./pairing-command";
 
-export function NodePairing({ token, expires }: { token: string; expires: number }) {
+export function NodePairing({
+  token,
+  expires,
+  replacementNodeId,
+}: {
+  token: string;
+  expires: number;
+  replacementNodeId?: string;
+}) {
   const client = useQueryClient();
   const configured = client.getQueryData<AppConfig>(["config"])?.publicHubUrl;
   const initialAddress = configured ?? window.location.origin;
@@ -40,7 +48,7 @@ export function NodePairing({ token, expires }: { token: string; expires: number
     setRenewing(true);
     setError(null);
     try {
-      const value = await createPairingToken();
+      const value = await createPairingToken(replacementNodeId);
       setPairing({ token: value.token, expires: Date.now() + value.expiresInSeconds * 1000 });
     } catch {
       setError(t("Unable to create a new token. Try again."));

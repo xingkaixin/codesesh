@@ -252,6 +252,24 @@ describe("NodePanel", () => {
     expect(screen.queryByRole("button", { name: "Generate new token" })).toBeNull();
   });
 
+  it("requires explicit replacement and requests a token bound to the selected node", async () => {
+    vi.mocked(api.createPairingToken).mockResolvedValue({
+      token: "replacement-token",
+      expiresInSeconds: 600,
+    });
+    panel();
+    fireEvent.click(await screen.findByRole("button", { name: "Replace Worker" }));
+    expect(api.createPairingToken).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "Keep this source identity, history, bookmarks, and titles. The old Worker's credentials stop working when the replacement pairs successfully.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create replacement token" }));
+    await screen.findByDisplayValue("replacement-token");
+    expect(api.createPairingToken).toHaveBeenCalledWith(node.id);
+  });
+
   it("reports successful and failed token copies", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

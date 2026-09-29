@@ -26,7 +26,7 @@ pub(super) enum Command {
         response: oneshot::Sender<Result<()>>,
     },
     Upload {
-        node: String,
+        credential: String,
         upload: crate::sync::Upload,
         pricing: crate::pricing::PricingSnapshot,
         response: oneshot::Sender<Result<crate::sync::Receipt>>,
@@ -79,12 +79,13 @@ pub(super) fn run(
                 let _ = response.send(result);
             }
             Command::Upload {
-                node,
+                credential,
                 upload,
                 pricing,
                 response,
             } => {
                 let result = pricing.with_current(|| {
+                    let node = cache.authenticate_worker(&credential)?;
                     let receipt = cache.receive_upload(&node, &upload, &pricing.pricing)?;
                     if let Some(reference) = &receipt.changed {
                         publish_changes(
