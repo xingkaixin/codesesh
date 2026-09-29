@@ -157,6 +157,38 @@ describe("NodePanel", () => {
     await waitFor(() => expect(api.requestRescan).toHaveBeenCalledWith(["worker-one"], ["codex"]));
   });
 
+  it("identifies failed Agents and marks old health reports as stale", async () => {
+    vi.mocked(api.fetchNodes).mockResolvedValue({
+      nodes: [
+        {
+          ...node,
+          error: "SOURCE_OR_STORAGE_ERROR [codex]: permission denied",
+          health: {
+            reportedAt: Date.now() - 120000,
+            collection: {
+              activeAgent: "claudecode",
+              lastSuccessAt: 123,
+              errors: { codex: "permission denied" },
+            },
+          },
+        },
+      ],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    });
+    panel();
+    await screen.findByText("Last reported state; Worker status may have changed.");
+    expect(screen.getByText("Collection failed: codex")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Check the affected Agent's source permissions and available disk space on the Worker.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Scanning claudecode")).toBeNull();
+  });
+
   it("reports successful and failed token copies", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });

@@ -66,6 +66,7 @@ impl Cache {
             CREATE TABLE IF NOT EXISTS hub_pairing(token_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS hub_nodes(id TEXT PRIMARY KEY,name TEXT NOT NULL,version TEXT NOT NULL,credential_hash TEXT NOT NULL UNIQUE,stream_id TEXT NOT NULL,confirmed_sequence INTEGER NOT NULL DEFAULT 0,confirmed_digest TEXT,confirmed_reference TEXT,recovery_epoch TEXT,paired_at INTEGER NOT NULL,last_seen INTEGER,last_confirmed_at INTEGER,collection_complete INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0,queue TEXT,error TEXT,instance_id TEXT,lease_until INTEGER);
             CREATE TABLE IF NOT EXISTS hub_orphans(node_id TEXT NOT NULL REFERENCES hub_nodes(id),agent TEXT NOT NULL,session_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(node_id,agent,session_id));
+            CREATE TABLE IF NOT EXISTS hub_node_health(node_id TEXT PRIMARY KEY REFERENCES hub_nodes(id),payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS hub_rescans(id TEXT PRIMARY KEY,node_id TEXT NOT NULL REFERENCES hub_nodes(id),request TEXT NOT NULL,status TEXT NOT NULL,progress TEXT);
             CREATE TABLE IF NOT EXISTS hub_chunks(node_id TEXT NOT NULL REFERENCES hub_nodes(id),stream_id TEXT NOT NULL,transfer_id TEXT NOT NULL,chunk_index INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(node_id,stream_id,transfer_id,chunk_index));")?;
         tx.execute(
@@ -259,11 +260,12 @@ impl Cache {
     }
 
     pub fn nodes(&self) -> Result<Vec<Node>> {
-        let mut query=self.connection.prepare("SELECT id,name,version,paired_at,last_seen,revoked,queue,error,(SELECT COUNT(*) FROM hub_orphans WHERE node_id=hub_nodes.id),collection_complete,last_confirmed_at FROM hub_nodes ORDER BY paired_at,id")?;
+        let mut query=self.connection.prepare("SELECT id,name,version,paired_at,last_seen,revoked,queue,error,(SELECT COUNT(*) FROM hub_orphans WHERE node_id=hub_nodes.id),collection_complete,last_confirmed_at,(SELECT payload FROM hub_node_health WHERE node_id=hub_nodes.id) FROM hub_nodes ORDER BY paired_at,id")?;
         let rows = query
             .query_map([], |r| {
                 Ok((
                     Node {
+                        health: None,
                         id: r.get(0)?,
                         name: r.get(1)?,
                         version: r.get(2)?,
@@ -277,11 +279,13 @@ impl Cache {
                         collection_complete: r.get(9)?,
                     },
                     r.get::<_, Option<String>>(6)?,
+                    r.get::<_, Option<String>>(11)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
-            .map(|(mut node, queue)| {
+            .map(|(mut node, queue, health)| {
+                node.health = health.map(|raw| serde_json::from_str(&raw)).transpose()?;
                 node.queue = queue.map(|raw| serde_json::from_str(&raw)).transpose()?;
                 Ok(node)
             })

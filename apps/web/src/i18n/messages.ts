@@ -1,5 +1,53 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Collection status": ["采集状态", "収集状態"],
+  "Last successful scan": ["最近完整扫描成功时间", "最終スキャン成功日時"],
+  "Not reported yet": ["尚未上报", "未報告"],
+  "Status reported: {0}": ["状态上报时间：{0}", "状態の報告日時: {0}"],
+  "Collection failed: {0}": ["采集失败：{0}", "収集失敗: {0}"],
+  "Pair this Worker again to restore access. Saved history is retained.": [
+    "重新配对此 Worker 可恢复访问，已归档历史会保留。",
+    "アクセスを復元するには Worker を再ペアリングしてください。保存済みの履歴は保持されます。",
+  ],
+  "Install compatible Hub and Worker versions, upgrading Hub first.": [
+    "安装兼容的 Hub 和 Worker 版本，先升级 Hub。",
+    "互換性のあるバージョンをインストールしてください。先に Hub を更新してください。",
+  ],
+  "Stop the other Worker using this identity, then wait for its lease to expire.": [
+    "停止使用同一身份的另一个 Worker，等待其租约到期。",
+    "同じ ID を使う別の Worker を停止し、リースの期限切れを待ってください。",
+  ],
+  "Check this Worker's Hub binding and credentials. Pair again if access was revoked.": [
+    "检查此 Worker 绑定的 Hub 和凭据；访问已撤销时需重新配对。",
+    "Worker の Hub 接続先と認証情報を確認してください。アクセスが取り消された場合は再ペアリングしてください。",
+  ],
+  "Check the affected Agent's source permissions and available disk space on the Worker.": [
+    "检查 Worker 上对应 Agent 的来源读取权限和剩余磁盘空间。",
+    "Worker 上で対象 Agent の読み取り権限とディスク空き容量を確認してください。",
+  ],
+  "Run codesesh worker status on this machine and inspect the reported log paths.": [
+    "在该机器运行 codesesh worker status，查看其提示的日志文件。",
+    "対象マシンで codesesh worker status を実行し、表示されたログを確認してください。",
+  ],
+  "Collection details unavailable. Upgrade the Worker to report them.": [
+    "采集详情不可用，升级 Worker 后可上报。",
+    "収集の詳細がありません。Worker を更新すると報告されます。",
+  ],
+  "Last reported state; Worker status may have changed.": [
+    "这是上次上报状态，Worker 的当前状态可能已变化。",
+    "前回報告された状態です。現在の状態は変わっている可能性があります。",
+  ],
+  "Some Agents failed; other Agents continue collecting.": [
+    "部分 Agent 采集失败，其他 Agent 继续采集。",
+    "一部の Agent の収集に失敗しました。他の Agent は収集を続けます。",
+  ],
+  "Scanning {0}": ["正在扫描 {0}", "{0} をスキャン中"],
+  "Collection paused or needs attention.": [
+    "采集已暂停或需要处理。",
+    "収集が一時停止中、または確認が必要です。",
+  ],
+  "Waiting for the next scan": ["等待下次扫描", "次のスキャンを待機中"],
+
   "Connect your machines. Keep your sessions together.": [
     "连接你的机器，集中保存会话。",
     "マシンを接続してセッションを一か所に。",

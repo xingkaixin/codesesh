@@ -260,6 +260,11 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
     assert!(!worker.begin_rescan(&task, &["codex".into()]).unwrap());
     worker.save_batch("codex", &mut batch).unwrap();
     let hello = crate::sync::WorkerHello {
+        collection_status: Some(crate::sync::CollectionStatus {
+            active_agent: Some("codex".into()),
+            last_success_at: Some(123),
+            errors: [("claudecode".into(), "unreadable source".into())].into(),
+        }),
         collection_complete: true,
         collection_error: None,
         epoch: Some(grant.epoch.clone()),
@@ -274,6 +279,17 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
     assert!(hello.rescan.as_ref().unwrap().target_sequence.is_some());
     cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
     assert_eq!(cache.rescan_tasks().unwrap()[0].status, "uploading");
+    let health = cache.nodes().unwrap()[0].health.clone().unwrap();
+    assert_eq!(health.collection.active_agent.as_deref(), Some("codex"));
+    assert_eq!(health.collection.last_success_at, Some(123));
+    assert_eq!(health.collection.errors["claudecode"], "unreadable source");
+    assert!(health.reported_at > 0);
+    let mut legacy_hello = hello.clone();
+    legacy_hello.collection_status = None;
+    cache
+        .worker_hello(&grant.node_id, &legacy_hello, "1.1.1")
+        .unwrap();
+    assert!(cache.nodes().unwrap()[0].health.is_none());
     drop(worker);
     let mut worker = WorkerStore::open(&worker_path).unwrap();
     assert!(!worker.begin_rescan(&task, &["codex".into()]).unwrap());

@@ -6,7 +6,7 @@ import { createPairingToken } from "../../lib/api";
 import { Monitor, Plug, Pencil, ChevronUp } from "../ui/icons";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
 import { NodeActions, type NodeAction } from "./NodeActions";
-import { nodeStatus, taskLabel } from "./node-status";
+import { collectionStatus, nodeRecoveryHint, nodeStatus, taskLabel } from "./node-status";
 
 export function NodePanel({ onClose }: { onClose: () => void }) {
   useLocale();
@@ -20,6 +20,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
   const nodes = query.data?.nodes ?? [];
   const active = nodes.filter((node) => !node.revoked);
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0];
+  const recoveryHint = selected ? nodeRecoveryHint(selected) : null;
   const task = query.data?.tasks.find((task) => task.nodeId === selected?.id);
   const pair = async () => {
     setPairing(true);
@@ -193,7 +194,38 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                 {query.isError ? t("Node status unavailable") : nodeStatus(selected, now)}
               </dd>
             </div>
+            <div>
+              <dt className="text-xs text-[var(--console-muted)]">{t("Collection status")}</dt>
+              <dd className="mt-1 text-sm">
+                {query.isError ? t("Node status unavailable") : collectionStatus(selected, now)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--console-muted)]">{t("Last successful scan")}</dt>
+              <dd className="mt-1 text-sm">
+                {selected.health?.collection.lastSuccessAt
+                  ? new Date(selected.health.collection.lastSuccessAt).toLocaleString()
+                  : t("Not reported yet")}
+              </dd>
+            </div>
           </dl>
+          {selected.health && (
+            <p className="mt-4 text-xs text-[var(--console-muted)]">
+              {t("Status reported: {0}", [new Date(selected.health.reportedAt).toLocaleString()])}
+            </p>
+          )}
+          {recoveryHint && recoveryHint !== nodeStatus(selected, now) && (
+            <p role="status" className="mt-3 text-sm text-[var(--console-warning)]">
+              {recoveryHint}
+            </p>
+          )}
+          {selected.health &&
+            Object.entries(selected.health.collection.errors).map(([agent, error]) => (
+              <details key={agent} className="mt-3 text-xs text-[var(--console-error)]">
+                <summary>{t("Collection failed: {0}", [agent])}</summary>
+                <p className="mt-2 break-words">{error}</p>
+              </details>
+            ))}
           {selected.lastConfirmedAt && (
             <p className="mt-4 text-xs text-[var(--console-muted)]">
               {t("Last confirmed: {0}", [new Date(selected.lastConfirmedAt).toLocaleString()])}
