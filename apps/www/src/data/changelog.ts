@@ -71,6 +71,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.1",
+        date: "2026-09-29",
+        title: "Keep Worker uploads moving as session counts change",
+        summary:
+          "CodeSesh 1.2.1 fixes a Hub/Worker sync failure when a session's message count changes but its replayable conversation stays the same. These updates no longer block queued uploads.",
+        direction:
+          "Reliable multi-machine history depends on accepting valid session updates while preserving the conversation already collected.",
+        highlights: [
+          {
+            title: "Sync session counts without blocking uploads",
+            description:
+              "The Hub now accepts count changes in metadata-only updates, including when Codex records new environment context or developer instructions without adding replayable messages.",
+          },
+          {
+            title: "Keep existing conversation content intact",
+            description:
+              "The Hub saves the updated count without rewriting stored messages or search content, preserving the conversation available for replay and search.",
+          },
+        ],
+      },
+      {
         version: "1.2.0",
         date: "2026-09-29",
         title: "Browse AI coding history across your machines",
@@ -440,6 +461,26 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.1",
+        date: "2026-09-29",
+        title: "消息计数变化时，Worker 上传继续进行",
+        summary:
+          "CodeSesh 1.2.1 修复会话消息计数变化、可回放对话未变时的 Hub/Worker 同步失败。这类更新不再阻塞上传队列。",
+        direction:
+          "跨机器浏览 AI 编码历史需要可靠的同步：接受有效的会话更新，同时保留已经采集的对话内容。",
+        highlights: [
+          {
+            title: "同步计数，不再阻塞上传",
+            description:
+              "Hub 现在接受纯元数据更新中的消息计数变化，包括 Codex 新增环境上下文或开发者指令、但未增加可回放消息的情况。",
+          },
+          {
+            title: "保留已有对话内容",
+            description: "Hub 保存最新计数时不重写已有消息和搜索内容，保留可用于回放和搜索的对话。",
+          },
+        ],
+      },
+      {
         version: "1.2.0",
         date: "2026-09-29",
         title: "在一个界面浏览多台机器的 AI 编码历史",
@@ -793,6 +834,27 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.1",
+        date: "2026-09-29",
+        title: "メッセージ数が変わってもWorkerのアップロードを継続",
+        summary:
+          "CodeSesh 1.2.1では、再生できる会話が変わらずメッセージ数だけが変化した場合のHub/Worker同期エラーを修正しました。この更新でアップロードキューが止まることはなくなります。",
+        direction:
+          "複数のマシンのAIコーディング履歴を確実に参照できるよう、有効な更新を受け入れながら、収集済みの会話を保持します。",
+        highlights: [
+          {
+            title: "メッセージ数の更新で同期を止めない",
+            description:
+              "Hubがメタデータのみの更新でもメッセージ数の変更を受け入れるようになりました。Codexで環境コンテキストや開発者指示が追加され、再生対象のメッセージが増えない場合も同期できます。",
+          },
+          {
+            title: "保存済みの会話を維持",
+            description:
+              "Hubは既存のメッセージや検索内容を書き換えずに最新の件数を保存し、再生や検索に使う会話を保持します。",
+          },
+        ],
+      },
       {
         version: "1.2.0",
         date: "2026-09-29",
