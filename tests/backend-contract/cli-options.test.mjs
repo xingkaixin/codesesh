@@ -219,7 +219,7 @@ async function startup(fixture, command, flags) {
       assert.equal(process.child.exitCode, null, JSON.stringify(process.output()));
       return [...process.output().stdout.matchAll(/https?:\/\/\S+/g)]
         .map((m) => new URL(m[0]))
-        .find((url) => url.searchParams.has("access_token"));
+        .find((url) => ["http:", "https:"].includes(url.protocol));
     }, "CLI startup URL");
     return url;
   } finally {
@@ -251,7 +251,7 @@ test("CLI startup accepts opaque sessions, preserves proxy origins and parses po
       assert.equal(actual.pathname, expected.pathname);
       assert.equal(actual.protocol, expected.protocol);
       if (flags.includes("--trust-proxy")) assert.equal(actual.origin, expected.origin);
-      assert.ok(actual.searchParams.get("access_token"));
+      assert.equal(actual.searchParams.has("access_token"), flags.includes("--remote-access"));
     }
   } finally {
     fixture.dispose();
@@ -307,12 +307,10 @@ test("CLI trace precedes the Web URL and labels asynchronous initialization hone
       try {
         await waitFor(() => {
           assert.equal(process.child.exitCode, null, JSON.stringify(process.output()));
-          return process.output().stdout.includes("access_token=");
+          return /https?:\/\/\S+/.test(process.output().stdout);
         }, "trace and Web URL");
         const stdout = process.output().stdout;
-        const url = [...stdout.matchAll(/https?:\/\/\S+/g)].find((match) =>
-          match[0].includes("access_token="),
-        );
+        const url = [...stdout.matchAll(/https?:\/\/\S+/g)][0];
         const report = traceReport(stdout, url.index);
         if (command === rust) {
           assert.match(report, /startup: <duration>ms/);

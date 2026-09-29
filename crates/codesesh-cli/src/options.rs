@@ -29,6 +29,10 @@ pub struct Args {
     pub host: String,
     #[arg(global = true, long)]
     pub remote_access: bool,
+    /// Require an API access token for local access; remote access always requires one.
+    #[arg(global = true, long)]
+    #[serde(default)]
+    pub auth: bool,
     #[arg(global = true, long)]
     pub tls_cert: Option<PathBuf>,
     #[arg(global = true, long)]

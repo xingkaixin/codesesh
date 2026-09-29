@@ -313,7 +313,7 @@ async function request(server, path, allowFailure = false) {
   const started = performance.now();
   const response = await fetch(new URL(path, server.origin), {
     signal: AbortSignal.timeout(90000),
-    headers: { Authorization: `Bearer ${server.token}` },
+    headers: server.token ? { Authorization: `Bearer ${server.token}` } : {},
   });
   const firstByteMs = performance.now() - started;
   const text = await response.text();
@@ -365,7 +365,7 @@ async function web(fixture, config, command, hot = false, traffic = false) {
       if (process.child.exitCode !== null) throw new Error(JSON.stringify(process.output()));
       return [...process.output().stdout.matchAll(/https?:\/\/\S+/g)]
         .map((m) => new URL(m[0]))
-        .find((u) => u.searchParams.has("access_token"));
+        .find((url) => ["http:", "https:"].includes(url.protocol));
     }, "startup URL");
     url.hostname = "127.0.0.1";
     server = { ...process, origin: url.origin, token: url.searchParams.get("access_token") };

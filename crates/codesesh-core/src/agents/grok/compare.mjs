@@ -116,14 +116,16 @@ try {
     () =>
       [...server.output().stdout.matchAll(/https?:\/\/\S+/g)]
         .map((m) => new URL(m[0]))
-        .find((u) => u.searchParams.has("access_token")),
+        .find((url) => ["http:", "https:"].includes(url.protocol)),
     "reference Grok URL",
   );
   url.hostname = "127.0.0.1";
   const get = async (path) =>
     (
       await fetch(new URL(path, url.origin), {
-        headers: { Authorization: `Bearer ${url.searchParams.get("access_token")}` },
+        headers: url.searchParams.has("access_token")
+          ? { Authorization: `Bearer ${url.searchParams.get("access_token")}` }
+          : {},
       })
     ).json();
   await waitFor(async () => {

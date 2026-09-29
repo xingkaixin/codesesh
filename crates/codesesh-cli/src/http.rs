@@ -34,7 +34,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct Options {
-    pub token: String,
+    pub token: Option<String>,
     pub hostname: String,
     pub port: u16,
     pub tls: bool,

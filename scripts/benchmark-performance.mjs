@@ -252,7 +252,7 @@ export function findStartupUrl(output, expectedOrigin) {
   for (const match of output.matchAll(/https?:\/\/\S+/g)) {
     try {
       const candidate = new URL(match[0]);
-      if (candidate.origin === expectedOrigin && candidate.searchParams.has("access_token")) {
+      if (candidate.origin === expectedOrigin) {
         return candidate;
       }
     } catch {}

@@ -257,7 +257,8 @@ agent's own data directory.
 |------|-------|---------|-------------|
 | `--port` | `-p` | `4521` | HTTP server starting port; falls back to the next available port if busy |
 | `--host` | — | `127.0.0.1` | HTTP server bind address; default is local-only, set explicitly (e.g. `0.0.0.0`) to expose on the network |
-| `--remote-access` | — | `false` | Allow network or reverse-proxy exposure; API access is token-protected in every mode |
+| `--auth` | — | `false` | Require an API access token for local access |
+| `--remote-access` | — | `false` | Allow network or reverse-proxy exposure; always require an API access token |
 | `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS |
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert` |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS |
@@ -276,11 +277,15 @@ agent's own data directory.
 | `-v` | — | — | Print version number |
 | `-h` / `--help` | — | — | Show help |
 
-Every CodeSesh server process protects its API with a new access token, including the default
-loopback listener, and includes that token in the printed startup URL. Non-loopback binding requires
-`--remote-access`. A trusted proxy also requires `--remote-access`, a loopback `--host`, and an
-HTTPS `--public-url`. Treat the startup URL as a password: do not publish it or place it in shared
-shell history.
+Local access does not require an API token by default. Use `--auth` to enable token authentication
+on the loopback listener. Without it, other users and processes on the same machine can access
+indexed sessions and write APIs. Host and cross-origin request checks remain enabled.
+
+`--remote-access` always enables token authentication, including when the backend listens on
+loopback behind a reverse proxy. Non-loopback binding requires `--remote-access`. A trusted proxy
+also requires a loopback `--host` and an HTTPS `--public-url`. When authentication is enabled, each
+server process generates a fresh token and includes it in the startup URL. Treat that URL as a
+password: do not share or persist it. Worker pairing and upload credentials are unchanged.
 
 A token proves who is asking; it does not hide the answer. Without TLS the token and the full
 session content travel the network in the clear, and the token in the URL can end up in reverse

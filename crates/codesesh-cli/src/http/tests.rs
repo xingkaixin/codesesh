@@ -9,12 +9,18 @@ async fn app() -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
     app_mode(false).await
 }
 async fn app_mode(hub: bool) -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
+    app_options(hub, Some("secret".into())).await
+}
+async fn app_options(
+    hub: bool,
+    token: Option<String>,
+) -> (Router, codesesh_core::runtime::Runtime, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let runtime = codesesh_core::runtime::Runtime::start(dir.path().join("cache.db"), vec![], 1)
         .await
         .unwrap();
     let options = Options {
-        token: "secret".into(),
+        token,
         hostname: "127.0.0.1".into(),
         port: 4521,
         tls: false,
@@ -71,6 +77,47 @@ async fn request(
         status,
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     )
+}
+
+#[tokio::test]
+async fn local_access_without_auth_preserves_request_boundaries() {
+    let (app, runtime, _dir) = app_options(false, None).await;
+    for (headers, expected) in [
+        (vec![], StatusCode::OK),
+        (vec![("authorization", "Bearer stale")], StatusCode::OK),
+        (vec![("origin", "http://evil.test")], StatusCode::FORBIDDEN),
+        (
+            vec![("sec-fetch-site", "cross-site")],
+            StatusCode::FORBIDDEN,
+        ),
+        (vec![("host", "evil.test:4521")], StatusCode::FORBIDDEN),
+    ] {
+        assert_eq!(
+            request(&app, Method::GET, "/api/config", &headers, "")
+                .await
+                .0,
+            expected
+        );
+    }
+    assert_eq!(
+        request(&app, Method::PUT, "/api/bookmarks", &[], "{}")
+            .await
+            .0,
+        StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
+    assert_eq!(
+        request(
+            &app,
+            Method::PUT,
+            "/api/bookmarks",
+            &[("content-type", "application/json")],
+            r#"{"reference":{"agentName":"codex","sessionId":"local"}}"#
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    runtime.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -344,7 +391,7 @@ async fn remote_proxy_accepts_public_authority_but_requires_https() {
         codesesh_core::pricing::PricingController::load(dir.path()),
         None,
         Options {
-            token: "secret".into(),
+            token: Some("secret".into()),
             hostname: "127.0.0.1".into(),
             port: 4521,
             tls: false,

@@ -17,6 +17,14 @@ describe("performance benchmark authentication", () => {
     );
   });
 
+  it("accepts local startup URLs without a token", () => {
+    const startup = findStartupUrl("http://localhost:4521/", "http://localhost:4521");
+    expect(startup?.href).toBe("http://localhost:4521/");
+    expect(authenticatedApiUrl(startup, "/api/config").href).toBe(
+      "http://localhost:4521/api/config",
+    );
+  });
+
   it("carries the startup token into API probes", () => {
     const startupUrl = new URL("http://localhost:4521/?access_token=benchmark-secret");
 

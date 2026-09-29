@@ -14,6 +14,24 @@ import {
   waitFor,
 } from "./harness.mjs";
 
+test("local auth is opt-in and remote access always requires a token", async () => {
+  const fixture = createFixture();
+  try {
+    for (const flags of [[], ["--auth"], ["--remote-access"]]) {
+      const server = await startServer(fixture, undefined, flags);
+      try {
+        const response = await fetch(`${server.origin}/api/config`);
+        assert.equal(response.status, flags.length === 0 ? 200 : 401);
+        assert.deepEqual(await readJson(server, "/api/config"), { window: { days: 0 } });
+      } finally {
+        await stop(server);
+      }
+    }
+  } finally {
+    fixture.dispose();
+  }
+});
+
 test(
   "CLI JSON exposes an identified index and exits without changing its source",
   { timeout: 35_000 },
@@ -45,7 +63,7 @@ test(
     const fixture = createFixture();
     let server;
     try {
-      server = await startServer(fixture);
+      server = await startServer(fixture, undefined, ["--auth"]);
       const unauthenticated = await fetch(`${server.origin}/api/sessions`);
       assert.equal(unauthenticated.status, 401);
       assert.deepEqual(await readJson(server, "/api/config"), { window: { days: 0 } });
@@ -76,7 +94,7 @@ test(
       const stopped = await stop(server);
       if (process.platform === "win32") assert.equal(stopped.signal, "SIGTERM");
       else assert.equal(stopped.code, 0);
-      server = await startServer(fixture);
+      server = await startServer(fixture, undefined, ["--auth"]);
       const bookmarks = await readJson(server, "/api/bookmarks");
       assert.equal(bookmarks.bookmarks.length, 1);
       assert.deepEqual(bookmarks.bookmarks[0].reference, REFERENCE);
@@ -99,7 +117,7 @@ test(
     let server;
     let stream;
     try {
-      server = await startServer(fixture);
+      server = await startServer(fixture, undefined, ["--auth"]);
       stream = await openEvents(server);
       assert.equal(stream.events[0].type, "connected");
       appendReply(fixture);

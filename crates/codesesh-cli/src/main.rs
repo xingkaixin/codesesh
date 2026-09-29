@@ -333,10 +333,12 @@ async fn run() -> Result<()> {
     });
     let listener = bind(&args.host, plan.port).await?;
     let address = listener.local_addr()?;
-    let mut bytes = Vec::with_capacity(32);
-    bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let token = (args.auth || args.remote_access).then(|| {
+        let mut bytes = Vec::with_capacity(32);
+        bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+        bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    });
     let home = environment.home.clone();
     let saved =
         match tokio::task::spawn_blocking(move || StateStore::from_environment(&home)).await? {
@@ -387,9 +389,9 @@ async fn run() -> Result<()> {
             .map_err(|_| anyhow::anyhow!("invalid startup URL"))?
             .extend([agent.to_lowercase().as_str(), &id]);
     }
-    startup
-        .query_pairs_mut()
-        .append_pair("access_token", &token);
+    if let Some(token) = &token {
+        startup.query_pairs_mut().append_pair("access_token", token);
+    }
     let mut advertised = startup.clone();
     advertised.set_path("/");
     if args.trace {

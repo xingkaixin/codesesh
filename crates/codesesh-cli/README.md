@@ -115,7 +115,8 @@ npx codesesh --trace
 | ----------- | ----- | ------- | ----------------------------------------------------------- |
 | `--port`    | `-p`  | `4521`  | HTTP server starting port; falls back to the next available port if busy |
 | `--host`    | —     | `127.0.0.1` | HTTP server bind address; non-loopback values require `--remote-access` |
-| `--remote-access` | — | `false` | Allow network or reverse-proxy exposure; every API mode uses a token |
+| `--auth` | — | `false` | Require an API access token for local access |
+| `--remote-access` | — | `false` | Allow network or reverse-proxy exposure; always require an API access token |
 | `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS            |
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert`                          |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS                    |
@@ -133,11 +134,15 @@ npx codesesh --trace
 | `--clear-cache` | — | `false` | Clear scan cache before starting                            |
 | `-v`        | —     | —       | Print version number                                        |
 
-Every CodeSesh server process protects its API with a fresh access token, including the default
-loopback listener, and prints that token in the startup URL. Non-loopback binding requires
-`--remote-access`. A trusted proxy also requires `--remote-access`, a loopback `--host`, and an
-HTTPS `--public-url`. Anyone with the startup URL can read the indexed AI session history, so treat
-it as a password and do not share or persist it.
+Local access does not require an API token by default. Use `--auth` to enable token authentication
+on the loopback listener. Without it, other users and processes on the same machine can access
+indexed sessions and write APIs. Host and cross-origin request checks remain enabled.
+
+`--remote-access` always enables token authentication, including when the backend listens on
+loopback behind a reverse proxy. Non-loopback binding requires `--remote-access`. A trusted proxy
+also requires a loopback `--host` and an HTTPS `--public-url`. When authentication is enabled, each
+server process generates a fresh token and includes it in the startup URL. Treat that URL as a
+password: do not share or persist it. Worker pairing and upload credentials are unchanged.
 
 A token authenticates the requester but does not encrypt traffic. Without TLS, the token and full
 session content travel over the network in plaintext, and URL tokens may be recorded in proxy logs.

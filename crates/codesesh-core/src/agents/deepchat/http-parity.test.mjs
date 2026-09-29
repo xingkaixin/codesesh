@@ -436,13 +436,15 @@ async function serve(fixture, agent, command) {
       assert.equal(process.child.exitCode, null, JSON.stringify(process.output()));
       return [...process.output().stdout.matchAll(/https?:\/\/\S+/g)]
         .map((m) => new URL(m[0]))
-        .find((url) => url.searchParams.has("access_token"));
+        .find((url) => ["http:", "https:"].includes(url.protocol));
     }, "desktop HTTP startup");
     startup.hostname = "127.0.0.1";
     const request = (path) =>
       fetch(new URL(path, startup.origin), {
         signal: AbortSignal.timeout(10000),
-        headers: { Authorization: `Bearer ${startup.searchParams.get("access_token")}` },
+        headers: startup.searchParams.has("access_token")
+          ? { Authorization: `Bearer ${startup.searchParams.get("access_token")}` }
+          : {},
       });
     await waitFor(async () => {
       const response = await request("/api/status");
