@@ -21,10 +21,11 @@ export const messages = {
   "Not reported yet": ["尚未上报", "未報告"],
   "Status reported: {0}": ["状态上报时间：{0}", "状態の報告日時: {0}"],
   "Collection failed: {0}": ["采集失败：{0}", "収集失敗: {0}"],
-  "Pair this Worker again to restore access. Saved history is retained.": [
-    "重新配对此 Worker 可恢复访问，已归档历史会保留。",
-    "アクセスを復元するには Worker を再ペアリングしてください。保存済みの履歴は保持されます。",
+  "Replace this Worker to restore access while keeping its source identity.": [
+    "替换此 Worker 可恢复访问并保留来源身份。",
+    "Worker を置き換えるとソース ID を保持したままアクセスを復元できます。",
   ],
+  "Replace Worker": ["替换 Worker", "Worker を置き換え"],
   "Install compatible Hub and Worker versions, upgrading Hub first.": [
     "安装兼容的 Hub 和 Worker 版本，先升级 Hub。",
     "互換性のあるバージョンをインストールしてください。先に Hub を更新してください。",

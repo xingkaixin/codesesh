@@ -205,7 +205,7 @@ async fn uploaded_sessions_publish_through_runtime_writer() {
     while let Some(pending) = worker.next_upload().unwrap() {
         let receipt = runtime
             .receive_upload(
-                grant.node_id.clone(),
+                grant.credential.clone(),
                 Upload {
                     epoch: grant.epoch.clone(),
                     stream_id: worker.stream_id().unwrap(),
@@ -233,6 +233,42 @@ async fn uploaded_sessions_publish_through_runtime_writer() {
         }
         event => panic!("unexpected event {event:?}"),
     }
+    let node = grant.node_id.clone();
+    let stream = worker.stream_id().unwrap();
+    let new = runtime
+        .hub_control(move |cache| {
+            let token = cache.create_replacement_token(&node)?;
+            cache.pair_worker(&token, "Replacement", "1.1.1", &stream)
+        })
+        .await
+        .unwrap();
+    let operation = Operation::SnapshotChunk {
+        transfer_id: uuid::Uuid::new_v4().to_string(),
+        index: 0,
+        data: "AA==".into(),
+    };
+    let late = Upload {
+        epoch: grant.epoch.clone(),
+        stream_id: worker.stream_id().unwrap(),
+        sequence: 1,
+        payload_version: 1,
+        digest: digest(&serde_json::to_vec(&operation).unwrap()),
+        operation,
+    };
+    let error = runtime
+        .receive_upload(
+            grant.credential.clone(),
+            late.clone(),
+            pricing.snapshot().unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("credential"));
+    runtime
+        .receive_upload(new.credential, late, pricing.snapshot().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(runtime.snapshot().len(), 1);
     runtime.shutdown().await.unwrap();
 }
 
@@ -741,4 +777,131 @@ fn rescan_history_is_bounded_and_paginates_without_duplicates() {
         .collect();
     ids.reverse();
     assert_eq!(actual, ids);
+}
+
+#[test]
+fn replacement_preserves_identity_history_and_name_and_revokes_old_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let stream = worker.stream_id().unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let old = cache
+        .pair_worker(&token, "Original", "1.1.1", &stream)
+        .unwrap();
+    worker
+        .save_batch(
+            "codex",
+            &mut ScanBatch {
+                sessions: vec![super::super::tests::source(dir.path(), "retained")],
+                removed: vec![],
+                checkpoint: None,
+                complete: true,
+                on_reject: None,
+                pricing: None,
+            },
+        )
+        .unwrap();
+    transfer(&mut cache, &mut worker, &old);
+    let reference = cache.snapshot().unwrap()[0].reference.clone();
+    cache.rename_worker(&old.node_id, "Office").unwrap();
+    let task = cache
+        .request_rescan(std::slice::from_ref(&old.node_id), &[], "manual")
+        .unwrap()
+        .remove(0);
+    cache
+        .claim_worker_instance(&old.node_id, &uuid::Uuid::new_v4().to_string())
+        .unwrap();
+    let replaced_token = cache.create_replacement_token(&old.node_id).unwrap();
+    let replacement = cache.create_replacement_token(&old.node_id).unwrap();
+    assert!(
+        cache
+            .pair_worker(&replaced_token, "New", "1.1.1", &stream)
+            .is_err()
+    );
+    assert!(cache.authenticate_worker(&old.credential).is_ok());
+    let new = cache
+        .pair_worker(&replacement, "New", "1.1.1", &stream)
+        .unwrap();
+    assert_eq!(new.node_id, old.node_id);
+    assert_ne!(new.credential, old.credential);
+    assert!(cache.authenticate_worker(&old.credential).is_err());
+    assert_eq!(
+        cache.authenticate_worker(&new.credential).unwrap(),
+        old.node_id
+    );
+    assert_eq!(cache.nodes().unwrap().len(), 1);
+    assert_eq!(cache.nodes().unwrap()[0].name, "Office");
+    assert_eq!(cache.snapshot().unwrap()[0].reference, reference);
+    assert!(
+        cache
+            .detail(cache.snapshot().unwrap()[0].clone())
+            .unwrap()
+            .is_some()
+    );
+    cache
+        .claim_worker_instance(&new.node_id, &uuid::Uuid::new_v4().to_string())
+        .unwrap();
+    let tasks = cache.rescan_tasks().unwrap();
+    assert!(
+        tasks
+            .iter()
+            .any(|item| item.request.reason == "worker-replacement" && item.status == "waiting")
+    );
+    assert!(
+        tasks
+            .iter()
+            .any(|item| item.request.id == task.id && item.status == "superseded")
+    );
+    let revoked_token = cache.create_replacement_token(&new.node_id).unwrap();
+    cache.revoke_worker(&new.node_id).unwrap();
+    assert!(
+        cache
+            .pair_worker(&revoked_token, "New", "1.1.1", &stream)
+            .is_err()
+    );
+    let restore = cache.create_replacement_token(&new.node_id).unwrap();
+    assert_eq!(
+        cache
+            .pair_worker(&restore, "New", "1.1.1", &stream)
+            .unwrap()
+            .node_id,
+        old.node_id
+    );
+    let ordinary = cache.create_pairing_token().unwrap();
+    assert_ne!(
+        cache
+            .pair_worker(&ordinary, "Other", "1.1.1", &stream)
+            .unwrap()
+            .node_id,
+        old.node_id
+    );
+}
+
+#[test]
+fn local_replacement_requires_installation_proof() {
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    cache.configure_local_worker("local-key").unwrap();
+    let stream = uuid::Uuid::new_v4().to_string();
+    let token = cache.create_pairing_token().unwrap();
+    let proof = crate::sync::local_worker_proof("local-key", "hub", &token, &stream);
+    cache
+        .pair_worker_with_origin(&token, "Local", "1.1.1", &stream, Some(("hub", &proof)))
+        .unwrap();
+    let token = cache.create_replacement_token("local").unwrap();
+    assert!(
+        cache
+            .pair_worker(&token, "Impostor", "1.1.1", &stream)
+            .is_err()
+    );
+    let proof = crate::sync::local_worker_proof("local-key", "hub", &token, &stream);
+    assert_eq!(
+        cache
+            .pair_worker_with_origin(&token, "Local", "1.1.1", &stream, Some(("hub", &proof)))
+            .unwrap()
+            .node_id,
+        "local"
+    );
 }

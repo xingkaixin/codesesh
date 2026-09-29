@@ -36,7 +36,7 @@ export function taskLabel(status: string) {
 export function nodeRecoveryHint(node: SourceNode) {
   const error = node.error ?? "";
   if (node.revoked)
-    return t("Pair this Worker again to restore access. Saved history is retained.");
+    return t("Replace this Worker to restore access while keeping its source identity.");
   if (error.includes("WORKER_TOO_NEW"))
     return t("Upgrade Hub first. Collection and uploads are paused.");
   if (error.includes("WORKER_TOO_OLD"))

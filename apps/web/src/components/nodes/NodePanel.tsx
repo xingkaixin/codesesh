@@ -156,13 +156,22 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                 {selected.id === "local" ? t("Local source") : selected.id}
               </p>
             </div>
-            <button
-              className={nodeButton}
-              onClick={() => setAction({ kind: "rename", node: selected })}
-            >
-              <Pencil aria-hidden="true" className="size-3.5" />
-              {t("Rename")}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className={nodeButton}
+                onClick={() => setAction({ kind: "rename", node: selected })}
+              >
+                <Pencil aria-hidden="true" className="size-3.5" />
+                {t("Rename")}
+              </button>
+              <button
+                className={nodeButton}
+                disabled={query.isError}
+                onClick={() => setAction({ kind: "replace", node: selected })}
+              >
+                {t("Replace Worker")}
+              </button>
+            </div>
           </div>
           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
             <div>

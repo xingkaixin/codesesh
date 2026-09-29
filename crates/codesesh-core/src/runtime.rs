@@ -321,7 +321,7 @@ impl Runtime {
 
     pub async fn receive_upload(
         &self,
-        node: String,
+        credential: String,
         upload: crate::sync::Upload,
         pricing: crate::pricing::PricingSnapshot,
     ) -> Result<crate::sync::Receipt> {
@@ -329,7 +329,7 @@ impl Runtime {
         self.inner
             .writer
             .try_send(writer::Command::Upload {
-                node,
+                credential,
                 upload,
                 pricing,
                 response,
