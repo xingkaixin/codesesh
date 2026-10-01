@@ -89,11 +89,13 @@ function databaseFacts(path) {
 
 function assertMigrationFacts(path, expected) {
   const actual = databaseFacts(path);
-  assert.deepEqual(
-    actual.cache_meta.find(({ key }) => key === "cost_only_publication_v1"),
-    { key: "cost_only_publication_v1", value: "1" },
-  );
-  actual.cache_meta = actual.cache_meta.filter(({ key }) => key !== "cost_only_publication_v1");
+  for (const patch of ["cost_only_publication_v1", "covering_read_indexes_v1"]) {
+    assert.deepEqual(
+      actual.cache_meta.find(({ key }) => key === patch),
+      { key: patch, value: "1" },
+    );
+    actual.cache_meta = actual.cache_meta.filter(({ key }) => key !== patch);
+  }
   assert.equal(actual.cache_meta.find(({ key }) => key === "version").value, "36");
   expected = structuredClone(expected);
   expected.cache_meta.find(({ key }) => key === "version").value = "36";
