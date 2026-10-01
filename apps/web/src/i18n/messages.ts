@@ -1,5 +1,6 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Markdown table": ["Markdown 表格", "Markdown テーブル"],
   "Source code": ["源码", "ソースコード"],
   "Copy source": ["复制源码", "ソースをコピー"],
   "Execution output": ["执行输出", "実行出力"],

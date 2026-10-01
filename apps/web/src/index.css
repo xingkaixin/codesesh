@@ -1005,6 +1005,38 @@
   margin: 0;
 }
 
+.console-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.console-markdown th,
+.console-markdown td {
+  min-width: 7rem;
+  border-bottom: 1px solid var(--console-border);
+  padding: 0.625rem 0.75rem;
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.console-markdown th {
+  text-align: left;
+  background: var(--console-surface-muted);
+  font-weight: 600;
+}
+
+.console-markdown th:first-child,
+.console-markdown td:first-child {
+  min-width: 3.25rem;
+}
+
+.console-markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .console-markdown strong {
   font-weight: 700;
 }
