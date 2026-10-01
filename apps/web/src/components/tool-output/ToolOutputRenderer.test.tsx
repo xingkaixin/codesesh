@@ -11,6 +11,85 @@ function renderOutput(outputContent: ToolOutputContent) {
 }
 
 describe("ToolOutputRenderer", () => {
+  it("shows free text answers and recorded absence without selecting an option", () => {
+    const view = renderOutput({
+      kind: "question-list",
+      questions: [
+        { question: "Device?", options: [{ label: "Phone" }], answers: ["My own device"] },
+        {
+          question: "Environment?",
+          options: [{ label: "Local" }],
+          answers: [],
+          unansweredLabel: "No answer recorded",
+        },
+      ],
+    });
+    expect(view.getByText("My own device")).toBeTruthy();
+    expect(view.getByText("No answer recorded")).toBeTruthy();
+    expect(view.queryByText("Selected")).toBeNull();
+    expect(view.queryByRole("radio")).toBeNull();
+  });
+
+  it("renders conversation replies, defers activity and raw output, and reveals more turns", () => {
+    const view = renderOutput({
+      kind: "thread-read",
+      title: "UI review",
+      threadId: "thread-a",
+      hasMore: true,
+      newestFirst: true,
+      request: [{ label: "threadId", value: "thread-a" }],
+      rawOutput: "private raw result",
+      turns: Array.from({ length: 6 }, (_, index) => ({
+        id: String(index),
+        status: "completed",
+        items: [
+          {
+            type: "userMessage",
+            id: `user-${index}`,
+            content: [{ type: "text", text: `Question ${index}` }],
+          },
+          {
+            type: "agentMessage",
+            id: `agent-${index}`,
+            phase: "final_answer",
+            text: `**Reply ${index}**`,
+          },
+          {
+            type: "commandExecution",
+            id: `command-${index}`,
+            command: "inspect",
+            output: "deferred activity",
+          },
+        ],
+      })),
+    });
+    expect(view.getByText("Reply 0").tagName).toBe("STRONG");
+    expect(view.getByText("Question 0")).toBeTruthy();
+    expect(view.queryByText("Question 5")).toBeNull();
+    expect(view.queryByText("deferred activity")).toBeNull();
+    expect(view.queryByText("private raw result")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Show more turns" }));
+    expect(view.getByText("Question 5")).toBeTruthy();
+    expect(view.getByText("Earlier turns exist outside this tool result")).toBeTruthy();
+    const raw = view.getByText("Raw output").closest("details")!;
+    act(() => {
+      raw.open = true;
+      fireEvent(raw, new Event("toggle"));
+    });
+    expect(view.getByText("private raw result")).toBeTruthy();
+    const activity = view.getAllByText("Other activity (1)")[0]!.closest("details")!;
+    act(() => {
+      activity.open = true;
+      fireEvent(activity, new Event("toggle"));
+    });
+    const command = view.getByText("inspect").closest("details")!;
+    act(() => {
+      command.open = true;
+      fireEvent(command, new Event("toggle"));
+    });
+    expect(view.container.textContent).toContain("deferred activity");
+  });
+
   it("renders plain, highlighted code, and unified diff output", () => {
     const plain = renderOutput({
       kind: "plain",

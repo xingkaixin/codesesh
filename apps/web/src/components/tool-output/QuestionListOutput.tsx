@@ -29,7 +29,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                 </span>
               ) : (
                 <span className="console-mono text-[11px] font-semibold text-[var(--console-muted)]">
-                  {t("Pending")}
+                  {question.unansweredLabel ?? t("Pending")}
                 </span>
               )}
             </div>
@@ -76,6 +76,21 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                 </div>
               );
             })}
+            {question.answers
+              .filter((answer) => !question.options.some((option) => option.label === answer))
+              .map((answer, index) => (
+                <div
+                  key={index}
+                  className="rounded-sm border border-[var(--console-success-border)] bg-[var(--console-success-bg)] px-3 py-2"
+                >
+                  <span className="console-mono text-[11px] font-semibold text-[var(--console-success)]">
+                    {t("User answer")}
+                  </span>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--console-text)]">
+                    {answer}
+                  </p>
+                </div>
+              ))}
           </div>
         </div>
       ))}

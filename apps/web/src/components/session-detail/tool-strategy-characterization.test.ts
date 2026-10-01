@@ -396,6 +396,98 @@ describe("Codex tool strategy", () => {
     });
   });
 
+  it("shows async questions without inferring an answer from acceptance or the first option", () => {
+    const strategy = buildStrategy({
+      agent: "codex",
+      tool: "request_user_input_async",
+      input: { questions: [{ title: "Which environment?", options: ["Local", "Hosted"] }] },
+      output: '{"accepted":true}',
+    });
+    expect(strategy).toMatchObject({
+      title: "ask user",
+      showInputPreview: false,
+      outputContent: {
+        kind: "question-list",
+        questions: [
+          {
+            question: "Which environment?",
+            options: [{ label: "Local" }, { label: "Hosted" }],
+            answers: [],
+            unansweredLabel: "No answer recorded",
+          },
+        ],
+      },
+    });
+    const answered = buildStrategy({
+      agent: "codex",
+      tool: "request_user_input_async",
+      input: {
+        questions: [
+          { title: "Which environment?", options: ["Local", "Hosted"] },
+          { title: "Device?" },
+        ],
+      },
+      output: '{"accepted":true}',
+      metadata: { questionAnswers: { "1": ["My own device"] } },
+    });
+    expect(answered.outputContent).toMatchObject({
+      questions: [
+        { answers: [] },
+        { question: "Device?", options: [], answers: ["My own device"] },
+      ],
+    });
+    expect(answered.secondaryText).toContain("1/2 answered");
+  });
+
+  it("unwraps read_thread results and preserves error output", () => {
+    const result = {
+      thread: { id: "thread-a", title: "Review UI" },
+      page: { order: "newest_first", hasMore: true },
+      turns: [
+        {
+          id: "turn-a",
+          status: "completed",
+          items: [{ type: "agentMessage", text: "Done", phase: "final_answer" }],
+        },
+      ],
+    };
+    for (const output of [
+      result,
+      JSON.stringify(result),
+      { content: [{ type: "text", text: JSON.stringify(result) }] },
+    ]) {
+      const strategy = buildStrategy({
+        agent: "codex",
+        tool: "read_thread",
+        input: { threadId: "thread-a" },
+        metadata: { namespace: "mcp__codex_app__" },
+        output,
+      });
+      expect(strategy).toMatchObject({
+        title: "read conversation",
+        secondaryText: "Review UI · 1 turns · More history available",
+        showInputPreview: false,
+        outputContent: {
+          kind: "thread-read",
+          title: "Review UI",
+          threadId: "thread-a",
+          hasMore: true,
+          newestFirst: true,
+          turns: result.turns,
+        },
+      });
+    }
+    const failed = buildStrategy({
+      agent: "codex",
+      tool: "read_thread",
+      status: "error",
+      metadata: { namespace: "mcp__codex_app__" },
+      input: { threadId: "thread-a" },
+      output: { content: [{ type: "text", text: "Invalid cursor" }], isError: true },
+    });
+    expect(failed.outputContent).toMatchObject({ kind: "plain", text: "Invalid cursor" });
+  });
+
   it("renders every Codex patch operation as a file section", () => {
     const strategy = buildStrategy({
       agent: "codex",

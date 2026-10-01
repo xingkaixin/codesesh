@@ -33,6 +33,7 @@ import {
   toRecord,
 } from "../tool-normalize";
 import { parseJsonText } from "../utils";
+import { buildCodexReadThreadDisplay } from "../codex-read-thread";
 import { buildDefaultToolStrategy, buildSkillToolStrategy } from "./shared";
 import {
   Bot,
@@ -163,18 +164,45 @@ export function buildCodexToolStrategy(
     };
   }
 
-  if (toolKey === "request_user_input") {
+  if (
+    (toolKey === "read_thread" || toolKey === "codex_app.read_thread") &&
+    (namespace === "mcp__codex_app__" || namespace === "mcp__codex_app")
+  ) {
+    const display = buildCodexReadThreadDisplay(state.inputValue, state.outputValue);
+    return {
+      ...defaultStrategy,
+      Icon: MessageSquareMore,
+      title: t("read conversation"),
+      secondaryText: display
+        ? `${display.title} · ${t("{0} turns", [display.turns.length])}${display.hasMore ? ` · ${t("More history available")}` : ""}`
+        : toPlainText(toRecord(state.inputValue).threadId) || undefined,
+      details: [],
+      showInputPreview: !display,
+      contentLabel: t("Conversation excerpt"),
+      outputContent: display ?? {
+        kind: "plain",
+        text: getOutputOrErrorText(state),
+        language: "text",
+        isCode: false,
+      },
+    };
+  }
+
+  if (toolKey === "request_user_input" || toolKey === "request_user_input_async") {
     const display = buildCodexRequestUserInputDisplay(
       state.inputValue,
       getOutputOrErrorText(state),
+      state.metadataValue,
+      toolKey === "request_user_input_async",
     );
     return {
       ...defaultStrategy,
       Icon: CircleHelp,
-      title: "ask",
+      title: toolKey === "request_user_input_async" ? t("ask user") : "ask",
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
+      contentLabel: t("Questions"),
       outputContent: display.outputContent,
     };
   }
