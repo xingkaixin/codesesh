@@ -884,6 +884,19 @@ pub fn parse(
             }
             "function_call_output" | "custom_tool_call_output" => {
                 let call_id = payload["call_id"].as_str().unwrap_or("");
+                if payload["type"] == "custom_tool_call_output" {
+                    if let Some((i, p)) = tools.get(call_id)
+                        && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
+                        && state.status == "running"
+                    {
+                        let (output, status) = super::codex_exec::output(&payload["output"], time);
+                        let output = clean_value(output);
+                        state.error = (status == "error").then(|| output.clone());
+                        state.output = Some(output);
+                        state.status = status.into();
+                    }
+                    continue;
+                }
                 let output = match &payload["output"] {
                     Value::String(s) => s.clone(),
                     Value::Array(items) => items

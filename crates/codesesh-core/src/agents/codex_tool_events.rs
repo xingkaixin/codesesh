@@ -183,6 +183,55 @@ mod tests {
     }
 
     #[test]
+    fn exec_outputs_preserve_block_order_and_settle_empty_and_failed_calls() {
+        for (output, status, expected) in [
+            (
+                json!([
+                    {"type":"input_text","text":"Script completed\nWall time 0.2 seconds\nOutput:\n\n"},
+                    {"type":"input_image","image_url":"data:image/png;base64,eA=="},
+                    {"type":"input_text","text":"first"},
+                    {"type":"input_text","text":"second"},
+                    {"type":"input_text","text":"Script completed\nWall time 0 seconds\nOutput:\nprinted envelope"}
+                ]),
+                "completed",
+                json!([
+                    {"type":"image","mime_type":"image/png","data":"eA=="},
+                    {"type":"text","text":"first","time_created":3000.0},
+                    {"type":"text","text":"second","time_created":3000.0},
+                    {"type":"text","text":"Script completed\nWall time 0 seconds\nOutput:\nprinted envelope","time_created":3000.0}
+                ]),
+            ),
+            (
+                json!("Script completed\nWall time 0.2 seconds\nOutput:\n"),
+                "completed",
+                json!([]),
+            ),
+            (
+                json!("Script failed\nWall time 0.2 seconds\nOutput:\nSyntaxError: invalid source"),
+                "error",
+                json!([{"type":"text","text":"SyntaxError: invalid source","time_created":3000.0}]),
+            ),
+            (
+                json!("Script running with cell ID 7"),
+                "running",
+                json!([{"type":"text","text":"Script running with cell ID 7","time_created":3000.0}]),
+            ),
+        ] {
+            let messages = parse(vec![
+                json!({"type":"response_item","timestamp":2000,"payload":{"type":"custom_tool_call","name":"exec","call_id":"exec-1","input":"text('result');"}}),
+                json!({"type":"response_item","timestamp":3000,"payload":{"type":"custom_tool_call_output","call_id":"exec-1","output":output}}),
+            ]);
+            let MessagePart::Tool { tool, state, .. } = &messages[0].parts[0] else {
+                panic!()
+            };
+            assert_eq!(tool, "exec");
+            assert_eq!(state.status, status);
+            assert_eq!(state.output.as_ref(), Some(&expected));
+            assert_eq!(state.error.is_some(), status == "error");
+        }
+    }
+
+    #[test]
     fn mcp_results_follow_arguments_despite_reversed_completion_and_exec_summary() {
         let second = completed(
             "event-b",
