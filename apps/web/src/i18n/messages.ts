@@ -1,5 +1,10 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Markdown table": ["Markdown 表格", "Markdown テーブル"],
+  "Wall time": ["运行耗时", "実行時間"],
+  "Internal calls": ["内部调用", "内部呼び出し"],
+  "Internal call failed": ["内部调用失败", "内部呼び出し失敗"],
+  "Internal call failures: {0}": ["{0} 次内部调用失败", "内部呼び出しが {0} 件失敗"],
   "Source code": ["源码", "ソースコード"],
   "Copy source": ["复制源码", "ソースをコピー"],
   "Execution output": ["执行输出", "実行出力"],

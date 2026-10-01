@@ -4,6 +4,45 @@ import { MarkdownContent } from "./MarkdownContent";
 
 afterEach(cleanup);
 
+describe("MarkdownContent GFM", () => {
+  it("renders separate tables with alignment, inline formatting and search highlights", () => {
+    const table =
+      "| Rank | Developer | Count | Probability | Identity |\n| :--- | :--- | ---: | :--- | :--- |\n| **1** | `alpha` | **87** | 0.18 | Human |";
+    const view = render(
+      <div className="console-markdown">
+        <MarkdownContent
+          text={`### Shared PRs\n\n${table}\n\n### Merged PRs\n\n${table}`}
+          highlightQuery="Human"
+        />
+      </div>,
+    );
+
+    expect(view.container.querySelectorAll("table")).toHaveLength(2);
+    expect(view.container.querySelectorAll("th")).toHaveLength(10);
+    expect(view.container.querySelector("td strong")?.textContent).toBe("1");
+    expect(view.container.querySelector("td code")?.textContent).toBe("alpha");
+    expect((view.container.querySelectorAll("td")[2] as HTMLElement).style.textAlign).toBe("right");
+    expect(marks(view.container)).toEqual(["Human", "Human"]);
+    expect(view.getAllByRole("region", { name: "Markdown table" })).toHaveLength(2);
+  });
+
+  it("keeps table syntax inside fences literal and task checkboxes read-only", () => {
+    const view = render(
+      <MarkdownContent
+        text={
+          "```text\n| Name | Count |\n| --- | --- |\n| Alpha | 5 |\n```\n\n- [x] Done\n- [ ] Pending"
+        }
+      />,
+    );
+
+    expect(view.container.querySelector("table")).toBeNull();
+    expect(view.container.querySelector("pre code")?.textContent).toContain("| Alpha | 5 |");
+    expect(view.getAllByRole("checkbox").every((el) => (el as HTMLInputElement).disabled)).toBe(
+      true,
+    );
+  });
+});
+
 function marks(container: HTMLElement): string[] {
   return [...container.querySelectorAll("mark")].map((mark) => mark.textContent ?? "");
 }

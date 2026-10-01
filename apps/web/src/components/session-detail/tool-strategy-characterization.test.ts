@@ -948,6 +948,93 @@ describe("Codex plan and text displays", () => {
 });
 
 describe("Code Mode displays", () => {
+  it("renders Pi JavaScript source and separates the runner header from printed output", () => {
+    const source = "  console.log('literal \\n');\n";
+    const printed = "same\nsame\nScript completed\nWall time 1.0 seconds\nOutput:\n\nuser text";
+    expect(
+      buildStrategy({
+        agent: "pi",
+        tool: "codemode",
+        input: { code: source },
+        output: [
+          { type: "text", text: `Script completed\nWall time 0.7 seconds\nOutput:\n\n${printed}` },
+          { type: "image", mime_type: "image/png", data: "eA==" },
+          { type: "text", text: "after" },
+        ],
+        metadata: { calls: [{ name: "models.classify", status: "ok" }] },
+      }),
+    ).toMatchObject({
+      showInputPreview: false,
+      secondaryText: "Execute JavaScript",
+      details: [
+        { label: "Wall time", value: "0.7 s" },
+        { label: "Internal calls", value: "1" },
+      ],
+      outputContent: {
+        kind: "code-execution",
+        source,
+        language: "javascript",
+        failed: false,
+        output: [
+          { kind: "plain", text: printed },
+          { kind: "media" },
+          { kind: "plain", text: "after" },
+        ],
+      },
+    });
+  });
+
+  it("reports Pi internal failures without changing script completion", () => {
+    const strategy = buildStrategy({
+      agent: "pi",
+      tool: "codemode",
+      input: { code: "await tools.bash({ command: 'invalid' });" },
+      output: [
+        { type: "text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n\npartial" },
+      ],
+      metadata: {
+        calls: [{ name: "bash", status: "error", error: "Unknown JSON field\nAvailable fields" }],
+      },
+    });
+    expect(strategy.secondaryText).toContain("Internal call failures: 1");
+    expect(strategy.details).toContainEqual({
+      label: "Internal call failed",
+      value: "bash: Unknown JSON field",
+    });
+    expect(strategy.outputContent).toMatchObject({
+      kind: "code-execution",
+      failed: false,
+      output: [{ text: "partial" }],
+    });
+  });
+
+  it("preserves unknown Pi envelopes and exposes script errors", () => {
+    const output = "Custom runner\nOutput:\n\nkeep everything";
+    expect(
+      buildStrategy({ agent: "pi", tool: "codemode", input: { code: "source" }, output })
+        .outputContent,
+    ).toMatchObject({ output: [{ text: output }] });
+    expect(
+      buildStrategy({
+        agent: "pi",
+        tool: "codemode",
+        status: "error",
+        input: { code: "invalid source" },
+        output: "partial",
+        error: "SyntaxError",
+      }).outputContent,
+    ).toMatchObject({ failed: true, output: [{ text: "SyntaxError" }] });
+    expect(
+      buildStrategy({
+        agent: "pi",
+        tool: "codemode",
+        input: { code: "source" },
+        output: [{ type: "text", text: "Script completed\nWall time 0.0 seconds\nOutput:\n\n" }],
+        metadata: { calls: [] },
+      }).outputContent,
+    ).toMatchObject({ output: [{ kind: "plain", text: "" }] });
+  });
+
   it("uses DeepChat descriptions and keeps source separate from repeated output", () => {
     const source = "  console.log('same');\nreturn 'same';\n";
     expect(

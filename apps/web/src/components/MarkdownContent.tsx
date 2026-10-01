@@ -2,13 +2,26 @@ import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Components, Options } from "react-markdown";
 import { resolveLocalMediaSource } from "../lib/local-media-policy";
 import { buildHighlightPattern } from "../lib/search-highlight";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../lib/content-render-budget";
 import { ProgressiveText } from "./ProgressiveContent";
 
+const remarkPlugins = [remarkGfm];
+
 const markdownComponents: Components = {
+  table: ({ children }) => (
+    <div
+      className="console-scrollbar max-w-full overflow-x-auto rounded-sm border border-[var(--console-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+      tabIndex={0}
+      role="region"
+      aria-label={t("Markdown table")}
+    >
+      <table>{children}</table>
+    </div>
+  ),
   a: ({ children }) => <span className="console-markdown-link">{children}</span>,
   img: ({ src, alt, title }) => {
     const safeSrc = resolveLocalMediaSource(typeof src === "string" ? src : undefined);
@@ -131,6 +144,7 @@ export const MarkdownContent = memo(function MarkdownContent({
         <div>
           <ReactMarkdown
             components={markdownComponents}
+            remarkPlugins={remarkPlugins}
             rehypePlugins={rehypePlugins}
             urlTransform={transformMediaUrl}
           >

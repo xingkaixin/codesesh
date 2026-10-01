@@ -1,3 +1,4 @@
+import { buildPiCodeExecutionStrategy } from "./pi-code-execution";
 import { t } from "../../../i18n/translate";
 /**
  * Pi tool display strategy — todo/read/write/edit/agent/bash rendering.
@@ -68,6 +69,8 @@ export function buildPiToolStrategy(
   const metadata = toRecord(state.metadataValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
+
+  if (toolKey === "codemode") return buildPiCodeExecutionStrategy(tool, state);
 
   if (toolKey === "todo") {
     const action = toPlainText(input.action) || toPlainText(metadata.action) || "todo";
