@@ -161,6 +161,38 @@ function routeChangeCalls() {
 }
 
 describe("App session loading", () => {
+  it("waits for bookmarks before reporting the window load complete", async () => {
+    let finishBookmarks!: (response: Response) => void;
+    const bookmarks = new Promise<Response>((resolve) => {
+      finishBookmarks = resolve;
+    });
+    const defaultFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      if (new URL(String(input), "http://localhost").pathname === "/api/bookmarks") {
+        return bookmarks;
+      }
+      return defaultFetch(input);
+    });
+    renderAppAt("/");
+
+    await screen.findByTestId("dashboard", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
+    expect(clientTelemetry.logClientEvent).toHaveBeenCalledWith("app.load.start");
+    expect(
+      clientTelemetry.logClientEvent.mock.calls.some(([event]) => event === "app.load.done"),
+    ).toBe(false);
+
+    await act(async () => {
+      finishBookmarks(Response.json({ bookmarks: [] }));
+    });
+    await waitFor(() =>
+      expect(clientTelemetry.logClientEvent).toHaveBeenCalledWith("app.load.done", {
+        duration_ms: expect.any(Number),
+        agents: 0,
+        sessions: 0,
+      }),
+    );
+  });
+
   it("loads and copies an available bookmarked session as Markdown", async () => {
     const sessionDetail = {
       ...SAMPLE_SESSION_HEAD,

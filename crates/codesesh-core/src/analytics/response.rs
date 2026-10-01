@@ -24,16 +24,22 @@ pub fn dashboard_response(
         .parse()
         .map_err(|_| anyhow::anyhow!("timeZone must be a valid IANA time zone"))?;
     let aggregate = &options.aggregate;
-    let facts = load_cost_facts(
-        connection,
-        aggregate.compare.map(|(from, _)| from).or(aggregate.from),
-        Some(aggregate.to),
-        true,
-    )?;
+    let loaded_facts;
+    let facts = if let Some(facts) = aggregate.cost_facts {
+        facts
+    } else {
+        loaded_facts = load_cost_facts(
+            connection,
+            aggregate.compare.map(|(from, _)| from).or(aggregate.from),
+            Some(aggregate.to),
+            true,
+        )?;
+        &loaded_facts
+    };
     let mut result = build_dashboard(
         sessions,
         &DashboardOptions {
-            cost_facts: Some(&facts),
+            cost_facts: Some(facts),
             ..*aggregate
         },
     );

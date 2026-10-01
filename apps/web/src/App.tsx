@@ -67,13 +67,6 @@ export default function App() {
   const loading = appConfig.loading || (!appConfig.error && sessionStore.loading);
   const error = appConfig.error ?? sessionStore.error;
   const retryLoad = appConfig.error ? appConfig.retry : sessionStore.retryLoad;
-  useWindowLoadTelemetry({
-    window: timeWindow,
-    pending: appConfig.loading || (!appConfig.error && sessionStore.loadPending),
-    error: error ?? sessionsError,
-    agentCount: sessionStore.agents.length,
-    sessionCount: sessionStore.sessions.length,
-  });
 
   const location = useLocation();
   const setScanStatus = useScanStatusPublisher();
@@ -158,6 +151,14 @@ export default function App() {
     toggleSessionBookmark,
     refresh: refreshBookmarks,
   } = bookmarks;
+  useWindowLoadTelemetry({
+    window: timeWindow,
+    pending:
+      appConfig.loading || (!appConfig.error && (sessionStore.loadPending || bookmarksLoading)),
+    error: error ?? sessionsError ?? sessionStore.loadError ?? bookmarksError,
+    agentCount: sessionStore.agents.length,
+    sessionCount: sessionStore.sessions.length,
+  });
 
   const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
   const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;

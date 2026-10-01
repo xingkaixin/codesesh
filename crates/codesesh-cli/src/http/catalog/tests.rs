@@ -95,10 +95,25 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         },
     ));
     let query = "from=2026-09-01&to=2026-09-02&timeZone=UTC";
-    let first = body(dashboard(AxumState(state.clone()), RawQuery(Some(query.into()))).await).await;
+    let first = body(
+        dashboard(
+            AxumState(state.clone()),
+            RawQuery(Some(query.into())),
+            Extension(Default::default()),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(first["recentSessions"].as_array().unwrap().len(), 1);
-    let second =
-        body(dashboard(AxumState(state.clone()), RawQuery(Some(query.into()))).await).await;
+    let second = body(
+        dashboard(
+            AxumState(state.clone()),
+            RawQuery(Some(query.into())),
+            Extension(Default::default()),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(first, second);
     state
         .saved
@@ -108,8 +123,15 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         .unwrap()
         .upsert_alias(&reference, "Changed alias")
         .unwrap();
-    let aliased =
-        body(dashboard(AxumState(state.clone()), RawQuery(Some(query.into()))).await).await;
+    let aliased = body(
+        dashboard(
+            AxumState(state.clone()),
+            RawQuery(Some(query.into())),
+            Extension(Default::default()),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(
         aliased["recentSessions"][0]["session"]["display_title"],
         "Changed alias"
@@ -119,6 +141,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
             dashboard(
                 AxumState(state.clone()),
                 RawQuery(Some(format!("{query}{filter}"))),
+                Extension(Default::default()),
             )
             .await,
         )
@@ -129,6 +152,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some("from=2026-09-03&to=2026-09-04&timeZone=UTC".into())),
+            Extension(Default::default()),
         )
         .await,
     )
@@ -138,6 +162,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some(query.replace("UTC", "Asia/Shanghai"))),
+            Extension(Default::default()),
         )
         .await,
     )
@@ -146,8 +171,15 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
     sessions[0].head.title = "New generation".into();
     sessions[0].detail.head.title = "New generation".into();
     writer.publish(&mut sessions).unwrap();
-    let updated =
-        body(dashboard(AxumState(state.clone()), RawQuery(Some(query.into()))).await).await;
+    let updated = body(
+        dashboard(
+            AxumState(state.clone()),
+            RawQuery(Some(query.into())),
+            Extension(Default::default()),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(
         updated["recentSessions"][0]["session"]["title"],
         "New generation"

@@ -225,7 +225,7 @@ describe("useSessionStore", () => {
 
     expect(result.current.sessions).toEqual([SAMPLE_SESSION_HEAD]);
     expect(result.current.window).toEqual(config.window);
-    expect(result.current.loadPending).toBe(false);
+    expect(result.current.loadPending).toBe(true);
     expect(result.current.dashboard).toBeNull();
 
     const changed = { ...SAMPLE_SESSION_HEAD, title: "Live session before stats" };
@@ -241,6 +241,7 @@ describe("useSessionStore", () => {
     });
 
     await waitFor(() => expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA));
+    expect(result.current.loadPending).toBe(false);
     expect(result.current.sessions).toEqual([changed]);
     expect(api.fetchSessions).toHaveBeenCalledOnce();
   });
@@ -258,6 +259,8 @@ describe("useSessionStore", () => {
     expect(result.current.error).toBeNull();
     expect(result.current.loadPending).toBe(false);
     expect(result.current.dashboard).toBeNull();
+
+    expect(result.current.loadError).toBe("Failed to load dashboard data.");
 
     const changed = { ...SAMPLE_SESSION_HEAD, title: "Live session without stats" };
     await act(() =>

@@ -1,6 +1,6 @@
 use super::{State, decorate_value, error, params::Params};
 use axum::{
-    Json,
+    Extension, Json,
     extract::{RawQuery, State as AxumState},
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -14,7 +14,39 @@ use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
+    time::Instant,
 };
+
+#[derive(Default, serde::Serialize)]
+struct QueryTimings {
+    read_wait_ms: f64,
+    heads_ms: f64,
+    cost_facts_ms: f64,
+    build_ms: f64,
+    cache_hit: bool,
+}
+
+fn log_query(
+    context: crate::logging::LogContext,
+    route: &str,
+    started: Instant,
+    timings: QueryTimings,
+) {
+    let Some(logger) = crate::logging::current() else {
+        return;
+    };
+    let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let mut data = serde_json::to_value(timings).unwrap();
+    data["duration_ms"] = json!(duration_ms);
+    data["route"] = json!(route);
+    let logger = logger.with_context(context);
+    // Keep routine polling at debug level and expose slow loads in normal logs.
+    if duration_ms >= 500.0 {
+        logger.info("perf.query", &data);
+    } else {
+        logger.debug("perf.query", &data);
+    }
+}
 
 const ANALYTICS_REVISION_QUERY: &str = concat!(
     "SELECT COALESCE((SELECT value FROM cache_meta ",
@@ -108,6 +140,7 @@ pub async fn agents(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
 pub async fn projects(
     AxumState(state): AxumState<Arc<State>>,
     RawQuery(raw): RawQuery,
+    Extension(context): Extension<crate::logging::LogContext>,
 ) -> Response {
     let query = Params::new(raw.as_deref());
     let limit = match query.limit(100, 250) {
@@ -124,9 +157,15 @@ pub async fn projects(
     };
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
+    let started = Instant::now();
     let result = state
         .runtime
         .read(move |conn| {
+            let mut timings = QueryTimings {
+                read_wait_ms: started.elapsed().as_secs_f64() * 1000.0,
+                cache_hit: true,
+                ..Default::default()
+            };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
             let value = cached_catalog(
@@ -134,13 +173,21 @@ pub async fn projects(
                 revision,
                 json!(["projects", from, to, query_scope.source_node_id]),
                 || {
+                    timings.cache_hit = false;
+                    let phase = Instant::now();
                     let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
                     let sessions = super::scoped_heads(&heads, &query_scope);
+                    timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                    let phase = Instant::now();
                     let groups = projects::build_project_groups(&sessions)
                         .into_iter()
                         .map(serde_json::to_value)
                         .collect::<serde_json::Result<Vec<_>>>()?;
+                    timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                    let phase = Instant::now();
                     let facts = analytics::load_cost_facts(conn, from, to, false)?;
+                    timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                    let phase = Instant::now();
                     let mut groups = analytics::attach_project_metrics(
                         &groups,
                         &sessions,
@@ -153,6 +200,7 @@ pub async fn projects(
                             .iter()
                             .any(|k| g[*k].as_f64().unwrap_or(0.0) > 0.0)
                     });
+                    timings.build_ms += phase.elapsed().as_secs_f64() * 1000.0;
                     Ok(Value::Array(groups))
                 },
             )?;
@@ -165,15 +213,16 @@ pub async fn projects(
                 })
             });
             let summary = analytics::summarize_projects(&groups);
-            Ok((groups, summary))
+            Ok((groups, summary, timings))
         })
         .await;
-    let Ok((groups, summary)) = result else {
+    let Ok((groups, summary, timings)) = result else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
     };
     let Ok(mut pages) = state.project_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
     };
+    log_query(context, "/api/projects", started, timings);
     match pages.paginate(
         chrono::Utc::now().timestamp_millis(),
         &query.pairs,
@@ -202,6 +251,7 @@ pub async fn projects(
 pub async fn dashboard(
     AxumState(state): AxumState<Arc<State>>,
     RawQuery(raw): RawQuery,
+    Extension(context): Extension<crate::logging::LogContext>,
 ) -> Response {
     let query = Params::new(raw.as_deref());
     let zone = query
@@ -265,19 +315,37 @@ pub async fn dashboard(
         days,
         zone
     ]);
+    let started = Instant::now();
     let result = state
         .runtime
         .read(move |conn| {
+            let mut timings = QueryTimings {
+                read_wait_ms: started.elapsed().as_secs_f64() * 1000.0,
+                cache_hit: true,
+                ..Default::default()
+            };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
-            cached_catalog(&cache, revision, key, || {
+            let value = cached_catalog(&cache, revision, key, || {
+                timings.cache_hit = false;
+                let phase = Instant::now();
                 let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
                 let sessions = super::scoped_heads(&heads, &query_scope);
+                timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                let phase = Instant::now();
+                let facts = analytics::load_cost_facts(
+                    conn,
+                    compare.map(|(from, _)| from).or(from),
+                    Some(to),
+                    true,
+                )?;
+                timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                let phase = Instant::now();
                 let info = agent_info(&HashMap::new())
                     .into_iter()
                     .map(|a| (a["name"].as_str().unwrap().to_owned(), a))
                     .collect();
-                analytics::dashboard_response(
+                let value = analytics::dashboard_response(
                     conn,
                     &sessions,
                     &analytics::DashboardResponseOptions {
@@ -288,18 +356,21 @@ pub async fn dashboard(
                             to,
                             agent_info: Some(&info),
                             compare,
-                            cost_facts: None,
+                            cost_facts: Some(&facts),
                         },
                         time_zone: &zone,
                         days,
                         query_scope: Some(query_scope),
                     },
-                )
-            })
+                )?;
+                timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                Ok(value)
+            })?;
+            Ok((value, timings))
         })
         .await;
     match result {
-        Ok(mut value) => {
+        Ok((mut value, timings)) => {
             value["window"]["to"] = json!(to);
             let aliases = state.aliases().await;
             for key in ["recentSessions", "recentFileActivities"] {
@@ -310,6 +381,7 @@ pub async fn dashboard(
                     }
                 }
             }
+            log_query(context, "/api/dashboard", started, timings);
             Json(value).into_response()
         }
         Err(e) => {

@@ -427,7 +427,16 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     projectsLoading,
     dashboard: window !== null ? (dashboardQuery.data ?? null) : null,
     loading: window === null || (!loadFailed && !hasSessionData),
-    loadPending: window === null || projectionQuery.isFetching || agentsQuery.isFetching,
+    loadPending:
+      window === null ||
+      projectionQuery.isFetching ||
+      agentsQuery.isFetching ||
+      projectsQuery.isFetching ||
+      dashboardQuery.isFetching,
+    loadError:
+      error ??
+      projectsError ??
+      (window !== null && dashboardQuery.isError ? "Failed to load dashboard data." : null),
     error,
     version: projectionQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,
