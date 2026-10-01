@@ -22,7 +22,7 @@ export function buildCodeExecutionStrategy(
   const input = toRecord(state.inputValue);
   const description = compactText(input.description);
   const source =
-    language === "javascript" ? toStringValue(state.inputValue) : toStringValue(input.code);
+    typeof state.inputValue === "string" ? state.inputValue : toStringValue(input.code);
   const value =
     state.status === "error" ? state.errorValue || state.outputValue : state.outputValue;
   const blocks = Array.isArray(value) ? value : [value];
