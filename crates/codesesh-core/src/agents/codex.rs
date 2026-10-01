@@ -558,8 +558,36 @@ pub fn parse(
         }
         has_record = true;
         let time = timestamp(&record).max(timestamp(payload));
-        updated = updated.max(time);
         let kind = record["type"].as_str().unwrap_or("");
+        let activity = match kind {
+            "response_item" => match payload["type"].as_str().unwrap_or("") {
+                "message" => matches!(payload["role"].as_str(), Some("user" | "assistant")),
+                "reasoning"
+                | "function_call"
+                | "function_call_output"
+                | "custom_tool_call"
+                | "custom_tool_call_output" => true,
+                _ => false,
+            },
+            "event_msg" => matches!(
+                payload["type"].as_str(),
+                Some(
+                    "task_started"
+                        | "task_complete"
+                        | "turn_aborted"
+                        | "token_count"
+                        | "item_completed"
+                        | "user_message"
+                        | "agent_message"
+                        | "agent_reasoning"
+                )
+            ),
+            "token_usage_record" => true,
+            _ => false,
+        };
+        if activity {
+            updated = updated.max(time);
+        }
         if matches!(kind, "session_meta" | "turn_context") {
             if let Some(name) = payload["model"].as_str().filter(|s| !s.trim().is_empty()) {
                 model = Some(name.trim().to_owned());
@@ -989,6 +1017,55 @@ fn clean_value(value: Value) -> Value {
 #[cfg(test)]
 mod incremental_tests {
     use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn reopening_a_session_does_not_advance_activity_time() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let path = sessions.join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        let mut file = File::create(&path).unwrap();
+        for record in [
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/project"}}),
+            serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}),
+            serde_json::json!({"type":"event_msg","timestamp":3000,"payload":{"type":"task_complete"}}),
+        ] {
+            writeln!(file, "{record}").unwrap();
+        }
+        let pricing = Pricing::bundled();
+        let initial = scan(root.path(), &pricing).unwrap();
+        assert_eq!(initial[0].head.time_updated, 3000.0);
+        let previous = initial
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect::<Vec<_>>();
+        for record in [
+            serde_json::json!({"type":"event_msg","timestamp":4000,"payload":{"type":"thread_settings_applied"}}),
+            serde_json::json!({"type":"turn_context","timestamp":5000,"payload":{"model":"gpt-5"}}),
+            serde_json::json!({"type":"response_item","timestamp":6000,"payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"Environment settings"}]}}),
+            serde_json::json!({"type":"world_state","timestamp":6001,"payload":{}}),
+        ] {
+            writeln!(file, "{record}").unwrap();
+        }
+        let full = scan(root.path(), &pricing).unwrap();
+        let changed = scan_changed(
+            root.path(),
+            &pricing,
+            std::slice::from_ref(&path),
+            &previous,
+        )
+        .unwrap();
+        for result in [&full, &changed.upserts] {
+            assert_eq!(result[0].head.time_updated, 3000.0);
+            assert_eq!(result[0].head.smart_tags_source_updated_at, Some(3000.0));
+            assert_eq!(result[0].detail.messages, initial[0].detail.messages);
+        }
+        writeln!(file, "{}", serde_json::json!({"type":"response_item","timestamp":7000,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}})).unwrap();
+        let continued = scan_changed(root.path(), &pricing, &[path], &previous).unwrap();
+        assert_eq!(continued.upserts[0].head.time_updated, 7000.0);
+        assert_eq!(continued.upserts[0].detail.messages.len(), 2);
+    }
 
     #[test]
     fn title_trims_after_utf16_limit() {

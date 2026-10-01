@@ -1,6 +1,6 @@
 pub(crate) fn parser_version(agent: &str) -> &'static str {
     if agent == "codex" {
-        "rust-parser-v3"
+        "rust-parser-v4"
     } else {
         "rust-parser-v2"
     }
