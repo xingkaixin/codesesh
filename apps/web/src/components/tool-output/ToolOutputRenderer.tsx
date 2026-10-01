@@ -1,6 +1,7 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { CodeHighlighter } from "./CodeHighlighter";
+import { CodeExecutionOutput } from "./CodeExecutionOutput";
 import { FileSectionsOutput } from "./FileSectionsOutput";
 import { MediaOutput } from "./MediaOutput";
 import { PropertyListOutput } from "./PropertyListOutput";
@@ -19,6 +20,16 @@ interface ToolOutputRendererProps {
 
 export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
   useLocale();
+
+  if (outputContent.kind === "code-execution") {
+    return (
+      <CodeExecutionOutput content={outputContent}>
+        {outputContent.output.map((block, index) => (
+          <ToolOutputRenderer key={index} outputContent={block} />
+        ))}
+      </CodeExecutionOutput>
+    );
+  }
 
   if (outputContent.kind === "thread-read") {
     return <ThreadReadOutput content={outputContent} />;

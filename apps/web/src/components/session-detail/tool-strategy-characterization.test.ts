@@ -946,3 +946,87 @@ describe("Codex plan and text displays", () => {
     });
   });
 });
+
+describe("Code Mode displays", () => {
+  it("uses DeepChat descriptions and keeps source separate from repeated output", () => {
+    const source = "  console.log('same');\nreturn 'same';\n";
+    expect(
+      buildStrategy({
+        agent: "deepchat",
+        tool: "run_code",
+        input: { code: source, description: "Inspect the workspace" },
+        output: "same\nsame",
+      }),
+    ).toMatchObject({
+      title: "run_code",
+      secondaryText: "Inspect the workspace",
+      showInputPreview: false,
+      contentLabel: "Execution output",
+      outputContent: {
+        kind: "code-execution",
+        source,
+        language: "typescript",
+        failed: false,
+        output: [{ kind: "plain", text: "same\nsame" }],
+      },
+    });
+  });
+
+  it("preserves ordered Codex output blocks and exposes script failures", () => {
+    const source = "image(result);";
+    const strategy = buildStrategy({
+      agent: "codex",
+      tool: "exec",
+      input: source,
+      output: [
+        { type: "text", text: "before" },
+        { type: "image", mime_type: "image/png", data: "eA==" },
+        { type: "text", text: "after" },
+      ],
+    });
+    expect(strategy).toMatchObject({
+      title: "exec",
+      secondaryText: "Execute JavaScript",
+      showInputPreview: false,
+      outputContent: {
+        kind: "code-execution",
+        source,
+        language: "javascript",
+        output: [
+          { kind: "plain", text: "before" },
+          { kind: "media" },
+          { kind: "plain", text: "after" },
+        ],
+      },
+    });
+    expect(
+      buildStrategy({
+        agent: "deepchat",
+        tool: "run_code",
+        status: "error",
+        input: { code: "invalid source" },
+        error: "SyntaxError",
+        output: "partial",
+      }),
+    ).toMatchObject({
+      outputContent: {
+        kind: "code-execution",
+        failed: true,
+        output: [{ kind: "plain", text: "SyntaxError" }],
+      },
+    });
+    expect(
+      buildStrategy({ agent: "deepchat", tool: "other", input: { code: "source" }, output: "ok" })
+        .outputContent.kind,
+    ).toBe("plain");
+    expect(
+      buildStrategy({
+        agent: "codex",
+        tool: "exec",
+        metadata: { namespace: "mcp__other__" },
+        input: source,
+        output: "ok",
+      }).outputContent.kind,
+    ).not.toBe("code-execution");
+  });
+});

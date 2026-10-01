@@ -25,6 +25,7 @@ import { buildPiToolStrategy } from "./pi";
 import { buildDshToolStrategy } from "./dsh";
 import { buildMiniMaxCodeToolStrategy } from "./minimax-code";
 import { buildDefaultToolStrategy } from "./shared";
+import { buildDeepChatToolStrategy } from "./deepchat";
 
 export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus } from "../tool-normalize";
 export {
@@ -60,6 +61,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   pi: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
   dsh: buildDshToolStrategy,
+  deepchat: buildDeepChatToolStrategy,
 };
 
 export function hasCustomToolStrategy(agentName: string): boolean {

@@ -314,3 +314,49 @@ describe("ToolOutputRenderer", () => {
     );
   });
 });
+
+describe("Code execution output", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("renders ordered output while deferring source and copies the original source", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { languages: ["en-US"], clipboard: { writeText } });
+    const source = "  console.log('original');\nreturn 'done';\n";
+    const view = renderOutput({
+      kind: "code-execution",
+      source,
+      language: "typescript",
+      failed: false,
+      output: [
+        { kind: "plain", text: "before", language: "text", isCode: false },
+        { kind: "media", items: [{ src: "data:image/png;base64,eA==", alt: "middle" }] },
+        { kind: "plain", text: "after", language: "text", isCode: false },
+      ],
+    });
+    expect(
+      [...view.container.querySelectorAll("pre,img")].map((el) =>
+        el.tagName === "IMG" ? el.getAttribute("alt") : el.textContent,
+      ),
+    ).toEqual(["before", "middle", "after"]);
+    expect(view.container.textContent).not.toContain("console.log");
+    fireEvent.click(view.getByText("Source code · TypeScript"));
+    expect(view.container.textContent).toContain("console.log");
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Copy source" }));
+    });
+    expect(writeText).toHaveBeenCalledWith(source);
+    vi.unstubAllGlobals();
+  });
+
+  it("opens source alongside an execution failure", () => {
+    const view = renderOutput({
+      kind: "code-execution",
+      source: "invalid source",
+      language: "javascript",
+      failed: true,
+      output: [{ kind: "plain", text: "SyntaxError", language: "text", isCode: false }],
+    });
+    expect(view.getByText("SyntaxError")).toBeTruthy();
+    expect(view.container.querySelector("details")?.open).toBe(true);
+    expect(view.container.textContent).toContain("invalid source");
+  });
+});

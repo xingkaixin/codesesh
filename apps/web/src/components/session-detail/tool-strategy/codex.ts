@@ -35,6 +35,7 @@ import {
 import { parseJsonText } from "../utils";
 import { buildCodexReadThreadDisplay } from "../codex-read-thread";
 import { buildDefaultToolStrategy, buildSkillToolStrategy } from "./shared";
+import { buildCodeExecutionStrategy } from "./code-execution";
 import {
   Bot,
   Clock3,
@@ -91,6 +92,10 @@ export function buildCodexToolStrategy(
   const formatPathForDisplay = (path: string) => getDisplayPath(path, baseDirectory);
   const formatTextForDisplay = (text: string) =>
     getDisplayTextWithRelativePaths(text, baseDirectory);
+
+  if (toolKey === "exec" && !namespace) {
+    return buildCodeExecutionStrategy(tool, state, "javascript");
+  }
 
   if (toolKey === "skill") {
     return buildSkillToolStrategy(tool, state, defaultStrategy, baseDirectory);
