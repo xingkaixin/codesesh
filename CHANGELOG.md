@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.2] - 2026-10-01
+
+This patch reduces Dashboard loading work for large local and Hub archives, improves loading diagnostics, and makes npm releases wait for verified platform package availability. (#666–#669)
+
+### Performance
+
+- Add covering read indexes for session metadata, usage, and user activity. Load only bookmarked sessions when resolving bookmarks, avoiding a full archive read during page loading. (#669)
+
+### Bug Fixes
+
+- Include projects, Dashboard, and bookmarks in initial loading telemetry, and report their loading failures. Add query phase timings to diagnose slow project and Dashboard responses. (#669)
+
+### Build
+
+- Publish all missing npm platform packages before polling their exact-version metadata and tarball integrity, then publish the main package. Allow up to five minutes for each publication stage and safely skip matching versions on reruns. (#666)
+- Update React Query, Astro, Vite, Vitest, coverage tooling, Turbo, Prettier, and the Astro formatting plugin. (#667, #668)
+
 ## [1.2.1] - 2026-09-29
 
 This patch fixes Worker synchronization when a session's message count changes without changing its replayable messages. (#664)

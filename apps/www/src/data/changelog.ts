@@ -71,6 +71,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.2",
+        date: "2026-10-01",
+        title: "Load dashboards with less work as history grows",
+        summary:
+          "CodeSesh 1.2.2 reduces the data read when opening dashboards and bookmarks in large local or Hub archives. More complete loading diagnostics help investigate pages that remain slow.",
+        direction:
+          "As AI coding history grows, everyday browsing should read only the data it needs, and loading problems should be traceable.",
+        highlights: [
+          {
+            title: "Read less when opening saved history",
+            description:
+              "Dashboard queries use indexes for session summaries, usage, and activity. Bookmarks load their saved sessions without reading the full archive.",
+          },
+          {
+            title: "Diagnose the complete page load",
+            description:
+              "Loading logs now cover projects, the dashboard, and bookmarks alongside sessions. Slow query logs show where time is spent, helping diagnose delays on a local server or Hub.",
+          },
+        ],
+      },
+      {
         version: "1.2.1",
         date: "2026-09-29",
         title: "Keep Worker uploads moving as session counts change",
@@ -461,6 +482,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.2",
+        date: "2026-10-01",
+        title: "历史增多时，Dashboard 加载减少读取",
+        summary:
+          "CodeSesh 1.2.2 减少打开大型本地或 Hub 历史库的 Dashboard 和收藏时读取的数据，并完善加载诊断，便于排查仍然缓慢的页面。",
+        direction:
+          "AI 编码历史不断积累时，日常浏览应仅读取所需数据，加载问题也应有明确的排查依据。",
+        highlights: [
+          {
+            title: "浏览已保存历史时减少读取",
+            description:
+              "Dashboard 查询通过索引读取会话摘要、用量和活动。收藏仅读取对应的会话，无需读取整个历史库。",
+          },
+          {
+            title: "排查完整的页面加载过程",
+            description:
+              "加载日志在会话之外也覆盖项目、Dashboard 和收藏。慢查询日志记录各阶段耗时，便于定位本地服务或 Hub 的加载延迟。",
+          },
+        ],
+      },
+      {
         version: "1.2.1",
         date: "2026-09-29",
         title: "消息计数变化时，Worker 上传继续进行",
@@ -834,6 +876,27 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.2",
+        date: "2026-10-01",
+        title: "履歴が増えても、ダッシュボードの読み取りを抑える",
+        summary:
+          "CodeSesh 1.2.2では、大きなローカル履歴やHubの履歴でダッシュボードとブックマークを開く際のデータ読み取りを減らしました。読み込みの診断情報も充実し、遅いページの原因を調べやすくなります。",
+        direction:
+          "AIコーディング履歴が増えても、日常の閲覧では必要なデータだけを読み取り、読み込みの問題を追跡できることを重視しています。",
+        highlights: [
+          {
+            title: "保存した履歴の読み取りを削減",
+            description:
+              "ダッシュボードはインデックスからセッション概要、使用量、アクティビティを読み取ります。ブックマークは対象のセッションだけを取得し、履歴全体を読み取りません。",
+          },
+          {
+            title: "ページ全体の読み込みを診断",
+            description:
+              "読み込みログはセッションに加え、プロジェクト、ダッシュボード、ブックマークも対象にします。遅いクエリの段階別の所要時間から、ローカルサーバーやHubの遅延を調べられます。",
+          },
+        ],
+      },
       {
         version: "1.2.1",
         date: "2026-09-29",
