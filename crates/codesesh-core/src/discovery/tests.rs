@@ -770,6 +770,77 @@ fn persisted_file_state_skips_bodies_and_rechecks_changes_after_restart() {
 }
 
 #[test]
+fn codex_parser_upgrade_corrects_cached_activity_without_source_changes() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("codex");
+    let sessions = root.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let path = sessions.join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+    let records = [
+        serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/project"}}),
+        serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}),
+        serde_json::json!({"type":"event_msg","timestamp":3000,"payload":{"type":"task_complete"}}),
+        serde_json::json!({"type":"event_msg","timestamp":4000,"payload":{"type":"thread_settings_applied"}}),
+    ];
+    std::fs::write(
+        &path,
+        records
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    )
+    .unwrap();
+    let source = AgentSource {
+        agent: "codex".into(),
+        data_root: root,
+        scan_path: sessions,
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut initial = scanner.refresh(None).unwrap();
+    cache
+        .apply_checkpoint(
+            &mut initial.sessions,
+            &initial.removed,
+            "codex",
+            &initial.checkpoint,
+            initial.complete,
+        )
+        .unwrap();
+    initial.on_reject.take();
+    cache
+        .connection()
+        .execute(
+            "UPDATE sessions SET time_updated=4000,activity_time=4000 WHERE agent_name='codex'",
+            [],
+        )
+        .unwrap();
+    cache.connection().execute("UPDATE cache_meta SET value=json_set(value,'$.parserVersion','rust-parser-v3') WHERE key='rust_source_state:codex'", []).unwrap();
+    assert_eq!(cache.snapshot().unwrap()[0].time_updated, 4000.0);
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut revised = scanner.refresh(None).unwrap();
+    assert_eq!(revised.sessions.len(), 1);
+    assert_eq!(revised.sessions[0].head.time_updated, 3000.0);
+    cache
+        .apply_checkpoint(
+            &mut revised.sessions,
+            &revised.removed,
+            "codex",
+            &revised.checkpoint,
+            revised.complete,
+        )
+        .unwrap();
+    revised.on_reject.take();
+    assert_eq!(cache.snapshot().unwrap()[0].time_updated, 3000.0);
+    let mut scanner = AgentScanner::new(source, db, pricing);
+    assert!(scanner.refresh(None).unwrap().sessions.is_empty());
+}
+
+#[test]
 fn codex_title_index_refresh_only_parses_the_renamed_session() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("codex");
