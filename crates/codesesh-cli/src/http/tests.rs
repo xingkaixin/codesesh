@@ -262,6 +262,72 @@ async fn api_auth_transport_and_write_boundaries() {
     runtime.shutdown().await.unwrap();
 }
 #[tokio::test]
+async fn bookmarks_resolve_only_requested_source_qualified_sessions() {
+    let (app, runtime, _dir) = app().await;
+    runtime.hub_control(|cache| {
+        for (node, id, title, publication) in [
+            ("local", "shared", "Local title", None),
+            ("worker-a", "shared", "Remote title", None),
+            ("local", "pending", "Pending title", Some("staging")),
+            ("local", "unrelated", "Unrelated title", None),
+        ] {
+            cache.connection().execute("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,publication_id,head_meta_json)
+                VALUES(?,'codex',?,?,'/fixture','path','/fixture','fixture',1,1,1,0,0,0,0,?,?)", (node,id,title,publication,if id == "unrelated" { "invalid-json" } else { "{}" }))?;
+        }
+        Ok(())
+    }).await.unwrap();
+    let write = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+    for reference in [
+        json!({"agentName":"codex","sessionId":"shared"}),
+        json!({"sourceNodeId":"worker-a","agentName":"codex","sessionId":"shared"}),
+        json!({"agentName":"codex","sessionId":"pending"}),
+        json!({"agentName":"codex","sessionId":"missing"}),
+    ] {
+        assert_eq!(
+            request(
+                &app,
+                Method::PUT,
+                "/api/bookmarks",
+                &write,
+                &json!({"reference":reference}).to_string()
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+    }
+    let (status, body) = request(&app, Method::GET, "/api/bookmarks", &write, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let views = body["bookmarks"].as_array().unwrap();
+    assert_eq!(views.len(), 4);
+    for (node, title) in [("local", "Local title"), ("worker-a", "Remote title")] {
+        let view = views
+            .iter()
+            .find(|view| {
+                view["reference"]["sessionId"] == "shared"
+                    && view["reference"]["sourceNodeId"]
+                        .as_str()
+                        .unwrap_or("local")
+                        == node
+            })
+            .unwrap();
+        assert_eq!(view["availability"], "available");
+        assert_eq!(view["session"]["title"], title);
+    }
+    for id in ["pending", "missing"] {
+        let view = views
+            .iter()
+            .find(|view| view["reference"]["sessionId"] == id)
+            .unwrap();
+        assert_eq!(view["availability"], "session-unavailable");
+    }
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn state_payload_and_query_errors_match_contract() {
     let (app, runtime, _dir) = app().await;
     let write = [

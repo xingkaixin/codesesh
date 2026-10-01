@@ -103,21 +103,6 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_session
       ON messages(source_node_id, agent_name, session_id, message_index);
 
-CREATE INDEX idx_messages_usage_time
-      ON messages(
-        CASE
-          WHEN time_completed > 0 THEN time_completed
-          WHEN time_created > 0 THEN time_created
-        END,
-        agent_name,
-        session_id,
-        message_index,
-        model,
-        tokens_json,
-        cost,
-        cost_source
-      );
-
 CREATE TABLE session_model_cost (
       source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,
@@ -267,10 +252,6 @@ CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON sessi
       INSERT INTO session_documents_fts(rowid, title, content_text)
       VALUES (new.id, new.title, new.content_text);
     END;
-
-CREATE INDEX idx_messages_user_activity
-    ON messages(time_created, agent_name, session_id)
-    WHERE role = 'user' AND automated = 0 AND time_created > 0;
 
 CREATE INDEX idx_session_documents_state
       ON session_documents(

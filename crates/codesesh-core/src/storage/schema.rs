@@ -122,6 +122,11 @@ fn migrate(
         for table in saved.iter().rev() {
             db.execute_batch(&format!("DROP TABLE migration_{table}"))?;
         }
+        // A full table migration drops the indexes installed by this patch.
+        db.execute(
+            "DELETE FROM cache_meta WHERE key='covering_read_indexes_v1'",
+            [],
+        )?;
         db.execute_batch("DROP TABLE IF EXISTS cached_sessions; DROP TABLE IF EXISTS project_sessions; DROP TABLE IF EXISTS search_index_publication_entries;")?;
         if version < 22 {
             db.execute_batch("INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions; UPDATE session_documents SET content_hash='';")?;
@@ -304,6 +309,10 @@ pub fn ensure_with_progress(
     let result = (|| -> Result<()> {
         for (key, sql) in [
             (
+                "covering_read_indexes_v1",
+                include_str!("read-indexes.sql"),
+            ),
+            (
                 "cost_only_publication_v1",
                 "DROP TRIGGER IF EXISTS session_documents_au;
                  CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
@@ -457,6 +466,7 @@ mod tests {
     fn upgrades_schema33_and_queues_existing_content_once() {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(include_str!("schema.sql")).unwrap();
+        db.execute_batch(include_str!("read-indexes.sql")).unwrap();
         db.execute_batch("DROP INDEX idx_messages_user_activity; ALTER TABLE messages DROP COLUMN automated; PRAGMA user_version=33;").unwrap();
         ensure(&db, None).unwrap();
         assert!(columns(&db, "messages").unwrap().contains("automated"));

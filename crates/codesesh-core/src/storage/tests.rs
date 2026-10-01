@@ -63,6 +63,55 @@ fn source_nodes_isolate_content_search_and_updates() {
 }
 
 #[test]
+fn schema36_read_index_patch_preserves_rows_and_uses_covering_plans() {
+    let root = tempfile::tempdir().unwrap();
+    let mut local = source(root.path(), "shared");
+    let mut remote = local.clone();
+    remote.head.reference.source_node_id = "worker-a".into();
+    remote.detail.head.reference = remote.head.reference.clone();
+    remote.head.version = Some("version".into());
+    remote.head.summary_files = Some(serde_json::json!(["/fixture/file.rs"]));
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut local)).unwrap();
+    cache.publish(std::slice::from_mut(&mut remote)).unwrap();
+    let db = cache.connection();
+    db.execute_batch("DELETE FROM cache_meta WHERE key='covering_read_indexes_v1';
+        DROP INDEX idx_sessions_heads;
+        DROP INDEX idx_messages_usage_time;
+        CREATE INDEX idx_messages_usage_time ON messages(
+            CASE WHEN time_completed > 0 THEN time_completed WHEN time_created > 0 THEN time_created END,
+            agent_name,session_id,message_index,model,tokens_json,cost,cost_source);
+        DROP INDEX idx_messages_user_activity;
+        CREATE INDEX idx_messages_user_activity ON messages(time_created,agent_name,session_id)
+            WHERE role='user' AND automated=0 AND time_created>0;").unwrap();
+    let heads = serde_json::to_value(cache.snapshot().unwrap()).unwrap();
+    let facts =
+        serde_json::to_value(crate::analytics::load_cost_facts(db, None, None, true).unwrap())
+            .unwrap();
+    for _ in 0..2 {
+        schema::ensure(db, None).unwrap();
+        assert_eq!(
+            serde_json::to_value(cache.snapshot().unwrap()).unwrap(),
+            heads
+        );
+        assert_eq!(
+            serde_json::to_value(crate::analytics::load_cost_facts(db, None, None, true).unwrap())
+                .unwrap(),
+            facts
+        );
+        for (sql, index) in [
+            (format!("SELECT {} FROM sessions WHERE publication_id IS NULL ORDER BY activity_time DESC,agent_name,session_id", snapshot::HEAD_COLUMNS), "idx_sessions_heads"),
+            ("SELECT source_node_id,agent_name,session_id,model,tokens_json,cost,cost_source FROM messages INDEXED BY idx_messages_usage_time WHERE CASE WHEN time_completed > 0 THEN time_completed WHEN time_created > 0 THEN time_created END > 0".into(), "idx_messages_usage_time"),
+            ("SELECT source_node_id,agent_name,session_id,time_created FROM messages INDEXED BY idx_messages_user_activity WHERE role='user' AND automated=0 AND time_created>0".into(), "idx_messages_user_activity"),
+        ] {
+            let plan: Vec<String> = db.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap()
+                .query_map([], |row| row.get(3)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+            assert!(plan.iter().any(|line| line.contains(&format!("COVERING INDEX {index}"))), "{plan:?}");
+        }
+    }
+}
+
+#[test]
 fn schema35_history_migrates_to_local_without_losing_messages() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("cache.db");
@@ -611,7 +660,7 @@ fn schema34_migration_preserves_heads_content_and_indexes() {
             )
             .unwrap();
     }
-    cache.connection.execute_batch("ALTER TABLE sessions DROP COLUMN head_meta_json; PRAGMA user_version=34; UPDATE cache_meta SET value='34' WHERE key='version';").unwrap();
+    cache.connection.execute_batch("DROP INDEX idx_sessions_heads; ALTER TABLE sessions DROP COLUMN head_meta_json; PRAGMA user_version=34; UPDATE cache_meta SET value='34' WHERE key='version';").unwrap();
     drop(cache);
     for _ in 0..2 {
         let mut cache = Cache::open(Some(&path)).unwrap();
@@ -667,7 +716,7 @@ fn schema34_failed_backfill_rolls_back_column_and_versions() {
     cache
         .publish(&mut [source(root.path(), "valid"), source(root.path(), "invalid")])
         .unwrap();
-    cache.connection.execute_batch("ALTER TABLE sessions DROP COLUMN head_meta_json; PRAGMA user_version=34; UPDATE cache_meta SET value='34' WHERE key='version'; UPDATE sessions SET meta_json='invalid' WHERE rowid=2;").unwrap();
+    cache.connection.execute_batch("DROP INDEX idx_sessions_heads; ALTER TABLE sessions DROP COLUMN head_meta_json; PRAGMA user_version=34; UPDATE cache_meta SET value='34' WHERE key='version'; UPDATE sessions SET meta_json='invalid' WHERE rowid=2;").unwrap();
     assert!(super::schema::ensure(&cache.connection, None).is_err());
     assert_eq!(
         cache

@@ -8,10 +8,10 @@ use axum::{
 };
 use codesesh_core::{
     bookmarks::materialize_bookmarks,
-    contract::{SessionHead, SessionReference},
+    contract::SessionReference,
     state::{
         BookmarkRecord, StateStore, normalize_session_alias, parse_bookmark_import,
-        parse_bookmark_reference, reference_key,
+        parse_bookmark_reference,
     },
 };
 use serde_json::{Value, json};
@@ -56,19 +56,14 @@ fn known(state: &State, reference: &SessionReference) -> Result<(), String> {
     }
 }
 async fn materialize(state: &State, records: Vec<BookmarkRecord>) -> anyhow::Result<Value> {
-    let query_scope = state.query_scope.clone();
     let known: HashSet<_> = codesesh_core::agents::catalog(0)
         .into_iter()
         .map(|a| a.name)
         .collect();
     let views = state
         .runtime
-        .read_snapshot(move |conn, heads| {
-            let live: HashMap<String, SessionHead> = super::scoped_heads(heads, &query_scope)
-                .into_iter()
-                .map(|s| (reference_key(&s.reference), s))
-                .collect();
-            materialize_bookmarks(&records, &live, &known, |refs| {
+        .read(move |conn| {
+            materialize_bookmarks(&records, &HashMap::new(), &known, |refs| {
                 refs.iter()
                     .filter_map(
                         |r| match codesesh_core::storage::head_from_connection(conn, r) {
