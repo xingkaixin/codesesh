@@ -470,13 +470,15 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
         payload: Option<&'a serde_json::value::RawValue>,
     }
     #[derive(Default, serde::Deserialize)]
-    struct Header {
+    struct Header<'a> {
         #[serde(default, rename = "type")]
         kind: Value,
         #[serde(default)]
         timestamp: Value,
         #[serde(default)]
         model: Value,
+        #[serde(default, borrow)]
+        item: Option<&'a serde_json::value::RawValue>,
     }
     let Ok(record) = serde_json::from_str::<Record<'_>>(line) else {
         return serde_json::from_str(line);
@@ -489,10 +491,27 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
     } else {
         return serde_json::from_str(line);
     };
+    let mcp_completion = header.kind == "item_completed"
+        && header.item.as_ref().is_some_and(|item| {
+            #[derive(serde::Deserialize)]
+            struct ItemType {
+                #[serde(rename = "type")]
+                kind: String,
+                #[serde(default)]
+                server: String,
+                #[serde(default)]
+                tool: String,
+            }
+            serde_json::from_str::<ItemType>(item.get()).is_ok_and(|item| {
+                item.kind == "McpToolCall"
+                    && item.server == "codex_app"
+                    && item.tool == "read_thread"
+            })
+        });
     let payload = if !internal(&record.kind)
         && !internal(&header.kind)
         && (record.kind == "response_item"
-            || (record.kind == "event_msg" && header.kind == "token_count"))
+            || (record.kind == "event_msg" && (header.kind == "token_count" || mcp_completion)))
     {
         serde_json::from_str(raw)?
     } else {
@@ -537,6 +556,7 @@ pub fn parse(
     let mut pending_plan = None;
     let mut latest_text = None;
     let mut tools = HashMap::<String, (usize, usize)>::new();
+    let mut tool_events = super::codex_tool_events::ToolEvents::default();
     let mut has_record = false;
     let mut next_index = 0;
     loop {
@@ -600,6 +620,22 @@ pub fn parse(
             head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
             continue;
         }
+        if kind == "event_msg" && payload["type"] == "item_completed" {
+            let item = &payload["item"];
+            if item["type"] == "McpToolCall"
+                && let Some(part) = tool_events.complete(item, &mut messages, time)
+            {
+                current = Some(assistant_part(
+                    &mut messages,
+                    current,
+                    latest_text,
+                    part,
+                    time,
+                    model.clone(),
+                ));
+            }
+            continue;
+        }
         if kind != "response_item" {
             continue;
         }
@@ -624,6 +660,16 @@ pub fn parse(
                     continue;
                 }
                 let full_text = content(payload, role == "assistant");
+                let full_text = if role == "user" {
+                    super::codex_tool_events::record_question_reply(
+                        &full_text,
+                        &mut messages,
+                        &tools,
+                    )
+                    .unwrap_or(full_text)
+                } else {
+                    full_text
+                };
                 static PLAN: LazyLock<Regex> = LazyLock::new(|| {
                     Regex::new(r"(?s)<proposed_plan>\s*(.*?)\s*</proposed_plan>").unwrap()
                 });
@@ -830,7 +876,9 @@ pub fn parse(
                     if messages[index].model.is_none() {
                         messages[index].model = model.clone();
                     }
-                    tools.insert(call_id, (index, messages[index].parts.len() - 1));
+                    let position = (index, messages[index].parts.len() - 1);
+                    tool_events.register(&namespace, &name, position);
+                    tools.insert(call_id, position);
                     current = Some(index);
                 }
             }
@@ -852,6 +900,7 @@ pub fn parse(
                 if !output.is_empty()
                     && let Some((i, p)) = tools.get(call_id)
                     && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
+                    && state.status == "running"
                 {
                     state.output = Some(
                         serde_json::json!([{ "type": "text", "text": output, "time_created": time }]),

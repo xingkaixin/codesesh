@@ -354,6 +354,8 @@ export function buildCodexWriteStdinDisplay(
 export function buildCodexRequestUserInputDisplay(
   inputValue: unknown,
   outputText: string,
+  metadataValue?: unknown,
+  asynchronous = false,
 ): {
   secondaryText?: string;
   details: ToolDetailItem[];
@@ -378,13 +380,20 @@ export function buildCodexRequestUserInputDisplay(
     outputText,
   );
   const answersById = toRecord(parsedOutput?.answers);
+  const recordedAnswers = toRecord(toRecord(metadataValue).questionAnswers);
 
   const questions = rawQuestions
-    .map((questionValue) => {
+    .map((questionValue, index) => {
       const question = toRecord(questionValue);
       const questionId = toPlainText(question.id);
       const rawAnswerRecord = toRecord(answersById[questionId]);
-      const rawAnswers = Array.isArray(rawAnswerRecord.answers) ? rawAnswerRecord.answers : [];
+      const rawAnswers = asynchronous
+        ? Array.isArray(recordedAnswers[index])
+          ? recordedAnswers[index]
+          : []
+        : Array.isArray(rawAnswerRecord.answers)
+          ? rawAnswerRecord.answers
+          : [];
       const answers = rawAnswers
         .map((answer) => (typeof answer === "string" ? stripRecommendedSuffix(answer) : ""))
         .filter(Boolean);
@@ -393,7 +402,9 @@ export function buildCodexRequestUserInputDisplay(
         ? question.options
             .map((optionValue) => {
               const option = toRecord(optionValue);
-              const normalizedLabel = normalizeRecommendedLabel(toPlainText(option.label));
+              const normalizedLabel = normalizeRecommendedLabel(
+                typeof optionValue === "string" ? optionValue : toPlainText(option.label),
+              );
               if (!normalizedLabel.label) {
                 return null;
               }
@@ -406,7 +417,7 @@ export function buildCodexRequestUserInputDisplay(
             .filter((option): option is NonNullable<typeof option> => option != null)
         : [];
 
-      const questionText = toPlainText(question.question);
+      const questionText = toPlainText(asynchronous ? question.title : question.question);
       if (!questionText) {
         return null;
       }
@@ -416,6 +427,7 @@ export function buildCodexRequestUserInputDisplay(
         question: questionText,
         options,
         answers,
+        ...(asynchronous ? { unansweredLabel: t("No answer recorded") } : {}),
       };
     })
     .filter((question): question is NonNullable<typeof question> => question != null);
@@ -434,10 +446,12 @@ export function buildCodexRequestUserInputDisplay(
   }
 
   return {
-    secondaryText: buildQuestionSummary(
-      questions.map((question) => question.header || ""),
-      questions.length,
-    ),
+    secondaryText: asynchronous
+      ? `${truncateText(questions[0]?.question || "", 96)} · ${t("{0}/{1} answered", [questions.filter((question) => question.answers.length > 0).length, questions.length])}`
+      : buildQuestionSummary(
+          questions.map((question) => question.header || ""),
+          questions.length,
+        ),
     details: [],
     outputContent: {
       kind: "question-list",

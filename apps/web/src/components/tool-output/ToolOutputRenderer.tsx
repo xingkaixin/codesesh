@@ -7,6 +7,7 @@ import { PropertyListOutput } from "./PropertyListOutput";
 import { QuestionListOutput } from "./QuestionListOutput";
 import { StructuredDiffOutput } from "./StructuredDiffOutput";
 import { TaskListOutput } from "./TaskListOutput";
+import { ThreadReadOutput } from "./ThreadReadOutput";
 import type { ToolOutputContent } from "./types";
 import { UnifiedDiffOutput } from "./UnifiedDiffOutput";
 import { ProgressiveText } from "../ProgressiveContent";
@@ -18,6 +19,10 @@ interface ToolOutputRendererProps {
 
 export function ToolOutputRenderer({ outputContent }: ToolOutputRendererProps) {
   useLocale();
+
+  if (outputContent.kind === "thread-read") {
+    return <ThreadReadOutput content={outputContent} />;
+  }
 
   if (outputContent.kind === "structured-diff") {
     return <StructuredDiffOutput blocks={outputContent.blocks} />;

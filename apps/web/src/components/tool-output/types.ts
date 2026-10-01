@@ -46,6 +46,7 @@ export interface QuestionListItem {
   question: string;
   options: QuestionListOptionItem[];
   answers: string[];
+  unansweredLabel?: string;
 }
 
 export interface QuestionListToolOutputContent {
@@ -86,6 +87,25 @@ export interface PropertyListToolOutputContent {
   items: PropertyItem[];
 }
 
+export interface ThreadReadTurn {
+  id: string;
+  status: string;
+  startedAt?: number;
+  items: Record<string, unknown>[];
+  error?: unknown;
+}
+
+export interface ThreadReadToolOutputContent {
+  kind: "thread-read";
+  title: string;
+  threadId: string;
+  turns: ThreadReadTurn[];
+  hasMore: boolean;
+  newestFirst: boolean;
+  request: PropertyItem[];
+  rawOutput: unknown;
+}
+
 export type ToolOutputContent =
   | PlainToolOutputContent
   | StructuredDiffToolOutputContent
@@ -93,4 +113,5 @@ export type ToolOutputContent =
   | QuestionListToolOutputContent
   | TaskListToolOutputContent
   | MediaToolOutputContent
-  | PropertyListToolOutputContent;
+  | PropertyListToolOutputContent
+  | ThreadReadToolOutputContent;
