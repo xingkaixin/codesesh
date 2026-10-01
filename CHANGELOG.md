@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.3] - 2026-10-01
+
+This patch improves session replay with Markdown tables, clearer Code Mode output, and Codex thread excerpts and question answers. It also keeps opening an old Codex chat from changing its recorded activity time. (#671–#674)
+
+### Features
+
+- Show Codex thread excerpts with user messages and final replies, expandable turns, and on-demand activity and original output. Match decoded thread calls to their own results and display asynchronous questions with the recorded user answers. (#672)
+- Display DeepChat, Codex, and Pi Code Mode results with ordered text and images, available descriptions, and expandable source with full-source copying. Preserve failure details and expose recorded Pi execution time and internal call failures. (#673, #674)
+
+### Bug Fixes
+
+- Advance Codex activity time only for conversation, usage, and supported turn lifecycle records. Opening an old chat or appending settings and other metadata no longer moves it into recent activity; the next scan corrects cached timestamps. (#671)
+- Resolve Codex tool completion events, empty outputs, script failures, and yielded scripts without losing repeated output or treating question acceptance as a user answer. Refresh existing Codex cache entries through the updated parser. (#672, #673)
+- Render GFM tables in agent replies and contain wide tables within the message area. (#674)
+
 ## [1.2.2] - 2026-10-01
 
 This patch reduces Dashboard loading work for large local and Hub archives, improves loading diagnostics, and makes npm releases wait for verified platform package availability. (#666–#669)

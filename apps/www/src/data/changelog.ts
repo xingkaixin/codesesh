@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.3",
+        date: "2026-10-01",
+        title: "Read conversations, code results, and answers more clearly",
+        summary:
+          "CodeSesh 1.2.3 makes local AI coding history easier to replay with readable tables, Code Mode text and images, and Codex thread excerpts and question answers. Opening an old Codex chat no longer changes its recorded activity time.",
+        direction:
+          "Session replay should preserve the conversation, tool results, and user decisions, while recent activity should reflect the work recorded by the source.",
+        highlights: [
+          {
+            title: "Review Codex threads and recorded answers",
+            description:
+              "Read user messages and final replies from thread lookups, expand more turns when needed, and see asynchronous questions alongside the user's recorded answers.",
+          },
+          {
+            title: "Inspect Code Mode output and source",
+            description:
+              "DeepChat, Codex, and Pi Code Mode calls show text and images in their original order. Expand and copy the source, inspect failures, and review available Pi execution details.",
+          },
+          {
+            title: "Read tables and trust recent activity",
+            description:
+              "Agent replies render Markdown tables with scrolling contained inside the message. Codex settings and other metadata no longer move old chats into recent activity; the next scan corrects saved timestamps.",
+          },
+        ],
+      },
+      {
         version: "1.2.2",
         date: "2026-10-01",
         title: "Load dashboards with less work as history grows",
@@ -482,6 +508,31 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.3",
+        date: "2026-10-01",
+        title: "更清楚地回看对话、代码结果与问答",
+        summary:
+          "CodeSesh 1.2.3 通过清楚的表格、Code Mode 文本与图片、Codex 线程摘录和问题回答，改善本地 AI 编码历史回放。打开旧 Codex 对话也不再改变记录的活动时间。",
+        direction: "会话回放应保留对话、工具结果与用户决策，最近活动应反映来源中记录的实际工作。",
+        highlights: [
+          {
+            title: "回看 Codex 线程与已有回答",
+            description:
+              "查看线程读取结果中的用户消息和最终回复，按需展开更多轮次，并在异步问题旁查看记录的用户回答。",
+          },
+          {
+            title: "查看 Code Mode 输出与源码",
+            description:
+              "DeepChat、Codex 和 Pi 的 Code Mode 按原顺序展示文本与图片。可展开并复制源码、查看失败详情，以及可用的 Pi 执行信息。",
+          },
+          {
+            title: "表格易读，最近活动准确",
+            description:
+              "Agent 回复中的 Markdown 表格正常展示，宽表格在消息内滚动。Codex 设置等元数据不再将旧对话移入最近活动，下次扫描会修正已有时间记录。",
+          },
+        ],
+      },
+      {
         version: "1.2.2",
         date: "2026-10-01",
         title: "历史增多时，Dashboard 加载减少读取",
@@ -876,6 +927,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.3",
+        date: "2026-10-01",
+        title: "会話、コードの実行結果、回答を読みやすく",
+        summary:
+          "CodeSesh 1.2.3では、表の表示、Code Modeのテキストと画像、Codexのスレッド抜粋と質問への回答を改善し、ローカルAIコーディング履歴を確認しやすくしました。古いCodexチャットを開いても、記録された活動時刻は変わりません。",
+        direction:
+          "履歴の再生では会話、ツールの結果、ユーザーの判断を保持し、最近のアクティビティはソースに記録された作業を反映することを重視しています。",
+        highlights: [
+          {
+            title: "Codexのスレッドと記録済みの回答を確認",
+            description:
+              "スレッド取得結果のユーザーメッセージと最終回答を読み、必要に応じて会話の続きを展開できます。非同期の質問には、記録されたユーザーの回答も表示されます。",
+          },
+          {
+            title: "Code Modeの出力とソースを確認",
+            description:
+              "DeepChat、Codex、PiのCode Modeでは、テキストと画像を元の順序で表示します。ソースの展開とコピー、失敗の詳細、記録されているPiの実行情報を確認できます。",
+          },
+          {
+            title: "読みやすい表と正確な活動時刻",
+            description:
+              "Agentの回答に含まれるMarkdownの表を表示し、横長の表はメッセージ内でスクロールできます。Codexの設定などのメタデータで古いチャットが最近のアクティビティに移ることはなく、次のスキャンで保存済みの時刻も修正されます。",
+          },
+        ],
+      },
       {
         version: "1.2.2",
         date: "2026-10-01",
