@@ -1,5 +1,10 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Source code": ["源码", "ソースコード"],
+  "Copy source": ["复制源码", "ソースをコピー"],
+  "Execution output": ["执行输出", "実行出力"],
+  "Execute JavaScript": ["执行 JavaScript", "JavaScript を実行"],
+  "Execute TypeScript": ["执行 TypeScript", "TypeScript を実行"],
   "Dispatched to Worker": ["已派发给 Worker", "Worker に送信済み"],
   Cancelled: ["已取消", "キャンセル済み"],
   "Unable to cancel. The task may already be dispatched; check its updated status.": [

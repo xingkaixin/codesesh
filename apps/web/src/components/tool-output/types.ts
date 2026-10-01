@@ -106,6 +106,14 @@ export interface ThreadReadToolOutputContent {
   rawOutput: unknown;
 }
 
+export interface CodeExecutionToolOutputContent {
+  kind: "code-execution";
+  source: string;
+  language: "javascript" | "typescript";
+  failed: boolean;
+  output: (PlainToolOutputContent | MediaToolOutputContent | PropertyListToolOutputContent)[];
+}
+
 export type ToolOutputContent =
   | PlainToolOutputContent
   | StructuredDiffToolOutputContent
@@ -114,4 +122,5 @@ export type ToolOutputContent =
   | TaskListToolOutputContent
   | MediaToolOutputContent
   | PropertyListToolOutputContent
-  | ThreadReadToolOutputContent;
+  | ThreadReadToolOutputContent
+  | CodeExecutionToolOutputContent;

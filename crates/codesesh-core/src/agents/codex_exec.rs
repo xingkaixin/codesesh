@@ -33,6 +33,55 @@ pub fn patch_text(args: &Value) -> &str {
         .unwrap_or("")
 }
 
+pub fn output(value: &Value, time: f64) -> (Value, &'static str) {
+    static ENVELOPE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^Script (?:completed|failed)\nWall time [^\n]*\nOutput:\n?").unwrap()
+    });
+    let items = match value {
+        Value::Array(items) => items.clone(),
+        _ => vec![value.clone()],
+    };
+    let first_text = items
+        .iter()
+        .find_map(|item| item.as_str().or_else(|| item["text"].as_str()))
+        .unwrap_or("");
+    let status = if first_text.starts_with("Script failed\n") {
+        "error"
+    } else if first_text.starts_with("Script running with cell ID ") {
+        "running"
+    } else {
+        "completed"
+    };
+    let mut first_text_block = true;
+    let blocks = items
+        .into_iter()
+        .filter_map(|item| {
+            if let Some(text) = item.as_str().or_else(|| item["text"].as_str()) {
+                let text = if first_text_block {
+                    ENVELOPE.replace(text, "").into_owned()
+                } else {
+                    text.to_owned()
+                };
+                first_text_block = false;
+                return (!text.trim().is_empty())
+                    .then(|| serde_json::json!({"type":"text","text":text,"time_created":time}));
+            }
+            if item["type"] == "input_image" {
+                let url = item["image_url"].as_str()?;
+                if let Some((mime, data)) = url
+                    .strip_prefix("data:")
+                    .and_then(|url| url.split_once(";base64,"))
+                {
+                    return Some(serde_json::json!({"type":"image","mime_type":mime,"data":data}));
+                }
+                return Some(serde_json::json!({"type":"image","url":url}));
+            }
+            (!item.is_null()).then_some(item)
+        })
+        .collect::<Vec<_>>();
+    (Value::Array(blocks), status)
+}
+
 pub fn decode(input: &Value) -> Vec<ExecInnerCall> {
     static ASSIGN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*").unwrap()

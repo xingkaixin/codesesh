@@ -97,7 +97,7 @@ export const AGENT_CATALOG = [
     iconColored: true,
     sourceKind: "sqlite",
     resumeCommandPrefix: null,
-    toolStrategy: "default",
+    toolStrategy: "custom",
   },
   {
     name: "cherrystudio",
