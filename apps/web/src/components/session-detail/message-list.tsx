@@ -46,6 +46,7 @@ interface MessageListProps {
   childSessionById?: ReadonlyMap<string, SessionHead>;
   apiRef: { current: MessageListHandle | null };
   anchorRegistry: TimelineAnchorRegistry;
+  followTail?: boolean;
 }
 
 export function MessageList({
@@ -57,10 +58,11 @@ export function MessageList({
   childSessionById,
   apiRef,
   anchorRegistry,
+  followTail = true,
 }: MessageListProps) {
   useLocale();
 
-  const transcriptRef = useTranscriptScroll(messages);
+  const transcriptRef = useTranscriptScroll(messages, followTail);
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export function MessageList({
   }, [apiRef, shouldVirtualize]);
 
   return (
-    <div ref={transcriptRef}>
+    <div ref={transcriptRef} className="[overflow-anchor:none]">
       {shouldVirtualize ? (
         <VirtualizedMessageList
           messages={messages}

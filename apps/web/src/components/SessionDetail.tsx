@@ -34,7 +34,10 @@ import {
   SessionDetailAuxOverlay,
 } from "./session-detail/session-detail-aux";
 import { SessionMessageTimeline } from "./session-detail/session-message-timeline";
+import { MessagePagingControls } from "./session-detail/message-paging-controls";
 import {
+  findScrollParent,
+  isWindowScrollParent,
   resolveReducedMotionScrollBehavior,
   type SessionAnchorScrollBehavior,
 } from "./session-detail/scroll-behavior";
@@ -42,23 +45,6 @@ import {
   createTimelineAnchorRegistry,
   type TimelineAnchorRegistry,
 } from "./session-detail/timeline-anchor-registry";
-
-const PAGING_MESSAGES = {
-  "Loaded {0} of {1} messages": [
-    "已加载 {0} / {1} 条消息",
-    "{1} 件中 {0} 件のメッセージを読み込みました",
-  ],
-  "Filters and navigation apply to loaded messages.": [
-    "筛选和消息导航仅作用于已加载的消息。",
-    "フィルターとメッセージナビゲーションは読み込み済みの内容に適用されます。",
-  ],
-  "Load more messages": ["加载更多消息", "さらにメッセージを読み込む"],
-  "Loading search match…": ["正在加载搜索命中位置…", "検索結果の位置を読み込み中…"],
-  "Couldn’t load more messages. Try again.": [
-    "无法加载更多消息，请重试。",
-    "追加のメッセージを読み込めませんでした。再試行してください。",
-  ],
-} as const;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -238,37 +224,64 @@ export function SessionDetail({
   const loadMore = messagePaging?.loadMore;
   const pageLoading = messagePaging?.loading ?? false;
   const pageFailed = messagePaging?.failed ?? false;
+  const pagingFooterRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (targetMessagePending && !pageLoading && !pageFailed) loadMore?.();
   }, [targetMessagePending, pageLoading, pageFailed, loadMore, session.messages.length]);
 
+  useEffect(() => {
+    const footer = pagingFooterRef.current;
+    if (!footer || !loadMore || pageLoading || pageFailed || targetMessagePending) return;
+    const parent = findScrollParent(footer);
+    let frame = 0;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer.disconnect();
+        // Let virtual rows mount and establish the reading anchor before extending the list.
+        frame = requestAnimationFrame(() => {
+          frame = requestAnimationFrame(loadMore);
+        });
+      },
+      { root: isWindowScrollParent(parent) ? null : parent, rootMargin: "0px 0px 240px 0px" },
+    );
+    observer.observe(footer);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    loadMore,
+    pageLoading,
+    pageFailed,
+    targetMessagePending,
+    session.messages.length,
+    sessionReference,
+  ]);
+
   const pageControls = messagePaging ? (
-    <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-xs leading-5 text-[var(--console-muted)]">
-      <p role="status">
-        {t(
-          "Loaded {0} of {1} messages",
-          [session.messages.length, session.message_total ?? 0],
-          locale,
-          PAGING_MESSAGES,
-        )}
-        {targetMessagePending && !pageFailed
-          ? ` · ${t("Loading search match…", [], locale, PAGING_MESSAGES)}`
-          : ""}
-      </p>
-      <p>{t("Filters and navigation apply to loaded messages.", [], locale, PAGING_MESSAGES)}</p>
-      {pageFailed && (
-        <p role="alert">
-          {t("Couldn’t load more messages. Try again.", [], locale, PAGING_MESSAGES)}
-        </p>
-      )}
-      <button
-        type="button"
-        disabled={pageLoading}
-        onClick={loadMore}
-        className="mt-2 rounded-sm border border-[var(--console-border)] px-3 py-1.5 text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] disabled:opacity-50"
-      >
-        {pageLoading ? t("Loading…") : t("Load more messages", [], locale, PAGING_MESSAGES)}
-      </button>
+    <MessagePagingControls
+      key={sessionReference}
+      loaded={session.messages.length}
+      total={session.message_total ?? 0}
+      paging={messagePaging}
+      searchMatchPending={targetMessagePending}
+      showLoadAll
+    />
+  ) : null;
+
+  const pagingFooter = messagePaging ? (
+    <div
+      ref={pagingFooterRef}
+      data-testid="session-message-paging-footer"
+      className="[overflow-anchor:none]"
+    >
+      <MessagePagingControls
+        loaded={session.messages.length}
+        total={session.message_total ?? 0}
+        paging={messagePaging}
+        searchMatchPending={targetMessagePending}
+      />
     </div>
   ) : null;
 
@@ -279,7 +292,7 @@ export function SessionDetail({
         className="mx-auto max-w-4xl rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
         {pageControls}
-        {t("This session has no displayable messages.")}
+        <div ref={pagingFooterRef}>{t("This session has no displayable messages.")}</div>
       </div>
     );
   }
@@ -351,6 +364,7 @@ export function SessionDetail({
                   childSessionById={childSessionById}
                   apiRef={virtualListRef}
                   anchorRegistry={anchorRegistry}
+                  followTail={!messagePaging}
                 />
               </RenderProfiler>
             </>
@@ -364,6 +378,7 @@ export function SessionDetail({
             hiddenTools={deriveHiddenTools(toc, filterState)}
             onShowAll={filterActions.resetAll}
           />
+          {pagingFooter}
         </div>
       </div>
       <DeferredInteractiveReceipt session={session} messagePaging={messagePaging} />
