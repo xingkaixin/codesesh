@@ -1,7 +1,8 @@
 import { useEffect, useEffectEvent } from "react";
 import type { NavigateFunction } from "react-router-dom";
 import type { SearchResult } from "../lib/api";
-import { agentRoutePath, sessionRoutePath } from "../lib/session-indexes";
+import { agentRoutePath } from "../lib/session-indexes";
+import { searchResultPath } from "../lib/search";
 import { isEditableTarget } from "../lib/keyboard";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import type { ViewState } from "../lib/view-state";
@@ -142,13 +143,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         event.preventDefault();
         dismissShortcutHint();
         closeSearch();
-        navigate(
-          {
-            pathname: sessionRoutePath(result.reference),
-            hash: result.messageIndex == null ? "" : `message-${result.messageIndex}`,
-          },
-          { state: { searchQuery: activeSearchQuery } },
-        );
+        navigate(searchResultPath(result), { state: { searchQuery: activeSearchQuery } });
       }
       return;
     }

@@ -1,9 +1,16 @@
 import { t } from "../i18n/translate";
-import { buildSessionTree } from "@codesesh/contract";
+import { buildSessionTree, sessionRoutePath } from "@codesesh/contract";
 import { type SearchRequestOptions, type SearchResult } from "./api";
 import { type SessionIndexes, getSessionAgentKey, getSessionRouteKey } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
 import type { SearchFilterState, SearchProjectOption } from "../components/app/types";
+
+export function searchResultPath(result: SearchResult): string {
+  return (
+    sessionRoutePath(result.reference) +
+    (result.messageIndex == null ? "" : `#message-${result.messageIndex}`)
+  );
+}
 
 interface SearchProjectOptionsInput {
   usesServerSearch: boolean;

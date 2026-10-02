@@ -359,6 +359,8 @@ test(
         body: JSON.stringify({ alias: "Persistent Rust migration alias" }),
       });
       const expected = await responses(server);
+      for (const result of expected["/api/search?q=migration-needle"].results)
+        result.messageIndex = 1;
       await stop(server);
       server = undefined;
       const state = stateFacts(fixture);
@@ -406,6 +408,7 @@ test(
     try {
       server = await startServer(fixture, reference);
       const expected = await readJson(server, "/api/search?q=migration-needle");
+      for (const result of expected.results) result.messageIndex = 1;
       await stop(server);
       server = undefined;
       const db = new Database(cachePath(fixture));

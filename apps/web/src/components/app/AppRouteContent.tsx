@@ -42,7 +42,7 @@ const ProjectDashboardView = lazy(() =>
   import("../Projects").then((module) => ({ default: module.ProjectDashboardView })),
 );
 const SessionDetailView = lazy(() =>
-  import("../SessionDetail").then((module) => ({ default: module.SessionDetail })),
+  import("../SessionDetail").then((module) => ({ default: module.SessionDetailRoute })),
 );
 const SearchResultsPanel = lazy(() =>
   import("./SearchResultsPanel").then((module) => ({ default: module.SearchResultsPanel })),
@@ -139,7 +139,6 @@ type SessionRouteModel = Extract<ViewState, { mode: "session" }> &
   LandingRouteModel & {
     detail: SessionDetailModel;
     detailHighlightQuery: string;
-    detailMessageIndex?: number;
     childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
   };
 
@@ -382,7 +381,6 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
           session={currentSession}
           agentCatalog={route.agentCatalog}
           highlightQuery={route.detailHighlightQuery}
-          targetMessageIndex={route.detailMessageIndex}
           childSessions={childSessions}
         />
       </LazySurface>

@@ -3,8 +3,9 @@ import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { formatSessionReference } from "@codesesh/contract";
+import { useLocation } from "react-router-dom";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import type { SessionDetail, SessionHead } from "../lib/api";
+import type { SessionDetail as SessionDetailData, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -46,7 +47,7 @@ import {
 // ---------------------------------------------------------------------------
 
 interface SessionDetailProps {
-  session: SessionDetail;
+  session: SessionDetailData;
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
   targetMessageIndex?: number;
@@ -117,6 +118,14 @@ function measureSessionDetailWork<T>(id: string, compute: () => T): T {
 // ---------------------------------------------------------------------------
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
+
+export function SessionDetailRoute(props: SessionDetailProps) {
+  const { hash } = useLocation();
+  const targetMessageIndex = /^#message-\d+$/.test(hash)
+    ? Number(hash.slice("#message-".length))
+    : undefined;
+  return <SessionDetail {...props} targetMessageIndex={targetMessageIndex} />;
+}
 
 export function SessionDetail({
   session,

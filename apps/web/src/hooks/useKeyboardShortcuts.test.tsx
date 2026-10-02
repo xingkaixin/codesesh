@@ -165,12 +165,9 @@ describe("useKeyboardShortcuts", () => {
 
     expect(dispatchKey("Enter").defaultPrevented).toBe(true);
     expect(deps.closeSearch).toHaveBeenCalledOnce();
-    expect(deps.navigate).toHaveBeenCalledWith(
-      { pathname: "/codex/s2", hash: "message-42" },
-      {
-        state: { searchQuery: "needle" },
-      },
-    );
+    expect(deps.navigate).toHaveBeenCalledWith("/codex/s2#message-42", {
+      state: { searchQuery: "needle" },
+    });
   });
 
   it("does nothing without navigable search results", () => {

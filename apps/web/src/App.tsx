@@ -331,9 +331,6 @@ export default function App() {
           retry: () => void sessionDetail.refresh(),
         },
         detailHighlightQuery,
-        detailMessageIndex: /^#message-\d+$/.test(location.hash)
-          ? Number(location.hash.slice("#message-".length))
-          : undefined,
         childSessionsByParentRouteKey: sessionIndexes.childrenByParentRouteKey,
       };
       break;
