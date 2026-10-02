@@ -2,12 +2,30 @@ import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
-import type { AgentInfo, SearchResult } from "../../lib/api";
-import { searchResultPath } from "../../lib/search";
+import type { AgentInfo, AppConfig, SearchResult } from "../../lib/api";
+import { SEARCH_RESULT_LIMIT, searchResultPath } from "../../lib/search";
+import { formatWindowLabel } from "../../lib/scan-format";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { SmartTagChips } from "../SmartTagChips";
 import { SearchFilterBar } from "./SearchFilterBar";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
+
+const SEARCH_MESSAGES = {
+  "Search range: {0}": ["搜索时间范围：{0}", "検索期間：{0}"],
+  "Searches collected session titles, messages, tool output and file paths. Shows up to {0} sessions.":
+    [
+      "搜索已采集会话的标题、消息、工具输出和文件路径，最多展示 {0} 个会话。",
+      "収集済みセッションのタイトル、メッセージ、ツール出力、ファイルパスを検索します。最大 {0} セッションを表示します。",
+    ],
+  "Showing the first {0} sessions. Narrow your query or filters to find a specific session.": [
+    "已展示前 {0} 个会话。请细化关键词或筛选条件，查找目标会话。",
+    "先頭の {0} セッションを表示しています。特定のセッションを探すには検索語やフィルターを絞り込んでください。",
+  ],
+  "Try another query, adjust filters, or change the time range above.": [
+    "可尝试其他关键词、调整筛选条件，或更改上方的时间范围。",
+    "検索語やフィルターを調整するか、上部の期間を変更してください。",
+  ],
+} as const;
 
 const SEARCH_MATCH_LABELS: Record<SearchResult["matchType"], string> = {
   recent: "Recent",
@@ -38,6 +56,7 @@ function renderHighlightedSnippet(
 
 export function SearchResultsPanel({
   query,
+  window,
   state,
   agentNameMap,
   agents,
@@ -50,6 +69,7 @@ export function SearchResultsPanel({
   registerResultRef,
 }: {
   query: string;
+  window?: AppConfig["window"] | null;
   state: SearchLoadState;
   agentNameMap: ReadonlyMap<string, string>;
   agents: AgentInfo[];
@@ -61,16 +81,36 @@ export function SearchResultsPanel({
   selectedIndex: number;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
-  useLocale();
+  const locale = useLocale();
 
   const results = state.status === "loaded" ? state.results : [];
   const filterBar = (
-    <SearchFilterBar
-      agents={agents}
-      projects={projects}
-      filters={filters}
-      onChangeFilters={onChangeFilters}
-    />
+    <>
+      <div className="space-y-1 text-xs leading-5 text-[var(--console-muted)]">
+        <p className="font-medium text-[var(--console-text)]">
+          {t(
+            "Search range: {0}",
+            [formatWindowLabel(window ? { window } : null) ?? t("Session time range")],
+            locale,
+            SEARCH_MESSAGES,
+          )}
+        </p>
+        <p>
+          {t(
+            "Searches collected session titles, messages, tool output and file paths. Shows up to {0} sessions.",
+            [SEARCH_RESULT_LIMIT],
+            locale,
+            SEARCH_MESSAGES,
+          )}
+        </p>
+      </div>
+      <SearchFilterBar
+        agents={agents}
+        projects={projects}
+        filters={filters}
+        onChangeFilters={onChangeFilters}
+      />
+    </>
   );
 
   if (state.status === "loading") {
@@ -138,17 +178,35 @@ export function SearchResultsPanel({
               {t("Query:")} {query}
             </p>
           ) : null}
+          <p className="mt-2 text-xs leading-5 text-[var(--console-muted)]">
+            {t(
+              "Try another query, adjust filters, or change the time range above.",
+              [],
+              locale,
+              SEARCH_MESSAGES,
+            )}
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-1 gap-3">
       {filterBar}
       <div className="console-mono text-[11px] text-[var(--console-muted)]">
         {t("Navigate j k · Open Enter · Exit Esc")}
       </div>
+      {results.length === SEARCH_RESULT_LIMIT ? (
+        <p role="status" className="text-xs leading-5 text-[var(--console-muted)]">
+          {t(
+            "Showing the first {0} sessions. Narrow your query or filters to find a specific session.",
+            [SEARCH_RESULT_LIMIT],
+            locale,
+            SEARCH_MESSAGES,
+          )}
+        </p>
+      ) : null}
       {results.map((result, index) => {
         const agentKey = result.reference.agentName.toLowerCase();
         const agentLabel = agentNameMap.get(agentKey) ?? result.reference.agentName;
@@ -180,7 +238,7 @@ export function SearchResultsPanel({
                   {t("Unmounted")}
                 </span>
               ) : null}
-              <span className="console-mono text-[11px] text-[var(--console-muted)]">
+              <span className="console-mono min-w-0 break-all text-[11px] text-[var(--console-muted)]">
                 {result.session.directory}
               </span>
             </div>

@@ -18,8 +18,8 @@ import {
 } from "../lib/api";
 import type { SessionIndexes } from "../lib/session-indexes";
 import type { SearchFilterState, SearchLoadState } from "../components/app/types";
-import { COST_RANGE_OPTIONS } from "../components/app/SearchFilterBar";
 import {
+  COST_RANGE_OPTIONS,
   buildLocalRecentResults,
   buildSearchProjectOptions,
   buildSearchRequestOptions,
