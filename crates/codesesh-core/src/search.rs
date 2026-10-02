@@ -1,3 +1,4 @@
+mod cjk;
 mod file_activity;
 mod parser;
 mod reader;

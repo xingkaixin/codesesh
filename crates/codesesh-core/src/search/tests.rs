@@ -90,6 +90,143 @@ fn ranked_fts_and_utf16_message_highlights() {
     );
 }
 
+fn chinese_database() -> Connection {
+    let db = database();
+    for (node, id, title, body, time) in [
+        (
+            "local",
+            "han-body",
+            "Fix timeout 𠮷野",
+            "🔎 修复数据库连接超时问题，检查HTTP请求和缓存。",
+            100,
+        ),
+        ("local", "han-title", "数据库连接修复", "other", 10),
+        ("local", "unordered", "Other", "数库据连接", 400),
+        ("worker-a", "han-body", "Remote", "远端数据库连接", 300),
+        (
+            "local",
+            "mixed",
+            "Mixed",
+            "修复数据库 hello timeout HTTP请求",
+            200,
+        ),
+    ] {
+        db.execute("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES(?,'codex',?,?,'/chinese','path','/chinese','chinese',10,?,?,1,0,0,0)", params![node,id,title,time,time]).unwrap();
+        db.execute("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES(?,'codex',?,0,'m','user',10,'[]',?)", params![node,id,body]).unwrap();
+        db.execute("INSERT INTO session_documents(source_node_id,agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at) VALUES(?,'codex',?,?,?,'',1,200)", params![node,id,title,body]).unwrap();
+    }
+    db
+}
+
+#[test]
+fn chinese_substrings_match_continuous_text_and_preserve_utf16_highlights() {
+    let db = chinese_database();
+    for query in ["库", "连接", "数据库", "数据库连接", "\"数据库连接\""] {
+        let results = execute(&db, query, &SearchOptions::default()).unwrap();
+        assert!(
+            results
+                .iter()
+                .any(|r| r.reference.session_id == "han-body"
+                    && r.reference.source_node_id == "local"),
+            "{query}"
+        );
+    }
+    let results = execute(&db, "数据库", &SearchOptions::default()).unwrap();
+    assert_eq!(results.len(), 4);
+    assert_eq!(results[0].reference.session_id, "han-title");
+    let body = results
+        .iter()
+        .find(|r| r.reference.session_id == "han-body" && r.reference.source_node_id == "local")
+        .unwrap();
+    assert_eq!(body.match_type, "user_message");
+    assert_eq!(
+        body.snippet,
+        "🔎 修复数据库连接超时问题，检查HTTP请求和缓存。"
+    );
+    assert_eq!(
+        body.snippet_highlights,
+        vec![HighlightRange { start: 5, end: 8 }]
+    );
+    assert!(
+        !results
+            .iter()
+            .any(|r| r.reference.session_id == "unordered")
+    );
+    assert_eq!(
+        execute(&db, "http请求", &SearchOptions::default())
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(
+        execute(&db, "数据库不存在", &SearchOptions::default())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        execute(&db, "数据库%", &SearchOptions::default())
+            .unwrap()
+            .is_empty()
+    );
+    let astral = execute(&db, "𠮷野", &SearchOptions::default()).unwrap();
+    assert_eq!(astral.len(), 1);
+    assert_eq!(astral[0].match_type, "title");
+    assert_eq!(
+        astral[0].snippet_highlights,
+        vec![HighlightRange { start: 12, end: 15 }]
+    );
+}
+
+#[test]
+fn mixed_chinese_queries_preserve_boolean_precedence_and_filters() {
+    let db = chinese_database();
+    let ids = |query| {
+        execute(&db, query, &SearchOptions::default())
+            .unwrap()
+            .into_iter()
+            .map(|r| r.reference.session_id)
+            .collect::<HashSet<_>>()
+    };
+    assert_eq!(ids("数据库 hello"), HashSet::from(["mixed".into()]));
+    assert!(ids("数据库 hell").is_empty());
+    assert_eq!(
+        ids("数据库 hello OR 缓存"),
+        HashSet::from(["mixed".into(), "han-body".into()])
+    );
+    assert_eq!(
+        ids("缓存 OR \"Rust world\""),
+        HashSet::from(["han-body".into(), "one".into()])
+    );
+    assert_eq!(
+        ids("OR 数据库 OR OR hello OR 缓存 OR"),
+        HashSet::from(["mixed".into(), "han-body".into()])
+    );
+    assert_eq!(ids("\"数据库 hello\""), HashSet::from(["mixed".into()]));
+    let results = execute(
+        &db,
+        "数据库",
+        &SearchOptions {
+            project_kind: Some("path".into()),
+            project_key: Some("/chinese".into()),
+            from: Some(50.0),
+            to: Some(150.0),
+            limit: Some(1),
+            query_scope: Some(QueryScope {
+                source_node_id: Some("local".into()),
+                agents: vec!["codex".into()],
+                project_scope: None,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].reference.session_id, "han-body");
+    assert_eq!(results[0].reference.source_node_id, "local");
+    db.execute("UPDATE sessions SET publication_id='staged' WHERE source_node_id='local' AND session_id='han-body'", []).unwrap();
+    assert!(ids("缓存").is_empty());
+}
+
 #[test]
 fn filters_include_descendant_cost_tools_files_and_scope() {
     let db = database();

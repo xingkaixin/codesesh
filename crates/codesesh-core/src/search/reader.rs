@@ -65,6 +65,8 @@ pub(super) fn search_prepared(
             "SELECT s.*, '' AS snippet FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
             filters.where_sql()
         )
+    } else if cjk::contains_han(query) {
+        cjk::statement(connection, query, &mut filters)?
     } else {
         let fts = to_fts_query(query);
         if fts.is_empty() {
