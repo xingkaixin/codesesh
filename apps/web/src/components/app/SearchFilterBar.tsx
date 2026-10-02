@@ -40,7 +40,7 @@ export function SearchFilterBar({
   };
 
   return (
-    <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-3 shadow-[var(--shadow-raised)]">
+    <div className="flex flex-col gap-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-3 shadow-[var(--shadow-raised)]">
       <SourceFilter
         value={filters.sourceNodeId}
         onChange={(sourceNodeId) => onChangeFilters((current) => ({ ...current, sourceNodeId }))}
@@ -72,7 +72,7 @@ export function SearchFilterBar({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">{t("Agent")}</span>
         <FilterChip
           active={!filters.agent}
@@ -89,7 +89,7 @@ export function SearchFilterBar({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">{t("Tag")}</span>
         {SMART_TAGS.map((tag) => (
           <FilterChip
@@ -101,7 +101,7 @@ export function SearchFilterBar({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">{t("Signal")}</span>
         {SEARCH_TOOL_OPTIONS.map((tool) => (
           <FilterChip
@@ -113,7 +113,7 @@ export function SearchFilterBar({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">{t("File Activity")}</span>
         {FILE_ACTIVITY_OPTIONS.map((option) => (
           <FilterChip
@@ -125,7 +125,7 @@ export function SearchFilterBar({
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="console-eyebrow">{t("Cost Range")}</span>
         <FilterChip
           active={!filters.costRange}

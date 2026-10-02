@@ -15,8 +15,9 @@ export function SourceFilter({
   if (!nodes.data) return null;
   return (
     <label className="flex items-center gap-2 text-xs text-[var(--console-muted)]">
-      <span className="shrink-0">{t("Source node")}</span>
+      <span className="console-eyebrow shrink-0">{t("Source node")}</span>
       <NativeSelect
+        className="console-mono rounded-full bg-[var(--console-surface-muted)] py-1 pl-2.5 text-[10px]"
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value || undefined)}
       >
