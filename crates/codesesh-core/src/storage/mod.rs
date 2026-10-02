@@ -6,6 +6,7 @@ mod facts;
 mod json;
 mod legacy_parts;
 mod memory;
+mod message_reuse;
 mod read;
 mod reprice;
 pub(crate) use reprice::reprice_session;
@@ -319,16 +320,34 @@ impl Cache {
                 "DELETE FROM session_documents WHERE source_node_id=? AND agent_name=? AND session_id=?",
                 params![reference.source_node_id,reference.agent_name,reference.session_id],
             )?;
+            let retained = message_reuse::stored_digests(transaction, reference)?;
+            if retained.is_empty() {
+                transaction.execute(
+                    "DELETE FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
+                    params![
+                        reference.source_node_id,
+                        reference.agent_name,
+                        reference.session_id
+                    ],
+                )?;
+            } else {
+                for table in [
+                    "session_model_cost",
+                    "session_cost_summary",
+                    "session_file_activity",
+                ] {
+                    transaction.execute(
+                        &format!("DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"),
+                        params![reference.source_node_id, reference.agent_name, reference.session_id],
+                    )?;
+                }
+                transaction.execute(
+                    "DELETE FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=?",
+                    params![reference.source_node_id, reference.agent_name, reference.session_id, session.detail.messages.len() as i64],
+                )?;
+            }
             transaction.execute(
-                "DELETE FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
-                params![
-                    reference.source_node_id,
-                    reference.agent_name,
-                    reference.session_id
-                ],
-            )?;
-            transaction.execute(
-                "INSERT INTO sessions(source_node_id,agent_name,session_id,sort_index,title,source_path,directory,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO sessions(source_node_id,agent_name,session_id,sort_index,title,source_path,directory,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET sort_index=excluded.sort_index,title=excluded.title,source_path=excluded.source_path,directory=excluded.directory,project_identity_kind=excluded.project_identity_kind,project_identity_key=excluded.project_identity_key,project_display_name=excluded.project_display_name,project_identity_resolver_revision=excluded.project_identity_resolver_revision,project_identity_input_signature=excluded.project_identity_input_signature,time_created=excluded.time_created,time_updated=excluded.time_updated,activity_time=excluded.activity_time,message_count=excluded.message_count,total_input_tokens=excluded.total_input_tokens,total_output_tokens=excluded.total_output_tokens,total_cost=excluded.total_cost,smart_tags_json=excluded.smart_tags_json,smart_tags_source_updated_at=excluded.smart_tags_source_updated_at,smart_tags_classifier_revision=excluded.smart_tags_classifier_revision,publication_id=NULL",
                 params![reference.source_node_id,reference.agent_name,reference.session_id,order as i64,head.title,session.source.to_string_lossy(),head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.stats.message_count as i64,head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cost,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision],
             )?;
             transaction.execute(
@@ -358,6 +377,14 @@ impl Cache {
                 let content = message_text(message);
                 text.push('\n');
                 text.push_str(&content);
+                if retained.get(&(index as i64)) == Some(&digest) {
+                    continue;
+                }
+                if !retained.is_empty() {
+                    transaction.prepare_cached("DELETE FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?")?.execute(
+                        params![reference.source_node_id, reference.agent_name, reference.session_id, index as i64],
+                    )?;
+                }
                 transaction.prepare_cached("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text,tool_metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)")?.execute(
                     params![reference.source_node_id,reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content,facts::tool_metadata(message)?])?;
             }
