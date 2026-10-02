@@ -1,10 +1,11 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { formatSessionReference } from "@codesesh/contract";
+import { useLocation } from "react-router-dom";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import type { SessionDetail, SessionHead } from "../lib/api";
+import type { SessionDetail as SessionDetailData, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,
@@ -46,9 +47,10 @@ import {
 // ---------------------------------------------------------------------------
 
 interface SessionDetailProps {
-  session: SessionDetail;
+  session: SessionDetailData;
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
+  targetMessageIndex?: number;
   childSessions?: SessionHead[];
 }
 
@@ -117,10 +119,19 @@ function measureSessionDetailWork<T>(id: string, compute: () => T): T {
 // SessionDetail (main export)
 // ---------------------------------------------------------------------------
 
+export function SessionDetailRoute(props: SessionDetailProps) {
+  const { hash } = useLocation();
+  const targetMessageIndex = /^#message-\d+$/.test(hash)
+    ? Number(hash.slice("#message-".length))
+    : undefined;
+  return <SessionDetail {...props} targetMessageIndex={targetMessageIndex} />;
+}
+
 export function SessionDetail({
   session,
   agentCatalog,
   highlightQuery,
+  targetMessageIndex,
   childSessions = [],
 }: SessionDetailProps) {
   const locale = useLocale();
@@ -183,6 +194,17 @@ export function SessionDetail({
     },
     [displayModel, handleJumpToMessageAnchor],
   );
+
+  const jumpToSearchMessage = useEffectEvent(() => {
+    if (targetMessageIndex == null) return;
+    const target = displayModel.resolveSourceMessageAnchor(targetMessageIndex);
+    if (!target) return;
+    handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto");
+    return () => {
+      scrollRequestRef.current += 1;
+    };
+  });
+  useEffect(() => jumpToSearchMessage(), [sessionReference, targetMessageIndex]);
 
   if (messageModels.length === 0) {
     return (

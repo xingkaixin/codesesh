@@ -664,6 +664,13 @@ pub struct SearchResult {
     pub snippet_highlights: Vec<SearchHighlightRange>,
     #[serde(rename = "matchType")]
     pub match_type: SearchMatchType,
+    #[serde(
+        rename = "messageIndex",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub message_index: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent: Option<SearchResultParent>,

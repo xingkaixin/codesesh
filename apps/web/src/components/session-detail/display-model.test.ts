@@ -120,6 +120,16 @@ describe("session detail display model", () => {
     expect(writes.messages.map((message) => message.index)).toEqual([1]);
     expect(writes.timelineEntries.map((entry) => entry.anchorId)).toEqual(["tool-1-1"]);
     expect(model.resolveMessageIndex("tool-1-1")).toBe(1);
+    expect(model.resolveSourceMessageAnchor(0)).toEqual({
+      anchorId: "session-message-0",
+      messageIndex: 0,
+    });
+    expect(model.resolveSourceMessageAnchor(1)).toEqual({
+      anchorId: "session-message-1-block-0",
+      messageIndex: 1,
+    });
+    expect(model.resolveSourceMessageAnchor(2)).toEqual({ anchorId: "tool-2-0", messageIndex: 2 });
+    expect(model.resolveSourceMessageAnchor(99)).toBeUndefined();
   });
 
   it("returns an empty coherent selection when no messages are visible", () => {
@@ -128,10 +138,42 @@ describe("session detail display model", () => {
       agentName: "claudecode",
     });
 
+    expect(model.resolveSourceMessageAnchor(0)).toBeUndefined();
     expect(model.messages).toEqual([]);
     expect(model.toc.filterIds.size).toBe(0);
     expect(model.toc.totalUnitCount).toBe(0);
     expect(model.select(new Set()).messages).toEqual([]);
     expect(model.select(new Set()).visibleUnitCount).toBe(0);
   });
+});
+
+it("locates merged Cursor tools after skipped empty messages", () => {
+  const model = buildSessionDetailDisplayModel({
+    agentName: "cursor",
+    messages: [
+      { id: "duplicate", role: "user", time_created: 0, parts: [] },
+      {
+        id: "duplicate",
+        role: "assistant",
+        time_created: 1,
+        parts: [{ type: "text", text: "Calling tools" }],
+      },
+      {
+        id: "duplicate",
+        role: "tool",
+        time_created: 2,
+        parts: [{ type: "tool", tool: "Read", state: { status: "completed", output: "first" } }],
+      },
+      {
+        id: "duplicate",
+        role: "tool",
+        time_created: 3,
+        parts: [{ type: "tool", tool: "Read", state: { status: "completed", output: "second" } }],
+      },
+    ],
+  });
+  expect(model.messages).toHaveLength(1);
+  expect(model.resolveSourceMessageAnchor(0)).toBeUndefined();
+  expect(model.resolveSourceMessageAnchor(2)).toEqual({ anchorId: "tool-0-0", messageIndex: 0 });
+  expect(model.resolveSourceMessageAnchor(3)).toEqual({ anchorId: "tool-0-1", messageIndex: 0 });
 });

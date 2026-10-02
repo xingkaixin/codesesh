@@ -126,11 +126,12 @@ test("searches and opens the aggregated Codex session", async ({ page }) => {
   await expect(result).toContainText("codex-shared-needle");
   await result.click();
 
-  await expect(page).toHaveURL(new RegExp(`/codex/${CODEX_SESSION_ID}$`));
+  await expect(page).toHaveURL(new RegExp(`/codex/${CODEX_SESSION_ID}#message-1$`));
   await expect(
     page.getByRole("heading", { level: 1, name: "Codex aggregation smoke session" }),
   ).toBeVisible();
   await expect(
     page.getByText("Codex joined the shared project with codex-shared-needle."),
   ).toBeVisible();
+  await expect(page.locator("#session-message-1-block-0")).toBeInViewport();
 });

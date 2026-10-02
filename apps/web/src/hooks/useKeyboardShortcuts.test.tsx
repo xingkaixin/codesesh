@@ -149,6 +149,7 @@ describe("useKeyboardShortcuts", () => {
 
   it("moves through search results and opens the selected result", () => {
     const deps = makeDeps({ isSearchMode: true, selectedSearchIndex: 1 });
+    deps.searchResults[1]!.messageIndex = 42;
     renderHook(() => useKeyboardShortcuts(deps));
 
     dispatchKey("j");
@@ -164,7 +165,7 @@ describe("useKeyboardShortcuts", () => {
 
     expect(dispatchKey("Enter").defaultPrevented).toBe(true);
     expect(deps.closeSearch).toHaveBeenCalledOnce();
-    expect(deps.navigate).toHaveBeenCalledWith("/codex/s2", {
+    expect(deps.navigate).toHaveBeenCalledWith("/codex/s2#message-42", {
       state: { searchQuery: "needle" },
     });
   });

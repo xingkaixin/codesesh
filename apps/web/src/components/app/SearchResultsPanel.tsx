@@ -3,7 +3,7 @@ import { t } from "../../i18n/translate";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import type { AgentInfo, SearchResult } from "../../lib/api";
-import { sessionRoutePath } from "../../lib/session-indexes";
+import { searchResultPath } from "../../lib/search";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { SmartTagChips } from "../SmartTagChips";
 import { SearchFilterBar } from "./SearchFilterBar";
@@ -160,7 +160,7 @@ export function SearchResultsPanel({
           <Link
             key={resultKey}
             ref={(node) => registerResultRef(resultKey, node)}
-            to={sessionRoutePath(result.reference)}
+            to={searchResultPath(result)}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
             data-selected={isSelected ? "true" : undefined}

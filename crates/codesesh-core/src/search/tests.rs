@@ -61,11 +61,13 @@ fn ranked_fts_and_utf16_message_highlights() {
     let results = execute(&db, "hello", &SearchOptions::default()).unwrap();
     assert_eq!(results[0].reference.session_id, "two");
     assert_eq!(results[0].match_type, "title");
+    assert_eq!(results[0].message_index, None);
     let one = results
         .iter()
         .find(|r| r.reference.session_id == "one")
         .unwrap();
     assert_eq!(one.match_type, "user_message");
+    assert_eq!(one.message_index, Some(0));
     assert_eq!(one.snippet, "🔎 中文 hello Rust world");
     assert_eq!(
         one.snippet_highlights,
@@ -139,6 +141,7 @@ fn chinese_substrings_match_continuous_text_and_preserve_utf16_highlights() {
         .find(|r| r.reference.session_id == "han-body" && r.reference.source_node_id == "local")
         .unwrap();
     assert_eq!(body.match_type, "user_message");
+    assert_eq!(body.message_index, Some(0));
     assert_eq!(
         body.snippet,
         "🔎 修复数据库连接超时问题，检查HTTP请求和缓存。"
@@ -579,5 +582,42 @@ fn fractional_times_survive_reads_and_window_boundaries() {
         )
         .unwrap()
         .is_empty()
+    );
+}
+
+#[test]
+fn search_targets_the_first_matching_message_in_source_order() {
+    let db = database();
+    db.execute(
+        "UPDATE messages SET content_text='unrelated' WHERE session_id='one'",
+        [],
+    )
+    .unwrap();
+    for (index, role, text) in [
+        (1, "assistant", "unrelated"),
+        (2, "tool", "hello output"),
+        (3, "user", "hello again"),
+    ] {
+        db.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex','one',?,'m',?,100,'[]',?)", params![index,role,text]).unwrap();
+    }
+    let results = execute(&db, "hello", &SearchOptions::default()).unwrap();
+    let one = results
+        .iter()
+        .find(|r| r.reference.session_id == "one")
+        .unwrap();
+    assert_eq!(one.message_index, Some(2));
+    assert_eq!(one.match_type, "tool_output");
+    assert_eq!(one.snippet, "hello output");
+    assert!(
+        execute(&db, "", &SearchOptions::default())
+            .unwrap()
+            .iter()
+            .all(|r| r.message_index.is_none())
+    );
+    assert!(
+        execute(&db, "file:Widget", &SearchOptions::default())
+            .unwrap()
+            .iter()
+            .all(|r| r.message_index.is_none())
     );
 }

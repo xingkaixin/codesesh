@@ -88,7 +88,7 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
         let snapshot=super::scoped_heads(heads,&query_scope);
         let ranked=search::execute_with_snapshot(conn,&query,&options,&snapshot)?;
         let needle=search::parse_query(&query).text.trim().to_lowercase();
-        let candidates=if needle.is_empty() {Vec::new()} else {snapshot.iter().filter(|s|aliases.get(&s.reference).is_some_and(|a|a.to_lowercase().contains(&needle))).map(|s|SearchResult {reference:s.reference.clone(),session:s.clone(),snippet:format!("Alias · {}",s.directory),snippet_highlights:vec![],match_type:"title".into()}).collect()};
+        let candidates=if needle.is_empty() {Vec::new()} else {snapshot.iter().filter(|s|aliases.get(&s.reference).is_some_and(|a|a.to_lowercase().contains(&needle))).map(|s|SearchResult {reference:s.reference.clone(),session:s.clone(),snippet:format!("Alias · {}",s.directory),snippet_highlights:vec![],match_type:"title".into(),message_index:None}).collect()};
         let mut alias_results=search::filter_candidates(conn,candidates,&query,&options,&snapshot)?;
         alias_results.sort_by(|a,b|b.session.time_updated.total_cmp(&a.session.time_updated));
         let mut merged=merge(ranked,alias_results,limit);let mut values=Vec::with_capacity(merged.len());

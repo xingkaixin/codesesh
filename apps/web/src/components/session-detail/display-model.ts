@@ -6,7 +6,12 @@ import {
   buildToolAnchorId,
   type FileChangeSummary,
 } from "./file-change";
-import { buildSessionTimelineEntries, type SessionTimelineEntry } from "./timeline";
+import {
+  buildSessionTimelineEntries,
+  buildMessageTimelineAnchorId,
+  buildBlockTimelineAnchorId,
+  type SessionTimelineEntry,
+} from "./timeline";
 import { buildSessionDetailToc, filterSessionMessages, type SessionDetailToc } from "./toc";
 import { normalizeMessagesForDisplay } from "./tool-strategy";
 import type { FilteredSessionMessage, MessageDisplayModel } from "./display-model-types";
@@ -27,6 +32,9 @@ export interface SessionDetailDisplayModel {
   fileChangeSummary: FileChangeSummary;
   select(selectedFilters: Set<string>): SessionDetailSelection;
   resolveMessageIndex(anchorId: string): number | undefined;
+  resolveSourceMessageAnchor(
+    sourceIndex: number,
+  ): { anchorId: string; messageIndex: number } | undefined;
 }
 
 function attachToolAnchors(blocks: MessageBlock[], messageIndex: number): MessageBlock[] {
@@ -88,6 +96,25 @@ export function buildSessionDetailDisplayModel({
           return listIndexes.get(messageIndex);
         },
       };
+    },
+    resolveSourceMessageAnchor(sourceIndex) {
+      const source = messages[sourceIndex];
+      if (!source) return;
+      const sourceParts = new Set(source.parts);
+      // Cursor tool messages share their parts with the preceding assistant row.
+      for (const { msg, blocks, index } of displayMessages) {
+        for (const [blockIndex, block] of blocks.entries()) {
+          const partIndex = block.parts.findIndex((part) => sourceParts.has(part));
+          if (partIndex === -1) continue;
+          const anchorId =
+            msg.role === "user"
+              ? buildMessageTimelineAnchorId(index)
+              : block.type === "tool"
+                ? block.anchorIds![partIndex]!
+                : buildBlockTimelineAnchorId(index, blockIndex);
+          return { anchorId, messageIndex: index };
+        }
+      }
     },
     resolveMessageIndex(anchorId) {
       return fileChanges.anchorMessageIndexes.get(anchorId);

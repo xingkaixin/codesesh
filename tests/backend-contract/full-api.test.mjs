@@ -77,6 +77,20 @@ async function capture(fixture, command) {
     const text = await response.text();
     const body = text ? JSON.parse(text) : null;
     const normalized = referenceSessionDetail(structuredClone(body));
+    if (
+      command === candidate &&
+      response.status === 200 &&
+      (label.startsWith("search ") || label === "alias search")
+    ) {
+      for (const result of normalized.results) {
+        const expectedIndex = { user_message: 0, assistant_reply: 1, tool_output: 1 }[
+          result.matchType
+        ];
+        assert.equal(result.messageIndex, expectedIndex);
+        // The frozen backend predates message navigation; compare the remaining search contract.
+        delete result.messageIndex;
+      }
+    }
     if (normalized?.nextCursor) normalized.nextCursor = normalizeCursor(normalized.nextCursor);
     if (label === "alias put" && response.status === 200) {
       assert.ok(Number.isSafeInteger(body.alias.updatedAt));

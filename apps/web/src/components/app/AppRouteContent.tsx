@@ -42,7 +42,7 @@ const ProjectDashboardView = lazy(() =>
   import("../Projects").then((module) => ({ default: module.ProjectDashboardView })),
 );
 const SessionDetailView = lazy(() =>
-  import("../SessionDetail").then((module) => ({ default: module.SessionDetail })),
+  import("../SessionDetail").then((module) => ({ default: module.SessionDetailRoute })),
 );
 const SearchResultsPanel = lazy(() =>
   import("./SearchResultsPanel").then((module) => ({ default: module.SearchResultsPanel })),

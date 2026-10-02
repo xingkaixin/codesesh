@@ -11,7 +11,7 @@ const sessionDetailRender = vi.hoisted(() => vi.fn());
 
 // oxlint-disable-next-line anti-slop/no-module-mocking -- Observe route-to-detail props without mounting the full transcript UI.
 vi.mock("../SessionDetail", () => ({
-  SessionDetail: (props: { session: SessionDetail; childSessions: SessionDetail[] }) => {
+  SessionDetailRoute: (props: { session: SessionDetail; childSessions: SessionDetail[] }) => {
     sessionDetailRender(props);
     return <div data-testid="session-detail">{props.session.reference.sessionId}</div>;
   },
