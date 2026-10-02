@@ -58,7 +58,7 @@ fn pairing_is_one_time_and_revocation_keeps_history() {
 fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     let dir = tempfile::tempdir().unwrap();
     let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
-    let mut cache = Cache::open(None).unwrap();
+    let mut cache = Cache::open(Some(&dir.path().join("hub.db"))).unwrap();
     cache.initialize_hub("hub-fixture").unwrap();
     let token = cache.create_pairing_token().unwrap();
     let grant = cache
@@ -76,6 +76,11 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     batch.sessions.push(session.clone());
     worker.save_batch("codex", &mut batch).unwrap();
     transfer(&mut cache, &mut worker, &grant);
+    assert!(cache.release_index_memory().unwrap());
+    assert_eq!(
+        cache.authenticate_worker(&grant.credential).unwrap(),
+        grant.node_id
+    );
     assert_eq!(cache.snapshot().unwrap().len(), 1);
     let head = cache.snapshot().unwrap().remove(0);
     assert_eq!(head.reference.source_node_id, grant.node_id);
@@ -103,6 +108,22 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     );
     batch.sessions[0].head = updated.head.clone();
     batch.sessions[0].detail = updated;
+    cache.connection.execute_batch("CREATE TRIGGER forbid_index_rewrite BEFORE UPDATE OF title ON session_documents BEGIN SELECT RAISE(ABORT,'unexpected index rewrite'); END;").unwrap();
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(
+        cache
+            .head(&head.reference)
+            .unwrap()
+            .unwrap()
+            .stats
+            .message_count,
+        head.stats.message_count + 2
+    );
+    cache
+        .connection
+        .execute_batch("DROP TRIGGER forbid_index_rewrite")
+        .unwrap();
     batch.sessions[0].head.title = "Renamed".into();
     worker.save_batch("codex", &mut batch).unwrap();
     assert!(matches!(
@@ -116,6 +137,14 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     let renamed = cache.head(&head.reference).unwrap().unwrap();
     assert_eq!(renamed.title, "Renamed");
     assert_eq!(renamed.stats.message_count, head.stats.message_count + 2);
+    cache.rebuild_search_indexes().unwrap();
+    assert!(cache.release_index_memory().unwrap());
+    assert_eq!(
+        crate::search::search_sessions(cache.connection(), "Renamed", &Default::default())
+            .unwrap()
+            .len(),
+        1
+    );
     assert_eq!(
         cache.detail(renamed).unwrap().unwrap().messages,
         detail.messages
@@ -248,6 +277,16 @@ async fn uploaded_sessions_publish_through_runtime_writer() {
             .unwrap();
     }
     assert_eq!(runtime.snapshot().len(), 1);
+    runtime
+        .hub_control(|cache| cache.rebuild_search_indexes())
+        .await
+        .unwrap();
+    let credential = grant.credential.clone();
+    let node = runtime
+        .hub_control(move |cache| cache.authenticate_worker(&credential))
+        .await
+        .unwrap();
+    assert_eq!(node, grant.node_id);
     match events.try_recv().unwrap() {
         crate::runtime::Event::Sessions {
             changed, removed, ..

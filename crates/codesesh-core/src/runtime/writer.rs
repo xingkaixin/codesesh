@@ -260,6 +260,14 @@ pub(super) fn run(
                 break;
             }
         }
+        match cache.release_index_memory() {
+            Ok(true) => {
+                release_unused_memory();
+                last_reclaim = Instant::now();
+            }
+            Ok(false) => {}
+            Err(error) => eprintln!("codesesh: cannot release index memory: {error:#}"),
+        }
     }
 }
 
