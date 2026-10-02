@@ -154,22 +154,29 @@ fn apply_operation(
             bytes,
             digest: expected,
         } => {
-            let mut query=tx.prepare("SELECT data FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=? ORDER BY chunk_index")?;
-            let parts = query
-                .query_map(params![node, stream, transfer_id], |r| {
-                    r.get::<_, Vec<u8>>(0)
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let (stored_chunks, stored_bytes): (i64, i64) = tx.query_row(
+                "SELECT COUNT(*), COALESCE(SUM(length(data)), 0) FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
+                params![node, stream, transfer_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
             ensure!(
-                !parts.is_empty() && parts.len() == *chunks as usize,
+                stored_chunks > 0 && stored_chunks == i64::from(*chunks),
                 "SNAPSHOT_INCOMPLETE"
             );
-            let payload = parts.concat();
-            ensure!(
-                payload.len() as u64 == *bytes && digest(&payload) == *expected,
-                "SNAPSHOT_CHECKSUM_MISMATCH"
-            );
-            let mut session = serde_json::from_slice::<CapturedSession>(&payload)?.into_parsed()?;
+            ensure!(stored_bytes as u64 == *bytes, "SNAPSHOT_CHECKSUM_MISMATCH");
+            let mut payload = Vec::new();
+            payload.try_reserve_exact(usize::try_from(stored_bytes)?)?;
+            {
+                let mut query = tx.prepare("SELECT data FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=? ORDER BY chunk_index")?;
+                let mut rows = query.query(params![node, stream, transfer_id])?;
+                while let Some(row) = rows.next()? {
+                    payload.extend_from_slice(row.get_ref(0)?.as_blob()?);
+                }
+            }
+            ensure!(digest(&payload) == *expected, "SNAPSHOT_CHECKSUM_MISMATCH");
+            let captured = serde_json::from_slice::<CapturedSession>(&payload)?;
+            drop(payload);
+            let mut session = captured.into_parsed()?;
             namespace(&mut session.head, node)?;
             session.detail.head = session.head.clone();
             for activity in &mut session.detail.file_activity {
