@@ -103,6 +103,22 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     );
     batch.sessions[0].head = updated.head.clone();
     batch.sessions[0].detail = updated;
+    cache.connection.execute_batch("CREATE TRIGGER forbid_index_rewrite BEFORE UPDATE OF title ON session_documents BEGIN SELECT RAISE(ABORT,'unexpected index rewrite'); END;").unwrap();
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(
+        cache
+            .head(&head.reference)
+            .unwrap()
+            .unwrap()
+            .stats
+            .message_count,
+        head.stats.message_count + 2
+    );
+    cache
+        .connection
+        .execute_batch("DROP TRIGGER forbid_index_rewrite")
+        .unwrap();
     batch.sessions[0].head.title = "Renamed".into();
     worker.save_batch("codex", &mut batch).unwrap();
     assert!(matches!(
@@ -116,6 +132,12 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
     let renamed = cache.head(&head.reference).unwrap().unwrap();
     assert_eq!(renamed.title, "Renamed");
     assert_eq!(renamed.stats.message_count, head.stats.message_count + 2);
+    assert_eq!(
+        crate::search::search_sessions(cache.connection(), "Renamed", &Default::default())
+            .unwrap()
+            .len(),
+        1
+    );
     assert_eq!(
         cache.detail(renamed).unwrap().unwrap().messages,
         detail.messages
