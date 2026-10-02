@@ -1,3 +1,4 @@
+import { getSessionReferenceKey } from "@codesesh/contract";
 import { t } from "../i18n/translate";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -143,7 +144,7 @@ export function useSessionSearch(
     if (!searchMode) return;
     const selectedResult = searchResults[selectedSearchIndex];
     if (!selectedResult) return;
-    const key = `${selectedResult.reference.agentName}/${selectedResult.reference.sessionId}`;
+    const key = getSessionReferenceKey(selectedResult.reference);
     searchResultRefs.current.get(key)?.scrollIntoView({ block: "nearest" });
   }, [searchMode, searchResults, selectedSearchIndex]);
 

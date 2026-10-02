@@ -454,3 +454,42 @@ it("restores the message position from a session link", async () => {
     scroll.mockRestore();
   }
 });
+
+it("offers a remote resume command with its source machine clearly identified", async () => {
+  responses["/api/agents"] = [
+    {
+      name: "claudecode",
+      displayName: "Claude Code",
+      count: 1,
+      resumeCommandPrefix: "claude --resume",
+    },
+  ];
+  const defaultFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    if (
+      new URL(String(input), "http://localhost").pathname ===
+      "/api/sessions/nodes/office/claudecode/session-1"
+    ) {
+      return Promise.resolve(
+        Response.json({
+          ...SAMPLE_SESSION_HEAD,
+          reference: { ...SAMPLE_SESSION_HEAD.reference, sourceNodeId: "office" },
+          directory: "/office/worktree",
+          messages: [],
+        }),
+      );
+    }
+    return defaultFetch(input);
+  });
+  renderAppAt("/nodes/office/claudecode/session-1");
+  const button = await screen.findByRole(
+    "button",
+    { name: /Copy resume command/ },
+    { timeout: LAZY_SURFACE_TIMEOUT_MS },
+  );
+  expect(button.getAttribute("aria-label")).toContain(
+    "cd '/office/worktree' && claude --resume 'session-1'",
+  );
+  expect(screen.getByText("Source: office")).toBeTruthy();
+  expect(screen.getByText("Run this command on office, in a POSIX-compatible shell.")).toBeTruthy();
+});

@@ -2,9 +2,6 @@ import { expect, test } from "./test-fixtures.js";
 
 test("keeps project navigation reachable on narrow viewports", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect
-    .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
-    .toBeLessThanOrEqual(390);
   await page.goto("/");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
@@ -89,6 +86,8 @@ test("opens a session detail from the project timeline", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "Core browsing smoke session" }),
   ).toBeVisible();
   await expect(page.getByText("Dashboard path is ready")).toBeVisible();
+  await expect(page.getByText("Source: Local source")).toBeVisible();
+  await expect(page.getByText(/Run this command on the machine running CodeSesh/)).toBeVisible();
 });
 
 test("searches indexed messages and opens a result", async ({ page }) => {
@@ -119,6 +118,9 @@ test("searches indexed messages and opens a result", async ({ page }) => {
   await expect(page.getByText("Search range: All time")).toBeVisible();
   await expect(page.getByText(/Shows up to 50 sessions/)).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+    .toBeLessThanOrEqual(390);
   await page.setViewportSize({ width: 1280, height: 720 });
   await searchResult.click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard#message-1$/);

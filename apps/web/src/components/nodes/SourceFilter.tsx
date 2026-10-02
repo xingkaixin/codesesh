@@ -31,23 +31,3 @@ export function SourceFilter({
     </label>
   );
 }
-
-export function SourceBadge({ sourceNodeId }: { sourceNodeId: string }) {
-  useLocale();
-  const nodes = useNodes();
-  const local = sourceNodeId === "local";
-  return (
-    <span
-      className="text-xs text-[var(--console-muted)]"
-      title={
-        local ? undefined : t("Paths belong to the source machine. Files are not transferred.")
-      }
-    >
-      {t("Source: {0}", [
-        local
-          ? t("Local source")
-          : (nodes.data?.nodes.find((node) => node.id === sourceNodeId)?.name ?? sourceNodeId),
-      ])}
-    </span>
-  );
-}

@@ -159,8 +159,8 @@ describe("SearchResultsPanel", () => {
     expect(selectedLink?.getAttribute("data-selected")).toBe("true");
     fireEvent.click(selectedLink!);
     expect(onOpenResult).toHaveBeenCalledOnce();
-    expect(registerResultRef).toHaveBeenCalledWith("Codex/s1", expect.any(HTMLAnchorElement));
-    expect(registerResultRef).toHaveBeenCalledWith("Other/s2", expect.any(HTMLAnchorElement));
+    expect(registerResultRef).toHaveBeenCalledWith("codex/s1", expect.any(HTMLAnchorElement));
+    expect(registerResultRef).toHaveBeenCalledWith("other/s2", expect.any(HTMLAnchorElement));
   });
 
   it("shows the parent title above a sub-session hit", () => {
@@ -258,4 +258,24 @@ it("explains a full result list without claiming additional matches exist", () =
   view.unmount();
   renderPanel({ status: "loaded", results: results.slice(0, 49) });
   expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("keeps matching session IDs on different sources distinct", () => {
+  const results: SearchResult[] = ["local", "worker-one"].map((sourceNodeId) => {
+    const reference = { sourceNodeId, agentName: "codex", sessionId: "same" };
+    return {
+      reference,
+      session: makeSession("same", { reference }),
+      snippet: "needle",
+      snippetHighlights: [],
+      matchType: "assistant_reply",
+    };
+  });
+  const { props } = renderPanel({ status: "loaded", results });
+  const local = screen.getByText("Source: Local source").closest("a");
+  const remote = screen.getByText("Source: worker-one").closest("a");
+  expect(local?.getAttribute("href")).toBe("/codex/same");
+  expect(remote?.getAttribute("href")).toBe("/nodes/worker-one/codex/same");
+  expect(props.registerResultRef).toHaveBeenCalledWith("codex/same", local);
+  expect(props.registerResultRef).toHaveBeenCalledWith("@worker-one/codex/same", remote);
 });
