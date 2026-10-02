@@ -1,11 +1,11 @@
 mod local;
-use super::{CapturedSession, Operation, PAYLOAD_VERSION};
+mod snapshot;
+use super::{Operation, PAYLOAD_VERSION, capture::CapturedSessionRef};
 use crate::{
     agents::{SessionRecord, dsh::AttachmentReferences},
     runtime::ScanBatch,
 };
 use anyhow::{Context, Result, ensure};
-use base64::{Engine, engine::general_purpose::STANDARD};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -437,16 +437,18 @@ impl WorkerStore {
                 session.head.reference.agent_name == agent,
                 "Scan batch contains a different Agent"
             );
-            let captured = CapturedSession::from_parsed(session.clone());
-            let content_hash = digest(&serde_json::to_vec(&(
-                &captured.detail.messages,
-                &captured.detail.file_activity,
+            let captured = CapturedSessionRef::new(session);
+            let content_hash = snapshot::serialized_digest(&(
+                &session.detail.messages,
+                &session.detail.file_activity,
                 &captured.message_cost_inputs,
-            ))?);
+            ))?;
+            let mut head = session.head.clone();
+            let cost_inputs = std::mem::take(&mut head.stats.cost_inputs);
             let metadata = Operation::Metadata {
-                head: Box::new(captured.detail.head.clone()),
-                cost_inputs: captured.head_cost_inputs.clone(),
-                source_path: captured.source_path.clone(),
+                head: Box::new(head),
+                cost_inputs,
+                source_path: captured.source_path.to_string(),
             };
             let metadata_bytes = serde_json::to_vec(&metadata)?;
             let metadata_hash = digest(&metadata_bytes);
@@ -459,29 +461,7 @@ impl WorkerStore {
                     .is_some_and(|(_, hash)| *hash != metadata_hash)
                     && metadata_bytes.len() > CHUNK_BYTES
             {
-                let payload = serde_json::to_vec(&captured)?;
-                let transfer_id = uuid::Uuid::new_v4().to_string();
-                let chunks = u32::try_from(payload.len().div_ceil(CHUNK_BYTES))
-                    .context("Session snapshot is too large")?;
-                for (index, bytes) in payload.chunks(CHUNK_BYTES).enumerate() {
-                    enqueue(
-                        &tx,
-                        &Operation::SnapshotChunk {
-                            transfer_id: transfer_id.clone(),
-                            index: index as u32,
-                            data: STANDARD.encode(bytes),
-                        },
-                    )?;
-                }
-                enqueue(
-                    &tx,
-                    &Operation::SnapshotCommit {
-                        transfer_id,
-                        chunks,
-                        bytes: payload.len() as u64,
-                        digest: digest(&payload),
-                    },
-                )?;
+                snapshot::enqueue_snapshot(&tx, &captured)?;
             } else if previous.is_some_and(|(_, metadata)| metadata != metadata_hash) {
                 enqueue(&tx, &metadata)?;
             }

@@ -2,7 +2,9 @@ use super::*;
 use crate::{
     agents::ParsedSession,
     discovery::{AgentScanner, PathEnvironment},
+    sync::CapturedSession,
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
 
 fn setup() -> (tempfile::TempDir, WorkerStore, AgentScanner) {
@@ -93,7 +95,6 @@ fn title_only_changes_do_not_requeue_message_content() {
     store.save_batch("codex", &mut batch).unwrap();
     drain(&mut store);
     batch.sessions[0].head.title = "New title".into();
-    batch.sessions[0].detail.head.title = "New title".into();
     store.save_batch("codex", &mut batch).unwrap();
     assert_eq!(store.queue_status().unwrap().batches, 1);
     assert!(matches!(
@@ -128,11 +129,54 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
     let mut batch = scanner.refresh(None).unwrap();
     let session: &mut ParsedSession = &mut batch.sessions[0];
     session.detail.messages[0].parts = vec![crate::contract::MessagePart::Text {
-        text: "x".repeat(CHUNK_BYTES * 3),
+        text: "中文\n\"😀".repeat(CHUNK_BYTES / 3),
         time_created: None,
     }];
+    session.head.title = "Latest head".into();
+    session.head.stats.cost_inputs = vec![
+        serde_json::from_value(json!({
+            "model":"gpt-5", "tokens":{"input":7,"output":3,"cache_read":0,"cache_create":0},
+            "web_search":0,"cost":null
+        }))
+        .unwrap(),
+    ];
+    session.detail.messages[0].cost_inputs = session.head.stats.cost_inputs.clone();
+    session.detail.message_cursor = Some("cursor".into());
+    session.detail.message_update = Some("append".into());
+    session.detail.file_activity = vec![crate::contract::SessionFileActivity {
+        reference: session.head.reference.clone(),
+        project_identity_key: session.head.project_identity.key.clone(),
+        path: "src/中文.rs".into(),
+        kind: "read".into(),
+        count: 2,
+        latest_time: 1000.0,
+    }];
+    let captured = CapturedSession::from_parsed(session.clone());
+    let expected_payload = serde_json::to_vec(&captured).unwrap();
+    let expected_hash = digest(
+        &serde_json::to_vec(&(
+            &captured.detail.messages,
+            &captured.detail.file_activity,
+            &captured.message_cost_inputs,
+        ))
+        .unwrap(),
+    );
+    let original = session.detail.clone();
+    store.db.execute_batch("CREATE TRIGGER reject_chunk BEFORE INSERT ON worker_outbox WHEN json_extract(NEW.payload,'$.index')=1 BEGIN SELECT RAISE(ABORT,'disk failure'); END;").unwrap();
+    let error = store.save_batch("codex", &mut batch).unwrap_err();
+    assert!(error.to_string().contains("disk failure"), "{error}");
+    assert_eq!(store.queue_status().unwrap().batches, 0);
+    assert!(store.baseline("codex").unwrap().sessions.is_empty());
+    assert_eq!(batch.sessions[0].detail, original);
+    store.db.execute_batch("DROP TRIGGER reject_chunk").unwrap();
     store.save_batch("codex", &mut batch).unwrap();
+    let stored_hash: String = store
+        .db
+        .query_row("SELECT content_hash FROM worker_sessions", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored_hash, expected_hash);
     let mut payload = Vec::new();
+    let mut chunk_count = 0;
     let stream = store.stream_id().unwrap();
     while let Some(next) = store.next_upload().unwrap() {
         assert!(
@@ -141,17 +185,36 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
                 .is_err()
         );
         match &next.operation {
-            Operation::SnapshotChunk { data, .. } => payload.extend(STANDARD.decode(data).unwrap()),
+            Operation::SnapshotChunk { data, index, .. } => {
+                assert_eq!(*index, chunk_count);
+                let bytes = STANDARD.decode(data).unwrap();
+                assert!(!bytes.is_empty() && bytes.len() <= CHUNK_BYTES);
+                payload.extend(bytes);
+                chunk_count += 1;
+            }
             Operation::SnapshotCommit {
                 bytes,
+                chunks,
                 digest: expected,
                 ..
             } => {
                 assert_eq!(*bytes, payload.len() as u64);
+                assert_eq!(*chunks, chunk_count);
                 assert_eq!(*expected, digest(&payload));
+                assert_eq!(payload, expected_payload);
                 let captured: CapturedSession = serde_json::from_slice(&payload).unwrap();
+                let parsed = captured.into_parsed().unwrap();
+                assert_eq!(parsed.head.title, "Latest head");
                 assert_eq!(
-                    captured.into_parsed().unwrap().detail.messages[0].parts,
+                    parsed.head.stats.cost_inputs,
+                    batch.sessions[0].head.stats.cost_inputs
+                );
+                assert_eq!(
+                    parsed.detail.messages[0].cost_inputs,
+                    original.messages[0].cost_inputs
+                );
+                assert_eq!(
+                    parsed.detail.messages[0].parts,
                     batch.sessions[0].detail.messages[0].parts
                 );
             }
@@ -161,6 +224,25 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
             .acknowledge(&stream, next.sequence, &next.digest)
             .unwrap();
     }
+}
+
+#[test]
+fn exact_chunk_boundary_has_no_empty_tail() {
+    let (_dir, mut store, _scanner) = setup();
+    let tx = store.db.transaction().unwrap();
+    snapshot::enqueue_snapshot(&tx, &"x".repeat(CHUNK_BYTES - 2)).unwrap();
+    tx.commit().unwrap();
+    let chunk = store.next_upload().unwrap().unwrap();
+    let Operation::SnapshotChunk { data, index, .. } = chunk.operation else {
+        panic!("expected snapshot chunk");
+    };
+    assert_eq!(index, 0);
+    assert_eq!(STANDARD.decode(data).unwrap().len(), CHUNK_BYTES);
+    store
+        .acknowledge(&store.stream_id().unwrap(), chunk.sequence, &chunk.digest)
+        .unwrap();
+    assert!(matches!(store.next_upload().unwrap().unwrap().operation,
+        Operation::SnapshotCommit { chunks: 1, bytes, .. } if bytes == CHUNK_BYTES as u64));
 }
 
 #[test]
