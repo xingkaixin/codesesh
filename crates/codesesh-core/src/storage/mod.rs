@@ -5,6 +5,7 @@ pub use json_index::JsonBaseline;
 mod facts;
 mod json;
 mod legacy_parts;
+mod memory;
 mod read;
 mod reprice;
 pub(crate) use reprice::reprice_session;
@@ -46,6 +47,7 @@ pub fn head_from_connection(
 pub struct Cache {
     connection: Connection,
     snapshot_data_version: std::cell::Cell<Option<i64>>,
+    reclaim_connection: std::cell::Cell<bool>,
 }
 
 impl Cache {
@@ -137,6 +139,7 @@ impl Cache {
         Ok(Self {
             connection,
             snapshot_data_version: std::cell::Cell::new(None),
+            reclaim_connection: std::cell::Cell::new(false),
         })
     }
 
@@ -169,9 +172,12 @@ impl Cache {
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA temp_store=FILE;")?;
         schema::ensure_with_progress(&connection, path, &mut progress)?;
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA cache_size=-16384")?;
+        // Startup migration or repair may have populated FTS before writes are tracked.
+        let reclaim_connection = std::cell::Cell::new(connection.total_changes() > 0);
         Ok(Self {
             connection,
             snapshot_data_version: std::cell::Cell::new(None),
+            reclaim_connection,
         })
     }
 
@@ -223,7 +229,14 @@ impl Cache {
         index: Option<&json_index::Publication<'_>>,
     ) -> Result<()> {
         let transaction = self.connection.transaction()?;
-        let cursors = Self::write_sessions(&transaction, sessions, removed, checkpoint, index)?;
+        let cursors = Self::write_sessions(
+            &transaction,
+            sessions,
+            removed,
+            checkpoint,
+            index,
+            &self.reclaim_connection,
+        )?;
         transaction.commit()?;
         for (session, cursor) in sessions.iter_mut().zip(cursors) {
             session.detail.message_cursor = Some(cursor);
@@ -238,6 +251,7 @@ impl Cache {
         removed: &[SessionReference],
         checkpoint: Option<(&str, &Option<serde_json::Value>, bool)>,
         index: Option<&json_index::Publication<'_>>,
+        reclaim_connection: &std::cell::Cell<bool>,
     ) -> Result<Vec<String>> {
         let profile = std::env::var_os("CODESESH_PROFILE_SCAN").is_some();
         let mut message_time = std::time::Duration::ZERO;
@@ -247,6 +261,7 @@ impl Cache {
             index.validate(transaction)?;
         }
         for reference in removed {
+            memory::note_previous_document(transaction, reference, reclaim_connection)?;
             for table in ["pending_reindex", "session_documents", "sessions"] {
                 transaction.execute(
                     &format!("DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"),
@@ -296,6 +311,7 @@ impl Cache {
                     crate::agents::parser_version(&reference.agent_name)
                 ]]
             ]))?;
+            memory::note_previous_document(transaction, reference, reclaim_connection)?;
             transaction.execute(
                 "DELETE FROM session_documents WHERE source_node_id=? AND agent_name=? AND session_id=?",
                 params![reference.source_node_id,reference.agent_name,reference.session_id],
@@ -344,6 +360,7 @@ impl Cache {
             }
             message_time += message_started.elapsed();
             let document_started = std::time::Instant::now();
+            memory::note_document_size(text.len() as i64, reclaim_connection);
             transaction.execute("INSERT INTO session_documents(source_node_id,agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at,detail_version) VALUES(?,?,?,?,?,?,?,?,?)", params![reference.source_node_id,reference.agent_name,reference.session_id,session.detail.head.title,text,facts::content_hash(head)?,session.detail.messages.len() as i64,chrono::Utc::now().timestamp_millis(),detail_version])?;
             document_time += document_started.elapsed();
             let facts_started = std::time::Instant::now();
@@ -418,6 +435,7 @@ impl Cache {
     }
 
     pub fn rebuild_search_indexes(&mut self) -> Result<()> {
+        self.reclaim_connection.set(true);
         let transaction = self.connection.transaction()?;
         transaction.execute(
             "INSERT INTO session_documents_fts(session_documents_fts) VALUES('rebuild')",

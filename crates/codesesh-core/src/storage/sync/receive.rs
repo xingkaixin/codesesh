@@ -93,8 +93,14 @@ impl Cache {
             return Ok(receipt);
         }
         ensure!(upload.sequence == confirmed + 1, "UPLOAD_SEQUENCE_GAP");
-        receipt.changed =
-            apply_operation(&tx, node, &upload.stream_id, &upload.operation, pricing)?;
+        receipt.changed = apply_operation(
+            &tx,
+            node,
+            &upload.stream_id,
+            &upload.operation,
+            pricing,
+            &self.reclaim_connection,
+        )?;
         tx.execute(
             "UPDATE hub_nodes SET confirmed_sequence=?,confirmed_digest=?,confirmed_reference=?,last_seen=?4,last_confirmed_at=?4 WHERE id=?5",
             params![
@@ -116,6 +122,7 @@ fn apply_operation(
     stream: &str,
     operation: &Operation,
     pricing: &Pricing,
+    reclaim_connection: &std::cell::Cell<bool>,
 ) -> Result<Option<SessionReference>> {
     match operation {
         Operation::SnapshotChunk {
@@ -171,7 +178,7 @@ fn apply_operation(
             }
             crate::storage::reprice::reprice_session(&mut session, pricing);
             let reference = session.head.reference.clone();
-            Cache::write_sessions(tx, &[session], &[], None, None)?;
+            Cache::write_sessions(tx, &[session], &[], None, None, reclaim_connection)?;
             tx.execute(
                 "DELETE FROM hub_orphans WHERE node_id=? AND agent=? AND session_id=?",
                 params![node, reference.agent_name, reference.session_id],
@@ -200,7 +207,7 @@ fn apply_operation(
                 return Ok(None);
             }
             head.stats.cost_inputs = cost_inputs.clone();
-            update_metadata(tx, &mut head, source_path, pricing)?;
+            update_metadata(tx, &mut head, source_path, pricing, reclaim_connection)?;
             let reference = head.reference;
             Ok(Some(reference))
         }
@@ -212,6 +219,7 @@ fn update_metadata(
     head: &mut SessionHead,
     source: &str,
     pricing: &Pricing,
+    reclaim_connection: &std::cell::Cell<bool>,
 ) -> Result<()> {
     let mut metadata: serde_json::Value = {
         let raw: String = tx.query_row("SELECT meta_json FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?", params![head.reference.source_node_id, head.reference.agent_name, head.reference.session_id], |r|r.get(0))?;
@@ -224,6 +232,8 @@ fn update_metadata(
     tx.execute("UPDATE sessions SET message_count=?,title=?,source_path=?,directory=?,project_identity_kind=?,project_identity_key=?,project_display_name=?,project_identity_resolver_revision=?,project_identity_input_signature=?,time_created=?,time_updated=?,activity_time=?,parent_agent_name=?,parent_session_id=?,total_input_tokens=?,total_output_tokens=?,total_cache_read_tokens=?,total_cache_create_tokens=?,total_tokens=?,total_cost=?,cost_source=?,model_usage_json=?,smart_tags_json=?,smart_tags_source_updated_at=?,smart_tags_classifier_revision=?,meta_json=?,head_meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
         params![head.stats.message_count as i64,head.title,source,head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.parent_reference.as_ref().map(|p|&p.agent_name),head.parent_reference.as_ref().map(|p|&p.session_id),head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.total_tokens,head.stats.total_cost,head.stats.cost_source.as_ref().map(|v|v.as_str()),head.model_usage.as_ref().map(serde_json::to_string).transpose()?,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision,serde_json::to_string(&metadata)?,serde_json::to_string(&head_metadata)?,reference.source_node_id,reference.agent_name,reference.session_id])?;
     tx.execute("UPDATE session_documents SET content_hash=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![crate::storage::facts::content_hash(head)?,reference.source_node_id,reference.agent_name,reference.session_id])?;
+    let previous_bytes = tx.query_row("SELECT octet_length(content_text) FROM session_documents WHERE source_node_id=?1 AND agent_name=?2 AND session_id=?3 AND title IS NOT ?4",params![reference.source_node_id,reference.agent_name,reference.session_id,head.title],|row|row.get::<_,i64>(0)).optional()?.unwrap_or(0);
+    super::super::memory::note_document_size(previous_bytes, reclaim_connection);
     tx.execute("UPDATE session_documents SET title=?1 WHERE source_node_id=?2 AND agent_name=?3 AND session_id=?4 AND title IS NOT ?1",params![head.title,reference.source_node_id,reference.agent_name,reference.session_id])?;
     tx.execute("UPDATE session_file_activity SET project_identity_key=? WHERE source_node_id=? AND agent_name=? AND session_id=?",params![head.project_identity.key,reference.source_node_id,reference.agent_name,reference.session_id])?;
     for table in ["session_model_cost", "session_cost_summary"] {

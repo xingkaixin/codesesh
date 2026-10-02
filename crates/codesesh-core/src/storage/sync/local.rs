@@ -65,6 +65,7 @@ impl Cache {
                     &[],
                     Some((&agent.name, &Some(checkpoint), baseline.complete)),
                     None,
+                    &self.reclaim_connection,
                 )?;
             }
             tx.execute("INSERT INTO cache_meta VALUES('local_worker_baseline',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [&marker])?;
