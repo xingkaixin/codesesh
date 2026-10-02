@@ -1,3 +1,6 @@
+import { getSessionReferenceKey } from "@codesesh/contract";
+import { useNodes } from "../../hooks/useNodes";
+import { SourceBadge } from "../nodes/SourceBadge";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
@@ -82,6 +85,7 @@ export function SearchResultsPanel({
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
   const locale = useLocale();
+  const nodes = useNodes();
 
   const results = state.status === "loaded" ? state.results : [];
   const filterBar = (
@@ -210,7 +214,7 @@ export function SearchResultsPanel({
       {results.map((result, index) => {
         const agentKey = result.reference.agentName.toLowerCase();
         const agentLabel = agentNameMap.get(agentKey) ?? result.reference.agentName;
-        const resultKey = `${result.reference.agentName}/${result.reference.sessionId}`;
+        const resultKey = getSessionReferenceKey(result.reference);
         const isSelected = index === selectedIndex;
         const isUnmountedChild = Boolean(result.session.parent_reference) && !result.parent;
 
@@ -233,6 +237,10 @@ export function SearchResultsPanel({
               <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--console-muted)]">
                 {t(SEARCH_MATCH_LABELS[result.matchType])}
               </span>
+              <SourceBadge
+                sourceNodeId={result.reference.sourceNodeId ?? "local"}
+                nodes={nodes.data?.nodes}
+              />
               {isUnmountedChild ? (
                 <span className="console-mono rounded-sm border border-[var(--console-border-strong)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
                   {t("Unmounted")}

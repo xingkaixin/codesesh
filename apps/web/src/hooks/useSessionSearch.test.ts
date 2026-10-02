@@ -163,3 +163,27 @@ describe("useSessionSearch", () => {
     await waitFor(() => expect(result.current.searchResults).toEqual(next));
   });
 });
+
+it("scrolls to the selected source when session IDs collide", async () => {
+  const local = makeSearchResult("same");
+  const remote = {
+    ...local,
+    reference: { ...local.reference, sourceNodeId: "worker-one" },
+  };
+  vi.mocked(api.fetchSearchResults).mockResolvedValue({ results: [local, remote] });
+  const { result } = renderSearch();
+  const localLink = document.createElement("a");
+  const remoteLink = document.createElement("a");
+  localLink.scrollIntoView = vi.fn();
+  remoteLink.scrollIntoView = vi.fn();
+  act(() => {
+    result.current.registerResultRef("cc/same", localLink);
+    result.current.registerResultRef("@worker-one/cc/same", remoteLink);
+    result.current.submitSearch("hello");
+  });
+  await waitFor(() => expect(localLink.scrollIntoView).toHaveBeenCalledOnce());
+  expect(remoteLink.scrollIntoView).not.toHaveBeenCalled();
+  act(() => result.current.setSelectedSearchIndex(1));
+  expect(remoteLink.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  expect(localLink.scrollIntoView).toHaveBeenCalledOnce();
+});
