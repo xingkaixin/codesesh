@@ -61,6 +61,7 @@ pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail>
             .into_iter()
             .map(message)
             .collect::<Result<_>>()?,
+        message_total: None,
         message_cursor: value.message_cursor,
         message_update: value.message_update.map(closed).transpose()?,
         file_activity: Some(

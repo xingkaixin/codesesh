@@ -1,3 +1,4 @@
+import type { SessionMessagePaging } from "../hooks/useSessionDetail";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
@@ -42,6 +43,23 @@ import {
   type TimelineAnchorRegistry,
 } from "./session-detail/timeline-anchor-registry";
 
+const PAGING_MESSAGES = {
+  "Loaded {0} of {1} messages": [
+    "已加载 {0} / {1} 条消息",
+    "{1} 件中 {0} 件のメッセージを読み込みました",
+  ],
+  "Filters and navigation apply to loaded messages.": [
+    "筛选和消息导航仅作用于已加载的消息。",
+    "フィルターとメッセージナビゲーションは読み込み済みの内容に適用されます。",
+  ],
+  "Load more messages": ["加载更多消息", "さらにメッセージを読み込む"],
+  "Loading search match…": ["正在加载搜索命中位置…", "検索結果の位置を読み込み中…"],
+  "Couldn’t load more messages. Try again.": [
+    "无法加载更多消息，请重试。",
+    "追加のメッセージを読み込めませんでした。再試行してください。",
+  ],
+} as const;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -51,6 +69,7 @@ interface SessionDetailProps {
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
   targetMessageIndex?: number;
+  messagePaging?: SessionMessagePaging;
   childSessions?: SessionHead[];
 }
 
@@ -132,6 +151,7 @@ export function SessionDetail({
   agentCatalog,
   highlightQuery,
   targetMessageIndex,
+  messagePaging,
   childSessions = [],
 }: SessionDetailProps) {
   const locale = useLocale();
@@ -204,7 +224,53 @@ export function SessionDetail({
       scrollRequestRef.current += 1;
     };
   });
-  useEffect(() => jumpToSearchMessage(), [sessionReference, targetMessageIndex]);
+  const targetMessageLoaded =
+    targetMessageIndex != null && targetMessageIndex < session.messages.length;
+  useEffect(
+    () => jumpToSearchMessage(),
+    [sessionReference, targetMessageIndex, targetMessageLoaded],
+  );
+  const targetMessagePending =
+    targetMessageIndex != null &&
+    Number.isSafeInteger(targetMessageIndex) &&
+    !targetMessageLoaded &&
+    targetMessageIndex < (session.message_total ?? 0);
+  const loadMore = messagePaging?.loadMore;
+  const pageLoading = messagePaging?.loading ?? false;
+  const pageFailed = messagePaging?.failed ?? false;
+  useEffect(() => {
+    if (targetMessagePending && !pageLoading && !pageFailed) loadMore?.();
+  }, [targetMessagePending, pageLoading, pageFailed, loadMore, session.messages.length]);
+
+  const pageControls = messagePaging ? (
+    <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 text-xs leading-5 text-[var(--console-muted)]">
+      <p role="status">
+        {t(
+          "Loaded {0} of {1} messages",
+          [session.messages.length, session.message_total ?? 0],
+          locale,
+          PAGING_MESSAGES,
+        )}
+        {targetMessagePending && !pageFailed
+          ? ` · ${t("Loading search match…", [], locale, PAGING_MESSAGES)}`
+          : ""}
+      </p>
+      <p>{t("Filters and navigation apply to loaded messages.", [], locale, PAGING_MESSAGES)}</p>
+      {pageFailed && (
+        <p role="alert">
+          {t("Couldn’t load more messages. Try again.", [], locale, PAGING_MESSAGES)}
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={pageLoading}
+        onClick={loadMore}
+        className="mt-2 rounded-sm border border-[var(--console-border)] px-3 py-1.5 text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] disabled:opacity-50"
+      >
+        {pageLoading ? t("Loading…") : t("Load more messages", [], locale, PAGING_MESSAGES)}
+      </button>
+    </div>
+  ) : null;
 
   if (messageModels.length === 0) {
     return (
@@ -212,6 +278,7 @@ export function SessionDetail({
         data-testid="session-detail"
         className="mx-auto max-w-4xl rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
       >
+        {pageControls}
         {t("This session has no displayable messages.")}
       </div>
     );
@@ -222,6 +289,7 @@ export function SessionDetail({
       data-testid="session-detail"
       className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
+      {pageControls}
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
@@ -298,7 +366,7 @@ export function SessionDetail({
           />
         </div>
       </div>
-      <DeferredInteractiveReceipt session={session} />
+      <DeferredInteractiveReceipt session={session} messagePaging={messagePaging} />
     </div>
   );
 }

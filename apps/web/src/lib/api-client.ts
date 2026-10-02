@@ -237,10 +237,10 @@ export function createApiClient(access: RemoteAccess) {
             : {}),
         }
       : undefined;
-    if (!options?.messageCursor) return fetchJson(path, fetchOptions);
-
-    const params = new URLSearchParams({ messageCursor: options.messageCursor });
-    return fetchJson(`${path}?${params}`, fetchOptions);
+    const params = new URLSearchParams();
+    if (options?.messageCursor) params.set("messageCursor", options.messageCursor);
+    if (options?.messageLimit != null) params.set("messageLimit", String(options.messageLimit));
+    return fetchJson(params.size ? `${path}?${params}` : path, fetchOptions);
   }
 
   async function fetchDashboard(

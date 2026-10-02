@@ -81,6 +81,7 @@ export interface FetchOptions {
 export interface SessionDetailFetchOptions extends FetchOptions {
   sourceNodeId?: string;
   messageCursor?: string;
+  messageLimit?: number;
   operationId?: string;
 }
 

@@ -55,6 +55,7 @@ pub async fn guard(
                     | "kind"
                     | "limit"
                     | "messageCursor"
+                    | "messageLimit"
                     | "path"
                     | "project"
                     | "projectKey"

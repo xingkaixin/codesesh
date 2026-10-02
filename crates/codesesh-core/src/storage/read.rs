@@ -3,6 +3,9 @@ use crate::contract::*;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+#[cfg(test)]
+mod tests;
+
 fn json_column<T: serde::de::DeserializeOwned>(row: &Row<'_>, column: &str) -> rusqlite::Result<T> {
     let text: String = row.get(column)?;
     serde_json::from_str(&text).map_err(|error| {
@@ -38,8 +41,20 @@ pub fn visit_detail_messages(
     connection: &Connection,
     head: SessionHead,
     encoded: Option<&str>,
-    mut emit: impl FnMut(Message) -> Result<()>,
+    emit: impl FnMut(Message) -> Result<()>,
 ) -> Result<Option<SessionDetail>> {
+    Ok(visit_detail_message_page(connection, head, encoded, None, emit)?.map(|(detail, _)| detail))
+}
+
+pub fn visit_detail_message_page(
+    connection: &Connection,
+    head: SessionHead,
+    encoded: Option<&str>,
+    limit: Option<usize>,
+    mut emit: impl FnMut(Message) -> Result<()>,
+) -> Result<Option<(SessionDetail, usize)>> {
+    const PAGE_PARTS_BYTES: usize = 512 * 1024;
+    anyhow::ensure!(limit != Some(0), "message limit must be positive");
     let reference = &head.reference;
     let count = connection
         .query_row(
@@ -80,15 +95,21 @@ pub fn visit_detail_messages(
         }
     }
 
+    // Legacy rows lack a verifiable continuation prefix until background reindexing.
+    let limit = limit.filter(|_| stored_tail.is_some());
+    let end = start
+        .saturating_add(limit.unwrap_or(count as usize))
+        .min(count as usize);
     let mut statement = connection.prepare(
-        "SELECT * FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? ORDER BY message_index",
+        "SELECT * FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? AND message_index<? ORDER BY message_index",
     )?;
     let rows = statement.query_map(
         params![
             reference.source_node_id,
             reference.agent_name,
             reference.session_id,
-            start as i64
+            start as i64,
+            end as i64
         ],
         |row| {
             let role: String = row.get("role")?;
@@ -141,22 +162,32 @@ pub fn visit_detail_messages(
                 row.get::<_, String>("parts_json")?,
                 row.get::<_, i64>("parts_format_version")?,
                 tokens,
+                row.get::<_, i64>("message_index")?,
             ))
         },
     )?;
     let mut emitted = 0;
     let mut digest = prefix;
+    let mut parts_bytes = 0;
     for row in rows {
-        let (message, next, raw_parts, format, raw_tokens) = row?;
+        let (message, next, raw_parts, format, raw_tokens, index) = row?;
+        anyhow::ensure!(
+            index == (start + emitted) as i64,
+            "materialized message index is inconsistent"
+        );
+        parts_bytes += raw_parts.len();
         digest = match next {
             Some(next) => next,
             None => cursor::advance(&digest, &message, &raw_parts, raw_tokens.as_deref(), format)?,
         };
         emit(message)?;
         emitted += 1;
+        if limit.is_some() && parts_bytes >= PAGE_PARTS_BYTES {
+            break;
+        }
     }
     anyhow::ensure!(
-        emitted + start as i64 == count,
+        emitted + start == end || (limit.is_some() && parts_bytes >= PAGE_PARTS_BYTES),
         "materialized message count is inconsistent"
     );
     let mut query = connection.prepare("SELECT project_identity_key,path,kind,count,latest_time FROM session_file_activity WHERE source_node_id=? AND agent_name=? AND session_id=? ORDER BY latest_time DESC,path")?;
@@ -187,21 +218,24 @@ pub fn visit_detail_messages(
         )
         .optional()?
         .is_some();
-    Ok(Some(SessionDetail {
-        message_cursor: Some(cursor::encode(
-            count as usize,
-            &cursor::with_cost_revision(&digest, cost_revision),
-        )?),
-        message_update: Some(if append { "append" } else { "reset" }.into()),
-        head: SessionHead {
-            version: None,
-            summary_files: None,
-            ..head
+    Ok(Some((
+        SessionDetail {
+            message_cursor: Some(cursor::encode(
+                start + emitted,
+                &cursor::with_cost_revision(&digest, cost_revision),
+            )?),
+            message_update: Some(if append { "append" } else { "reset" }.into()),
+            head: SessionHead {
+                version: None,
+                summary_files: None,
+                ..head
+            },
+            messages: Vec::new(),
+            detail_freshness: if pending { "stale" } else { "fresh" }.into(),
+            file_activity,
         },
-        messages: Vec::new(),
-        detail_freshness: if pending { "stale" } else { "fresh" }.into(),
-        file_activity,
-    }))
+        count as usize,
+    )))
 }
 
 fn parse_cursor(encoded: &str) -> Option<(usize, String)> {

@@ -272,7 +272,7 @@ describe("fetchSessionData", () => {
     });
   });
 
-  it("sends an opaque message cursor without forwarding it as a fetch option", async () => {
+  it("sends paging options without forwarding them as fetch options", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ messages: [] }),
@@ -283,10 +283,11 @@ describe("fetchSessionData", () => {
     await fetchSessionData("codex", "session", {
       signal: controller.signal,
       messageCursor: "prefix+/=",
+      messageLimit: 200,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/sessions/codex/session?messageCursor=prefix%2B%2F%3D",
+      "/api/sessions/codex/session?messageCursor=prefix%2B%2F%3D&messageLimit=200",
       { signal: controller.signal },
     );
   });

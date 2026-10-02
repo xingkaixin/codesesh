@@ -18,6 +18,7 @@ export type WireSessionDetail = {
   messages: Array<WireMessage>;
   message_cursor?: string;
   message_update?: MessageUpdate;
+  message_total?: number;
   file_activity?: Array<WireSessionFileActivity>;
   version?: string | null;
   summary_files?: unknown;
