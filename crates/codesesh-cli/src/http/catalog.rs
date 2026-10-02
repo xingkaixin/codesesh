@@ -183,7 +183,7 @@ pub async fn projects(
             let value = cached_catalog(
                 &cache,
                 revision,
-                json!(["projects", from, to, query_scope.source_node_id]),
+                json!(["projects", from, to, query_scope.source_node_id, identity]),
                 || {
                     timings.cache_hit = false;
                     let phase = Instant::now();
@@ -193,11 +193,27 @@ pub async fn projects(
                     let phase = Instant::now();
                     let groups = projects::build_project_groups(&sessions)
                         .into_iter()
+                        .filter(|g| {
+                            identity.as_ref().is_none_or(|(kind, key)| {
+                                g.identity_kind == *kind && g.identity_key == *key
+                            })
+                        })
                         .map(serde_json::to_value)
                         .collect::<serde_json::Result<Vec<_>>>()?;
                     timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let facts = analytics::load_cost_facts(conn, from, to, false)?;
+                    let facts = analytics::load_scoped_cost_facts(
+                        conn,
+                        &sessions,
+                        &analytics::DashboardScope {
+                            agent: None,
+                            project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
+                            project_key: identity.as_ref().map(|(_, key)| key.clone()),
+                        },
+                        from,
+                        to,
+                        false,
+                    )?;
                     timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
                     let mut groups = analytics::attach_project_metrics(
@@ -216,14 +232,9 @@ pub async fn projects(
                     Ok(Value::Array(groups))
                 },
             )?;
-            let Value::Array(mut groups) = value else {
+            let Value::Array(groups) = value else {
                 anyhow::bail!("invalid project aggregate");
             };
-            groups.retain(|g| {
-                identity.as_ref().is_none_or(|(kind, key)| {
-                    g["identityKind"] == *kind && g["identityKey"] == *key
-                })
-            });
             let summary = analytics::summarize_projects(&groups);
             Ok((groups, summary, timings))
         })
@@ -355,8 +366,10 @@ pub async fn dashboard(
                 let sessions = super::scoped_heads(&heads, &query_scope);
                 timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
-                let facts = analytics::load_cost_facts(
+                let facts = analytics::load_scoped_cost_facts(
                     conn,
+                    &sessions,
+                    &scope,
                     compare.map(|(from, _)| from).or(from),
                     Some(to),
                     true,

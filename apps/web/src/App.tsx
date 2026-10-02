@@ -35,6 +35,7 @@ import { getProjectIdentityKey } from "./lib/projects";
 import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
+import { APP_ROUTE_IDS } from "./lib/app-routes";
 
 export default function App() {
   useLocale();
@@ -43,7 +44,8 @@ export default function App() {
   const appConfig = useAppConfig();
   const timeWindowController = useTimeWindow(appConfig.config?.window);
   const { timeWindow } = timeWindowController;
-  const sessionStore = useSessionStore(timeWindow);
+  const routeMatches = useMatches();
+  const sessionStore = useSessionStore(timeWindow, routeMatches.at(-1)?.id === APP_ROUTE_IDS.root);
   const {
     activeAgents,
     agentCatalog,
@@ -88,7 +90,6 @@ export default function App() {
   const resolvedTheme = useTheme(theme);
   const { copySessionAsMarkdown, sessionCopyNotice } = useCopySessionAsMarkdown();
 
-  const routeMatches = useMatches();
   const viewState = useMemo(
     () => viewStateFromRouteMatches(routeMatches, validAgentKeys),
     [routeMatches, validAgentKeys],

@@ -83,9 +83,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function renderStore(window: AppConfig["window"] = config.window) {
+async function renderStore(window: AppConfig["window"] = config.window, loadDashboard = true) {
   const { client, Wrapper } = createQueryWrapper();
-  const hook = renderHook(({ selectedWindow }) => useSessionStore(selectedWindow), {
+  const hook = renderHook(({ selectedWindow }) => useSessionStore(selectedWindow, loadDashboard), {
     wrapper: Wrapper,
     initialProps: { selectedWindow: window },
   });
@@ -94,6 +94,28 @@ async function renderStore(window: AppConfig["window"] = config.window) {
 }
 
 describe("useSessionStore", () => {
+  it("loads the global dashboard only when requested, including reload and live sync", async () => {
+    const { Wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ loadDashboard }) => useSessionStore(config.window, loadDashboard),
+      { wrapper: Wrapper, initialProps: { loadDashboard: false } },
+    );
+    await waitFor(() => expect(result.current.loadPending).toBe(false));
+    await act(() => result.current.reload());
+    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+    expect(api.fetchDashboard).not.toHaveBeenCalled();
+    expect(result.current.dashboard).toBeNull();
+
+    rerender({ loadDashboard: true });
+    await waitFor(() => expect(result.current.dashboard).toEqual(SAMPLE_DASHBOARD_DATA));
+    expect(api.fetchDashboard).toHaveBeenCalledOnce();
+
+    rerender({ loadDashboard: false });
+    await act(() => result.current.resyncLiveState());
+    expect(api.fetchDashboard).toHaveBeenCalledOnce();
+    expect(result.current.dashboard).toBeNull();
+    expect(result.current.loadError).toBeNull();
+  });
   it.each(["live", "resync"] as const)(
     "refreshes materialized bookmark views on %s",
     async (refresh) => {
@@ -632,38 +654,41 @@ describe("useSessionStore", () => {
     expect(result.current.version).toBeGreaterThan(0);
   });
 
-  it("coalesces aggregate refreshes and guarantees a trailing refresh", async () => {
-    let now = Date.now();
-    vi.spyOn(Date, "now").mockImplementation(() => now);
-    const { result } = await renderStore();
-    await act(() => result.current.reload());
-    vi.mocked(api.fetchAgents).mockClear();
-    vi.mocked(api.fetchProjects).mockClear();
-    vi.mocked(api.fetchDashboard).mockClear();
+  it.each([true, false])(
+    "coalesces aggregate refreshes with global dashboard demand %s",
+    async (loadDashboard) => {
+      let now = Date.now();
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+      const { result } = await renderStore(config.window, loadDashboard);
+      await act(() => result.current.reload());
+      vi.mocked(api.fetchAgents).mockClear();
+      vi.mocked(api.fetchProjects).mockClear();
+      vi.mocked(api.fetchDashboard).mockClear();
 
-    now += 500;
-    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
-    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledOnce());
-    await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledOnce());
-    await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledOnce());
+      now += 500;
+      await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+      await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledOnce());
+      await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledOnce());
+      await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledTimes(loadDashboard ? 1 : 0));
 
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    now += 500;
-    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
-    now += 500;
-    await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      now += 500;
+      await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+      now += 500;
+      await act(() => result.current.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
-    expect(api.fetchAgents).toHaveBeenCalledOnce();
-    expect(api.fetchProjects).toHaveBeenCalledOnce();
-    expect(api.fetchDashboard).toHaveBeenCalledOnce();
+      expect(api.fetchAgents).toHaveBeenCalledOnce();
+      expect(api.fetchProjects).toHaveBeenCalledOnce();
+      expect(api.fetchDashboard).toHaveBeenCalledTimes(loadDashboard ? 1 : 0);
 
-    await act(() => vi.advanceTimersByTimeAsync(1_500));
-    vi.useRealTimers();
+      await act(() => vi.advanceTimersByTimeAsync(1_500));
+      vi.useRealTimers();
 
-    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledTimes(2));
-  });
+      await waitFor(() => expect(api.fetchAgents).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(api.fetchProjects).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(api.fetchDashboard).toHaveBeenCalledTimes(loadDashboard ? 2 : 0));
+    },
+  );
 
   it("keeps window-external backfill sessions out of the active snapshot", async () => {
     const window = { from: 100, to: 200, days: 7 };
@@ -766,7 +791,7 @@ describe("useSessionStore", () => {
     const { Wrapper } = createQueryWrapper();
     const { result } = renderHook(
       () => ({
-        store: useSessionStore(config.window),
+        store: useSessionStore(config.window, false),
         scoped: useDashboard(config.window, filters),
       }),
       { wrapper: Wrapper },
@@ -784,7 +809,7 @@ describe("useSessionStore", () => {
     await act(() => result.current.store.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
 
     await waitFor(() => expect(result.current.scoped.dashboard).toEqual(liveDashboard));
-    expect(api.fetchDashboard).toHaveBeenCalledTimes(4);
+    expect(api.fetchDashboard).toHaveBeenCalledTimes(2);
   });
 
   it("invalidates only session details changed by a live event", async () => {
