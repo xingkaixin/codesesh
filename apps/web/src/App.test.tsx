@@ -426,3 +426,31 @@ describe("App route telemetry", () => {
     expect(payload).not.toHaveProperty("projectKey");
   });
 });
+
+it("restores the message position from a session link", async () => {
+  const scrolled: string[] = [];
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    scrolled.push(this.id);
+  });
+  responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
+  responses["/api/sessions"] = { sessions: [SAMPLE_SESSION_HEAD] };
+  responses["/api/sessions/claudecode/session-1"] = {
+    ...SAMPLE_SESSION_HEAD,
+    messages: [0, 1, 2].map((index) => ({
+      id: `message-${index}`,
+      role: "user",
+      time_created: index + 1,
+      parts: [{ type: "text", text: `Linked message ${index}` }],
+    })),
+  };
+  try {
+    renderAppAt("/claudecode/session-1#message-2");
+    await waitFor(() => expect(scrolled).toContain("session-message-2"), {
+      timeout: LAZY_SURFACE_TIMEOUT_MS,
+    });
+  } finally {
+    scroll.mockRestore();
+  }
+});

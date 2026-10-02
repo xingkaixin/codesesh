@@ -1,7 +1,7 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { formatSessionReference } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { SessionDetail, SessionHead } from "../lib/api";
@@ -49,6 +49,7 @@ interface SessionDetailProps {
   session: SessionDetail;
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
+  targetMessageIndex?: number;
   childSessions?: SessionHead[];
 }
 
@@ -121,6 +122,7 @@ export function SessionDetail({
   session,
   agentCatalog,
   highlightQuery,
+  targetMessageIndex,
   childSessions = [],
 }: SessionDetailProps) {
   const locale = useLocale();
@@ -183,6 +185,17 @@ export function SessionDetail({
     },
     [displayModel, handleJumpToMessageAnchor],
   );
+
+  const jumpToSearchMessage = useEffectEvent(() => {
+    if (targetMessageIndex == null) return;
+    const target = displayModel.resolveSourceMessageAnchor(targetMessageIndex);
+    if (!target) return;
+    handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto");
+    return () => {
+      scrollRequestRef.current += 1;
+    };
+  });
+  useEffect(() => jumpToSearchMessage(), [sessionReference, targetMessageIndex]);
 
   if (messageModels.length === 0) {
     return (

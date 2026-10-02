@@ -142,9 +142,13 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         event.preventDefault();
         dismissShortcutHint();
         closeSearch();
-        navigate(sessionRoutePath(result.reference), {
-          state: { searchQuery: activeSearchQuery },
-        });
+        navigate(
+          {
+            pathname: sessionRoutePath(result.reference),
+            hash: result.messageIndex == null ? "" : `message-${result.messageIndex}`,
+          },
+          { state: { searchQuery: activeSearchQuery } },
+        );
       }
       return;
     }

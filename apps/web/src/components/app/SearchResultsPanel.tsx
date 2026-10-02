@@ -160,7 +160,10 @@ export function SearchResultsPanel({
           <Link
             key={resultKey}
             ref={(node) => registerResultRef(resultKey, node)}
-            to={sessionRoutePath(result.reference)}
+            to={{
+              pathname: sessionRoutePath(result.reference),
+              hash: result.messageIndex == null ? "" : `message-${result.messageIndex}`,
+            }}
             state={{ searchQuery: query }}
             onClick={onOpenResult}
             data-selected={isSelected ? "true" : undefined}

@@ -203,3 +203,22 @@ describe("SearchResultsPanel", () => {
     expect(screen.getByText("Unmounted")).toBeTruthy();
   });
 });
+
+it("links message matches to their source position", () => {
+  renderPanel({
+    status: "loaded",
+    results: [
+      {
+        reference: { sourceNodeId: "remote", agentName: "codex", sessionId: "s1" },
+        session: makeSession("s1"),
+        snippet: "needle",
+        snippetHighlights: [],
+        matchType: "tool_output",
+        messageIndex: 42,
+      },
+    ],
+  });
+  expect(screen.getByText("Session s1").closest("a")?.getAttribute("href")).toBe(
+    "/nodes/remote/codex/s1#message-42",
+  );
+});
