@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { formatSessionReference } from "@codesesh/contract";
 import { FileText, Funnel } from "../ui/icons";
 import type { SessionDetail } from "../../lib/api";
+import type { SessionMessagePaging } from "../../hooks/useSessionDetail";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { DrawerDialog } from "../DrawerDialog";
@@ -28,11 +29,23 @@ function ReceiptPlaceholder() {
   );
 }
 
-export function DeferredInteractiveReceipt({ session }: { session: SessionDetail }) {
+export function DeferredInteractiveReceipt({
+  session,
+  messagePaging,
+}: {
+  session: SessionDetail;
+  messagePaging?: SessionMessagePaging;
+}) {
   useLocale();
 
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const loadMore = messagePaging?.loadMore;
+  const pageLoading = messagePaging?.loading ?? false;
+  const pageFailed = messagePaging?.failed ?? false;
+  useEffect(() => {
+    if (open && !pageLoading && !pageFailed) loadMore?.();
+  }, [open, pageLoading, pageFailed, loadMore, session.messages.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,7 +93,23 @@ export function DeferredInteractiveReceipt({ session }: { session: SessionDetail
         title={t("Session Receipt")}
         variant="desktop"
       >
-        {ready ? (
+        {messagePaging ? (
+          <div
+            className="p-4 text-sm text-[var(--console-muted)]"
+            role={pageFailed ? "alert" : "status"}
+          >
+            <p>{pageFailed ? t("Unable to load this session.") : t("Loading…")}</p>
+            {pageFailed && (
+              <button
+                type="button"
+                onClick={loadMore}
+                className="mt-3 rounded-sm border border-[var(--console-border)] px-3 py-1.5 text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+              >
+                {t("Retry")}
+              </button>
+            )}
+          </div>
+        ) : ready ? (
           <RenderProfiler id="InteractiveReceipt">
             <ErrorBoundary>
               <Suspense fallback={<ReceiptPlaceholder />}>

@@ -10,7 +10,7 @@ import {
   type SetStateAction,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
-import type { SessionDetailError } from "../../hooks/useSessionDetail";
+import type { SessionDetailError, SessionMessagePaging } from "../../hooks/useSessionDetail";
 import type { AgentCatalog } from "../../lib/agents";
 import type {
   AgentInfo,
@@ -66,6 +66,7 @@ interface LoadModel {
 }
 
 interface SessionDetailModel {
+  messagePaging?: SessionMessagePaging;
   session: SessionDetail | null;
   loading: boolean;
   error: SessionDetailError | null;
@@ -381,6 +382,7 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
             currentSession.reference.sourceNodeId,
           )}
           session={currentSession}
+          messagePaging={route.detail.messagePaging}
           agentCatalog={route.agentCatalog}
           highlightQuery={route.detailHighlightQuery}
           childSessions={childSessions}

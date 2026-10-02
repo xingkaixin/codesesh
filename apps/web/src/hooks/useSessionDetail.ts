@@ -5,6 +5,12 @@ import { ApiRequestError, fetchSessionData, logClientEvent, type SessionDetail }
 import { queryKeys } from "../lib/query-keys";
 import type { ViewState } from "../lib/view-state";
 
+export interface SessionMessagePaging {
+  loading: boolean;
+  failed: boolean;
+  loadMore: () => void;
+}
+
 export type SessionDetailError = { kind: "missing" } | { kind: "load-failed"; message: string };
 
 function getSessionDetailError(error: unknown): SessionDetailError {
@@ -83,6 +89,7 @@ export function useSessionDetail(viewState: ViewState) {
           signal,
           ...(route.sourceNodeId ? { sourceNodeId: route.sourceNodeId } : {}),
           messageCursor: previous?.message_cursor,
+          messageLimit: 200,
           operationId,
         });
         const data = mergeSessionDetailUpdate(previous, response);
@@ -124,10 +131,24 @@ export function useSessionDetail(viewState: ViewState) {
     await query.refetch({ cancelRefetch: true });
   }, [query, route]);
 
+  const { refetch } = query;
+  const loadMore = useCallback(() => {
+    void refetch({ cancelRefetch: false });
+  }, [refetch]);
+  const partial = Boolean(
+    query.data &&
+    query.data.messages.length < (query.data.message_total ?? query.data.messages.length),
+  );
+  const messagePaging: SessionMessagePaging | undefined = partial
+    ? { loading: query.isFetching, failed: query.isError, loadMore }
+    : undefined;
+
   return {
     session: route ? (query.data ?? null) : null,
     sessionLoading: route !== null && query.isPending,
-    sessionError: route !== null && query.isError ? getSessionDetailError(query.error) : null,
+    sessionError:
+      route !== null && query.isError && !partial ? getSessionDetailError(query.error) : null,
+    messagePaging,
     refresh,
   };
 }

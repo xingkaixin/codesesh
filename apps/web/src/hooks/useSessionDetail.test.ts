@@ -375,3 +375,55 @@ describe("useSessionDetail", () => {
     expect(result.current.sessionError).toBeNull();
   });
 });
+
+it("retains loaded messages on a page failure, retries the prefix and resets rewritten content", async () => {
+  const firstMessage = { id: "m1", role: "user" as const, time_created: 1, parts: [] };
+  const secondMessage = { ...firstMessage, id: "m2" };
+  const initial = {
+    ...sample,
+    messages: [firstMessage],
+    message_cursor: "first",
+    message_update: "reset" as const,
+    message_total: 2,
+  };
+  const rewritten = {
+    ...initial,
+    messages: [{ ...firstMessage, id: "new" }],
+    message_cursor: "new-prefix",
+  };
+  vi.mocked(api.fetchSessionData)
+    .mockResolvedValueOnce(initial)
+    .mockRejectedValueOnce(new Error("page unavailable"))
+    .mockResolvedValueOnce({
+      ...initial,
+      messages: [secondMessage],
+      message_cursor: "second",
+      message_update: "append",
+    })
+    .mockResolvedValueOnce(rewritten);
+  const { result } = renderSessionDetail();
+  await waitFor(() => expect(result.current.session).toEqual(initial));
+  expect(api.fetchSessionData).toHaveBeenCalledTimes(1);
+  expect(api.fetchSessionData).toHaveBeenLastCalledWith(
+    "claudecode",
+    "claudecode/abc",
+    expect.objectContaining({ messageLimit: 200 }),
+  );
+  act(() => result.current.messagePaging?.loadMore());
+  await waitFor(() => expect(result.current.messagePaging?.failed).toBe(true));
+  expect(result.current.sessionError).toBeNull();
+  expect(result.current.session).toEqual(initial);
+  act(() => result.current.messagePaging?.loadMore());
+  await waitFor(() =>
+    expect(result.current.session?.messages).toEqual([firstMessage, secondMessage]),
+  );
+  expect(result.current.messagePaging).toBeUndefined();
+  expect(api.fetchSessionData).toHaveBeenLastCalledWith(
+    "claudecode",
+    "claudecode/abc",
+    expect.objectContaining({ messageCursor: "first", messageLimit: 200 }),
+  );
+  await act(() => result.current.refresh());
+  await waitFor(() => expect(result.current.session).toEqual(rewritten));
+  expect(result.current.messagePaging?.failed).toBe(false);
+});

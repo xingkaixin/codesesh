@@ -326,6 +326,7 @@ export default function App() {
         bookmarks: bookmarkActions,
         detail: {
           session: sessionDetail.session,
+          messagePaging: sessionDetail.messagePaging,
           loading: sessionDetail.sessionLoading,
           error: sessionDetail.sessionError,
           retry: () => void sessionDetail.refresh(),

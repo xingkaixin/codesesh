@@ -22,7 +22,7 @@ export function useCopySessionAsMarkdown() {
     async (sessionHead: SessionHead) => {
       const { agentName, sessionId, sourceNodeId } = sessionHead.reference;
       try {
-        const detail = await queryClient.fetchQuery({
+        let detail = await queryClient.fetchQuery({
           queryKey: queryKeys.sessionDetail(agentName, sessionId, sourceNodeId),
           queryFn: ({ signal }) =>
             fetchSessionData(agentName, sessionId, {
@@ -31,6 +31,9 @@ export function useCopySessionAsMarkdown() {
             }),
           staleTime: Infinity,
         });
+        if (detail.messages.length < (detail.message_total ?? detail.messages.length)) {
+          detail = await fetchSessionData(agentName, sessionId, { sourceNodeId });
+        }
         const copied = await writeToClipboard(formatSessionAsMarkdown(detail));
         if (!copied) throw new Error("Clipboard write failed");
         setNotice({ message: "Session copied as Markdown." });
