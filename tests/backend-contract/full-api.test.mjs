@@ -109,6 +109,24 @@ async function capture(fixture, command) {
     await take("projects", "/api/projects");
     await take("projects agent", "/api/projects?agent=codex");
     await take("projects unknown", "/api/projects?agent=unknown");
+    const projectPage = await take("projects page 1", "/api/projects?limit=1");
+    assert.ok(projectPage.body.nextCursor, "two-project fixture must return pagination cursor");
+    const nextProjectPage = await take(
+      "projects page 2",
+      `/api/projects?limit=1&cursor=${projectPage.body.nextCursor}`,
+    );
+    assert.deepEqual(nextProjectPage.body.summary, projectPage.body.summary);
+    await take(
+      "projects replay cursor",
+      `/api/projects?limit=1&cursor=${projectPage.body.nextCursor}`,
+    );
+    await take(
+      "projects cursor query mismatch",
+      `/api/projects?limit=1&agent=codex&cursor=${projectPage.body.nextCursor}`,
+    );
+    const emptyProjectCursor = await take("projects empty cursor", "/api/projects?limit=1&cursor=");
+    assert.deepEqual(emptyProjectCursor.body.projects, projectPage.body.projects);
+    await take("projects blank cursor", "/api/projects?limit=1&cursor=%20");
     const list = await take("sessions", "/api/sessions");
     assert.equal(list.body.sessions.length, 3);
     for (const [label, query] of [
@@ -128,6 +146,9 @@ async function capture(fixture, command) {
       await take(`sessions ${label}`, `/api/sessions?${query}`);
     const page = await take("sessions page 1", "/api/sessions?limit=1");
     assert.ok(page.body.nextCursor, "three-session fixture must return pagination cursor");
+    const emptyCursor = await take("sessions empty cursor", "/api/sessions?limit=1&cursor=");
+    assert.deepEqual(emptyCursor.body.sessions, page.body.sessions);
+    await take("sessions blank cursor", "/api/sessions?limit=1&cursor=%20");
     const page2 = await take(
       "sessions page 2",
       `/api/sessions?limit=1&cursor=${page.body.nextCursor}`,
@@ -144,6 +165,7 @@ async function capture(fixture, command) {
       JSON.stringify({ version: 1, snapshot: "00000000-0000-4000-8000-000000000000", offset: 1 }),
     ).toString("base64url");
     await take("sessions stale cursor", `/api/sessions?cursor=${stale}`);
+    await take("projects stale cursor", `/api/projects?cursor=${stale}`);
     const detail = await take("detail", detailOf(IDS[0]));
     await take(
       "detail unchanged cursor",

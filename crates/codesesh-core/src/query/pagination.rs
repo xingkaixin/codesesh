@@ -160,19 +160,25 @@ mod tests {
             .unwrap();
         let cursor = first.next_cursor.unwrap();
         let second = paginator
-            .paginate(10, &query, Some(&cursor), 1, || (vec![99], "new"))
+            .paginate(10, &query, Some(&cursor), 1, || {
+                panic!("retained pages must not reload the session list")
+            })
             .unwrap();
         assert_eq!(second.items, vec![2]);
         assert_eq!(second.view, "old");
         assert_eq!(
             paginator
-                .paginate(10, &[], Some(&cursor), 1, || (vec![], "new"))
+                .paginate(10, &[], Some(&cursor), 1, || {
+                    panic!("invalid cursors must not reload the session list")
+                })
                 .unwrap_err(),
             PaginationError::InvalidCursor
         );
         assert_eq!(
             paginator
-                .paginate(60_000, &query, Some(&cursor), 1, || (vec![], "new"))
+                .paginate(60_000, &query, Some(&cursor), 1, || {
+                    panic!("expired cursors must not reload the session list")
+                })
                 .unwrap_err(),
             PaginationError::StaleSnapshot
         );
