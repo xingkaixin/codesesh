@@ -196,8 +196,11 @@ async function refreshProjectQueries(
 function liveAggregateRefreshDelay(queryClient: QueryClient, window: AppConfig["window"]): number {
   const states = [
     queryClient.getQueryState(agentCatalogOptions(window).queryKey),
-    queryClient.getQueryState(dashboardQueryOptions(window, {}).queryKey),
     queryClient.getQueryState(projectsOptions(window).queryKey),
+    ...queryClient
+      .getQueryCache()
+      .findAll({ queryKey: queryKeys.dashboards, type: "active" })
+      .map((query) => query.state),
   ];
   if (states.some((state) => !state || state.data === undefined || state.isInvalidated)) return 0;
   const oldestUpdate = Math.min(...states.map((state) => state!.dataUpdatedAt));
@@ -217,7 +220,7 @@ function sameWindow(
   );
 }
 
-export function useSessionStore(window: AppConfig["window"] | null) {
+export function useSessionStore(window: AppConfig["window"] | null, loadDashboard = true) {
   const queryClient = useQueryClient();
   const pendingProjectionLoads = useRef(new PendingSessionProjectionLoads()).current;
   const liveAggregateRefreshRef = useRef<{ dirty: boolean } | null>(null);
@@ -241,7 +244,7 @@ export function useSessionStore(window: AppConfig["window"] | null) {
   });
   const dashboardQuery = useQuery({
     ...dashboardQueryOptions(window ?? {}, {}),
-    enabled: window !== null,
+    enabled: window !== null && loadDashboard,
   });
   const projectsQuery = useQuery({
     ...projectsOptions(window ?? {}),
@@ -250,7 +253,6 @@ export function useSessionStore(window: AppConfig["window"] | null) {
   });
   const refetchProjection = projectionQuery.refetch;
   const refetchAgents = agentsQuery.refetch;
-  const refetchDashboard = dashboardQuery.refetch;
   const refetchProjects = projectsQuery.refetch;
   const hasSessionData =
     window !== null && projectionQuery.data !== undefined && agentsQuery.data !== undefined;
@@ -272,15 +274,18 @@ export function useSessionStore(window: AppConfig["window"] | null) {
 
   const reload = useCallback(async (): Promise<void> => {
     if (!window) return;
-    const [agentsResult, projectionResult, dashboardResult] = await Promise.all([
+    const [agentsResult, projectionResult] = await Promise.all([
       refetchAgents({ cancelRefetch: true }),
       refetchProjection({ cancelRefetch: true }),
-      refetchDashboard({ cancelRefetch: true }),
+      queryClient.invalidateQueries(
+        { queryKey: queryKeys.dashboards, refetchType: "active" },
+        { throwOnError: true, cancelRefetch: true },
+      ),
       refreshProjectQueries(queryClient, window),
     ]);
-    const failure = agentsResult.error ?? projectionResult.error ?? dashboardResult.error;
+    const failure = agentsResult.error ?? projectionResult.error;
     if (failure) throw failure;
-  }, [queryClient, refetchAgents, refetchDashboard, refetchProjection, window]);
+  }, [queryClient, refetchAgents, refetchProjection, window]);
 
   const applyLiveEvent = useCallback(
     async (event: SessionsUpdatedEvent): Promise<LiveSessionApplyResult | null> => {
@@ -425,18 +430,20 @@ export function useSessionStore(window: AppConfig["window"] | null) {
     projectPage,
     projectsError,
     projectsLoading,
-    dashboard: window !== null ? (dashboardQuery.data ?? null) : null,
+    dashboard: window !== null && loadDashboard ? (dashboardQuery.data ?? null) : null,
     loading: window === null || (!loadFailed && !hasSessionData),
     loadPending:
       window === null ||
       projectionQuery.isFetching ||
       agentsQuery.isFetching ||
       projectsQuery.isFetching ||
-      dashboardQuery.isFetching,
+      (loadDashboard && dashboardQuery.isFetching),
     loadError:
       error ??
       projectsError ??
-      (window !== null && dashboardQuery.isError ? "Failed to load dashboard data." : null),
+      (window !== null && loadDashboard && dashboardQuery.isError
+        ? "Failed to load dashboard data."
+        : null),
     error,
     version: projectionQuery.dataUpdatedAt,
     activeAgents: agentCatalog.active,

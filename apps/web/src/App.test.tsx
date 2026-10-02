@@ -236,9 +236,11 @@ describe("App session loading", () => {
     responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
     responses["/api/sessions"] = { sessions: [SAMPLE_SESSION_HEAD] };
     let dashboardAvailable = false;
+    let dashboardAttempts = 0;
     const defaultFetch = globalThis.fetch;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/dashboard") dashboardAttempts += 1;
       if (url.pathname === "/api/dashboard" && !dashboardAvailable) {
         return new Response("statistics unavailable", { status: 503 });
       }
@@ -250,6 +252,7 @@ describe("App session loading", () => {
     const { router } = renderAppAt("/claudecode/session-1");
 
     await screen.findByTestId("session-detail", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
+    expect(dashboardAttempts).toBe(0);
     expect(
       screen.queryByText("Failed to load session data for the selected time window."),
     ).toBeNull();
@@ -391,6 +394,9 @@ describe("App dashboard scope wiring", () => {
             params.get("projectKind") === "path" && params.get("projectKey") === "/workspace",
         ),
       ).toBe(true),
+    );
+    expect(dashboardRequests().every((params) => params.get("projectKey") === "/workspace")).toBe(
+      true,
     );
   });
 
