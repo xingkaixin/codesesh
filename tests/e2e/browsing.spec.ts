@@ -2,6 +2,9 @@ import { expect, test } from "./test-fixtures.js";
 
 test("keeps project navigation reachable on narrow viewports", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+    .toBeLessThanOrEqual(390);
   await page.goto("/");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
@@ -113,6 +116,10 @@ test("searches indexed messages and opens a result", async ({ page }) => {
     .filter({ hasText: "Core browsing smoke session" })
     .first();
   await expect(searchResult).toContainText("needle");
+  await expect(page.getByText("Search range: All time")).toBeVisible();
+  await expect(page.getByText(/Shows up to 50 sessions/)).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await searchResult.click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard#message-1$/);
   await expect(page.getByText("needle search target")).toBeVisible();

@@ -355,6 +355,7 @@ export default function App() {
       search={{
         active: search.searchMode,
         query: search.activeSearchQuery,
+        window: loadedWindow,
         state: search.searchState,
         agentNameMap,
         agents: activeAgents,

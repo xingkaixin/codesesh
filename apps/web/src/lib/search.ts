@@ -3,7 +3,19 @@ import { buildSessionTree, sessionRoutePath } from "@codesesh/contract";
 import { type SearchRequestOptions, type SearchResult } from "./api";
 import { type SessionIndexes, getSessionAgentKey, getSessionRouteKey } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
-import type { SearchFilterState, SearchProjectOption } from "../components/app/types";
+import type { CostRangeId, SearchFilterState, SearchProjectOption } from "../components/app/types";
+
+export const SEARCH_RESULT_LIMIT = 50;
+
+export const COST_RANGE_OPTIONS: Array<{
+  id: CostRangeId;
+  label: string;
+  costMin: number;
+}> = [
+  { id: "paid", label: "Cost > $0", costMin: 0.000001 },
+  { id: "one_plus", label: "Cost >= $1", costMin: 1 },
+  { id: "ten_plus", label: "Cost >= $10", costMin: 10 },
+];
 
 export function searchResultPath(result: SearchResult): string {
   return (
@@ -91,7 +103,7 @@ export function buildLocalRecentResults(
       snippetHighlights: [],
       matchType: "recent" as const,
     });
-    if (results.length >= 50) break;
+    if (results.length >= SEARCH_RESULT_LIMIT) break;
   }
 
   return results;

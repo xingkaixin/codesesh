@@ -4,8 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { SearchResult, SessionHead } from "../../lib/api";
 import { SearchResultsPanel } from "./SearchResultsPanel";
+import { setLanguagePreference } from "../../i18n/language";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setLanguagePreference("system");
+});
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
@@ -221,4 +225,37 @@ it("links message matches to their source position", () => {
   expect(screen.getByText("Session s1").closest("a")?.getAttribute("href")).toBe(
     "/nodes/remote/codex/s1#message-42",
   );
+});
+
+it("explains the selected search window, indexed scope and empty-result recovery", () => {
+  setLanguagePreference("zh-CN");
+  const view = renderPanel(
+    { status: "loaded", results: [] },
+    {
+      window: { from: new Date(2026, 8, 1).getTime(), to: new Date(2026, 8, 3).getTime() },
+    },
+  );
+  expect(screen.getByText("搜索时间范围：2026-09-01 → 2026-09-03")).toBeTruthy();
+  expect(screen.getByText(/最多展示 50 个会话/)).toBeTruthy();
+  expect(screen.getByText(/更改上方的时间范围/)).toBeTruthy();
+  view.unmount();
+  renderPanel({ status: "loading" }, { window: { from: 0, days: 0 } });
+  expect(screen.getByText("搜索时间范围：全部时间")).toBeTruthy();
+});
+
+it("explains a full result list without claiming additional matches exist", () => {
+  const results: SearchResult[] = Array.from({ length: 50 }, (_, index) => ({
+    reference: { agentName: "codex", sessionId: `session-${index}` },
+    session: makeSession(`session-${index}`),
+    snippet: "needle",
+    snippetHighlights: [],
+    matchType: "assistant_reply",
+  }));
+  const view = renderPanel({ status: "loaded", results });
+  expect(screen.getByRole("status").textContent).toBe(
+    "Showing the first 50 sessions. Narrow your query or filters to find a specific session.",
+  );
+  view.unmount();
+  renderPanel({ status: "loaded", results: results.slice(0, 49) });
+  expect(screen.queryByRole("status")).toBeNull();
 });

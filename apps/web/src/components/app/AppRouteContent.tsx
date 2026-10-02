@@ -86,6 +86,7 @@ interface ProjectAgentFilterModel {
 
 interface SearchContentModel {
   active: boolean;
+  window?: AppConfig["window"] | null;
   query: string;
   state: SearchLoadState;
   agentNameMap: ReadonlyMap<string, string>;
@@ -181,6 +182,7 @@ function SearchRouteContent({ search }: { search: SearchContentModel }) {
       <LazySurface>
         <SearchResultsPanel
           query={search.query}
+          window={search.window}
           state={search.state}
           agentNameMap={search.agentNameMap}
           agents={search.agents}

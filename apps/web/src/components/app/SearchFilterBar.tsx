@@ -5,7 +5,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { SMART_TAGS, type AgentInfo, type FileActivityKind } from "../../lib/api";
 import { getProjectIdentityKey } from "../../lib/projects";
 import { FilterChip } from "./FilterChip";
-import type { CostRangeId, SearchFilterState, SearchProjectOption } from "./types";
+import { COST_RANGE_OPTIONS } from "../../lib/search";
+import type { SearchFilterState, SearchProjectOption } from "./types";
 
 export const SEARCH_TOOL_OPTIONS = ["apply_patch", "bash", "read", "edit", "grep"] as const;
 
@@ -14,16 +15,6 @@ export const FILE_ACTIVITY_OPTIONS: Array<{ kind: FileActivityKind; label: strin
   { kind: "edit", label: "Edit" },
   { kind: "write", label: "Write" },
   { kind: "delete", label: "Delete" },
-];
-
-export const COST_RANGE_OPTIONS: Array<{
-  id: CostRangeId;
-  label: string;
-  costMin: number;
-}> = [
-  { id: "paid", label: "Cost > $0", costMin: 0.000001 },
-  { id: "one_plus", label: "Cost >= $1", costMin: 1 },
-  { id: "ten_plus", label: "Cost >= $10", costMin: 10 },
 ];
 
 export function SearchFilterBar({
