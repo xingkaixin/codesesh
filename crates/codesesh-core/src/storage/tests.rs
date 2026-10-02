@@ -299,6 +299,7 @@ fn checkpoint_and_initialization_publish_with_session_commit() {
             .unwrap(),
         "{\"offset\":1}"
     );
+    sessions[0].detail.messages[0].id = "rewritten".into();
     cache.connection.execute_batch("CREATE TRIGGER reject_write BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'failure'); END;").unwrap();
     assert!(
         cache
