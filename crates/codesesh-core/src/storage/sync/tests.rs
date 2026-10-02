@@ -152,6 +152,118 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
 }
 
 #[test]
+fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub-fixture").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let stream = worker.stream_id().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Laptop", "1.1.1", &stream)
+        .unwrap();
+    let mut session = super::super::tests::source(dir.path(), "chunked");
+    session.detail.messages[0].parts = vec![crate::contract::MessagePart::Text {
+        text: "中文 🔎".repeat(40_000),
+        time_created: None,
+    }];
+    let mut batch = ScanBatch {
+        sessions: vec![session],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    let commit = loop {
+        let pending = worker.next_upload().unwrap().unwrap();
+        let upload = Upload {
+            epoch: grant.epoch.clone(),
+            stream_id: stream.clone(),
+            sequence: pending.sequence,
+            payload_version: pending.payload_version,
+            digest: pending.digest,
+            operation: pending.operation,
+        };
+        if matches!(upload.operation, Operation::SnapshotCommit { .. }) {
+            break upload;
+        }
+        let receipt = cache
+            .receive_upload(&grant.node_id, &upload, &Pricing::bundled())
+            .unwrap();
+        worker
+            .acknowledge(&stream, receipt.sequence, &receipt.digest)
+            .unwrap();
+    };
+    let Operation::SnapshotCommit {
+        transfer_id,
+        chunks,
+        bytes,
+        digest: expected,
+    } = &commit.operation
+    else {
+        panic!("expected snapshot commit");
+    };
+    assert!(*chunks > 1);
+    for (count, length, checksum, error) in [
+        (chunks + 1, *bytes, expected.clone(), "SNAPSHOT_INCOMPLETE"),
+        (
+            *chunks,
+            u64::MAX,
+            expected.clone(),
+            "SNAPSHOT_CHECKSUM_MISMATCH",
+        ),
+        (
+            *chunks,
+            *bytes,
+            "0".repeat(64),
+            "SNAPSHOT_CHECKSUM_MISMATCH",
+        ),
+    ] {
+        let mut invalid = commit.clone();
+        invalid.operation = Operation::SnapshotCommit {
+            transfer_id: transfer_id.clone(),
+            chunks: count,
+            bytes: length,
+            digest: checksum,
+        };
+        invalid.digest = digest(&serde_json::to_vec(&invalid.operation).unwrap());
+        assert_eq!(
+            cache
+                .receive_upload(&grant.node_id, &invalid, &Pricing::bundled())
+                .unwrap_err()
+                .to_string(),
+            error
+        );
+        assert!(cache.snapshot().unwrap().is_empty());
+        assert_eq!(
+            cache
+                .connection
+                .query_row("SELECT COUNT(*) FROM hub_chunks", [], |row| row
+                    .get::<_, u32>(0))
+                .unwrap(),
+            *chunks
+        );
+    }
+    transfer(&mut cache, &mut worker, &grant);
+    let head = cache.snapshot().unwrap().remove(0);
+    assert_eq!(
+        cache.detail(head).unwrap().unwrap().messages[0].parts,
+        batch.sessions[0].detail.messages[0].parts
+    );
+    assert_eq!(
+        cache
+            .connection
+            .query_row("SELECT COUNT(*) FROM hub_chunks", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    assert!(worker.next_upload().unwrap().is_none());
+}
+
+#[test]
 fn failed_commit_rolls_back_content_and_receipt_and_retries() {
     let dir = tempfile::tempdir().unwrap();
     let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
