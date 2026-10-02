@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setLanguagePreference } from "../../i18n/language";
 import type { Message, SessionFileActivity } from "../../lib/api";
 import { buildSessionDetailDisplayModel } from "./display-model";
 
@@ -176,4 +177,60 @@ it("locates merged Cursor tools after skipped empty messages", () => {
   expect(model.resolveSourceMessageAnchor(0)).toBeUndefined();
   expect(model.resolveSourceMessageAnchor(2)).toEqual({ anchorId: "tool-0-0", messageIndex: 0 });
   expect(model.resolveSourceMessageAnchor(3)).toEqual({ anchorId: "tool-0-1", messageIndex: 0 });
+});
+
+it("refreshes timeline summaries after replacement, filtering, locale changes and Cursor tool appends", () => {
+  const original: Message = {
+    id: "same-id",
+    role: "assistant",
+    time_created: 1,
+    parts: [
+      { type: "reasoning", text: "**Thinking**" },
+      { type: "text", text: "Before replacement" },
+    ],
+  };
+  const build = (messages: Message[]) =>
+    buildSessionDetailDisplayModel({ messages, agentName: "cursor" });
+  const first = build([original]);
+  expect(first.select(first.toc.filterIds).timelineEntries.map((entry) => entry.tooltip)).toEqual([
+    "Agent · Thinking",
+    "Agent · Before replacement",
+  ]);
+  const appended = build([
+    original,
+    {
+      id: "same-id",
+      role: "tool",
+      time_created: 2,
+      parts: [{ type: "tool", tool: "Read", state: { status: "completed" } }],
+    },
+  ]);
+  expect(appended.select(new Set(["agent_message", "tool:read"])).timelineEntries).toEqual([
+    expect.objectContaining({ tooltip: "Agent · Before replacement" }),
+    expect.objectContaining({ tooltip: "Read · Read", anchorId: "tool-0-0" }),
+  ]);
+  try {
+    setLanguagePreference("zh-CN");
+    expect(appended.select(new Set(["thinking"])).timelineEntries[0]?.tooltip).toBe(
+      "智能体 · Thinking",
+    );
+  } finally {
+    setLanguagePreference("en");
+  }
+  const replaced = build([{ ...original, parts: [{ type: "text", text: "After replacement" }] }]);
+  expect(replaced.select(replaced.toc.filterIds).timelineEntries[0]?.tooltip).toBe(
+    "Agent · After replacement",
+  );
+  const combined = build([
+    {
+      ...original,
+      parts: [
+        { type: "text", text: "**Across" },
+        { type: "text", text: "parts**" },
+      ],
+    },
+  ]);
+  expect(combined.select(combined.toc.filterIds).timelineEntries[0]?.tooltip).toBe(
+    "Agent · Across parts",
+  );
 });
