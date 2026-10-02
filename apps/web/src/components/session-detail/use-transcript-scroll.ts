@@ -7,9 +7,10 @@ import {
   scrollParentTo,
 } from "./scroll-behavior";
 
-export function useTranscriptScroll(content: unknown) {
+export function useTranscriptScroll(content: unknown, followTail = true) {
   const containerRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<() => void>(() => {});
+  const followTailRef = useRef(followTail);
 
   useLayoutEffect(() => {
     const node = containerRef.current;
@@ -23,7 +24,9 @@ export function useTranscriptScroll(content: unknown) {
         restore();
         return;
       }
-      atBottom = getScrollHeight(parent) - getScrollTop(parent) - getViewportHeight(parent) <= 48;
+      atBottom =
+        followTailRef.current &&
+        getScrollHeight(parent) - getScrollTop(parent) - getViewportHeight(parent) <= 48;
       const viewportTop =
         parent === window ? 0 : (parent as HTMLElement).getBoundingClientRect().top;
       const rows = node.querySelectorAll<HTMLElement>("[data-message-id]");
@@ -36,7 +39,7 @@ export function useTranscriptScroll(content: unknown) {
     };
     const restore = () => {
       scrollHeight = getScrollHeight(parent);
-      if (atBottom) {
+      if (atBottom && followTailRef.current) {
         const bottom = Math.max(0, getScrollHeight(parent) - getViewportHeight(parent));
         if (Math.abs(getScrollTop(parent) - bottom) > 1) scrollParentTo(parent, bottom);
       } else if (anchor) {
@@ -48,6 +51,7 @@ export function useTranscriptScroll(content: unknown) {
           if (Math.abs(delta) > 1) scrollParentTo(parent, getScrollTop(parent) + delta);
         }
       }
+      capture();
     };
     capture();
     restoreRef.current = restore;
@@ -61,6 +65,9 @@ export function useTranscriptScroll(content: unknown) {
     };
   }, []);
 
-  useLayoutEffect(() => restoreRef.current(), [content]);
+  useLayoutEffect(() => {
+    restoreRef.current();
+    followTailRef.current = followTail;
+  }, [content, followTail]);
   return containerRef;
 }

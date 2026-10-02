@@ -2,8 +2,8 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useTranscriptScroll } from "./use-transcript-scroll";
 
-function Transcript({ revision }: { revision: number }) {
-  const ref = useTranscriptScroll(revision);
+function Transcript({ revision, followTail = true }: { revision: number; followTail?: boolean }) {
+  const ref = useTranscriptScroll(revision, followTail);
   return (
     <div ref={ref}>
       <div data-message-id="stable">Message {revision}</div>
@@ -66,6 +66,43 @@ it("retains the visible message when earlier content changes height", () => {
   top = 80;
   view.rerender(<Transcript revision={1} />);
   expect(scroll).toHaveBeenLastCalledWith({ top: 500, behavior: "auto" });
+  view.unmount();
+  parent.remove();
+});
+
+it("keeps history pages in place and follows live appends after reaching the real end", () => {
+  const parent = document.createElement("div");
+  parent.style.overflowY = "auto";
+  document.body.append(parent);
+  let height = 1000;
+  Object.defineProperty(parent, "scrollHeight", { get: () => height });
+  Object.defineProperty(parent, "clientHeight", { value: 200 });
+  parent.scrollTop = 800;
+  const scroll = vi.fn((options?: ScrollToOptions | number) => {
+    if (typeof options === "object") parent.scrollTop = options.top ?? parent.scrollTop;
+  });
+  parent.scrollTo = scroll;
+  const view = render(<Transcript revision={0} followTail={false} />, { container: parent });
+  scroll.mockClear();
+  height = 1400;
+  view.rerender(<Transcript revision={1} followTail={false} />);
+  expect(scroll).not.toHaveBeenCalled();
+  act(() => {
+    parent.scrollTop = 1200;
+    fireEvent.scroll(parent);
+  });
+  height = 1800;
+  view.rerender(<Transcript revision={2} />);
+  expect(scroll).not.toHaveBeenCalled();
+  fireEvent.scroll(parent);
+  expect(parent.scrollTop).toBe(1200);
+  act(() => {
+    parent.scrollTop = 1600;
+    fireEvent.scroll(parent);
+  });
+  height = 2000;
+  view.rerender(<Transcript revision={3} />);
+  expect(scroll).toHaveBeenLastCalledWith({ top: 1800, behavior: "auto" });
   view.unmount();
   parent.remove();
 });
