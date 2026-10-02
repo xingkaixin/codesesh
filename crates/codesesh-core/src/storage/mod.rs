@@ -29,7 +29,10 @@ pub struct StorageProgress {
     pub total: Option<u64>,
 }
 
-pub use read::{detail as detail_from_connection, detail_with_cursor, visit_detail_messages};
+pub use read::{
+    detail as detail_from_connection, detail_with_cursor, visit_detail_message_page,
+    visit_detail_messages,
+};
 pub use snapshot::load as snapshot_from_connection;
 pub fn head_from_connection(
     connection: &Connection,

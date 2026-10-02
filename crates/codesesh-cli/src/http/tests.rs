@@ -655,3 +655,21 @@ async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
     );
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn session_message_limit_rejects_zero_oversized_and_invalid_pages() {
+    let (app, runtime, _dir) = app().await;
+    for limit in ["0", "201", "-1", "no", ""] {
+        let (status, body) = request(
+            &app,
+            Method::GET,
+            &format!("/api/sessions/codex/session?messageLimit={limit}"),
+            &[("authorization", "Bearer secret")],
+            "",
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"], "messageLimit must be between 1 and 200");
+    }
+    runtime.shutdown().await.unwrap();
+}

@@ -120,6 +120,18 @@ pub async fn detail(
     };
     let query = Params::new(raw.as_deref());
     let cursor = query.optional("messageCursor").map(str::to_owned);
+    let message_limit = match query.get("messageLimit") {
+        None => None,
+        Some(raw) => match raw.parse::<usize>() {
+            Ok(limit @ 1..=200) => Some(limit),
+            _ => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "messageLimit must be between 1 and 200",
+                );
+            }
+        },
+    };
     let pricing = match state.pricing.snapshot() {
         Ok(snapshot) => snapshot.pricing,
         Err(_) => return retry("Pricing unavailable; retry later"),
@@ -129,6 +141,7 @@ pub async fn detail(
         pricing,
         reference,
         cursor,
+        message_limit,
         state.aliases().await,
         _permit,
     )

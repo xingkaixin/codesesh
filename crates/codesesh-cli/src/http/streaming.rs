@@ -42,6 +42,7 @@ pub async fn detail(
     pricing: codesesh_core::pricing::Pricing,
     reference: codesesh_core::contract::SessionReference,
     cursor: Option<String>,
+    message_limit: Option<usize>,
     aliases: std::collections::HashMap<codesesh_core::contract::SessionReference, String>,
     guard: tokio::sync::OwnedSemaphorePermit,
 ) -> Response {
@@ -58,10 +59,11 @@ pub async fn detail(
                 };
                 writer.write_all(b"{\"messages\":[")?;
                 let mut first = true;
-                let detail = codesesh_core::storage::visit_detail_messages(
+                let (detail, total) = codesesh_core::storage::visit_detail_message_page(
                     connection,
                     head,
                     cursor.as_deref(),
+                    message_limit,
                     |mut message| {
                         message.cost_breakdown = pricing.message_cost_breakdown(&message);
                         let message = super::wire::message(message)?;
@@ -76,7 +78,9 @@ pub async fn detail(
                 .ok_or(DetailNotReady)?;
                 let mut detail = detail;
                 super::decorate(&mut detail.head, &aliases);
-                let mut footer = serde_json::to_value(super::wire::detail(detail)?)?;
+                let mut detail = super::wire::detail(detail)?;
+                detail.message_total = message_limit.map(|_| total as f64);
+                let mut footer = serde_json::to_value(detail)?;
                 footer
                     .as_object_mut()
                     .expect("detail is a JSON object")

@@ -145,7 +145,8 @@ async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
         codesesh_core::pricing::Pricing::bundled(),
         reference.clone(),
         None,
-        aliases,
+        None,
+        aliases.clone(),
         semaphore.clone().acquire_owned().await.unwrap(),
     )
     .await;
@@ -166,11 +167,49 @@ async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
         expected
     );
     assert_eq!(semaphore.available_permits(), 1);
+    let mut paged_messages = Vec::new();
+    let mut page_cursor = None;
+    while paged_messages.len() < 300 {
+        let response = detail(
+            runtime.clone(),
+            codesesh_core::pricing::Pricing::bundled(),
+            reference.clone(),
+            page_cursor,
+            Some(64),
+            aliases.clone(),
+            semaphore.clone().acquire_owned().await.unwrap(),
+        )
+        .await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let page: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(page["message_total"].as_f64(), Some(300.0));
+        assert_eq!(page["display_title"], "Local Alias");
+        assert_eq!(
+            page["message_update"],
+            if paged_messages.is_empty() {
+                "reset"
+            } else {
+                "append"
+            }
+        );
+        let messages = page["messages"].as_array().unwrap();
+        assert!(!messages.is_empty() && messages.len() <= 64);
+        paged_messages.extend(messages.iter().cloned());
+        page_cursor = Some(page["message_cursor"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(
+        serde_json::Value::Array(paged_messages),
+        expected["messages"]
+    );
+    assert_eq!(page_cursor, cursor);
     let response = detail(
         runtime.clone(),
         codesesh_core::pricing::Pricing::bundled(),
         reference,
         cursor,
+        None,
         Default::default(),
         semaphore.clone().acquire_owned().await.unwrap(),
     )
@@ -200,6 +239,7 @@ async fn missing_detail_returns_retry_before_streaming_and_releases_permit() {
         runtime.clone(),
         codesesh_core::pricing::Pricing::bundled(),
         reference,
+        None,
         None,
         Default::default(),
         semaphore.clone().acquire_owned().await.unwrap(),

@@ -312,6 +312,9 @@ pub struct WireSessionDetail {
     pub message_update: Option<MessageUpdate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub message_total: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub file_activity: Option<Vec<WireSessionFileActivity>>,
 }
 
