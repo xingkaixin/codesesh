@@ -15,6 +15,7 @@ pub struct Usage {
     cost: f64,
     models: BTreeMap<String, f64>,
     cost_inputs: Vec<crate::pricing::CostInput>,
+    assigned_prefix: usize,
 }
 
 fn count(value: &Value) -> f64 {
@@ -92,6 +93,10 @@ impl Usage {
         self.cost += cost.unwrap_or(0.0);
         let mut merge_target = None;
         for index in (0..messages.len()).rev() {
+            // Parsing only appends messages and this accumulator only adds tokens.
+            if index < self.assigned_prefix && merge_target.is_some() {
+                break;
+            }
             let message = &mut messages[index];
             if message.role != Role::Assistant {
                 continue;
@@ -114,6 +119,7 @@ impl Usage {
                 merge_target = Some(index);
             }
         }
+        self.assigned_prefix = messages.len();
         if let Some(index) = merge_target {
             let message = &mut messages[index];
             message
@@ -151,5 +157,88 @@ impl Usage {
     }
     pub fn models(self) -> Option<BTreeMap<String, f64>> {
         (!self.models.is_empty()).then_some(self.models)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn message(role: Role, model: Option<&str>) -> Message {
+        serde_json::from_value(json!({
+            "id":"", "role":role, "model":model, "parts":[], "time_created":0
+        }))
+        .unwrap()
+    }
+
+    fn consume(usage: &mut Usage, messages: &mut [Message], step: usize, model: Option<&str>) {
+        usage.consume(
+            &json!({"info":{
+                "total_token_usage":{"total_tokens":step * 10},
+                "last_token_usage":{"input_tokens":7,"output_tokens":3}
+            }}),
+            model,
+            &Pricing::capture_only(),
+            messages,
+        );
+    }
+
+    #[test]
+    fn unassigned_messages_take_priority_over_merging_by_model() {
+        let mut usage = Usage::default();
+        let mut messages = vec![
+            message(Role::Assistant, Some("old")),
+            message(Role::Assistant, Some("new")),
+        ];
+        for (index, model) in [
+            "new", "new", "new", "other", "new", "missing", "new", "new", "new",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let step = index + 1;
+            if step == 4 {
+                messages.push(message(Role::User, None));
+                messages.push(message(Role::Assistant, Some("other")));
+            }
+            if step == 7 {
+                messages.push(message(Role::Assistant, Some("pending")));
+                messages.push(message(Role::Assistant, Some("new")));
+            }
+            consume(&mut usage, &mut messages, step, Some(model));
+        }
+        assert_eq!(
+            messages
+                .iter()
+                .map(|m| m.cost_inputs.len())
+                .collect::<Vec<_>>(),
+            [1, 3, 0, 1, 1, 2]
+        );
+        assert_eq!(messages[0].model.as_deref(), Some("old"));
+        assert_eq!(messages[1].tokens.as_ref().unwrap().input, Some(21.0));
+        assert_eq!(usage.stats(0).total_input_tokens, 63.0);
+        messages.push(message(Role::Assistant, None));
+        consume(&mut usage, &mut messages, 9, Some("new"));
+        assert!(messages.last().unwrap().tokens.is_none());
+        consume(&mut usage, &mut messages, 10, Some("new"));
+        assert_eq!(messages.last().unwrap().cost_inputs.len(), 1);
+        assert_eq!(usage.stats(0).total_input_tokens, 70.0);
+    }
+
+    #[test]
+    fn late_model_assignment_is_visible_for_usage_merges() {
+        let mut usage = Usage::default();
+        let mut messages = vec![message(Role::Assistant, None)];
+        consume(&mut usage, &mut messages, 1, None);
+        consume(&mut usage, &mut messages, 2, None);
+        messages[0].model = Some("late".into());
+        messages.push(message(Role::User, None));
+        consume(&mut usage, &mut messages, 3, None);
+        assert_eq!(messages[0].cost_inputs.len(), 2);
+        consume(&mut usage, &mut messages, 4, Some("late"));
+        assert_eq!(messages[0].cost_inputs.len(), 3);
+        assert_eq!(messages[0].tokens.as_ref().unwrap().input, Some(21.0));
+        assert_eq!(usage.stats(0).total_input_tokens, 28.0);
     }
 }
