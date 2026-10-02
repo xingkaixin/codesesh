@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.4",
+        date: "2026-10-03",
+        title: "Find the right message and read long conversations in stages",
+        summary:
+          "CodeSesh 1.2.4 finds Chinese terms inside continuous text and opens message search results at the matching message. Long conversations load in pages, source machines are clearer, and browsing and synchronization do less repeated work as local AI coding history grows.",
+        direction:
+          "Growing history should remain practical to search and read. Load what the reader needs, preserve the complete conversation, and make its source clear.",
+        highlights: [
+          {
+            title: "Search Chinese text and open the matching message",
+            description:
+              "Find short Chinese terms within longer text and jump from a message result to its first match. Search explains the active scope, time range, and 50-session display limit so you can refine the results.",
+          },
+          {
+            title: "Read long conversations without loading everything first",
+            description:
+              "Messages load in pages as you approach the bottom. Retry a failed page or choose Load all messages, while keeping your reading position. Markdown copying and receipts still use the complete conversation.",
+          },
+          {
+            title: "Know which machine a session belongs to",
+            description:
+              "Search results identify the source machine. Session details show its sync status and explain where to run a copied resume command, helping you return to the right environment.",
+          },
+          {
+            title: "Reduce repeated work as history grows",
+            description:
+              "CodeSesh reuses unchanged messages and list pages, limits statistics reads to the selected sessions, and reduces temporary memory used by Hub/Worker synchronization.",
+          },
+        ],
+      },
+      {
         version: "1.2.3",
         date: "2026-10-01",
         title: "Read conversations, code results, and answers more clearly",
@@ -508,6 +539,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.4",
+        date: "2026-10-03",
+        title: "找到命中消息，分段阅读长对话",
+        summary:
+          "CodeSesh 1.2.4 支持在连续中文文本中搜索词语，并从消息搜索结果直接定位到命中消息。长对话分批加载，来源机器更清楚，本地 AI 编码历史增多时，浏览与同步也能减少重复处理。",
+        direction:
+          "历史不断积累时，搜索和阅读仍应方便。按阅读需要加载内容，保留完整对话，并清楚标明来源。",
+        highlights: [
+          {
+            title: "搜到中文词语，直接打开命中消息",
+            description:
+              "在较长的中文文本中找到短词，从消息搜索结果跳到首条命中消息。搜索会说明当前范围、时间范围和最多展示 50 个会话的限制，便于进一步筛选。",
+          },
+          {
+            title: "无需先加载全部内容，就能开始阅读长对话",
+            description:
+              "接近底部时自动加载下一页，失败后可重试，也可选择加载全部消息，同时保留阅读位置。复制 Markdown 和查看收据仍会使用完整对话。",
+          },
+          {
+            title: "确认会话来自哪台机器",
+            description:
+              "搜索结果标明来源机器，会话详情展示同步状态，并说明复制的恢复命令应在哪里运行，方便回到正确的工作环境。",
+          },
+          {
+            title: "历史增多时减少重复处理",
+            description:
+              "复用未变消息和已有列表分页，统计仅读取所选会话的数据，并减少 Hub/Worker 同步过程中的临时内存占用。",
+          },
+        ],
+      },
+      {
         version: "1.2.3",
         date: "2026-10-01",
         title: "更清楚地回看对话、代码结果与问答",
@@ -927,6 +989,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.4",
+        date: "2026-10-03",
+        title: "一致したメッセージを見つけ、長い会話を少しずつ読む",
+        summary:
+          "CodeSesh 1.2.4では、続けて書かれた中国語の中から語句を検索でき、メッセージの検索結果から一致した箇所を開けます。長い会話をページ単位で読み込み、ソースのマシンを明示するとともに、履歴の増加に伴う閲覧や同期の重複処理を減らしました。",
+        direction:
+          "履歴が増えても検索と閲覧を使いやすく保つため、読むために必要な内容から読み込み、会話全体を保持し、そのソースを明確にします。",
+        highlights: [
+          {
+            title: "中国語の語句を検索し、一致したメッセージを開く",
+            description:
+              "長い中国語の文章に含まれる短い語句を検索し、メッセージの検索結果から最初に一致した箇所へ移動できます。検索対象、期間、最大50セッションの表示上限も確認でき、結果を絞り込みやすくなります。",
+          },
+          {
+            title: "すべての読み込みを待たずに長い会話を読む",
+            description:
+              "末尾に近づくと次のページを読み込みます。失敗したページの再試行や全メッセージの読み込みも選べ、読んでいる位置を保ちます。Markdownのコピーとレシートには会話全体を使います。",
+          },
+          {
+            title: "セッションがどのマシンのものかを確認",
+            description:
+              "検索結果にソースのマシンを表示します。セッションの詳細では同期状態と、コピーした再開コマンドを実行する場所を確認でき、元の作業環境に戻りやすくなります。",
+          },
+          {
+            title: "履歴が増えても重複処理を抑える",
+            description:
+              "変更のないメッセージや保持済みの一覧ページを再利用し、統計の読み取りを選択したセッションに絞ります。Hub/Worker同期中の一時的なメモリ使用量も減らしました。",
+          },
+        ],
+      },
       {
         version: "1.2.3",
         date: "2026-10-01",

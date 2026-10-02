@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.4] - 2026-10-03
+
+This patch improves Chinese search, opens message matches at their recorded position, and loads long conversations in pages with clearer progress and source details. It also reduces repeated reads, message writes, and temporary memory use across local history and Hub/Worker sync. (#676–#690)
+
+### Features
+
+- Open message search results at the first matching message, with links that preserve the position on reload. Explain the active search scope, time range, and 50-session display limit. (#681, #682)
+- Identify the source machine in search results and session details, show its last confirmed sync and collection state, and explain where to run copied resume commands. (#683)
+- Load long transcripts in pages, fetch the next page near the bottom, and provide retry controls and a top-level **Load all messages** action. Preserve the reading position, load through search targets, and fetch complete content for Markdown copying and receipts. (#684, #690)
+
+### Bug Fixes
+
+- Match Chinese substrings inside continuous text, including short terms, quoted phrases, and mixed Chinese/English queries, while preserving filters and highlighted snippets. (#680)
+- Release retained SQLite index allocations after large-document indexing and maintenance, and avoid reindexing unchanged titles during metadata updates. (#676)
+
+### Performance
+
+- Reduce Hub snapshot input copies and stream Worker snapshot serialization into upload chunks, lowering temporary memory use while preserving hashes, retries, and durable queue behavior. (#677, #687)
+- Reuse retained session and project list pages before rebuilding lists. Restrict analytics reads to the requested sessions and request global Dashboard statistics only on the Dashboard route. (#678, #679)
+- Reuse unchanged message summaries when preparing the timeline and preserve unchanged SQLite message rows during session updates. Session aggregates and full-text search documents still rebuild as needed. (#685, #686)
+- Avoid repeated scans of already assigned Codex usage and generate full-session fallback snippets only when title and individual-message matches do not supply a result. (#688, #689)
+
 ## [1.2.3] - 2026-10-01
 
 This patch improves session replay with Markdown tables, clearer Code Mode output, and Codex thread excerpts and question answers. It also keeps opening an old Codex chat from changing its recorded activity time. (#671–#674)
