@@ -158,6 +158,18 @@ pub async fn projects(
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
     let started = Instant::now();
+    if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
+        log_query(
+            context,
+            "/api/projects",
+            started,
+            QueryTimings {
+                cache_hit: true,
+                ..Default::default()
+            },
+        );
+        return paginated_projects(&state, &query, limit, Vec::new(), Value::Null);
+    }
     let result = state
         .runtime
         .read(move |conn| {
@@ -219,10 +231,20 @@ pub async fn projects(
     let Ok((groups, summary, timings)) = result else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
     };
+    log_query(context, "/api/projects", started, timings);
+    paginated_projects(&state, &query, limit, groups, summary)
+}
+
+fn paginated_projects(
+    state: &State,
+    query: &Params,
+    limit: usize,
+    groups: Vec<Value>,
+    summary: Value,
+) -> Response {
     let Ok(mut pages) = state.project_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
     };
-    log_query(context, "/api/projects", started, timings);
     match pages.paginate(
         chrono::Utc::now().timestamp_millis(),
         &query.pairs,

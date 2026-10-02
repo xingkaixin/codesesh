@@ -25,6 +25,9 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
         Ok(v) => v,
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
+    if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
+        return paginated_sessions(&state, &query, limit, Vec::new());
+    }
     let aliases = state.aliases().await;
     let snapshot = state.snapshot();
     let cwd = query
@@ -69,6 +72,15 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
     if query.get("limit").is_none() && query.get("cursor").is_none() {
         return session_page(items, None);
     }
+    paginated_sessions(&state, &query, limit, items)
+}
+
+fn paginated_sessions(
+    state: &State,
+    query: &Params,
+    limit: usize,
+    items: Vec<codesesh_core::contract::SessionHead>,
+) -> Response {
     let Ok(mut pages) = state.session_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load sessions");
     };
