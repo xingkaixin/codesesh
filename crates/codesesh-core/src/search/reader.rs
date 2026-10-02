@@ -91,21 +91,22 @@ pub(super) fn search_prepared(
     let mut result = Vec::with_capacity(rows.len());
     let mut message_matches = first_message_matches(connection, &rows, &terms)?;
     for (session, fallback) in rows {
-        let (text, ranges, kind) = if terms.values.is_empty() {
+        let (text, ranges, kind, message_index) = if terms.values.is_empty() {
             (
                 format!("Recent session · {}", session.directory),
                 Vec::new(),
                 "recent",
+                None,
             )
         } else if terms.matches(&session.title) {
             let (text, ranges) = snippet::build(&session.title, &terms);
-            (text, ranges, "title")
+            (text, ranges, "title", None)
         } else {
             message_matches
                 .remove(&session.reference)
                 .unwrap_or_else(|| {
                     let ranges = snippet::highlights(&fallback, &terms);
-                    (fallback, ranges, "assistant_reply")
+                    (fallback, ranges, "assistant_reply", None)
                 })
         };
         result.push(SearchResult {
@@ -114,12 +115,13 @@ pub(super) fn search_prepared(
             snippet: text,
             snippet_highlights: ranges,
             match_type: kind.into(),
+            message_index,
         });
     }
     Ok(result)
 }
 
-type MessageMatch = (String, Vec<HighlightRange>, &'static str);
+type MessageMatch = (String, Vec<HighlightRange>, &'static str, Option<usize>);
 
 fn first_message_matches(
     connection: &Connection,
@@ -157,7 +159,7 @@ fn first_message_matches(
             ]
         })
         .collect();
-    let mut query=connection.prepare(&format!("WITH candidate_sessions(source_node_id,agent_name,session_id) AS (VALUES {values}), first_message_matches AS MATERIALIZED (SELECT c.source_node_id,c.agent_name,c.session_id,(SELECT m.rowid FROM messages m INDEXED BY idx_messages_session WHERE m.source_node_id=c.source_node_id AND m.agent_name=c.agent_name AND m.session_id=c.session_id AND codesesh_message_matches_terms(m.content_text) ORDER BY m.message_index LIMIT 1) AS message_rowid FROM candidate_sessions c) SELECT m.source_node_id,m.agent_name,m.session_id,m.role,m.mode,m.tool_metadata_json,m.content_text FROM first_message_matches f JOIN messages m ON m.rowid=f.message_rowid"))?;
+    let mut query=connection.prepare(&format!("WITH candidate_sessions(source_node_id,agent_name,session_id) AS (VALUES {values}), first_message_matches AS MATERIALIZED (SELECT c.source_node_id,c.agent_name,c.session_id,(SELECT m.rowid FROM messages m INDEXED BY idx_messages_session WHERE m.source_node_id=c.source_node_id AND m.agent_name=c.agent_name AND m.session_id=c.session_id AND codesesh_message_matches_terms(m.content_text) ORDER BY m.message_index LIMIT 1) AS message_rowid FROM candidate_sessions c) SELECT m.source_node_id,m.agent_name,m.session_id,m.message_index,m.role,m.mode,m.tool_metadata_json,m.content_text FROM first_message_matches f JOIN messages m ON m.rowid=f.message_rowid"))?;
     let mut rows = query.query(params_from_iter(params))?;
     while let Some(row) = rows.next()? {
         let reference = SessionReference {
@@ -180,7 +182,15 @@ fn first_message_matches(
             "assistant_reply"
         };
         let (text, ranges) = snippet::build(&text, terms);
-        matches.insert(reference, (text, ranges, kind));
+        matches.insert(
+            reference,
+            (
+                text,
+                ranges,
+                kind,
+                Some(row.get::<_, i64>("message_index")? as usize),
+            ),
+        );
     }
     Ok(matches)
 }
@@ -235,6 +245,7 @@ pub(super) fn search_files(
             snippet: format!("{prefix}{file} · {count} events"),
             snippet_highlights: highlights,
             match_type: "file_path".into(),
+            message_index: None,
         })
     })
     .collect()

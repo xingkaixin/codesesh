@@ -9,6 +9,7 @@ export type SearchResult = {
   snippet: string;
   snippetHighlights: Array<SearchHighlightRange>;
   matchType: SearchMatchType;
+  messageIndex?: number;
   parent?: SearchResultParent;
   reference: SessionReference;
   session: WireSessionHead;

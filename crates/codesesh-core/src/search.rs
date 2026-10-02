@@ -58,6 +58,8 @@ pub struct SearchResult {
     pub snippet: String,
     pub snippet_highlights: Vec<HighlightRange>,
     pub match_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_index: Option<usize>,
 }
 
 fn prepare(
@@ -155,6 +157,7 @@ pub fn execute_with_snapshot(
             snippet: format!("Recent session · {}", session.directory),
             snippet_highlights: Vec::new(),
             match_type: "recent".into(),
+            message_index: None,
         })
         .collect())
 }
