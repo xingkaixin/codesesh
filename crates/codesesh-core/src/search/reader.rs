@@ -62,7 +62,7 @@ pub(super) fn search_prepared(
     let query = query.trim();
     let statement = if query.is_empty() {
         format!(
-            "SELECT s.*, '' AS snippet FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
+            "SELECT s.*, 0 AS document_id FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
             filters.where_sql()
         )
     } else if cjk::contains_han(query) {
@@ -74,7 +74,7 @@ pub(super) fn search_prepared(
         }
         filters.params.insert(0, fts.into());
         format!(
-            "SELECT s.*, COALESCE(NULLIF(snippet(session_documents_fts,1,'','',' … ',18),''),highlight(session_documents_fts,0,'','')) AS snippet FROM session_documents_fts JOIN session_documents d ON d.id = session_documents_fts.rowid JOIN sessions s ON s.source_node_id=d.source_node_id AND s.agent_name = d.agent_name AND s.session_id = d.session_id WHERE session_documents_fts MATCH ? AND s.publication_id IS NULL {} ORDER BY bm25(session_documents_fts,8.0,1.0),s.activity_time DESC LIMIT ?",
+            "SELECT s.*, d.id AS document_id FROM session_documents_fts JOIN session_documents d ON d.id = session_documents_fts.rowid JOIN sessions s ON s.source_node_id=d.source_node_id AND s.agent_name = d.agent_name AND s.session_id = d.session_id WHERE session_documents_fts MATCH ? AND s.publication_id IS NULL {} ORDER BY bm25(session_documents_fts,8.0,1.0),s.activity_time DESC LIMIT ?",
             filters.where_sql()
         )
     };
@@ -84,13 +84,21 @@ pub(super) fn search_prepared(
     let mut statement = connection.prepare(&statement)?;
     let rows = statement
         .query_map(params_from_iter(filters.params), |row| {
-            Ok((head(row)?, row.get::<_, String>("snippet")?))
+            Ok((head(row)?, row.get::<_, i64>("document_id")?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let terms = snippet::Terms::parse(query);
     let mut result = Vec::with_capacity(rows.len());
     let mut message_matches = first_message_matches(connection, &rows, &terms)?;
-    for (session, fallback) in rows {
+    let fallback_ids: Vec<_> = rows
+        .iter()
+        .filter(|(head, _)| {
+            !terms.matches(&head.title) && !message_matches.contains_key(&head.reference)
+        })
+        .map(|(_, id)| *id)
+        .collect();
+    let mut fallbacks = fallback_snippets(connection, query, &fallback_ids)?;
+    for (session, document_id) in rows {
         let (text, ranges, kind, message_index) = if terms.values.is_empty() {
             (
                 format!("Recent session · {}", session.directory),
@@ -105,6 +113,7 @@ pub(super) fn search_prepared(
             message_matches
                 .remove(&session.reference)
                 .unwrap_or_else(|| {
+                    let fallback = fallbacks.remove(&document_id).unwrap_or_default();
                     let ranges = snippet::highlights(&fallback, &terms);
                     (fallback, ranges, "assistant_reply", None)
                 })
@@ -121,11 +130,39 @@ pub(super) fn search_prepared(
     Ok(result)
 }
 
+fn fallback_snippets(
+    connection: &Connection,
+    query: &str,
+    document_ids: &[i64],
+) -> Result<HashMap<i64, String>> {
+    if document_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = vec!["?"; document_ids.len()].join(",");
+    let mut params: Vec<Value> = document_ids.iter().map(|id| (*id).into()).collect();
+    let sql = if cjk::contains_han(query) {
+        format!(
+            "SELECT id,codesesh_cjk_snippet(content_text) FROM session_documents WHERE id IN ({placeholders})"
+        )
+    } else {
+        params.insert(0, to_fts_query(query).into());
+        format!(
+            "SELECT rowid,COALESCE(NULLIF(snippet(session_documents_fts,1,'','',' … ',18),''),highlight(session_documents_fts,0,'','')) FROM session_documents_fts WHERE session_documents_fts MATCH ? AND rowid IN ({placeholders})"
+        )
+    };
+    Ok(connection
+        .prepare(&sql)?
+        .query_map(params_from_iter(params), |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
 type MessageMatch = (String, Vec<HighlightRange>, &'static str, Option<usize>);
 
 fn first_message_matches(
     connection: &Connection,
-    rows: &[(SessionHead, String)],
+    rows: &[(SessionHead, i64)],
     terms: &snippet::Terms,
 ) -> Result<HashMap<SessionReference, MessageMatch>> {
     let candidates: Vec<_> = rows
@@ -144,8 +181,11 @@ fn first_message_matches(
         rusqlite::functions::FunctionFlags::SQLITE_UTF8
             | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
         move |ctx| {
-            let text: Option<String> = ctx.get(0)?;
-            Ok(owned_terms.matches(text.as_deref().unwrap_or_default()))
+            let text = ctx
+                .get_raw(0)
+                .as_str_or_null()
+                .map_err(|error| rusqlite::Error::UserFunctionError(Box::new(error)))?;
+            Ok(owned_terms.matches(text.unwrap_or_default()))
         },
     )?;
     let values = vec!["(?, ?, ?)"; candidates.len()].join(",");
