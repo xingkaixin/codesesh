@@ -6,6 +6,7 @@ import type { FilteredSessionMessage } from "./display-model-types";
 
 const TIMELINE_SUMMARY_LENGTH = 48;
 const TIMELINE_SCROLL_EDGE_TOLERANCE = 1;
+const singlePartSummaries = new WeakMap<MessagePart, string>();
 
 export type SessionTimelineEntryKind =
   | "user"
@@ -52,7 +53,11 @@ export function summarizeTimelineText(value: string) {
 }
 
 function summarizeParts(parts: MessagePart[]) {
-  return summarizeTimelineText(
+  // API parts are immutable; cache unlocalized text without retaining evicted transcripts.
+  const single = parts.length === 1 ? parts[0] : undefined;
+  const cached = single && singlePartSummaries.get(single);
+  if (cached !== undefined) return cached;
+  const summary = summarizeTimelineText(
     parts
       .map((part) =>
         part.type === "text" || part.type === "reasoning" || part.type === "plan" ? part.text : "",
@@ -60,6 +65,8 @@ function summarizeParts(parts: MessagePart[]) {
       .filter(Boolean)
       .join(" "),
   );
+  if (single) singlePartSummaries.set(single, summary);
+  return summary;
 }
 
 export function classifyTimelineToolKind(part: ToolPart): ToolTimelineEntryKind {
