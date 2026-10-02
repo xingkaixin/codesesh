@@ -66,7 +66,7 @@ pub(super) fn statement(
         Ok(snippet::build(text(context)?, &terms).0)
     })?;
     Ok(format!(
-        "SELECT s.*, CASE WHEN codesesh_cjk_title_match(s.title) THEN '' ELSE codesesh_cjk_snippet(d.content_text) END AS snippet FROM sessions s JOIN session_documents d ON d.source_node_id=s.source_node_id AND d.agent_name=s.agent_name AND d.session_id=s.session_id WHERE s.publication_id IS NULL {} AND ({}) ORDER BY codesesh_cjk_title_match(s.title) DESC,s.activity_time DESC LIMIT ?",
+        "SELECT s.*, d.id AS document_id FROM sessions s JOIN session_documents d ON d.source_node_id=s.source_node_id AND d.agent_name=s.agent_name AND d.session_id=s.session_id WHERE s.publication_id IS NULL {} AND ({}) ORDER BY codesesh_cjk_title_match(s.title) DESC,s.activity_time DESC LIMIT ?",
         filters.where_sql(),
         conditions.join(" "),
     ))

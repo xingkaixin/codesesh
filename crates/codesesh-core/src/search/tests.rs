@@ -621,3 +621,86 @@ fn search_targets_the_first_matching_message_in_source_order() {
             .all(|r| r.message_index.is_none())
     );
 }
+
+#[test]
+fn cross_message_fallbacks_preserve_text_highlights_and_source_identity() {
+    let db = chinese_database();
+    let body = "alpha 数据库\nomega 连接";
+    db.execute("UPDATE messages SET content_text='alpha 数据库' WHERE source_node_id='local' AND session_id='han-body'", []).unwrap();
+    db.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex','han-body',1,'m','tool',100,'[]','omega 连接')", []).unwrap();
+    db.execute("UPDATE session_documents SET content_text=? WHERE source_node_id='local' AND session_id='han-body'", [body]).unwrap();
+    for (query, highlights) in [
+        (
+            "alpha omega",
+            vec![
+                HighlightRange { start: 0, end: 5 },
+                HighlightRange { start: 10, end: 15 },
+            ],
+        ),
+        (
+            "数据库 连接",
+            vec![
+                HighlightRange { start: 6, end: 9 },
+                HighlightRange { start: 16, end: 18 },
+            ],
+        ),
+    ] {
+        let results = execute(&db, query, &SearchOptions::default()).unwrap();
+        let local = results
+            .iter()
+            .find(|r| r.reference.session_id == "han-body" && r.reference.source_node_id == "local")
+            .unwrap();
+        assert_eq!(local.snippet, body);
+        assert_eq!(local.snippet_highlights, highlights);
+        assert_eq!(local.message_index, None);
+        assert_eq!(local.match_type, "assistant_reply");
+        if query == "数据库 连接" {
+            let remote = results
+                .iter()
+                .find(|r| r.reference.source_node_id == "worker-a")
+                .unwrap();
+            assert_eq!(remote.snippet, "远端数据库连接");
+            assert_eq!(remote.message_index, Some(0));
+        }
+    }
+    db.execute("UPDATE messages SET content_text='alpha omega 数据库连接' WHERE source_node_id='local' AND session_id='han-body' AND message_index=1", []).unwrap();
+    db.execute("UPDATE session_documents SET content_text='alpha 数据库\nalpha omega 数据库连接' WHERE source_node_id='local' AND session_id='han-body'", []).unwrap();
+    for query in ["alpha omega", "数据库 连接"] {
+        let results = execute(&db, query, &SearchOptions::default()).unwrap();
+        let local = results
+            .iter()
+            .find(|r| r.reference.session_id == "han-body" && r.reference.source_node_id == "local")
+            .unwrap();
+        assert_eq!(local.message_index, Some(1));
+        assert_eq!(local.match_type, "tool_output");
+        assert_eq!(local.snippet, "alpha omega 数据库连接");
+    }
+}
+
+#[test]
+fn fts_only_matches_keep_body_and_empty_body_fallbacks() {
+    let db = database();
+    db.execute(
+        "UPDATE sessions SET title='CAFÉ' WHERE session_id='one'",
+        [],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE session_documents SET title='CAFÉ' WHERE session_id='one'",
+        [],
+    )
+    .unwrap();
+    let results = execute(&db, "cafe", &SearchOptions::default()).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].snippet, "🔎 中文 hello Rust world");
+    assert_eq!(results[0].message_index, None);
+    assert!(results[0].snippet_highlights.is_empty());
+    db.execute(
+        "UPDATE session_documents SET content_text='' WHERE session_id='one'",
+        [],
+    )
+    .unwrap();
+    let results = execute(&db, "cafe", &SearchOptions::default()).unwrap();
+    assert_eq!(results[0].snippet, "CAFÉ");
+    assert_eq!(results[0].message_index, None);
+}
