@@ -284,6 +284,121 @@ fn fractional_activity_stays_outside_the_inclusive_boundary() {
 }
 
 #[test]
+fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_sources() {
+    let mut parent = head("shared", None, 200);
+    parent.reference.source_node_id = "worker-a".into();
+    let mut child = head("child", None, 500);
+    child.reference.source_node_id = "worker-a".into();
+    child.reference.agent_name = "claudecode".into();
+    child.project_identity.key = "/child-project".into();
+    child.parent_reference = Some(parent.reference.clone());
+    let mut historical = head("historical", None, 900);
+    historical.reference.source_node_id = "worker-a".into();
+    let local = head("shared", None, 200);
+    let mut outside = head("outside", None, 200);
+    outside.reference.source_node_id = "worker-a".into();
+    outside.project_identity.key = "/other-project".into();
+    let mut parsed: Vec<_> = [parent, child, historical, local, outside]
+        .into_iter()
+        .map(|mut head| {
+            let times = if head.reference.session_id == "child" { vec![0] } else { vec![100, 175] };
+            head.stats.message_count = times.len();
+            head.stats.total_input_tokens = times.len() as f64 * 10.0;
+            head.stats.total_output_tokens = times.len() as f64 * 2.0;
+            head.stats.total_cost = times.len() as f64;
+            let messages: Vec<_> = times.into_iter().enumerate().map(|(index, time)| {
+                json!({"id":format!("message-{index}"),"role":"user","agent":null,"time_created":time,"time_completed":null,"mode":null,"model":"model","provider":null,"tokens":{"input":10,"output":2},"cost":1,"parts":[]})
+            }).collect();
+            let mut detail = serde_json::to_value(&head).unwrap();
+            detail["messages"] = json!(messages);
+            detail["detail_freshness"] = json!("fresh");
+            detail["file_activity"] = json!([]);
+            crate::agents::codex::ParsedSession {
+                head,
+                source: "/fixture/not-required".into(),
+                detail: serde_json::from_value(detail).unwrap(),
+            }
+        }).collect();
+    let mut cache = crate::storage::Cache::open(None).unwrap();
+    cache.publish(&mut parsed).unwrap();
+    let sessions: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .filter(|head| head.reference.source_node_id == "worker-a")
+        .collect();
+    let scope = DashboardScope {
+        agent: Some("codex".into()),
+        project_kind: Some("path".into()),
+        project_key: Some("/project".into()),
+    };
+    let all = load_cost_facts(cache.connection(), Some(50.0), Some(250.0), true).unwrap();
+    let scoped = load_scoped_cost_facts(
+        cache.connection(),
+        &sessions,
+        &scope,
+        Some(50.0),
+        Some(250.0),
+        true,
+    )
+    .unwrap();
+    assert_eq!(scoped.sessions.len(), 3);
+    assert_eq!(scoped.messages.len(), 4);
+    assert!(
+        scoped
+            .sessions
+            .iter()
+            .any(|summary| summary.reference.agent_name == "claudecode")
+    );
+    assert!(
+        scoped
+            .sessions
+            .iter()
+            .all(|summary| summary.reference.source_node_id == "worker-a")
+    );
+    let options = DashboardOptions {
+        by_agent_names: &["codex".into(), "claudecode".into()],
+        scope: &scope,
+        from: Some(150.0),
+        to: 250.0,
+        agent_info: None,
+        compare: Some((50.0, 149.0)),
+        cost_facts: Some(&all),
+    };
+    let expected = build_dashboard(&sessions, &options);
+    let actual = build_dashboard(
+        &sessions,
+        &DashboardOptions {
+            cost_facts: Some(&scoped),
+            ..options
+        },
+    );
+    assert_eq!(actual, expected);
+    assert_eq!(actual["totals"]["cost"], 3.0);
+    let hours = active_hours(
+        cache.connection(),
+        &sessions,
+        &scope,
+        Some(150.0),
+        250.0,
+        "UTC".parse().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        hours["counts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap())
+            .sum::<u64>(),
+        2
+    );
+    let empty = load_scoped_cost_facts(cache.connection(), &[], &scope, None, None, true).unwrap();
+    assert!(empty.sessions.is_empty());
+    assert!(empty.messages.is_empty());
+}
+
+#[test]
 fn cost_facts_reuse_the_callers_transaction_without_committing_it() {
     let cache = crate::storage::Cache::open(None).unwrap();
     let connection = cache.connection();
@@ -293,6 +408,17 @@ fn cost_facts_reuse_the_callers_transaction_without_committing_it() {
     let facts = load_cost_facts(connection, None, None, true).unwrap();
     assert!(facts.messages.is_empty());
     assert!(facts.sessions.is_empty());
+    let scoped = load_scoped_cost_facts(
+        connection,
+        &[],
+        &DashboardScope::default(),
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    assert!(scoped.messages.is_empty());
+    assert!(scoped.sessions.is_empty());
     assert!(!connection.is_autocommit());
     connection.execute_batch("ROLLBACK").unwrap();
     assert!(

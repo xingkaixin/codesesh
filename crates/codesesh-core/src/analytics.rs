@@ -8,7 +8,7 @@ mod response;
 mod time_zone;
 pub use facts::*;
 pub use projects::{attach_project_metrics, summarize_projects};
-pub use read::load_cost_facts;
+pub use read::{load_cost_facts, load_scoped_cost_facts};
 pub use response::{DashboardResponseOptions, dashboard_response};
 pub use time_zone::DashboardTimeZone;
 

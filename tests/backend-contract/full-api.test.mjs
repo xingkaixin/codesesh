@@ -109,6 +109,11 @@ async function capture(fixture, command) {
     await take("projects", "/api/projects");
     await take("projects agent", "/api/projects?agent=codex");
     await take("projects unknown", "/api/projects?agent=unknown");
+    await take(
+      "projects selected identity",
+      `/api/projects?projectKind=path&projectKey=${encodeURIComponent(fixture.project)}`,
+    );
+    await take("projects after selected identity", "/api/projects");
     const projectPage = await take("projects page 1", "/api/projects?limit=1");
     assert.ok(projectPage.body.nextCursor, "two-project fixture must return pagination cursor");
     const nextProjectPage = await take(
