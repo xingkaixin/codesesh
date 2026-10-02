@@ -1,11 +1,16 @@
-import { SourceBadge } from "../nodes/SourceFilter";
+import { lazy, Suspense } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { Link } from "react-router-dom";
 import type { RouteHeaderModel } from "../../lib/build-route-header-model";
-import { CopyResumeButton } from "../CopyResumeButton";
 import { PanelLeftOpen } from "../ui/icons";
 import { ScanStatusNotice } from "./ScanStatusNotice";
+
+const SessionSourceDetails = lazy(() =>
+  import("../nodes/SessionSourceDetails").then((module) => ({
+    default: module.SessionSourceDetails,
+  })),
+);
 
 interface ResumeSessionAction {
   resumeCommandPrefix: string | null;
@@ -149,9 +154,12 @@ export function AppPageHeader({
               {t("Esc back")}
             </span>
           ) : null}
-          {sourceNodeId && <SourceBadge sourceNodeId={sourceNodeId} />}
-          {resumeSession ? <CopyResumeButton {...resumeSession} /> : null}
         </div>
+        {sourceNodeId && (
+          <Suspense fallback={null}>
+            <SessionSourceDetails sourceNodeId={sourceNodeId} resumeSession={resumeSession} />
+          </Suspense>
+        )}
         <div aria-live="polite">
           {sessionCopyNotice ? (
             <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">

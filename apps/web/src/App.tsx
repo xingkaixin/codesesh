@@ -393,9 +393,7 @@ export default function App() {
   }, [dismissShortcutHint]);
   const sessionRouteActive = !isSearchMode && viewState.mode === "session";
   const resumeSession =
-    sessionRouteActive &&
-    session &&
-    (!session.reference.sourceNodeId || session.reference.sourceNodeId === "local")
+    sessionRouteActive && session
       ? {
           resumeCommandPrefix:
             findAgent(agentCatalog, viewState.activeAgentKey)?.resumeCommandPrefix ?? null,

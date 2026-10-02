@@ -19,6 +19,7 @@ interface CopyResumeButtonProps {
    */
   directory?: string | null;
   className?: string;
+  descriptionId?: string;
 }
 
 export function CopyResumeButton({
@@ -26,6 +27,7 @@ export function CopyResumeButton({
   sessionId,
   directory,
   className = "",
+  descriptionId,
 }: CopyResumeButtonProps) {
   useLocale();
 
@@ -43,6 +45,7 @@ export function CopyResumeButton({
   return (
     <button
       type="button"
+      aria-describedby={descriptionId}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
