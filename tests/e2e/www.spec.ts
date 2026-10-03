@@ -115,6 +115,11 @@ for (const locale of locales) {
 
 test("copies the install command with the clipboard API", async ({ page }) => {
   await page.addInitScript(() => {
+    Reflect.set(window, "umami", {
+      track: (name: string, data: Record<string, string>) => {
+        Reflect.set(window, "__trackedEvent", { name, data });
+      },
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
@@ -136,10 +141,29 @@ test("copies the install command with the clipboard API", async ({ page }) => {
       page.evaluate(() => ("__copiedCommand" in window ? window.__copiedCommand : undefined)),
     )
     .toBe("npx codesesh@latest");
+
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "__trackedEvent")))
+    .toEqual({
+      name: "install-copy",
+      data: { method: "npm", placement: "hero-install", locale: "en" },
+    });
+
+  await page.locator("#hero-install-tab-brew").click();
+  await page.locator("#hero-install-panel-brew [data-copy-command]").click();
+  await expect
+    .poll(() => page.evaluate(() => Reflect.get(window, "__trackedEvent")))
+    .toEqual({
+      name: "install-copy",
+      data: { method: "brew", placement: "hero-install", locale: "en" },
+    });
 });
 
 test("reports copy failure without an unhandled rejection", async ({ page }) => {
   await page.addInitScript(() => {
+    Reflect.set(window, "umami", {
+      track: () => Reflect.set(window, "__trackedEvent", true),
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: () => Promise.reject(new Error("denied")) },
@@ -159,10 +183,14 @@ test("reports copy failure without an unhandled rejection", async ({ page }) => 
   await expect(group.locator("[data-copy-status]")).toHaveText(
     "Copy failed. Copy the command manually.",
   );
+  expect(await page.evaluate(() => Reflect.get(window, "__trackedEvent"))).toBeUndefined();
 });
 
 test("falls back when the clipboard API rejects", async ({ page }) => {
   await page.addInitScript(() => {
+    Reflect.set(window, "umami", {
+      track: () => Promise.reject(new Error("analytics unavailable")),
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: () => Promise.reject(new Error("denied")) },
@@ -178,6 +206,23 @@ test("falls back when the clipboard API rejects", async ({ page }) => {
   await copy.click();
 
   await expect(copy).toContainText("Copied");
+});
+
+test("distinguishes repository visits from download intent", async ({ page }) => {
+  const events: string[] = [];
+  await page.exposeFunction("recordEvent", (name: string) => events.push(name));
+  await page.addInitScript(() => {
+    Reflect.set(window, "umami", { track: Reflect.get(window, "recordEvent") });
+  });
+  await page.route("https://github.com/**", (route) => route.fulfill({ status: 204 }));
+  await page.goto("/guides/getting-started/");
+
+  await page.getByRole("link", { name: "GitHub Releases", exact: true }).click();
+  await expect.poll(() => events).toEqual(["download-click"]);
+  await page.locator("footer").getByRole("link", { name: "GitHub", exact: true }).click();
+  await expect.poll(() => events).toEqual(["download-click", "github-click"]);
+  await page.locator("footer").getByRole("link", { name: "Docs", exact: true }).click();
+  expect(events).toEqual(["download-click", "github-click"]);
 });
 
 test("explores each interactive product preview", async ({ page }) => {
@@ -214,6 +259,9 @@ for (const route of ["/", "/zh/", "/ja/"]) {
       await document.fonts.ready;
     });
 
+    await expect(page.locator(".session-orbit-wrap")).toBeHidden();
+    await expect(page.locator("[data-orbit-ready]")).toHaveCount(0);
+
     for (const demo of await page.locator(".demo-shell").all()) {
       expect(await demo.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
@@ -236,6 +284,8 @@ test("removes landing and product preview motion when reduced motion is requeste
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
+  await expect(page.locator(".session-orbit-wrap")).toBeHidden();
+  await expect(page.locator("[data-orbit-ready]")).toHaveCount(0);
   await expect(page.locator(".hero-copy")).toHaveCSS("animation-name", "none");
   await expect(page.locator('[data-product-demo="overview"] .demo-bar-fill').first()).toHaveCSS(
     "transition-duration",

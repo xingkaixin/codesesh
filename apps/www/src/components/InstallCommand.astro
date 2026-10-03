@@ -6,6 +6,8 @@ interface Props {
   locale: Locale;
   showEndpoint?: boolean;
   command?: string;
+  method: string;
+  placement: string;
 }
 
 const { locale, showEndpoint = false } = Astro.props;
@@ -27,6 +29,8 @@ const command = Astro.props.command ?? t.command;
     <button
       type="button"
       data-copy-command={command}
+      data-copy-method={Astro.props.method}
+      data-copy-placement={Astro.props.placement}
       data-copy-label={t.copyCommand}
       data-copied-label={t.copied}
       data-copy-failed-label={t.copyFailed}
@@ -53,6 +57,8 @@ const command = Astro.props.command ?? t.command;
 </div>
 
 <script>
+  import { trackEvent } from "../scripts/analytics";
+
   async function copyText(value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -111,6 +117,13 @@ const command = Astro.props.command ?? t.command;
         if (status) status.textContent = feedback;
         idleIcon.dataset.active = String(!copied);
         doneIcon.dataset.active = String(copied);
+
+        if (copied) {
+          void trackEvent("install-copy", {
+            method: button.dataset.copyMethod ?? "",
+            placement: button.dataset.copyPlacement ?? "",
+          });
+        }
 
         window.clearTimeout(timer);
         timer = window.setTimeout(() => {

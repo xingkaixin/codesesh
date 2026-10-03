@@ -350,6 +350,7 @@ const jsonLd = {
         src="https://umami.xingkaixin.me/script.js"
         data-website-id="ef9537a4-c9aa-4f4c-b228-78efa155a203"
         data-domains={analyticsHost}
+        data-performance="true"
       ></script>
     )}
     {analyticsEnabled && (
@@ -363,5 +364,10 @@ const jsonLd = {
   </head>
   <body>
     <slot />
+    <script>
+      import { trackOutboundLinks } from "../scripts/analytics";
+
+      trackOutboundLinks();
+    </script>
   </body>
 </html>
