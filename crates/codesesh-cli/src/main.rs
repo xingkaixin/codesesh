@@ -237,10 +237,24 @@ async fn run() -> Result<()> {
         );
         return Ok(());
     }
-    let enabled_agents = discovery::selected_sources(&environment, &plan.agents)
-        .into_iter()
-        .map(|source| source.agent)
-        .collect();
+    let enabled_agents = if hub_enabled {
+        codesesh_core::agents::catalog(0)
+            .into_iter()
+            .map(|agent| agent.name)
+            .filter(|name| {
+                plan.agents.is_empty()
+                    || plan
+                        .agents
+                        .iter()
+                        .any(|agent| agent.eq_ignore_ascii_case(name))
+            })
+            .collect()
+    } else {
+        discovery::selected_sources(&environment, &plan.agents)
+            .into_iter()
+            .map(|source| source.agent)
+            .collect()
+    };
     let runtime_sources = sources
         .into_iter()
         .map(|source| {
