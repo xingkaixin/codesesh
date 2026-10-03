@@ -1,6 +1,7 @@
 ---
-layout: ../../layouts/SessionHistoryLayout.astro
+layout: ../../layouts/GuideLayout.astro
 locale: en
+slug: session-history
 ---
 
 Use CodeSesh to search and replay Claude Code and Codex conversations that are still stored on your computer. It reads supported local records, groups sessions by project, and lets you search messages, tool output, and file paths. You do not need to upload your history or create an account.
@@ -51,7 +52,9 @@ npx codesesh --days 0 --agent claudecode,codex
 
 Replay means reading the recorded conversation and tool activity. It does not rerun commands or restore an earlier filesystem state. See the [search and replay product demo](/#tour) for the interface overview.
 
-<h2 id="troubleshooting">4. If a session is missing</h2>
+<span id="troubleshooting"></span>
+
+## 4. If a session is missing
 
 - **Check the time range first.** Restart with `--days 0` and clear restrictive filters in the UI. Remove `--from`, `--to`, `--cwd`, or `--agent` options if they exclude the session.
 - **Check the source files.** Confirm the records still exist under the relevant local directory and that the current user can read them. For Codex, check whether the session was moved to `archived_sessions/`.

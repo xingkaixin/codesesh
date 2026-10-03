@@ -20,6 +20,7 @@ interface PageConfig {
   alternateRoutes: Record<Locale, string>;
   schema: Record<string, unknown>[];
   markdownUrl?: string;
+  ogType?: string;
 }
 
 interface Props {
@@ -308,7 +309,7 @@ const jsonLd = {
       title="Full AI knowledge file"
     />
 
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={page?.ogType ?? "website"} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={pageDescription} />

@@ -1,6 +1,6 @@
 # CodeSesh
 
-> CodeSesh is a local developer tool that turns session history from ten AI coding agents into project-aware, structurally searchable, replayable engineering memory.
+> CodeSesh is a local developer tool that turns session history from supported AI coding agents into project-aware, structurally searchable, replayable engineering memory.
 
 ## Canonical Links
 
@@ -81,3 +81,17 @@ It persists scan progress, restores from a SQLite cache, incrementally watches c
 ## Chinese Summary
 
 CodeSesh 将十种 AI 编码 Agent 的本地会话按项目组织到同一个 SQLite 索引中，提供结构化搜索、文件活动索引和完整会话回放。会话数据不上传，无需账号、云同步或会话遥测。
+
+## Usage guides
+
+- [All guides](https://codesesh.xingkaixin.me/guides/)
+- [中文使用指南](https://codesesh.xingkaixin.me/zh/guides/)
+- [日本語の使い方](https://codesesh.xingkaixin.me/ja/guides/)
+- [Install CodeSesh](https://codesesh.xingkaixin.me/guides/getting-started/)
+- [Find session history](https://codesesh.xingkaixin.me/guides/session-history/)
+- [Local and LAN access](https://codesesh.xingkaixin.me/guides/lan-access/)
+- [Multi-machine Hub and Worker setup](https://codesesh.xingkaixin.me/guides/multi-machine-sync/)
+- [Background services and logs](https://codesesh.xingkaixin.me/guides/background-services/)
+- [Token usage and costs](https://codesesh.xingkaixin.me/guides/usage-and-costs/)
+
+A Hub serves stored history; Workers collect and upload it. Use `--host 0.0.0.0 --remote-access` for authenticated LAN access, and preserve the console URL's access token. HTTP is unencrypted; use HTTPS when transport encryption is required.

@@ -1,0 +1,174 @@
+---
+import type { MarkdownLayoutProps } from "astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { localeConfig, type Locale } from "../data/landing";
+import {
+  guides,
+  guideCopy,
+  guideRoutes,
+  guidePageConfig,
+} from "../data/guides";
+import LandingLayout from "./LandingLayout.astro";
+
+type Props = MarkdownLayoutProps<{ locale: Locale; slug: string }>;
+
+const {
+  frontmatter: { locale, slug },
+  headings,
+} = Astro.props;
+const guide = guides.find((entry) => entry.slug === slug);
+if (!guide) throw new Error(`Unknown guide: ${slug}`);
+const t = guideCopy[locale];
+const content = guide.copy[locale];
+const related = guides.filter(
+  (entry) => entry.slug !== slug && entry.category === guide.category,
+);
+const links = related.length
+  ? related
+  : guides.filter((entry) => entry.slug === "session-history");
+---
+
+<LandingLayout locale={locale} page={guidePageConfig(locale, guide)}>
+  <div class="console-ui min-h-dvh bg-[var(--console-bg)] text-[var(--console-text)]">
+    <Header locale={locale} page="guides" languageRoutes={guideRoutes(slug)} />
+    <main class="mx-auto max-w-[1104px] px-4 py-10 sm:px-6 sm:py-14">
+      <nav
+        class="mb-8 flex flex-wrap items-center gap-3 text-sm text-[var(--console-muted)]"
+        aria-label={t.home}
+      >
+        <a class="guide-link" href={localeConfig[locale].route}>
+          {t.home}
+        </a>
+        <span aria-hidden="true">/</span>
+        <a class="guide-link" href={guideRoutes()[locale]}>
+          {t.label}
+        </a>
+      </nav>
+      <header class="mb-10 max-w-[760px] lg:ml-[248px]">
+        <h1 class="console-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+          {content.title}
+        </h1>
+        <p class="mt-5 text-base leading-8 text-[var(--console-text-secondary)]">
+          {content.description}
+        </p>
+        <p class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--console-muted)]">
+          <span>{t.by}</span>
+          <span>
+            {t.updated} <time datetime={guide.updated}>{guide.updated}</time>
+          </span>
+        </p>
+      </header>
+      <div class="grid gap-10 lg:grid-cols-[200px_minmax(0,760px)] lg:gap-12">
+        <aside>
+          <nav
+            class="border-t border-[var(--console-border)] pt-5 lg:sticky lg:top-24"
+            aria-label={t.contents}
+          >
+            <p class="mb-3 text-sm font-semibold">{t.contents}</p>
+            <ul class="space-y-1">
+              {headings
+                .filter((heading) => heading.depth === 2)
+                .map((heading) => (
+                  <li>
+                    <a
+                      class="guide-link block py-2 text-sm leading-6"
+                      href={`#${heading.slug}`}
+                    >
+                      {heading.text}
+                    </a>
+                  </li>
+                ))}
+            </ul>
+          </nav>
+        </aside>
+        <article class="min-w-0">
+          <div class="guide-content">
+            <slot />
+          </div>
+          <section
+            class="mt-12 border-t border-[var(--console-border)] pt-7"
+            aria-labelledby="related-guides"
+          >
+            <h2
+              id="related-guides"
+              class="console-display text-xl font-semibold"
+            >
+              {t.related}
+            </h2>
+            <ul class="my-5 space-y-4">
+              {links.map((entry) => (
+                <li>
+                  <a class="guide-link" href={guideRoutes(entry.slug)[locale]}>
+                    {entry.copy[locale].title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <a class="guide-link" href={guideRoutes()[locale]}>
+              {t.all}
+            </a>
+          </section>
+        </article>
+      </div>
+    </main>
+    <Footer locale={locale} />
+  </div>
+</LandingLayout>
+
+<style>
+  .guide-content {
+    color: var(--console-text-secondary);
+    font-size: 1rem;
+    line-height: 1.85;
+    overflow-wrap: anywhere;
+  }
+  .guide-content :global([id]) {
+    scroll-margin-top: 8rem;
+  }
+  .guide-content :global(h2) {
+    margin: 2.75rem 0 1rem;
+    color: var(--console-text);
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .guide-content :global(p),
+  .guide-content :global(ul),
+  .guide-content :global(ol) {
+    margin: 1rem 0;
+  }
+  .guide-content :global(ul) {
+    list-style: disc;
+    padding-left: 1.5rem;
+  }
+  .guide-content :global(ol) {
+    list-style: decimal;
+    padding-left: 1.5rem;
+  }
+  .guide-content :global(li) {
+    margin: 0.6rem 0;
+  }
+  .guide-content :global(strong) {
+    color: var(--console-text);
+  }
+  .guide-content :global(a) {
+    color: var(--brand-text);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .guide-content :global(a:focus-visible) {
+    outline: 2px solid var(--brand);
+    outline-offset: 3px;
+  }
+  .guide-content :global(code) {
+    font-family: "JetBrains Mono Variable", monospace;
+    font-size: 0.85em;
+  }
+  .guide-content :global(pre) {
+    margin: 1.25rem 0;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+  }
+</style>

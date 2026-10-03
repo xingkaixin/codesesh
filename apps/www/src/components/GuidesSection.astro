@@ -1,0 +1,51 @@
+---
+import { guideCopy, guideRoutes, guides } from "../data/guides";
+import type { Locale } from "../data/landing";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = guideCopy[locale];
+const featured = guides.filter((guide) =>
+  ["getting-started", "lan-access", "multi-machine-sync"].includes(guide.slug),
+);
+---
+
+<section
+  id="guides"
+  class="scroll-mt-24 px-4 pt-24 sm:px-6 lg:px-7"
+  aria-labelledby="guides-heading"
+>
+  <div class="mx-auto grid max-w-[1180px] gap-9 border-t border-[var(--console-border)] pt-10 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-[72px]">
+    <div>
+      <h2
+        id="guides-heading"
+        class="console-display text-3xl font-semibold leading-tight sm:text-4xl"
+      >
+        {t.intro}
+      </h2>
+      <p class="my-5 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]">
+        {t.description}
+      </p>
+      <a class="guide-link" href={guideRoutes()[locale]}>
+        {t.all}
+      </a>
+    </div>
+    <ul class="space-y-7">
+      {featured.map((guide) => (
+        <li>
+          <h3 class="text-base font-semibold">
+            <a class="guide-link" href={guideRoutes(guide.slug)[locale]}>
+              {guide.copy[locale].title}
+            </a>
+          </h3>
+          <p class="mt-2 max-w-[68ch] text-sm leading-7 text-[var(--console-text-secondary)]">
+            {guide.copy[locale].description}
+          </p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>

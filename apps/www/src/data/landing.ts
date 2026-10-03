@@ -119,7 +119,7 @@ interface LandingCopy {
   };
 }
 
-export const landingUpdated = "2026-09-19";
+export const landingUpdated = "2026-10-03";
 
 export const siteUrl = "https://codesesh.xingkaixin.me";
 

@@ -1,6 +1,7 @@
 ---
-layout: ../../../layouts/SessionHistoryLayout.astro
+layout: ../../../layouts/GuideLayout.astro
 locale: zh
+slug: session-history
 ---
 
 CodeSesh 可以搜索和回放仍保存在本机的 Claude Code 与 Codex 对话。它读取受支持的本地记录，按项目组织会话，并搜索消息、工具输出和文件路径。无需上传历史，也不需要注册账号。
@@ -51,7 +52,9 @@ npx codesesh --days 0 --agent claudecode,codex
 
 回放是查看已记录的对话和工具活动，不会重新执行命令或恢复当时的文件系统。可以先查看[搜索与会话回放演示](/zh/#tour)，了解界面。
 
-<h2 id="troubleshooting">4. 找不到会话时怎么排查</h2>
+<span id="troubleshooting"></span>
+
+## 4. 找不到会话时怎么排查
 
 - **先检查时间范围。** 使用 `--days 0` 重新启动，并清除界面中限制过严的筛选。如果 `--from`、`--to`、`--cwd` 或 `--agent` 排除了目标会话，也需要移除这些参数。
 - **确认源文件仍存在。** 检查对应的本地目录及当前用户的读取权限。Codex 会话还需确认是否已被移到 `archived_sessions/`。
