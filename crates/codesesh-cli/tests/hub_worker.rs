@@ -125,6 +125,67 @@ async fn wait_for_sessions(client: &reqwest::Client, url: &url::Url, token: &str
 }
 
 #[tokio::test]
+async fn hub_queries_archived_agents_without_local_installations() {
+    let home = tempfile::tempdir().unwrap();
+    source(home.path(), "archived", "Archived session");
+    let file = home.path().join(".codex/sessions/rollout-archived.jsonl");
+    let detail = codesesh_core::agents::codex::parse(
+        &file,
+        &Default::default(),
+        &codesesh_core::pricing::Pricing::bundled(),
+    )
+    .unwrap()
+    .unwrap();
+    let mut sessions: Vec<_> = ["codex", "cursor"]
+        .into_iter()
+        .map(|agent| {
+            let mut detail = detail.clone();
+            detail.head.reference.agent_name = agent.into();
+            codesesh_core::agents::ParsedSession {
+                head: detail.head.clone(),
+                detail,
+                source: file.clone(),
+            }
+        })
+        .collect();
+    let mut cache =
+        codesesh_core::storage::Cache::open(Some(&home.path().join(".codesesh/codesesh.db")))
+            .unwrap();
+    cache.publish(&mut sessions).unwrap();
+    drop(cache);
+    std::fs::remove_file(file).unwrap();
+
+    let (_server, url, token) = hub(home.path(), 0);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    for (route, count) in [
+        ("api/projects?days=0", 2),
+        ("api/dashboard?days=0", 2),
+        ("api/dashboard?days=0&agent=cursor", 1),
+    ] {
+        let response: Value = client
+            .get(url.join(route).unwrap())
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let total = if route.starts_with("api/projects") {
+            &response["summary"]["sessions"]
+        } else {
+            &response["totals"]["sessions"]
+        };
+        assert_eq!(total, count, "{route}: {response}");
+    }
+}
+
+#[tokio::test]
 async fn worker_recovers_when_a_persisted_recovery_epoch_is_stale() {
     use codesesh_core::{
         agents::ParsedSession, pricing::Pricing, runtime::ScanBatch, storage::Cache,
