@@ -104,7 +104,12 @@ const methods = [
       data-install-panel={method.id}
       hidden={index !== 0}
     >
-      <InstallCommand locale={locale} command={method.command} />
+      <InstallCommand
+        locale={locale}
+        command={method.command}
+        method={method.id}
+        placement={id}
+      />
       <div class="install-options__details">
         <p>{method.note}</p>
         {method.id !== "npm" && <p>{labels.start}</p>}

@@ -4,9 +4,24 @@ locale: en
 slug: session-history
 ---
 
-Use CodeSesh to search and replay Claude Code and Codex conversations that are still stored on your computer. It reads supported local records, groups sessions by project, and lets you search messages, tool output, and file paths. You do not need to upload your history or create an account.
+Claude Code stores local conversation transcripts under `~/.claude/projects/`. Codex stores active session records under `~/.codex/sessions/` and archived records under `~/.codex/archived_sessions/`. These are JSONL files: each line is a JSON record. `~` means your user home directory. Custom configuration roots can change these locations.
 
-## 1. Start the local viewer
+## 1. Where Claude Code and Codex store history
+
+CodeSesh reads these locations by default. `~` means your user home directory:
+
+- **Claude Code:** JSONL session records under `~/.claude/projects/`. If you set `CLAUDE_CONFIG_DIR`, CodeSesh reads the `projects/` directory under that configuration root.
+- **Codex:** `rollout-*.jsonl` records under `~/.codex/sessions/`, including nested date directories. If you set `CODEX_HOME`, CodeSesh reads `sessions/` under that root.
+
+Start CodeSesh from a terminal that has the same environment variables as your coding tool. These variables point to the tool's root directory, not directly to `projects/` or `sessions/`.
+
+The current Codex adapter does not scan `~/.codex/archived_sessions/` by default. Conversations stored only on another computer or in a hosted service are outside this local scan.
+
+You can inspect an existing JSONL file in a text editor without installing a viewer. A transcript contains many records, including tool activity, so searching one file is different from searching conversations across projects. Keep the original files unchanged when inspecting them.
+
+## 2. Search history with CodeSesh
+
+Use CodeSesh to search and replay conversations across supported local records. It groups sessions by project and searches messages, tool output, and file paths. Standalone mode needs no account and keeps the history on your computer. See the [installation guide](/guides/getting-started/) for standalone binaries and other installation methods.
 
 Install Node.js 22 or later, then run this in a terminal:
 
@@ -17,17 +32,6 @@ npx codesesh --days 0
 CodeSesh opens its Web UI at `http://localhost:4521`. If that port is occupied, use the address printed in the terminal. Keep the terminal process running while you browse.
 
 **Why `--days 0`?** The default command, `npx codesesh`, includes sessions active in the last seven local calendar days. Use `--days 0` when you want to find older conversations. A large history may take time to finish its first scan and search indexing.
-
-## 2. Check where your history is stored
-
-CodeSesh reads these locations by default. `~` means your user home directory:
-
-- **Claude Code:** JSONL session records under `~/.claude/projects/`. If you set `CLAUDE_CONFIG_DIR`, CodeSesh reads the `projects/` directory under that configuration root.
-- **Codex:** `rollout-*.jsonl` records under `~/.codex/sessions/`, including nested date directories. If you set `CODEX_HOME`, CodeSesh reads `sessions/` under that root.
-
-Start CodeSesh from a terminal that has the same environment variables as your coding tool. These variables point to the tool's root directory, not directly to `projects/` or `sessions/`.
-
-The current Codex adapter does not scan `~/.codex/archived_sessions/` by default. Conversations stored only on another computer or in a hosted service are outside this local scan.
 
 ## 3. Find a conversation by project and content
 

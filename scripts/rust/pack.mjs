@@ -56,6 +56,7 @@ json(join(cli, "package.json"), {
   ...base,
   name: "codesesh",
   description: "Browse local AI coding sessions",
+  homepage: "https://codesesh.xingkaixin.me/",
   engines: { node: JSON.parse(readFileSync(join(root, "package.json"), "utf8")).engines.node },
   bin: { codesesh: "bin/codesesh.cjs" },
   files: ["bin", "targets.json"],

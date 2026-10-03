@@ -38,17 +38,17 @@ export const guides: Guide[] = [
       en: {
         title: "How to find Claude Code and Codex session history",
         description:
-          "Find local Claude Code and Codex conversations with CodeSesh. Search by project or file, replay tool activity, and troubleshoot missing sessions.",
+          "Find where Claude Code and Codex store history, check active and archived JSONL records, and search conversations by project or file with CodeSesh.",
       },
       zh: {
         title: "如何查找 Claude Code 和 Codex 的历史会话",
         description:
-          "使用 CodeSesh 查找本地 Claude Code 和 Codex 对话：按项目或文件搜索，回放工具调用，并排查历史会话缺失的原因。",
+          "了解 Claude Code 和 Codex 历史记录的保存位置、JSONL 文件和归档会话，再用 CodeSesh 按项目或文件搜索对话，排查会话缺失。",
       },
       ja: {
         title: "Claude Code と Codex の会話履歴を探す方法",
         description:
-          "CodeSesh で Claude Code と Codex の会話を探す手順。プロジェクトやファイルでの検索、ツール操作の確認、履歴が見つからない場合の調べ方を説明します。",
+          "Claude Code と Codex の履歴の保存場所、JSONL ファイル、アーカイブを確認し、CodeSesh でプロジェクトやファイルから会話を探す方法を説明します。",
       },
     },
   },
