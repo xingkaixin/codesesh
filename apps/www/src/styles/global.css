@@ -209,6 +209,21 @@
     font-size: 0.6875rem;
   }
 
+  .guide-link {
+    color: var(--brand-text);
+    text-underline-offset: 0.2em;
+  }
+
+  .guide-link:hover {
+    text-decoration: underline;
+  }
+
+  .guide-link:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 3px;
+    border-radius: var(--radius-xs);
+  }
+
   .install-command {
     display: flex;
     flex-wrap: wrap;

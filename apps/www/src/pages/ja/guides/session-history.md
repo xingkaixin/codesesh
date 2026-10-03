@@ -1,6 +1,7 @@
 ---
-layout: ../../../layouts/SessionHistoryLayout.astro
+layout: ../../../layouts/GuideLayout.astro
 locale: ja
+slug: session-history
 ---
 
 CodeSesh を使うと、パソコンに残っている Claude Code と Codex の会話を検索して読み返せます。対応するローカル記録を読み込み、プロジェクト別に整理し、メッセージ、ツール出力、ファイルパスを検索できます。履歴のアップロードやアカウント登録は不要です。
@@ -51,7 +52,9 @@ npx codesesh --days 0 --agent claudecode,codex
 
 再生とは記録済みの会話やツール操作を読み返すことです。コマンドの再実行や過去のファイルシステムの復元は行いません。画面の概要は[検索と会話再生のデモ](/ja/#tour)で確認できます。
 
-<h2 id="troubleshooting">4. 会話が見つからない場合</h2>
+<span id="troubleshooting"></span>
+
+## 4. 会話が見つからない場合
 
 - **期間を確認する。** `--days 0` で再起動し、画面の絞り込みを解除します。`--from`、`--to`、`--cwd`、`--agent` が対象を除外している場合は、その引数も外します。
 - **元のファイルを確認する。** ローカルの保存場所に記録が残っていて、現在のユーザーが読めることを確認します。Codex では `archived_sessions/` に移されていないかも確認してください。

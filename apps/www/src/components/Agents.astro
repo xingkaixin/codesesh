@@ -1,9 +1,6 @@
 ---
 import { agents, copy, type Locale } from "../data/landing";
-import {
-  sessionHistoryCopy,
-  sessionHistoryRoutes,
-} from "../data/session-history";
+import { guides, guideRoutes } from "../data/guides";
 import HeadingText from "./HeadingText.astro";
 
 interface Props {
@@ -32,9 +29,12 @@ const t = copy[locale].agents;
       </p>
       <a
         class="footer-link mt-4 inline-block"
-        href={sessionHistoryRoutes[locale]}
+        href={guideRoutes("session-history")[locale]}
       >
-        {sessionHistoryCopy[locale].title}
+        {
+          guides.find((guide) => guide.slug === "session-history")!.copy[locale]
+            .title
+        }
       </a>
     </div>
 

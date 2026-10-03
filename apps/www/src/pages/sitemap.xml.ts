@@ -1,6 +1,6 @@
 import { latestReleaseDate, sitemapEntries } from "../data/changelog";
-import { landingUpdated, localeConfig, locales, siteUrl } from "../data/landing";
-import { sessionHistoryRoutes, sessionHistoryUpdated } from "../data/session-history";
+import { landingUpdated, localeConfig, siteUrl } from "../data/landing";
+import { guideSitemapEntries } from "../data/guides";
 
 export const prerender = true;
 
@@ -23,14 +23,7 @@ export function GET(): Response {
       ...entry,
       lastmod: entry.route === localeConfig[entry.locale].route ? homeUpdated : latestReleaseDate,
     })),
-    ...locales.map((locale) => ({
-      route: sessionHistoryRoutes[locale],
-      alternates: Object.fromEntries(
-        locales.map((key) => [localeConfig[key].language, sessionHistoryRoutes[key]]),
-      ),
-      priority: "0.8",
-      lastmod: sessionHistoryUpdated,
-    })),
+    ...guideSitemapEntries,
   ];
   const urls = entries
     .map((entry) => {

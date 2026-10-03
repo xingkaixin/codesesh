@@ -1,11 +1,12 @@
 ---
 import { copy, localeConfig, locales, type Locale } from "../data/landing";
 import { changelogRoutes } from "../data/changelog";
+import { guideCopy, guideRoutes } from "../data/guides";
 import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
-  page?: "landing" | "changelog";
+  page?: "landing" | "changelog" | "guides";
   languageRoutes?: Record<Locale, string>;
 }
 
@@ -37,7 +38,7 @@ const themes = [
 
     <nav
       data-fluid-hover="x"
-      class="ml-8 hidden items-center gap-2 md:flex"
+      class="ml-8 hidden items-center gap-2 lg:flex"
       aria-label={localeConfig[locale].primaryNavigationLabel}
     >
       <a
@@ -68,6 +69,14 @@ const themes = [
         aria-current={page === "changelog" ? "page" : undefined}
       >
         {t.changelog}
+      </a>
+      <a
+        data-fluid-item
+        class="landing-nav-link rounded-sm px-2 py-2"
+        href={guideRoutes()[locale]}
+        aria-current={page === "guides" ? "page" : undefined}
+      >
+        {guideCopy[locale].label}
       </a>
       <a
         data-fluid-item
@@ -138,6 +147,25 @@ const themes = [
       </a>
     </nav>
   </div>
+  <nav
+    class="flex gap-5 border-t border-[var(--console-border)] px-4 sm:px-6 lg:hidden"
+    aria-label={localeConfig[locale].primaryNavigationLabel}
+  >
+    <a
+      class="landing-nav-link py-3 text-sm"
+      href={guideRoutes()[locale]}
+      aria-current={page === "guides" ? "page" : undefined}
+    >
+      {guideCopy[locale].label}
+    </a>
+    <a
+      class="landing-nav-link py-3 text-sm"
+      href={changelogRoutes[locale]}
+      aria-current={page === "changelog" ? "page" : undefined}
+    >
+      {t.changelog}
+    </a>
+  </nav>
 </header>
 
 <script>
