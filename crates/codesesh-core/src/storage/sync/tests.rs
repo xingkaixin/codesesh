@@ -579,6 +579,75 @@ fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
 }
 
 #[test]
+fn recovery_survives_another_epoch_change_before_acknowledgment() {
+    for accepted in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("worker.db");
+        let mut worker = WorkerStore::open(&path).unwrap();
+        let mut cache = Cache::open(None).unwrap();
+        cache.initialize_hub("hub").unwrap();
+        let token = cache.create_pairing_token().unwrap();
+        let mut grant = cache
+            .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+            .unwrap();
+        worker.bind("https://hub.example/", &grant).unwrap();
+        let initial = worker.prepare_recovery(&grant.epoch).unwrap();
+        cache.recover_worker(&grant.node_id, &initial).unwrap();
+        worker
+            .finish_recovery("https://hub.example/", &grant)
+            .unwrap();
+        let mut batch = ScanBatch {
+            sessions: vec![super::super::tests::source(dir.path(), "queued")],
+            removed: vec![],
+            checkpoint: None,
+            complete: true,
+            on_reject: None,
+            pricing: None,
+        };
+        worker.save_batch("codex", &mut batch).unwrap();
+        let epoch = if accepted {
+            cache.rotate_data_epoch().unwrap()
+        } else {
+            "stale-epoch".into()
+        };
+        let stale = worker.prepare_recovery(&epoch).unwrap();
+        if accepted {
+            cache.recover_worker(&grant.node_id, &stale).unwrap();
+            grant.epoch = cache.rotate_data_epoch().unwrap();
+        }
+        assert_eq!(
+            cache
+                .recover_worker(&grant.node_id, &stale)
+                .unwrap_err()
+                .to_string(),
+            "HUB_EPOCH_CHANGED"
+        );
+        drop(worker);
+        let mut worker = WorkerStore::open(&path).unwrap();
+        let recovery = worker.prepare_recovery(&grant.epoch).unwrap();
+        assert_ne!(recovery.new_stream, stale.new_stream);
+        assert_eq!(worker.queue_status().unwrap().batches, 2);
+        cache.recover_worker(&grant.node_id, &recovery).unwrap();
+        cache.recover_worker(&grant.node_id, &recovery).unwrap();
+        worker
+            .finish_recovery("https://hub.example/", &grant)
+            .unwrap();
+        transfer(&mut cache, &mut worker, &grant);
+        assert_eq!(cache.snapshot().unwrap().len(), 1);
+        assert_eq!(worker.queue_status().unwrap().batches, 0);
+        assert_eq!(
+            cache
+                .rescan_tasks()
+                .unwrap()
+                .iter()
+                .filter(|task| task.status == "waiting")
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn recovery_retains_orphaned_metadata_until_a_snapshot_repairs_it() {
     let dir = tempfile::tempdir().unwrap();
     let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();

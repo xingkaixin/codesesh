@@ -188,23 +188,25 @@ impl WorkerStore {
     }
 
     pub fn prepare_recovery(&mut self, epoch: &str) -> Result<super::Recovery> {
-        if let Some(recovery) = self.recovery()? {
-            ensure!(
-                recovery.epoch == epoch,
-                "Hub changed again during recovery; queue preserved"
-            );
-            return Ok(recovery);
-        }
+        let previous_stream = if let Some(recovery) = self.recovery()? {
+            if recovery.epoch == epoch {
+                return Ok(recovery);
+            }
+            // The Hub may still own the original stream if it never accepted the pending recovery.
+            recovery.previous_stream
+        } else {
+            self.stream_id()?
+        };
         let recovery = super::Recovery {
             epoch: epoch.into(),
-            previous_stream: self.stream_id()?,
+            previous_stream,
             new_stream: uuid::Uuid::new_v4().to_string(),
         };
         let tx = self.db.transaction()?;
         reset_queue(&tx, &recovery.new_stream)?;
         tx.execute("DELETE FROM worker_meta WHERE key='rescan'", [])?;
         tx.execute(
-            "INSERT INTO worker_meta VALUES('recovery',?)",
+            "INSERT INTO worker_meta VALUES('recovery',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             [serde_json::to_string(&recovery)?],
         )?;
         tx.commit()?;

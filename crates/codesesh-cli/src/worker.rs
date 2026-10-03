@@ -24,7 +24,11 @@ impl Collector {
             collection_status: Some(self.scanning.status(&self.store)?),
             collection_complete: self.store.collection_complete(&self.agents)?,
             collection_error: self.scanning.error().or(self.store.pause_reason()?),
-            epoch: self.store.binding()?.map(|(_, grant)| grant.epoch),
+            epoch: self
+                .store
+                .recovery()?
+                .map(|recovery| recovery.epoch)
+                .or(self.store.binding()?.map(|(_, grant)| grant.epoch)),
             confirmed_sequence: self.store.confirmed_sequence()?,
             version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: PROTOCOL_VERSION,
@@ -271,23 +275,32 @@ pub async fn run(
                     .json(&recovery)
                     .send()
                     .await;
-                match response {
+                let refresh_epoch = match response {
                     Ok(response) if response.status().is_success() => {
                         grant.epoch = recovery.epoch;
                         collector.store.finish_recovery(origin.as_str(), &grant)?;
                         next_hello = Instant::now();
+                        false
                     }
                     Ok(response) => {
-                        eprintln!("Worker recovery pending: {}", response.text().await?);
+                        let status = response.status();
+                        let reason = response.text().await?;
+                        eprintln!("Worker recovery pending: {reason}");
                         next_hello = Instant::now() + backoff(15);
+                        status == StatusCode::CONFLICT
+                            && serde_json::from_str::<serde_json::Value>(&reason)
+                                .is_ok_and(|body| body["error"] == "HUB_EPOCH_CHANGED")
                     }
                     Err(_) => {
                         next_hello = Instant::now() + backoff(5);
+                        false
                     }
-                }
+                };
                 online = false;
                 paused = true;
-                continue;
+                if !refresh_epoch {
+                    continue;
+                }
             }
             let result = client
                 .post(origin.join("api/worker/hello")?)
