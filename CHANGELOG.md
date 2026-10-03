@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.5] - 2026-10-03
+
+This patch lets Workers recover when the Hub changes again during a pending recovery, preventing stale recovery state from keeping synchronization paused across restarts. Queued session content is preserved. (#692)
+
+### Bug Fixes
+
+- On a `HUB_EPOCH_CHANGED` recovery conflict, repeat the handshake with the pending recovery epoch and verify the Hub identity before updating recovery. Replace the stale recovery stream atomically while preserving queued payloads and the original previous stream, including when an earlier recovery acknowledgment was lost. (#692)
+
 ## [1.2.4] - 2026-10-03
 
 This patch improves Chinese search, opens message matches at their recorded position, and loads long conversations in pages with clearer progress and source details. It also reduces repeated reads, message writes, and temporary memory use across local history and Hub/Worker sync. (#676–#690)
