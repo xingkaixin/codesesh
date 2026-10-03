@@ -4,6 +4,11 @@ import { AGENT_CATALOG } from "@codesesh/contract";
 const siteUrl = "https://codesesh.xingkaixin.me";
 const supportedAgents = AGENT_CATALOG.map(({ displayName }) => displayName);
 
+interface AnalyticsTestWindow extends Window {
+  __trackedEvent?: { name: string; data: Record<string, string> } | boolean;
+  recordEvent?: (name: string) => Promise<void>;
+}
+
 const locales = [
   { route: "/", language: "en", canonical: `${siteUrl}/` },
   { route: "/zh/", language: "zh-CN", canonical: `${siteUrl}/zh/` },
@@ -143,7 +148,7 @@ test("copies the install command with the clipboard API", async ({ page }) => {
     .toBe("npx codesesh@latest");
 
   await expect
-    .poll(() => page.evaluate(() => Reflect.get(window, "__trackedEvent")))
+    .poll(() => page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent))
     .toEqual({
       name: "install-copy",
       data: { method: "npm", placement: "hero-install", locale: "en" },
@@ -152,7 +157,7 @@ test("copies the install command with the clipboard API", async ({ page }) => {
   await page.locator("#hero-install-tab-brew").click();
   await page.locator("#hero-install-panel-brew [data-copy-command]").click();
   await expect
-    .poll(() => page.evaluate(() => Reflect.get(window, "__trackedEvent")))
+    .poll(() => page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent))
     .toEqual({
       name: "install-copy",
       data: { method: "brew", placement: "hero-install", locale: "en" },
@@ -183,7 +188,7 @@ test("reports copy failure without an unhandled rejection", async ({ page }) => 
   await expect(group.locator("[data-copy-status]")).toHaveText(
     "Copy failed. Copy the command manually.",
   );
-  expect(await page.evaluate(() => Reflect.get(window, "__trackedEvent"))).toBeUndefined();
+  expect(await page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent)).toBeUndefined();
 });
 
 test("falls back when the clipboard API rejects", async ({ page }) => {
@@ -212,7 +217,7 @@ test("distinguishes repository visits from download intent", async ({ page }) =>
   const events: string[] = [];
   await page.exposeFunction("recordEvent", (name: string) => events.push(name));
   await page.addInitScript(() => {
-    Reflect.set(window, "umami", { track: Reflect.get(window, "recordEvent") });
+    Reflect.set(window, "umami", { track: (window as AnalyticsTestWindow).recordEvent });
   });
   await page.route("https://github.com/**", (route) => route.fulfill({ status: 204 }));
   await page.goto("/guides/getting-started/");
