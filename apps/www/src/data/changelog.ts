@@ -71,6 +71,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.5",
+        date: "2026-10-03",
+        title: "Resume Worker synchronization after interrupted recovery",
+        summary:
+          "CodeSesh 1.2.5 fixes Workers that stay paused when the Hub changes again during recovery. They can reconnect to the verified Hub and continue uploading queued AI coding history, including when restarting the Worker previously left it stuck.",
+        direction:
+          "Multi-machine history should recover from interrupted synchronization while preserving work already collected and verifying the destination Hub.",
+        highlights: [
+          {
+            title: "Recover from stale synchronization state",
+            description:
+              "Workers refresh their recovery state when the Hub changes again, instead of repeatedly retrying an outdated recovery and remaining offline in the Hub.",
+          },
+          {
+            title: "Keep queued history available for upload",
+            description:
+              "Recovery preserves queued session content even if the source log is no longer available. It also handles a lost recovery acknowledgment followed by another Hub change.",
+          },
+        ],
+      },
+      {
         version: "1.2.4",
         date: "2026-10-03",
         title: "Find the right message and read long conversations in stages",
@@ -539,6 +560,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.5",
+        date: "2026-10-03",
+        title: "让中断恢复的 Worker 继续同步",
+        summary:
+          "CodeSesh 1.2.5 修复 Hub 在恢复过程中再次变更后，Worker 持续暂停同步的问题。Worker 会核实 Hub 身份、更新恢复状态，并继续上传排队的 AI 编码历史，解决此前重启仍无法恢复的情况。",
+        direction:
+          "多机器历史同步应能从中断中恢复，同时保留已经采集的内容，并确认数据发往正确的 Hub。",
+        highlights: [
+          {
+            title: "从过期同步状态中恢复",
+            description:
+              "Hub 再次变更时，Worker 会更新恢复状态，避免反复尝试过期的恢复请求、在 Hub 中持续显示离线。",
+          },
+          {
+            title: "保留排队历史并继续上传",
+            description:
+              "恢复时保留已排队的会话内容，即使来源日志已不再可用。先前恢复的确认响应丢失、Hub 随后再次变更时，也能继续恢复。",
+          },
+        ],
+      },
+      {
         version: "1.2.4",
         date: "2026-10-03",
         title: "找到命中消息，分段阅读长对话",
@@ -989,6 +1031,27 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.5",
+        date: "2026-10-03",
+        title: "復旧が中断した Worker の同期を再開",
+        summary:
+          "CodeSesh 1.2.5 は、復旧中に Hub の状態が再び変わると Worker の同期が停止したままになる問題を修正します。接続先の Hub を確認して復旧状態を更新し、キューに保存した AI コーディング履歴のアップロードを再開します。Worker を再起動しても解消しなかったケースに対応します。",
+        direction:
+          "複数マシンの履歴同期は、中断から復旧できることが必要です。収集済みの内容を保持し、送信先の Hub を確認しながら同期を再開します。",
+        highlights: [
+          {
+            title: "古い同期状態から復旧",
+            description:
+              "Hub の状態が再び変わったときに Worker の復旧状態を更新します。古い復旧要求を繰り返して Hub 上でオフラインのままになる問題を解消します。",
+          },
+          {
+            title: "キュー内の履歴を保持してアップロード",
+            description:
+              "元のログが利用できなくなっていても、キューに保存済みの会話内容を保持します。復旧の確認応答が失われた後に Hub の状態が再び変わった場合も復旧を続けられます。",
+          },
+        ],
+      },
       {
         version: "1.2.4",
         date: "2026-10-03",
