@@ -25,17 +25,17 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 - **Flexible Time Ranges** — Switch between rolling presets, all history, or a custom date range without restarting the server
 - **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
 - **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
-- **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost
+- **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost. Match Chinese substrings and open message results at the first matching message
 - **UI languages** — English, Simplified Chinese, and Japanese. Follows your browser language by default; use the language selector in the top toolbar to switch and save your preference. Session content and code stay in their original language.
 - **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model token shares for the selected date range, smart tags, and cost at a glance
 - **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
 - **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent
 - **Smart Tags** — Automatically label sessions such as bugfix, refactoring, feature work, testing, docs, planning, git operations, build/deploy, and exploration
 - **Bookmarks** — Save important sessions and keep them visible from the dashboard
-- **Full Conversation Replay** — Read every message, tool call, and reasoning step exactly as it happened
+- **Full Conversation Replay** — Read messages, tool calls, and reasoning in pages, or load the complete conversation. Keep your reading position and copy the full transcript as Markdown
 - **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
 - **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
-- **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details
+- **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details, with the source machine and where to run the command clearly identified
 - **Resumable History Indexing** — Checkpoint large backfills, resume interrupted scans, and show durable progress
 - **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
 - **Session Receipts** — Inspect model and token-category usage with available cost breakdowns, then export the complete receipt as a PNG
