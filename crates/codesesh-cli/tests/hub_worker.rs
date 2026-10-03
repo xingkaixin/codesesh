@@ -125,6 +125,82 @@ async fn wait_for_sessions(client: &reqwest::Client, url: &url::Url, token: &str
 }
 
 #[tokio::test]
+async fn worker_recovers_when_a_persisted_recovery_epoch_is_stale() {
+    use codesesh_core::{
+        agents::ParsedSession, pricing::Pricing, runtime::ScanBatch, storage::Cache,
+        sync::WorkerStore,
+    };
+
+    let hub_home = tempfile::tempdir().unwrap();
+    let worker_home = tempfile::tempdir().unwrap();
+    let hub_root = hub_home.path().join(".codesesh");
+    let mut cache = Cache::open(Some(&hub_root.join("codesesh.db"))).unwrap();
+    let hub_id = uuid::Uuid::new_v4().to_string();
+    cache.initialize_hub(&hub_id).unwrap();
+    std::fs::write(hub_root.join("hub-identity"), hub_id).unwrap();
+    let worker_path = worker_home.path().join(".codesesh/worker.db");
+    let mut store = WorkerStore::open(&worker_path).unwrap();
+    let pair_token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(
+            &pair_token,
+            "Interrupted Worker",
+            env!("CARGO_PKG_VERSION"),
+            &store.stream_id().unwrap(),
+        )
+        .unwrap();
+    source(
+        worker_home.path(),
+        "queued",
+        "Content retained only in the queue",
+    );
+    let file = worker_home
+        .path()
+        .join(".codex/sessions/rollout-queued.jsonl");
+    let detail =
+        codesesh_core::agents::codex::parse(&file, &Default::default(), &Pricing::bundled())
+            .unwrap()
+            .unwrap();
+    store
+        .save_batch(
+            "codex",
+            &mut ScanBatch {
+                sessions: vec![ParsedSession {
+                    head: detail.head.clone(),
+                    detail,
+                    source: file.clone(),
+                }],
+                removed: Vec::new(),
+                checkpoint: None,
+                complete: true,
+                on_reject: None,
+                pricing: None,
+            },
+        )
+        .unwrap();
+    std::fs::remove_file(file).unwrap();
+    store.prepare_recovery("stale-epoch").unwrap();
+    drop(cache);
+    let (_server, url, token) = hub(hub_home.path(), 0);
+    store.bind(url.as_str(), &grant).unwrap();
+    drop(store);
+    let _worker = Process(
+        command(worker_home.path())
+            .args(["worker", "--hub", url.as_str(), "--agent", "codex"])
+            .spawn()
+            .unwrap(),
+    );
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap();
+    wait_for_sessions(&client, &url, &token, 1).await;
+    let store = WorkerStore::open(&worker_path).unwrap();
+    assert!(store.recovery().unwrap().is_none());
+    assert_eq!(store.binding().unwrap().unwrap().1.epoch, grant.epoch);
+}
+
+#[tokio::test]
 async fn real_worker_uploads_and_recovers_after_hub_restart() {
     let hub_home = tempfile::tempdir().unwrap();
     let worker_home = tempfile::tempdir().unwrap();
