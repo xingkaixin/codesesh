@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.6",
+        date: "2026-10-03",
+        title: "Catch up on history with clearer rescan progress",
+        summary:
+          "CodeSesh 1.2.6 reduces idle waits while Workers collect and upload AI coding history. Rescan tasks now explain what triggered them and show available scan counts, making long recovery tasks easier to follow.",
+        direction:
+          "Multi-machine history should catch up without unnecessary delays and show progress that reflects work already saved and confirmed.",
+        highlights: [
+          {
+            title: "Keep history collection and uploads moving",
+            description:
+              "Workers continue scanning unfinished history and send the next queued upload as soon as the previous one is confirmed. Failed requests still wait before retrying, and pending content stays saved locally.",
+          },
+          {
+            title: "Understand why a rescan started",
+            description:
+              "Task details distinguish a manual rescan from Hub recovery or Worker replacement, so an automatic recovery is easier to understand.",
+          },
+          {
+            title: "See scanning and upload confirmation separately",
+            description:
+              "Available progress shows scanned source items for a pending Agent. Older or offline reports are not presented as current counts, and a task finishes only after its uploads are confirmed.",
+          },
+        ],
+      },
+      {
         version: "1.2.5",
         date: "2026-10-03",
         title: "Resume Worker synchronization after interrupted recovery",
@@ -560,6 +586,31 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.6",
+        date: "2026-10-03",
+        title: "更快补齐历史，看清重采集进度",
+        summary:
+          "CodeSesh 1.2.6 减少 Worker 采集和上传 AI 编码历史时的空等。重采集任务现在会说明触发原因，并显示可用的扫描计数，让耗时较长的恢复过程更容易跟进。",
+        direction: "多机历史应减少不必要的等待，进度应对应已经保存和确认的工作。",
+        highlights: [
+          {
+            title: "让历史采集与上传持续推进",
+            description:
+              "历史未扫完时继续扫描，上一条上传确认后立即处理下一条。失败请求仍会等待后重试，待上传内容持续保存在本地。",
+          },
+          {
+            title: "知道重采集为何开始",
+            description:
+              "任务详情区分手动操作、Hub 数据恢复和 Worker 替换，自动触发的恢复也有清楚的原因。",
+          },
+          {
+            title: "区分扫描进度与上传确认",
+            description:
+              "有可用上报时显示待完成 Agent 的来源项扫描计数，不将过期或离线上报当作当前进度。只有相关上传得到确认，任务才会完成。",
+          },
+        ],
+      },
+      {
         version: "1.2.5",
         date: "2026-10-03",
         title: "让中断恢复的 Worker 继续同步",
@@ -1031,6 +1082,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.6",
+        date: "2026-10-03",
+        title: "履歴の収集を速め、再収集の進捗をわかりやすく",
+        summary:
+          "CodeSesh 1.2.6 は、Worker が AI コーディング履歴を収集・アップロードする際の不要な待ち時間を減らします。再収集タスクに開始理由と取得できたスキャン件数を表示し、長い復旧処理の進み具合を確認しやすくしました。",
+        direction:
+          "複数マシンの履歴を不要な待ち時間なく集約し、保存済みの処理と確認済みのアップロードに基づいて進捗を伝えます。",
+        highlights: [
+          {
+            title: "履歴の収集とアップロードを続けて処理",
+            description:
+              "未収集の履歴がある間はスキャンを続け、アップロードの確認が届いたら次の送信に進みます。失敗時は待ってから再試行し、送信待ちの内容はローカルに保持します。",
+          },
+          {
+            title: "再収集が始まった理由を確認",
+            description:
+              "手動操作、Hub のデータ復旧、Worker の置き換えをタスク詳細で区別します。自動的に始まった復旧処理も理由がわかります。",
+          },
+          {
+            title: "スキャンとアップロード確認を区別",
+            description:
+              "報告がある場合は、未完了の Agent がスキャンしたソース項目数を表示します。古い報告やオフライン時の値を現在の進捗として扱わず、対象のアップロードが確認されてからタスクを完了します。",
+          },
+        ],
+      },
       {
         version: "1.2.5",
         date: "2026-10-03",
