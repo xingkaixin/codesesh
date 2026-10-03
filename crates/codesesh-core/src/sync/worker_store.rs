@@ -284,6 +284,35 @@ impl WorkerStore {
         Ok(progress.error.is_none())
     }
 
+    pub fn rescan_scan_progress(&self) -> Result<Option<super::RescanScanProgress>> {
+        let Some(progress) = self.rescan_progress()? else {
+            return Ok(None);
+        };
+        if progress.error.is_some() || progress.target_sequence.is_some() {
+            return Ok(None);
+        }
+        for agent in progress.pending_agents {
+            let counts: Option<(Option<i64>, Option<i64>)> = self.db.query_row(
+                "SELECT json_extract(checkpoint,'$.offset'),json_extract(checkpoint,'$.total') FROM worker_sources WHERE agent=? AND complete=0",
+                [&agent],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?;
+            if let Some((Some(completed), Some(total))) = counts
+                && total > 0
+                && completed >= 0
+                && completed <= total
+            {
+                return Ok(Some(super::RescanScanProgress {
+                    id: progress.id,
+                    agent,
+                    completed,
+                    total,
+                }));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn history_choice(&self) -> Result<Option<String>> {
         Ok(self
             .db

@@ -475,14 +475,20 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
         .remove(0);
     assert!(worker.begin_rescan(&task, &["codex".into()]).unwrap());
     assert!(!worker.begin_rescan(&task, &["codex".into()]).unwrap());
+    assert!(worker.rescan_scan_progress().unwrap().is_none());
+    batch.complete = false;
+    batch.checkpoint = Some(serde_json::json!({"offset": 1, "total": 2}));
     worker.save_batch("codex", &mut batch).unwrap();
-    let hello = crate::sync::WorkerHello {
+    drop(worker);
+    let mut worker = WorkerStore::open(&worker_path).unwrap();
+    let mut hello = crate::sync::WorkerHello {
         collection_status: Some(crate::sync::CollectionStatus {
+            rescan: worker.rescan_scan_progress().unwrap(),
             active_agent: Some("codex".into()),
             last_success_at: Some(123),
             errors: [("claudecode".into(), "unreadable source".into())].into(),
         }),
-        collection_complete: true,
+        collection_complete: false,
         collection_error: None,
         epoch: Some(grant.epoch.clone()),
         confirmed_sequence: worker.confirmed_sequence().unwrap(),
@@ -493,6 +499,26 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
         queue: worker.queue_status().unwrap(),
         rescan: worker.rescan_progress().unwrap(),
     };
+    cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
+    assert_eq!(cache.rescan_tasks().unwrap()[0].status, "running");
+    let scan = cache.nodes().unwrap()[0]
+        .health
+        .clone()
+        .unwrap()
+        .collection
+        .rescan
+        .unwrap();
+    assert_eq!(scan.id, task.id);
+    assert_eq!(scan.agent, "codex");
+    assert_eq!((scan.completed, scan.total), (1, 2));
+    batch.complete = true;
+    batch.checkpoint = None;
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert!(worker.rescan_scan_progress().unwrap().is_none());
+    hello.collection_status.as_mut().unwrap().rescan = worker.rescan_scan_progress().unwrap();
+    hello.collection_complete = true;
+    hello.rescan = worker.rescan_progress().unwrap();
+    hello.queue = worker.queue_status().unwrap();
     assert!(hello.rescan.as_ref().unwrap().target_sequence.is_some());
     cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
     assert_eq!(cache.rescan_tasks().unwrap()[0].status, "uploading");
@@ -502,6 +528,21 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
     assert_eq!(health.collection.errors["claudecode"], "unreadable source");
     assert!(health.reported_at > 0);
     let mut legacy_hello = hello.clone();
+    let legacy_status =
+        serde_json::json!({"activeAgent": null, "lastSuccessAt": null, "errors": {}});
+    legacy_hello.collection_status = Some(serde_json::from_value(legacy_status.clone()).unwrap());
+    assert!(
+        legacy_hello
+            .collection_status
+            .as_ref()
+            .unwrap()
+            .rescan
+            .is_none()
+    );
+    assert_eq!(
+        serde_json::to_value(&legacy_hello.collection_status).unwrap(),
+        legacy_status
+    );
     legacy_hello.collection_status = None;
     cache
         .worker_hello(&grant.node_id, &legacy_hello, "1.1.1")

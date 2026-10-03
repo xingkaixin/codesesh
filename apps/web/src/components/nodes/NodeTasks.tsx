@@ -1,22 +1,26 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import type { NodeTask } from "@codesesh/contract";
-import { cancelRescan, fetchRescanHistory } from "../../lib/api";
+import { cancelRescan, fetchRescanHistory, type SourceNode } from "../../lib/api";
+import { isNodeOnline } from "../../hooks/useNodes";
 import { t } from "../../i18n/translate";
 import { nodeButton } from "./NodeDialog";
-import { taskLabel } from "./node-status";
+import { taskLabel, taskReason } from "./node-status";
 
 const activeStatuses = new Set(["waiting", "dispatched", "running", "paused", "uploading"]);
 
 export function NodeTasks({
-  nodeId,
+  node,
+  now,
   tasks,
   unavailable,
 }: {
-  nodeId: string;
+  node: SourceNode;
+  now: number;
   tasks: NodeTask[];
   unavailable: boolean;
 }) {
+  const nodeId = node.id;
   const client = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
@@ -55,40 +59,62 @@ export function NodeTasks({
       setCancelling(null);
     }
   };
-  const row = (task: NodeTask) => (
-    <li key={task.request.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
-      <div className="min-w-0 text-sm">
-        <p>
-          {taskLabel(task.status)} ·{" "}
-          {task.request.agents.length ? task.request.agents.join(", ") : t("All agents")}
-        </p>
-        <p className="mt-1 text-xs text-[var(--console-muted)]">
-          {new Date(task.request.createdAt).toLocaleString()}
-        </p>
-        {task.progress?.pendingAgents.length ? (
+  const row = (task: NodeTask) => {
+    const reason = taskReason(task.request.reason);
+    const scan = node.health?.collection.rescan;
+    const showScan =
+      task.status === "running" &&
+      scan?.id === task.request.id &&
+      task.progress?.pendingAgents.includes(scan.agent) &&
+      !unavailable &&
+      isNodeOnline(node, now) &&
+      node.health != null &&
+      now - node.health.reportedAt <= 60000;
+    return (
+      <li key={task.request.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
+        <div className="min-w-0 text-sm">
+          <p>
+            {taskLabel(task.status)} ·{" "}
+            {task.request.agents.length ? task.request.agents.join(", ") : t("All agents")}
+          </p>
+          {reason && <p className="mt-1 text-xs text-[var(--console-muted)]">{reason}</p>}
+          {showScan && scan && (
+            <p className="mt-2 tabular-nums">
+              {t("{0}: {1} / {2} source items scanned", [
+                scan.agent,
+                scan.completed.toLocaleString(),
+                scan.total.toLocaleString(),
+              ])}
+            </p>
+          )}
           <p className="mt-1 text-xs text-[var(--console-muted)]">
-            {t("Pending Agents: {0}", [task.progress.pendingAgents.join(", ")])}
+            {new Date(task.request.createdAt).toLocaleString()}
           </p>
-        ) : null}
-        {task.progress?.error && (
-          <p className="mt-1 break-words text-xs text-[var(--console-error)]">
-            {task.progress.error}
-          </p>
+          {task.progress?.pendingAgents.length ? (
+            <p className="mt-1 text-xs text-[var(--console-muted)]">
+              {t("Pending Agents: {0}", [task.progress.pendingAgents.join(", ")])}
+            </p>
+          ) : null}
+          {task.progress?.error && (
+            <p className="mt-1 break-words text-xs text-[var(--console-error)]">
+              {task.progress.error}
+            </p>
+          )}
+        </div>
+        {task.status === "waiting" && (
+          <button
+            className={nodeButton}
+            disabled={unavailable || cancelling !== null}
+            onClick={() => {
+              void cancel(task);
+            }}
+          >
+            {t("Cancel queued task")}
+          </button>
         )}
-      </div>
-      {task.status === "waiting" && (
-        <button
-          className={nodeButton}
-          disabled={unavailable || cancelling !== null}
-          onClick={() => {
-            void cancel(task);
-          }}
-        >
-          {t("Cancel queued task")}
-        </button>
-      )}
-    </li>
-  );
+      </li>
+    );
+  };
   return (
     <section
       className="mt-4 border-t border-[var(--console-border)] pt-4"

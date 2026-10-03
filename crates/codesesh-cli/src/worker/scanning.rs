@@ -60,6 +60,7 @@ impl Scanning {
         store: &WorkerStore,
     ) -> Result<codesesh_core::sync::CollectionStatus> {
         Ok(codesesh_core::sync::CollectionStatus {
+            rescan: store.rescan_scan_progress()?,
             active_agent: self
                 .pending
                 .as_ref()
