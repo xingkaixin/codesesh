@@ -60,6 +60,7 @@ impl Scanning {
         store: &WorkerStore,
     ) -> Result<codesesh_core::sync::CollectionStatus> {
         Ok(codesesh_core::sync::CollectionStatus {
+            rescan: store.rescan_scan_progress()?,
             active_agent: self
                 .pending
                 .as_ref()
@@ -133,7 +134,17 @@ impl Scanning {
                     if !paused && self.errors.is_empty() {
                         store.record_scan_success()?;
                     }
-                    self.next_scan = Instant::now() + Duration::from_secs(5);
+                    let agents = self
+                        .sources
+                        .iter()
+                        .map(|source| source.agent.clone())
+                        .collect::<Vec<_>>();
+                    let delay = if self.errors.is_empty() && !store.collection_complete(&agents)? {
+                        Duration::ZERO
+                    } else {
+                        Duration::from_secs(5)
+                    };
+                    self.next_scan = Instant::now() + delay;
                 }
             }
         }
@@ -237,6 +248,35 @@ mod tests {
         scanning.tick(&mut store, false).await.unwrap();
         assert!(store.collection_complete(&["claudecode".into()]).unwrap());
         assert!(!store.collection_complete(&["codex".into()]).unwrap());
+        assert!(scanning.pending.is_none());
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(scanning.pending.is_none());
+    }
+
+    #[tokio::test]
+    async fn unfinished_history_continues_until_all_agents_finish_then_waits() {
+        let (_dir, mut scanning, mut store) = fixture();
+        let mut incomplete = batch();
+        incomplete.complete = false;
+        store.save_batch("codex", &mut incomplete).unwrap();
+        let scanner = scanning.scanners[1].take().unwrap();
+        scanning.pending = Some((1, 0, tokio::spawn(async move { (scanner, Ok(batch())) })));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.pending.as_ref().map(|pending| pending.0), Some(0));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.pending.as_ref().map(|pending| pending.0), Some(1));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(
+            store
+                .collection_complete(&["codex".into(), "claudecode".into()])
+                .unwrap()
+        );
+        assert!(scanning.pending.is_none());
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(scanning.pending.is_none());
     }
 
     #[tokio::test]

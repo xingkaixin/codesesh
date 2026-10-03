@@ -258,7 +258,8 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
           )}
           <NodeTasks
             key={selected.id}
-            nodeId={selected.id}
+            node={selected}
+            now={now}
             tasks={query.data?.tasks ?? []}
             unavailable={query.isError}
           />

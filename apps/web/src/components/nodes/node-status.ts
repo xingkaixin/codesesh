@@ -33,6 +33,15 @@ export function taskLabel(status: string) {
   return labels[status] ?? status;
 }
 
+export function taskReason(reason: string) {
+  const reasons: Record<string, string> = {
+    manual: t("Requested manually"),
+    "hub-recovery": t("Triggered by Hub recovery"),
+    "worker-replacement": t("Triggered by Worker replacement"),
+  };
+  return reasons[reason];
+}
+
 export function nodeRecoveryHint(node: SourceNode) {
   const error = node.error ?? "";
   if (node.revoked)

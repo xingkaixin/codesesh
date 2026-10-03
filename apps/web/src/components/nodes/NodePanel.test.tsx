@@ -228,6 +228,69 @@ describe("NodePanel", () => {
     expect(api.fetchRescanHistory).toHaveBeenCalledWith(node.id, undefined);
   });
 
+  it.each(["current", "stale", "offline", "other-task", "legacy", "uploading"])(
+    "shows the recovery reason and only matching current scan counts (%s)",
+    async (state) => {
+      const scan = {
+        id: state === "other-task" ? "old-task" : "recovery",
+        agent: "codex",
+        completed: 32,
+        total: 96,
+      };
+      vi.mocked(api.fetchNodes).mockResolvedValue({
+        nodes: [
+          {
+            ...node,
+            lastSeen: state === "offline" ? 1 : Date.now(),
+            health: {
+              reportedAt: state === "stale" ? 1 : Date.now(),
+              collection: {
+                activeAgent: "codex",
+                lastSuccessAt: null,
+                errors: {},
+                ...(state === "legacy" ? {} : { rescan: scan }),
+              },
+            },
+          },
+        ],
+        tasks: [
+          {
+            nodeId: node.id,
+            request: {
+              id: "recovery",
+              agents: [],
+              reason: "hub-recovery",
+              requiredRevisions: {},
+              createdAt: 1,
+            },
+            status: state === "uploading" ? "uploading" : "running",
+            progress: {
+              id: "recovery",
+              pendingAgents: state === "uploading" ? [] : ["codex"],
+              targetSequence: state === "uploading" ? 192 : null,
+              error: null,
+            },
+          },
+        ],
+        local: null,
+        version: "1.2.5",
+        minimumWorkerVersion: "1.1.1",
+      });
+      panel();
+      await screen.findByText("Triggered by Hub recovery");
+      expect(screen.queryByText("codex: 32 / 96 source items scanned") !== null).toBe(
+        state === "current",
+      );
+      expect(screen.getByText("3 pending batches · 0.0 MB")).toBeTruthy();
+      if (state === "uploading") {
+        expect(screen.getByText("Waiting for upload confirmation · All agents")).toBeTruthy();
+        expect(screen.queryByText("Pending Agents: codex")).toBeNull();
+      } else {
+        expect(screen.getByText("Pending Agents: codex")).toBeTruthy();
+      }
+    },
+  );
+
   it("confirms pairing against the token rather than another newly connected node", async () => {
     vi.mocked(api.createPairingToken).mockResolvedValue({
       token: "paired-token",

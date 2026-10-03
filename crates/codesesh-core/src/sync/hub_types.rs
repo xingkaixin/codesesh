@@ -26,10 +26,24 @@ pub struct Receipt {
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectionStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rescan: Option<RescanScanProgress>,
     pub active_agent: Option<String>,
     #[ts(type = "number | null")]
     pub last_success_at: Option<i64>,
     pub errors: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanScanProgress {
+    pub id: String,
+    pub agent: String,
+    #[ts(type = "number")]
+    pub completed: i64,
+    #[ts(type = "number")]
+    pub total: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]

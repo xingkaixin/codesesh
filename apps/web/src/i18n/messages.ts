@@ -17,6 +17,13 @@ export const messages = {
     "キャンセルできません。送信済みの可能性があります。更新後の状態を確認してください。",
   ],
   "Pending Agents: {0}": ["待完成 Agent：{0}", "未完了の Agent: {0}"],
+  "Requested manually": ["由手动操作触发", "手動でリクエスト"],
+  "Triggered by Hub recovery": ["由 Hub 数据恢复触发", "Hub のデータ復旧により開始"],
+  "Triggered by Worker replacement": ["由 Worker 替换触发", "Worker の置き換えにより開始"],
+  "{0}: {1} / {2} source items scanned": [
+    "{0}：已扫描 {1} / {2} 项来源",
+    "{0}: ソース項目 {1} / {2} 件をスキャン済み",
+  ],
   "Cancel queued task": ["取消排队任务", "待機タスクをキャンセル"],
   "Rescan tasks": ["重采集任务", "再収集タスク"],
   "Hide task history": ["收起任务历史", "タスク履歴を閉じる"],
