@@ -232,11 +232,14 @@ pub async fn run(
     let mut online = false;
     let mut retry_seconds = 1u64;
     let mut shutdown = Box::pin(crate::shutdown_signal());
+    let mut next_tick = Instant::now();
     loop {
         tokio::select! {
+            biased;
             _ = &mut shutdown => break,
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+            _ = tokio::time::sleep_until(next_tick.into()) => {}
         }
+        next_tick = Instant::now() + Duration::from_millis(100);
         if Instant::now() >= next_status {
             let queue = collector.store.queue_status()?;
             let phase = if paused {
@@ -409,6 +412,7 @@ pub async fn run(
                         &receipt.digest,
                     )?;
                     retry_seconds = 1;
+                    next_tick = Instant::now();
                 }
                 Ok(response)
                     if response.status() == StatusCode::CONFLICT
