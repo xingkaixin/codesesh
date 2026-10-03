@@ -6,6 +6,8 @@
 
 <p align="center"><strong>One place to see every AI coding session you've ever had.</strong></p>
 
+[Website](https://codesesh.xingkaixin.me/) · [Find Claude Code and Codex history](https://codesesh.xingkaixin.me/guides/session-history/) · [Installation guide](https://codesesh.xingkaixin.me/guides/getting-started/)
+
 CodeSesh scans your local machine, finds sessions from supported AI coding agents, and surfaces them in a unified Web UI.
 
 ## Quick Start

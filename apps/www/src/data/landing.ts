@@ -178,8 +178,8 @@ export const agents = AGENT_CATALOG.map((entry) => ({
 export const copy = {
   zh: {
     meta: {
-      title: "CodeSesh：搜索与回放本地 AI 编码历史",
-      description: `CodeSesh 把 ${agentCount} 种 AI 编码 Agent 的本地会话按项目组织，提供结构化搜索、完整回放与本地 SQLite 索引，让工程上下文可查、可追溯。`,
+      title: "CodeSesh：Claude Code 与 Codex 历史会话查看器",
+      description: `在本机搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种 AI 编码工具的历史。按项目查找对话、工具调用和文件变更，免费开源，无需账号。`,
     },
     header: {
       tour: "产品导览",
@@ -197,7 +197,7 @@ export const copy = {
     },
     hero: {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
-      title: ["你和 AI 写过的", "每一次对话，都还在。"],
+      title: ["搜索和回放", "你的 AI 编码历史。"],
       body: `在本机统一搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用与文件变更。`,
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
@@ -386,8 +386,9 @@ export const copy = {
   },
   en: {
     meta: {
-      title: "CodeSesh: Search and Replay Local AI Coding History",
-      description: `CodeSesh organizes local sessions from ${agentCount} AI coding agents by project, with structured search, full replay, and a local SQLite index.`,
+      title: "Claude Code & Codex History Viewer | CodeSesh",
+      description:
+        "Search Claude Code, Codex, and Cursor history locally. Find conversations, tool calls, and file changes by project. Free and open source, with no account needed.",
     },
     header: {
       tour: "Tour",
@@ -405,7 +406,7 @@ export const copy = {
     },
     hero: {
       eyebrow: `Local / Zero config / ${agentCount} agents`,
-      title: ["Every AI session.", "Still here."],
+      title: ["Search and replay", "your AI coding history."],
       body: `Search and replay local history from Claude Code, Codex, Cursor, and ${agentCount - 3} other agents. Browse messages, tool calls, and file changes by project.`,
       privacy:
         "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
@@ -598,8 +599,8 @@ export const copy = {
   },
   ja: {
     meta: {
-      title: "CodeSesh：ローカルのAIコーディング履歴を検索・再生",
-      description: `CodeSeshは、${agentCount}種類のAIコーディングエージェントのローカルセッションをプロジェクト別に整理し、構造化検索、完全な再生、ローカルSQLiteインデックスを提供します。`,
+      title: "Claude Code・Codex の会話履歴ビューアー | CodeSesh",
+      description: `Claude Code、Codex、Cursor など${agentCount}種類のAIコーディング履歴をローカルで検索・再生。会話、ツール呼び出し、ファイル変更をプロジェクト別に確認できます。無料・オープンソース、アカウント不要。`,
     },
     header: {
       tour: "製品ツアー",
@@ -617,7 +618,7 @@ export const copy = {
     },
     hero: {
       eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
-      title: ["AIとの開発履歴を、", "すべてここに。"],
+      title: ["AIコーディングの履歴を、", "検索して読み返す。"],
       body: `Claude Code、Codex、Cursorなど${agentCount}種類のツールの履歴をローカルで検索・再生。メッセージ、ツール呼び出し、ファイル変更をプロジェクト別に確認できます。`,
       privacy:
         "セッション内容とインデックスはローカルに保持されます。アカウント、クラウド同期、セッションのテレメトリは不要です。",

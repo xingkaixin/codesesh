@@ -4,9 +4,24 @@ locale: zh
 slug: session-history
 ---
 
-CodeSesh 可以搜索和回放仍保存在本机的 Claude Code 与 Codex 对话。它读取受支持的本地记录，按项目组织会话，并搜索消息、工具输出和文件路径。无需上传历史，也不需要注册账号。
+Claude Code 的本地对话记录通常保存在 `~/.claude/projects/`。Codex 的普通会话记录保存在 `~/.codex/sessions/`，归档记录保存在 `~/.codex/archived_sessions/`。这些都是 JSONL 文件，每行是一条 JSON 记录。`~` 代表当前用户的主目录；自定义配置可以改变这些位置。
 
-## 1. 启动本地查看器
+## 1. Claude Code 和 Codex 历史记录的保存位置
+
+CodeSesh 默认读取以下位置。`~` 代表当前用户的主目录：
+
+- **Claude Code：** `~/.claude/projects/` 下的 JSONL 会话记录。如果设置了 `CLAUDE_CONFIG_DIR`，则读取该配置根目录下的 `projects/`。
+- **Codex：** `~/.codex/sessions/` 下的 `rollout-*.jsonl`，包括按日期嵌套的子目录。如果设置了 `CODEX_HOME`，则读取该根目录下的 `sessions/`。
+
+启动 CodeSesh 的终端应使用与编码工具相同的环境变量。这两个变量指向工具的根目录，不是直接指向 `projects/` 或 `sessions/`。
+
+当前 Codex 适配器默认不扫描 `~/.codex/archived_sessions/`。仅保存在另一台电脑或托管服务中的对话，也不属于这次本地扫描的范围。
+
+不安装查看器，也可以用文本编辑器打开已有的 JSONL 文件。一个会话文件包含多条记录和工具活动；搜索单个文件与跨项目搜索对话不同。查看时保留原文件，不要修改内容。
+
+## 2. 用 CodeSesh 搜索历史会话
+
+CodeSesh 可以跨受支持的本地记录搜索和回放对话，按项目组织会话，并查找消息、工具输出和文件路径。单机模式无需账号，历史记录留在你的电脑上。独立可执行文件和其他安装方式见[安装指南](/zh/guides/getting-started/)。
 
 安装 Node.js 22 或更高版本，然后在终端运行：
 
@@ -17,17 +32,6 @@ npx codesesh --days 0
 CodeSesh 会打开 `http://localhost:4521`。如果端口被占用，请使用终端中打印的地址。浏览期间保持终端进程运行。
 
 **为什么加 `--days 0`？** 默认命令 `npx codesesh` 只包含最近七个本地日历日内活跃的会话。查找更早的对话时，使用 `--days 0`。历史记录较多时，首次扫描和搜索索引需要一些时间。
-
-## 2. 确认历史记录存在哪里
-
-CodeSesh 默认读取以下位置。`~` 代表当前用户的主目录：
-
-- **Claude Code：** `~/.claude/projects/` 下的 JSONL 会话记录。如果设置了 `CLAUDE_CONFIG_DIR`，则读取该配置根目录下的 `projects/`。
-- **Codex：** `~/.codex/sessions/` 下的 `rollout-*.jsonl`，包括按日期嵌套的子目录。如果设置了 `CODEX_HOME`，则读取该根目录下的 `sessions/`。
-
-启动 CodeSesh 的终端应使用与编码工具相同的环境变量。这两个变量指向工具的根目录，不是直接指向 `projects/` 或 `sessions/`。
-
-当前 Codex 适配器默认不扫描 `~/.codex/archived_sessions/`。仅保存在另一台电脑或托管服务中的对话，也不属于这次本地扫描的范围。
 
 ## 3. 按项目和内容找回一次对话
 

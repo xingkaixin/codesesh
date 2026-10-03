@@ -9,7 +9,9 @@ interface Props {
 const { locale } = Astro.props;
 const t = guideCopy[locale];
 const featured = guides.filter((guide) =>
-  ["getting-started", "lan-access", "multi-machine-sync"].includes(guide.slug),
+  ["getting-started", "session-history", "usage-and-costs"].includes(
+    guide.slug,
+  ),
 );
 ---
 
