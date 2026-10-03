@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.6] - 2026-10-03
+
+This patch reduces idle time while Workers collect and upload history, and explains why a rescan started and how far it has progressed. Upload confirmation, retry backoff, and durable queues remain in place. (#694)
+
+### Performance
+
+- Send the next queued upload immediately after a matching acknowledgment instead of waiting 100 ms between requests. Keep one upload in flight, heartbeats, graceful shutdown, and failure backoff. (#694)
+- Continue bounded scan rounds while history remains, keeping the five-second interval once collection completes or an Agent reports an error. Faster scanning can temporarily increase queue occupancy. (#694)
+
+### Features
+
+- Show whether a rescan was triggered manually, by Hub recovery, or by Worker replacement. Display committed source-item counts for a pending Agent, hide stale or mismatched reports, and retain the pending-Agent display for older Workers. Scanning and upload confirmation remain separate phases. (#694)
+
 ## [1.2.5] - 2026-10-03
 
 This patch lets Workers recover when the Hub changes again during a pending recovery, preventing stale recovery state from keeping synchronization paused across restarts. Queued session content is preserved. (#692)
