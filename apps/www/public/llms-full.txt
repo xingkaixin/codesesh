@@ -355,3 +355,17 @@ npx codesesh
 ```text
 http://localhost:4521
 ```
+
+## Usage guides
+
+- [All guides](https://codesesh.xingkaixin.me/guides/)
+- [中文使用指南](https://codesesh.xingkaixin.me/zh/guides/)
+- [日本語の使い方](https://codesesh.xingkaixin.me/ja/guides/)
+- [Install CodeSesh](https://codesesh.xingkaixin.me/guides/getting-started/)
+- [Find session history](https://codesesh.xingkaixin.me/guides/session-history/)
+- [Local and LAN access](https://codesesh.xingkaixin.me/guides/lan-access/)
+- [Multi-machine Hub and Worker setup](https://codesesh.xingkaixin.me/guides/multi-machine-sync/)
+- [Background services and logs](https://codesesh.xingkaixin.me/guides/background-services/)
+- [Token usage and costs](https://codesesh.xingkaixin.me/guides/usage-and-costs/)
+
+A Hub serves stored history; Workers collect and upload it. Use `--host 0.0.0.0 --remote-access` for authenticated LAN access, and preserve the console URL's access token. HTTP is unencrypted; use HTTPS when transport encryption is required.
