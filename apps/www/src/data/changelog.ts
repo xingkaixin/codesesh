@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.7",
+        date: "2026-10-04",
+        title: "Keep shared history visible and recent activity current",
+        summary:
+          "CodeSesh 1.2.7 keeps archived and remote Agent sessions visible in the Hub without requiring a local Agent installation. Default date ranges stay current, and a redesigned product site with three-language guides makes local AI coding history easier to explore and set up.",
+        direction:
+          "History should stay available across machines, recent views should follow the work happening now, and setup instructions should make those workflows practical.",
+        highlights: [
+          {
+            title: "Find Agent history without a local installation",
+            description:
+              "Hub projects and dashboards include archived and remote Agent sessions even when that Agent is absent from the Hub machine. Explicit Agent filters still apply.",
+          },
+          {
+            title: "Keep recent date ranges moving",
+            description:
+              "Default 7-, 14-, 30-, and 90-day views follow the current local date, including after the server has been running for days. Ranges with an explicit end date remain fixed.",
+          },
+          {
+            title: "Follow practical guides in three languages",
+            description:
+              "English, Chinese, and Japanese guides cover installation, session search, LAN access, Hub/Worker setup, background services, and token and cost interpretation.",
+          },
+          {
+            title: "Explore the product before installing",
+            description:
+              "The redesigned site brings product previews, supported Agents, guides, and installation options into a clearer tour, with light and dark themes and mobile navigation.",
+          },
+        ],
+      },
+      {
         version: "1.2.6",
         date: "2026-10-03",
         title: "Catch up on history with clearer rescan progress",
@@ -586,6 +617,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.7",
+        date: "2026-10-04",
+        title: "共享历史完整可见，近期活动随日期更新",
+        summary:
+          "CodeSesh 1.2.7 让 Hub 无需在本机安装对应 Agent，也能展示已归档和远程会话。默认日期范围持续更新，重新设计的产品站与三语指南帮助你了解并配置本地 AI 编码历史工作流。",
+        direction:
+          "历史记录应当跨机器持续可用，近期视图应当反映当前工作，配置指南应当让这些工作流更容易上手。",
+        highlights: [
+          {
+            title: "本机未安装 Agent，也能找到历史",
+            description:
+              "Hub 的项目与 Dashboard 会包含已归档和远程 Agent 会话，不再要求 Hub 所在机器安装对应 Agent。显式 Agent 筛选仍然生效。",
+          },
+          {
+            title: "近期日期范围持续滚动",
+            description:
+              "默认的 7、14、30、90 天视图随当前本地日期更新，服务器运行多天后也不会停留在启动时的范围。明确设置结束日期的范围保持固定。",
+          },
+          {
+            title: "按三语指南完成实际配置",
+            description:
+              "英文、中文、日文指南覆盖安装、会话搜索、局域网访问、Hub/Worker 配置、后台服务，以及 token 和费用解读。",
+          },
+          {
+            title: "安装前看清产品能力",
+            description:
+              "重新设计的产品站将产品预览、支持的 Agent、指南和安装方式组织成更清楚的导览，并提供明暗主题与移动端导航。",
+          },
+        ],
+      },
+      {
         version: "1.2.6",
         date: "2026-10-03",
         title: "更快补齐历史，看清重采集进度",
@@ -1082,6 +1144,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.7",
+        date: "2026-10-04",
+        title: "共有履歴を見落とさず、直近の活動を最新の日付で確認",
+        summary:
+          "CodeSesh 1.2.7 では、Hub に対応する Agent をインストールしていなくても、保存済みの履歴や別マシンのセッションを表示できます。既定の日付範囲も現在の日付に追従します。刷新した製品サイトと3言語のガイドで、ローカル AI コーディング履歴の使い方や設定を確認しやすくしました。",
+        direction:
+          "履歴はマシンをまたいで利用でき、直近の表示は現在の作業を反映するべきです。設定ガイドも、こうした使い方を実践できる内容に整えます。",
+        highlights: [
+          {
+            title: "Agent が未インストールでも履歴を確認",
+            description:
+              "Hub のプロジェクトとダッシュボードに、保存済みの履歴や別マシンの Agent セッションを表示します。Hub 側への Agent のインストールは不要で、明示した Agent フィルターは引き続き適用されます。",
+          },
+          {
+            title: "直近の日付範囲を自動で更新",
+            description:
+              "既定の7・14・30・90日間の表示は、サーバーを何日も稼働させた後も現在のローカル日付に追従します。終了日を明示した範囲は固定のままです。",
+          },
+          {
+            title: "3言語のガイドで設定を進める",
+            description:
+              "英語・中国語・日本語のガイドで、インストール、セッション検索、LAN アクセス、Hub/Worker 設定、バックグラウンドサービス、トークンと費用の読み方を説明します。",
+          },
+          {
+            title: "インストール前に製品の使い方を確認",
+            description:
+              "製品プレビュー、対応 Agent、ガイド、インストール方法をわかりやすく整理しました。ライト・ダークテーマとモバイル向けナビゲーションも利用できます。",
+          },
+        ],
+      },
       {
         version: "1.2.6",
         date: "2026-10-03",
