@@ -1,6 +1,5 @@
 import {
   addCalendarDays,
-  countCalendarDays,
   parseCalendarDayBoundary,
   startOfCalendarDay,
   toCalendarDayKey,
@@ -29,14 +28,15 @@ function endOfLocalDay(timestamp: number): number {
   return addCalendarDays(timestamp, 1) - 1;
 }
 
-function presetFromDefault(window: TimeWindow, now: number): TimeWindowPreset {
-  if (window.days === 0 || window.from == null) return "all";
+function presetFromDefault(window: TimeWindow): TimeWindowPreset {
+  if (window.days === 0) return "all";
   if (
-    (window.days === 7 || window.days === 14 || window.days === 30 || window.days === 90) &&
-    countCalendarDays(window.from, window.to ?? now) === window.days
+    window.to == null &&
+    (window.days === 7 || window.days === 14 || window.days === 30 || window.days === 90)
   ) {
     return `${window.days}d`;
   }
+  if (window.from == null) return "all";
   return "custom";
 }
 
@@ -69,7 +69,7 @@ export function resolveTimeWindow(
       return { preset: range, window: { from, to }, customFrom, customTo };
     }
   }
-  const fallbackPreset = presetFromDefault(fallback, now);
+  const fallbackPreset = presetFromDefault(fallback);
   if (fallbackPreset !== "custom") {
     return { preset: fallbackPreset, window: presetWindow(fallbackPreset, now) };
   }
