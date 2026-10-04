@@ -1,0 +1,18 @@
+{
+  "tool": "Built-in image_gen",
+  "purpose": "Landing page archive sculpture",
+  "outputs": [
+    "public/artwork/archive-light-768.webp",
+    "public/artwork/archive-light-1536.webp",
+    "public/artwork/archive-dark-768.webp",
+    "public/artwork/archive-dark-1536.webp"
+  ],
+  "encoding": {
+    "format": "webp",
+    "quality": 86
+  },
+  "prompts": {
+    "light": "Use case: stylized-concept. Asset type: art-directed hero image for CodeSesh, a local AI coding session archive. Create a single refined 3D sculpture made of many very thin translucent frosted sage-green glass sheets, shaped like broad rectangular archive cards with subtly rounded edges. Cards are arranged in a graceful curved rising fan, lower left to upper right, like a physical continuous history becoming an organized index. Roughly 40 sheets with fine polished edges, some pale silvery aluminum separators, deep forest-green inner core. One coherent architectural form, bold silhouette, close-up studio product photography, elegant restrained industrial precision, realistic refraction and soft directional daylight from upper left. Place it on a seamless very pale neutral gray-green background approximately #edf0eb, subtle contact shadows, no scenery, no room, no pedestal. Wide 3:2 composition with sculpture filling most of frame, generous breathing room at edges, three-quarter perspective, no text, no letters, no UI, no symbols, no grids, no logos, no planets, no chrome blobs, no glowing neon, no grain. The silhouette should read immediately at thumbnail size. Premium international design studio quality, photorealistic rendered materials, crisp clarity.",
+    "dark": "Use case: lighting-weather. Edit target: the provided sage glass archive sculpture. Make a matching DARK MODE version of exactly this image, preserve the sculpture, camera, composition and all its sheets exactly. Change only lighting and background: seamless very dark forest charcoal #111511 background and ground, soft pale sage rim light tracing every glass edge, translucent deep green body, subdued silver highlights and polished dark metal separators. Physically believable low-key studio photography. Sculptural silhouette must remain legible. No glow, no text, no symbols, no extra objects. Keep same wide 3:2 aspect ratio."
+  }
+}
