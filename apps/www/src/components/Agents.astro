@@ -1,77 +1,199 @@
 ---
-import { agents, copy, type Locale } from "../data/landing";
-import { guides, guideRoutes } from "../data/guides";
-import HeadingText from "./HeadingText.astro";
+import { experience } from "../data/experience";
+import { agents, type Locale } from "../data/landing";
+import { guideRoutes } from "../data/guides";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
-const t = copy[locale].agents;
+const t = experience[locale];
 ---
 
 <section
   id="agents"
-  class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 lg:px-7"
+  class="agents section-space"
   aria-labelledby="agents-heading"
 >
-  <div class="mx-auto grid max-w-[1180px] gap-8 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-[52px]">
-    <div>
-      <h2
-        id="agents-heading"
-        class="console-display landing-heading text-3xl font-semibold leading-[1.2] text-[var(--console-text)]"
-      >
-        <HeadingText value={t.title} />
+  <div class="section-shell agents-layout">
+    <div class="agents-copy" data-reveal>
+      <h2 id="agents-heading" class="section-heading">
+        {t.agentsTitle}
       </h2>
-      <p class="mt-4 text-sm leading-7 text-[var(--console-text-secondary)]">
-        {t.body}
+      <p class="section-body">{t.agentsBody}</p>
+      <p class="agent-count">
+        <span>{agents.length}</span>
+        {t.agentsCount}
       </p>
-      <a
-        class="footer-link mt-4 inline-block"
-        href={guideRoutes("session-history")[locale]}
-      >
-        {
-          guides.find((guide) => guide.slug === "session-history")!.copy[locale]
-            .title
-        }
-      </a>
     </div>
-
-    <ul class="grid gap-px overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-border)] sm:grid-cols-2 lg:grid-cols-5">
+    <ul class="agent-list" data-reveal>
       {agents.map((agent) => (
-        <li class="flex min-h-14 items-center gap-3 bg-[var(--console-bg)] px-4 py-3">
-          {"iconColored" in agent && agent.iconColored ? (
-            <img
-              src={agent.icon}
-              alt=""
-              width="18"
-              height="18"
-              class="size-[18px]"
-              loading="lazy"
-            />
-          ) : (
-            <span
-              aria-hidden="true"
-              class="inline-block size-[18px] bg-[var(--console-text)] opacity-80"
-              style={`mask: url("${agent.icon}") center / contain no-repeat; -webkit-mask: url("${agent.icon}") center / contain no-repeat;`}
-            />
-          )}
-          <span class="console-mono text-xs font-medium text-[var(--console-text)]">
-            {agent.name}
-          </span>
+        <li>
+          <span
+            class="agent-icon"
+            aria-hidden="true"
+            style={`mask-image:url('${agent.icon}')`}
+          ></span>
+          <span>{agent.name}</span>
         </li>
       ))}
     </ul>
   </div>
+  <div class="section-shell local-story" data-reveal>
+    <div class="local-heading">
+      <Icon name="shield" class="local-shield" />
+      <h3 class="console-display">
+        {t.localTitle[0]}
+        <br />
+        {t.localTitle[1]}
+      </h3>
+    </div>
+    <div class="local-body">
+      <p>{t.localBody}</p>
+      <a class="text-link" href={guideRoutes("multi-machine-sync")[locale]}>
+        {t.localLink}
+        <Icon name="arrow-up-right" />
+      </a>
+    </div>
+  </div>
 </section>
 
 <style>
-  #agents {
-    background: linear-gradient(
-      transparent,
-      var(--console-surface-sunken) 45%,
-      transparent
-    );
+  .agents {
+    background: var(--console-surface-sunken);
+  }
+  .agents-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 6rem;
+    align-items: center;
+  }
+  .agents-copy .section-heading {
+    max-width: 9em;
+  }
+  .agents-copy .section-body {
+    max-width: 26rem;
+  }
+  .agent-count {
+    display: flex;
+    align-items: baseline;
+    gap: 1.2rem;
+    margin: 2rem 0 0;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--console-text-secondary);
+  }
+  .agent-count > span {
+    font-family: var(--font-display);
+    font-size: 6.6rem;
+    line-height: 1;
+    letter-spacing: -0.08em;
+    color: var(--brand-text);
+  }
+  .agent-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.9rem 1.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .agent-list li {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.8rem;
+    min-width: 0;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  .agent-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    background: var(--console-text);
+    opacity: 0.85;
+  }
+  .local-story {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 6rem;
+    border-top: 1px solid var(--console-border-strong);
+    padding-top: 3.5rem;
+    margin-top: 4rem;
+    align-items: center;
+  }
+  .local-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.2rem;
+  }
+  .local-heading :global(.local-shield) {
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    color: var(--brand-text);
+    margin-top: 0.3rem;
+  }
+  .local-heading h3 {
+    margin: 0;
+    font-size: clamp(1.7rem, 2.5vw, 2.5rem);
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+  }
+  .local-body > p {
+    margin: 0 0 0.6rem;
+    max-width: 34rem;
+    color: var(--console-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.75;
+  }
+  @media (max-width: 1023px) {
+    .agents-layout,
+    .local-story {
+      gap: 3rem;
+    }
+    .agent-list {
+      gap: 1.6rem 1rem;
+    }
+  }
+  @media (max-width: 767px) {
+    .agents-layout,
+    .local-story {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    .agents-copy .section-heading {
+      max-width: 14em;
+    }
+    .agent-count {
+      margin-top: 1.5rem;
+    }
+    .agent-count > span {
+      font-size: 5rem;
+    }
+    .agent-list {
+      gap: 1.8rem 1rem;
+    }
+    .agent-list li {
+      font-size: 0.72rem;
+    }
+    .agent-icon {
+      width: 1.8rem;
+      height: 1.8rem;
+    }
+    .local-story {
+      margin-top: 3rem;
+      padding-top: 2.5rem;
+      gap: 1.5rem;
+    }
+    .local-body > p {
+      font-size: 0.9rem;
+    }
   }
 </style>

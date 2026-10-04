@@ -14,20 +14,15 @@ const items: FAQItem[] = t.items;
 
 <section
   id="faq"
-  class="scroll-mt-20 px-4 pb-4 pt-24 sm:px-6 lg:px-7"
+  class="faq-section section-space"
   aria-labelledby="faq-heading"
 >
-  <div class="mx-auto grid max-w-[1180px] gap-8 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-[52px]">
+  <div class="section-shell faq-layout">
     <div class="lg:sticky lg:top-24 lg:self-start">
-      <h2
-        id="faq-heading"
-        class="console-display landing-heading text-3xl font-semibold leading-[1.2] text-[var(--console-text)]"
-      >
+      <h2 id="faq-heading" class="section-heading">
         <HeadingText value={t.title} />
       </h2>
-      <p class="mt-4 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]">
-        {t.body}
-      </p>
+      <p class="section-body">{t.body}</p>
     </div>
 
     <div>
@@ -62,3 +57,40 @@ const items: FAQItem[] = t.items;
     </div>
   </div>
 </section>
+
+<style>
+  .faq-section {
+    border-top: 1px solid var(--console-border);
+    padding-top: 5rem;
+  }
+  .faq-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 6rem;
+  }
+  .faq-layout h2 {
+    max-width: 8em;
+    font-size: clamp(2rem, 3.6vw, 3.4rem);
+  }
+  .faq-layout .section-body {
+    max-width: 22rem;
+    font-size: 0.9rem;
+  }
+  @media (max-width: 1023px) {
+    .faq-layout {
+      gap: 3rem;
+    }
+  }
+  @media (max-width: 767px) {
+    .faq-layout {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .faq-layout h2 {
+      max-width: none;
+    }
+    .faq-section {
+      padding-top: 4rem;
+    }
+  }
+</style>

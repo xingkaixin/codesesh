@@ -3,6 +3,7 @@ import { copy, localeConfig, locales, type Locale } from "../data/landing";
 import { changelogRoutes } from "../data/changelog";
 import { guideCopy, guideRoutes } from "../data/guides";
 import Icon from "./Icon.astro";
+import { experience } from "../data/experience";
 
 interface Props {
   locale: Locale;
@@ -17,6 +18,14 @@ const languageRoutes =
   Astro.props.languageRoutes ??
   (page === "changelog" ? changelogRoutes : undefined);
 
+const links = [
+  { label: t.tour, href: `${homeRoute}#tour` },
+  { label: t.capabilities, href: `${homeRoute}#capabilities` },
+  { label: t.agents, href: `${homeRoute}#agents` },
+  { label: t.changelog, href: changelogRoutes[locale] },
+  { label: guideCopy[locale].label, href: guideRoutes()[locale] },
+  { label: t.faq, href: `${homeRoute}#faq` },
+];
 const themes = [
   { key: "light", icon: "sun", label: t.themeLight },
   { key: "dark", icon: "moon", label: t.themeDark },
@@ -24,90 +33,37 @@ const themes = [
 ] as const;
 ---
 
-<header class="sticky top-0 z-50 border-b border-[var(--console-border)] bg-[var(--console-bg)]/84 backdrop-blur-xl">
-  <div class="mx-auto flex h-[60px] max-w-[86rem] items-center px-4 sm:px-6 lg:px-7">
-    <a
-      href={localeConfig[locale].route}
-      class="motion-hover flex shrink-0 items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-    >
-      <img src="/logo.svg?v=3" alt="CodeSesh" class="size-6 rounded-sm" />
-      <span class="console-display hidden text-sm font-bold tracking-[0.06em] sm:inline">
-        CODESESH
-      </span>
+<header class="site-header">
+  <div class="header-inner section-shell">
+    <a href={homeRoute} class="site-brand">
+      <img src="/logo.svg?v=3" alt="CodeSesh" width="28" height="28" />
+      <span class="console-display">CODESESH</span>
     </a>
-
     <nav
-      data-fluid-hover="x"
-      class="ml-8 hidden items-center gap-2 lg:flex"
+      class="desktop-nav"
       aria-label={localeConfig[locale].primaryNavigationLabel}
     >
-      <a
-        data-fluid-item
-        class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#tour`}
-      >
-        {t.tour}
-      </a>
-      <a
-        data-fluid-item
-        class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#capabilities`}
-      >
-        {t.capabilities}
-      </a>
-      <a
-        data-fluid-item
-        class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#agents`}
-      >
-        {t.agents}
-      </a>
-      <a
-        data-fluid-item
-        class="landing-nav-link rounded-sm px-2 py-2 hidden lg:inline"
-        href={changelogRoutes[locale]}
-        aria-current={page === "changelog" ? "page" : undefined}
-      >
-        {t.changelog}
-      </a>
-      <a
-        data-fluid-item
-        class="landing-nav-link rounded-sm px-2 py-2"
-        href={guideRoutes()[locale]}
-        aria-current={page === "guides" ? "page" : undefined}
-      >
-        {guideCopy[locale].label}
-      </a>
-      <a
-        data-fluid-item
-        class="landing-nav-link rounded-sm px-2 py-2"
-        href={`${homeRoute}#faq`}
-      >
-        {t.faq}
-      </a>
+      {links.map((link) => (
+        <a
+          class="landing-nav-link"
+          href={link.href}
+          aria-current={Astro.url.pathname === link.href ? "page" : undefined}
+        >
+          {link.label}
+        </a>
+      ))}
     </nav>
-
-    <nav
-      class="ml-auto flex items-center gap-1.5 sm:gap-2"
+    <div
+      class="header-controls"
       aria-label={localeConfig[locale].siteControlsLabel}
+      role="group"
     >
-      <div
-        class="flex min-h-9 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-0.5"
-        data-fluid-hover="x"
-        role="group"
-        aria-label={t.languageLabel}
-      >
+      <div class="desktop-languages" role="group" aria-label={t.languageLabel}>
         {locales.map((item) => (
           <a
-            data-fluid-item
             href={languageRoutes?.[item] ?? localeConfig[item].route}
-            class:list={[
-              "motion-hover console-mono inline-flex min-h-8 items-center rounded-sm px-2 text-[10px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
-              locale === item
-                ? "bg-[var(--console-text)] text-[var(--console-bg)]"
-                : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
-            ]}
             aria-current={locale === item ? "page" : undefined}
+            lang={localeConfig[item].language}
           >
             {localeConfig[item].switchLabel}
           </a>
@@ -118,7 +74,7 @@ const themes = [
         data-theme-toggle
         data-theme-label={t.themeLabel}
         data-theme-switch-to={t.themeSwitchTo}
-        class="motion-hover console-mono inline-flex size-9 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        class="theme-control"
       >
         <span class="copy-icon-stack inline-grid">
           {themes.map((theme) => (
@@ -138,35 +94,219 @@ const themes = [
         >{`${t.themeLabel}: ${t.themeSystem}${t.themeSwitchTo.replace("{next}", t.themeLight)}`}</span>
       </button>
       <a
+        class="header-github"
         href="https://github.com/xingkaixin/codesesh"
         target="_blank"
         rel="noopener noreferrer"
-        class="pressable console-mono inline-flex min-h-9 items-center rounded-sm border border-[var(--console-text)] bg-[var(--console-text)] px-3 text-[10px] font-semibold text-[var(--console-bg)] hover:bg-[var(--console-text-secondary)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
+        aria-label={t.github}
       >
-        {t.github}
+        <Icon name="github" class="size-5" />
       </a>
-    </nav>
+      <details class="mobile-menu" data-mobile-menu>
+        <summary>
+          <span>{experience[locale].menu}</span>
+          <Icon name="menu" />
+        </summary>
+        <div class="mobile-menu__panel">
+          <nav aria-label={localeConfig[locale].primaryNavigationLabel}>
+            {links.map((link) => (
+              <a href={link.href}>
+                {link.label}
+                <Icon name="arrow-up-right" />
+              </a>
+            ))}
+            <a
+              href="https://github.com/xingkaixin/codesesh"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+              <Icon name="arrow-up-right" />
+            </a>
+          </nav>
+          <div
+            class="mobile-languages"
+            role="group"
+            aria-label={t.languageLabel}
+          >
+            {locales.map((item) => (
+              <a
+                href={languageRoutes?.[item] ?? localeConfig[item].route}
+                aria-current={locale === item ? "page" : undefined}
+                lang={localeConfig[item].language}
+              >
+                {localeConfig[item].switchLabel}
+              </a>
+            ))}
+          </div>
+        </div>
+      </details>
+    </div>
   </div>
-  <nav
-    class="flex gap-5 border-t border-[var(--console-border)] px-4 sm:px-6 lg:hidden"
-    aria-label={localeConfig[locale].primaryNavigationLabel}
-  >
-    <a
-      class="landing-nav-link py-3 text-sm"
-      href={guideRoutes()[locale]}
-      aria-current={page === "guides" ? "page" : undefined}
-    >
-      {guideCopy[locale].label}
-    </a>
-    <a
-      class="landing-nav-link py-3 text-sm"
-      href={changelogRoutes[locale]}
-      aria-current={page === "changelog" ? "page" : undefined}
-    >
-      {t.changelog}
-    </a>
-  </nav>
 </header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    border-bottom: 1px solid var(--console-border);
+    background: color-mix(in srgb, var(--console-bg) 94%, transparent);
+    backdrop-filter: blur(16px);
+  }
+  .header-inner {
+    display: flex;
+    height: 76px;
+    align-items: center;
+    gap: 2rem;
+  }
+  .site-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-shrink: 0;
+  }
+  .site-brand span {
+    font-size: 0.91rem;
+    font-weight: 700;
+    letter-spacing: 0.045em;
+  }
+  .desktop-nav {
+    display: flex;
+    align-items: center;
+    gap: 1.4rem;
+    margin-left: auto;
+  }
+  .desktop-nav a {
+    white-space: nowrap;
+    font-size: 0.76rem;
+    padding-block: 0.75rem;
+  }
+  .header-controls {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+    margin-left: auto;
+  }
+  .desktop-languages,
+  .mobile-languages {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+  .desktop-languages a,
+  .mobile-languages a {
+    color: var(--console-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    padding-block: 0.75rem;
+  }
+  [aria-current="page"] {
+    color: var(--console-text);
+    text-decoration: underline;
+    text-underline-offset: 5px;
+  }
+  .theme-control,
+  .header-github {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 44px;
+    cursor: pointer;
+    color: var(--console-text-secondary);
+  }
+  .theme-control:hover,
+  .header-github:hover {
+    color: var(--brand-text);
+  }
+  .mobile-menu {
+    display: none;
+  }
+  @media (max-width: 1279px) {
+    .desktop-nav {
+      display: none;
+    }
+    .mobile-menu {
+      display: block;
+    }
+    .mobile-menu summary {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-height: 44px;
+      padding-inline: 0.5rem;
+      cursor: pointer;
+      list-style: none;
+      font-size: 0.78rem;
+    }
+    .mobile-menu summary::-webkit-details-marker {
+      display: none;
+    }
+    .mobile-menu__panel {
+      position: absolute;
+      inset: 100% 0 auto;
+      padding: 1.25rem max(1.25rem, calc((100vw - 80rem) / 2)) 1.5rem;
+      border-bottom: 1px solid var(--console-border-strong);
+      background: var(--console-bg);
+      box-shadow: var(--elevation-overlay);
+      max-height: calc(100dvh - 76px);
+      overflow-y: auto;
+    }
+    .mobile-menu__panel nav {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.2rem 2rem;
+    }
+    .mobile-menu__panel nav a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 48px;
+      font-size: 1rem;
+    }
+    .mobile-languages {
+      margin-top: 1rem;
+      padding-top: 0.65rem;
+      border-top: 1px solid var(--console-border);
+      gap: 1.5rem;
+    }
+    .mobile-languages a {
+      font-size: 0.78rem;
+    }
+  }
+  @media (max-width: 767px) {
+    .header-inner {
+      height: 68px;
+      gap: 0.5rem;
+    }
+    .desktop-languages,
+    .header-github {
+      display: none;
+    }
+    .header-controls {
+      gap: 0.2rem;
+    }
+    .site-brand span {
+      font-size: 0.82rem;
+    }
+    .site-brand {
+      gap: 0.55rem;
+    }
+    .site-brand img {
+      width: 25px;
+      height: 25px;
+    }
+    .mobile-menu__panel {
+      max-height: calc(100dvh - 68px);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .site-header {
+      background: var(--console-bg);
+      backdrop-filter: none;
+    }
+  }
+</style>
 
 <script>
   import { attachFluidHover } from "../../../shared/fluid-hover";
@@ -185,6 +325,23 @@ const themes = [
 
   setupFluidHover();
   document.addEventListener("astro:after-swap", setupFluidHover);
+
+  const menu = document.querySelector<HTMLDetailsElement>("[data-mobile-menu]");
+  if (menu) {
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Node)) return;
+      if (
+        !menu.contains(event.target) ||
+        (event.target instanceof Element && event.target.closest("a"))
+      )
+        menu.open = false;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !menu.open) return;
+      menu.open = false;
+      menu.querySelector("summary")?.focus();
+    });
+  }
 
   const THEMES = ["light", "dark", "system"] as const;
 

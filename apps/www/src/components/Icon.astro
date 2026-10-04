@@ -1,5 +1,8 @@
 ---
 import {
+  ArrowRight01Icon,
+  ArrowUpRight01Icon,
+  Menu01Icon,
   BookmarkIcon,
   ChartColumnIcon,
   CheckIcon,
@@ -10,6 +13,7 @@ import {
   DatabaseIcon,
   ExpandIcon,
   EyeIcon,
+  GithubIcon,
   KeyboardIcon,
   ListTreeIcon,
   MoonIcon,
@@ -25,11 +29,15 @@ import type { IconName } from "../data/landing";
 
 type UiIconName =
   | IconName
+  | "arrow-right"
+  | "arrow-up-right"
+  | "menu"
   | "check"
   | "chevron-left"
   | "chevron-right"
   | "copy"
   | "expand"
+  | "github"
   | "sun"
   | "moon"
   | "monitor";
@@ -42,6 +50,9 @@ interface Props {
 const { name, class: className = "size-4" } = Astro.props;
 
 const icons = {
+  "arrow-right": ArrowRight01Icon,
+  "arrow-up-right": ArrowUpRight01Icon,
+  menu: Menu01Icon,
   "bar-chart-3": ChartColumnIcon,
   bookmark: BookmarkIcon,
   check: CheckIcon,
@@ -51,6 +62,7 @@ const icons = {
   database: DatabaseIcon,
   expand: ExpandIcon,
   eye: EyeIcon,
+  github: GithubIcon,
   keyboard: KeyboardIcon,
   "list-tree": ListTreeIcon,
   monitor: ComputerIcon,
