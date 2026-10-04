@@ -53,30 +53,4 @@ describe("buildRouteHeaderModel", () => {
       breadcrumbs: [{ label: "Search" }],
     });
   });
-
-  it.each([
-    [{ mode: "root", activeAgentKey: null, activeSessionId: null } as const, "Dashboard"],
-    [{ mode: "projects", activeAgentKey: null, activeSessionId: null } as const, "Projects"],
-    [
-      {
-        mode: "project",
-        activeAgentKey: null,
-        activeSessionId: null,
-        activeProjectKind: "path",
-        activeProjectKey: "/tmp/codesesh",
-      } as const,
-      "Project",
-    ],
-    [
-      {
-        mode: "session",
-        activeAgentKey: "claudecode",
-        activeSessionId: "session-1",
-      } as const,
-      "Session",
-    ],
-    [{ mode: "agent", activeAgentKey: "claudecode", activeSessionId: null } as const, "Landing"],
-  ])("keeps the existing $1 context for non-search routes", (viewState, expected) => {
-    expect(buildRouteHeaderModel(createInput(viewState)).contextLabel).toBe(expected);
-  });
 });

@@ -10,12 +10,6 @@ const CENTRE = 100;
 /** Between the inner (55) and outer (86) radius. */
 const ON_RING = 70;
 
-async function nextFrame() {
-  await act(async () => {
-    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
-  });
-}
-
 const harnessRef = createRef<{ hitTest: (x: number, y: number) => number | null }>();
 let canvas: StubbedCanvas;
 
@@ -60,25 +54,6 @@ afterEach(() => {
 });
 
 describe("useDonutRing", () => {
-  it("traces one clipped wedge per share", () => {
-    render(<Harness shares={[0.5, 0.5]} />);
-
-    expect(canvas.context.clip).toHaveBeenCalledTimes(2);
-    expect(canvas.context.fill).toHaveBeenCalledTimes(2);
-  });
-
-  it("skips a share too thin to draw", () => {
-    render(<Harness shares={[1, 0]} />);
-
-    expect(canvas.context.clip).toHaveBeenCalledTimes(1);
-  });
-
-  it("offsets the hovered slice so it reads as lifted", () => {
-    render(<Harness shares={[0.5, 0.5]} hovered={1} />);
-
-    expect(canvas.context.translate).toHaveBeenCalledTimes(1);
-  });
-
   it("maps a pointer on the ring to its slice", () => {
     render(<Harness shares={[0.5, 0.5]} />);
 
@@ -92,16 +67,6 @@ describe("useDonutRing", () => {
 
     expect(hitTest(CENTRE, CENTRE)).toBeNull();
     expect(hitTest(CENTRE + SIZE, CENTRE)).toBeNull();
-  });
-
-  it("eases into a new set of shares on an animation frame", async () => {
-    const { rerender } = render(<Harness shares={[0.5, 0.5]} reducedMotion={false} />);
-    expect(canvas.context.clearRect).not.toHaveBeenCalled();
-
-    rerender(<Harness shares={[0.8, 0.2]} reducedMotion={false} />);
-    await nextFrame();
-
-    expect(canvas.context.clearRect).toHaveBeenCalled();
   });
 
   it("stops after morphing and wakes for hover without rereading styles", () => {

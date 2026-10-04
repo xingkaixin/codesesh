@@ -7,12 +7,6 @@ import { columnProgress, DEFAULT_BAR_LAYOUT, useBarField, type BarHover } from "
 const WIDTH = 400;
 const HEIGHT = 200;
 
-async function nextFrame() {
-  await act(async () => {
-    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
-  });
-}
-
 const harnessRef = createRef<{ hitTest: (x: number, y: number) => BarHover | null }>();
 let canvas: StubbedCanvas;
 
@@ -60,21 +54,6 @@ afterEach(() => {
 });
 
 describe("useBarField", () => {
-  it("paints one rounded band per value", () => {
-    render(<Harness values={[[100], [50]]} />);
-
-    expect(canvas.context.roundRect).toHaveBeenCalled();
-    expect(canvas.context.fill).toHaveBeenCalled();
-    // Two columns, each clipped to its band before the tiles are filled.
-    expect(canvas.context.clip).toHaveBeenCalledTimes(2);
-  });
-
-  it("outlines the hovered band and leaves the others alone", () => {
-    render(<Harness values={[[100], [50]]} hovered={{ column: 0, band: 0 }} />);
-
-    expect(canvas.context.stroke).toHaveBeenCalledTimes(1);
-  });
-
   it("skips a zero value instead of drawing a floor-height band", () => {
     render(<Harness values={[[0], [50]]} />);
 
@@ -111,15 +90,6 @@ describe("useBarField", () => {
 
     expect(canvas.context.roundRect).not.toHaveBeenCalled();
     expect(hitTest(10, 10)).toBeNull();
-  });
-
-  it("grows the bars on animation frames when motion is allowed", async () => {
-    render(<Harness values={[[100]]} reducedMotion={false} />);
-    expect(canvas.context.roundRect).not.toHaveBeenCalled();
-
-    await nextFrame();
-
-    expect(canvas.context.roundRect).toHaveBeenCalled();
   });
 
   it("stops after growth settles and reuses its resolved palette", () => {

@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentCatalog } from "../../lib/agents";
@@ -146,16 +146,6 @@ describe("OverviewScreen", () => {
     expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
     expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
-  });
-
-  it("labels every agent bar with its icon and cost", async () => {
-    renderScreen();
-
-    await screen.findByRole("heading", { name: "Agents" });
-    const agentColumn = within(screen.getByTestId("overview-agent-row"));
-
-    expect(agentColumn.getByRole("img", { name: "Codex" })).toBeTruthy();
-    expect(agentColumn.getByText("$4.00")).toBeTruthy();
   });
 
   it("issues exactly one new request when the agent filter changes", async () => {

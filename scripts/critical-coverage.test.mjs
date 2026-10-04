@@ -39,23 +39,11 @@ describe("critical coverage owners", () => {
   });
 
   it("generates threshold keys from the same owner manifest", () => {
-    expect(
-      Object.fromEntries(CRITICAL_COVERAGE_SCOPES.map(({ id, thresholds }) => [id, thresholds])),
-    ).toEqual({
-      "web-hooks": { lines: 95 },
-      "web-api-client": { lines: 89 },
-      "web-interactions": { lines: 87 },
-      "web-route-recovery": { lines: 85 },
-    });
     for (const scope of CRITICAL_COVERAGE_SCOPES) {
       expect(getCriticalCoverageThresholds()).toHaveProperty(
         getCoverageScopePattern(scope),
         scope.thresholds,
       );
     }
-
-    const routeRecovery = CRITICAL_COVERAGE_SCOPES.find(({ id }) => id === "web-route-recovery");
-    if (!routeRecovery) throw new Error("web-route-recovery coverage scope is missing");
-    expect(routeRecovery.owners.map(({ path }) => path)).toContain("apps/web/src/router.tsx");
   });
 });

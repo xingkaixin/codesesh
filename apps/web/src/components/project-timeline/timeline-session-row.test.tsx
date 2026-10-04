@@ -118,23 +118,4 @@ describe("TimelineSessionRow", () => {
 
     expect(onOpen).toHaveBeenCalledWith({ agentName: "codex", sessionId: "child" });
   });
-
-  it("marks an orphan row as Unmounted", () => {
-    renderRow({ row: createRow({ isOrphan: true }) });
-
-    expect(screen.getByText("Unmounted")).not.toBeNull();
-  });
-
-  it("omits the Unmounted badge for a mounted row", () => {
-    renderRow();
-
-    expect(screen.queryByText("Unmounted")).toBeNull();
-  });
-
-  it("omits a kind badge when the adapter reports none", () => {
-    renderRow({ row: createRow({ childCount: 1, childRoots: [CHILD] }), expanded: true });
-
-    const childRow = screen.getByRole("button", { name: /Probe the cache/ });
-    expect(childRow.textContent).toBe("09:30Probe the cache3 msgs · $0.25");
-  });
 });

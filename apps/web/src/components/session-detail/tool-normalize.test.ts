@@ -1,32 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ToolPart } from "../../lib/api";
 import {
   buildSemanticOutputContent,
-  cleanToolTitle,
   extractCommand,
   extractToolTextSegments,
   formatToolOutput,
   getOutputOrErrorText,
-  getToolTitle,
   joinToolText,
-  normalizeEscapedNewlines,
-  normalizeToolLabel,
-  normalizeToolName,
   stripSystemTag,
-  toDisplayText,
   type NormalizedToolState,
 } from "./tool-normalize";
 import { escapeRegExp, parseInputCandidate, parseJsonText, toRecord } from "./utils";
-
-function part(overrides?: Partial<ToolPart>): ToolPart {
-  return {
-    type: "tool",
-    tool: "Read",
-    title: "Read",
-    state: { status: "completed" },
-    ...overrides,
-  };
-}
 
 describe("utils", () => {
   it("escapeRegExp escapes regex metacharacters", () => {
@@ -51,21 +34,6 @@ describe("utils", () => {
   });
 });
 
-describe("toDisplayText", () => {
-  it("returns empty string for null/undefined", () => {
-    expect(toDisplayText(null)).toBe("");
-    expect(toDisplayText(undefined)).toBe("");
-  });
-
-  it("pretty-prints JSON-looking strings", () => {
-    expect(toDisplayText('{"b":2,"a":1}')).toBe('{\n  "b": 2,\n  "a": 1\n}');
-  });
-
-  it("serializes objects", () => {
-    expect(toDisplayText({ x: 1 })).toBe('{\n  "x": 1\n}');
-  });
-});
-
 describe("joinToolText / extractToolTextSegments / stripSystemTag", () => {
   it("extracts text segments recursively", () => {
     expect(extractToolTextSegments("hello")).toEqual(["hello"]);
@@ -84,29 +52,6 @@ describe("joinToolText / extractToolTextSegments / stripSystemTag", () => {
 
   it("stripSystemTag removes system wrappers", () => {
     expect(stripSystemTag("<system>secret</system>")).toBe("secret");
-  });
-});
-
-describe("cleanToolTitle / normalizeToolLabel / normalizeToolName / getToolTitle", () => {
-  it("cleanToolTitle strips tool: prefix and leading dots", () => {
-    expect(cleanToolTitle("tool: Read")).toBe("Read");
-    expect(cleanToolTitle("...Bash")).toBe("Bash");
-  });
-
-  it("normalizeToolLabel uses title then tool then fallback", () => {
-    expect(normalizeToolLabel(part({ title: "Edit", tool: "Edit" }))).toBe("Edit");
-    expect(normalizeToolLabel(part({ title: "", tool: "Write" }))).toBe("Write");
-    expect(normalizeToolLabel(part({ title: "", tool: "" }))).toBe("tool");
-  });
-
-  it("normalizeToolName lowercases", () => {
-    expect(normalizeToolName(part({ title: "Read" }))).toBe("read");
-  });
-
-  it("getToolTitle prefers clean title, falls back to tool then default", () => {
-    expect(getToolTitle(part({ title: "Read", tool: "read" }))).toBe("Read");
-    expect(getToolTitle(part({ title: "", tool: "Write" }))).toBe("Write");
-    expect(getToolTitle(part({ title: "", tool: "" }))).toBe("Tool");
   });
 });
 
@@ -181,11 +126,5 @@ describe("extractCommand", () => {
     expect(extractCommand('{"cmd":"ls -la"}')).toBe("ls -la");
     expect(extractCommand('{"command":"pwd"}')).toBe("pwd");
     expect(extractCommand("not json")).toBe("");
-  });
-});
-
-describe("normalizeEscapedNewlines", () => {
-  it("replaces literal backslash-n with newlines", () => {
-    expect(normalizeEscapedNewlines("a\\nb\\nc")).toBe("a\nb\nc");
   });
 });

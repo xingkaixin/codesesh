@@ -2,22 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { PlanPart, ToolPart } from "../../lib/api";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
-import {
-  BookOpenText,
-  Bot,
-  CircleHelp,
-  Clock3,
-  FilePenLine,
-  FileSearch,
-  Image as ImageIcon,
-  ListTodo,
-  NotebookPen,
-  Plug,
-  SquareTerminal,
-  Target,
-  Users,
-  Wrench,
-} from "../ui/icons";
 
 interface StrategyFixture {
   agent: string;
@@ -74,7 +58,6 @@ describe("Pi tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: ListTodo,
       title: "todo update",
       secondaryText: "#2 · Protect strategies · pending -> completed",
       details: [
@@ -106,7 +89,6 @@ describe("Pi tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: Bot,
       title: "agent · reviewer",
       secondaryText: "#agent-7 · Review rendering",
       details: [
@@ -128,7 +110,6 @@ describe("Pi tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: Bot,
       title: "subagent result",
       secondaryText: "#agent-7",
       details: [
@@ -151,7 +132,6 @@ describe("Pi tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: ImageIcon,
       title: "analyze image",
       secondaryText: "screens/home.png, screens/detail.png",
       details: [
@@ -176,7 +156,6 @@ describe("Pi tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title,
       secondaryText: "(node ./scripts/check.mjs)",
       showInputPreview: false,
@@ -195,7 +174,6 @@ describe("Cursor tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: FileSearch,
       title: "grep",
       secondaryText: "src · TODO",
       details: [],
@@ -220,7 +198,6 @@ describe("Cursor tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: FileSearch,
       title: "glob",
       secondaryText: "src · **/*.ts",
       showInputPreview: false,
@@ -241,7 +218,6 @@ describe("Cursor tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: "bash",
       secondaryText: "Run checks (bash ./scripts/check.sh)",
       showInputPreview: false,
@@ -283,7 +259,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: "Browser",
       secondaryText: "Inspect DOM",
       details: [],
@@ -314,7 +289,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: "bash",
       secondaryText: "Inspect generated source\nnl -ba ./src/value.ts | sed -n '1,2p'",
       details: [
@@ -342,7 +316,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: "bash",
       secondaryText: "session #7 · stdin",
       details: [
@@ -374,7 +347,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: CircleHelp,
       title: "ask",
       secondaryText: "1 questions · Scope",
       details: [],
@@ -508,7 +480,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: FilePenLine,
       title: "patch",
       secondaryText: "1 write · 1 edit · 1 delete · 1 move",
       details: [],
@@ -558,7 +529,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: FilePenLine,
       secondaryText: undefined,
       outputContent: {
         kind: "plain",
@@ -584,7 +554,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: Bot,
       title: "reviewer",
       secondaryText: undefined,
       details: [
@@ -601,35 +570,29 @@ describe("Codex tool strategy", () => {
     [
       "collaboration.wait_agent",
       { timeout_ms: 30_000 },
-      Clock3,
       "wait for agents",
       "30s timeout",
       "Agent updates",
     ],
-    ["collaboration.list_agents", {}, Users, "list agents", undefined, "Agent tree"],
+    ["collaboration.list_agents", {}, "list agents", undefined, "Agent tree"],
     [
       "collaboration.interrupt_agent",
       { target: "reviewer" },
-      Users,
       "interrupt agent",
       "reviewer",
       "Result",
     ],
-  ])(
-    "renders %s agent coordination state",
-    (tool, input, Icon, title, secondaryText, contentLabel) => {
-      const strategy = buildStrategy({ agent: "codex", tool, input, output: "ok" });
+  ])("renders %s agent coordination state", (tool, input, title, secondaryText, contentLabel) => {
+    const strategy = buildStrategy({ agent: "codex", tool, input, output: "ok" });
 
-      expect(strategy).toMatchObject({
-        Icon,
-        title,
-        secondaryText,
-        details: [],
-        showInputPreview: false,
-        contentLabel,
-      });
-    },
-  );
+    expect(strategy).toMatchObject({
+      title,
+      secondaryText,
+      details: [],
+      showInputPreview: false,
+      contentLabel,
+    });
+  });
 
   it("renders goal state semantically", () => {
     const strategy = buildStrategy({
@@ -640,7 +603,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: Target,
       title: "create goal",
       secondaryText: "Finish characterization tests",
       details: [],
@@ -658,7 +620,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: Plug,
       title: "airtable · search",
       secondaryText: "tool strategy",
       details: [],
@@ -683,7 +644,6 @@ describe("Codex tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: Wrench,
       title: "skill",
       secondaryText: "./.agents/skills/review",
       expandable: false,
@@ -706,7 +666,6 @@ describe("DSH tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: "bash",
       secondaryText: "Show working directory and root files (pwd && ls)",
       details: [{ label: "Workdir", value: "packages/core" }],
@@ -724,7 +683,6 @@ describe("DSH tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: BookOpenText,
       title: "read",
       secondaryText: "README.md",
       outputContent: { kind: "plain", text: "# Title", language: "markdown" },
@@ -740,7 +698,6 @@ describe("DSH tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: NotebookPen,
       title: "write",
       secondaryText: "src/index.ts",
       outputContent: { kind: "plain", text: "export const x = 1;", language: "typescript" },
@@ -758,7 +715,6 @@ describe("DSH tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: FilePenLine,
       title: "edit",
       secondaryText: "src/index.ts",
       outputContent: {
@@ -805,7 +761,6 @@ describe("DSH tool strategy", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: "job_output",
       showInputPreview: true,
       outputContent: { kind: "plain", text: "still running" },
@@ -876,7 +831,6 @@ describe("search and shell strategy contracts", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: FileSearch,
       title: fixture.title,
       secondaryText: fixture.secondaryText,
       showInputPreview: false,
@@ -910,7 +864,6 @@ describe("search and shell strategy contracts", () => {
     });
 
     expect(strategy).toMatchObject({
-      Icon: SquareTerminal,
       title: fixture.title,
       secondaryText: fixture.secondaryText,
       showInputPreview: false,

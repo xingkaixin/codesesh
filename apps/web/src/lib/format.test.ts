@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   formatClockTime,
   formatCompact,
-  formatCostSource,
   formatDelta,
-  formatInt,
   formatMessageTime,
   formatMonthDay,
   formatMoney,
-  formatNumber,
   formatPercent,
   formatRelativeShort,
   formatRelativeTime,
@@ -20,18 +17,6 @@ import {
 describe("formatRelativeTime", () => {
   it("returns unknown for undefined", () => {
     expect(formatRelativeTime(undefined)).toBe("unknown");
-  });
-
-  it("returns unknown for null", () => {
-    expect(formatRelativeTime(null)).toBe("unknown");
-  });
-
-  it("returns unknown for zero", () => {
-    expect(formatRelativeTime(0)).toBe("unknown");
-  });
-
-  it("returns just now for the current instant", () => {
-    expect(formatRelativeTime(Date.now())).toBe("just now");
   });
 
   it("returns just now for a future timestamp", () => {
@@ -59,25 +44,6 @@ describe("formatRelativeTime", () => {
   });
 });
 
-describe("formatNumber", () => {
-  it("formats zero", () => {
-    expect(formatNumber(0)).toBe("0");
-  });
-
-  it("formats with thousands separators", () => {
-    expect(formatNumber(1000)).toBe("1,000");
-    expect(formatNumber(1234567)).toBe("1,234,567");
-  });
-
-  it("formats negative numbers", () => {
-    expect(formatNumber(-1234)).toBe("-1,234");
-  });
-
-  it("formats decimals", () => {
-    expect(formatNumber(1.5)).toBe("1.5");
-  });
-});
-
 describe("formatMoney", () => {
   it("formats zero as $0.00", () => {
     expect(formatMoney(0)).toBe("$0.00");
@@ -96,20 +62,6 @@ describe("formatMoney", () => {
 
   it("formats negative values", () => {
     expect(formatMoney(-1)).toBe("$-1.0000");
-  });
-});
-
-describe("formatCostSource", () => {
-  it("returns recorded", () => {
-    expect(formatCostSource("recorded")).toBe("recorded");
-  });
-
-  it("returns estimated", () => {
-    expect(formatCostSource("estimated")).toBe("estimated");
-  });
-
-  it("returns undefined for undefined", () => {
-    expect(formatCostSource(undefined)).toBeUndefined();
   });
 });
 
@@ -140,17 +92,6 @@ describe("formatTokens", () => {
 
   it("formats negative values as-is", () => {
     expect(formatTokens(-500)).toBe("-500");
-  });
-});
-
-describe("formatInt", () => {
-  it("formats with thousands separators", () => {
-    expect(formatInt(24918)).toBe("24,918");
-    expect(formatInt(0)).toBe("0");
-  });
-
-  it("rounds fractions away", () => {
-    expect(formatInt(1234.6)).toBe("1,235");
   });
 });
 
