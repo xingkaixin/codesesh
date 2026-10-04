@@ -277,24 +277,3 @@ export async function openEvents(server) {
     },
   };
 }
-
-export function referenceSessionDetail(value) {
-  if (!Array.isArray(value?.messages)) return value;
-  const copy = structuredClone(value);
-  for (const message of copy.messages) {
-    if (!message.cost_breakdown) continue;
-    assert.equal(message.cost_source, "estimated");
-    assert.deepEqual(Object.keys(message.cost_breakdown).sort(), [
-      "cache_create",
-      "cache_read",
-      "input",
-      "output",
-    ]);
-    const costs = Object.values(message.cost_breakdown);
-    assert.ok(costs.every((cost) => Number.isFinite(cost) && cost >= 0));
-    assert.ok(Math.abs(costs.reduce((sum, cost) => sum + cost, 0) - message.cost) <= 1e-8);
-    // The frozen reference predates this additive receipt field.
-    delete message.cost_breakdown;
-  }
-  return copy;
-}

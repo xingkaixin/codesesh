@@ -391,25 +391,6 @@ fn fractional_source_times_survive_sqlite_and_message_cursor() {
 }
 
 #[test]
-#[ignore = "Driven by the isolated Node/Rust cache-roundtrip contract test"]
-fn external_cache_compatibility_probe() {
-    let input = std::env::var("CODESESH_CACHE_PROBE_INPUT").expect("isolated probe input file");
-    let input: serde_json::Value = serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
-    let path = Path::new(input["path"].as_str().unwrap());
-    let cache = Cache::open(Some(path)).unwrap();
-    let heads = cache.snapshot().unwrap();
-    let details = heads
-        .iter()
-        .map(|head| cache.detail(head.clone()).unwrap())
-        .collect::<Vec<_>>();
-    std::fs::write(
-        input["output"].as_str().unwrap(),
-        serde_json::to_vec(&serde_json::json!({"heads":heads,"details":details})).unwrap(),
-    )
-    .unwrap();
-}
-
-#[test]
 fn detail_visitor_streams_messages_and_stops_before_reading_the_next_row() {
     let root = tempfile::tempdir().unwrap();
     let mut sessions = vec![source(root.path(), "stream")];

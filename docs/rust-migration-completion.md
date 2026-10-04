@@ -1,5 +1,7 @@
 # Rust 后端迁移汇总包
 
+本文记录迁移时的验收。2026-10-04 起，旧 Node 差分套件及专用探针已移除；下文相关命令和路径仅对应[移除前版本](https://github.com/xingkaixin/codesesh/tree/d4e61bea743303eeaadc606dd2a1bb807c8b9af6)。当前验证范围见 [testing.md](./testing.md)。
+
 完整历史回填吞吐的后续优化见 [扫描吞吐报告](benchmarks/rust-backfill-throughput-2026-09-25.md)。
 
 2026-09-25 后续解析、索引与常驻内存优化，以及 5,356 个本地会话的验收，见

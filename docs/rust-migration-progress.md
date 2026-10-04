@@ -1,5 +1,7 @@
 # Rust 迁移进度
 
+本文记录迁移时的验收。2026-10-04 起，旧 Node 差分套件及专用探针已移除；下文相关命令和路径仅对应[移除前版本](https://github.com/xingkaixin/codesesh/tree/d4e61bea743303eeaadc606dd2a1bb807c8b9af6)。当前验证范围见 [testing.md](./testing.md)。
+
 范围：执行 [P0～P7](rust-migration-plan.md)，P8 发布不在当前任务内。
 
 参考提交：`a545f543a554421b0576058c701ef2ac4190d62e`。分支：`feat/rust-rewrite`。

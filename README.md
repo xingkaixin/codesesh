@@ -409,17 +409,13 @@ pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
+pnpm test:rust:platform
 pnpm build:rust
-pnpm package:artifact:test
-pnpm prepare:reference
+node --test scripts/rust/packaging.test.mjs
+node --test scripts/rust/publish.test.mjs
 pnpm test:backend
-pnpm test:backend:compare
-pnpm test:rust:slice
-pnpm test:backend:full
-pnpm test:migration
 pnpm perf:check
 pnpm exec playwright install --with-deps chromium
-pnpm test:rust:browser
 pnpm test:e2e
 node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
 node scripts/rust/smoke.mjs --contracts
@@ -444,10 +440,12 @@ pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 
 ### CI and release boundaries
 
-Frontend, contract, coverage, and documentation checks run once on Linux / Node 24. Rust is tested
-on all four native targets; npm installation is verified on Node 22.0.0 and Node 24 for each target.
-The pinned legacy Node package is only a compatibility-test reference, never a runtime fallback or
-part of the shipped application.
+Frontend, contract, coverage, documentation, and the complete Rust suite run once on Linux / Node 24.
+All four native targets compile and run platform-dependent checks: filesystem discovery, migration,
+watchers, SQLite persistence, native services, process lifecycle, and packaging. macOS and Windows
+use `pnpm test:rust:platform`; npm installation is verified on Node 22.0.0 and Node 24 for each target.
+See [the test policy](docs/testing.md) for the platform selection. Legacy Node differential suites
+have been retired. The pinned Node package remains available only for manual performance benchmarks.
 
 Version 1.1.0 prepares the native Rust backend for release. Version and changelog updates do not
 publish packages. The Release workflow only runs for `v*` tags; publication requires separate

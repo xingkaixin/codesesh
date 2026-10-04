@@ -249,27 +249,6 @@ fn matches_node_projection_for_forked_streamed_tools() {
 }
 
 #[test]
-#[ignore = "invoked by fixed-reference comparison script"]
-fn export_reference_fixture() {
-    let root = std::env::var("DSH_COMPARE_ROOT").unwrap();
-    let mut sessions = scan(Path::new(&root), &Pricing::bundled()).unwrap();
-    let mut cache = crate::storage::Cache::open(None).unwrap();
-    cache.publish(&mut sessions).unwrap();
-    let output = sessions
-        .into_iter()
-        .map(|s| {
-            let detail = cache.detail(s.head.clone()).unwrap().unwrap();
-            json!({"head":s.head,"detail":detail})
-        })
-        .collect::<Vec<_>>();
-    fs::write(
-        Path::new(&root).join("rust.json"),
-        serde_json::to_vec_pretty(&output).unwrap(),
-    )
-    .unwrap();
-}
-
-#[test]
 fn changed_scan_does_not_parse_unrelated_corrupt_artifacts() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path(), false, json!({}), &[user(0, "keep")]);

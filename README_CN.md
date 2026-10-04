@@ -366,17 +366,13 @@ pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
+pnpm test:rust:platform
 pnpm build:rust
-pnpm package:artifact:test
-pnpm prepare:reference
+node --test scripts/rust/packaging.test.mjs
+node --test scripts/rust/publish.test.mjs
 pnpm test:backend
-pnpm test:backend:compare
-pnpm test:rust:slice
-pnpm test:backend:full
-pnpm test:migration
 pnpm perf:check
 pnpm exec playwright install --with-deps chromium
-pnpm test:rust:browser
 pnpm test:e2e
 node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
 node scripts/rust/smoke.mjs --contracts
@@ -400,9 +396,11 @@ pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 
 ### CI 与发布边界
 
-前端、契约、覆盖率和文档检查在 Linux / Node 24 执行一次。Rust 在四个原生目标上测试，
-每个目标的 npm 安装分别使用 Node 22.0.0 和 Node 24 验证。兼容测试使用锁定的旧 Node
-参考包；该包仅用于测试，不会进入产品或作为运行时回退。
+前端、契约、覆盖率、文档和完整 Rust 测试在 Linux / Node 24 执行一次。四个原生目标
+都编译并检查文件发现、数据迁移、监听、SQLite 持久化、原生服务、进程生命周期和打包。
+macOS 与 Windows 使用 `pnpm test:rust:platform`；每个目标的 npm 安装分别使用 Node 22.0.0
+和 Node 24 验证。平台选择依据见[测试策略](docs/testing.md)。旧 Node 差分套件已移除，
+锁定参考包仅保留给手动性能对照。
 
 v1.1.0 将 Rust 原生后端纳入版本发布准备。更新版本号与发布记录不会发布包。
 Release workflow 仅由 `v*` tag 触发；正式发布需单独授权并完成[发布清单](docs/release-guide.md)。

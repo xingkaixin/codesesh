@@ -204,26 +204,6 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
 mod tests {
     use super::*;
     #[test]
-    #[ignore = "invoked by grok/compare.mjs with an isolated fixture"]
-    fn export_reference_fixture() {
-        let root = std::env::var("GROK_COMPARE_ROOT").unwrap();
-        let mut sessions = scan(Path::new(&root), &Pricing::bundled()).unwrap();
-        let mut cache = crate::storage::Cache::open(None).unwrap();
-        cache.publish(&mut sessions).unwrap();
-        let output = sessions
-            .into_iter()
-            .map(|s| {
-                let detail = cache.detail(s.head.clone()).unwrap().unwrap();
-                json!({"head":s.head,"detail":detail})
-            })
-            .collect::<Vec<_>>();
-        fs::write(
-            Path::new(&root).join("rust.json"),
-            serde_json::to_vec_pretty(&output).unwrap(),
-        )
-        .unwrap();
-    }
-    #[test]
     fn changed_sources_do_not_parse_unrelated_logs() {
         let root = tempfile::tempdir().unwrap();
         let selected = root.path().join("selected");
