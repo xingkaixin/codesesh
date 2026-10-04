@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.7] - 2026-10-04
+
+This patch keeps archived and remote Agent history visible in Hub queries even when the Agent is not installed locally, and keeps default date ranges moving with the current day. The product site adds localized usage guides and a redesigned introduction to installation, search, and multi-machine workflows. (#696–#701)
+
+### Bug Fixes
+
+- Build the Hub query scope from supported Agents and the explicit `--agent` selection instead of local source directories. Restore archived and remote Agent visibility in projects and dashboards, including the existing full-scope analytics query path. (#696)
+- Resolve default 7/14/30/90-day ranges from the current local date when no explicit end date is configured. Long-running servers no longer leave the UI on an old startup range; explicit fixed ranges remain fixed. (#700)
+
+### Documentation
+
+- Add English, Chinese, and Japanese usage guides for installation, session search, LAN access, Hub/Worker setup, background services, and token/cost interpretation, with navigation and related articles. (#697)
+- Redesign the product landing page with a clearer product tour, interactive previews, coordinated light/dark themes, and responsive navigation. Improve history-storage answers and search metadata, and track installation-command copies and outbound visits. (#698, #699)
+
+### Build
+
+- Retire completed migration comparisons and redundant assertions. Run the full Rust suite on Linux and platform-dependent subsets on macOS/Windows while retaining native builds, process contracts, packaging, and installation checks across all four targets. (#701)
+
 ## [1.2.6] - 2026-10-03
 
 This patch reduces idle time while Workers collect and upload history, and explains why a rescan started and how far it has progressed. Upload confirmation, retry backoff, and durable queues remain in place. (#694)
