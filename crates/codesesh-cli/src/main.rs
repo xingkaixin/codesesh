@@ -102,6 +102,10 @@ async fn run() -> Result<()> {
         );
     }
     logger.info("cli.start",&serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"host":args.host,"json":args.json,"trace":args.trace,"log_path":logger.path()}));
+    logger.info(
+        "perf.startup.prepare",
+        &serde_json::json!({"duration_ms": started.elapsed().as_secs_f64() * 1000.0}),
+    );
     logger.debug(
         "cli.options",
         &serde_json::json!({"cache":args.cache&&!args.no_cache,"days":plan.days}),
@@ -138,8 +142,13 @@ async fn run() -> Result<()> {
                 .exists()))
     .then(|| node_identity::lock(&environment.home, "collector.lock"))
     .transpose()?;
+    let pricing_started = std::time::Instant::now();
     let pricing_controller = PricingController::load(&environment.home);
     let pricing = Arc::new(pricing_controller.snapshot()?.pricing);
+    logger.info(
+        "perf.startup.pricing",
+        &serde_json::json!({"duration_ms": pricing_started.elapsed().as_secs_f64() * 1000.0}),
+    );
     let persistent = codesesh_core::app_paths::root(&environment.home).join("codesesh.db");
     if args.clear_cache {
         for suffix in ["", "-wal", "-shm"] {
@@ -158,6 +167,7 @@ async fn run() -> Result<()> {
         .as_ref()
         .map(|dir| dir.join("codesesh.db"))
         .unwrap_or(persistent);
+    let database_started = std::time::Instant::now();
     let (cache_path, fallback_cleanup) = tokio::task::spawn_blocking(move || {
         if hub_enabled {
             cache_path::open(&cache_path)?;
@@ -167,6 +177,10 @@ async fn run() -> Result<()> {
         }
     })
     .await??;
+    logger.info(
+        "perf.startup.database",
+        &serde_json::json!({"duration_ms": database_started.elapsed().as_secs_f64() * 1000.0}),
+    );
     let temporary = fallback_cleanup.or(temporary);
     let local_source = if scan_local {
         let home = environment.home.clone();

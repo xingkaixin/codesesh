@@ -30,3 +30,6 @@ ts-rs.workspace = true
 walkdir.workspace = true
 
 tempfile = "3.27"
+
+[dev-dependencies]
+rusqlite = { workspace = true, features = ["hooks"] }

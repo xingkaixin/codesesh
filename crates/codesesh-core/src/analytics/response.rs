@@ -6,6 +6,14 @@ use crate::{
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use std::time::Instant;
+
+#[derive(Default, serde::Serialize)]
+pub struct DashboardTimings {
+    pub aggregate_ms: f64,
+    pub active_hours_ms: f64,
+    pub file_activity_ms: f64,
+}
 
 pub struct DashboardResponseOptions<'a> {
     pub aggregate: DashboardOptions<'a>,
@@ -18,7 +26,8 @@ pub fn dashboard_response(
     connection: &Connection,
     sessions: &[SessionHead],
     options: &DashboardResponseOptions<'_>,
-) -> anyhow::Result<Value> {
+) -> anyhow::Result<(Value, DashboardTimings)> {
+    let mut timings = DashboardTimings::default();
     let time_zone: DashboardTimeZone = options
         .time_zone
         .parse()
@@ -38,6 +47,7 @@ pub fn dashboard_response(
         )?;
         &loaded_facts
     };
+    let phase = Instant::now();
     let mut result = build_dashboard(
         sessions,
         &DashboardOptions {
@@ -45,6 +55,8 @@ pub fn dashboard_response(
             ..*aggregate
         },
     );
+    timings.aggregate_ms = phase.elapsed().as_secs_f64() * 1000.0;
+    let phase = Instant::now();
     result["activeHours"] = active_hours(
         connection,
         sessions,
@@ -53,6 +65,8 @@ pub fn dashboard_response(
         aggregate.to,
         time_zone,
     )?;
+    timings.active_hours_ms = phase.elapsed().as_secs_f64() * 1000.0;
+    let phase = Instant::now();
     result["recentFileActivities"] = serde_json::to_value(list_file_activity(
         connection,
         &FileActivityOptions {
@@ -66,6 +80,7 @@ pub fn dashboard_response(
             ..FileActivityOptions::default()
         },
     )?)?;
+    timings.file_activity_ms = phase.elapsed().as_secs_f64() * 1000.0;
     let mut window = json!({"to":aggregate.to,"days":options.days});
     if let Some(from) = aggregate.from {
         window["from"] = json!(from);
@@ -75,5 +90,5 @@ pub fn dashboard_response(
         window["compareTo"] = json!(to);
     }
     result["window"] = window;
-    Ok(result)
+    Ok((result, timings))
 }
