@@ -11,8 +11,8 @@ const { locale } = Astro.props;
 const t = copy[locale].footer;
 ---
 
-<footer class="px-4 pb-12 pt-14 sm:px-6 lg:px-7">
-  <div class="mx-auto flex max-w-[1180px] flex-col gap-5 border-t border-[var(--console-border)] pt-6 sm:flex-row sm:items-center">
+<footer class="site-footer">
+  <div class="section-shell footer-content">
     <a
       href={localeConfig[locale].route}
       class="flex items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
@@ -59,3 +59,35 @@ const t = copy[locale].footer;
     </nav>
   </div>
 </footer>
+
+<style>
+  .site-footer {
+    padding-block: 2.2rem;
+  }
+  .footer-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  .footer-content nav {
+    margin-left: auto;
+  }
+  .footer-content :global(.footer-link) {
+    font-size: 0.72rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+  @media (max-width: 767px) {
+    .footer-content {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.8rem;
+    }
+    .footer-content nav {
+      margin: 0;
+      gap: 1.2rem;
+    }
+  }
+</style>

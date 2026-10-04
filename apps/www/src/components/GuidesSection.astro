@@ -1,6 +1,7 @@
 ---
 import { guideCopy, guideRoutes, guides } from "../data/guides";
 import type { Locale } from "../data/landing";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -17,37 +18,62 @@ const featured = guides.filter((guide) =>
 
 <section
   id="guides"
-  class="scroll-mt-24 px-4 pt-24 sm:px-6 lg:px-7"
+  class="guides-section"
   aria-labelledby="guides-heading"
+  data-reveal
 >
-  <div class="mx-auto grid max-w-[1180px] gap-9 border-t border-[var(--console-border)] pt-10 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)] lg:gap-[72px]">
-    <div>
-      <h2
-        id="guides-heading"
-        class="console-display text-3xl font-semibold leading-tight sm:text-4xl"
-      >
-        {t.intro}
-      </h2>
-      <p class="my-5 max-w-sm text-sm leading-7 text-[var(--console-text-secondary)]">
-        {t.description}
-      </p>
-      <a class="guide-link" href={guideRoutes()[locale]}>
-        {t.all}
-      </a>
-    </div>
-    <ul class="space-y-7">
-      {featured.map((guide) => (
-        <li>
-          <h3 class="text-base font-semibold">
-            <a class="guide-link" href={guideRoutes(guide.slug)[locale]}>
-              {guide.copy[locale].title}
-            </a>
-          </h3>
-          <p class="mt-2 max-w-[68ch] text-sm leading-7 text-[var(--console-text-secondary)]">
-            {guide.copy[locale].description}
-          </p>
-        </li>
-      ))}
-    </ul>
-  </div>
+  <h2 id="guides-heading" class="console-display">
+    {t.intro}
+  </h2>
+  <ul>
+    {featured.map((guide) => (
+      <li>
+        <a href={guideRoutes(guide.slug)[locale]}>
+          <span>{guide.copy[locale].title}</span>
+          <Icon name="arrow-up-right" />
+        </a>
+      </li>
+    ))}
+  </ul>
+  <a class="text-link" href={guideRoutes()[locale]}>
+    {t.all}
+    <Icon name="arrow-right" />
+  </a>
 </section>
+<style>
+  .guides-section {
+    padding-block: 0.5rem;
+    scroll-margin-top: 6rem;
+  }
+  .guides-section h2 {
+    margin: 0 0 1.5rem;
+    font-size: clamp(1.7rem, 2.2vw, 2.2rem);
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+  }
+  ul {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+  }
+  li {
+    border-bottom: 1px solid var(--console-border);
+  }
+  li a {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.5rem;
+    align-items: center;
+    min-height: 5.3rem;
+    padding-block: 1rem;
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+  li a:hover {
+    color: var(--brand-text);
+  }
+  li a :global(svg) {
+    flex-shrink: 0;
+  }
+</style>

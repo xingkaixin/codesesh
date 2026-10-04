@@ -1,193 +1,272 @@
 ---
+import { experience } from "../data/experience";
 import { copy, type Locale } from "../data/landing";
+import Icon from "./Icon.astro";
 import ProductDemo from "./ProductDemo.astro";
-import SectionBackground from "./SectionBackground.astro";
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
-const sceneNames = ["overview", "projects", "replay"] as const;
-const scenes = sceneNames.map((scene, index) => ({
-  copy: copy[locale].scenes[index],
-  scene,
-}));
+const t = experience[locale];
+const scenes = ["overview", "projects", "replay"] as const;
 ---
 
-<div class="product-showcase">
-  {scenes.map(({ copy: sceneCopy, scene }, index) => {
-    const sectionId = index === 0 ? "tour" : `tour-${scene}`;
-    const headingId = `${sectionId}-heading`;
-    const descriptionId = `${sectionId}-description`;
-
-    return (
-      <section
-        id={sectionId}
-        class:list={[
-          "showcase-section landing-background",
-          `showcase-section--${scene}`,
-        ]}
-        aria-labelledby={headingId}
-        aria-describedby={descriptionId}
-      >
-        {scene !== "overview" && <SectionBackground variant={scene} />}
-        <div class="showcase-inner">
-          <div class="showcase-grid">
-            <div class="showcase-copy">
-              <h2 id={headingId}>{sceneCopy?.title}</h2>
-              <p id={descriptionId}>{sceneCopy?.description}</p>
-            </div>
-
-            <div class="showcase-preview">
-              <ProductDemo
-                id={`tour-demo-${locale}-${scene}`}
-                locale={locale}
-                scene={scene}
-              />
-              <p class="showcase-hint">{sceneCopy?.hint}</p>
-            </div>
+<section
+  id="tour"
+  class="product-showcase section-space"
+  aria-labelledby="tour-heading"
+  data-showcase
+>
+  <div class="section-shell">
+    <header class="showcase-heading" data-reveal>
+      <h2 id="tour-heading" class="section-heading">
+        {t.tourTitle}
+      </h2>
+      <p class="section-body">{t.tourBody}</p>
+    </header>
+    <div
+      class="showcase-tabs"
+      role="tablist"
+      aria-label={copy[locale].header.tour}
+    >
+      {scenes.map((scene, index) => (
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${scene}`}
+          aria-controls={`tour-${scene}`}
+          aria-selected={index === 0}
+          tabindex={index === 0 ? 0 : -1}
+        >
+          <Icon
+            name={
+              index === 0
+                ? "bar-chart-3"
+                : index === 1
+                  ? "list-tree"
+                  : "terminal"
+            }
+          />
+          {t.tabs[index]}
+        </button>
+      ))}
+      <span class="showcase-sample">{copy[locale].tour.sampleLabel}</span>
+    </div>
+    <div class="showcase-stage">
+      {scenes.map((scene, index) => (
+        <div
+          role="tabpanel"
+          tabindex="0"
+          id={`tour-${scene}`}
+          aria-labelledby={`tab-${scene}`}
+          hidden={index !== 0}
+          class="showcase-panel"
+        >
+          <ProductDemo
+            id={`tour-demo-${locale}-${scene}`}
+            locale={locale}
+            scene={scene}
+          />
+          <div class="showcase-description">
+            <h3>{copy[locale].scenes[index]!.title}</h3>
+            <p>{copy[locale].scenes[index]!.description}</p>
           </div>
+          <p class="showcase-hint">
+            <Icon name="arrow-right" />
+            {copy[locale].scenes[index]!.hint}
+          </p>
         </div>
-      </section>
+      ))}
+    </div>
+  </div>
+</section>
+
+<noscript>
+  <style>
+    .showcase-tabs {
+      display: none;
+    }
+    .showcase-panel[hidden] {
+      display: block;
+    }
+    .showcase-panel + .showcase-panel {
+      margin-top: 3rem;
+    }
+  </style>
+</noscript>
+
+<script>
+  const showcase = document.querySelector<HTMLElement>("[data-showcase]");
+  if (showcase) {
+    const tabs = Array.from(
+      showcase.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
     );
-  })}
-</div>
+    const panels = Array.from(
+      showcase.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+    );
+    function select(index: number) {
+      tabs.forEach((tab, i) => {
+        tab.setAttribute("aria-selected", String(i === index));
+        tab.tabIndex = i === index ? 0 : -1;
+      });
+      panels.forEach((panel, i) => {
+        panel.hidden = i !== index;
+      });
+    }
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => select(index));
+      tab.addEventListener("keydown", (event) => {
+        const next =
+          event.key === "ArrowRight"
+            ? (index + 1) % tabs.length
+            : event.key === "ArrowLeft"
+              ? (index + tabs.length - 1) % tabs.length
+              : event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? tabs.length - 1
+                  : undefined;
+        if (next === undefined) return;
+        event.preventDefault();
+        select(next);
+        tabs[next]?.focus();
+      });
+    });
+    function followHash() {
+      const index = panels.findIndex(
+        (panel) => `#${panel.id}` === window.location.hash,
+      );
+      if (index < 0) return;
+      select(index);
+      panels[index]?.scrollIntoView({ block: "start" });
+    }
+    followHash();
+    window.addEventListener("hashchange", followHash);
+  }
+</script>
 
 <style>
   .product-showcase {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    overflow-x: clip;
     border-top: 1px solid var(--console-border);
-    background: var(--console-bg);
+    background: var(--console-surface-muted);
   }
-
-  .showcase-section {
-    scroll-margin-top: 5rem;
-    padding: 8rem 1.75rem;
+  .showcase-heading {
+    max-width: 48rem;
+    margin-bottom: 2rem;
   }
-
-  .showcase-section--overview {
-    background: var(--console-surface-sunken);
-  }
-
-  .showcase-inner {
-    width: 100%;
-    max-width: 73.75rem;
-    min-width: 0;
-    margin: 0 auto;
-  }
-
-  .showcase-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 20rem) minmax(47.5rem, 1fr);
-    gap: clamp(2rem, 3vw, 2.5rem);
+  .showcase-tabs {
+    display: flex;
     align-items: center;
+    gap: 1.5rem;
+    border-bottom: 1px solid var(--console-border-strong);
   }
-
-  .showcase-section--overview .showcase-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2.4rem;
-  }
-
-  .showcase-section--overview .showcase-copy {
-    max-width: 47rem;
-  }
-
-  .showcase-section--replay .showcase-grid {
-    grid-template-columns: minmax(47.5rem, 1fr) minmax(0, 20rem);
-  }
-
-  .showcase-section--projects .showcase-copy h2,
-  .showcase-section--replay .showcase-copy h2 {
-    font-size: clamp(2rem, 3vw, 2.75rem);
-  }
-
-  .showcase-section--replay .showcase-copy {
-    order: 2;
-  }
-
-  .showcase-section--replay .showcase-preview {
-    order: 1;
-  }
-
-  .showcase-copy {
-    min-width: 0;
-  }
-
-  .showcase-copy h2 {
-    max-width: 13em;
-    margin: 0;
-    color: var(--console-text);
-    font-family: var(--font-display);
-    font-size: clamp(2rem, 3.5vw, 3.35rem);
-    font-weight: 570;
-    letter-spacing: -0.045em;
-    line-height: 1.02;
-    text-wrap: balance;
-  }
-
-  .showcase-copy > p {
-    max-width: 43ch;
-    margin: 1.15rem 0 0;
+  .showcase-tabs button {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    min-height: 3.75rem;
+    padding: 0.6rem 0.15rem;
     color: var(--console-text-secondary);
-    font-size: 0.95rem;
-    line-height: 1.75;
-    text-wrap: pretty;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
   }
-
-  .showcase-preview {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
+  .showcase-tabs button::after {
+    position: absolute;
+    inset: auto 0 -1px;
+    height: 2px;
+    background: var(--brand-text);
+    content: "";
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s var(--ease-out);
   }
-
-  .showcase-hint {
-    max-width: 45rem;
-    margin: 0.85rem 0 0;
+  .showcase-tabs button[aria-selected="true"] {
+    color: var(--brand-text);
+  }
+  .showcase-tabs button[aria-selected="true"]::after {
+    transform: scaleX(1);
+  }
+  .showcase-tabs button:hover {
+    color: var(--console-text);
+  }
+  .showcase-sample {
+    margin-left: auto;
     color: var(--console-muted);
     font-family: var(--font-mono);
-    font-size: 0.67rem;
+    font-size: 0.65rem;
+  }
+  .showcase-stage {
+    padding: 2rem 0 0;
+  }
+  .showcase-panel {
+    min-height: 38rem;
+    scroll-margin-top: 8rem;
+  }
+  .showcase-description {
+    margin-top: 1.6rem;
+  }
+  .showcase-description h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 550;
+  }
+  .showcase-description p {
+    max-width: 68ch;
+    margin: 0.5rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.87rem;
     line-height: 1.65;
   }
-
-  @media (max-width: 1180px) {
-    .showcase-section {
-      padding: 6rem 1.25rem;
+  .showcase-hint {
+    display: flex;
+    align-items: start;
+    gap: 0.55rem;
+    margin: 1.1rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+  .showcase-hint :global(svg) {
+    flex: 0 0 1rem;
+    margin-top: 0.1rem;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .showcase-panel:not([hidden]) {
+      animation: panel-enter 0.35s var(--ease-out);
     }
-
-    .showcase-grid,
-    .showcase-section--replay .showcase-grid {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 2rem;
-    }
-
-    .showcase-section--replay .showcase-copy,
-    .showcase-section--replay .showcase-preview {
-      order: initial;
-    }
-
-    .showcase-copy,
-    .showcase-copy h2,
-    .showcase-copy > p {
-      max-width: 42rem;
+    @keyframes panel-enter {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
     }
   }
-
   @media (max-width: 767px) {
-    .showcase-section {
-      padding: 4.75rem 1rem;
+    .showcase-heading {
+      margin-bottom: 1.75rem;
     }
-
-    .showcase-grid,
-    .showcase-section--overview .showcase-grid {
-      gap: 1.6rem;
+    .showcase-tabs {
+      gap: 1.3rem;
     }
-
-    .showcase-copy h2 {
-      font-size: clamp(1.8rem, 9vw, 2.45rem);
+    .showcase-tabs button {
+      font-size: 0.78rem;
+      gap: 0.4rem;
+    }
+    .showcase-sample {
+      display: none;
+    }
+    .showcase-stage {
+      padding-top: 1.4rem;
+    }
+    .showcase-panel {
+      min-height: 0;
+    }
+    .showcase-description p {
+      font-size: 0.8rem;
     }
   }
 </style>

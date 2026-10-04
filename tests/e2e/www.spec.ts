@@ -68,8 +68,8 @@ for (const locale of locales) {
       await page.title(),
     );
     await expect(page.locator('meta[property="og:locale:alternate"]')).toHaveCount(2);
-    await expect(page.locator("header [role=group] a")).toHaveCount(3);
-    await expect(page.locator('header [role=group] a[aria-current="page"]')).toHaveAttribute(
+    await expect(page.locator("header .desktop-languages a")).toHaveCount(3);
+    await expect(page.locator('header .desktop-languages a[aria-current="page"]')).toHaveAttribute(
       "href",
       locale.route,
     );
@@ -151,16 +151,16 @@ test("copies the install command with the clipboard API", async ({ page }) => {
     .poll(() => page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent))
     .toEqual({
       name: "install-copy",
-      data: { method: "npm", placement: "hero-install", locale: "en" },
+      data: { method: "npm", placement: "cta-install", locale: "en" },
     });
 
-  await page.locator("#hero-install-tab-brew").click();
-  await page.locator("#hero-install-panel-brew [data-copy-command]").click();
+  await page.locator("#cta-install-tab-brew").click();
+  await page.locator("#cta-install-panel-brew [data-copy-command]").click();
   await expect
     .poll(() => page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent))
     .toEqual({
       name: "install-copy",
-      data: { method: "brew", placement: "hero-install", locale: "en" },
+      data: { method: "brew", placement: "cta-install", locale: "en" },
     });
 });
 
@@ -243,12 +243,15 @@ test("explores each interactive product preview", async ({ page }) => {
 
   await expect(overview.locator("[data-demo-model-total]")).toContainText("6.42B");
 
+  await page.getByRole("tab", { name: "Projects", exact: true }).click();
   const project = page.locator('[data-product-demo="projects"]');
   const subsession = project.locator("details[data-demo-subsession]").first();
   await subsession.locator("summary").click();
   await expect(subsession).toHaveAttribute("open", "");
   await expect(subsession).toContainText("Generate step validation schema");
 
+  await page.getByRole("tab", { name: "Projects", exact: true }).press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Replay", exact: true })).toBeFocused();
   const replay = page.locator('[data-product-demo="replay"]');
   const tool = replay.locator('details[data-demo-tool="edit_file"]');
   await tool.locator("summary").click();
@@ -264,10 +267,16 @@ for (const route of ["/", "/zh/", "/ja/"]) {
       await document.fonts.ready;
     });
 
-    await expect(page.locator(".session-orbit-wrap")).toBeHidden();
-    await expect(page.locator("[data-orbit-ready]")).toHaveCount(0);
-
-    for (const demo of await page.locator(".demo-shell").all()) {
+    await expect(page.locator(".hero__art")).toBeVisible();
+    const menu = page.locator("[data-mobile-menu]");
+    await menu.locator("summary").click();
+    await expect(menu.locator("nav")).toBeVisible();
+    await menu.locator("summary").press("Escape");
+    await expect(menu).not.toHaveAttribute("open");
+    await expect(menu.locator("summary")).toBeFocused();
+    for (const tab of await page.locator(".showcase-tabs [role=tab]").all()) {
+      await tab.click();
+      const demo = page.locator(".showcase-panel:not([hidden]) .demo-shell");
       expect(await demo.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
@@ -289,9 +298,9 @@ test("removes landing and product preview motion when reduced motion is requeste
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.locator(".session-orbit-wrap")).toBeHidden();
-  await expect(page.locator("[data-orbit-ready]")).toHaveCount(0);
-  await expect(page.locator(".hero-copy")).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".hero__copy")).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".hero__art")).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".reveal-pending")).toHaveCount(0);
   await expect(page.locator('[data-product-demo="overview"] .demo-bar-fill').first()).toHaveCSS(
     "transition-duration",
     "0s",

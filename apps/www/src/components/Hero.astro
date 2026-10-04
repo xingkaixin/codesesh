@@ -1,259 +1,328 @@
 ---
-import sessionArchive from "../assets/backgrounds/session-orbit.webp";
-import { copy, type Locale } from "../data/landing";
-import HeadingText from "./HeadingText.astro";
-import InstallOptions from "./InstallOptions.astro";
-import SessionOrbit from "./SessionOrbit.astro";
+import { experience } from "../data/experience";
+import { agents, copy, type Locale } from "../data/landing";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
-const t = copy[locale].hero;
+const t = experience[locale];
+const featuredAgents = agents.filter(({ name }) =>
+  ["Claude Code", "Codex", "Cursor", "OpenCode"].includes(name),
+);
 ---
 
 <section class="hero" aria-labelledby="hero-heading">
-  <div class="hero__inner">
-    <div class="hero-copy">
-      <p class="console-eyebrow">{t.eyebrow}</p>
-      <h1 id="hero-heading" class="console-display landing-heading">
-        <HeadingText value={t.title} />
+  <div class="hero__inner section-shell">
+    <div class="hero__copy">
+      <p class="hero__intro">{t.intro}</p>
+      <h1 id="hero-heading" class="console-display">
+        <span>{t.title[0]}</span>
+        <span>{t.title[1]}</span>
       </h1>
       <p class="hero__body">{t.body}</p>
-      <div class="hero__action">
-        <InstallOptions locale={locale} id="hero-install" />
+      <div class="hero__actions">
+        <a class="button-primary" href="#install">
+          {t.start}
+          <Icon name="arrow-up-right" />
+        </a>
+        <a class="text-link" href="#tour">
+          {t.tour}
+          <Icon name="arrow-right" />
+        </a>
       </div>
     </div>
-
-    <div class="hero-visual" aria-hidden="true">
+    <div class="hero__art" aria-hidden="true">
       <img
-        src={sessionArchive.src}
-        width={sessionArchive.width}
-        height={sessionArchive.height}
+        class="hero__image hero__image--light"
+        src="/artwork/archive-light-1536.webp"
+        srcset="/artwork/archive-light-768.webp 768w, /artwork/archive-light-1536.webp 1536w"
+        sizes="(max-width: 767px) 100vw, 65vw"
+        width="1536"
+        height="1024"
         alt=""
-        loading="eager"
         fetchpriority="high"
-        decoding="async"
       />
-      <div class="hero-visual__veil"></div>
-      <SessionOrbit />
+      <img
+        class="hero__image hero__image--dark"
+        src="/artwork/archive-dark-1536.webp"
+        srcset="/artwork/archive-dark-768.webp 768w, /artwork/archive-dark-1536.webp 1536w"
+        sizes="(max-width: 767px) 100vw, 65vw"
+        width="1536"
+        height="1024"
+        alt=""
+        fetchpriority="high"
+      />
     </div>
   </div>
-
-  <div class="hero__principle">
-    <p>{t.privacy}</p>
-    <span aria-hidden="true"></span>
+  <div class="hero__foundation section-shell">
+    <div class="hero__agents" aria-label={copy[locale].hero.agentsLabel}>
+      {featuredAgents.map((agent) => (
+        <span class="hero__agent">
+          <span
+            class="hero__agent-icon"
+            style={`mask-image:url('${agent.icon}')`}
+            aria-hidden="true"
+          ></span>
+          {agent.name}
+        </span>
+      ))}
+      <a href="#agents" class="hero__agent-more">
+        +{agents.length - featuredAgents.length}
+        <span class="sr-only"> {experience[locale].agentsCount}</span>
+        <Icon name="arrow-right" />
+      </a>
+    </div>
+    <p class="hero__local">
+      <Icon name="shield" />
+      {locale === "zh"
+        ? "本地运行。免费开源。"
+        : locale === "ja"
+          ? "ローカル実行。無料・オープンソース。"
+          : "Local by default. Open source, always."}
+    </p>
   </div>
 </section>
 
 <style>
   .hero {
-    min-height: calc(100dvh - 3.75rem);
-    padding: 1.5rem 1rem 0;
-    overflow: hidden;
+    overflow: clip;
   }
-
   .hero__inner {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 0.86fr) minmax(31rem, 1.14fr);
-    gap: clamp(2rem, 5vw, 5.75rem);
+    grid-template-columns: 1fr 1fr;
     align-items: center;
-    width: 100%;
-    max-width: 86rem;
-    min-height: calc(100dvh - 9rem);
-    margin: 0 auto;
+    min-height: min(42rem, calc(100svh - 10rem));
+    padding-block: 5rem;
   }
-
-  .hero-copy {
-    max-width: 39rem;
-    padding: 3.5rem 0 3rem;
+  .hero__copy {
+    position: relative;
+    z-index: 1;
   }
-
-  .hero-copy .console-eyebrow {
-    margin: 0 0 1.35rem;
+  .hero__intro {
+    margin: 0 0 1.8rem;
+    color: var(--brand-text);
+    font-size: 0.83rem;
+    font-weight: 500;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(3.6rem, 6.3vw, 6.4rem);
+    font-weight: 500;
+    letter-spacing: -0.075em;
+    line-height: 1.03;
+  }
+  h1 span {
+    display: block;
+    white-space: nowrap;
+  }
+  h1 span + span {
     color: var(--brand-text);
   }
-
-  .hero-copy h1 {
-    max-width: 11em;
-    margin: 0;
-    color: var(--console-text);
-    font-size: clamp(3rem, 5vw, 5.2rem);
-    font-weight: 570;
-    letter-spacing: -0.055em;
-    line-height: 0.96;
-  }
-
-  .hero-copy h1 :global(.block) {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
   .hero__body {
-    max-width: 36rem;
-    margin: 1.7rem 0 0;
+    max-width: 29rem;
+    margin: 1.9rem 0 0;
     color: var(--console-text-secondary);
-    font-size: clamp(1rem, 1.3vw, 1.13rem);
-    line-height: 1.68;
+    font-size: 1.07rem;
+    line-height: 1.75;
     text-wrap: pretty;
   }
-
-  .hero__action {
-    margin-top: 2rem;
+  .hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.75rem;
+    margin-top: 2.2rem;
   }
-
-  .hero-visual {
-    position: relative;
-    min-height: min(42rem, calc(100dvh - 8rem));
-    overflow: hidden;
-    border: 1px solid
-      color-mix(in srgb, var(--console-border-strong), transparent 16%);
-    border-radius: var(--radius-xl);
-    background: var(--console-surface-sunken);
-    box-shadow: 0 2.2rem 7rem -3.4rem
-      color-mix(in srgb, var(--console-text), transparent 55%);
-    isolation: isolate;
-  }
-
-  .hero-visual > img {
+  .hero__art {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: 59% center;
-    opacity: 0.78;
-    filter: saturate(0.68) contrast(0.92);
-  }
-
-  .hero-visual__veil {
-    position: absolute;
-    inset: 0;
-    background:
-      linear-gradient(90deg, var(--console-bg) 0%, transparent 19%),
-      linear-gradient(
-        180deg,
-        transparent 70%,
-        color-mix(in srgb, var(--console-bg), transparent 72%)
-      );
+    top: 50%;
+    right: -13%;
+    width: 74%;
+    translate: 0 -50%;
     pointer-events: none;
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      #000 12%,
+      #000 93%,
+      transparent
+    );
   }
-
-  .hero__principle {
-    display: grid;
-    grid-template-columns: minmax(0, 31rem) 1fr;
+  .hero__image {
+    width: 100%;
+    height: auto;
+    mask-image: linear-gradient(
+      180deg,
+      transparent,
+      #000 13%,
+      #000 84%,
+      transparent
+    );
+  }
+  .hero__image--dark {
+    display: none;
+  }
+  :global(.dark) .hero__image--light {
+    display: none;
+  }
+  :global(.dark) .hero__image--dark {
+    display: block;
+  }
+  .hero__foundation {
+    display: flex;
+    justify-content: space-between;
     gap: 2rem;
     align-items: center;
-    width: 100%;
-    max-width: 86rem;
-    margin: 0 auto;
-    padding: 1.15rem 0 1.4rem;
+    padding-block: 1.8rem;
+    border-top: 1px solid var(--console-border);
   }
-
-  .hero__principle p {
-    margin: 0;
-    color: var(--console-muted);
+  .hero__agents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.6rem;
+    align-items: center;
+  }
+  .hero__agent {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .hero__agent-icon {
+    width: 20px;
+    height: 20px;
+    background: var(--console-text);
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+  }
+  .hero__agent-more {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
     font-family: var(--font-mono);
-    font-size: 0.68rem;
-    line-height: 1.7;
+    font-size: 0.75rem;
+    color: var(--console-text-secondary);
   }
-
-  .hero__principle span {
-    height: 1px;
-    background: linear-gradient(90deg, var(--brand-line), transparent);
+  .hero__local {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    color: var(--console-text-secondary);
+    font-size: 0.75rem;
   }
-
-  :global(.dark) .hero-visual > img {
-    opacity: 0.54;
-    filter: saturate(0.54) brightness(0.58) contrast(1.08);
+  :global(:lang(zh-CN)) h1 {
+    font-size: clamp(3.5rem, 5.4vw, 5.5rem);
+    letter-spacing: -0.055em;
+    line-height: 1.18;
   }
-
-  :global(.dark) .hero-visual__veil {
-    background:
-      linear-gradient(90deg, var(--console-bg) 0%, transparent 21%),
-      linear-gradient(
-        180deg,
-        transparent 66%,
-        color-mix(in srgb, var(--console-bg), transparent 48%)
-      );
+  :global(:lang(ja)) h1 {
+    font-size: clamp(2.7rem, 3.9vw, 4.1rem);
+    letter-spacing: -0.06em;
+    line-height: 1.3;
   }
-
+  @media (prefers-reduced-motion: no-preference) {
+    .hero__copy {
+      animation: hero-enter 0.75s var(--ease-out) both;
+    }
+    .hero__art {
+      animation: art-enter 1.15s var(--ease-out) both;
+    }
+    @keyframes hero-enter {
+      from {
+        opacity: 0;
+        transform: translateY(18px);
+      }
+    }
+    @keyframes art-enter {
+      from {
+        opacity: 0;
+        transform: translate(24px, 12px) scale(0.96);
+      }
+    }
+    @supports (animation-timeline: view()) {
+      .hero__image {
+        animation: archive-drift linear both;
+        animation-timeline: view();
+        animation-range: exit 0% exit 100%;
+      }
+      @keyframes archive-drift {
+        to {
+          transform: translateY(8%) rotate(-3deg);
+        }
+      }
+    }
+  }
   @media (max-width: 1023px) {
     .hero__inner {
-      grid-template-columns: minmax(0, 0.92fr) minmax(24rem, 1.08fr);
-      gap: 2rem;
+      min-height: 39rem;
+      padding-block: 4.5rem;
     }
-
-    .hero-copy h1 {
-      font-size: clamp(2.75rem, 6vw, 4.5rem);
+    .hero__local {
+      display: none;
     }
-
-    .hero-visual {
-      min-height: min(35rem, calc(100dvh - 9rem));
+    .hero__foundation {
+      justify-content: center;
     }
   }
-
   @media (max-width: 767px) {
-    .hero {
-      min-height: auto;
-      padding: 0 1rem;
-    }
-
     .hero__inner {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
       min-height: auto;
+      padding-block: 3.25rem 0;
     }
-
-    .hero-copy {
-      max-width: none;
-      padding: 4rem 0 2rem;
+    .hero__intro {
+      margin-bottom: 1.25rem;
+      font-size: 0.78rem;
     }
-
-    .hero-copy h1 {
-      max-width: 12em;
-      font-size: clamp(2.8rem, 13vw, 4.4rem);
-      line-height: 0.98;
+    h1 {
+      font-size: clamp(2.15rem, 10.9vw, 5.8rem);
     }
-
-    .hero-copy h1 :global(.block) {
-      white-space: normal;
+    :global(:lang(zh-CN)) h1 {
+      font-size: clamp(2.9rem, 10.6vw, 4.6rem);
     }
-
+    :global(:lang(ja)) h1 {
+      font-size: clamp(2rem, 7.3vw, 3.3rem);
+    }
     .hero__body {
-      max-width: 32rem;
-      margin-top: 1.3rem;
-      font-size: 1rem;
+      margin-top: 1.35rem;
+      max-width: 33rem;
+      font-size: 0.98rem;
     }
-
-    .hero__action {
-      margin-top: 1.6rem;
+    .hero__actions {
+      gap: 1.3rem;
+      margin-top: 1.5rem;
     }
-
-    .hero-visual {
-      min-height: min(18rem, 42svh);
+    .hero__art {
+      position: relative;
+      top: auto;
+      right: auto;
+      translate: none;
+      width: 124%;
+      margin: 0.75rem -12% -0.5rem;
     }
-
-    .hero-visual > img {
-      object-position: 63% center;
+    .hero__foundation {
+      padding-block: 1.5rem;
     }
-
-    .hero__principle {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 0.8rem;
-      padding: 1.2rem 0 1.8rem;
+    .hero__agents {
+      justify-content: center;
+      column-gap: 1.25rem;
+      row-gap: 1rem;
     }
-
-    .hero__principle span {
-      order: -1;
+    .hero__agent {
+      font-size: 0.7rem;
+      gap: 0.4rem;
     }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .hero-copy,
-    .hero-visual {
-      animation: none;
+    .hero__agent-icon {
+      width: 16px;
+      height: 16px;
     }
   }
 </style>
