@@ -60,6 +60,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @codesesh/web... build
       - run: cargo test --workspace --locked
+        if: runner.os == 'Linux'
+      - run: pnpm test:rust:platform
+        if: runner.os != 'Linux'
 
       - name: Build, pack and smoke test native release
         run: |

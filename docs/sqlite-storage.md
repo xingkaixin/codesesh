@@ -97,7 +97,7 @@ sqlite3 ~/.codesesh/codesesh.db 'VACUUM'
 ```bash
 cargo test -p codesesh-core storage --locked
 cargo test -p codesesh-core state --locked
-pnpm test:migration
+cargo test -p codesesh-core migration --locked
 pnpm test:backend
 ```
 

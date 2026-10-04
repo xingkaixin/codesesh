@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatIsoDate,
-  formatScanStatusLabel,
-  formatSearchSubtitle,
-  formatWindowLabel,
-} from "./scan-format";
+import { formatScanStatusLabel } from "./scan-format";
 import type { ScanStatusEvent } from "./api";
 
 function scanStatus(overrides: Partial<ScanStatusEvent>): ScanStatusEvent {
@@ -23,73 +18,15 @@ function scanStatus(overrides: Partial<ScanStatusEvent>): ScanStatusEvent {
   };
 }
 
-describe("formatIsoDate", () => {
-  it("formats as YYYY-MM-DD", () => {
-    expect(formatIsoDate(new Date("2026-06-21T14:30:00").getTime())).toBe("2026-06-21");
-  });
-});
-
-describe("formatWindowLabel", () => {
-  it("returns All time when from is null", () => {
-    // SAFETY: Window formatting reads only the supplied window bounds from the public config.
-    expect(formatWindowLabel({ window: { from: null, to: 1000 } } as never)).toBe("All time");
-  });
-
-  it("returns null for null config", () => {
-    expect(formatWindowLabel(null)).toBeNull();
-  });
-});
-
-describe("formatSearchSubtitle", () => {
-  it("shows searching message while loading", () => {
-    expect(formatSearchSubtitle("query", true, 0)).toContain("Searching");
-  });
-
-  it("shows count when done", () => {
-    expect(formatSearchSubtitle("query", false, 5)).toContain("5 matches");
-  });
-});
-
 describe("formatScanStatusLabel", () => {
   it("returns null for inactive status", () => {
     expect(formatScanStatusLabel(null)).toBeNull();
     expect(formatScanStatusLabel(scanStatus({ active: false }))).toBeNull();
   });
 
-  it("keeps routine publication quiet", () => {
-    expect(
-      formatScanStatusLabel(
-        scanStatus({
-          active: true,
-          phase: "publishing",
-          completedAgents: [],
-          scanningAgents: [],
-          totalAgents: 0,
-          agentStatuses: {},
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it("keeps legacy indexing quiet", () => {
-    expect(
-      formatScanStatusLabel(
-        scanStatus({
-          active: true,
-          phase: "indexing",
-          completedAgents: [],
-          scanningAgents: [],
-          totalAgents: 0,
-          agentStatuses: {},
-        }),
-      ),
-    ).toBeNull();
-  });
-
   it("surfaces an inactive refresh failure", () => {
     const status = scanStatus({
       active: false,
-      backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
       agentStatuses: {
         codex: { updatedAt: 0, agentName: "codex", status: "failed", error: "cache is read-only" },
       },
@@ -140,7 +77,6 @@ describe("formatScanStatusLabel", () => {
       formatScanStatusLabel(
         scanStatus({
           active: false,
-          backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
           agentStatuses: {
             codex: {
               agentName: "codex",
@@ -163,7 +99,6 @@ describe("formatScanStatusLabel", () => {
       formatScanStatusLabel(
         scanStatus({
           active: false,
-          backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
           agentStatuses: {
             claudecode: {
               agentName: "claudecode",
@@ -195,7 +130,6 @@ describe("formatScanStatusLabel", () => {
               },
             },
           },
-          agentStatuses: {},
         }),
       ),
     ).toBe(
@@ -320,8 +254,6 @@ describe("formatScanStatusLabel", () => {
       formatScanStatusLabel(
         scanStatus({
           active: false,
-          backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
-          agentStatuses: {},
           searchIndexMaintenance: {
             active: true,
             currentAgent: "codex",

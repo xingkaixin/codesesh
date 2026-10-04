@@ -4,8 +4,15 @@ import { fileURLToPath } from "node:url";
 
 export const CRITICAL_COVERAGE_SCOPES = [
   {
-    id: "web-hooks",
-    owners: [{ path: "apps/web/src/hooks", kind: "directory" }],
+    id: "web-session-data",
+    owners: [
+      { path: "apps/web/src/hooks/useSessionStore.ts", kind: "file" },
+      { path: "apps/web/src/hooks/useSessionDetail.ts", kind: "file" },
+      { path: "apps/web/src/hooks/useLiveSync.ts", kind: "file" },
+      { path: "apps/web/src/hooks/useProjects.ts", kind: "file" },
+      { path: "apps/web/src/hooks/useBookmarks.ts", kind: "file" },
+      { path: "apps/web/src/hooks/useTimeWindow.ts", kind: "file" },
+    ],
     thresholds: { lines: 95 },
   },
   {

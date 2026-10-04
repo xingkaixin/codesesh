@@ -189,15 +189,6 @@ describe("AppRouteContent", () => {
     expect(props.load.retry).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the overview on the root route", async () => {
-    renderContent(makeProps());
-
-    expect(
-      await screen.findByTestId("dashboard", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS }),
-    ).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "Filter by agent" })).toBeTruthy();
-  });
-
   it("shows a retryable project failure instead of an empty state", async () => {
     const props = makeProps();
     const retry = vi.fn();

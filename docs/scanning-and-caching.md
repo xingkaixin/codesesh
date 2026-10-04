@@ -94,12 +94,10 @@ codesesh --trace
 pnpm build:web
 cargo test --workspace --locked
 pnpm test:backend
-pnpm prepare:reference
-pnpm test:backend:compare
 ```
 
 单元测试检查事务、增量状态和回填不变量；进程契约检查真实 CLI、HTTP、SSE 和重启行为。
-对照工具使用固定的 Node 参考制品，不作为生产运行时依赖。性能测量方法见
+CI 不再执行旧 Node 差分测试。性能测量方法见
 [performance.md](./performance.md)。
 
 ## 重启、进度与源移除

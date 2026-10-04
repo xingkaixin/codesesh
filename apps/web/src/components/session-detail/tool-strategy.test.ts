@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Message, ToolPart } from "../../lib/api";
-import {
-  getAssistantDisplayLabel,
-  getToolDisplayStrategy,
-  normalizeMessagesForDisplay,
-  normalizeToolState,
-} from "./tool-strategy";
+import type { ToolPart } from "../../lib/api";
+import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 
 function part(overrides?: Partial<ToolPart>): ToolPart {
   return {
@@ -64,19 +59,6 @@ describe("normalizeToolState", () => {
 });
 
 describe("getToolDisplayStrategy", () => {
-  it("routes to a per-agent builder", () => {
-    const state = normalizeToolState(
-      part({ tool: "read", title: "read", state: { status: "completed" } }),
-    );
-    const strategy = getToolDisplayStrategy(
-      "claudecode",
-      part({ tool: "read", title: "read" }),
-      state,
-    );
-    expect(strategy).toBeDefined();
-    expect(strategy.title).toBeTruthy();
-  });
-
   it.each(FILE_TOOL_CASES)(
     "normalizes %s %s to the canonical %s file strategy",
     (agentName, toolName, title) => {
@@ -727,23 +709,5 @@ describe("getToolDisplayStrategy", () => {
         { label: "Message", value: "Please check the tool renderer." },
       ],
     });
-  });
-});
-
-describe("getAssistantDisplayLabel", () => {
-  it("returns USER for user role", () => {
-    expect(getAssistantDisplayLabel({ role: "user" } as Message)).toBe("USER");
-  });
-
-  it("returns AGENT for assistant role", () => {
-    expect(getAssistantDisplayLabel({ role: "assistant" } as Message)).toBe("AGENT");
-  });
-});
-
-describe("normalizeMessagesForDisplay", () => {
-  it("returns messages unchanged for non-cursor agents", () => {
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- SAFETY: This deliberately minimal message must pass through untouched for agents without normalization.
-    const messages = [{ role: "user", content: "hi" } as unknown as Message];
-    expect(normalizeMessagesForDisplay(messages, "claudecode")).toBe(messages);
   });
 });

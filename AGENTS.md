@@ -57,15 +57,15 @@ release 不允许跳过资源。契约类型改变后重新生成 TypeScript 并
 前端使用 `pnpm lint`、`pnpm format:check`、`pnpm typecheck` 和相关 Vitest 测试。
 
 - `pnpm test:backend`：真实进程 CLI、HTTP、SSE 和持久化契约。
-- `pnpm prepare:reference`：获取锁定的旧 Node 参考制品，仅用于差分验收。
-- `pnpm test:backend:compare`：对照参考与候选后端。
+- `pnpm test:rust:platform`：macOS / Windows 的文件系统、原生依赖与进程测试子集；Linux 跑完整 Rust 测试。
+- `pnpm prepare:reference`：获取锁定的旧 Node 参考制品，仅用于手动性能对照。
 - `pnpm test:e2e`：Playwright 端到端，脚本先构建再运行。
 - `pnpm --filter @codesesh/web test:bundle`：构建后检查首屏 bundle 预算。
 - `node scripts/check-docs-paths.mjs`：文档路径必须存在。
 - `node scripts/check-docs-facts.mjs`：repo-fact 标记块须与源码、脚本和 CI 一致。
 - `node scripts/release-preflight.mjs`：Cargo 与前端版本一致性。
 
-完整 CI 以 `.github/workflows/ci.yml` 为事实源。验证命令不代表已经通过，报告结果必须保留
+测试取舍和平台边界见 `docs/testing.md`。完整 CI 以 `.github/workflows/ci.yml` 为事实源。验证命令不代表已经通过，报告结果必须保留
 实际运行证据。制品要求见 `docs/rust-packaging.md`，发布操作与代码迁移分开。
 
 ## Web 设计规则
