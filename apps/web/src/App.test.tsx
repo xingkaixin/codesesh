@@ -323,6 +323,7 @@ describe("App live updates", () => {
     const sidebarSession = {
       ...SAMPLE_SESSION_HEAD,
       ...createSessionIdentity({ agentName: "claudecode", sessionId: "sidebar-session" }),
+      time_updated: Date.now(),
       project_identity: { kind: "path" as const, key: "/workspace", displayName: "workspace" },
     };
     responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];

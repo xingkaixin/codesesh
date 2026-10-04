@@ -46,18 +46,28 @@ describe("time window URL state", () => {
     ).toBe(fallback);
   });
 
-  it("re-resolves a preset fallback at the current local day", () => {
+  it.each([7, 14, 30, 90])("resolves a %i-day fallback independently of server startup", (days) => {
     const result = resolveTimeWindow(
       new URLSearchParams(),
       {
-        from: new Date(2026, 6, 8).getTime(),
-        to: new Date(2026, 6, 15).getTime() - 1,
-        days: 7,
+        from: new Date(2026, 5, 15 - days).getTime(),
+        days,
       },
       now,
     );
 
     expect(result).toEqual({
+      preset: `${days}d`,
+      window: {
+        from: new Date(2026, 6, 15 - days).getTime(),
+        to: new Date(2026, 6, 15).getTime() - 1,
+        days,
+      },
+    });
+  });
+
+  it("resolves a days-only fallback as a rolling preset", () => {
+    expect(resolveTimeWindow(new URLSearchParams(), { days: 7 }, now)).toEqual({
       preset: "7d",
       window: {
         from: new Date(2026, 6, 8).getTime(),
@@ -67,17 +77,19 @@ describe("time window URL state", () => {
     });
   });
 
-  it("does not treat contradictory fallback bounds as a preset", () => {
+  it.each([1, 8])("preserves an explicit end date with a July %i start", (day) => {
     const fallback = {
-      from: new Date(2026, 6, 1).getTime(),
+      from: new Date(2026, 6, day).getTime(),
       to: new Date(2026, 6, 15).getTime() - 1,
       days: 7,
     };
 
-    expect(resolveTimeWindow(new URLSearchParams(), fallback, now)).toEqual({
+    expect(
+      resolveTimeWindow(new URLSearchParams(), fallback, new Date(2026, 7, 14).getTime()),
+    ).toEqual({
       preset: "custom",
       window: fallback,
-      customFrom: "2026-07-01",
+      customFrom: `2026-07-0${day}`,
       customTo: "2026-07-14",
     });
   });

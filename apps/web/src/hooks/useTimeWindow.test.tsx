@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, useLocation } from "react-router-dom";
+import type { TimeWindow } from "../lib/time-window";
 import { useTimeWindow } from "./useTimeWindow";
 
 afterEach(() => {
@@ -13,12 +14,14 @@ type ResolveWindow = ReturnType<typeof useTimeWindow>["resolve"];
 function TimeWindowHarness({
   observedPresets,
   observedResolvers,
+  defaultWindow = { days: 7 },
 }: {
   observedPresets: Array<string | null>;
   observedResolvers?: ResolveWindow[];
+  defaultWindow?: TimeWindow;
 }) {
   const location = useLocation();
-  const controller = useTimeWindow({ days: 7 });
+  const controller = useTimeWindow(defaultWindow);
   observedPresets.push(controller.preset);
   observedResolvers?.push(controller.resolve);
 
@@ -86,19 +89,26 @@ describe("useTimeWindow", () => {
     expect(observedResolvers.at(-1)).toBe(initialResolver);
   });
 
-  it("refreshes a rolling preset at local midnight", () => {
+  it.each(["/", "/?range=7d"])("refreshes a rolling preset at local midnight from %s", (url) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 6, 15, 23, 59, 59, 900));
     render(
-      <MemoryRouter initialEntries={["/?range=7d"]}>
-        <TimeWindowHarness observedPresets={[]} />
+      <MemoryRouter initialEntries={[url]}>
+        <TimeWindowHarness
+          observedPresets={[]}
+          defaultWindow={{ from: new Date(2026, 5, 9).getTime(), days: 7 }}
+        />
       </MemoryRouter>,
     );
 
+    expect(screen.getByTestId("preset").textContent).toBe("7d");
+    expect(screen.getByTestId("from").textContent).toBe(String(new Date(2026, 6, 9).getTime()));
     expect(screen.getByTestId("to").textContent).toBe(String(new Date(2026, 6, 16).getTime() - 1));
 
     act(() => vi.advanceTimersByTime(100));
 
+    expect(screen.getByTestId("preset").textContent).toBe("7d");
+    expect(screen.getByTestId("from").textContent).toBe(String(new Date(2026, 6, 10).getTime()));
     expect(screen.getByTestId("to").textContent).toBe(String(new Date(2026, 6, 17).getTime() - 1));
   });
 
