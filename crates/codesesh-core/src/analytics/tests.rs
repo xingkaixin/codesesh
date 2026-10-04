@@ -399,6 +399,85 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
 }
 
 #[test]
+fn active_hours_work_does_not_grow_with_unrelated_message_history() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let cache = crate::storage::Cache::open(None).unwrap();
+    let db = cache.connection();
+    db.execute_batch("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost)
+        VALUES('local','codex','parent','Parent','/project','path','/project','project',100,200,1,0,0,0);
+        INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
+        VALUES('local','codex','parent',0,'current','user',200,'[]','Current user message');").unwrap();
+    let sessions = cache.snapshot().unwrap();
+    let steps = Arc::new(AtomicUsize::new(0));
+    let counter = steps.clone();
+    db.progress_handler(
+        1,
+        Some(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+            false
+        }),
+    )
+    .unwrap();
+    let measure = || {
+        steps.store(0, Ordering::Relaxed);
+        let hours = active_hours(
+            db,
+            &sessions,
+            &DashboardScope::default(),
+            Some(150.0),
+            250.0,
+            "UTC".parse().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            hours["counts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap())
+                .sum::<u64>(),
+            1
+        );
+        steps.load(Ordering::Relaxed)
+    };
+    let baseline = measure();
+    db.execute_batch("WITH RECURSIVE rows(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM rows WHERE n<5000)
+        INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
+        SELECT 'local','codex','parent',n,'history-'||n,'user',100,'[]',printf('%2048s','history') FROM rows;
+        WITH RECURSIVE rows(n) AS (VALUES(5001) UNION ALL SELECT n+1 FROM rows WHERE n<10000)
+        INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
+        SELECT 'local','codex','parent',n,'assistant-'||n,'assistant',200,'[]',printf('%2048s','assistant') FROM rows;").unwrap();
+    let with_history = measure();
+    assert!(
+        with_history < baseline * 2,
+        "query work grew from {baseline} to {with_history} steps"
+    );
+    db.progress_handler(0, None::<fn() -> bool>).unwrap();
+    let all_time = active_hours(
+        db,
+        &sessions,
+        &DashboardScope::default(),
+        None,
+        250.0,
+        "UTC".parse().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        all_time["counts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap())
+            .sum::<u64>(),
+        5001
+    );
+}
+
+#[test]
 fn cost_facts_reuse_the_callers_transaction_without_committing_it() {
     let cache = crate::storage::Cache::open(None).unwrap();
     let connection = cache.connection();
