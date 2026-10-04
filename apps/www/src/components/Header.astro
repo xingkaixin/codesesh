@@ -98,9 +98,9 @@ const themes = [
         href="https://github.com/xingkaixin/codesesh"
         target="_blank"
         rel="noopener noreferrer"
+        aria-label={t.github}
       >
-        {t.github}
-        <Icon name="arrow-up-right" />
+        <Icon name="github" class="size-5" />
       </a>
       <details class="mobile-menu" data-mobile-menu>
         <summary>
@@ -206,7 +206,8 @@ const themes = [
     text-decoration: underline;
     text-underline-offset: 5px;
   }
-  .theme-control {
+  .theme-control,
+  .header-github {
     display: grid;
     place-items: center;
     width: 40px;
@@ -214,22 +215,9 @@ const themes = [
     cursor: pointer;
     color: var(--console-text-secondary);
   }
-  .theme-control:hover {
-    color: var(--brand-text);
-  }
-  .header-github {
-    display: flex;
-    gap: 0.6rem;
-    align-items: center;
-    min-height: 40px;
-    padding-inline: 0.9rem;
-    border: 1px solid var(--console-border-strong);
-    border-radius: var(--radius-sm);
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
+  .theme-control:hover,
   .header-github:hover {
-    background: var(--console-surface);
+    color: var(--brand-text);
   }
   .mobile-menu {
     display: none;
