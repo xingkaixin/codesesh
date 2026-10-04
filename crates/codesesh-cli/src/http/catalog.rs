@@ -23,6 +23,8 @@ struct QueryTimings {
     heads_ms: f64,
     cost_facts_ms: f64,
     build_ms: f64,
+    #[serde(flatten)]
+    dashboard: analytics::DashboardTimings,
     cache_hit: bool,
 }
 
@@ -380,7 +382,7 @@ pub async fn dashboard(
                     .into_iter()
                     .map(|a| (a["name"].as_str().unwrap().to_owned(), a))
                     .collect();
-                let value = analytics::dashboard_response(
+                let (value, dashboard_timings) = analytics::dashboard_response(
                     conn,
                     &sessions,
                     &analytics::DashboardResponseOptions {
@@ -399,6 +401,7 @@ pub async fn dashboard(
                     },
                 )?;
                 timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
+                timings.dashboard = dashboard_timings;
                 Ok(value)
             })?;
             Ok((value, timings))
