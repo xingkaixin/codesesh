@@ -40,7 +40,7 @@
     "generate:rust-contract": "cargo run --locked -p codesesh-core --example export_contract && oxfmt --write packages/contract/src/generated",
     "build:web": "turbo run build --filter=@codesesh/contract --filter=@codesesh/web --filter=@codesesh/www",
     "test:rust": "cargo test --workspace --locked",
-    "test:rust:platform": "cargo test -p codesesh-core --lib --locked -- discovery:: migration:: runtime:: state:: storage::schema:: storage::memory:: pricing::manager:: sync::worker_store:: agents::cursor:: agents::dsh:: agents::kimi:: projects::tests::real_git_worktree_shares_common_directory && cargo test -p codesesh-cli --bin codesesh --locked -- cache_path:: json_scan:: logging:: pricing_refresh:: service:: worker::connection:: && cargo test -p codesesh-cli --test data_migration --test hub_worker --locked",
+    "test:rust:platform": "cargo test -p codesesh-core --lib --locked -- discovery:: migration:: runtime:: state:: storage::schema:: storage::memory:: pricing::manager:: sync::worker_store:: agents::cursor:: agents::dsh:: agents::kimi:: projects:: && cargo test -p codesesh-cli --bin codesesh --locked -- cache_path:: json_scan:: logging:: pricing_refresh:: service:: worker::connection:: && cargo test -p codesesh-cli --test data_migration --test hub_worker --test worker_scheduling --locked",
     "bench:rust": "node scripts/rust/benchmark.mjs"
   },
   "devDependencies": {
