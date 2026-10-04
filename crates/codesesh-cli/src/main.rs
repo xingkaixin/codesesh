@@ -297,6 +297,7 @@ async fn run() -> Result<()> {
         runtime
             .hub_control(move |cache| {
                 cache.initialize_hub(&hub_id)?;
+                cache.clear_worker_leases()?;
                 cache.configure_local_worker(&local_key)?;
                 if recover {
                     cache.rotate_data_epoch()?;

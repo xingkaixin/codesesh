@@ -299,6 +299,13 @@ impl Cache {
         Ok(())
     }
 
+    /// Call only before serving requests, while holding the exclusive Hub process lock.
+    pub fn clear_worker_leases(&mut self) -> Result<()> {
+        self.connection
+            .execute("UPDATE hub_nodes SET instance_id=NULL,lease_until=0", [])?;
+        Ok(())
+    }
+
     pub fn release_worker_instance(&mut self, node: &str, instance: &str) -> Result<()> {
         uuid::Uuid::parse_str(instance).context("Invalid Worker instance")?;
         self.connection.execute(

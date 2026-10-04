@@ -359,14 +359,69 @@ async fn real_worker_uploads_and_recovers_after_hub_restart() {
         );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    #[cfg(unix)]
+    {
+        let mut worker = _worker;
+        assert!(
+            Command::new("kill")
+                .args(["-TERM", &worker.0.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = worker.0.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "Worker did not stop while Hub was offline"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(
+            std::fs::read_to_string(worker_home.path().join("process.log"))
+                .unwrap()
+                .contains("Hub lease could not be released")
+        );
+    }
+    #[cfg(not(unix))]
+    drop(_worker);
+    let previous =
+        codesesh_core::sync::WorkerStore::open(&worker_home.path().join(".codesesh/worker.db"))
+            .unwrap();
+    let binding = previous.binding().unwrap().unwrap();
+    let stream = previous.stream_id().unwrap();
+    let confirmed = previous.confirmed_sequence().unwrap();
+    assert!(previous.queue_status().unwrap().batches > 0);
+    drop(previous);
+    let _worker = Process(
+        command(worker_home.path())
+            .args(["worker", "--hub", url.as_str(), "--agent", "codex"])
+            .spawn()
+            .unwrap(),
+    );
     let (_server, restarted, new_token) = hub(hub_home.path(), url.port().unwrap());
-    wait_for_sessions(
-        &client,
-        &restarted,
-        &new_token,
-        if cfg!(unix) { 3 } else { 2 },
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        wait_for_sessions(
+            &client,
+            &restarted,
+            &new_token,
+            if cfg!(unix) { 3 } else { 2 },
+        ),
     )
-    .await;
+    .await
+    .expect("Worker waited for a stale lease after Hub restart");
+    let current =
+        codesesh_core::sync::WorkerStore::open(&worker_home.path().join(".codesesh/worker.db"))
+            .unwrap();
+    assert_eq!(json!(current.binding().unwrap().unwrap()), json!(binding));
+    assert_eq!(current.stream_id().unwrap(), stream);
+    assert!(current.confirmed_sequence().unwrap() >= confirmed);
+    drop(current);
     let nodes: Value = client
         .get(restarted.join("api/nodes").unwrap())
         .bearer_auth(new_token)
