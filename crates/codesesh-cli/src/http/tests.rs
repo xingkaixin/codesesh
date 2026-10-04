@@ -588,18 +588,20 @@ async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
             .0,
         StatusCode::NO_CONTENT
     );
-    assert_eq!(
-        request(
-            &app,
-            Method::POST,
-            "/api/worker/hello",
-            &replacement,
-            &hello.to_string()
-        )
+    let mut conflict = Request::builder()
+        .method(Method::POST)
+        .uri("/api/worker/hello")
+        .header("host", "localhost:4521");
+    for (key, value) in replacement {
+        conflict = conflict.header(key, value);
+    }
+    let conflict = app
+        .clone()
+        .oneshot(conflict.body(Body::from(hello.to_string())).unwrap())
         .await
-        .0,
-        StatusCode::CONFLICT
-    );
+        .unwrap();
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    assert_eq!(conflict.headers()["retry-after"], "2");
     assert_eq!(
         request(&app, Method::POST, "/api/worker/goodbye", &headers, "")
             .await

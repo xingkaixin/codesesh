@@ -9,6 +9,7 @@ use std::{
 
 #[derive(Default)]
 struct Requests {
+    hello_attempts: Vec<Instant>,
     uploads: Vec<(Instant, i64)>,
     heartbeats: Vec<usize>,
     confirmed: i64,
@@ -32,6 +33,10 @@ async fn worker_drains_in_order_with_retry_heartbeat_and_shutdown() {
         }))
         .route("/api/worker/hello", post(|State(requests): State<Arc<Mutex<Requests>>>, Json(_hello): Json<WorkerHello>| async move {
             let mut requests = requests.lock().unwrap();
+            requests.hello_attempts.push(Instant::now());
+            if requests.hello_attempts.len() == 1 {
+                return (StatusCode::CONFLICT, [("retry-after", "2")], Json(json!({"error":"WORKER_INSTANCE_CONFLICT"}))).into_response();
+            }
             let uploads = requests.uploads.len();
             requests.heartbeats.push(uploads);
             Json(json!({
@@ -39,7 +44,7 @@ async fn worker_drains_in_order_with_retry_heartbeat_and_shutdown() {
                 "minimumWorkerVersion":"1.1.1","protocolVersion":1,"payloadVersion":1,
                 "error":null,"confirmedSequence":requests.confirmed,"heartbeatSeconds":5,
                 "maxInFlight":1,"rescan":null
-            }))
+            })).into_response()
         }))
         .route("/api/worker/upload", post(|State(requests): State<Arc<Mutex<Requests>>>, Json(upload): Json<Upload>| async move {
             let first = {
@@ -126,6 +131,10 @@ async fn worker_drains_in_order_with_retry_heartbeat_and_shutdown() {
     }
     {
         let requests = requests.lock().unwrap();
+        assert!(
+            requests.hello_attempts[1].duration_since(requests.hello_attempts[0])
+                >= Duration::from_secs(2)
+        );
         assert!(requests.uploads.len() > 2);
         assert_eq!(requests.uploads[0].1, 1);
         assert_eq!(requests.uploads[1].1, 1);

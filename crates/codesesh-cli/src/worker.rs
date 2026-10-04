@@ -363,10 +363,10 @@ pub async fn run(
                 {
                     paused = true;
                     online = false;
+                    next_hello = Instant::now() + retry_delay(&response, 60);
                     let reason = response.text().await?;
                     collector.store.set_pause(Some(&reason))?;
                     eprintln!("Worker paused: {reason}");
-                    next_hello = Instant::now() + Duration::from_secs(60);
                 }
                 _ => {
                     online = false;
@@ -420,20 +420,13 @@ pub async fn run(
                 {
                     paused = true;
                     online = false;
+                    next_hello = Instant::now() + retry_delay(&response, 60);
                     let error = response.text().await?;
                     collector.store.set_pause(Some(&error))?;
                     eprintln!("Worker upload paused: {error}");
-                    next_hello = Instant::now() + Duration::from_secs(60);
                 }
                 Ok(response) => {
-                    let delay = response
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(retry_seconds)
-                        .clamp(1, 300);
-                    next_upload = Instant::now() + backoff(delay);
+                    next_upload = Instant::now() + retry_delay(&response, retry_seconds);
                     retry_seconds = (retry_seconds * 2).min(60);
                 }
                 Err(_) => {
@@ -458,6 +451,17 @@ pub async fn run(
         ),
     }
     Ok(())
+}
+
+fn retry_delay(response: &reqwest::Response, fallback_seconds: u64) -> Duration {
+    let seconds = response
+        .headers()
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(fallback_seconds)
+        .clamp(1, 300);
+    backoff(seconds)
 }
 
 fn backoff(seconds: u64) -> Duration {

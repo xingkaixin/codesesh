@@ -58,7 +58,11 @@ async fn authenticate(
             if failure.is::<codesesh_core::runtime::ReadBusy>() {
                 retry("Hub is busy")
             } else if failure.to_string().starts_with("WORKER_INSTANCE_CONFLICT") {
-                error(StatusCode::CONFLICT, &failure.to_string())
+                (
+                    [(axum::http::header::RETRY_AFTER, "2")],
+                    error(StatusCode::CONFLICT, &failure.to_string()),
+                )
+                    .into_response()
             } else {
                 error(
                     StatusCode::UNAUTHORIZED,
