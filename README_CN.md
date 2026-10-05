@@ -345,9 +345,8 @@ HTML 和未版本化文件使用 Workers 默认策略。部署产物排除 Finde
 让缺失资源返回 404，而不是首页。统计仅使用 Umami，保持 Cloudflare Web Analytics
 自动注入关闭。
 
-首次从 Pages 迁移时，先部署并验证 Worker 的 `workers.dev` 地址，再移除 Pages
-自定义域名绑定及旧 CNAME，然后将域名绑定到 Worker（重新运行 `cf deploy --prebuilt`）。
-正式域名、多语言页面、静态资源、安装脚本和 404 验证完成前，保留旧 Pages 部署。
+Pages 迁移已完成，旧 Pages 项目可以删除。站点仅通过正式自定义域名提供访问；
+生成的部署配置显式关闭 `workers.dev` 和版本预览地址。
 
 ### 复现 CI 必需检查
 

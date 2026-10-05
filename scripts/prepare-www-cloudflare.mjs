@@ -31,7 +31,8 @@ await writeFile(
     {
       name: "codesesh",
       compatibilityDate: "2026-10-05",
-      workersDev: true,
+      workersDev: false,
+      previewUrls: false,
       domains: ["codesesh.xingkaixin.me"],
       assets: {
         htmlHandling: "force-trailing-slash",
