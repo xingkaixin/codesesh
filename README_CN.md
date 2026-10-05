@@ -338,8 +338,9 @@ Rust 后端通过 Cargo 测试。`test:coverage` 统计 Vitest 覆盖的 TypeScr
 `pnpm --filter @codesesh/www build:cf`，再运行
 `(cd apps/www && cf deploy --prebuilt --dry-run)`。
 
-Workers Static Assets 通过 `apps/www/public/_headers` 为带内容哈希的 `/_astro/`
-资源设置一年缓存。HTML 和未版本化文件使用 Workers 默认策略。
+准备脚本生成 `_headers`，仅为构建中实际存在的 `/_astro/` 资源设置一年缓存。
+Workers 会将通配符响应头应用到 404，因此使用精确路径避免缓存缺失资源。
+HTML 和未版本化文件使用 Workers 默认策略。部署产物排除 Finder 元数据。
 部署显式启用尾斜杠 URL 和 `404-page`，使用 `apps/www/public/404.html`，
 让缺失资源返回 404，而不是首页。统计仅使用 Umami，保持 Cloudflare Web Analytics
 自动注入关闭。

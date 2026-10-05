@@ -379,8 +379,10 @@ To validate without uploading, run `pnpm --filter @codesesh/contract build`,
 `pnpm --filter @codesesh/www build:cf`, then
 `(cd apps/www && cf deploy --prebuilt --dry-run)`.
 
-Workers Static Assets uses `apps/www/public/_headers` to cache fingerprinted
-`/_astro/` assets for one year. HTML and unversioned files use the Workers defaults.
+The preparation script generates `_headers` with exact paths for built `/_astro/`
+assets and caches them for one year. Workers applies wildcard headers to 404s too,
+so exact paths keep missing assets out of that cache policy. HTML and unversioned
+files use the Workers defaults. Finder metadata is excluded from deployment.
 The deployment explicitly uses trailing-slash URLs and `404-page` handling with
 `apps/www/public/404.html`, so missing assets return 404 instead of the homepage.
 Analytics uses Umami only; keep Cloudflare Web Analytics injection disabled.
