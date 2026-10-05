@@ -144,7 +144,9 @@ pub fn scan_sources(
 }
 
 pub fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
-    if !exists(&source.scan_path)? {
+    if !(exists(&source.scan_path)?
+        || source.agent == "codex" && exists(&source.data_root.join("archived_sessions"))?)
+    {
         return Ok(AgentScan {
             available: false,
             sessions: vec![],
@@ -177,6 +179,9 @@ fn exists(path: &Path) -> std::io::Result<bool> {
     }
 }
 fn has_sources(source: &AgentSource) -> Result<bool> {
+    if source.agent == "codex" {
+        return Ok(!agents::codex_rollout::paths(&source.data_root)?.is_empty());
+    }
     let database = match source.agent.as_str() {
         "cursor" => Some(source.scan_path.join("globalStorage/state.vscdb")),
         "opencode" => Some(source.scan_path.clone()),
@@ -206,7 +211,6 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
         let name = entry.file_name().to_string_lossy();
         let present = match source.agent.as_str() {
             "claudecode" => entry.depth() == 2 && name.ends_with(".jsonl"),
-            "codex" => name.starts_with("rollout-") && name.ends_with(".jsonl"),
             "pi" => name.ends_with(".jsonl"),
             "grok" => name == "summary.json",
             "kimi" => entry.depth() == 3 && matches!(name.as_ref(), "metadata.json" | "state.json"),

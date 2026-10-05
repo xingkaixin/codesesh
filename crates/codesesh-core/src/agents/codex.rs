@@ -1,7 +1,7 @@
-use super::codex_usage::Usage;
+use super::{codex_rollout as rollout, codex_usage::Usage};
 use crate::pricing::Pricing;
 use crate::{contract::*, projects::path_identity};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::DateTime;
 use regex::Regex;
 use serde_json::Value;
@@ -33,10 +33,6 @@ impl ParsedSession {
 }
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
-    let sessions_root = root.join("sessions");
-    if !sessions_root.exists() {
-        return Ok(Vec::new());
-    }
     let mut titles = HashMap::new();
     if let Ok(file) = File::open(root.join("session_index.jsonl")) {
         for line in BufReader::new(file).lines().map_while(Result::ok) {
@@ -49,18 +45,10 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
         }
     }
     let mut sessions = Vec::new();
-    for entry in WalkDir::new(sessions_root).follow_links(false) {
-        let entry = entry.context("enumerating Codex sources")?;
-        let name = entry.file_name().to_string_lossy();
-        if !entry.file_type().is_file()
-            || !name.starts_with("rollout-")
-            || !name.ends_with(".jsonl")
-        {
-            continue;
-        }
-        if let Some(detail) = parse(entry.path(), &titles, pricing)? {
+    for path in rollout::paths(root)? {
+        if let Some(detail) = parse(&path, &titles, pricing)? {
             sessions.push(ParsedSession {
-                source: entry.into_path(),
+                source: path,
                 head: detail.head.clone(),
                 detail,
             });
@@ -96,7 +84,7 @@ pub fn scan_changed(
     }) {
         let upserts = scan(root, pricing)?;
         for old in previous {
-            if old.source.try_exists()?
+            if rollout::physical_path(&old.source)?.is_some()
                 && !upserts.iter().any(|session| session.source == old.source)
             {
                 anyhow::bail!("Codex source is incomplete: {}", old.source.display());
@@ -122,18 +110,12 @@ pub fn scan_changed(
         if path.is_dir() {
             for entry in WalkDir::new(path) {
                 let entry = entry?;
-                if entry.file_type().is_file()
-                    && entry.file_name().to_string_lossy().starts_with("rollout-")
-                    && entry.path().extension().is_some_and(|ext| ext == "jsonl")
-                {
-                    files.insert(entry.into_path());
+                if entry.file_type().is_file() && rollout::is_rollout(entry.path()) {
+                    files.insert(rollout::logical_path(entry.path()));
                 }
             }
-        } else if path
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().starts_with("rollout-"))
-        {
-            files.insert(path.clone());
+        } else if rollout::is_rollout(path) {
+            files.insert(rollout::logical_path(path));
         }
     }
     for session in previous {
@@ -164,7 +146,7 @@ pub fn scan_changed(
     }
     let mut changed = Vec::new();
     for file in &files {
-        if file.try_exists()?
+        if rollout::physical_path(file)?.is_some()
             && let Some(detail) = parse(file, &titles, pricing)?
         {
             affected.insert(detail.head.reference.session_id.clone());
@@ -176,14 +158,16 @@ pub fn scan_changed(
                 head: detail.head.clone(),
                 detail,
             });
-        } else if file.try_exists()? && previous.iter().any(|session| session.source == *file) {
+        } else if rollout::physical_path(file)?.is_some()
+            && previous.iter().any(|session| session.source == *file)
+        {
             anyhow::bail!("Codex source is incomplete: {}", file.display());
         }
     }
     for session in previous.iter().filter(|session| {
         affected.contains(&session.head.reference.session_id) && !files.contains(&session.source)
     }) {
-        if session.source.try_exists()? {
+        if rollout::physical_path(&session.source)?.is_some() {
             if let Some(detail) = parse(&session.source, &titles, pricing)? {
                 changed.push(ParsedSession {
                     source: session.source.clone(),
@@ -318,8 +302,9 @@ fn child_summary(
     let mut nickname = None;
     let mut latest = None;
     let mut final_output = None;
-    let fallback = crate::time::file_mtime_ms(source)?;
-    for line in BufReader::new(File::open(source)?).lines() {
+    let (reader, physical) = rollout::open(source)?;
+    let fallback = crate::time::file_mtime_ms(&physical)?;
+    for line in BufReader::new(reader).lines() {
         let Ok(record) = serde_json::from_str::<Value>(&line?) else {
             continue;
         };
@@ -525,8 +510,8 @@ pub fn parse(
     titles: &HashMap<String, String>,
     pricing: &Pricing,
 ) -> Result<Option<SessionDetail>> {
-    let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut lines = super::jsonl::JsonLines::new(file);
+    let (reader, physical) = rollout::open(path)?;
+    let mut lines = super::jsonl::JsonLines::new(reader);
     let Some(line) = lines.next_line()? else {
         return Ok(None);
     };
@@ -534,7 +519,8 @@ pub fn parse(
     let Ok(first) = serde_json::from_str::<Value>(&first_line) else {
         return Ok(None);
     };
-    let filename = path.file_stem().unwrap_or_default().to_string_lossy();
+    let logical = rollout::logical_path(path);
+    let filename = logical.file_stem().unwrap_or_default().to_string_lossy();
     let pieces = filename.split('-').collect::<Vec<_>>();
     let id = pieces[pieces.len().saturating_sub(5)..].join("-");
     let directory = first["payload"]["cwd"].as_str().unwrap_or("").to_owned();
@@ -542,7 +528,7 @@ pub fn parse(
     let created = if created > 0.0 {
         created
     } else {
-        crate::time::file_mtime_ms(path)?
+        crate::time::file_mtime_ms(&physical)?
     };
     let mut updated = created;
     let mut messages = Vec::<Message>::new();
@@ -1179,8 +1165,14 @@ mod incremental_tests {
             .iter()
             .map(crate::agents::SessionRecord::from)
             .collect::<Vec<_>>();
+        for session in &full {
+            let bytes = zstd::stream::encode_all(File::open(&session.source).unwrap(), 3).unwrap();
+            std::fs::write(session.source.with_extension("jsonl.zst"), bytes).unwrap();
+            std::fs::remove_file(&session.source).unwrap();
+        }
+        let compressed = scan(root.path(), &pricing).unwrap();
         let incremental = scan_changed(root.path(), &pricing, &[parent_path], &previous).unwrap();
-        for result in [&full, &incremental.upserts] {
+        for result in [&full, &compressed, &incremental.upserts] {
             let messages = &result
                 .iter()
                 .find(|session| session.head.reference.session_id == parent)

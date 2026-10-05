@@ -120,3 +120,14 @@ CI 不再执行旧 Node 差分测试。性能测量方法见
 
 会话详情收到追加内容时，原本停留底部的视图跟随新内容；正在阅读历史的视图保留消息
 锚点。虚拟列表沿用已测量高度，避免刷新时跳回上方。
+
+## Codex archives and compressed rollouts
+
+Codex discovery includes `sessions/` and `archived_sessions/` beneath `CODEX_HOME`.
+Both `rollout-*.jsonl` and `rollout-*.jsonl.zst` are read; Zstandard data is decoded
+as a stream without rewriting the source store. The plain JSONL path is the logical
+source key for both representations. When both exist, plain JSONL takes precedence.
+Compression and materialization change the source fingerprint and trigger a refresh,
+while session references and message IDs remain unchanged. Archived rollouts retain
+the same session reference when moved between directories. Corrupt compressed data
+fails the scan instead of publishing a partial replacement.

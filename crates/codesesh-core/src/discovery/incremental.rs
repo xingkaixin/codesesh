@@ -122,7 +122,12 @@ impl AgentScanner {
             "minimax-code" => vec![root.join("v2/sqlite/runtime-state.sqlite")],
             "zcode" => vec![root.join("cli/db/db.sqlite")],
             "dsh" => vec![root.join("sessions"), root.join("attachments/v1")],
-            "codex" | "kimi-code" => vec![
+            "codex" => vec![
+                root.clone(),
+                self.source.data_root.join("archived_sessions"),
+                self.source.data_root.join("session_index.jsonl"),
+            ],
+            "kimi-code" => vec![
                 root.clone(),
                 self.source.data_root.join("session_index.jsonl"),
             ],
