@@ -8,7 +8,12 @@ fn fixture(root: &Path) -> PathBuf {
     let db = Connection::open(&path).unwrap();
     db.execute_batch(include_str!("fixture.sql")).unwrap();
     let summaries = Connection::open(root.join("conversation_summaries.db")).unwrap();
-    summaries.execute_batch("CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT); INSERT INTO conversation_summaries VALUES ('session', '', '[\"file:///tmp/agy-fixture\"]', '2026-09-02 16:57:28.971105+00:00', '');").unwrap();
+    summaries.execute_batch("CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT);").unwrap();
+    let workspace = url::Url::from_file_path(root.join("agy-fixture")).unwrap();
+    summaries.execute(
+        "INSERT INTO conversation_summaries VALUES ('session', '', ?1, '2026-09-02 16:57:28.971105+00:00', '')",
+        [json!([workspace.as_str()]).to_string()],
+    ).unwrap();
     path
 }
 
@@ -27,7 +32,10 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
     assert_eq!(session.head.reference.agent_name, "antigravity-cli");
     assert_eq!(session.head.reference.session_id, "session");
     assert_eq!(session.head.title, "A title");
-    assert!(session.head.directory.ends_with("agy-fixture"));
+    assert_eq!(
+        Path::new(&session.head.directory),
+        temp.path().join("agy-fixture")
+    );
     assert!(session.head.time_updated > 1_700_000_000_000.0);
     assert_eq!(
         session
