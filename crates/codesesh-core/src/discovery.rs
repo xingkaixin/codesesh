@@ -18,6 +18,41 @@ use std::{
     path::Path,
 };
 
+#[derive(Clone, Debug, Default, serde::Deserialize, Serialize, PartialEq, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourcePresence {
+    #[default]
+    Pending,
+    Available,
+    NotFound,
+    Missing,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize, Serialize, PartialEq, ts_rs::TS)]
+pub struct AgentCollectionStatus {
+    pub presence: SourcePresence,
+    pub complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error: Option<String>,
+}
+
+impl AgentCollectionStatus {
+    pub fn collected(&mut self, presence: SourcePresence, complete: bool) {
+        self.presence = if presence == SourcePresence::NotFound
+            && matches!(
+                self.presence,
+                SourcePresence::Available | SourcePresence::Missing
+            ) {
+            SourcePresence::Missing
+        } else {
+            presence
+        };
+        self.complete = complete;
+        self.error = None;
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ScanOptions {
     pub agents: Vec<String>,

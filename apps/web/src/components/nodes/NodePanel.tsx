@@ -6,6 +6,7 @@ import { createPairingToken } from "../../lib/api";
 import { Monitor, Plug, Pencil, ChevronUp } from "../ui/icons";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
 import { NodeActions, type NodeAction } from "./NodeActions";
+import { CollectionSources } from "../collection-status";
 import { NodeTasks } from "./NodeTasks";
 import { collectionStatus, nodeRecoveryHint, nodeStatus } from "./node-status";
 
@@ -175,19 +176,21 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
           </div>
           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-[var(--console-muted)]">{t("Worker version")}</dt>
-              <dd className="mt-1 text-sm">v{selected.version}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--console-muted)]">{t("Last heartbeat")}</dt>
+              <dt className="text-xs text-muted-foreground">{t("Collection status")}</dt>
               <dd className="mt-1 text-sm">
-                {selected.lastSeen
-                  ? new Date(selected.lastSeen).toLocaleString()
-                  : t("Not connected yet")}
+                {query.isError ? t("Node status unavailable") : collectionStatus(selected, now)}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-[var(--console-muted)]">{t("Pending uploads")}</dt>
+              <dt className="text-xs text-muted-foreground">{t("Last confirmed sync")}</dt>
+              <dd className="mt-1 text-sm">
+                {selected.lastConfirmedAt
+                  ? new Date(selected.lastConfirmedAt).toLocaleString()
+                  : t("Not reported yet")}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">{t("Pending uploads")}</dt>
               <dd className="mt-1 text-sm">
                 {selected.queue
                   ? t("{0} pending batches · {1} MB", [
@@ -198,48 +201,40 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-[var(--console-muted)]">{t("Sync status")}</dt>
-              <dd className="mt-1 text-sm">
-                {query.isError ? t("Node status unavailable") : nodeStatus(selected, now)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--console-muted)]">{t("Collection status")}</dt>
-              <dd className="mt-1 text-sm">
-                {query.isError ? t("Node status unavailable") : collectionStatus(selected, now)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[var(--console-muted)]">{t("Last successful scan")}</dt>
-              <dd className="mt-1 text-sm">
-                {selected.health?.collection.lastSuccessAt
-                  ? new Date(selected.health.collection.lastSuccessAt).toLocaleString()
-                  : t("Not reported yet")}
-              </dd>
+              <dt className="text-xs text-muted-foreground">{t("Worker version")}</dt>
+              <dd className="mt-1 text-sm">v{selected.version}</dd>
             </div>
           </dl>
-          {selected.health && (
-            <p className="mt-4 text-xs text-[var(--console-muted)]">
-              {t("Status reported: {0}", [new Date(selected.health.reportedAt).toLocaleString()])}
-            </p>
-          )}
+          <p className="mt-3 text-xs text-muted-foreground">
+            {query.isError ? t("Node status unavailable") : nodeStatus(selected, now)}
+          </p>
+          <section className="mt-5 border-t border-border pt-4" aria-label={t("Agent sources")}>
+            <h4 className="mb-1 text-sm font-semibold">{t("Agent sources")}</h4>
+            <CollectionSources
+              sources={selected.health?.collection.sources}
+              stale={
+                query.isError ||
+                !isNodeOnline(selected, now) ||
+                selected.health == null ||
+                now - selected.health.reportedAt > 60000 ||
+                Boolean(selected.error)
+              }
+              uploading={Boolean(selected.queue?.batches)}
+            />
+          </section>
           {recoveryHint && recoveryHint !== nodeStatus(selected, now) && (
             <p role="status" className="mt-3 text-sm text-[var(--console-warning)]">
               {recoveryHint}
             </p>
           )}
-          {selected.health &&
+          {!selected.health?.collection.sources &&
+            selected.health &&
             Object.entries(selected.health.collection.errors).map(([agent, error]) => (
               <details key={agent} className="mt-3 text-xs text-[var(--console-error)]">
                 <summary>{t("Collection failed: {0}", [agent])}</summary>
                 <p className="mt-2 break-words">{error}</p>
               </details>
             ))}
-          {selected.lastConfirmedAt && (
-            <p className="mt-4 text-xs text-[var(--console-muted)]">
-              {t("Last confirmed: {0}", [new Date(selected.lastConfirmedAt).toLocaleString()])}
-            </p>
-          )}
           {selected.queue?.oldestAt && (
             <p className="mt-2 text-xs text-[var(--console-muted)]">
               {t("Oldest pending: {0}", [new Date(selected.queue.oldestAt).toLocaleString()])}
@@ -256,6 +251,32 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
               {t("{0} sessions need source content or a backup.", [selected.incompleteSessions])}
             </p>
           )}
+          <details className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground">
+            <summary className="cursor-pointer">{t("Diagnostics")}</summary>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <dt>{t("Last heartbeat")}</dt>
+                <dd className="mt-1">
+                  {selected.lastSeen
+                    ? new Date(selected.lastSeen).toLocaleString()
+                    : t("Not connected yet")}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Last successful scan")}</dt>
+                <dd className="mt-1">
+                  {selected.health?.collection.lastSuccessAt
+                    ? new Date(selected.health.collection.lastSuccessAt).toLocaleString()
+                    : t("Not reported yet")}
+                </dd>
+              </div>
+            </dl>
+            {selected.health && (
+              <p className="mt-3">
+                {t("Status reported: {0}", [new Date(selected.health.reportedAt).toLocaleString()])}
+              </p>
+            )}
+          </details>
           <NodeTasks
             key={selected.id}
             node={selected}

@@ -66,6 +66,7 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
         .unwrap();
     let session = super::super::tests::source(dir.path(), "shared");
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: Vec::new(),
         removed: Vec::new(),
         checkpoint: None,
@@ -168,6 +169,7 @@ fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
         time_created: None,
     }];
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![session],
         removed: Vec::new(),
         checkpoint: None,
@@ -274,6 +276,7 @@ fn failed_commit_rolls_back_content_and_receipt_and_retries() {
         .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
         .unwrap();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: Vec::new(),
         removed: Vec::new(),
         checkpoint: None,
@@ -358,6 +361,7 @@ async fn uploaded_sessions_publish_through_runtime_writer() {
         .await
         .unwrap();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![super::super::tests::source(dir.path(), "shared")],
         removed: vec![],
         checkpoint: None,
@@ -460,6 +464,7 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
         .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
         .unwrap();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![super::super::tests::source(dir.path(), "shared")],
         removed: vec![],
         checkpoint: None,
@@ -483,6 +488,17 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
     let mut worker = WorkerStore::open(&worker_path).unwrap();
     let mut hello = crate::sync::WorkerHello {
         collection_status: Some(crate::sync::CollectionStatus {
+            sources: Some(
+                [(
+                    "codex".into(),
+                    crate::discovery::AgentCollectionStatus {
+                        presence: crate::discovery::SourcePresence::Available,
+                        complete: false,
+                        error: None,
+                    },
+                )]
+                .into(),
+            ),
             rescan: worker.rescan_scan_progress().unwrap(),
             active_agent: Some("codex".into()),
             last_success_at: Some(123),
@@ -527,6 +543,11 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
     assert_eq!(health.collection.last_success_at, Some(123));
     assert_eq!(health.collection.errors["claudecode"], "unreadable source");
     assert!(health.reported_at > 0);
+    assert_eq!(
+        health.collection.sources.as_ref().unwrap()["codex"].presence,
+        crate::discovery::SourcePresence::Available
+    );
+    assert!(!health.collection.sources.as_ref().unwrap()["codex"].complete);
     let mut legacy_hello = hello.clone();
     let legacy_status =
         serde_json::json!({"activeAgent": null, "lastSuccessAt": null, "errors": {}});
@@ -569,6 +590,7 @@ fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
         .unwrap();
     worker.bind("https://hub.example/", &grant).unwrap();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![super::super::tests::source(dir.path(), "shared")],
         removed: vec![],
         checkpoint: None,
@@ -638,6 +660,7 @@ fn recovery_survives_another_epoch_change_before_acknowledgment() {
             .finish_recovery("https://hub.example/", &grant)
             .unwrap();
         let mut batch = ScanBatch {
+            source_presence: None,
             sessions: vec![super::super::tests::source(dir.path(), "queued")],
             removed: vec![],
             checkpoint: None,
@@ -700,6 +723,7 @@ fn recovery_retains_orphaned_metadata_until_a_snapshot_repairs_it() {
         .unwrap();
     worker.bind("https://hub.example/", &grant).unwrap();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![super::super::tests::source(dir.path(), "shared")],
         removed: vec![],
         checkpoint: None,
@@ -808,6 +832,7 @@ fn local_worker_resume_drains_pending_content_without_changing_source_identity()
         .unwrap();
     worker.bind("https://hub.example/", &grant).unwrap();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![super::super::tests::source(dir.path(), "shared")],
         removed: vec![],
         checkpoint: None,
@@ -891,6 +916,7 @@ fn local_pairing_requires_bound_proof_and_preserves_existing_history() {
     original.head.title = "Updated locally".into();
     original.detail.head = original.head.clone();
     let mut batch = ScanBatch {
+        source_presence: None,
         sessions: vec![original],
         removed: vec![],
         checkpoint: None,
@@ -1096,6 +1122,7 @@ fn replacement_preserves_identity_history_and_name_and_revokes_old_credentials()
         .save_batch(
             "codex",
             &mut ScanBatch {
+                source_presence: None,
                 sessions: vec![super::super::tests::source(dir.path(), "retained")],
                 removed: vec![],
                 checkpoint: None,

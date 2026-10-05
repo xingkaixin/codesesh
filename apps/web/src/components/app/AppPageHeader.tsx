@@ -4,7 +4,10 @@ import { t } from "../../i18n/translate";
 import { Link } from "react-router-dom";
 import type { RouteHeaderModel } from "../../lib/build-route-header-model";
 import { PanelLeftOpen } from "../ui/icons";
-import { ScanStatusNotice } from "./ScanStatusNotice";
+
+const ScanStatusNotice = lazy(() =>
+  import("./ScanStatusNotice").then((module) => ({ default: module.ScanStatusNotice })),
+);
 
 const SessionSourceDetails = lazy(() =>
   import("../nodes/SessionSourceDetails").then((module) => ({
@@ -172,7 +175,11 @@ export function AppPageHeader({
             </p>
           ) : null}
         </div>
-        <ScanStatusNotice visible={scanStatusVisible} />
+        {scanStatusVisible && (
+          <Suspense fallback={null}>
+            <ScanStatusNotice visible />
+          </Suspense>
+        )}
         {sessionLoadNotice ? (
           <div
             role={sessionLoadNotice.error ? "alert" : "status"}

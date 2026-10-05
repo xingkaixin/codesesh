@@ -226,6 +226,7 @@ async fn worker_recovers_when_a_persisted_recovery_epoch_is_stale() {
         .save_batch(
             "codex",
             &mut ScanBatch {
+                source_presence: None,
                 sessions: vec![ParsedSession {
                     head: detail.head.clone(),
                     detail,

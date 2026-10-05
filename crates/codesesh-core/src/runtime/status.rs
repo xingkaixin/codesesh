@@ -44,6 +44,7 @@ pub struct ScanProgress {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanStatus {
+    pub sources: BTreeMap<String, crate::discovery::AgentCollectionStatus>,
     #[serde(rename = "type")]
     pub kind: &'static str,
     pub phase: &'static str,
@@ -67,6 +68,10 @@ impl ScanStatus {
         let now = chrono::Utc::now().timestamp_millis();
         let names: Vec<_> = agents.collect();
         Self {
+            sources: names
+                .iter()
+                .map(|name| (name.clone(), Default::default()))
+                .collect(),
             kind: "scan-status",
             phase: if names.is_empty() {
                 "idle"
@@ -114,6 +119,11 @@ impl ScanStatus {
         count: usize,
     ) {
         let now = chrono::Utc::now().timestamp_millis();
+        if state == "failed" {
+            let source = self.sources.entry(agent.into()).or_default();
+            source.error = error.clone();
+            source.complete = false;
+        }
         if state == "scanning" && !self.active {
             self.agent_statuses.clear();
             self.started_at = Some(now);

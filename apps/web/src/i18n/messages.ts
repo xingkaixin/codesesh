@@ -1,5 +1,39 @@
 // English source messages map to [Simplified Chinese, Japanese].
 export const messages = {
+  "Agent source details unavailable. Upgrade the collector to report them.": [
+    "Agent 来源详情未提供，请升级采集端。",
+    "Agent のソース詳細がありません。収集側を更新してください。",
+  ],
+  "Collection failed": ["采集失败", "収集に失敗"],
+  "Source no longer found": ["来源已无法找到", "ソースが見つからなくなりました"],
+  "Not discovered": ["未发现", "未検出"],
+  "Not checked yet": ["尚未检查", "未確認"],
+  "Collected; uploads pending": ["已采集，等待上传", "収集済み・アップロード待ち"],
+  "Up to date": ["已更新", "最新"],
+  "Previously discovered. Check the source location and permissions.": [
+    "此前已发现，请检查来源位置与读取权限。",
+    "以前は検出されました。場所と読み取り権限を確認してください。",
+  ],
+  "Older messages may not appear in search yet.": [
+    "较早的消息可能尚未出现在搜索结果中。",
+    "古いメッセージはまだ検索結果に含まれていない可能性があります。",
+  ],
+  "Not discovered · {0}": ["未发现的来源 · {0}", "未検出のソース · {0}"],
+  "No records found in the configured source locations.": [
+    "在配置的来源位置中未找到记录。",
+    "設定されたソースの場所に記録が見つかりません。",
+  ],
+  "No collection sources enabled.": ["未启用采集来源。", "収集ソースが有効になっていません。"],
+  "Some sources need attention": ["部分来源需要处理", "確認が必要なソースがあります"],
+  "Local collection": ["本地采集", "ローカル収集"],
+  "View status": ["查看状态", "状態を表示"],
+  "Available history remains searchable.": [
+    "已收录的历史仍可正常搜索。",
+    "収集済みの履歴は引き続き検索できます。",
+  ],
+  "Last confirmed sync": ["最后确认同步", "最終同期確認"],
+  "Agent sources": ["Agent 来源", "Agent ソース"],
+  Diagnostics: ["诊断信息", "診断情報"],
   "Markdown table": ["Markdown 表格", "Markdown テーブル"],
   "Wall time": ["运行耗时", "実行時間"],
   "Internal calls": ["内部调用", "内部呼び出し"],

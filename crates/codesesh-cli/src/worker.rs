@@ -204,6 +204,7 @@ pub async fn run(
                     }
                     if let Some(captured) = cache.capture_session(&head.reference)? {
                         let mut batch = codesesh_core::runtime::ScanBatch {
+                            source_presence: None,
                             sessions: vec![captured.into_parsed()?],
                             removed: Vec::new(),
                             checkpoint: None,
