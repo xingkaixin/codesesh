@@ -488,7 +488,10 @@ export default function App() {
                     : undefined,
                 sessionCopyNotice,
                 liveNotice,
-                scanStatusVisible: viewState.mode === "root",
+                scanStatusVisible:
+                  appConfig.config != null &&
+                  !appConfig.config.hubEnabled &&
+                  (viewState.mode === "root" || isSearchMode),
                 sessionLoadNotice,
               }}
               actions={{
