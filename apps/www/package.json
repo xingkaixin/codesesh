@@ -13,7 +13,8 @@
     "lint:fix": "oxlint astro.config.ts eslint.config.mjs prettier.config.mjs src --fix && eslint \"src/**/*.astro\" --fix",
     "format": "oxfmt --write astro.config.ts eslint.config.mjs prettier.config.mjs src && prettier --write \"src/**/*.astro\"",
     "format:check": "oxfmt --check astro.config.ts eslint.config.mjs prettier.config.mjs src && prettier --check \"src/**/*.astro\"",
-    "deploy:cf": "pnpm build && wrangler pages deploy dist --project-name codesesh"
+    "build:cf": "pnpm build && node ../../scripts/prepare-www-cloudflare.mjs",
+    "deploy:cf": "pnpm build:cf && cf deploy --prebuilt"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "catalog:",

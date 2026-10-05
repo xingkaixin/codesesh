@@ -360,8 +360,8 @@ pnpm test:coverage
 # Performance benchmark
 pnpm bench:perf
 
-# Deploy landing page to Cloudflare Pages
-pnpm --filter @codesesh/www deploy:cf
+# Deploy landing page to Cloudflare Workers
+pnpm deploy:www
 ```
 
 Rust backend tests run through Cargo. `test:coverage` measures the TypeScript contract and Web
@@ -369,17 +369,26 @@ code covered by Vitest; it does not measure Rust coverage. Playwright exercises 
 the native server. Backend process contracts and the fixed Node reference provide separate
 compatibility checks.
 
-The Pages deployment uses `apps/www/public/_headers` to cache fingerprinted
-`/_astro/` assets for one year. Keep HTML and unversioned public files on the
-Pages defaults so deployments remain visible. Landing pages preload their hero
-image, which Pages can use for Early Hints. These optimizations use the existing
-Pages service. `apps/www/public/404.html` disables Pages' SPA fallback so missing
-assets return an uncached 404 instead of a cacheable copy of the homepage.
+The landing page deploys to the `codesesh` Worker at `codesesh.xingkaixin.me`.
+Use the globally installed `cf` CLI managed by mise, already authenticated with
+Cloudflare; do not add `cf` or Wrangler as a project dependency. `pnpm deploy:www`
+builds the contract and Astro site, prepares `.cloudflare/output/v0/`, then runs
+`cf deploy --prebuilt`. This avoids automatic configuration installing build tools.
+The output format is currently cf's v0 beta format, verified with cf 1.0.0-beta.12.
+To validate without uploading, run `pnpm --filter @codesesh/contract build`,
+`pnpm --filter @codesesh/www build:cf`, then
+`(cd apps/www && cf deploy --prebuilt --dry-run)`.
 
-Use one Cloudflare Web Analytics injection source for the landing page. When
-Pages injects the beacon, leave `PUBLIC_ANALYTICS_TOKEN` unset; it is only a
-fallback for deployments without automatic injection. Check both Pages and zone
-settings if the production HTML contains multiple CF beacons. Umami is separate.
+Workers Static Assets uses `apps/www/public/_headers` to cache fingerprinted
+`/_astro/` assets for one year. HTML and unversioned files use the Workers defaults.
+The deployment explicitly uses trailing-slash URLs and `404-page` handling with
+`apps/www/public/404.html`, so missing assets return 404 instead of the homepage.
+Analytics uses Umami only; keep Cloudflare Web Analytics injection disabled.
+
+For the initial Pages migration, deploy and verify the Worker's `workers.dev` URL,
+remove the Pages custom-domain binding and its old CNAME, then attach the domain
+to the Worker (rerun `cf deploy --prebuilt`). Retain the old Pages deployment until
+the production domain, localized pages, assets, installer, and 404s are verified.
 
 ### Reproduce Required CI Checks
 

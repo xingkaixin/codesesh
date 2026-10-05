@@ -321,23 +321,32 @@ pnpm test:coverage
 # 性能 benchmark
 pnpm bench:perf
 
-# 部署落地页到 Cloudflare Pages
-pnpm --filter @codesesh/www deploy:cf
+# 部署落地页到 Cloudflare Workers
+pnpm deploy:www
 ```
 
 Rust 后端通过 Cargo 测试。`test:coverage` 统计 Vitest 覆盖的 TypeScript 契约和 Web 代码，
 不代表 Rust 覆盖率。Playwright 使用原生服务器验证浏览器流程；后端进程契约和固定 Node
 参考制品提供独立的兼容性检查。
 
-Pages 部署通过 `apps/www/public/_headers` 为文件名带内容哈希的 `/_astro/` 资源
-设置一年缓存。HTML 和未版本化的公共文件沿用 Pages 默认策略，保证部署更新及时可见。
-落地页预加载首屏主图，Pages 可据此生成 Early Hints。这些优化使用现有 Pages 服务。
-`apps/www/public/404.html` 关闭 Pages 的 SPA 回退，让缺失资源返回不可缓存的 404，
-避免把首页 HTML 当作静态资源长期缓存。
+落地页部署到 `codesesh` Worker，正式域名为 `codesesh.xingkaixin.me`。
+使用 mise 全局安装且已登录的 `cf`，不要将 `cf` 或 Wrangler 加入项目依赖。
+`pnpm deploy:www` 构建契约和 Astro 站点，生成 `.cloudflare/output/v0/`，
+然后运行 `cf deploy --prebuilt`，避免自动配置安装构建工具。
+输出采用 cf 当前的 v0 beta 格式，已使用 cf 1.0.0-beta.12 验证。
+只验证、不上传时，先运行 `pnpm --filter @codesesh/contract build` 和
+`pnpm --filter @codesesh/www build:cf`，再运行
+`(cd apps/www && cf deploy --prebuilt --dry-run)`。
 
-落地页的 Cloudflare Web Analytics 应只保留一个注入入口。Pages 已注入 beacon 时，
-不要设置 `PUBLIC_ANALYTICS_TOKEN`；该变量仅供没有自动注入的部署作为回退。
-若生产 HTML 出现多个 CF beacon，需同时检查 Pages 和域名级配置。Umami 独立运行。
+Workers Static Assets 通过 `apps/www/public/_headers` 为带内容哈希的 `/_astro/`
+资源设置一年缓存。HTML 和未版本化文件使用 Workers 默认策略。
+部署显式启用尾斜杠 URL 和 `404-page`，使用 `apps/www/public/404.html`，
+让缺失资源返回 404，而不是首页。统计仅使用 Umami，保持 Cloudflare Web Analytics
+自动注入关闭。
+
+首次从 Pages 迁移时，先部署并验证 Worker 的 `workers.dev` 地址，再移除 Pages
+自定义域名绑定及旧 CNAME，然后将域名绑定到 Worker（重新运行 `cf deploy --prebuilt`）。
+正式域名、多语言页面、静态资源、安装脚本和 404 验证完成前，保留旧 Pages 部署。
 
 ### 复现 CI 必需检查
 
