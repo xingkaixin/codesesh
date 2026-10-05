@@ -387,10 +387,9 @@ The deployment explicitly uses trailing-slash URLs and `404-page` handling with
 `apps/www/public/404.html`, so missing assets return 404 instead of the homepage.
 Analytics uses Umami only; keep Cloudflare Web Analytics injection disabled.
 
-For the initial Pages migration, deploy and verify the Worker's `workers.dev` URL,
-remove the Pages custom-domain binding and its old CNAME, then attach the domain
-to the Worker (rerun `cf deploy --prebuilt`). Retain the old Pages deployment until
-the production domain, localized pages, assets, installer, and 404s are verified.
+The Pages migration is complete. The retired Pages project can be removed.
+Only the production custom domain serves the site; `workers.dev` and version
+preview URLs are explicitly disabled in the generated deployment configuration.
 
 ### Reproduce Required CI Checks
 
