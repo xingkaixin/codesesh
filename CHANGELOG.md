@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.8] - 2026-10-05
+
+This patch reduces unnecessary reads when loading Dashboard activity statistics and restores Worker synchronization promptly after a Hub restart. More detailed timing logs help diagnose slow startup and Dashboard requests. (#703, #704)
+
+### Bug Fixes
+
+- Clear stale Worker leases before the restarted Hub accepts requests, and honor the Hub's short retry hint for instance conflicts instead of waiting a fixed minute. Preserve Worker credentials, stream identity, confirmed progress, queued uploads, and duplicate-instance protection while the Hub is running. (#704)
+
+### Performance
+
+- Use the existing covering user-activity index with explicit date bounds for Dashboard activity-hour queries. Avoid scanning unrelated history and reading message payloads while preserving source, project, publication, parent-session, and automated-message filters. (#703)
+
+### Diagnostics
+
+- Record separate Dashboard aggregation, activity-hour, and file-activity timings, plus startup preparation, pricing, and database timings, to locate delays more precisely. (#703)
+
 ## [1.2.7] - 2026-10-04
 
 This patch keeps archived and remote Agent history visible in Hub queries even when the Agent is not installed locally, and keeps default date ranges moving with the current day. The product site adds localized usage guides and a redesigned introduction to installation, search, and multi-machine workflows. (#696–#701)

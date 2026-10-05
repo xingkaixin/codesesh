@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.8",
+        date: "2026-10-05",
+        title: "Reduce Dashboard waits and reconnect after Hub restarts",
+        summary:
+          "CodeSesh 1.2.8 reduces unnecessary history reads when loading Dashboard activity statistics. Workers resume synchronization sooner after the Hub restarts, keeping collected AI coding history ready to upload.",
+        direction:
+          "Growing history should remain practical to browse, and routine service restarts should let synchronization resume without unnecessary waits.",
+        highlights: [
+          {
+            title: "Load activity statistics with less work",
+            description:
+              "Dashboard activity-hour queries read the requested date range through an existing index, avoiding unrelated history and message content while keeping your source and project filters.",
+          },
+          {
+            title: "Resume synchronization after a Hub restart",
+            description:
+              "Workers no longer wait on stale connections from the previous Hub process or a fixed one-minute retry. Existing pairing, confirmed progress, and queued history are preserved.",
+          },
+          {
+            title: "Locate slow startup and Dashboard steps",
+            description:
+              "More detailed timing logs distinguish startup stages and Dashboard calculations, helping investigate delays when opening a large local or shared history library.",
+          },
+        ],
+      },
+      {
         version: "1.2.7",
         date: "2026-10-04",
         title: "Keep shared history visible and recent activity current",
@@ -617,6 +643,31 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.8",
+        date: "2026-10-05",
+        title: "减少 Dashboard 等待，Hub 重启后及时恢复同步",
+        summary:
+          "CodeSesh 1.2.8 减少 Dashboard 加载活动统计时对无关历史的读取。Hub 重启后，Worker 更快恢复同步，已采集的 AI 编码历史继续保留并等待上传。",
+        direction: "历史增长后仍应便于浏览，日常服务重启后应能恢复同步，减少不必要的等待。",
+        highlights: [
+          {
+            title: "减少加载活动统计的读取量",
+            description:
+              "Dashboard 活跃时段查询通过已有索引读取所选日期范围，跳过无关历史和消息正文，并保留来源与项目筛选。",
+          },
+          {
+            title: "Hub 重启后继续同步",
+            description:
+              "Worker 不再因上一次 Hub 进程留下的连接状态或固定一分钟的重试间隔而等待。已有配对、已确认进度和待上传历史都会保留。",
+          },
+          {
+            title: "定位启动与 Dashboard 的耗时环节",
+            description:
+              "更细的耗时日志区分启动阶段与 Dashboard 计算步骤，便于排查大型本地或共享历史库打开缓慢的问题。",
+          },
+        ],
+      },
+      {
         version: "1.2.7",
         date: "2026-10-04",
         title: "共享历史完整可见，近期活动随日期更新",
@@ -1144,6 +1195,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.8",
+        date: "2026-10-05",
+        title: "ダッシュボードの待ち時間を減らし、Hub 再起動後の同期を早く再開",
+        summary:
+          "CodeSesh 1.2.8 は、ダッシュボードの活動統計を読み込む際に、不要な履歴の読み取りを減らします。Hub の再起動後も Worker がより早く同期を再開し、収集済みの AI コーディング履歴を保持したままアップロードを続けられます。",
+        direction:
+          "履歴が増えても閲覧しやすく、日常的なサービス再起動後は不要な待ち時間なく同期を再開できることを重視します。",
+        highlights: [
+          {
+            title: "活動統計の読み取りを必要な範囲に限定",
+            description:
+              "ダッシュボードの活動時間帯の集計では、既存のインデックスで指定期間を読み取ります。無関係な履歴やメッセージ本文を読まずに、取得元とプロジェクトの絞り込みを維持します。",
+          },
+          {
+            title: "Hub の再起動後に同期を再開",
+            description:
+              "前の Hub プロセスが残した接続状態や、固定の1分間の再試行待ちによる遅れを解消します。ペアリング、確認済みの進捗、送信待ちの履歴は保持されます。",
+          },
+          {
+            title: "起動やダッシュボードの遅延箇所を確認",
+            description:
+              "処理時間のログで起動の各段階とダッシュボードの計算を区別できるようにし、大きなローカル履歴や共有履歴を開く際の遅延を調べやすくしました。",
+          },
+        ],
+      },
       {
         version: "1.2.7",
         date: "2026-10-04",
