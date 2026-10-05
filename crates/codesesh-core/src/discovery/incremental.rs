@@ -22,6 +22,7 @@ use std::{
 
 pub struct AgentScanner {
     source: AgentSource,
+    source_available: Option<bool>,
     cache_path: PathBuf,
     worker: bool,
     source_node_id: String,
@@ -51,6 +52,7 @@ impl AgentScanner {
     pub fn new(source: AgentSource, cache_path: PathBuf, pricing: Arc<Pricing>) -> Self {
         Self {
             source,
+            source_available: None,
             cache_path,
             worker: false,
             source_node_id: crate::contract::local_source_node_id(),
@@ -285,6 +287,15 @@ impl AgentScanner {
             .collect();
         let rejected = self.rejected.clone();
         Ok(runtime::ScanBatch {
+            source_presence: self.source_available.map(|available| {
+                if available {
+                    super::SourcePresence::Available
+                } else if !self.durable_references.is_empty() {
+                    super::SourcePresence::Missing
+                } else {
+                    super::SourcePresence::NotFound
+                }
+            }),
             sessions: delta.upserts,
             removed,
             checkpoint: next_checkpoint,
@@ -305,6 +316,7 @@ impl AgentScanner {
             let local = self.backfill.as_ref().map(Backfill::checkpoint);
             let saved = checkpoint.or(local.as_ref());
             let mut items = inventory(&self.source)?;
+            self.source_available = Some(!items.is_empty() || has_sources(&self.source)?);
             let present: HashSet<_> = items.iter().map(|item| item.key.as_str()).collect();
             self.file_fingerprints
                 .retain(|key, _| present.contains(key.as_str()));
@@ -326,10 +338,7 @@ impl AgentScanner {
                         });
                 }
             }
-            if items.is_empty()
-                && !has_sources(&self.source)?
-                && !self.durable_references.is_empty()
-            {
+            if self.source_available == Some(false) && !self.durable_references.is_empty() {
                 return Ok((ScanDelta::default(), None, true));
             }
             self.backfill = Some(Backfill::new(
@@ -576,9 +585,11 @@ impl AgentScanner {
             self.source.agent.as_str(),
             "cursor" | "opencode" | "zcode" | "deepchat" | "cherrystudio" | "minimax-code"
         ) {
+            self.source_available = Some(has_sources(&self.source)?);
             return Ok((self.read(paths)?, None, true));
         }
         let current = inventory(&self.source)?;
+        self.source_available = Some(!current.is_empty() || has_sources(&self.source)?);
         if current.is_empty()
             && !self.source.scan_path.try_exists()?
             && !self.durable_references.is_empty()

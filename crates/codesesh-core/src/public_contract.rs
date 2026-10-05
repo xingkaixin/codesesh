@@ -600,6 +600,9 @@ pub enum ScanPhase {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ScanStatusEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sources: Option<BTreeMap<String, crate::discovery::AgentCollectionStatus>>,
     pub r#type: ScanStatusEventType,
     pub active: bool,
     pub phase: ScanPhase,

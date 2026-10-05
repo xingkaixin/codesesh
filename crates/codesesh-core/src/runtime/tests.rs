@@ -9,6 +9,7 @@ fn write_source(path: &Path, text: &str) {
 fn batch(path: &Path) -> Result<ScanBatch> {
     let parsed = codex::parse(path, &HashMap::new(), &Pricing::bundled())?.unwrap();
     Ok(ScanBatch {
+        source_presence: None,
         sessions: vec![ParsedSession {
             source: path.to_owned(),
             head: parsed.head.clone(),
@@ -58,6 +59,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                 batch(&scan_path)
             } else {
                 Ok(ScanBatch {
+                    source_presence: None,
                     sessions: vec![],
                     removed: vec![SessionReference {
                         source_node_id: crate::contract::local_source_node_id(),
@@ -124,6 +126,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                 batch(&scan_path)
             } else {
                 Ok(ScanBatch {
+                    source_presence: None,
                     sessions: vec![],
                     removed: vec![SessionReference {
                         source_node_id: crate::contract::local_source_node_id(),
@@ -596,6 +599,7 @@ async fn backfill_reports_durable_progress_and_clears_it_on_completion() {
                 }
             }
             Ok(ScanBatch {
+                source_presence: None,
                 sessions: vec![],
                 removed: vec![],
                 checkpoint: (!complete).then(|| serde_json::json!({"offset":32,"total":100})),
@@ -662,5 +666,39 @@ async fn pricing_refresh_publishes_cached_costs_without_rewriting_messages() {
         }
     }
     assert!(cost_event);
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn collection_status_distinguishes_absent_empty_and_disappeared_sources() {
+    use crate::discovery::{AgentScanner, SourcePresence};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("sessions");
+    fs::create_dir(&root).unwrap();
+    let database = temporary.path().join("cache.db");
+    let source = crate::discovery::AgentSource {
+        agent: "codex".into(),
+        data_root: temporary.path().into(),
+        scan_path: root.clone(),
+    };
+    let runtime = Runtime::start(
+        database.clone(),
+        vec![
+            AgentScanner::new(source, database, Arc::new(Pricing::bundled())).into_runtime_source(),
+        ],
+        1,
+    )
+    .await
+    .unwrap();
+    until(|| runtime.status().sources["codex"].presence == SourcePresence::NotFound).await;
+    assert!(runtime.snapshot().is_empty());
+    let file = root.join("rollout-empty.jsonl");
+    fs::write(&file, "").unwrap();
+    runtime.refresh("codex").unwrap();
+    until(|| runtime.status().sources["codex"].presence == SourcePresence::Available).await;
+    assert!(runtime.snapshot().is_empty());
+    fs::remove_file(file).unwrap();
+    runtime.refresh("codex").unwrap();
+    until(|| runtime.status().sources["codex"].presence == SourcePresence::Missing).await;
     runtime.shutdown().await.unwrap();
 }

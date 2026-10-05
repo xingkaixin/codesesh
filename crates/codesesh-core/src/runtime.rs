@@ -58,6 +58,7 @@ pub struct ScanRequest {
 }
 
 pub struct ScanBatch {
+    pub source_presence: Option<crate::discovery::SourcePresence>,
     pub sessions: Vec<ParsedSession>,
     pub removed: Vec<SessionReference>,
     pub checkpoint: Option<Value>,

@@ -28,6 +28,10 @@ pub struct Receipt {
 pub struct CollectionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
+    pub sources:
+        Option<std::collections::BTreeMap<String, crate::discovery::AgentCollectionStatus>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub rescan: Option<RescanScanProgress>,
     pub active_agent: Option<String>,
     #[ts(type = "number | null")]

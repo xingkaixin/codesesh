@@ -22,6 +22,7 @@ pub(super) struct Scanning {
     cursor: usize,
     next_scan: Instant,
     errors: BTreeMap<String, String>,
+    source_statuses: BTreeMap<String, codesesh_core::discovery::AgentCollectionStatus>,
 }
 
 impl Scanning {
@@ -32,6 +33,10 @@ impl Scanning {
             .map(|source| Some(AgentScanner::for_worker(source, path.clone())))
             .collect();
         Self {
+            source_statuses: sources
+                .iter()
+                .map(|source| (source.agent.clone(), Default::default()))
+                .collect(),
             sources,
             path,
             scanners,
@@ -45,6 +50,9 @@ impl Scanning {
 
     pub(super) fn reset(&mut self) {
         self.generation += 1;
+        for status in self.source_statuses.values_mut() {
+            status.complete = false;
+        }
         self.scanners = self
             .sources
             .iter()
@@ -60,6 +68,7 @@ impl Scanning {
         store: &WorkerStore,
     ) -> Result<codesesh_core::sync::CollectionStatus> {
         Ok(codesesh_core::sync::CollectionStatus {
+            sources: Some(self.source_statuses.clone()),
             rescan: store.rescan_scan_progress()?,
             active_agent: self
                 .pending
@@ -108,7 +117,16 @@ impl Scanning {
                         self.path.clone(),
                     ));
                 } else {
-                    let result = result.and_then(|mut batch| store.save_batch(agent, &mut batch));
+                    let result = result.and_then(|mut batch| {
+                        store.save_batch(agent, &mut batch)?;
+                        if let Some(presence) = batch.source_presence.clone() {
+                            self.source_statuses
+                                .entry(agent.clone())
+                                .or_default()
+                                .collected(presence, batch.complete);
+                        }
+                        Ok(())
+                    });
                     match result {
                         Ok(()) => {
                             self.errors.remove(agent);
@@ -121,6 +139,9 @@ impl Scanning {
                                     .collect();
                             eprintln!("Worker scan failed; progress retained: {message}");
                             self.errors.insert(agent.clone(), message);
+                            let status = self.source_statuses.entry(agent.clone()).or_default();
+                            status.error = self.errors.get(agent).cloned();
+                            status.complete = false;
                             scanner = AgentScanner::for_worker(
                                 self.sources[index].clone(),
                                 self.path.clone(),
@@ -190,6 +211,7 @@ mod tests {
 
     fn batch() -> ScanBatch {
         ScanBatch {
+            source_presence: None,
             sessions: vec![],
             removed: vec![],
             checkpoint: None,
@@ -243,10 +265,23 @@ mod tests {
         finish(&scanning).await;
         scanning.tick(&mut store, false).await.unwrap();
         assert!(scanning.error().unwrap().contains("codex"));
+        let report = scanning.status(&store).unwrap();
+        assert!(
+            report.sources.unwrap()["codex"]
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("unreadable source")
+        );
         assert_eq!(scanning.pending.as_ref().unwrap().0, 1);
         finish(&scanning).await;
         scanning.tick(&mut store, false).await.unwrap();
         assert!(store.collection_complete(&["claudecode".into()]).unwrap());
+        let report = scanning.status(&store).unwrap();
+        assert_eq!(
+            report.sources.unwrap()["claudecode"].presence,
+            codesesh_core::discovery::SourcePresence::NotFound
+        );
         assert!(!store.collection_complete(&["codex".into()]).unwrap());
         assert!(scanning.pending.is_none());
         scanning.tick(&mut store, false).await.unwrap();

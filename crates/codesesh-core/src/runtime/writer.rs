@@ -182,6 +182,13 @@ pub(super) fn run(
                         );
                     }
                     let mut status = statuses.borrow().as_ref().clone();
+                    if let Some(presence) = batch.source_presence.clone() {
+                        status
+                            .sources
+                            .entry(agent.clone())
+                            .or_default()
+                            .collected(presence, batch.complete);
+                    }
                     if !batch.complete
                         || status
                             .backfill
