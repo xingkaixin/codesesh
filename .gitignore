@@ -33,6 +33,7 @@ skills-lock.json
 
 # cf
 .wrangler
+.cloudflare/
 
 # worktree
 .worktree

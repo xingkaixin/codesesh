@@ -9,7 +9,6 @@ import {
   siteUrl,
   type Locale,
 } from "../data/landing";
-import analyticsLoader from "../scripts/analytics-loader.js?raw";
 import "../styles/global.css";
 
 interface PageConfig {
@@ -50,11 +49,6 @@ const defaultLocaleUrl = new URL(
 const ogLocaleAlternates = alternateLocales.filter(
   (alternate) => alternate.ogLocale !== currentLocale.ogLocale,
 );
-// Pages can inject its own beacon; this public site ID enables the fallback
-// for deployments without automatic injection.
-const analyticsToken = import.meta.env.PUBLIC_ANALYTICS_TOKEN as
-  string | undefined;
-const analyticsEnabled = import.meta.env.PROD && Boolean(analyticsToken);
 const analyticsHost = new URL(siteUrl).hostname;
 const featureList = t.features.groups.flatMap((group) =>
   group.items.map((item) => item.title),
@@ -357,14 +351,6 @@ const jsonLd = {
         data-website-id="ef9537a4-c9aa-4f4c-b228-78efa155a203"
         data-domains={analyticsHost}
         data-performance="true"
-      ></script>
-    )}
-    {analyticsEnabled && (
-      <script
-        is:inline
-        data-analytics-host={analyticsHost}
-        data-analytics-token={analyticsToken}
-        set:html={analyticsLoader}
       ></script>
     )}
   </head>
