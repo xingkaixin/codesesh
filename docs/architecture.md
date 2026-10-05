@@ -35,7 +35,7 @@ codesesh-cli / Clap
 
 | 模块 | 职责 |
 |------|------|
-| `crates/codesesh-core/src/agents/` | 13 个 Agent 的源格式解析及增量读取 |
+| `crates/codesesh-core/src/agents/` | 14 个 Agent 的源格式解析及增量读取 |
 | `crates/codesesh-core/src/discovery/` | 路径发现、扫描状态、窗口优先回填和 checkpoint |
 | `crates/codesesh-core/src/runtime.rs` | 并发限制、任务取消、状态与刷新调度 |
 | `crates/codesesh-core/src/runtime/writer.rs` | 单写者事务、提交后快照与 SSE 发布 |
@@ -50,7 +50,7 @@ codesesh-cli / Clap
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi
-- SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code
+- SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code · Antigravity CLI
 <!-- repo-fact:agent-source-kinds:end -->
 
 ## 一致性边界

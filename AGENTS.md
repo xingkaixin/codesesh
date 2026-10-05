@@ -14,7 +14,7 @@
 
 ## 目录与职能
 
-- `crates/codesesh-core/src/agents/`：13 个 Agent 适配器、来源解析和增量读取。
+- `crates/codesesh-core/src/agents/`：14 个 Agent 适配器、来源解析和增量读取。
 - `crates/codesesh-core/src/discovery/`：数据路径、扫描编排、窗口优先回填和 checkpoint。
 - `crates/codesesh-core/src/runtime.rs`：有界扫描、取消、刷新和状态。
 - `crates/codesesh-core/src/runtime/`：单 SQLite writer、监听和状态发布。

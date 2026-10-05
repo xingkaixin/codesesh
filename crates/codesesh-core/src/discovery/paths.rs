@@ -84,6 +84,10 @@ impl PathEnvironment {
         Some(match agent {
             "claudecode" => self.home_path("CLAUDE_CONFIG_DIR", ".claude"),
             "codex" => self.home_path("CODEX_HOME", ".codex"),
+            "antigravity-cli" => self
+                .read_env_path("AGY_CONVERSATIONS_DIR")
+                .and_then(|path| path.parent().map(Path::to_owned))
+                .unwrap_or_else(|| self.home.join(".gemini/antigravity-cli")),
             "kimi" => self.home_path("KIMI_SHARE_DIR", ".kimi"),
             "kimi-code" => self.home_path("KIMI_CODE_HOME", ".kimi-code"),
             "grok" => self.home_path("GROK_HOME", ".grok"),
@@ -133,6 +137,9 @@ impl PathEnvironment {
         let data_root = self.data_root(agent)?;
         let fallback = self.cwd.join("data").join(agent);
         let primary = match agent {
+            "antigravity-cli" => self
+                .read_env_path("AGY_CONVERSATIONS_DIR")
+                .unwrap_or_else(|| data_root.join("conversations")),
             "claudecode" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
             "pi" => data_root.join("agent/sessions"),

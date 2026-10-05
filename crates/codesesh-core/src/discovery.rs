@@ -208,6 +208,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
             "claudecode" => entry.depth() == 2 && name.ends_with(".jsonl"),
             "codex" => name.starts_with("rollout-") && name.ends_with(".jsonl"),
             "pi" => name.ends_with(".jsonl"),
+            "antigravity-cli" => name.ends_with(".db"),
             "grok" => name == "summary.json",
             "kimi" => entry.depth() == 3 && matches!(name.as_ref(), "metadata.json" | "state.json"),
             "kimi-code" => {

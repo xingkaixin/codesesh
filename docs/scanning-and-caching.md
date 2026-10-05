@@ -29,7 +29,7 @@ Clap 参数与 PathEnvironment
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件型：Claude Code、Codex、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
-- 单 SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio、MiniMax Code
+- SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio、MiniMax Code、Antigravity CLI
 <!-- repo-fact:agent-source-kinds:end -->
 
 文件事件是刷新提示，不直接修改会话。适配器根据变更路径、会话关系及源状态决定需要重读的

@@ -221,6 +221,11 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
     }
     let context_names: &[&str] = match source.agent.as_str() {
+        "antigravity-cli" => &[
+            "conversation_summaries.db",
+            "conversation_summaries.db-wal",
+            "conversation_summaries.db-journal",
+        ],
         "kimi-code" => &["session_index.jsonl"],
         "kimi" => &["kimi.json", "config.toml"],
         _ => &[],
@@ -263,6 +268,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
             "codex" => name.starts_with("rollout-") && name.ends_with(".jsonl"),
             "pi" => name.ends_with(".jsonl"),
+            "antigravity-cli" => name.ends_with(".db"),
             "grok" => name == "summary.json",
             "dsh" => {
                 entry.depth() == 3
@@ -291,6 +297,14 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
         let (mut activity, mut fingerprint) = stamp(entry.path())?;
         let mut bytes = entry.metadata()?.len();
+        if source.agent == "antigravity-cli" {
+            for suffix in ["-wal", "-journal"] {
+                let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
+                if related.try_exists()? {
+                    fingerprint.push_str(&stamp(&related)?.1);
+                }
+            }
+        }
         if source.agent == "claudecode" {
             let parent = entry.path().parent().unwrap();
             let project = if parent.file_name().is_some_and(|name| name == "subagents") {
