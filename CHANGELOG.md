@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.9] - 2026-10-06
+
+This release shows collection status for local and Worker sources, keeps archived and compressed Codex history available, and adds partial support for Antigravity CLI conversations. (#709–#711)
+
+### Features
+
+- Show per-Agent source discovery, collection progress, completion, missing sources, and failures. Standalone mode adds a header status popover; Hub mode adds source details to Workers. Older Workers report unavailable details without implying missing sources. (#709)
+- Read Antigravity CLI SQLite conversations, including prompts, assistant messages, titles, workspace metadata, parent relationships, and tool calls. Support `AGY_CONVERSATIONS_DIR` overrides. Tool outcomes and model/token usage remain unknown; message timestamps use the session update time, and IDE `.pb` history is not supported. (#711)
+
+### Bug Fixes
+
+- Discover Codex history in both `sessions/` and `archived_sessions/`, including `.jsonl.zst` rollouts and compressed subagent summaries. Preserve session and message identities across compression and resume, prefer plain JSONL when both formats exist, and reject corrupt replacements without overwriting cached history. (#710)
+
+### Build
+
+- Migrate the product site from Cloudflare Pages to Workers, cache only existing assets, and serve the custom domain without public Worker preview endpoints. (#706–#708)
+
 ## [1.2.8] - 2026-10-05
 
 This patch reduces unnecessary reads when loading Dashboard activity statistics and restores Worker synchronization promptly after a Hub restart. More detailed timing logs help diagnose slow startup and Dashboard requests. (#703, #704)

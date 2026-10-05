@@ -71,6 +71,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.9",
+        date: "2026-10-06",
+        title: "See collection progress and recover more coding history",
+        summary:
+          "CodeSesh 1.2.9 shows which local and Worker sources are still collecting or need attention. Archived and compressed Codex sessions stay readable, and partial Antigravity CLI support brings another source of local AI coding history into search and replay.",
+        direction:
+          "History browsing should explain what has been collected and preserve access as Agents archive or compress their files. New sources should make compatibility limits clear.",
+        highlights: [
+          {
+            title: "Understand collection status on each machine",
+            description:
+              "See per-Agent discovery, collection progress, completion, missing sources, and errors from the local status panel or Worker details.",
+          },
+          {
+            title: "Read archived and compressed Codex sessions",
+            description:
+              "Find history stored in archived folders or Zstandard-compressed rollouts. Compression and resume preserve the same session instead of creating duplicates.",
+          },
+          {
+            title: "Browse Antigravity CLI conversations",
+            description:
+              "Read local SQLite conversations and tool calls with titles and workspace context. Support is partial: IDE history is excluded, tool outcomes and usage are unknown, and message times use the session update time.",
+          },
+        ],
+      },
+      {
         version: "1.2.8",
         date: "2026-10-05",
         title: "Reduce Dashboard waits and reconnect after Hub restarts",
@@ -643,6 +669,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.2.9",
+        date: "2026-10-06",
+        title: "看清采集进度，找回更多编码历史",
+        summary:
+          "CodeSesh 1.2.9 展示本机与 Worker 中仍在采集或需要处理的来源，支持读取 Codex 归档及压缩会话，并通过 Antigravity CLI 的部分支持，将更多本地 AI 编码历史纳入搜索与回放。",
+        direction:
+          "历史浏览应说明已经采集了什么，并在 Agent 归档或压缩文件后继续保留访问能力。接入新来源时，也应明确兼容范围。",
+        highlights: [
+          {
+            title: "了解每台机器的采集状态",
+            description:
+              "在本机状态面板或 Worker 详情中，按 Agent 查看来源发现、采集进度、完成、来源缺失及错误。",
+          },
+          {
+            title: "读取归档及压缩的 Codex 会话",
+            description:
+              "查找归档目录或 Zstandard 压缩文件中的历史。压缩及恢复后仍对应同一个会话，避免重复记录。",
+          },
+          {
+            title: "浏览 Antigravity CLI 对话",
+            description:
+              "读取本地 SQLite 对话与工具调用，结合标题和工作区定位历史。目前为部分支持：不包含 IDE 历史，工具结果和用量未知，消息时间采用会话更新时间。",
+          },
+        ],
+      },
+      {
         version: "1.2.8",
         date: "2026-10-05",
         title: "减少 Dashboard 等待，Hub 重启后及时恢复同步",
@@ -1195,6 +1247,32 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.2.9",
+        date: "2026-10-06",
+        title: "収集状況を確認し、より多くの履歴を読む",
+        summary:
+          "CodeSesh 1.2.9 では、ローカルと Worker のどのソースが収集中か、対応が必要かを確認できます。アーカイブ済み・圧縮済みの Codex セッションを読み取り、Antigravity CLI の部分対応により、検索・再生できるローカル AI コーディング履歴を広げます。",
+        direction:
+          "何が収集されたかを明確にし、Agent がファイルをアーカイブや圧縮した後も履歴を参照できるようにします。新しいソースへの対応では、互換性の範囲も明示します。",
+        highlights: [
+          {
+            title: "各マシンの収集状況を確認",
+            description:
+              "ローカルのステータスパネルや Worker の詳細で、Agent ごとのソース検出、収集の進捗、完了、ソースの消失、エラーを確認できます。",
+          },
+          {
+            title: "Codex のアーカイブ・圧縮履歴を読む",
+            description:
+              "アーカイブ先や Zstandard 圧縮ファイルに保存された履歴を検索できます。圧縮や再開の前後で同じセッションとして扱い、重複を防ぎます。",
+          },
+          {
+            title: "Antigravity CLI の会話を閲覧",
+            description:
+              "ローカル SQLite の会話とツール呼び出しを、タイトルやワークスペース情報とともに確認できます。部分対応のため IDE 履歴は対象外です。ツールの結果と使用量は不明として扱い、各メッセージの時刻にはセッションの更新時刻を使います。",
+          },
+        ],
+      },
       {
         version: "1.2.8",
         date: "2026-10-05",

@@ -69,10 +69,11 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | DeepChat    | 已支持 |
 | Cherry Studio | 已支持 |
 | MiniMax Code | 已支持 |
-
-| Antigravity CLI | Partial support |
+| Antigravity CLI | 部分支持 |
 
 <!-- repo-fact:agents:end -->
+
+Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息及工具调用。工具结果与用量仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/antigravity-cli-integration.md)。
 
 OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V2 迁移完成后开始读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/opencode-v2-integration.md)。
 
