@@ -959,12 +959,13 @@ mod tests {
     fn message_parts_reject_invalid_closed_values_and_images_without_content() {
         for value in [
             json!({"type": "plan", "text": "plan", "approval_status": "pending"}),
-            json!({"type": "tool", "tool": "read", "state": {"status": "unknown"}}),
+            json!({"type": "tool", "tool": "read", "state": {"status": "invalid"}}),
             json!({"type": "image", "mime_type": "image/png"}),
         ] {
             assert!(serde_json::from_value::<WireMessagePart>(value).is_err());
         }
         for value in [
+            json!({"type": "tool", "tool": "read", "state": {"status": "unknown"}}),
             json!({"type": "image", "data": "base64", "mime_type": "image/png"}),
             json!({"type": "image", "url": "https://example.com/image.png"}),
         ] {

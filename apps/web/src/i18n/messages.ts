@@ -604,6 +604,7 @@ export const messages = {
   "Show all": ["显示全部", "すべて表示"],
   Success: ["成功", "成功"],
   Failed: ["失败", "失敗"],
+  Unknown: ["未知", "不明"],
   Running: ["运行中", "実行中"],
   "Open sub-session ↗": ["打开子会话 ↗", "サブセッションを開く ↗"],
   INPUT: ["输入", "入力"],
