@@ -70,6 +70,8 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 | Cherry Studio | 已支持 |
 | MiniMax Code | 已支持 |
 
+| Antigravity CLI | Partial support |
+
 <!-- repo-fact:agents:end -->
 
 OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V2 迁移完成后开始读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/opencode-v2-integration.md)。

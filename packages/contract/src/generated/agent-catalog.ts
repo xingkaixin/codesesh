@@ -108,4 +108,13 @@ export const AGENT_CATALOG = [
     resumeCommandPrefix: null,
     toolStrategy: "default",
   },
+  {
+    name: "antigravity-cli",
+    displayName: "Antigravity CLI",
+    icon: "/icon/agent/antigravity-cli.svg",
+    iconColored: true,
+    sourceKind: "sqlite",
+    resumeCommandPrefix: null,
+    toolStrategy: "default",
+  },
 ] as const;

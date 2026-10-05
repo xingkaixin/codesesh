@@ -38,6 +38,7 @@ pub enum FileActivityKind {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolPartStatus {
+    Unknown,
     Running,
     Completed,
     Error,

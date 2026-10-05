@@ -64,11 +64,13 @@ describe("message part contract", () => {
   it("derives explicit tool statuses when legacy state omitted them", () => {
     expect(
       normalizeMessageParts([
+        { type: "tool", tool: "Unknown", state: { status: "unknown", output: null } },
         { type: "tool", tool: "Pending", state: {} },
         { type: "tool", tool: "Failed", state: { error: "nope" } },
         { type: "tool", tool: "Finished", state: { output: null } },
       ]),
     ).toEqual([
+      { type: "tool", tool: "Unknown", state: { status: "unknown", output: null } },
       { type: "tool", tool: "Pending", state: { status: "running" } },
       {
         type: "tool",

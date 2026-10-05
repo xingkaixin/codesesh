@@ -35,6 +35,7 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 - DeepChat
 - Cherry Studio
 - MiniMax Code
+- Antigravity CLI
 <!-- repo-fact:agents:end -->
 
 ## Core Capabilities

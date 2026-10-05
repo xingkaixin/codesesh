@@ -92,6 +92,7 @@ fn normalized(value: &Value) -> Option<Value> {
                 .or_else(|| part.get("output"));
             let error = state.get("error");
             let status = match state.get("status").and_then(Value::as_str) {
+                Some("unknown") => "unknown",
                 Some("running") => "running",
                 Some("completed" | "success") => "completed",
                 Some("error") => "error",

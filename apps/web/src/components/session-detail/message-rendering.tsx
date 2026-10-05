@@ -6,6 +6,7 @@ import {
   CalendarRange,
   CheckCircle2,
   ChevronDown,
+  CircleHelp,
   Lightbulb,
   LoaderCircle,
   MessageCircleX,
@@ -41,6 +42,12 @@ const TOOL_STATUS_META: Record<
   ToolStatus,
   { label: string; className: string; icon: typeof LoaderCircle }
 > = {
+  unknown: {
+    label: "Unknown",
+    className:
+      "border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] text-[var(--console-muted)]",
+    icon: CircleHelp,
+  },
   completed: {
     label: "Success",
     className:

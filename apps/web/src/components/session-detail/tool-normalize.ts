@@ -20,7 +20,7 @@ import {
   toStringValue,
 } from "./utils";
 
-export type ToolStatus = "running" | "completed" | "error";
+export type ToolStatus = "unknown" | "running" | "completed" | "error";
 
 export interface NormalizedToolState {
   status: ToolStatus;

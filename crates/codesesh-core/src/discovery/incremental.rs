@@ -113,6 +113,10 @@ impl AgentScanner {
         let name = self.source.agent.clone();
         let root = &self.source.scan_path;
         let mut roots = match self.source.agent.as_str() {
+            "antigravity-cli" => vec![
+                root.clone(),
+                self.source.data_root.join("conversation_summaries.db"),
+            ],
             "cursor" => vec![
                 root.join("globalStorage/state.vscdb"),
                 root.join("workspaceStorage"),
@@ -993,6 +997,14 @@ impl AgentScanner {
                 let upserts = agents::grok::scan_paths(root, pricing, &paths)?;
                 Ok(selected_delta(upserts, &self.previous, |session| {
                     sources.contains(&session.source)
+                }))
+            }
+            "antigravity-cli" if paths.is_some() => {
+                let paths = paths.unwrap();
+                let upserts =
+                    agents::antigravity_cli::scan_paths(&self.source.data_root, pricing, paths)?;
+                Ok(selected_delta(upserts, &self.previous, |session| {
+                    paths.contains(&session.source)
                 }))
             }
             "codex" if paths.is_some() => agents::codex::scan_changed(

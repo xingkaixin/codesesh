@@ -35,7 +35,8 @@ function normalizeStatus(
   error: unknown,
 ): ToolPartStatus {
   const status = state.status;
-  if (status === "running" || status === "completed" || status === "error") return status;
+  if (status === "unknown" || status === "running" || status === "completed" || status === "error")
+    return status;
   if (status === "success") return "completed";
   if (error != null) return "error";
   if (output !== undefined) return "completed";

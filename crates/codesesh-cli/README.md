@@ -67,6 +67,8 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | Cherry Studio | ✅ Supported |
 | MiniMax Code | ✅ Supported |
 
+| Antigravity CLI | Partial support |
+
 <!-- repo-fact:agents:end -->
 
 OpenCode supports V1 SQLite history and the V2 `2.0.15` schema. Set `OPENCODE_DB` to select a custom database (relative to `XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` by default). V2 migration must finish before scanning; session totals prevent copied fork history from being counted again. See the [compatibility design](../../docs/opencode-v2-integration.md) for supported messages and validation limits.

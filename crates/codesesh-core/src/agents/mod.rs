@@ -6,6 +6,7 @@ pub(crate) fn parser_version(agent: &str) -> &'static str {
     }
 }
 
+pub mod antigravity_cli;
 pub mod cherrystudio;
 pub mod claudecode;
 pub mod codex;
@@ -84,6 +85,7 @@ pub fn scan_agent(
     pricing: &Pricing,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match agent {
+        "antigravity-cli" => antigravity_cli::scan(scan_path, data_root, pricing),
         "claudecode" => claudecode::scan(scan_path, pricing),
         "codex" => codex::scan(data_root, pricing),
         "cursor" => cursor::scan(scan_path, pricing),
