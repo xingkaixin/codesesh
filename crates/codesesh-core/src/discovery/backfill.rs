@@ -138,6 +138,9 @@ fn stamp(path: &Path) -> Result<(f64, String)> {
     Ok((time.as_secs_f64() * 1000.0, stamp))
 }
 pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
+    if source.agent == "codex" {
+        return codex_inventory(source);
+    }
     let root = if source.agent == "dsh" {
         source.scan_path.join("sessions")
     } else {
@@ -206,20 +209,6 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     }
     let mut items = Vec::new();
     let mut context_stamps = Vec::new();
-    let mut codex_titles = std::collections::HashMap::new();
-    if source.agent == "codex" {
-        use std::io::BufRead;
-        if let Ok(file) = std::fs::File::open(source.data_root.join("session_index.jsonl")) {
-            for line in std::io::BufReader::new(file).lines() {
-                if let Ok(record) = serde_json::from_str::<serde_json::Value>(&line?)
-                    && let (Some(id), Some(title)) =
-                        (record["id"].as_str(), record["thread_name"].as_str())
-                {
-                    codex_titles.insert(id.to_owned(), title.to_owned());
-                }
-            }
-        }
-    }
     let context_names: &[&str] = match source.agent.as_str() {
         "kimi-code" => &["session_index.jsonl"],
         "kimi" => &["kimi.json", "config.toml"],
@@ -261,7 +250,6 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                             .and_then(Path::file_name)
                             .is_some_and(|name| name == "subagents"))
             }
-            "codex" => name.starts_with("rollout-") && name.ends_with(".jsonl"),
             "pi" => name.ends_with(".jsonl"),
             "grok" => name == "summary.json",
             "dsh" => {
@@ -306,18 +294,6 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                     fingerprint.push_str(&stamp(&related)?.1);
                 }
             }
-        }
-        if source.agent == "codex" {
-            let stem = entry
-                .path()
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let pieces: Vec<_> = stem.split('-').collect();
-            let id = pieces[pieces.len().saturating_sub(5)..].join("-");
-            fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
-                &codex_titles.get(&id),
-            )?)));
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
             entry.path().parent().unwrap().to_owned()
@@ -368,6 +344,44 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     let context = crate::hash::hex(&Sha256::digest(serde_json::to_vec(&context_stamps)?));
     for item in &mut items {
         item.fingerprint.push_str(&context);
+    }
+    Ok(items)
+}
+
+fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
+    use crate::agents::codex_rollout;
+    use std::io::BufRead;
+    let mut titles = std::collections::HashMap::new();
+    if let Ok(file) = std::fs::File::open(source.data_root.join("session_index.jsonl")) {
+        for line in std::io::BufReader::new(file).lines() {
+            if let Ok(record) = serde_json::from_str::<serde_json::Value>(&line?)
+                && let (Some(id), Some(title)) =
+                    (record["id"].as_str(), record["thread_name"].as_str())
+            {
+                titles.insert(id.to_owned(), title.to_owned());
+            }
+        }
+    }
+    let mut items = Vec::new();
+    for path in codex_rollout::paths(&source.data_root)? {
+        let Some(physical) = codex_rollout::physical_path(&path)? else {
+            continue;
+        };
+        let (activity, mut fingerprint) = stamp(&physical)?;
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+        let pieces: Vec<_> = stem.split('-').collect();
+        let id = pieces[pieces.len().saturating_sub(5)..].join("-");
+        fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
+            &titles.get(&id),
+        )?)));
+        items.push(Item {
+            key: path.to_string_lossy().into_owned(),
+            path: Some(path),
+            activity,
+            fingerprint,
+            target: false,
+            bytes: std::fs::metadata(physical)?.len(),
+        });
     }
     Ok(items)
 }

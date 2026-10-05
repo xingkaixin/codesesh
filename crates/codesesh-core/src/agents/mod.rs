@@ -122,4 +122,5 @@ mod codex_usage;
 mod smart_tags;
 
 mod codex_patch;
+pub(crate) mod codex_rollout;
 mod file_activity;
