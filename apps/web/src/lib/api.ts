@@ -16,6 +16,7 @@ export const {
   createPairingToken,
   fetchPairingStatus,
   updateNode,
+  setSourceIgnored,
   requestRescan,
   fetchSourceSessions,
   fetchConfig,

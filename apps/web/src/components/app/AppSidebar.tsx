@@ -1,8 +1,9 @@
 import { useFluidHover } from "../../hooks/useFluidHover";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import { useCallback, useEffect, type ReactNode } from "react";
-import type { BookmarkView, ApiProjectGroup, SessionHead } from "../../lib/api";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { sourceName } from "../nodes/SourceBadge";
+import type { BookmarkView, ApiProjectGroup, SessionHead, SourceNode } from "../../lib/api";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { useSidebarKeyboardNavigation } from "../../hooks/useSidebarKeyboardNavigation";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
@@ -108,6 +109,7 @@ export interface AppSidebarViewModel {
   sidebarSessions: SessionHead[];
   sidebarSessionLookup: SidebarSessionLookup;
   bookmarkedSidebarSessionReferences: Set<string>;
+  sourceNodes?: SourceNode[];
   isSearchMode: boolean;
   shortcutHelpOpen: boolean;
   dismissShortcutHint: () => void;
@@ -193,6 +195,7 @@ export function AppSidebar({
     sidebarSessions,
     sidebarSessionLookup,
     bookmarkedSidebarSessionReferences,
+    sourceNodes,
     isSearchMode,
     shortcutHelpOpen,
     dismissShortcutHint,
@@ -226,6 +229,16 @@ export function AppSidebar({
       : null;
   const isOverviewSelected = viewState.mode === "root";
   const isProjectsSelected = viewState.mode === "projects";
+  const multipleSources =
+    new Set(sidebarSessions.map((session) => session.reference.sourceNodeId ?? "local")).size > 1;
+  const sessionSourceLabel = useMemo(
+    () =>
+      multipleSources
+        ? (session: SessionHead) =>
+            sourceName(session.reference.sourceNodeId ?? "local", sourceNodes)
+        : undefined,
+    [multipleSources, sourceNodes],
+  );
   const { selectedSessionReference, selectSession } = useSidebarKeyboardNavigation({
     viewState,
     sessions: sidebarSessions,
@@ -430,6 +443,7 @@ export function AppSidebar({
                   onToggleBookmark={onToggleSidebarSessionBookmark}
                   onRenameSession={onRenameSession}
                   groupByProject={false}
+                  sourceLabel={sessionSourceLabel}
                 />
               </RenderProfiler>
             )}

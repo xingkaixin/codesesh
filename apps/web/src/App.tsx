@@ -12,6 +12,7 @@ import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useSidebarModel } from "./hooks/useSidebarModel";
+import { useNodes } from "./hooks/useNodes";
 import { useSessionStore } from "./hooks/useSessionStore";
 import { useAppConfig } from "./hooks/useAppConfig";
 import { useProjectLookup } from "./hooks/useProjects";
@@ -194,6 +195,7 @@ export default function App() {
     },
     [activeProjectIdentityKey],
   );
+  const sourceNodes = useNodes();
   const sidebar = useSidebarModel({
     viewState,
     sessionIndexes,
@@ -455,6 +457,7 @@ export default function App() {
               sidebarSessions,
               sidebarSessionLookup: sidebar.sidebarSessionLookup,
               bookmarkedSidebarSessionReferences,
+              sourceNodes: sourceNodes.data?.nodes,
               isSearchMode,
               shortcutHelpOpen,
               dismissShortcutHint,

@@ -17,6 +17,7 @@ vi.mock("../../lib/api", async (original) => ({
   updateNode: vi.fn(),
   createPairingToken: vi.fn(),
   fetchPairingStatus: vi.fn(),
+  setSourceIgnored: vi.fn(),
 }));
 
 const node = {
@@ -31,6 +32,8 @@ const node = {
   collectionComplete: true,
   queue: { batches: 3, bytes: 1024, oldestAt: 1 },
   error: null,
+  agents: {},
+  ignoredSources: [] as string[],
 };
 
 function panel() {
@@ -90,6 +93,53 @@ describe("NodePanel", () => {
     expect(
       screen.getByRole("button", { name: "Source nodes: Node status unavailable" }),
     ).toBeTruthy();
+  });
+  it("flags a missing source until the user ignores it", async () => {
+    const missing = {
+      ...node,
+      agents: { zcode: { sessions: 18, lastActivity: 1 } },
+      health: {
+        reportedAt: Date.now(),
+        collection: {
+          sources: { zcode: { presence: "missing" as const, complete: true } },
+          activeAgent: null,
+          lastSuccessAt: null,
+          errors: {},
+        },
+      },
+    };
+    vi.mocked(api.fetchNodes).mockResolvedValue({
+      nodes: [missing],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    });
+    vi.mocked(api.setSourceIgnored).mockResolvedValue(undefined);
+    const { client, Wrapper } = createQueryWrapper();
+    client.setQueryData(["config"], { window: {}, hubEnabled: true });
+    render(<NodeStatusButton onClick={vi.fn()} />, { wrapper: Wrapper });
+    expect(
+      await screen.findByRole("button", {
+        name: "Source nodes: 1 online / 1 paired Workers; 1 need attention",
+      }),
+    ).toBeTruthy();
+    cleanup();
+
+    panel();
+    expect(await screen.findByText("ZCode source no longer found")).toBeTruthy();
+    vi.mocked(api.fetchNodes).mockResolvedValue({
+      nodes: [{ ...missing, ignoredSources: ["zcode"] }],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ignore source" }));
+    await waitFor(() => expect(screen.queryByText("ZCode source no longer found")).toBeNull());
+    expect(api.setSourceIgnored).toHaveBeenCalledWith("worker-one", "zcode", true);
+    expect(screen.getByText("Ignored")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop ignoring" })).toBeTruthy();
   });
   it("marks an unchanged node offline as time passes and online after a heartbeat", async () => {
     vi.useFakeTimers();

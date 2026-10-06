@@ -38,6 +38,7 @@ interface SessionTreeSidebarProps {
   onRenameSession: (session: SessionHead) => void;
   /** False when the listing already covers one project. */
   groupByProject?: boolean;
+  sourceLabel?: (session: SessionHead) => string | undefined;
 }
 
 interface SessionTreeModel {
@@ -138,7 +139,13 @@ export const MAX_SESSION_TREE_NESTING = 32;
  */
 export function buildSessionTreeModel(
   sessions: SessionHead[],
-  { groupByProject = true }: { groupByProject?: boolean } = {},
+  {
+    groupByProject = true,
+    sourceLabel,
+  }: {
+    groupByProject?: boolean;
+    sourceLabel?: (session: SessionHead) => string | undefined;
+  } = {},
 ): SessionTreeModel {
   const sortOrderByPath = new Map<string, number>();
   const pathBySessionReference = new Map<string, string>();
@@ -204,7 +211,10 @@ export function buildSessionTreeModel(
       const frame = pending.pop()!;
       const { node, parentPath, siblingTitleCounts } = frame;
       const session = node.session;
-      const title = getSessionDisplayTitle(session);
+      const source = sourceLabel?.(session);
+      const title = source
+        ? `${getSessionDisplayTitle(session)} · ${source}`
+        : getSessionDisplayTitle(session);
       siblingTitleCounts.set(title, (siblingTitleCounts.get(title) ?? 0) + 1);
       const siblingCount = siblingTitleCounts.get(title) ?? 1;
       const leaf =
@@ -316,6 +326,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   onToggleBookmark,
   onRenameSession,
   groupByProject = true,
+  sourceLabel,
 }: SessionTreeSidebarProps) {
   const locale = useLocale();
 
@@ -326,11 +337,11 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const modelData = useMemo(
     () =>
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
-        buildSessionTreeModel(sessions, { groupByProject }),
+        buildSessionTreeModel(sessions, { groupByProject, sourceLabel }),
       ),
 
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, sessions, groupByProject],
+    [locale, sessions, groupByProject, sourceLabel],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const groupCountByPathRef = useRef(modelData.groupCountByPath);

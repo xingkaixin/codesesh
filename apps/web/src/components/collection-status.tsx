@@ -1,16 +1,27 @@
-import { AGENT_CATALOG, type AgentCollectionStatus } from "@codesesh/contract";
+import {
+  AGENT_CATALOG,
+  type AgentCollectionStatus,
+  type NodeAgentActivity,
+} from "@codesesh/contract";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
+import { formatNumber, formatRelativeTime } from "../lib/format";
 import { AgentIcon } from "./AgentIcon";
 
 export function CollectionSources({
   sources,
   stale = false,
   uploading = false,
+  activity,
+  ignored = [],
+  onStopIgnoring,
 }: {
   sources: Record<string, AgentCollectionStatus> | undefined;
   stale?: boolean;
   uploading?: boolean;
+  activity?: Record<string, NodeAgentActivity>;
+  ignored?: string[];
+  onStopIgnoring?: (agent: string) => void;
 }) {
   useLocale();
   if (!sources) {
@@ -22,13 +33,18 @@ export function CollectionSources({
   }
   const entries = Object.entries(sources);
   const absent = entries.filter(([, status]) => status.presence === "not-found" && !status.error);
-  const visible = entries.filter(([, status]) => status.presence !== "not-found" || status.error);
+  const lastActivity = (name: string) => activity?.[name]?.lastActivity ?? 0;
+  const visible = entries
+    .filter(([, status]) => status.presence !== "not-found" || status.error)
+    .sort(([left], [right]) => lastActivity(right) - lastActivity(left));
   const row = ([name, status]: [string, AgentCollectionStatus]) => {
     const agent = AGENT_CATALOG.find((entry) => entry.name === name);
-    const warning = Boolean(status.error) || status.presence === "missing";
+    const isIgnored = status.presence === "missing" && ignored.includes(name);
+    const warning = Boolean(status.error) || (status.presence === "missing" && !isIgnored);
+    const stats = activity?.[name];
     const pending = status.presence === "pending";
     const absent = status.presence === "not-found" && !status.error;
-    const label = sourceLabel(status, uploading);
+    const label = isIgnored ? t("Ignored") : sourceLabel(status, uploading);
     return (
       <li key={name} className="flex items-start gap-3 py-3">
         {agent && (
@@ -44,7 +60,7 @@ export function CollectionSources({
             <span className="font-medium">{agent?.displayName ?? name}</span>
             <span
               className={
-                stale || absent || pending
+                stale || absent || pending || isIgnored
                   ? "text-muted-foreground"
                   : warning || !status.complete || uploading
                     ? "text-[var(--console-warning)]"
@@ -54,7 +70,31 @@ export function CollectionSources({
               {label}
             </span>
           </div>
-          {status.error ? (
+          {stats && stats.sessions > 0 && (
+            <p
+              className="mt-0.5 text-xs text-muted-foreground"
+              title={stats.lastActivity ? new Date(stats.lastActivity).toLocaleString() : undefined}
+            >
+              {t("{0} sessions · last active {1}", [
+                formatNumber(stats.sessions),
+                formatRelativeTime(stats.lastActivity),
+              ])}
+            </p>
+          )}
+          {isIgnored ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("Collected sessions stay available. Collection resumes if the source returns.")}
+              {onStopIgnoring && (
+                <button
+                  type="button"
+                  className="ml-2 underline underline-offset-2 hover:text-[var(--console-text)]"
+                  onClick={() => onStopIgnoring(name)}
+                >
+                  {t("Stop ignoring")}
+                </button>
+              )}
+            </p>
+          ) : status.error ? (
             <details className="mt-1 text-xs text-[var(--console-error)]">
               <summary className="cursor-pointer">{t("Error details")}</summary>
               <p className="mt-1 break-words">{status.error}</p>

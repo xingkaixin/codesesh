@@ -113,6 +113,17 @@ export function createApiClient(access: RemoteAccess) {
     });
   }
 
+  async function setSourceIgnored(nodeId: string, agent: string, ignored: boolean): Promise<void> {
+    await fetchJson(
+      `/api/nodes/${encodeURIComponent(nodeId)}/sources/${encodeURIComponent(agent)}/ignored`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ignored }),
+      },
+    );
+  }
+
   async function requestRescan(nodeIds: string[], agents: string[] = []): Promise<void> {
     await fetchJson("/api/nodes/rescan", {
       method: "POST",
@@ -157,6 +168,7 @@ export function createApiClient(access: RemoteAccess) {
     appendTimeWindow(params, window);
     params.set("limit", options?.project ? "1" : "100");
     if (options?.cursor) params.set("cursor", options.cursor);
+    if (options?.sourceNodeId) params.set("sourceNodeId", options.sourceNodeId);
     if (options?.project) {
       params.set("projectKind", options.project.kind);
       params.set("projectKey", options.project.key);
@@ -352,6 +364,7 @@ export function createApiClient(access: RemoteAccess) {
     createPairingToken,
     fetchPairingStatus,
     updateNode,
+    setSourceIgnored,
     requestRescan,
     fetchSourceSessions,
     fetchConfig,
