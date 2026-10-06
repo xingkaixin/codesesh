@@ -307,6 +307,13 @@ export const messages = {
   "Open navigation": ["打开导航", "ナビゲーションを開く"],
   "Expand sidebar": ["展开侧边栏", "サイドバーを展開"],
   "Collapse sidebar": ["收起侧边栏", "サイドバーを折りたたむ"],
+  Collapse: ["收起", "折りたたむ"],
+  PROJECTS: ["项目", "プロジェクト"],
+  "All {0} →": ["全部 {0} →", "すべて {0} →"],
+  "Most recent first · numbers are session counts": [
+    "按最近活动排序 · 数字为会话数",
+    "最近の活動順 · 数字はセッション数",
+  ],
   Breadcrumb: ["面包屑导航", "パンくずリスト"],
   "Skip to content": ["跳转到内容", "コンテンツへスキップ"],
   BOOKMARKS: ["书签", "ブックマーク"],
