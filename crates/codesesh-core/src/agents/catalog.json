@@ -6,7 +6,15 @@
     "iconColored": true,
     "sourceKind": "filesystem",
     "resumeCommandPrefix": "claude --resume",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "cursor",
@@ -14,7 +22,15 @@
     "icon": "/icon/agent/cursor.svg",
     "sourceKind": "sqlite",
     "resumeCommandPrefix": null,
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "partial",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": false,
+      "sessionTree": false
+    }
   },
   {
     "name": "kimi",
@@ -22,7 +38,15 @@
     "icon": "/icon/agent/kimi.svg",
     "sourceKind": "filesystem",
     "resumeCommandPrefix": "kimi -r",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "partial",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": false
+    }
   },
   {
     "name": "kimi-code",
@@ -30,7 +54,15 @@
     "icon": "/icon/agent/kimi.svg",
     "sourceKind": "filesystem",
     "resumeCommandPrefix": "kimi -r",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": false
+    }
   },
   {
     "name": "codex",
@@ -38,7 +70,15 @@
     "icon": "/icon/agent/codex.svg",
     "sourceKind": "filesystem",
     "resumeCommandPrefix": "codex resume",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "grok",
@@ -46,7 +86,15 @@
     "icon": "/icon/agent/grok.svg",
     "sourceKind": "filesystem",
     "resumeCommandPrefix": "grok --resume",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": true,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "pi",
@@ -54,7 +102,15 @@
     "icon": "/icon/agent/pi.svg",
     "sourceKind": "filesystem",
     "resumeCommandPrefix": "pi --session",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": true,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": false
+    }
   },
   {
     "name": "opencode",
@@ -62,7 +118,15 @@
     "icon": "/icon/agent/opencode.svg",
     "sourceKind": "sqlite",
     "resumeCommandPrefix": "opencode -s",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": true,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "zcode",
@@ -70,7 +134,15 @@
     "icon": "/icon/agent/zcode.svg",
     "sourceKind": "sqlite",
     "resumeCommandPrefix": null,
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "partial",
+      "recordedCost": true,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "minimax-code",
@@ -78,7 +150,15 @@
     "icon": "/icon/agent/minimax-code.svg",
     "sourceKind": "sqlite",
     "resumeCommandPrefix": "mcode --session",
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": true,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "dsh",
@@ -87,7 +167,15 @@
     "iconColored": true,
     "sourceKind": "filesystem",
     "resumeCommandPrefix": null,
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "deepchat",
@@ -96,7 +184,15 @@
     "iconColored": true,
     "sourceKind": "sqlite",
     "resumeCommandPrefix": null,
-    "toolStrategy": "custom"
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
   },
   {
     "name": "cherrystudio",
@@ -105,7 +201,15 @@
     "iconColored": true,
     "sourceKind": "sqlite",
     "resumeCommandPrefix": null,
-    "toolStrategy": "default"
+    "toolStrategy": "default",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": true,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": false
+    }
   },
   {
     "name": "antigravity-cli",
@@ -114,6 +218,14 @@
     "iconColored": true,
     "sourceKind": "sqlite",
     "resumeCommandPrefix": null,
-    "toolStrategy": "default"
+    "toolStrategy": "default",
+    "support": {
+      "tier": "partial",
+      "usage": "none",
+      "recordedCost": false,
+      "toolResults": false,
+      "reasoning": false,
+      "sessionTree": true
+    }
   }
 ]

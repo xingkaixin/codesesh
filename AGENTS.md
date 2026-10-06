@@ -89,6 +89,8 @@ release 不允许跳过资源。契约类型改变后重新生成 TypeScript 并
 2. 在 `crates/codesesh-core/src/discovery/paths.rs` 声明数据根目录及环境变量覆盖。
 3. 在 `crates/codesesh-core/src/agents/catalog.json` 声明公开元数据和展示能力，然后运行
    `pnpm generate:rust-contract`；浏览器端目录由生成结果导出，不维护第二份值。
+   `support` 按适配器实际解析结果声明分级与能力，并同步 README 中的能力矩阵。
+   `support` 按适配器实际解析结果声明分级与能力，并同步 README 中的能力矩阵。
 4. 在 `apps/web/public/icon/agent/` 与 `apps/www/public/icon/agent/` 添加 SVG。
 5. 自定义工具展示在 `apps/web/src/components/session-detail/tool-strategy/` 添加并注册。
 

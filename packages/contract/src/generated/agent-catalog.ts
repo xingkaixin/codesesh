@@ -8,6 +8,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: "claude --resume",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "cursor",
@@ -16,6 +24,14 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: null,
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "partial",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: false,
+      sessionTree: false,
+    },
   },
   {
     name: "kimi",
@@ -24,6 +40,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: "kimi -r",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "partial",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: false,
+    },
   },
   {
     name: "kimi-code",
@@ -32,6 +56,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: "kimi -r",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: false,
+    },
   },
   {
     name: "codex",
@@ -40,6 +72,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: "codex resume",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "grok",
@@ -48,6 +88,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: "grok --resume",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "pi",
@@ -56,6 +104,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: "pi --session",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: false,
+    },
   },
   {
     name: "opencode",
@@ -64,6 +120,14 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: "opencode -s",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "zcode",
@@ -72,6 +136,14 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: null,
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "partial",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "minimax-code",
@@ -80,6 +152,14 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: "mcode --session",
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "dsh",
@@ -89,6 +169,14 @@ export const AGENT_CATALOG = [
     sourceKind: "filesystem",
     resumeCommandPrefix: null,
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "deepchat",
@@ -98,6 +186,14 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: null,
     toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
   },
   {
     name: "cherrystudio",
@@ -107,6 +203,14 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: null,
     toolStrategy: "default",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: false,
+    },
   },
   {
     name: "antigravity-cli",
@@ -116,5 +220,13 @@ export const AGENT_CATALOG = [
     sourceKind: "sqlite",
     resumeCommandPrefix: null,
     toolStrategy: "default",
+    support: {
+      tier: "partial",
+      usage: "none",
+      recordedCost: false,
+      toolResults: false,
+      reasoning: false,
+      sessionTree: true,
+    },
   },
 ] as const;
