@@ -6,7 +6,7 @@ use crate::contract::{Message, MessagePart, ToolState};
 
 type Position = (usize, usize);
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct ToolEvents {
     pending: HashMap<String, Vec<Position>>,
     completed: HashSet<String>,

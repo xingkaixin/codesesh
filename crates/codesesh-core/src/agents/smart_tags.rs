@@ -82,14 +82,17 @@ pub fn classify(messages: &[Message]) -> Vec<String> {
             } = part
             {
                 let name = format!("{tool} {}", title.as_deref().unwrap_or(""));
-                let payload = format!("{name}\n{}", serde_json::to_string(state).unwrap());
                 tags[8] |= PLAN.is_match(&name);
                 reads += usize::from(READ.is_match(&name));
                 edits += usize::from(EDIT.is_match(&name));
-                tags[3] |= TESTING.is_match(&payload);
-                tags[5] |= GIT.is_match(&payload);
-                tags[6] |= BUILD.is_match(&payload);
-                tags[4] |= state.input.as_ref().is_some_and(doc_path);
+                // Tool states hold full outputs; skip serializing them once every payload tag is set.
+                if !(tags[3] && tags[5] && tags[6]) {
+                    let payload = format!("{name}\n{}", serde_json::to_string(state).unwrap());
+                    for (tag, rule) in [(3, &*TESTING), (5, &*GIT), (6, &*BUILD)] {
+                        tags[tag] = tags[tag] || rule.is_match(&payload);
+                    }
+                }
+                tags[4] = tags[4] || state.input.as_ref().is_some_and(doc_path);
             }
         }
     }

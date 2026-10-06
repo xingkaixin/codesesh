@@ -42,6 +42,7 @@ pub struct AgentScanner {
     >,
     rejected: Arc<AtomicBool>,
     cursor: agents::cursor::CursorSync,
+    codex: agents::codex::Checkpoints,
     opencode: Option<DatabaseSnapshot>,
     fingerprints: HashMap<String, String>,
     price_dependencies: Option<PriceDependencies>,
@@ -69,6 +70,7 @@ impl AgentScanner {
             baseline: HashMap::new(),
             rejected: Arc::new(AtomicBool::new(false)),
             cursor: Default::default(),
+            codex: Default::default(),
             opencode: None,
             fingerprints: HashMap::new(),
             price_dependencies: Some(HashMap::new()),
@@ -1012,6 +1014,7 @@ impl AgentScanner {
                 pricing,
                 paths.unwrap(),
                 &self.previous,
+                &mut self.codex,
             ),
             "claudecode" if paths.is_some() => {
                 agents::claudecode::scan_changed(root, pricing, paths.unwrap(), &self.previous)

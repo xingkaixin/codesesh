@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -76,6 +76,7 @@ pub fn scan_changed(
     pricing: &Pricing,
     paths: &[PathBuf],
     previous: &[crate::agents::SessionRecord],
+    checkpoints: &mut Checkpoints,
 ) -> Result<super::ScanDelta> {
     if paths.iter().any(|path| {
         path.file_name()
@@ -147,7 +148,7 @@ pub fn scan_changed(
     let mut changed = Vec::new();
     for file in &files {
         if rollout::physical_path(file)?.is_some()
-            && let Some(detail) = parse(file, &titles, pricing)?
+            && let Some(detail) = checkpoints.parse(file, &titles, pricing)?
         {
             affected.insert(detail.head.reference.session_id.clone());
             if let Some(parent) = &detail.head.parent_reference {
@@ -168,7 +169,7 @@ pub fn scan_changed(
         affected.contains(&session.head.reference.session_id) && !files.contains(&session.source)
     }) {
         if rollout::physical_path(&session.source)?.is_some() {
-            if let Some(detail) = parse(&session.source, &titles, pricing)? {
+            if let Some(detail) = checkpoints.parse(&session.source, &titles, pricing)? {
                 changed.push(ParsedSession {
                     source: session.source.clone(),
                     head: detail.head.clone(),
@@ -515,54 +516,220 @@ pub fn parse(
     let Some(line) = lines.next_line()? else {
         return Ok(None);
     };
-    let first_line = line.to_owned();
-    let Ok(first) = serde_json::from_str::<Value>(&first_line) else {
+    let Some(mut parser) = Parser::new(path, &physical, line)? else {
         return Ok(None);
     };
-    let logical = rollout::logical_path(path);
-    let filename = logical.file_stem().unwrap_or_default().to_string_lossy();
-    let pieces = filename.split('-').collect::<Vec<_>>();
-    let id = pieces[pieces.len().saturating_sub(5)..].join("-");
-    let directory = first["payload"]["cwd"].as_str().unwrap_or("").to_owned();
-    let created = timestamp(&first).max(timestamp(&first["payload"]));
-    let created = if created > 0.0 {
-        created
-    } else {
-        crate::time::file_mtime_ms(&physical)?
-    };
-    let mut updated = created;
-    let mut messages = Vec::<Message>::new();
-    let mut model = None;
-    let mut usage = Usage::default();
-    let mut head_usage = Usage::default();
-    let mut head_model = None;
-    let mut message_count = 0;
-    let mut message_title = None;
-    let mut current: Option<usize> = None;
-    let mut pending_plan = None;
-    let mut latest_text = None;
-    let mut tools = HashMap::<String, (usize, usize)>::new();
-    let mut tool_events = super::codex_tool_events::ToolEvents::default();
-    let mut has_record = false;
-    let mut next_index = 0;
-    loop {
-        let line = if next_index == 0 {
-            first_line.as_str()
-        } else if let Some(line) = lines.next_line()? {
-            line
-        } else {
-            break;
+    parser.feed(line, pricing);
+    while let Some(line) = lines.next_line()? {
+        parser.feed(line, pricing);
+    }
+    Ok(parser.finish(titles))
+}
+
+#[cfg(not(test))]
+const CHECKPOINT_MIN_BYTES: u64 = 8 * 1024 * 1024;
+#[cfg(test)]
+const CHECKPOINT_MIN_BYTES: u64 = 1;
+const CHECKPOINT_LIMIT: usize = 2;
+const CHECKPOINT_TAIL_BYTES: usize = 64;
+
+/// Parser state for the few large rollouts that changed most recently.
+#[derive(Default)]
+pub struct Checkpoints(Vec<(PathBuf, Checkpoint)>);
+
+struct Checkpoint {
+    physical: PathBuf,
+    offset: u64,
+    tail: Vec<u8>,
+    generation: u64,
+    parser: Parser,
+}
+
+impl Checkpoints {
+    pub fn parse(
+        &mut self,
+        path: &Path,
+        titles: &HashMap<String, String>,
+        pricing: &Pricing,
+    ) -> Result<Option<SessionDetail>> {
+        let logical = rollout::logical_path(path);
+        let previous = self
+            .0
+            .iter()
+            .position(|(key, _)| *key == logical)
+            .map(|index| self.0.remove(index).1);
+        let Some(physical) = rollout::physical_path(path)?
+            .filter(|physical| physical.extension().is_some_and(|ext| ext == "jsonl"))
+        else {
+            return parse(path, titles, pricing);
         };
-        let line_index = next_index;
-        next_index += 1;
+        let Ok(mut file) = File::open(&physical) else {
+            return parse(path, titles, pricing);
+        };
+        let len = file.metadata()?.len();
+        if len < CHECKPOINT_MIN_BYTES {
+            return parse(path, titles, pricing);
+        }
+        let mut resumed = None;
+        if let Some(checkpoint) = previous
+            && checkpoint.physical == physical
+            && checkpoint.generation == pricing.generation()
+            && checkpoint.offset <= len
+        {
+            let mut tail = vec![0; checkpoint.tail.len()];
+            file.seek(SeekFrom::Start(checkpoint.offset - tail.len() as u64))?;
+            file.read_exact(&mut tail)?;
+            if tail == checkpoint.tail {
+                resumed = Some(checkpoint);
+            }
+        }
+        let (mut parser, mut offset, mut tail) = match resumed {
+            Some(checkpoint) => (Some(checkpoint.parser), checkpoint.offset, checkpoint.tail),
+            None => (None, 0, Vec::new()),
+        };
+        file.seek(SeekFrom::Start(offset))?;
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let mut line = String::new();
+        let mut partial = None;
+        loop {
+            line.clear();
+            let read = reader.read_line(&mut line)?;
+            if read == 0 {
+                break;
+            }
+            // Codex may still be writing the last line; resume before it.
+            if !line.ends_with('\n') {
+                partial = Some(std::mem::take(&mut line));
+                break;
+            }
+            let state = match &mut parser {
+                Some(state) => state,
+                None => match Parser::new(path, &physical, &line)? {
+                    Some(state) => parser.insert(state),
+                    None => return Ok(None),
+                },
+            };
+            state.feed(&line, pricing);
+            offset += read as u64;
+            tail = line.as_bytes()[line.len().saturating_sub(CHECKPOINT_TAIL_BYTES)..].to_vec();
+        }
+        let Some(parser) = parser else {
+            return parse(path, titles, pricing);
+        };
+        let mut current = parser.clone();
+        if let Some(line) = &partial {
+            current.feed(line, pricing);
+        }
+        self.0.push((
+            logical,
+            Checkpoint {
+                physical,
+                offset,
+                tail,
+                generation: pricing.generation(),
+                parser,
+            },
+        ));
+        if self.0.len() > CHECKPOINT_LIMIT {
+            self.0.remove(0);
+        }
+        Ok(current.finish(titles))
+    }
+}
+
+#[derive(Clone)]
+struct Parser {
+    id: String,
+    directory: String,
+    created: f64,
+    parent: Option<String>,
+    updated: f64,
+    messages: Vec<Message>,
+    model: Option<String>,
+    usage: Usage,
+    head_usage: Usage,
+    head_model: Option<String>,
+    message_count: usize,
+    message_title: Option<String>,
+    current: Option<usize>,
+    pending_plan: Option<MessagePart>,
+    latest_text: Option<usize>,
+    tools: HashMap<String, (usize, usize)>,
+    tool_events: super::codex_tool_events::ToolEvents,
+    has_record: bool,
+    next_index: usize,
+}
+
+impl Parser {
+    fn new(path: &Path, physical: &Path, first_line: &str) -> Result<Option<Self>> {
+        let Ok(first) = serde_json::from_str::<Value>(first_line) else {
+            return Ok(None);
+        };
+        let logical = rollout::logical_path(path);
+        let filename = logical.file_stem().unwrap_or_default().to_string_lossy();
+        let pieces = filename.split('-').collect::<Vec<_>>();
+        let id = pieces[pieces.len().saturating_sub(5)..].join("-");
+        let created = timestamp(&first).max(timestamp(&first["payload"]));
+        let created = if created > 0.0 {
+            created
+        } else {
+            crate::time::file_mtime_ms(physical)?
+        };
+        Ok(Some(Self {
+            id,
+            directory: first["payload"]["cwd"].as_str().unwrap_or("").to_owned(),
+            created,
+            parent: (first["payload"]["thread_source"] == "subagent")
+                .then(|| first["payload"]["parent_thread_id"].as_str())
+                .flatten()
+                .map(str::to_owned),
+            updated: created,
+            messages: Vec::new(),
+            model: None,
+            usage: Usage::default(),
+            head_usage: Usage::default(),
+            head_model: None,
+            message_count: 0,
+            message_title: None,
+            current: None,
+            pending_plan: None,
+            latest_text: None,
+            tools: HashMap::new(),
+            tool_events: Default::default(),
+            has_record: false,
+            next_index: 0,
+        }))
+    }
+
+    fn feed(&mut self, line: &str, pricing: &Pricing) {
+        let Self {
+            updated,
+            messages,
+            model,
+            usage,
+            head_usage,
+            head_model,
+            message_count,
+            message_title,
+            current,
+            pending_plan,
+            latest_text,
+            tools,
+            tool_events,
+            has_record,
+            next_index,
+            ..
+        } = self;
+        let line_index = *next_index;
+        *next_index += 1;
         let Ok(record) = projected_record(line) else {
-            continue;
+            return;
         };
         let payload = &record["payload"];
         if internal(&record["type"]) || internal(&payload["type"]) {
-            continue;
+            return;
         }
-        has_record = true;
+        *has_record = true;
         let time = timestamp(&record).max(timestamp(payload));
         let kind = record["type"].as_str().unwrap_or("");
         let activity = match kind {
@@ -592,44 +759,44 @@ pub fn parse(
             _ => false,
         };
         if activity {
-            updated = updated.max(time);
+            *updated = updated.max(time);
         }
         if matches!(kind, "session_meta" | "turn_context") {
             if let Some(name) = payload["model"].as_str().filter(|s| !s.trim().is_empty()) {
-                model = Some(name.trim().to_owned());
-                head_model = model.clone();
+                *model = Some(name.trim().to_owned());
+                *head_model = model.clone();
             }
-            continue;
+            return;
         }
         if kind == "event_msg" && payload["type"] == "token_count" {
-            usage.consume(payload, model.as_deref(), pricing, &mut messages);
+            usage.consume(payload, model.as_deref(), pricing, messages);
             head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
-            continue;
+            return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
             let item = &payload["item"];
             if item["type"] == "McpToolCall"
-                && let Some(part) = tool_events.complete(item, &mut messages, time)
+                && let Some(part) = tool_events.complete(item, messages, time)
             {
-                current = Some(assistant_part(
-                    &mut messages,
-                    current,
-                    latest_text,
+                *current = Some(assistant_part(
+                    messages,
+                    *current,
+                    *latest_text,
                     part,
                     time,
                     model.clone(),
                 ));
             }
-            continue;
+            return;
         }
         if kind != "response_item" {
-            continue;
+            return;
         }
         if matches!(
             payload["type"].as_str(),
             Some("message" | "function_call" | "function_call_output")
         ) {
-            message_count += 1;
+            *message_count += 1;
         }
         if let Some(name) = payload["info"]
             .get("model")
@@ -637,22 +804,18 @@ pub fn parse(
             .as_str()
             .filter(|name| !name.trim().is_empty())
         {
-            head_model = Some(name.trim().into());
+            *head_model = Some(name.trim().into());
         }
         match payload["type"].as_str().unwrap_or("") {
             "message" => {
                 let role = payload["role"].as_str().unwrap_or("");
                 if !matches!(role, "user" | "assistant") {
-                    continue;
+                    return;
                 }
                 let full_text = content(payload, role == "assistant");
                 let full_text = if role == "user" {
-                    super::codex_tool_events::record_question_reply(
-                        &full_text,
-                        &mut messages,
-                        &tools,
-                    )
-                    .unwrap_or(full_text)
+                    super::codex_tool_events::record_question_reply(&full_text, messages, tools)
+                        .unwrap_or(full_text)
                 } else {
                     full_text
                 };
@@ -661,7 +824,7 @@ pub fn parse(
                 });
                 let text = if role == "assistant" {
                     if let Some(captures) = PLAN.captures(&full_text) {
-                        pending_plan = Some(MessagePart::Plan {
+                        *pending_plan = Some(MessagePart::Plan {
                             text: captures[1].trim().into(),
                             approval_status: "success".into(),
                             time_created: Some(time),
@@ -672,11 +835,11 @@ pub fn parse(
                     clean(&full_text)
                 };
                 if text.trim().is_empty() || (role == "user" && developer_message(&text)) {
-                    continue;
+                    return;
                 }
                 if role == "user"
                     && text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN")
-                    && let (Some(index), Some(plan)) = (current, pending_plan.take())
+                    && let (Some(index), Some(plan)) = (*current, pending_plan.take())
                 {
                     messages[index].parts.push(plan);
                 }
@@ -718,13 +881,13 @@ pub fn parse(
                         notification_message.nickname =
                             (!nickname.is_empty()).then(|| nickname.to_owned());
                         messages.push(notification_message);
-                        current = None;
-                        latest_text = None;
-                        continue;
+                        *current = None;
+                        *latest_text = None;
+                        return;
                     }
                 }
                 if role == "user" && line_index < 20 && message_title.is_none() {
-                    message_title = title(&text);
+                    *message_title = title(&text);
                 }
                 let part = MessagePart::Text {
                     text,
@@ -732,23 +895,17 @@ pub fn parse(
                 };
                 if role == "user" {
                     messages.push(message(Role::User, part, time, None));
-                    current = None;
-                    latest_text = None;
+                    *current = None;
+                    *latest_text = None;
                 } else {
-                    let target = assistant_part(
-                        &mut messages,
-                        current,
-                        latest_text,
-                        part,
-                        time,
-                        model.clone(),
-                    );
-                    current = Some(target);
-                    latest_text = Some(target);
+                    let target =
+                        assistant_part(messages, *current, *latest_text, part, time, model.clone());
+                    *current = Some(target);
+                    *latest_text = Some(target);
                 }
             }
             "reasoning" => {
-                pending_plan = None;
+                *pending_plan = None;
                 let text = payload["summary"]
                     .as_array()
                     .into_iter()
@@ -760,10 +917,10 @@ pub fn parse(
                     .join("\n");
                 let text = clean(&text);
                 if !text.trim().is_empty() {
-                    current = Some(assistant_part(
-                        &mut messages,
-                        current,
-                        latest_text,
+                    *current = Some(assistant_part(
+                        messages,
+                        *current,
+                        *latest_text,
                         MessagePart::Reasoning {
                             text,
                             time_created: Some(time),
@@ -771,14 +928,14 @@ pub fn parse(
                         time,
                         model.clone(),
                     ));
-                    latest_text = None;
+                    *latest_text = None;
                 }
             }
             "function_call" | "custom_tool_call" => {
-                pending_plan = None;
+                *pending_plan = None;
                 let name = payload["name"].as_str().unwrap_or("").trim();
                 if name.is_empty() {
-                    continue;
+                    return;
                 }
                 let call_id = payload["call_id"].as_str().unwrap_or("").trim().to_owned();
                 let input = if payload["type"] == "custom_tool_call" {
@@ -851,7 +1008,7 @@ pub fn parse(
                         }),
                         time_created: Some(time),
                     };
-                    let index = if let Some(target) = latest_text.or(current) {
+                    let index = if let Some(target) = latest_text.or(*current) {
                         messages[target].parts.push(part);
                         target
                     } else {
@@ -865,7 +1022,7 @@ pub fn parse(
                     let position = (index, messages[index].parts.len() - 1);
                     tool_events.register(&namespace, &name, position);
                     tools.insert(call_id, position);
-                    current = Some(index);
+                    *current = Some(index);
                 }
             }
             "function_call_output" | "custom_tool_call_output" => {
@@ -881,7 +1038,7 @@ pub fn parse(
                         state.output = Some(output);
                         state.status = status.into();
                     }
-                    continue;
+                    return;
                 }
                 let output = match &payload["output"] {
                     Value::String(s) => s.clone(),
@@ -910,64 +1067,79 @@ pub fn parse(
             _ => {}
         }
     }
-    if let (Some(index), Some(plan)) = (current, pending_plan) {
-        messages[index].parts.push(plan);
-    }
-    if !has_record {
-        return Ok(None);
-    }
-    for (index, message) in messages.iter_mut().enumerate() {
-        message.id = format!("{id}:{index}");
-    }
-    let (project_identity, signature) = path_identity(&directory);
-    let fallback = Path::new(&directory)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned());
-    let title = titles
-        .get(&id)
-        .and_then(|text| title(text))
-        .or(message_title)
-        .or_else(|| fallback.and_then(|text| title(&text)))
-        .unwrap_or_else(|| "Untitled Session".into());
-    let head = SessionHead {
-        version: None,
-        summary_files: None,
-        reference: SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
-            agent_name: "codex".into(),
-            session_id: id,
-        },
-        title,
-        directory,
-        display_title: None,
-        parent_reference: (first["payload"]["thread_source"] == "subagent")
-            .then(|| first["payload"]["parent_thread_id"].as_str())
-            .flatten()
-            .map(|id| SessionReference {
+
+    fn finish(self, titles: &HashMap<String, String>) -> Option<SessionDetail> {
+        let Self {
+            id,
+            directory,
+            created,
+            parent,
+            updated,
+            mut messages,
+            head_usage,
+            message_count,
+            message_title,
+            current,
+            pending_plan,
+            has_record,
+            ..
+        } = self;
+        if let (Some(index), Some(plan)) = (current, pending_plan) {
+            messages[index].parts.push(plan);
+        }
+        if !has_record {
+            return None;
+        }
+        for (index, message) in messages.iter_mut().enumerate() {
+            message.id = format!("{id}:{index}");
+        }
+        let (project_identity, signature) = path_identity(&directory);
+        let fallback = Path::new(&directory)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let title = titles
+            .get(&id)
+            .and_then(|text| title(text))
+            .or(message_title)
+            .or_else(|| fallback.and_then(|text| title(&text)))
+            .unwrap_or_else(|| "Untitled Session".into());
+        let head = SessionHead {
+            version: None,
+            summary_files: None,
+            reference: SessionReference {
                 source_node_id: crate::contract::local_source_node_id(),
                 agent_name: "codex".into(),
-                session_id: id.into(),
+                session_id: id,
+            },
+            title,
+            directory,
+            display_title: None,
+            parent_reference: parent.map(|id| SessionReference {
+                source_node_id: crate::contract::local_source_node_id(),
+                agent_name: "codex".into(),
+                session_id: id,
             }),
-        project_identity,
-        project_identity_resolver_revision: Some("project-identity-v2".into()),
-        project_identity_input_signature: Some(signature),
-        time_created: created,
-        time_updated: updated,
-        stats: head_usage.stats(message_count),
-        model_usage: head_usage.models(),
-        smart_tags: super::smart_tags::classify(&messages),
-        smart_tags_source_updated_at: Some(updated),
-        smart_tags_classifier_revision: Some("smart-tags-v1".into()),
-    };
-    let file_activity = super::file_activity::summarize(&head, &messages);
-    Ok(Some(SessionDetail {
-        head,
-        messages,
-        detail_freshness: "fresh".into(),
-        message_cursor: None,
-        message_update: None,
-        file_activity,
-    }))
+            project_identity,
+            project_identity_resolver_revision: Some("project-identity-v2".into()),
+            project_identity_input_signature: Some(signature),
+            time_created: created,
+            time_updated: updated,
+            stats: head_usage.stats(message_count),
+            model_usage: head_usage.models(),
+            smart_tags: super::smart_tags::classify(&messages),
+            smart_tags_source_updated_at: Some(updated),
+            smart_tags_classifier_revision: Some("smart-tags-v1".into()),
+        };
+        let file_activity = super::file_activity::summarize(&head, &messages);
+        Some(SessionDetail {
+            head,
+            messages,
+            detail_freshness: "fresh".into(),
+            message_cursor: None,
+            message_update: None,
+            file_activity,
+        })
+    }
 }
 
 fn message(role: Role, part: MessagePart, time: f64, model: Option<String>) -> Message {
@@ -1068,6 +1240,42 @@ mod incremental_tests {
     use std::io::Write;
 
     #[test]
+    fn checkpoints_resume_appends_and_match_full_parses() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000009.jsonl");
+        let pricing = Pricing::bundled();
+        let records = [
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/work","model":"gpt-5"}}),
+            serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Run the tests"}]}}),
+            serde_json::json!({"type":"response_item","timestamp":3000,"payload":{"type":"function_call","name":"exec_command","call_id":"call-1","arguments":"{\"cmd\":\"cargo test\"}"}}),
+            serde_json::json!({"type":"event_msg","timestamp":3500,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}),
+            serde_json::json!({"type":"response_item","timestamp":4000,"payload":{"type":"function_call_output","call_id":"call-1","output":"ok"}}),
+            serde_json::json!({"type":"response_item","timestamp":5000,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Tests pass"}]}}),
+        ];
+        let mut checkpoints = Checkpoints::default();
+        let mut file = File::create(&path).unwrap();
+        for record in &records {
+            let line = format!("{record}\n");
+            let (head, rest) = line.split_at(line.len() / 2);
+            for chunk in [head, rest] {
+                file.write_all(chunk.as_bytes()).unwrap();
+                file.flush().unwrap();
+                assert_eq!(
+                    checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
+                    parse(&path, &HashMap::new(), &pricing).unwrap()
+                );
+            }
+        }
+        std::fs::write(&path, format!("{}\n{}\n", records[0], records[5])).unwrap();
+        assert_eq!(
+            checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
+            parse(&path, &HashMap::new(), &pricing).unwrap()
+        );
+    }
+
+    #[test]
     fn reopening_a_session_does_not_advance_activity_time() {
         let root = tempfile::tempdir().unwrap();
         let sessions = root.path().join("sessions");
@@ -1102,6 +1310,7 @@ mod incremental_tests {
             &pricing,
             std::slice::from_ref(&path),
             &previous,
+            &mut Default::default(),
         )
         .unwrap();
         for result in [&full, &changed.upserts] {
@@ -1110,7 +1319,14 @@ mod incremental_tests {
             assert_eq!(result[0].detail.messages, initial[0].detail.messages);
         }
         writeln!(file, "{}", serde_json::json!({"type":"response_item","timestamp":7000,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}})).unwrap();
-        let continued = scan_changed(root.path(), &pricing, &[path], &previous).unwrap();
+        let continued = scan_changed(
+            root.path(),
+            &pricing,
+            &[path],
+            &previous,
+            &mut Default::default(),
+        )
+        .unwrap();
         assert_eq!(continued.upserts[0].head.time_updated, 7000.0);
         assert_eq!(continued.upserts[0].detail.messages.len(), 2);
     }
@@ -1171,7 +1387,14 @@ mod incremental_tests {
             std::fs::remove_file(&session.source).unwrap();
         }
         let compressed = scan(root.path(), &pricing).unwrap();
-        let incremental = scan_changed(root.path(), &pricing, &[parent_path], &previous).unwrap();
+        let incremental = scan_changed(
+            root.path(),
+            &pricing,
+            &[parent_path],
+            &previous,
+            &mut Default::default(),
+        )
+        .unwrap();
         for result in [&full, &compressed, &incremental.upserts] {
             let messages = &result
                 .iter()
@@ -1221,7 +1444,8 @@ mod incremental_tests {
                 &previous
                     .iter()
                     .map(crate::agents::SessionRecord::from)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
+                &mut Default::default()
             )
             .is_err()
         );
@@ -1233,7 +1457,8 @@ mod incremental_tests {
                 &previous
                     .iter()
                     .map(crate::agents::SessionRecord::from)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
+                &mut Default::default()
             )
             .is_err()
         );
@@ -1246,6 +1471,7 @@ mod incremental_tests {
                 .iter()
                 .map(crate::agents::SessionRecord::from)
                 .collect::<Vec<_>>(),
+            &mut Default::default(),
         )
         .unwrap();
         assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
