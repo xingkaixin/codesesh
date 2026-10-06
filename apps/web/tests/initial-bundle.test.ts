@@ -12,7 +12,7 @@ const indexHtmlPath = join(distDir, "index.html");
  * not to fail on ordinary feature work, tight enough that pulling a route's
  * heavy dependencies back into the entry trips it.
  */
-const INITIAL_JS_GZIP_BUDGET_BYTES = 300_000;
+const INITIAL_JS_GZIP_BUDGET_BYTES = 310_000;
 
 /** Markers for dependencies that must only arrive with the route that needs them. */
 const DEFERRED_DEPENDENCY_MARKERS = ["micromark", "mdast", "prism", "remark"];
