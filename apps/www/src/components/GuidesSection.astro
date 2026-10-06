@@ -22,6 +22,10 @@ const featured = guides.filter((guide) =>
   aria-labelledby="guides-heading"
   data-reveal
 >
+  <p class="landing-kicker">
+    <b>06</b>
+    {t.label}
+  </p>
   <h2 id="guides-heading" class="console-display">
     {t.intro}
   </h2>
@@ -49,8 +53,8 @@ const featured = guides.filter((guide) =>
     margin: 0 0 1.5rem;
     font-size: clamp(1.7rem, 2.2vw, 2.2rem);
     line-height: 1.2;
-    font-weight: 500;
-    letter-spacing: -0.04em;
+    font-weight: 600;
+    letter-spacing: -0.03em;
   }
   ul {
     list-style: none;
@@ -70,7 +74,13 @@ const featured = guides.filter((guide) =>
     font-size: 0.95rem;
     line-height: 1.6;
   }
+  li a {
+    transition:
+      padding var(--dur-base) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
   li a:hover {
+    padding-left: 0.5rem;
     color: var(--brand-text);
   }
   li a :global(svg) {

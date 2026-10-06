@@ -72,6 +72,14 @@
     --brand-line: #aabda8;
     --brand-fg: #f4f7f2;
     --success-text: #27633f;
+    --signal: #a9521c;
+    --signal-soft: #f3decd;
+    --band: #152019;
+    --band-surface: #1d2922;
+    --band-line: #2f3d34;
+    --band-text: #e9efe7;
+    --band-muted: #a9b8ad;
+    --band-accent: #9fc6a6;
     --elevation-raised: 0 1px 2px rgba(35, 54, 40, 0.05), 0 12px 28px -16px rgba(35, 54, 40, 0.2);
     --elevation-overlay:
       0 4px 12px rgba(35, 54, 40, 0.08), 0 24px 48px -24px rgba(35, 54, 40, 0.28);
@@ -90,8 +98,8 @@
     --console-border: #293229;
     --console-border-strong: #3b493d;
     --console-text: #edf1ec;
-    --console-text-secondary: #b9c3bb;
-    --console-muted: #8c9a90;
+    --console-text-secondary: #c4cec6;
+    --console-muted: #a0ada3;
     --console-accent: #edf1ec;
     --console-accent-strong: #f5f8f3;
     --console-accent-fg: #111511;
@@ -102,6 +110,14 @@
     --brand-line: #415944;
     --brand-fg: #10140f;
     --success-text: #82c79a;
+    --signal: #ee9d5e;
+    --signal-soft: #2e1f14;
+    --band: #181d18;
+    --band-surface: #1f261f;
+    --band-line: #313c32;
+    --band-text: #edf1ec;
+    --band-muted: #a9b8ad;
+    --band-accent: #9fc6a6;
     --elevation-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
     --elevation-overlay: 0 4px 16px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.8);
     --scrim: rgba(0, 0, 0, 0.55);
@@ -288,6 +304,15 @@
     animation: hero-enter 480ms 80ms var(--ease-out) both;
   }
 
+  .agent-mark {
+    display: inline-block;
+    flex: none;
+    background: currentColor;
+    mask-size: contain;
+    mask-position: center;
+    mask-repeat: no-repeat;
+  }
+
   .copy-icon-stack > span {
     grid-area: 1 / 1;
     opacity: 0;
@@ -312,34 +337,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes section-enter {
-  from {
-    opacity: 0;
-    transform: translateY(1.5rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  @supports (animation-timeline: view()) {
-    .showcase-copy,
-    .showcase-preview,
-    .features__header,
-    .feature-card,
-    #agents > div,
-    #updates > div,
-    #faq > div {
-      animation: section-enter linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 34%;
-    }
   }
 }
 
@@ -386,6 +383,27 @@
     letter-spacing: -0.055em;
     line-height: 1.1;
     text-wrap: balance;
+  }
+  .landing-kicker {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1.25rem;
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+  }
+  .landing-kicker b {
+    color: var(--brand-text);
+    font-weight: 500;
+  }
+  .landing-kicker::after {
+    content: "";
+    width: 3rem;
+    height: 1px;
+    background: var(--console-border-strong);
   }
   .section-body {
     max-width: 38rem;

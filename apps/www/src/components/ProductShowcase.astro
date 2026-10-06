@@ -1,8 +1,8 @@
 ---
 import { experience } from "../data/experience";
 import { copy, type Locale } from "../data/landing";
+import { sections } from "../data/sections";
 import Icon from "./Icon.astro";
-import ProductDemo from "./ProductDemo.astro";
 
 interface Props {
   locale: Locale;
@@ -10,263 +10,1017 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = experience[locale];
-const scenes = ["overview", "projects", "replay"] as const;
+const tour = copy[locale].tour;
+const scenes = copy[locale].scenes;
+const s = sections[locale].tour;
+const sceneIds = ["overview", "projects", "replay"] as const;
+
+const ranges = {
+  "7d": {
+    sessions: "128",
+    messages: "9,412",
+    tokens: "18.6M",
+    cost: "$42.17",
+    bars: [34, 52, 41, 68, 59, 86, 72, 45, 63, 91, 77, 58],
+    agents: [58, 27, 15],
+  },
+  "30d": {
+    sessions: "512",
+    messages: "38,904",
+    tokens: "71.2M",
+    cost: "$168.40",
+    bars: [62, 48, 74, 81, 55, 69, 92, 66, 58, 84, 71, 79],
+    agents: [51, 33, 16],
+  },
+  all: {
+    sessions: "2,184",
+    messages: "166,310",
+    tokens: "302M",
+    cost: "$701.95",
+    bars: [22, 31, 38, 35, 47, 52, 49, 61, 70, 78, 88, 95],
+    agents: [47, 31, 22],
+  },
+};
+const rangeIds = ["7d", "30d", "all"] as const;
+const initial = ranges["7d"];
+const stats = ["sessions", "messages", "tokens", "cost"] as const;
+const statLabels = {
+  en: {
+    sessions: "Sessions",
+    messages: "Messages",
+    tokens: "Tokens",
+    cost: "Cost",
+  },
+  zh: { sessions: "会话", messages: "消息", tokens: "Token", cost: "成本" },
+  ja: {
+    sessions: "セッション",
+    messages: "メッセージ",
+    tokens: "トークン",
+    cost: "コスト",
+  },
+}[locale];
+const agentNames = ["Claude Code", "Codex", "Cursor"];
+
+const tree = [
+  { kind: "project", name: "api-gateway", meta: `42 ${s.sessionsUnit}` },
+  {
+    kind: "parent",
+    name: "Fix refresh token race",
+    agent: "Claude Code",
+    meta: "1.2M",
+  },
+  {
+    kind: "sub",
+    name: "Explore auth middleware",
+    agent: "Claude Code",
+    meta: "310K",
+  },
+  {
+    kind: "session",
+    name: "Add rate-limit headers",
+    agent: "Codex",
+    meta: "640K",
+  },
+  { kind: "project", name: "web-console", meta: `31 ${s.sessionsUnit}` },
+  {
+    kind: "session",
+    name: "Virtualize session timeline",
+    agent: "Cursor",
+    meta: "880K",
+  },
+  {
+    kind: "session",
+    name: "Theme tokens for dark mode",
+    agent: "OpenCode",
+    meta: "210K",
+  },
+  { kind: "project", name: "docs-site", meta: `12 ${s.sessionsUnit}` },
+];
+
+const steps = [
+  { kind: "user", badge: s.userBadge, text: s.prompt, meta: "10:02" },
+  { kind: "agent", badge: "Agent", text: s.firstReply, meta: "10:02" },
+  {
+    kind: "tool",
+    badge: "Read",
+    text: "src/auth/refresh.ts",
+    meta: "182 lines",
+  },
+  {
+    kind: "tool",
+    badge: "Grep",
+    text: "refreshToken( in src/",
+    meta: "6 matches",
+  },
+  {
+    kind: "tool",
+    badge: "Edit",
+    text: "src/auth/refresh.ts  +18 −6",
+    meta: "10:07",
+  },
+  {
+    kind: "tool",
+    badge: "Bash",
+    text: "pnpm test auth  ✓ 24 passed",
+    meta: "10:08",
+  },
+  { kind: "agent", badge: "Agent", text: s.finalReply, meta: "10:09" },
+];
+const filters = [
+  { kind: "user", label: tour.userMessages },
+  { kind: "agent", label: tour.agentResponses },
+  { kind: "tool", label: tour.toolCalls },
+];
 ---
 
 <section
   id="tour"
-  class="product-showcase section-space"
+  class="tour section-space"
   aria-labelledby="tour-heading"
-  data-showcase
+  data-tour
 >
   <div class="section-shell">
-    <header class="showcase-heading" data-reveal>
+    <header class="tour__heading" data-reveal>
+      <p class="landing-kicker">
+        <b>01</b>
+        {copy[locale].header.tour}
+      </p>
       <h2 id="tour-heading" class="section-heading">
         {t.tourTitle}
       </h2>
       <p class="section-body">{t.tourBody}</p>
     </header>
+
     <div
-      class="showcase-tabs"
+      class="tour__tabs"
       role="tablist"
       aria-label={copy[locale].header.tour}
     >
-      {scenes.map((scene, index) => (
+      {sceneIds.map((scene, index) => (
         <button
           type="button"
           role="tab"
-          id={`tab-${scene}`}
-          aria-controls={`tour-${scene}`}
-          aria-selected={index === 0}
+          id={`tour-tab-${scene}`}
+          aria-controls={`tour-panel-${scene}`}
+          aria-selected={index === 0 ? "true" : "false"}
           tabindex={index === 0 ? 0 : -1}
+          data-tour-tab={scene}
         >
-          <Icon
-            name={
-              index === 0
-                ? "bar-chart-3"
-                : index === 1
-                  ? "list-tree"
-                  : "terminal"
-            }
-          />
+          <span class="console-mono" aria-hidden="true">
+            0{index + 1}
+          </span>
           {t.tabs[index]}
         </button>
       ))}
-      <span class="showcase-sample">{copy[locale].tour.sampleLabel}</span>
     </div>
-    <div class="showcase-stage">
-      {scenes.map((scene, index) => (
-        <div
-          role="tabpanel"
-          tabindex="0"
-          id={`tour-${scene}`}
-          aria-labelledby={`tab-${scene}`}
-          hidden={index !== 0}
-          class="showcase-panel"
-        >
-          <ProductDemo
-            id={`tour-demo-${locale}-${scene}`}
-            locale={locale}
-            scene={scene}
-          />
-          <div class="showcase-description">
-            <h3>{copy[locale].scenes[index]!.title}</h3>
-            <p>{copy[locale].scenes[index]!.description}</p>
-          </div>
-          <p class="showcase-hint">
-            <Icon name="arrow-right" />
-            {copy[locale].scenes[index]!.hint}
+
+    {sceneIds.map((scene, index) => (
+      <div
+        class="tour__scene"
+        role="tabpanel"
+        id={`tour-panel-${scene}`}
+        aria-labelledby={`tour-tab-${scene}`}
+        hidden={index !== 0}
+        data-tour-panel={scene}
+      >
+        <div class="tour__copy">
+          <h3 class="console-display">{scenes[index]!.title}</h3>
+          <p>{scenes[index]!.description}</p>
+          <p class="tour__hint">
+            <Icon name="eye" />
+            {scenes[index]!.hint}
           </p>
         </div>
-      ))}
-    </div>
+
+        <div class="tour__window" aria-label={tour[scene]}>
+          <div class="tour__bar" aria-hidden="true">
+            <i></i>
+            <i></i>
+            <i></i>
+            <span class="console-mono">codesesh · {t.tabs[index]}</span>
+            <span class="tour__tag console-mono">{tour.sampleLabel}</span>
+          </div>
+
+          {scene === "overview" && (
+            <div
+              class="tour__body overview"
+              data-overview
+              data-ranges={JSON.stringify(ranges)}
+            >
+              <div class="overview__top">
+                <span class="console-mono tour__muted">{s.activity}</span>
+                <div class="tour__seg" role="group" aria-label={tour.range}>
+                  {rangeIds.map((id, i) => (
+                    <button
+                      type="button"
+                      aria-pressed={i === 0 ? "true" : "false"}
+                      data-range={id}
+                    >
+                      {s.ranges[i]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div class="overview__stats">
+                {stats.map((key) => (
+                  <div class="tour__stat">
+                    <span>{statLabels[key]}</span>
+                    <strong class="console-display" data-stat={key}>
+                      {initial[key]}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <div class="overview__charts">
+                <div class="tour__stat overview__bars" aria-hidden="true">
+                  {initial.bars.map((height, i) => (
+                    <span
+                      data-bar
+                      class:list={[i % 3 === 1 && "is-alt"]}
+                      style={`height:${height}%;animation-delay:${i * 45}ms`}
+                    ></span>
+                  ))}
+                </div>
+                <div class="tour__stat overview__agents">
+                  {agentNames.map((name, i) => (
+                    <div>
+                      <p>
+                        <span>{name}</span>
+                        <span class="console-mono" data-agent-share={i}>
+                          {initial.agents[i]}%
+                        </span>
+                      </p>
+                      <span class="tour__meter">
+                        <span
+                          data-agent-meter={i}
+                          style={`width:${initial.agents[i]}%`}
+                        ></span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {scene === "projects" && (
+            <div class="tour__body projects" data-projects>
+              <div class="projects__tree">
+                <p class="console-mono tour__muted projects__label">
+                  {tour.sampleProjects}
+                </p>
+                {tree.map((row) => (
+                  <div
+                    class:list={["projects__row", `is-${row.kind}`]}
+                    hidden={row.kind === "sub"}
+                    data-sub-row={row.kind === "sub" ? "" : undefined}
+                  >
+                    {row.kind === "project" && <Icon name="list-tree" />}
+                    {row.kind === "parent" && (
+                      <button
+                        type="button"
+                        class="projects__toggle"
+                        aria-expanded="false"
+                        aria-label={s.expand}
+                        data-sub-toggle
+                      >
+                        <Icon name="chevron-right" class="size-3" />
+                      </button>
+                    )}
+                    {row.kind === "sub" && (
+                      <span class="tour__tag is-sub console-mono">sub</span>
+                    )}
+                    <span class="projects__name">{row.name}</span>
+                    <span class="projects__meta">
+                      {row.agent && (
+                        <span class="tour__tag console-mono">{row.agent}</span>
+                      )}
+                      <span class="console-mono tour__muted">{row.meta}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div class="tour__stat projects__rollup">
+                <p class="console-mono tour__muted">api-gateway · {s.rollup}</p>
+                <p>
+                  <span>{statLabels.messages}</span>
+                  <span class="console-mono" data-rollup="messages">
+                    2,904
+                  </span>
+                </p>
+                <p>
+                  <span>{statLabels.tokens}</span>
+                  <span class="console-mono" data-rollup="tokens">
+                    6.1M
+                  </span>
+                </p>
+                <p>
+                  <span>{statLabels.cost}</span>
+                  <span class="console-mono" data-rollup="cost">
+                    $13.75
+                  </span>
+                </p>
+              </div>
+            </div>
+          )}
+
+          {scene === "replay" && (
+            <div class="tour__body replay" data-replay>
+              <div
+                class="replay__filters"
+                role="group"
+                aria-label={tour.filters}
+              >
+                {filters.map((filter) => (
+                  <button
+                    type="button"
+                    aria-pressed="true"
+                    data-filter={filter.kind}
+                    class={`is-${filter.kind}`}
+                  >
+                    <i aria-hidden="true"></i>
+                    {filter.label}
+                  </button>
+                ))}
+                <span
+                  class="console-mono tour__muted replay__status"
+                  aria-live="polite"
+                  data-visible-template={tour.visibleStatus}
+                  data-visible-status
+                >
+                  {tour.visibleStatus.replace("{count}", String(steps.length))}
+                </span>
+              </div>
+              <ol class="replay__steps">
+                {steps.map((step, i) => (
+                  <li
+                    class={`replay__step is-${step.kind}`}
+                    data-step={step.kind}
+                    style={`animation-delay:${120 + i * 380}ms`}
+                  >
+                    <span class="replay__badge console-mono">{step.badge}</span>
+                    <span class="replay__text">{step.text}</span>
+                    <span class="replay__meta console-mono">{step.meta}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      </div>
+    ))}
   </div>
 </section>
 
-<noscript>
-  <style>
-    .showcase-tabs {
-      display: none;
-    }
-    .showcase-panel[hidden] {
-      display: block;
-    }
-    .showcase-panel + .showcase-panel {
-      margin-top: 3rem;
-    }
-  </style>
-</noscript>
-
 <script>
-  const showcase = document.querySelector<HTMLElement>("[data-showcase]");
-  if (showcase) {
-    const tabs = Array.from(
-      showcase.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-    );
-    const panels = Array.from(
-      showcase.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
-    );
-    function select(index: number) {
+  type RangeData = {
+    sessions: string;
+    messages: string;
+    tokens: string;
+    cost: string;
+    bars: number[];
+    agents: number[];
+  };
+
+  document.querySelectorAll<HTMLElement>("[data-tour]").forEach((tour) => {
+    const tabs = [
+      ...tour.querySelectorAll<HTMLButtonElement>("[data-tour-tab]"),
+    ];
+    const panels = [...tour.querySelectorAll<HTMLElement>("[data-tour-panel]")];
+
+    const select = (index: number, focus = false) => {
       tabs.forEach((tab, i) => {
-        tab.setAttribute("aria-selected", String(i === index));
-        tab.tabIndex = i === index ? 0 : -1;
+        const active = i === index;
+        tab.setAttribute("aria-selected", String(active));
+        tab.tabIndex = active ? 0 : -1;
+        panels[i]!.hidden = !active;
       });
-      panels.forEach((panel, i) => {
-        panel.hidden = i !== index;
-      });
-    }
+      if (focus) tabs[index]!.focus();
+    };
+
     tabs.forEach((tab, index) => {
       tab.addEventListener("click", () => select(index));
       tab.addEventListener("keydown", (event) => {
-        const next =
-          event.key === "ArrowRight"
-            ? (index + 1) % tabs.length
-            : event.key === "ArrowLeft"
-              ? (index + tabs.length - 1) % tabs.length
-              : event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? tabs.length - 1
-                  : undefined;
-        if (next === undefined) return;
+        const step =
+          event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+        if (!step) return;
         event.preventDefault();
-        select(next);
-        tabs[next]?.focus();
+        select((index + step + tabs.length) % tabs.length, true);
       });
     });
-    function followHash() {
-      const index = panels.findIndex(
-        (panel) => `#${panel.id}` === window.location.hash,
-      );
-      if (index < 0) return;
-      select(index);
-      panels[index]?.scrollIntoView({ block: "start" });
+
+    const overview = tour.querySelector<HTMLElement>("[data-overview]");
+    if (overview) {
+      const ranges = JSON.parse(overview.dataset.ranges ?? "{}") as Record<
+        string,
+        RangeData
+      >;
+      const rangeButtons =
+        overview.querySelectorAll<HTMLButtonElement>("[data-range]");
+      rangeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const data = ranges[button.dataset.range ?? ""];
+          if (!data) return;
+          rangeButtons.forEach((item) =>
+            item.setAttribute("aria-pressed", String(item === button)),
+          );
+          overview
+            .querySelectorAll<HTMLElement>("[data-stat]")
+            .forEach((stat) => {
+              stat.textContent = data[stat.dataset.stat as "sessions"];
+            });
+          overview
+            .querySelectorAll<HTMLElement>("[data-bar]")
+            .forEach((bar, i) => {
+              bar.style.height = `${data.bars[i]}%`;
+            });
+          data.agents.forEach((share, i) => {
+            const label = overview.querySelector(`[data-agent-share="${i}"]`);
+            const meter = overview.querySelector<HTMLElement>(
+              `[data-agent-meter="${i}"]`,
+            );
+            if (label) label.textContent = `${share}%`;
+            if (meter) meter.style.width = `${share}%`;
+          });
+        });
+      });
     }
-    followHash();
-    window.addEventListener("hashchange", followHash);
-  }
+
+    const projects = tour.querySelector<HTMLElement>("[data-projects]");
+    const toggle =
+      projects?.querySelector<HTMLButtonElement>("[data-sub-toggle]");
+    if (projects && toggle) {
+      const rollups = {
+        collapsed: { messages: "2,904", tokens: "6.1M", cost: "$13.75" },
+        expanded: { messages: "3,218", tokens: "6.4M", cost: "$14.90" },
+      };
+      toggle.addEventListener("click", () => {
+        const expanded = toggle.getAttribute("aria-expanded") !== "true";
+        toggle.setAttribute("aria-expanded", String(expanded));
+        projects
+          .querySelectorAll<HTMLElement>("[data-sub-row]")
+          .forEach((row) => {
+            row.hidden = !expanded;
+          });
+        const values = rollups[expanded ? "expanded" : "collapsed"];
+        projects
+          .querySelectorAll<HTMLElement>("[data-rollup]")
+          .forEach((cell) => {
+            cell.textContent = values[cell.dataset.rollup as "messages"];
+          });
+      });
+    }
+
+    const replay = tour.querySelector<HTMLElement>("[data-replay]");
+    if (replay) {
+      const status = replay.querySelector<HTMLElement>("[data-visible-status]");
+      const filterButtons =
+        replay.querySelectorAll<HTMLButtonElement>("[data-filter]");
+      filterButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          button.setAttribute(
+            "aria-pressed",
+            String(button.getAttribute("aria-pressed") !== "true"),
+          );
+          const visible = new Set(
+            [...filterButtons]
+              .filter((item) => item.getAttribute("aria-pressed") === "true")
+              .map((item) => item.dataset.filter),
+          );
+          let count = 0;
+          replay
+            .querySelectorAll<HTMLElement>("[data-step]")
+            .forEach((step) => {
+              step.hidden = !visible.has(step.dataset.step);
+              if (!step.hidden) count += 1;
+            });
+          if (status) {
+            status.textContent = (status.dataset.visibleTemplate ?? "").replace(
+              "{count}",
+              String(count),
+            );
+          }
+        });
+      });
+    }
+  });
 </script>
 
 <style>
-  .product-showcase {
-    border-top: 1px solid var(--console-border);
+  .tour {
+    scroll-margin-top: 4rem;
+  }
+  .tour__heading {
+    max-width: 48rem;
+  }
+  .tour__tabs {
+    display: flex;
+    width: max-content;
+    max-width: 100%;
+    gap: 0.25rem;
+    margin-top: 2.5rem;
+    padding: 0.25rem;
+    overflow-x: auto;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
     background: var(--console-surface-muted);
   }
-  .showcase-heading {
-    max-width: 48rem;
-    margin-bottom: 2rem;
-  }
-  .showcase-tabs {
-    display: flex;
+  .tour__tabs button {
+    display: inline-flex;
     align-items: center;
-    gap: 1.5rem;
-    border-bottom: 1px solid var(--console-border-strong);
-  }
-  .showcase-tabs button {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    min-height: 3.75rem;
-    padding: 0.6rem 0.15rem;
-    color: var(--console-text-secondary);
-    font-size: 0.88rem;
+    gap: 0.55rem;
+    min-height: 2.75rem;
+    padding: 0 1.1rem;
+    border-radius: var(--radius-md);
+    color: var(--console-muted);
+    font-size: 0.875rem;
     font-weight: 500;
-    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
   }
-  .showcase-tabs button::after {
-    position: absolute;
-    inset: auto 0 -1px;
-    height: 2px;
-    background: var(--brand-text);
-    content: "";
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform 0.25s var(--ease-out);
+  .tour__tabs button span {
+    font-size: 0.7rem;
   }
-  .showcase-tabs button[aria-selected="true"] {
+  .tour__tabs button[aria-selected="true"] {
+    background: var(--console-surface);
+    color: var(--console-text);
+    box-shadow: var(--elevation-raised);
+  }
+  .tour__tabs button[aria-selected="true"] span {
     color: var(--brand-text);
   }
-  .showcase-tabs button[aria-selected="true"]::after {
-    transform: scaleX(1);
-  }
-  .showcase-tabs button:hover {
-    color: var(--console-text);
-  }
-  .showcase-sample {
-    margin-left: auto;
-    color: var(--console-muted);
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-  }
-  .showcase-stage {
-    padding: 2rem 0 0;
-  }
-  .showcase-panel {
-    min-height: 38rem;
-    scroll-margin-top: 8rem;
-  }
-  .showcase-description {
-    margin-top: 1.6rem;
-  }
-  .showcase-description h3 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 550;
-  }
-  .showcase-description p {
-    max-width: 68ch;
-    margin: 0.5rem 0 0;
-    color: var(--console-text-secondary);
-    font-size: 0.87rem;
-    line-height: 1.65;
-  }
-  .showcase-hint {
-    display: flex;
+  .tour__scene {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
+    gap: 2.5rem;
     align-items: start;
-    gap: 0.55rem;
-    margin: 1.1rem 0 0;
-    color: var(--console-text-secondary);
-    font-size: 0.75rem;
-    line-height: 1.6;
+    margin-top: 1.75rem;
+    animation: tour-in 0.5s var(--ease-out) both;
   }
-  .showcase-hint :global(svg) {
-    flex: 0 0 1rem;
+  .tour__scene[hidden] {
+    display: none;
+  }
+  .tour__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-top: 0.75rem;
+  }
+  .tour__copy h3 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .tour__copy p {
+    margin: 0;
+    color: var(--console-text-secondary);
+    font-size: 0.94rem;
+    line-height: 1.7;
+  }
+  .tour__copy p.tour__hint {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.85rem;
+    border-radius: var(--radius-lg);
+    background: var(--signal-soft);
+    color: var(--signal);
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+  .tour__hint :global(svg) {
+    flex: none;
     margin-top: 0.1rem;
   }
-  @media (prefers-reduced-motion: no-preference) {
-    .showcase-panel:not([hidden]) {
-      animation: panel-enter 0.35s var(--ease-out);
+  .tour__window {
+    overflow: hidden;
+    border: 1px solid var(--console-border);
+    border-radius: 18px;
+    background: var(--console-surface);
+    box-shadow: var(--elevation-overlay);
+  }
+  .tour__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--console-border);
+    background: var(--console-surface-muted);
+    color: var(--console-muted);
+    font-size: 0.72rem;
+  }
+  .tour__bar i {
+    width: 10px;
+    height: 10px;
+    border-radius: 99px;
+    background: var(--console-border-strong);
+  }
+  .tour__bar span:first-of-type {
+    margin-left: 0.75rem;
+  }
+  .tour__bar .tour__tag {
+    margin-left: auto;
+  }
+  .tour__tag {
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--console-border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--console-muted);
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+  .tour__tag.is-sub {
+    border-color: var(--signal);
+    color: var(--signal);
+  }
+  .tour__muted {
+    color: var(--console-muted);
+    font-size: 0.75rem;
+  }
+  .tour__body {
+    padding: 1.4rem;
+  }
+  .tour__stat {
+    padding: 1rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
+    background: var(--console-surface);
+  }
+  .tour__seg {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-pill);
+    background: var(--console-surface-muted);
+  }
+  .tour__seg button {
+    min-height: 2rem;
+    padding: 0 0.7rem;
+    border-radius: var(--radius-pill);
+    color: var(--console-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+  .tour__seg button[aria-pressed="true"] {
+    background: var(--console-text);
+    color: var(--console-bg);
+  }
+  .tour__meter {
+    display: block;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: var(--console-surface-muted);
+  }
+  .tour__meter span {
+    display: block;
+    height: 100%;
+    border-radius: 99px;
+    background: var(--console-text-secondary);
+    transition: width 0.6s var(--ease-out);
+  }
+
+  .overview {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+  }
+  .overview__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .overview__stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .overview__stats .tour__stat span {
+    color: var(--console-muted);
+    font-size: 0.75rem;
+  }
+  .overview__stats strong {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 1.6rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .overview__charts {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 1rem;
+  }
+  .overview__bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    height: 11rem;
+    box-sizing: border-box;
+  }
+  .overview__bars span {
+    flex: 1;
+    border-radius: 6px 6px 2px 2px;
+    background: var(--brand);
+    transform-origin: bottom;
+    transition: height 0.6s var(--ease-out);
+    animation: tour-grow 0.8s var(--ease-out) both;
+  }
+  .overview__bars span.is-alt {
+    background: var(--console-border-strong);
+  }
+  .overview__agents {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.9rem;
+  }
+  .overview__agents p {
+    display: flex;
+    justify-content: space-between;
+    margin: 0 0 0.4rem;
+    font-size: 0.8rem;
+  }
+  .overview__agents p span:last-child {
+    color: var(--console-muted);
+  }
+
+  .projects {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .projects__label {
+    margin: 0;
+    padding: 0.5rem 0.85rem;
+  }
+  .projects__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 2.75rem;
+    padding: 0 0.85rem;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+  }
+  .projects__row[hidden] {
+    display: none;
+  }
+  .projects__row:hover {
+    background: var(--console-surface-muted);
+  }
+  .projects__row.is-project {
+    font-weight: 600;
+  }
+  .projects__row.is-project :global(svg) {
+    color: var(--brand-text);
+  }
+  .projects__row.is-parent,
+  .projects__row.is-session {
+    padding-left: 2.2rem;
+  }
+  .projects__row.is-sub {
+    padding-left: 3.6rem;
+    animation: tour-in 0.4s var(--ease-out) both;
+  }
+  .projects__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .projects__meta {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  .projects__toggle {
+    display: inline-flex;
+    width: 1.75rem;
+    height: 1.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-sm);
+    background: var(--console-surface);
+    transition: transform var(--dur-base) var(--ease-out);
+  }
+  .projects__toggle[aria-expanded="true"] {
+    transform: rotate(90deg);
+  }
+  .projects__rollup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    align-self: start;
+  }
+  .projects__rollup p {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    font-size: 0.875rem;
+  }
+  .projects__rollup p span:first-child {
+    color: var(--console-muted);
+  }
+
+  .replay {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .replay__filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .replay__filters button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-pill);
+    color: var(--console-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  .replay__filters button[aria-pressed="true"] {
+    border-color: var(--console-border-strong);
+    background: var(--console-surface);
+    color: var(--console-text);
+  }
+  .replay__filters i {
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+  }
+  .replay__filters .is-user i {
+    background: var(--console-text);
+  }
+  .replay__filters .is-agent i {
+    background: var(--brand);
+  }
+  .replay__filters .is-tool i {
+    background: var(--signal);
+  }
+  .replay__status {
+    margin-left: auto;
+  }
+  .replay__steps {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .replay__steps::before,
+  .replay__steps::after {
+    content: "";
+    position: absolute;
+    top: 1.5rem;
+    bottom: 1.5rem;
+    left: 3.05rem;
+    width: 2px;
+    background: var(--console-border);
+  }
+  .replay__steps::after {
+    background: var(--brand);
+    transform-origin: top;
+    animation: tour-rail 3.2s var(--ease-out) both;
+  }
+  .replay__step {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+    gap: 0.9rem;
+    align-items: start;
+    padding: 0.75rem 0.85rem;
+    border-radius: var(--radius-lg);
+    animation: tour-step 0.55s var(--ease-out) both;
+  }
+  .replay__step[hidden] {
+    display: none;
+  }
+  .replay__badge {
+    padding: 0.25rem 0.4rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.68rem;
+    text-align: center;
+  }
+  .is-user .replay__badge {
+    background: var(--console-text);
+    color: var(--console-bg);
+  }
+  .is-agent .replay__badge {
+    background: var(--brand-soft);
+    color: var(--brand-text);
+  }
+  .is-tool .replay__badge {
+    background: var(--signal-soft);
+    color: var(--signal);
+  }
+  .replay__text {
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  .is-tool .replay__text {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+  }
+  .replay__meta {
+    color: var(--console-muted);
+    font-size: 0.72rem;
+  }
+
+  @keyframes tour-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
     }
-    @keyframes panel-enter {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes tour-grow {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+  @keyframes tour-step {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes tour-rail {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .tour__scene {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
   @media (max-width: 767px) {
-    .showcase-heading {
-      margin-bottom: 1.75rem;
+    .overview__stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .showcase-tabs {
-      gap: 1.3rem;
+    .overview__charts,
+    .projects {
+      grid-template-columns: minmax(0, 1fr);
     }
-    .showcase-tabs button {
-      font-size: 0.78rem;
-      gap: 0.4rem;
+    .tour__body {
+      padding: 1rem;
     }
-    .showcase-sample {
+    .replay__step {
+      grid-template-columns: 4rem minmax(0, 1fr);
+    }
+    .replay__meta {
       display: none;
     }
-    .showcase-stage {
-      padding-top: 1.4rem;
+    .replay__steps::before,
+    .replay__steps::after {
+      left: 2.85rem;
     }
-    .showcase-panel {
-      min-height: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tour__scene,
+    .overview__bars span,
+    .projects__row.is-sub,
+    .replay__step,
+    .replay__steps::after {
+      animation: none;
     }
-    .showcase-description p {
-      font-size: 0.8rem;
+    .overview__bars span,
+    .tour__meter span {
+      transition: none;
     }
   }
 </style>

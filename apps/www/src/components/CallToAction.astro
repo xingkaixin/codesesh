@@ -1,6 +1,8 @@
 ---
 import { experience } from "../data/experience";
 import type { Locale } from "../data/landing";
+import { sections } from "../data/sections";
+import Icon from "./Icon.astro";
 import InstallOptions from "./InstallOptions.astro";
 
 interface Props {
@@ -9,62 +11,124 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = experience[locale];
+const s = sections[locale].install;
 ---
 
 <section
   id="install"
-  class="installation section-space"
+  class="installation section-shell"
   aria-labelledby="cta-heading"
 >
-  <div class="section-shell installation-inner" data-reveal>
-    <div>
+  <div class="installation__band" data-reveal>
+    <div class="installation__copy">
+      <p class="installation__kicker console-mono">08 · {s.label}</p>
       <h2 id="cta-heading" class="section-heading">
-        <span>{t.installTitle[0]}</span>
+        {t.installTitle[0]}
         <span>{t.installTitle[1]}</span>
       </h2>
-      <p class="section-body">{t.installBody}</p>
+      <p class="installation__body">{t.installBody}</p>
+      <div class="installation__links">
+        <a
+          class="installation__github pressable"
+          href="https://github.com/xingkaixin/codesesh"
+        >
+          <Icon name="github" />
+          GitHub
+        </a>
+        <a
+          class="installation__download pressable"
+          href="https://github.com/xingkaixin/codesesh/releases"
+        >
+          {s.download}
+          <Icon name="arrow-up-right" />
+        </a>
+      </div>
     </div>
     <InstallOptions locale={locale} id="cta-install" />
   </div>
 </section>
+
 <style>
   .installation {
-    background: var(--brand-soft);
+    padding-block: clamp(3rem, 6vw, 5rem) clamp(5rem, 8vw, 7rem);
+    scroll-margin-top: 4rem;
   }
-  .installation-inner {
+  .installation__band {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 3.5rem;
     align-items: center;
+    padding: clamp(1.75rem, 6vw, 5.5rem);
+    border: 1px solid var(--band-line);
+    border-radius: 28px;
+    background: var(--band);
+    color: var(--band-text);
   }
-  .installation h2 {
-    font-size: clamp(2.4rem, 4.5vw, 4.5rem);
-    letter-spacing: -0.06em;
+  .installation__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
   }
-  .installation h2 span {
+  .installation__kicker {
+    margin: 0;
+    color: var(--band-accent);
+    font-size: 0.75rem;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+  }
+  .installation .section-heading {
+    font-size: clamp(2.4rem, 5vw, 4.25rem);
+  }
+  .installation .section-heading span {
     display: block;
+    color: var(--band-accent);
   }
-  .installation h2 span + span {
-    color: var(--brand-text);
+  .installation__body {
+    margin: 0;
+    color: var(--band-muted);
+    font-size: 1.05rem;
+    line-height: 1.65;
   }
-  .installation .section-body {
-    max-width: 27rem;
+  .installation__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
-  .installation :global(.install-options) {
-    max-width: none;
-    background: var(--console-bg);
-    border-color: var(--console-border-strong);
-    border-radius: var(--radius-md);
+  .installation__links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 3rem;
+    padding: 0 1.3rem;
+    border: 1px solid var(--band-line);
+    border-radius: var(--radius-pill);
+    font-size: 0.9rem;
+    font-weight: 500;
   }
+  .installation__github {
+    border-color: var(--band-text);
+    background: var(--band-text);
+    color: var(--band);
+  }
+  .installation__download:hover {
+    border-color: var(--band-text);
+  }
+  .installation__band :global(.install-options) {
+    --console-surface: var(--band-surface);
+    --console-surface-muted: var(--band);
+    --console-border: var(--band-line);
+    --console-border-strong: var(--band-line);
+    --console-text: var(--band-text);
+    --console-text-secondary: var(--band-muted);
+    --console-muted: var(--band-muted);
+    --elevation-raised: none;
+    --brand: var(--band-accent);
+    --brand-line: var(--band-accent);
+  }
+
   @media (max-width: 1023px) {
-    .installation-inner {
-      gap: 2.5rem;
-    }
-  }
-  @media (max-width: 767px) {
-    .installation-inner {
-      grid-template-columns: 1fr;
-      gap: 2rem;
+    .installation__band {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

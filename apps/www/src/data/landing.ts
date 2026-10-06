@@ -52,6 +52,7 @@ interface LandingCopy {
   header: {
     tour: string;
     capabilities: string;
+    hub: string;
     agents: string;
     changelog: string;
     faq: string;
@@ -184,6 +185,7 @@ export const copy = {
     header: {
       tour: "产品导览",
       capabilities: "能力",
+      hub: "多机同步",
       agents: "支持的 Agent",
       changelog: "更新日志",
       faq: "FAQ",
@@ -393,6 +395,7 @@ export const copy = {
     header: {
       tour: "Tour",
       capabilities: "Capabilities",
+      hub: "Multi-machine",
       agents: "Agents",
       changelog: "Changelog",
       faq: "FAQ",
@@ -605,6 +608,7 @@ export const copy = {
     header: {
       tour: "製品ツアー",
       capabilities: "機能",
+      hub: "マルチマシン",
       agents: "対応エージェント",
       changelog: "更新履歴",
       faq: "FAQ",
