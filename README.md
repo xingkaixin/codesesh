@@ -9,42 +9,38 @@
 
 [Website](https://codesesh.xingkaixin.me/) · [Find Claude Code and Codex history](https://codesesh.xingkaixin.me/guides/session-history/) · [Installation guide](https://codesesh.xingkaixin.me/guides/getting-started/)
 
-You've been coding with AI agents, and the conversations are scattered everywhere on your filesystem. Context is lost. Cost is invisible. History is buried.
-
-**CodeSesh** fixes that. It scans your local machine, finds every AI agent session, and surfaces them in a unified, beautiful Web UI. Think of it as a time machine for your AI-assisted development workflow.
+You use several AI coding agents, and their sessions are scattered across your filesystem. **CodeSesh** finds them and puts them in one Web UI.
 
 ---
 
 ## Why CodeSesh?
 
-Modern developers work with multiple AI coding agents simultaneously. Each tool stores its session history in its own proprietary format, in its own hidden directory. There's no way to search across them, compare costs, or revisit that brilliant conversation you had three weeks ago.
+Each AI coding agent keeps its history in its own format and hidden directory. You can't search across them, compare costs, or get back to a conversation from three weeks ago.
 
-CodeSesh believes your session history belongs to **you** — and you deserve to see it all in one place.
+CodeSesh does three jobs:
 
-**What you get:**
+### Find
 
-- **Unified Timeline** — Browse sessions across all your AI agents in a single, searchable interface
-- **Flexible Time Ranges** — Switch between rolling presets, all history, or a custom date range without restarting the server
-- **Session Aliases** — Give important sessions memorable local names that carry through search, bookmarks, and activity views
-- **Persistent Themes** — Choose light, dark, or system appearance and keep your UI preferences across sessions
-- **Structured Global Search** — Search titles, messages, tool output, and file paths with filters for agent, project, smart tag, tool, file activity, and cost. Match Chinese substrings and open message results at the first matching message
-- **UI languages** — English, Simplified Chinese, and Japanese. Follows your browser language by default; use the language selector in the top toolbar to switch and save your preference. Session content and code stay in their original language.
-- **Dashboard & Activity Trends** — Track daily activity, agent distribution, recent sessions, latest activity, token usage, model token shares for the selected date range, smart tags, and cost at a glance
-- **Project Browse Mode** — Open a dedicated projects view with project-level metrics, sessions, and cross-agent drill-down
-- **Project & Nested Session Tree** — Group sessions by repository or project identity, while keeping subagent sessions under their parent
-- **Smart Tags** — Automatically label sessions such as bugfix, refactoring, feature work, testing, docs, planning, git operations, build/deploy, and exploration
-- **Bookmarks** — Save important sessions and keep them visible from the dashboard
-- **Full Conversation Replay** — Read messages, tool calls, and reasoning in pages, or load the complete conversation. Keep your reading position and copy the full transcript as Markdown
-- **File Activity Index** — Jump to files that were read, edited, created, deleted, or moved, and search sessions by file activity
-- **Keyboard Navigation** — Move through views, focus search, and open shortcuts without leaving the keyboard
-- **Agent Resume Commands** — Copy worktree-aware resume commands from supported agent session details, with the source machine and where to run the command clearly identified
-- **Resumable History Indexing** — Checkpoint large backfills, resume interrupted scans, and show durable progress
-- **Cost & Token Visibility** — See token totals, cache tokens, recorded costs, and model-based cost estimates
-- **Session Receipts** — Inspect model and token-category usage with available cost breakdowns, then export the complete receipt as a PNG
-- **SQLite Cache, Migrations & Search Index** — Restore session lists quickly, upgrade local schemas safely, and reuse the same local store for search
-- **Zero Configuration** — Just run it. CodeSesh auto-discovers everything on your filesystem
-- **Local by Default** — Standalone history stays on your machine. Optional Workers send sessions to your self-hosted Hub; no account or cloud telemetry is required
-- **Live Refresh** — File changes are picked up automatically, and the UI stays in sync without a restart
+- **Structured search** — Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings match, and message results open at the first hit
+- **Projects** — Group sessions by repository identity across agents, with subagent sessions nested under their parent
+- **File activity** — Jump to files that were read, edited, created, deleted, or moved, and find the sessions that touched them
+- **Bookmarks and aliases** — Keep important sessions on the dashboard and give them names that carry through search and activity views
+- **Time ranges** — Switch between rolling presets, all history, or a custom range without restarting
+
+### See
+
+- **Dashboard** — Daily activity, agent distribution, model token shares, smart tags, and latest activity for the selected range
+- **Tokens and cost** — Token totals, cache tokens, recorded costs, and model-based estimates, always labeled as recorded or estimated
+- **Smart tags** — Sessions labeled as bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, or exploration
+- **Session receipts** — Usage by model and token category, exportable as a PNG
+
+### Reuse
+
+- **Full replay** — Messages, tool calls, and reasoning, paged or complete, with your reading position kept
+- **Copy as Markdown** — Take a whole conversation into a new prompt, issue, or note
+- **Resume commands** — Copy worktree-aware resume commands for supported agents, with the source machine shown
+
+**Under the hood:** zero configuration, local by default (no account or telemetry), live refresh, an SQLite cache with resumable history indexing, keyboard navigation, light and dark themes, and an English, Simplified Chinese, and Japanese UI.
 
 ---
 
