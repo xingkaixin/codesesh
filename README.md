@@ -50,7 +50,7 @@ CodeSesh believes your session history belongs to **you** — and you deserve to
 
 ## Multiple machines with Hub and Worker
 
-Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh worker` on each machine you want to collect from. The source-node panel guides pairing, shows collection health, and manages rescans and Worker replacement. User-level background service commands are available on macOS, Linux, and Windows. See the [Hub/Worker guide](docs/hub-worker.md) for setup, migration, and recovery.
+Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh worker` on each machine you want to collect from. The source-node panel guides pairing, shows collection health, and manages rescans and Worker replacement. User-level background service commands are available on macOS, Linux, and Windows. See the [Hub/Worker guide](docs/guides/hub-worker.md) for setup, migration, and recovery.
 
 ## Supported Agents
 
@@ -75,11 +75,11 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 
 <!-- repo-fact:agents:end -->
 
-Antigravity CLI supports local SQLite conversations, titles, workspace metadata, and tool calls. Tool outcomes and usage remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/antigravity-cli-integration.md).
+Antigravity CLI supports local SQLite conversations, titles, workspace metadata, and tool calls. Tool outcomes and usage remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
 
-OpenCode supports V1 SQLite history and the V2 `2.0.15` schema. Set `OPENCODE_DB` to select a custom database (relative to `XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` by default). V2 migration must finish before scanning; session totals prevent copied fork history from being counted again. See the [compatibility design](docs/opencode-v2-integration.md) for supported messages and validation limits.
+OpenCode supports V1 SQLite history and the V2 `2.0.15` schema. Set `OPENCODE_DB` to select a custom database (relative to `XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` by default). V2 migration must finish before scanning; session totals prevent copied fork history from being counted again. See the [compatibility design](docs/agents/opencode-v2.md) for supported messages and validation limits.
 
-MiniMax Code supports CLI 0.4.12 `v2/sqlite/runtime-state.sqlite`, including session trees, reasoning, tools, and usage. Discovery selects the first database under `~/.minimax` or `~/.minimax-code`; `MINIMAX_DATA_DIR` takes precedence over `MAVIS_DATA_DIR`. Refresh detects updates and removals as well as new messages. Media retains available references; legacy ledger layouts and Desktop compatibility are unverified. See the [integration design](docs/minimax-code-integration.md).
+MiniMax Code supports CLI 0.4.12 `v2/sqlite/runtime-state.sqlite`, including session trees, reasoning, tools, and usage. Discovery selects the first database under `~/.minimax` or `~/.minimax-code`; `MINIMAX_DATA_DIR` takes precedence over `MAVIS_DATA_DIR`. Refresh detects updates and removals as well as new messages. Media retains available references; legacy ledger layouts and Desktop compatibility are unverified. See the [integration design](docs/agents/minimax-code.md).
 
 DeepChat supports the current unencrypted `app_db/agent.db`, including native and ACP sessions.
 Set `DEEPCHAT_USER_DATA_DIR` to override its user data directory. Legacy `chat.db`,
@@ -439,7 +439,7 @@ node scripts/rust/verify-set.mjs
 
 A local run covers the host platform. Native packaging targets macOS arm64/x64, Linux x64 GNU (glibc 2.35+),
 and Windows x64; each target still needs its own runner and installed-package checks. See
-[the packaging guide](docs/rust-packaging.md).
+[the packaging guide](docs/engineering/rust-packaging.md).
 
 ### Performance Benchmark
 
@@ -457,12 +457,12 @@ Frontend, contract, coverage, documentation, and the complete Rust suite run onc
 All four native targets compile and run platform-dependent checks: filesystem discovery, migration,
 watchers, SQLite persistence, native services, process lifecycle, and packaging. macOS and Windows
 use `pnpm test:rust:platform`; npm installation is verified on Node 22.0.0 and Node 24 for each target.
-See [the test policy](docs/testing.md) for the platform selection. Legacy Node differential suites
+See [the test policy](docs/engineering/testing.md) for the platform selection. Legacy Node differential suites
 have been retired. The pinned Node package remains available only for manual performance benchmarks.
 
 Version 1.1.0 prepares the native Rust backend for release. Version and changelog updates do not
 publish packages. The Release workflow only runs for `v*` tags; publication requires separate
-authorization and completion of the [release checklist](docs/release-guide.md).
+authorization and completion of the [release checklist](docs/engineering/release-guide.md).
 
 ### Dev Workflow
 
@@ -501,8 +501,8 @@ apps/www/                            Astro product site
 scripts/rust/                        Native build, packaging, and benchmarks
 ```
 
-`docs/architecture.md` describes how a scan flows through these; `docs/sqlite-storage.md` covers
-the cache and search index; `docs/performance.md` describes what guards performance and where to add
+`docs/architecture.md` describes how a scan flows through these; `docs/design/sqlite-storage.md` covers
+the cache and search index; `docs/engineering/performance.md` describes what guards performance and where to add
 a new guard.
 
 ### Extending
@@ -524,4 +524,4 @@ Local databases, model prices, and logs now default to `~/.codesesh/` (`%USERPRO
 on Windows). On the first migration, stop older CodeSesh instances and confirm the terminal prompt.
 For non-interactive runs, pass `--migrate-data` after stopping older instances. Migration verifies data
 before removing old files and reports every retained path. Existing `CODESESH_STATE_DIR` and
-`CODESESH_LOG_DIR` overrides remain supported. See [data migration](docs/sqlite-storage.md#数据目录迁移).
+`CODESESH_LOG_DIR` overrides remain supported. See [data migration](docs/design/sqlite-storage.md#数据目录迁移).

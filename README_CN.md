@@ -48,7 +48,7 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 
 ## 使用 Hub 与 Worker 汇总多台机器
 
-运行 `codesesh hub` 提供只负责查询的 Web UI，在需要采集的机器上配对独立的 `codesesh worker`。来源节点面板提供配对引导、采集健康状态、重采集和 Worker 替换管理。macOS、Linux 与 Windows 均提供用户级后台服务命令。部署、迁移和恢复步骤见 [Hub/Worker 指南](docs/hub-worker.md)。
+运行 `codesesh hub` 提供只负责查询的 Web UI，在需要采集的机器上配对独立的 `codesesh worker`。来源节点面板提供配对引导、采集健康状态、重采集和 Worker 替换管理。macOS、Linux 与 Windows 均提供用户级后台服务命令。部署、迁移和恢复步骤见 [Hub/Worker 指南](docs/guides/hub-worker.md)。
 
 ## 支持的 Agent
 
@@ -73,11 +73,11 @@ CodeSesh 认为，你的会话历史属于**你** —— 你应该在一个地�
 
 <!-- repo-fact:agents:end -->
 
-Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息及工具调用。工具结果与用量仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/antigravity-cli-integration.md)。
+Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息及工具调用。工具结果与用量仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 
-OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V2 迁移完成后开始读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/opencode-v2-integration.md)。
+OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V2 迁移完成后开始读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/agents/opencode-v2.md)。
 
-MiniMax Code 支持 CLI 0.4.12 的 `v2/sqlite/runtime-state.sqlite`，包含会话树、思考、工具调用和用量。默认依次查找 `~/.minimax`、`~/.minimax-code`，选择首个存在数据库的目录；`MINIMAX_DATA_DIR` 优先于 `MAVIS_DATA_DIR`。同步会识别已有消息的修改和删除，不限于追加消息。媒体仅展示可用引用；旧 ledger 布局和 Desktop 兼容性未验证。详情见 [接入设计](docs/minimax-code-integration.md)。
+MiniMax Code 支持 CLI 0.4.12 的 `v2/sqlite/runtime-state.sqlite`，包含会话树、思考、工具调用和用量。默认依次查找 `~/.minimax`、`~/.minimax-code`，选择首个存在数据库的目录；`MINIMAX_DATA_DIR` 优先于 `MAVIS_DATA_DIR`。同步会识别已有消息的修改和删除，不限于追加消息。媒体仅展示可用引用；旧 ledger 布局和 Desktop 兼容性未验证。详情见 [接入设计](docs/agents/minimax-code.md)。
 
 DeepChat 支持新版未加密的 `app_db/agent.db`，包含原生及 ACP 会话。
 可通过 `DEEPCHAT_USER_DATA_DIR` 指定用户数据目录。
@@ -394,7 +394,7 @@ node scripts/rust/verify-set.mjs
 <!-- repo-fact:ci-commands:end -->
 
 本地运行只覆盖当前主机。原生目标为 macOS arm64/x64、Linux x64 GNU（glibc 2.35+）和 Windows x64；
-各目标仍需要对应 runner 和安装验收。详见[制品指南](docs/rust-packaging.md)。
+各目标仍需要对应 runner 和安装验收。详见[制品指南](docs/engineering/rust-packaging.md)。
 
 ### 性能 Benchmark
 
@@ -411,11 +411,11 @@ pnpm bench:perf -- --cold --react-profile --target heaviest --navigation direct
 前端、契约、覆盖率、文档和完整 Rust 测试在 Linux / Node 24 执行一次。四个原生目标
 都编译并检查文件发现、数据迁移、监听、SQLite 持久化、原生服务、进程生命周期和打包。
 macOS 与 Windows 使用 `pnpm test:rust:platform`；每个目标的 npm 安装分别使用 Node 22.0.0
-和 Node 24 验证。平台选择依据见[测试策略](docs/testing.md)。旧 Node 差分套件已移除，
+和 Node 24 验证。平台选择依据见[测试策略](docs/engineering/testing.md)。旧 Node 差分套件已移除，
 锁定参考包仅保留给手动性能对照。
 
 v1.1.0 将 Rust 原生后端纳入版本发布准备。更新版本号与发布记录不会发布包。
-Release workflow 仅由 `v*` tag 触发；正式发布需单独授权并完成[发布清单](docs/release-guide.md)。
+Release workflow 仅由 `v*` tag 触发；正式发布需单独授权并完成[发布清单](docs/engineering/release-guide.md)。
 
 ### 开发流程
 
@@ -473,4 +473,4 @@ resume 声明和工具展示策略。
 `%USERPROFILE%\.codesesh\`）。首次迁移前请退出旧版本，并确认终端提示；非交互运行需在
 退出旧版本后传入 `--migrate-data`。迁移校验通过后清理旧文件，所有保留路径都会逐项列出。
 已有 `CODESESH_STATE_DIR`、`CODESESH_LOG_DIR` 配置继续有效。
-详见[数据目录迁移](docs/sqlite-storage.md#数据目录迁移)。
+详见[数据目录迁移](docs/design/sqlite-storage.md#数据目录迁移)。

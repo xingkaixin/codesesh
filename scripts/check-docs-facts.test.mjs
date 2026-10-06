@@ -52,9 +52,9 @@ function fixtureRepo(packageManager = "pnpm@11.20.0", nodeEngine = ">=22.0.0") {
     "apps/www/public/llms-full.txt": `${agentsList}\n${node}\n${node}\n${pnpm}\n${pnpm}`,
     "apps/www/public/llms.txt": agentsList,
     "apps/www/public/index.md": agentsList,
-    "docs/scanning-and-caching.md": sourceKinds,
+    "docs/design/scanning-and-caching.md": sourceKinds,
     "docs/architecture.md": sourceKinds,
-    "docs/sqlite-storage.md": marked(
+    "docs/design/sqlite-storage.md": marked(
       "cache-schema-version",
       "- 当前 schema：`CACHE_SCHEMA_VERSION = 21`",
     ),
@@ -106,7 +106,7 @@ describe("CS-172: semantic documentation facts", () => {
     });
 
     expect(mismatches).toContainEqual({
-      document: "docs/sqlite-storage.md",
+      document: "docs/design/sqlite-storage.md",
       fact: "cache-schema-version",
       message: "expected CACHE_SCHEMA_VERSION = 22; documented 21",
     });

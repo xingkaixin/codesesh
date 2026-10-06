@@ -113,7 +113,7 @@ describe("CS-151: documentation path check", () => {
     expect(CHECKED_DOCUMENTS).toContain("AGENTS.md");
     expect(CHECKED_DOCUMENTS).toContain("CONTEXT.md");
     expect(CHECKED_DOCUMENTS).toContain("README.md");
-    expect(CHECKED_DOCUMENTS).toContain("docs/PRD.md");
-    expect(CHECKED_DOCUMENTS).toContain("docs/sqlite-storage.md");
+    expect(CHECKED_DOCUMENTS).toContain("docs/product.md");
+    expect(CHECKED_DOCUMENTS).toContain("docs/design/sqlite-storage.md");
   });
 });

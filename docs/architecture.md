@@ -31,6 +31,22 @@ codesesh-cli / Clap
 输出 JSON 并退出。它不启动 HTTP 服务或文件监听。扫描故障会输出诊断，并使进程以非零
 状态结束。持久缓存与 `--no-cache` 使用的临时缓存都由同一 Rust 存储模块处理。
 
+## Hub / Worker 模式
+
+```text
+codesesh worker
+  -> 复用 AgentScanner 解析本机 Agent
+  -> 变化写入本地持久化 outbox（`crates/codesesh-core/src/sync/worker_store.rs`）
+  -> 主动向 Hub 发起心跳与批次上传，按确认清理 outbox
+
+codesesh hub
+  -> 接收批次，经同一 SQLite writer 按 (source_node_id, agent, session_id) 提交
+  -> 与单机模式共享查询、搜索、统计、定价与 Web UI
+```
+
+Hub 不采集，Worker 不提供查询界面。同一数据目录的单机模式与 Hub/Worker 互斥。
+身份、协议、恢复与迁移语义见 [design/hub-worker.md](./design/hub-worker.md)。
+
 ## 模块边界
 
 | 模块 | 职责 |
@@ -44,7 +60,10 @@ codesesh-cli / Clap
 | `crates/codesesh-core/src/analytics/` | Dashboard 与项目聚合 |
 | `crates/codesesh-core/src/pricing/` | 价格缓存、固定代际、刷新和成本归因 |
 | `crates/codesesh-core/src/state/` | 用户状态数据库与迁移 |
+| `crates/codesesh-core/src/sync/` | Hub/Worker 协议、Worker outbox 与采集捕获 |
 | `crates/codesesh-cli/src/http/` | HTTP 路由、安全校验、SSE 与请求处理 |
+| `crates/codesesh-cli/src/worker/` | Worker 连接、上传与扫描调度 |
+| `crates/codesesh-cli/src/service/` | launchd、systemd user 与 Task Scheduler 后台服务 |
 | `packages/contract/src/` | 浏览器安全契约和共享纯逻辑 |
 | `packages/contract/src/generated/` | 从 Rust 导出的 TypeScript wire 类型 |
 
@@ -52,6 +71,21 @@ codesesh-cli / Clap
 - 文件系统: Claude Code · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi
 - SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code · Antigravity CLI
 <!-- repo-fact:agent-source-kinds:end -->
+
+## 设计原则
+
+- **适配器只负责解析**：Agent 适配器把原生格式转成 Session Head 和消息，不处理项目身份、
+  定价、存储或发布。来源差异留在适配器内，不向下游泄漏。
+- **单一写入路径**：所有持久化经过 runtime writer，单机扫描和 Hub 接收共用同一 writer。
+  新功能不另开写连接。
+- **先提交再发布**：内存快照和 SSE 只反映已提交的数据，读取方不需要处理半完成状态。
+- **契约由 Rust 生成**：wire 类型在 Rust 定义并导出 TypeScript，前端不手写重复类型。
+  浏览器安全的纯逻辑放在 `packages/contract/src/`。
+- **Agent 元数据单一来源**：Agent 名称、图标和展示能力只在
+  `crates/codesesh-core/src/agents/catalog.json` 声明，其他位置从生成结果读取。
+- **未知如实表达**：缺失的用量、成本或工具结果保持未知，不以零或推测值代替。
+- **边界清晰的 CLI**：`codesesh-cli` 只负责参数、HTTP、进程和服务生命周期，业务逻辑在
+  `codesesh-core`。npm launcher 只选择并启动原生可执行文件。
 
 ## 一致性边界
 
@@ -62,6 +96,7 @@ codesesh-cli / Clap
 - 详情和搜索读取已提交的结构化消息，文件变化通过后台刷新进入下一快照。
 - npm launcher 不包含解析、存储或 HTTP 业务逻辑，也没有旧后端回退。
 
-扫描行为见 [scanning-and-caching.md](./scanning-and-caching.md)，存储见
-[sqlite-storage.md](./sqlite-storage.md)，制品见 [rust-packaging.md](./rust-packaging.md)。
-性能数据必须按 [performance.md](./performance.md) 的方法重新测量，不能由语言变化推导提速。
+扫描行为见 [design/scanning-and-caching.md](./design/scanning-and-caching.md)，存储见
+[design/sqlite-storage.md](./design/sqlite-storage.md)，制品见
+[engineering/rust-packaging.md](./engineering/rust-packaging.md)。性能数据必须按
+[engineering/performance.md](./engineering/performance.md) 的方法重新测量。

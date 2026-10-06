@@ -65,8 +65,8 @@ release 不允许跳过资源。契约类型改变后重新生成 TypeScript 并
 - `node scripts/check-docs-facts.mjs`：repo-fact 标记块须与源码、脚本和 CI 一致。
 - `node scripts/release-preflight.mjs`：Cargo 与前端版本一致性。
 
-测试取舍和平台边界见 `docs/testing.md`。完整 CI 以 `.github/workflows/ci.yml` 为事实源。验证命令不代表已经通过，报告结果必须保留
-实际运行证据。制品要求见 `docs/rust-packaging.md`，发布操作与代码迁移分开。
+测试取舍和平台边界见 `docs/engineering/testing.md`。完整 CI 以 `.github/workflows/ci.yml` 为事实源。验证命令不代表已经通过，报告结果必须保留
+实际运行证据。制品要求见 `docs/engineering/rust-packaging.md`，发布操作与代码迁移分开。
 
 ## Web 设计规则
 

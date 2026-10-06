@@ -98,7 +98,7 @@ pnpm test:backend
 
 单元测试检查事务、增量状态和回填不变量；进程契约检查真实 CLI、HTTP、SSE 和重启行为。
 CI 不再执行旧 Node 差分测试。性能测量方法见
-[performance.md](./performance.md)。
+[performance.md](../engineering/performance.md)。
 
 ## 重启、进度与源移除
 
