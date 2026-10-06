@@ -1,0 +1,459 @@
+---
+import type { Locale } from "../data/landing";
+import { guideRoutes } from "../data/guides";
+import { sections } from "../data/sections";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = sections[locale].hub;
+const nodes = [
+  {
+    name: "laptop",
+    os: "macOS",
+    agents: "Claude Code · Codex",
+    state: "connected",
+  },
+  {
+    name: "workstation",
+    os: "Linux",
+    agents: "Codex · OpenCode",
+    state: "collecting",
+  },
+  { name: "desktop", os: "Windows", agents: "Cursor", state: "offline" },
+] as const;
+const status = (state: (typeof nodes)[number]["state"], detail = false) =>
+  state === "offline" && detail ? t.queued.replace("{count}", "128") : t[state];
+---
+
+<section id="hub" class="hub section-shell" aria-labelledby="hub-heading">
+  <div class="hub__intro" data-reveal>
+    <div>
+      <p class="landing-kicker">
+        <b>04</b>
+        {t.label}
+      </p>
+      <h2 id="hub-heading" class="section-heading">
+        {t.title[0]}
+        <span>{t.title[1]}</span>
+      </h2>
+      <p class="section-body">{t.body}</p>
+      <a class="text-link" href={guideRoutes("multi-machine-sync")[locale]}>
+        {t.guide}
+        <Icon name="arrow-right" />
+      </a>
+    </div>
+    <ol class="hub__points">
+      {t.points.map(([title, body], index) => (
+        <li>
+          <span class="console-mono">0{index + 1}</span>
+          <div>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </div>
+
+  <div class="hub__panel" data-reveal>
+    <div class="hub__topology">
+      <div class="hub__workers">
+        <p class="console-mono hub__label">Workers</p>
+        {nodes.map((node) => (
+          <div class="hub__worker-row">
+            <div class="hub__worker">
+              <div class="hub__worker-head">
+                <Icon name="monitor" />
+                <strong>{node.name}</strong>
+                <span class="console-mono hub__muted">{node.os}</span>
+                <span class={`hub__status is-${node.state} console-mono`}>
+                  <i aria-hidden="true"></i>
+                  {status(node.state)}
+                </span>
+              </div>
+              <p>{node.agents}</p>
+              {node.state === "collecting" && (
+                <span class="hub__progress" aria-hidden="true">
+                  <span></span>
+                </span>
+              )}
+            </div>
+            <span
+              class:list={[
+                "hub__lane",
+                node.state === "offline" && "is-offline",
+              ]}
+              aria-hidden="true"
+            ></span>
+          </div>
+        ))}
+      </div>
+      <span class="hub__bus" aria-hidden="true"></span>
+      <span class="hub__lane hub__lane--trunk" aria-hidden="true"></span>
+      <div class="hub__card">
+        <div class="hub__card-head">
+          <span class="hub__live" aria-hidden="true"></span>
+          <strong class="console-display">Hub</strong>
+          <span class="console-mono hub__muted">history.example.com</span>
+        </div>
+        <p class="hub__role">{t.hubRole}</p>
+        <p class="console-mono hub__label">{t.nodesLabel}</p>
+        <ul>
+          {nodes.map((node) => (
+            <li>
+              <span>
+                <strong>{node.name}</strong>
+                <span class="console-mono hub__muted"> · {node.os}</span>
+              </span>
+              <span class={`hub__status is-${node.state} console-mono`}>
+                <i aria-hidden="true"></i>
+                {status(node.state, true)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p class="hub__foot">{t.hubFoot}</p>
+      </div>
+    </div>
+    <pre class="hub__terminal console-mono"><span class="hub__muted"># Hub</span>
+<span class="hub__prompt">$</span> codesesh hub start
+<span class="hub__muted"># {t.workerComment}</span>
+<span class="hub__prompt">$</span> codesesh worker start --hub https://history.example.com --name laptop --pair-token-stdin</pre>
+  </div>
+</section>
+
+<style>
+  .hub {
+    padding-block: clamp(3rem, 6vw, 5rem) clamp(5rem, 8vw, 7rem);
+    scroll-margin-top: 4rem;
+  }
+  .hub__intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4rem;
+    align-items: start;
+    margin-bottom: 3rem;
+  }
+  .hub__intro .section-heading span {
+    display: block;
+    color: var(--brand-text);
+  }
+  .hub__intro .text-link {
+    margin-top: 1rem;
+    color: var(--brand-text);
+  }
+  .hub__points {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .hub__points li {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--console-border);
+  }
+  .hub__points li > span {
+    padding-top: 0.2rem;
+    color: var(--brand-text);
+    font-size: 0.75rem;
+  }
+  .hub__points h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .hub__points p {
+    margin: 0.35rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+  .hub__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: clamp(1rem, 3vw, 2rem);
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-xl);
+    background: var(--console-surface);
+    box-shadow: var(--elevation-raised);
+  }
+  .hub__topology {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2px 3.5rem minmax(0, 1fr);
+    align-items: center;
+  }
+  .hub__workers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .hub__label {
+    margin: 0;
+    color: var(--console-muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .hub__muted {
+    color: var(--console-muted);
+    font-size: 0.75rem;
+  }
+  .hub__worker-row {
+    display: flex;
+    align-items: center;
+  }
+  .hub__worker {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
+    background: var(--console-surface);
+  }
+  .hub__worker-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .hub__worker-head :global(svg) {
+    color: var(--console-muted);
+  }
+  .hub__worker-head .hub__status {
+    margin-left: auto;
+  }
+  .hub__worker p {
+    margin: 0.4rem 0 0;
+    color: var(--console-text-secondary);
+    font-size: 0.8rem;
+  }
+  .hub__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--brand-text);
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+  .hub__status i {
+    width: 7px;
+    height: 7px;
+    border-radius: 99px;
+    background: currentColor;
+  }
+  .hub__status.is-offline {
+    color: var(--signal);
+  }
+  .hub__status.is-collecting i,
+  .hub__status.is-offline i {
+    animation: hub-pulse 1.6s ease-in-out infinite;
+  }
+  .hub__progress {
+    display: block;
+    height: 4px;
+    margin-top: 0.6rem;
+    overflow: hidden;
+    border-radius: 99px;
+    background: var(--console-surface-muted);
+  }
+  .hub__progress span {
+    display: block;
+    height: 100%;
+    background: var(--brand);
+    animation: hub-progress 4.5s var(--ease-out) infinite;
+  }
+  .hub__lane {
+    position: relative;
+    flex: 0 0 3.5rem;
+    height: 2px;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--console-border-strong) 0 6px,
+      transparent 6px 12px
+    );
+  }
+  .hub__lane::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background: var(--brand);
+    animation: hub-hop 1.8s var(--ease-out) infinite;
+  }
+  .hub__lane.is-offline {
+    opacity: 0.7;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--signal) 0 2px,
+      transparent 2px 10px
+    );
+  }
+  .hub__lane.is-offline::after {
+    display: none;
+  }
+  .hub__bus {
+    align-self: stretch;
+    margin: 3.5rem 0 3rem;
+    background: var(--console-border-strong);
+  }
+  .hub__card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 1.25rem;
+    border: 1.5px solid var(--brand);
+    border-radius: var(--radius-xl);
+    background: var(--console-surface-muted);
+  }
+  .hub__card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .hub__card-head strong {
+    font-size: 1.15rem;
+  }
+  .hub__card-head .hub__muted {
+    margin-left: auto;
+  }
+  .hub__live {
+    position: relative;
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background: var(--brand);
+  }
+  .hub__live::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 1px solid var(--brand);
+    border-radius: 99px;
+    animation: hub-ping 2.4s var(--ease-out) infinite;
+  }
+  .hub__role {
+    margin: 0 0 0.75rem;
+    color: var(--console-text-secondary);
+    font-size: 0.8rem;
+  }
+  .hub__card .hub__label {
+    padding-bottom: 0.5rem;
+  }
+  .hub__card ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .hub__card li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--console-border);
+    font-size: 0.875rem;
+  }
+  .hub__card li strong {
+    font-weight: 600;
+  }
+  .hub__foot {
+    margin: 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--console-border);
+    color: var(--console-muted);
+    font-size: 0.8rem;
+  }
+  .hub__terminal {
+    margin: 0;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
+    background: var(--console-bg);
+    font-size: 0.8rem;
+    line-height: 1.9;
+  }
+  .hub__prompt {
+    color: var(--brand-text);
+  }
+
+  @keyframes hub-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @keyframes hub-progress {
+    0% {
+      width: 14%;
+    }
+    75%,
+    100% {
+      width: 100%;
+    }
+  }
+  @keyframes hub-hop {
+    from {
+      left: 0;
+      opacity: 0;
+    }
+    20%,
+    80% {
+      opacity: 1;
+    }
+    to {
+      left: calc(100% - 8px);
+      opacity: 0;
+    }
+  }
+  @keyframes hub-ping {
+    0% {
+      opacity: 1;
+      transform: scale(0.6);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(1.8);
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .hub__intro {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
+    }
+  }
+  @media (max-width: 767px) {
+    .hub__topology {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1.25rem;
+    }
+    .hub__lane,
+    .hub__bus {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hub__status i,
+    .hub__progress span,
+    .hub__lane::after,
+    .hub__live::after {
+      animation: none;
+    }
+    .hub__progress span {
+      width: 64%;
+    }
+  }
+</style>

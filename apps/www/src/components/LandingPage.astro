@@ -9,7 +9,9 @@ import Footer from "./Footer.astro";
 import Header from "./Header.astro";
 import GuidesSection from "./GuidesSection.astro";
 import Hero from "./Hero.astro";
+import HubWorker from "./HubWorker.astro";
 import LatestUpdate from "./LatestUpdate.astro";
+import LocalBoundary from "./LocalBoundary.astro";
 import ProductShowcase from "./ProductShowcase.astro";
 
 interface Props {
@@ -28,6 +30,8 @@ const { locale } = Astro.props;
     <Hero locale={locale} />
     <ProductShowcase locale={locale} />
     <Features locale={locale} />
+    <LocalBoundary locale={locale} />
+    <HubWorker locale={locale} />
     <Agents locale={locale} />
     <div class="landing-resources section-shell section-space">
       <LatestUpdate locale={locale} />

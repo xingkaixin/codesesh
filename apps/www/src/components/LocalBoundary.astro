@@ -1,0 +1,310 @@
+---
+import { experience } from "../data/experience";
+import type { Locale } from "../data/landing";
+import { sections } from "../data/sections";
+import Icon from "./Icon.astro";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = experience[locale];
+const s = sections[locale].local;
+---
+
+<section class="local section-shell" aria-labelledby="local-heading">
+  <div class="local__band" data-reveal>
+    <div class="local__copy">
+      <p class="local__kicker console-mono">03 · {s.label}</p>
+      <h2 id="local-heading" class="section-heading">
+        {t.localTitle[0]}
+        <span>{t.localTitle[1]}</span>
+      </h2>
+      <p class="local__body">{t.localBody}</p>
+      <a class="local__link" href="#faq">
+        {t.localLink}
+        <Icon name="arrow-right" />
+      </a>
+    </div>
+
+    <div class="local__diagram">
+      <div class="local__boundary">
+        <span class="local__boundary-label console-mono">{s.boundary}</span>
+        <ol class="local__chain">
+          {s.chain.map(([title, detail], index) => (
+            <>
+              {index > 0 && (
+                <li
+                  class="local__wire"
+                  aria-hidden="true"
+                  style={`--delay:${index * 0.4}s`}
+                ></li>
+              )}
+              <li class="local__node">
+                <strong class="console-display">{title}</strong>
+                <span class="console-mono">{detail}</span>
+              </li>
+            </>
+          ))}
+        </ol>
+      </div>
+      <div class="local__notes">
+        <div class="local__note">
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"></path>
+            <path class="local__strike-line" d="M4 4l16 16"></path>
+          </svg>
+          <div>
+            <s>{s.cloud}</s>
+            <span class="console-mono">{s.cloudNote}</span>
+          </div>
+        </div>
+        <a class="local__note" href="#hub">
+          <Icon name="database" />
+          <span>
+            {s.worker} <b aria-hidden="true">→</b>
+          </span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .local {
+    padding-bottom: clamp(4rem, 7vw, 6rem);
+  }
+  .local__band {
+    display: grid;
+    grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.5fr);
+    gap: 3.5rem;
+    align-items: center;
+    padding: clamp(1.75rem, 5vw, 4.5rem);
+    border: 1px solid var(--band-line);
+    border-radius: 28px;
+    background: var(--band);
+    color: var(--band-text);
+  }
+  .local__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  .local__kicker {
+    margin: 0;
+    color: var(--band-accent);
+    font-size: 0.75rem;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+  }
+  .local .section-heading {
+    font-size: clamp(2rem, 3.4vw, 3.25rem);
+  }
+  .local .section-heading span {
+    display: block;
+    color: var(--band-muted);
+  }
+  .local__body {
+    margin: 0;
+    color: var(--band-muted);
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+  .local__link {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.75rem;
+    border-bottom: 1px solid currentColor;
+    color: var(--band-accent);
+    font-weight: 500;
+  }
+  .local__diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .local__boundary {
+    position: relative;
+    padding: 2.5rem 1.5rem 1.5rem;
+    border: 1.5px dashed var(--band-line);
+    border-radius: 20px;
+  }
+  .local__boundary-label {
+    position: absolute;
+    top: -0.7rem;
+    left: 1.25rem;
+    padding: 0 0.6rem;
+    background: var(--band);
+    color: var(--band-accent);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .local__chain {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .local__node {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--band-line);
+    border-radius: 14px;
+    background: var(--band-surface);
+  }
+  .local__node strong {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .local__node span {
+    color: var(--band-muted);
+    font-size: 0.72rem;
+    overflow-wrap: anywhere;
+  }
+  .local__wire {
+    position: relative;
+    flex: 0 0 2rem;
+    height: 2px;
+    align-self: center;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--band-line) 0 6px,
+      transparent 6px 12px
+    );
+  }
+  .local__wire::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background: var(--band-accent);
+    animation: local-hop 1.6s var(--delay) var(--ease-out) infinite;
+  }
+  .local__notes {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 1rem;
+  }
+  .local__note {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--band-line);
+    border-radius: 14px;
+    color: var(--band-muted);
+    font-size: 0.8rem;
+    line-height: 1.55;
+  }
+  .local__note :global(svg) {
+    flex: none;
+  }
+  .local__strike-line {
+    stroke: var(--signal);
+  }
+  .local__note s {
+    display: block;
+    color: var(--band-text);
+    font-size: 0.94rem;
+    font-weight: 500;
+    text-decoration-color: var(--signal);
+  }
+  .local__note div span {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+  }
+  a.local__note {
+    transition: border-color var(--dur-base) var(--ease-out);
+  }
+  a.local__note:hover {
+    border-color: var(--band-accent);
+  }
+  a.local__note b {
+    color: var(--band-accent);
+    font-weight: 500;
+  }
+
+  @keyframes local-hop {
+    from {
+      left: 0;
+      opacity: 0;
+    }
+    20%,
+    80% {
+      opacity: 1;
+    }
+    to {
+      left: calc(100% - 8px);
+      opacity: 0;
+    }
+  }
+  @keyframes local-hop-vertical {
+    from {
+      top: 0;
+      opacity: 0;
+    }
+    20%,
+    80% {
+      opacity: 1;
+    }
+    to {
+      top: calc(100% - 8px);
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 1199px) {
+    .local__band {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 639px) {
+    .local__chain {
+      flex-direction: column;
+    }
+    .local__wire {
+      flex: 0 0 2rem;
+      width: 2px;
+      height: auto;
+      background: repeating-linear-gradient(
+        180deg,
+        var(--band-line) 0 6px,
+        transparent 6px 12px
+      );
+    }
+    .local__wire::after {
+      top: 0;
+      left: -3px;
+      animation-name: local-hop-vertical;
+    }
+    .local__notes {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .local__wire::after {
+      animation: none;
+    }
+  }
+</style>
