@@ -1,6 +1,6 @@
 # Hub / Worker 使用与恢复
 
-实现基线见 [设计](hub-worker-design.md)，验收安排见 [验证清单](hub-worker-verification.md)。
+设计决策和数据语义见 [Hub/Worker 设计](../design/hub-worker.md)。
 
 ## 启动方式
 
