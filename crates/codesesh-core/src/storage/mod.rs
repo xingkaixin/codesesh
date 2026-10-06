@@ -11,12 +11,11 @@ mod read;
 mod reprice;
 pub(crate) use reprice::reprice_session;
 mod schema;
+mod search_text;
 mod snapshot;
 use crate::{
     agents::codex::ParsedSession,
-    contract::{
-        CostSource, Message, MessagePart, Role, SessionDetail, SessionHead, SessionReference,
-    },
+    contract::{CostSource, Role, SessionDetail, SessionHead, SessionReference},
 };
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -374,7 +373,7 @@ impl Cache {
                     .map(|tokens| json::tokens(&reference.agent_name, tokens))
                     .transpose()?;
                 digest = cursor::advance(&digest, message, &parts, tokens.as_deref(), 1)?;
-                let content = message_text(message);
+                let content = search_text::message_text(message);
                 text.push('\n');
                 text.push_str(&content);
                 if retained.get(&(index as i64)) == Some(&digest) {
@@ -491,43 +490,6 @@ pub fn role_name(role: &Role) -> &'static str {
         Role::Assistant => "assistant",
         Role::Tool => "tool",
     }
-}
-
-fn message_text(message: &Message) -> String {
-    fn append(value: &serde_json::Value, fields: &mut Vec<String>) {
-        match value {
-            serde_json::Value::Null => (),
-            serde_json::Value::String(value) => {
-                let value = value.trim();
-                if !value.is_empty() {
-                    fields.push(value.to_owned());
-                }
-            }
-            serde_json::Value::Array(values) => {
-                values.iter().for_each(|value| append(value, fields))
-            }
-            serde_json::Value::Object(values) => {
-                values.values().for_each(|value| append(value, fields))
-            }
-            value => fields.push(value.to_string()),
-        }
-    }
-    let mut fields = vec![role_name(&message.role).to_owned()];
-    for value in [&message.agent, &message.model].into_iter().flatten() {
-        append(&serde_json::Value::String(value.clone()), &mut fields);
-    }
-    for part in &message.parts {
-        let value = serde_json::to_value(part).expect("message part serializes");
-        append(&value["type"], &mut fields);
-        if matches!(part, MessagePart::Tool { .. }) {
-            for key in ["title", "tool", "state"] {
-                append(&value[key], &mut fields);
-            }
-        } else {
-            append(&value["text"], &mut fields);
-        }
-    }
-    fields.join("\n")
 }
 
 #[cfg(test)]
