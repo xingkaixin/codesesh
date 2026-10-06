@@ -100,9 +100,6 @@ CREATE TABLE messages (
         ON DELETE CASCADE
     );
 
-CREATE INDEX idx_messages_session
-      ON messages(source_node_id, agent_name, session_id, message_index);
-
 CREATE TABLE session_model_cost (
       source_node_id TEXT NOT NULL DEFAULT 'local',
       agent_name TEXT NOT NULL,

@@ -302,6 +302,10 @@ pub fn ensure_with_progress(
             ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
             ("cost_only_publication_v1", ""),
             (
+                "duplicate_message_index_v1",
+                "DROP INDEX IF EXISTS idx_messages_session",
+            ),
+            (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
             ),
