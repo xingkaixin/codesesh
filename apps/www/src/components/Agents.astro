@@ -1,8 +1,6 @@
 ---
 import { experience } from "../data/experience";
-import { agents, type Locale } from "../data/landing";
-import { guideRoutes } from "../data/guides";
-import Icon from "./Icon.astro";
+import { agents, copy, type Locale } from "../data/landing";
 
 interface Props {
   locale: Locale;
@@ -10,190 +8,169 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = experience[locale];
+const half = Math.ceil(agents.length / 2);
+const rows = [agents, [...agents.slice(half), ...agents.slice(0, half)]];
 ---
 
-<section
-  id="agents"
-  class="agents section-space"
-  aria-labelledby="agents-heading"
->
-  <div class="section-shell agents-layout">
-    <div class="agents-copy" data-reveal>
+<section id="agents" class="agents" aria-labelledby="agents-heading">
+  <div class="section-shell agents__intro" data-reveal>
+    <p class="agents__count">
+      <strong class="console-display">{agents.length}</strong>
+      <span class="console-mono">{t.agentsCount}</span>
+    </p>
+    <div>
+      <p class="landing-kicker">
+        <b>05</b>
+        {copy[locale].header.agents}
+      </p>
       <h2 id="agents-heading" class="section-heading">
         {t.agentsTitle}
       </h2>
-      <p class="section-body">{t.agentsBody}</p>
-      <p class="agent-count">
-        <span>{agents.length}</span>
-        {t.agentsCount}
-      </p>
+      <p class="section-body">{copy[locale].agents.body}</p>
     </div>
-    <ul class="agent-list" data-reveal>
-      {agents.map((agent) => (
-        <li>
-          <span
-            class="agent-icon"
-            aria-hidden="true"
-            style={`mask-image:url('${agent.icon}')`}
-          ></span>
-          <span>{agent.name}</span>
-        </li>
-      ))}
-    </ul>
   </div>
-  <div class="section-shell local-story" data-reveal>
-    <div class="local-heading">
-      <Icon name="shield" class="local-shield" />
-      <h3 class="console-display">
-        {t.localTitle[0]}
-        <br />
-        {t.localTitle[1]}
-      </h3>
-    </div>
-    <div class="local-body">
-      <p>{t.localBody}</p>
-      <a class="text-link" href={guideRoutes("multi-machine-sync")[locale]}>
-        {t.localLink}
-        <Icon name="arrow-up-right" />
-      </a>
-    </div>
+
+  <ul class="sr-only">
+    {agents.map((agent) => (
+      <li>{agent.name}</li>
+    ))}
+  </ul>
+  <div class="agents__rows" aria-hidden="true">
+    {rows.map((row, index) => (
+      <div class="agents__viewport">
+        <div class:list={["agents__track", index === 1 && "is-reverse"]}>
+          {[...row, ...row].map((agent, i) => (
+            <span
+              class="agents__item console-display"
+              data-duplicate={i >= row.length ? "" : undefined}
+            >
+              <span class="agents__icon">
+                <span
+                  class="agent-mark"
+                  style={`mask-image:url('${agent.icon}')`}
+                ></span>
+              </span>
+              {agent.name}
+            </span>
+          ))}
+        </div>
+      </div>
+    ))}
   </div>
 </section>
 
 <style>
   .agents {
+    padding-block: clamp(4.5rem, 8vw, 7rem);
+    border-block: 1px solid var(--console-border);
     background: var(--console-surface-sunken);
+    scroll-margin-top: 4rem;
   }
-  .agents-layout {
+  .agents__intro {
     display: grid;
-    grid-template-columns: 1fr 1.15fr;
-    gap: 6rem;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    gap: 3rem;
+    align-items: end;
+    margin-bottom: 3.5rem;
   }
-  .agents-copy .section-heading {
-    max-width: 9em;
-  }
-  .agents-copy .section-body {
-    max-width: 26rem;
-  }
-  .agent-count {
+  .agents__count {
     display: flex;
-    align-items: baseline;
-    gap: 1.2rem;
-    margin: 2rem 0 0;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--console-text-secondary);
-  }
-  .agent-count > span {
-    font-family: var(--font-display);
-    font-size: 6.6rem;
-    line-height: 1;
-    letter-spacing: -0.08em;
-    color: var(--brand-text);
-  }
-  .agent-list {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.9rem 1.5rem;
-    list-style: none;
-    padding: 0;
+    align-items: flex-end;
+    gap: 1rem;
     margin: 0;
   }
-  .agent-list li {
+  .agents__count strong {
+    font-size: clamp(6rem, 12vw, 10rem);
+    font-weight: 600;
+    letter-spacing: -0.06em;
+    line-height: 0.85;
+  }
+  .agents__count span {
+    padding-bottom: 0.9rem;
+    color: var(--console-muted);
+    font-size: 0.8rem;
+  }
+  .agents__rows {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.8rem;
-    min-width: 0;
-    font-size: 0.8rem;
-    font-weight: 500;
+    gap: 0.75rem;
   }
-  .agent-icon {
-    width: 2.25rem;
-    height: 2.25rem;
-    mask-size: contain;
-    mask-position: center;
-    mask-repeat: no-repeat;
-    background: var(--console-text);
-    opacity: 0.85;
+  .agents__viewport {
+    overflow: hidden;
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      #000 10%,
+      #000 90%,
+      transparent
+    );
   }
-  .local-story {
-    display: grid;
-    grid-template-columns: 1fr 1.15fr;
-    gap: 6rem;
-    border-top: 1px solid var(--console-border-strong);
-    padding-top: 3.5rem;
-    margin-top: 4rem;
-    align-items: center;
-  }
-  .local-heading {
+  .agents__track {
     display: flex;
-    align-items: flex-start;
-    gap: 1.2rem;
+    width: max-content;
+    gap: 0.75rem;
+    animation: agents-marquee 48s linear infinite;
   }
-  .local-heading :global(.local-shield) {
-    width: 2rem;
-    height: 2rem;
-    flex-shrink: 0;
-    color: var(--brand-text);
-    margin-top: 0.3rem;
+  .agents__track.is-reverse {
+    animation-direction: reverse;
+    animation-duration: 56s;
   }
-  .local-heading h3 {
-    margin: 0;
-    font-size: clamp(1.7rem, 2.5vw, 2.5rem);
-    line-height: 1.2;
+  .agents__rows:hover .agents__track {
+    animation-play-state: paused;
+  }
+  .agents__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3.75rem;
+    padding: 0 1.4rem 0 0.85rem;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-lg);
+    background: var(--console-surface);
+    font-size: 1rem;
     font-weight: 500;
-    letter-spacing: -0.04em;
+    white-space: nowrap;
   }
-  .local-body > p {
-    margin: 0 0 0.6rem;
-    max-width: 34rem;
-    color: var(--console-text-secondary);
-    font-size: 0.95rem;
-    line-height: 1.75;
+  .agents__icon {
+    display: inline-flex;
+    width: 2.1rem;
+    height: 2.1rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--console-border);
+    border-radius: var(--radius-md);
+    background: var(--console-surface-muted);
+    color: var(--console-text);
   }
+  .agents__icon .agent-mark {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  @keyframes agents-marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
   @media (max-width: 1023px) {
-    .agents-layout,
-    .local-story {
-      gap: 3rem;
-    }
-    .agent-list {
-      gap: 1.6rem 1rem;
+    .agents__intro {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
     }
   }
-  @media (max-width: 767px) {
-    .agents-layout,
-    .local-story {
-      grid-template-columns: 1fr;
-      gap: 2.5rem;
+  @media (prefers-reduced-motion: reduce) {
+    .agents__track {
+      flex-wrap: wrap;
+      width: auto;
+      padding-inline: 1.5rem;
+      animation: none;
     }
-    .agents-copy .section-heading {
-      max-width: 14em;
+    .agents__rows > :last-child {
+      display: none;
     }
-    .agent-count {
-      margin-top: 1.5rem;
-    }
-    .agent-count > span {
-      font-size: 5rem;
-    }
-    .agent-list {
-      gap: 1.8rem 1rem;
-    }
-    .agent-list li {
-      font-size: 0.72rem;
-    }
-    .agent-icon {
-      width: 1.8rem;
-      height: 1.8rem;
-    }
-    .local-story {
-      margin-top: 3rem;
-      padding-top: 2.5rem;
-      gap: 1.5rem;
-    }
-    .local-body > p {
-      font-size: 0.9rem;
+    .agents__item[data-duplicate] {
+      display: none;
     }
   }
 </style>

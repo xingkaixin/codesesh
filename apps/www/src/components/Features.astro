@@ -1,299 +1,192 @@
 ---
-import { experience } from "../data/experience";
 import { copy, type Locale } from "../data/landing";
-import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
-const t = experience[locale];
-const groups = copy[locale].features.groups;
+const t = copy[locale].features;
+const [title, subtitle] = Array.isArray(t.title) ? t.title : [t.title, ""];
 ---
 
 <section
   id="capabilities"
   class="features section-space"
-  aria-labelledby="capabilities-heading"
+  aria-labelledby="features-heading"
 >
   <div class="section-shell">
-    <header class="features-heading" data-reveal>
-      <h2 id="capabilities-heading" class="section-heading">
-        {t.featuresTitle}
+    <header class="features__header" data-reveal>
+      <p class="landing-kicker">
+        <b>02</b>
+        {copy[locale].header.capabilities}
+      </p>
+      <h2 id="features-heading" class="section-heading">
+        {title}
+        {subtitle && <span>{subtitle}</span>}
       </h2>
-      <p class="section-body">{t.featuresBody}</p>
+      <p class="section-body">{t.body}</p>
     </header>
-    <div class="feature-stories">
-      <article class="feature-story" data-reveal>
-        <a
-          class="feature-image feature-image--search"
-          href="/demo/search.webp"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${t.searchTitle} ${t.screenshot}`}
-        >
-          <img
-            src="/demo/search.webp"
-            width="1586"
-            height="992"
-            alt={t.searchTitle}
-            loading="lazy"
-            decoding="async"
-          />
-          <span class="image-expand">
-            <Icon name="expand" />
-          </span>
-        </a>
-        <p class="image-caption">{t.screenshot}</p>
-        <h3>{t.searchTitle}</h3>
-        <p>{t.searchBody}</p>
-      </article>
-      <article class="feature-story feature-story--replay" data-reveal>
-        <a
-          class="feature-image feature-image--replay"
-          href="/demo/session-detail.webp"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${t.replayTitle} ${t.screenshot}`}
-        >
-          <img
-            src="/demo/session-detail.webp"
-            width="1586"
-            height="992"
-            alt={t.replayTitle}
-            loading="lazy"
-            decoding="async"
-          />
-          <span class="image-expand">
-            <Icon name="expand" />
-          </span>
-        </a>
-        <p class="image-caption">{t.screenshot}</p>
-        <h3>{t.replayTitle}</h3>
-        <p>{t.replayBody}</p>
-      </article>
+
+    <div class="features__track" aria-hidden="true">
+      <span></span>
     </div>
-    <div class="feature-details" data-reveal>
-      {groups.map((group) => (
-        <details class="feature-detail" name="capability">
-          <summary>
-            <span>{group.title}</span>
-            <Icon name="chevron-right" />
-          </summary>
-          <p>{group.description}</p>
+    <ol class="features__grid">
+      {t.groups.map((group, index) => (
+        <li class="features__stage" data-reveal>
+          <span
+            class="features__number console-display"
+            style={`animation-delay:${index * 2}s`}
+            aria-hidden="true"
+          >
+            0{index + 1}
+          </span>
+          <h3 class="console-display">{group.title}</h3>
+          <p class="features__description">{group.description}</p>
           <ul>
             {group.items.map((item) => (
               <li>
-                <Icon name={item.icon} />
-                <div>
-                  <h4>{item.title}</h4>
-                  <p>{item.description}</p>
-                </div>
+                <h4>{item.title}</h4>
+                <p>{item.description}</p>
               </li>
             ))}
           </ul>
-        </details>
+        </li>
       ))}
-    </div>
+    </ol>
   </div>
 </section>
 
 <style>
-  .features-heading {
-    max-width: 47rem;
-    margin-bottom: 3rem;
+  .features {
+    scroll-margin-top: 4rem;
   }
-  .feature-stories {
-    display: grid;
-    grid-template-columns: 1.15fr 1fr;
-    gap: 3rem;
-    align-items: start;
+  .features__header {
+    max-width: 54rem;
   }
-  .feature-story--replay {
-    padding-top: 5rem;
-  }
-  .feature-image {
+  .features__header h2 span {
     display: block;
+    color: var(--console-muted);
+  }
+  .features__track {
     position: relative;
-    height: 25rem;
-    overflow: hidden;
-    border-radius: var(--radius-md);
-    background: var(--console-surface-sunken);
-    border: 1px solid var(--console-border);
+    height: 2px;
+    margin: 4rem 0 2.25rem;
+    background: var(--console-border-strong);
   }
-  .feature-image img {
-    display: block;
-    max-width: none;
-    width: 170%;
-    margin-top: 2.8rem;
-    margin-left: -20%;
-    box-shadow: var(--elevation-overlay);
-    transition: transform 0.6s var(--ease-out);
-  }
-  .feature-image--replay {
-    height: 22rem;
-    background: var(--brand-soft);
-  }
-  .feature-image--replay img {
-    width: 200%;
-    margin-left: -75%;
-    margin-top: 3rem;
-  }
-  .image-expand {
+  .features__track span {
     position: absolute;
-    right: 0.8rem;
-    bottom: 0.8rem;
-    display: grid;
-    place-items: center;
-    width: 2.3rem;
-    height: 2.3rem;
-    border-radius: var(--radius-sm);
-    background: var(--console-surface);
-    border: 1px solid var(--console-border);
-    color: var(--console-text);
+    top: -5px;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 99px;
+    background: var(--signal);
+    box-shadow: 0 0 0 6px var(--signal-soft);
+    animation: features-travel 8s linear infinite;
   }
-  .feature-image:hover img {
-    transform: translateY(-6px);
-  }
-  .image-caption {
-    margin: 0.65rem 0 1.6rem !important;
-    color: var(--console-muted) !important;
-    font-family: var(--font-mono);
-    font-size: 0.6rem !important;
-  }
-  .feature-story h3 {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: clamp(1.55rem, 2.3vw, 2.2rem);
-    letter-spacing: -0.035em;
-    font-weight: 500;
-    line-height: 1.2;
-  }
-  .feature-story > p {
-    max-width: 34rem;
-    margin: 0.9rem 0 0;
-    font-size: 0.95rem;
-    line-height: 1.75;
-    color: var(--console-text-secondary);
-  }
-  .feature-details {
+  .features__grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 2rem;
-    margin-top: 4rem;
-    align-items: start;
-  }
-  .feature-detail {
-    border-top: 1px solid var(--console-border-strong);
-  }
-  .feature-detail summary {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    justify-content: space-between;
-    min-height: 4.5rem;
-    font-size: 1.1rem;
-    font-weight: 500;
-    cursor: pointer;
-    list-style: none;
-  }
-  .feature-detail summary::-webkit-details-marker {
-    display: none;
-  }
-  .feature-detail summary :global(svg) {
-    flex-shrink: 0;
-    transition: transform 0.2s var(--ease-out);
-  }
-  .feature-detail[open] summary :global(svg) {
-    transform: rotate(90deg);
-  }
-  .feature-detail > p {
-    margin: 0 0 1.5rem;
-    font-size: 0.82rem;
-    line-height: 1.6;
-    color: var(--console-text-secondary);
-  }
-  .feature-detail ul {
+    margin: 0;
     padding: 0;
-    margin: 0;
     list-style: none;
-    display: grid;
-    gap: 1.2rem;
   }
-  .feature-detail li {
+  .features__stage {
     display: flex;
-    gap: 0.65rem;
-    align-items: start;
+    flex-direction: column;
+    gap: 0.85rem;
   }
-  .feature-detail li :global(svg) {
-    flex: 0 0 1rem;
-    margin-top: 0.1rem;
-    color: var(--brand-text);
+  .features__number {
+    color: var(--console-border-strong);
+    font-size: 3.5rem;
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    animation: features-lit 8s linear infinite;
   }
-  .feature-detail h4 {
+  .features__stage h3 {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 1.5rem;
     font-weight: 600;
   }
-  .feature-detail li p {
-    margin: 0.3rem 0 0;
+  .features__description {
+    min-height: 2.75rem;
+    margin: 0 0 0.5rem;
     color: var(--console-text-secondary);
-    font-size: 0.78rem;
+    font-size: 0.875rem;
     line-height: 1.6;
   }
-  @media (max-width: 1023px) {
-    .feature-stories {
-      gap: 1.7rem;
+  .features__stage ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .features__stage ul li {
+    padding: 0.9rem 0;
+    border-top: 1px solid var(--console-border);
+  }
+  .features__stage h4 {
+    margin: 0;
+    font-size: 0.94rem;
+    font-weight: 600;
+  }
+  .features__stage ul p {
+    margin: 0.35rem 0 0;
+    color: var(--console-muted);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+
+  @keyframes features-travel {
+    from {
+      left: 0;
     }
-    .feature-image {
-      height: 20rem;
-    }
-    .feature-image--replay {
-      height: 18rem;
-    }
-    .feature-details {
-      grid-template-columns: 1fr 1fr;
+    to {
+      left: calc(100% - 12px);
     }
   }
-  @media (max-width: 767px) {
-    .features-heading {
-      margin-bottom: 2rem;
+  /* 8s 周期内数字只在光点经过时亮起，四列依次延迟 2s 与光点位置对齐。 */
+  @keyframes features-lit {
+    0%,
+    4% {
+      color: var(--signal);
     }
-    .feature-stories {
-      grid-template-columns: 1fr;
-      gap: 2.6rem;
+    18%,
+    100% {
+      color: var(--console-border-strong);
     }
-    .feature-story--replay {
-      padding-top: 0;
+  }
+
+  @media (max-width: 1023px) {
+    .features__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: 3rem;
     }
-    .feature-image,
-    .feature-image--replay {
-      height: auto;
-      aspect-ratio: 1.25;
+    .features__track {
+      display: none;
     }
-    .feature-story > p {
-      font-size: 0.9rem;
+    .features__grid {
+      margin-top: 3rem;
     }
-    .feature-details {
-      grid-template-columns: 1fr;
-      gap: 0;
-      margin-top: 2.5rem;
+    .features__number {
+      animation: none;
+      color: var(--brand-text);
     }
-    .feature-detail[open] {
-      padding-bottom: 1.5rem;
-    }
-    .feature-detail summary {
-      min-height: 4rem;
+  }
+  @media (max-width: 639px) {
+    .features__grid {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .feature-image img,
-    .feature-detail summary :global(svg) {
-      transition: none;
+    .features__track span {
+      animation: none;
     }
-    .feature-image:hover img {
-      transform: none;
+    .features__number {
+      animation: none;
+      color: var(--brand-text);
     }
   }
 </style>
