@@ -2,6 +2,12 @@ use anyhow::{Result, bail, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{collections::HashSet, path::Path};
 
+pub(super) const DOCUMENT_UPDATE_TRIGGER: &str = "DROP TRIGGER IF EXISTS session_documents_au;
+     CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
+       INSERT INTO session_documents_fts(session_documents_fts,rowid,title,content_text) VALUES('delete',old.id,old.title,old.content_text);
+       INSERT INTO session_documents_fts(rowid,title,content_text) VALUES(new.id,new.title,new.content_text);
+     END;";
+
 fn exists(db: &Connection, name: &str) -> Result<bool> {
     Ok(db
         .query_row(
@@ -308,18 +314,8 @@ pub fn ensure_with_progress(
     db.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| -> Result<()> {
         for (key, sql) in [
-            (
-                "covering_read_indexes_v1",
-                include_str!("read-indexes.sql"),
-            ),
-            (
-                "cost_only_publication_v1",
-                "DROP TRIGGER IF EXISTS session_documents_au;
-                 CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
-                   INSERT INTO session_documents_fts(session_documents_fts,rowid,title,content_text) VALUES('delete',old.id,old.title,old.content_text);
-                   INSERT INTO session_documents_fts(rowid,title,content_text) VALUES(new.id,new.title,new.content_text);
-                 END;",
-            ),
+            ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
+            ("cost_only_publication_v1", DOCUMENT_UPDATE_TRIGGER),
             (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
@@ -353,7 +349,8 @@ pub fn ensure_with_progress(
     if result.is_err() {
         let _ = db.execute_batch("ROLLBACK");
     }
-    result
+    result?;
+    super::search_text::rebuild(db, progress)
 }
 
 fn restore_legacy_heads(db: &Connection) -> Result<()> {
