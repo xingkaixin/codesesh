@@ -13,7 +13,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 
 ## 表和索引
 
-持久 schema 包含 13 张表，其中两张为 FTS5 虚表，另有一个项目聚合视图。
+持久 schema 包含 14 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
 
 | 对象 | 用途 |
 |------|------|
@@ -27,13 +27,16 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `session_cost_summary` | 消息用量与费用归因所需的会话事实 |
 | `message_tools` | 消息工具名，用于结构化过滤 |
 | `session_file_activity` | 文件路径、操作类型、次数和最近活动时间 |
-| `session_documents` | 标题、聚合文本、内容签名和已索引消息数 |
-| `session_documents_fts` | 会话全文检索 |
+| `session_documents` | 标题、内容签名和已索引消息数 |
+| `message_fts` | 消息全文检索，无内容表，rowid 对应 `messages.rowid` |
+| `session_title_fts` | 会话标题全文检索，内容来自 `sessions` |
 | `session_file_activity_path_fts` | 文件路径 trigram 检索 |
 | `project_groups_v` | 按项目身份聚合会话 |
 
 `(agent_name, session_id)` 是持久化会话身份。消息和文件活动通过复合外键关联会话，删除
-会话时级联清理。FTS 由内容表触发器维护，不另外保存一套消息级全文索引。
+会话时级联清理。标题和文件路径 FTS 由内容表触发器维护。`message_fts` 不保存原文，由 writer
+在写入或删除消息时同步维护：只索引新增或变化的消息，汉字逐字切分，使中文子串可以按短语
+查询。搜索在会话层面组合各个词的命中，片段从命中消息的 `content_text` 生成。
 
 schema 33 的消息用量时间索引覆盖顺序、模型、tokens 和成本字段。schema 34 保存
 `automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
@@ -73,7 +76,7 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 2. schema 35 及更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份；迁移重建带来源维度的键，早于 schema 35 的库同时回填 `head_meta_json`。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
-5. 缺失的 FTS 虚表通过建表和 rebuild 恢复。
+5. 缺失的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。与固定 Node 参考
 制品的正向迁移与 Rust 重启检查是独立验收。schema 36 不支持再由 schema 35 的旧版本
