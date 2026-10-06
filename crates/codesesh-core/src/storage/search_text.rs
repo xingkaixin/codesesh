@@ -6,7 +6,7 @@ use serde_json::Value;
 
 const REVISION_KEY: &str = "search_text_v2";
 const CURSOR_KEY: &str = "search_text_v2_cursor";
-const TOOL_TEXT_EDGE_BYTES: usize = 8 * 1024;
+const TOOL_TEXT_EDGE_BYTES: usize = 64 * 1024;
 const BLOB_MIN_BYTES: usize = 256;
 const REWRITE_BATCH: usize = 500;
 
@@ -287,7 +287,7 @@ mod tests {
         assert!(text.contains("/tmp/shot.png") && text.contains("rendered ok"));
         assert!(!text.contains("iVBORw0KGgo"));
 
-        let log = format!("start {} finish", "line of build output\n".repeat(2000));
+        let log = format!("start {} finish", "line of build output\n".repeat(10_000));
         let text = tool(json!(log));
         assert!(text.contains("start") && text.contains("finish"));
         assert!(text.len() < 3 * TOOL_TEXT_EDGE_BYTES);
