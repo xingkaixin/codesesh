@@ -23,8 +23,12 @@ fn batch(path: &Path) -> Result<ScanBatch> {
     })
 }
 
-async fn until(mut predicate: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(10), async {
+async fn until(predicate: impl FnMut() -> bool) {
+    until_within(Duration::from_secs(10), predicate).await;
+}
+
+async fn until_within(timeout: Duration, mut predicate: impl FnMut() -> bool) {
+    tokio::time::timeout(timeout, async {
         while !predicate() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -570,7 +574,12 @@ async fn prefetched_batch_is_discarded_when_publication_is_locked() {
     .unwrap();
     until(|| calls.load(Ordering::SeqCst) == 2).await;
     assert!(runtime.snapshot().is_empty());
-    until(|| rejected.load(Ordering::SeqCst) == 2).await;
+    // The writer gives up after SQLite's 5 s busy_timeout, which sums requested sleeps
+    // rather than elapsed time, so loaded runners can stretch it well past 10 s.
+    until_within(Duration::from_secs(60), || {
+        rejected.load(Ordering::SeqCst) == 2
+    })
+    .await;
     blocker.lock().unwrap().execute_batch("COMMIT").unwrap();
     assert!(runtime.snapshot().is_empty());
     let count: i64 = blocker
