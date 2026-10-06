@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -76,6 +76,7 @@ pub fn scan_changed(
     pricing: &Pricing,
     paths: &[PathBuf],
     previous: &[crate::agents::SessionRecord],
+    checkpoints: &mut Checkpoints,
 ) -> Result<super::ScanDelta> {
     if paths.iter().any(|path| {
         path.file_name()
@@ -147,7 +148,7 @@ pub fn scan_changed(
     let mut changed = Vec::new();
     for file in &files {
         if rollout::physical_path(file)?.is_some()
-            && let Some(detail) = parse(file, &titles, pricing)?
+            && let Some(detail) = checkpoints.parse(file, &titles, pricing)?
         {
             affected.insert(detail.head.reference.session_id.clone());
             if let Some(parent) = &detail.head.parent_reference {
@@ -168,7 +169,7 @@ pub fn scan_changed(
         affected.contains(&session.head.reference.session_id) && !files.contains(&session.source)
     }) {
         if rollout::physical_path(&session.source)?.is_some() {
-            if let Some(detail) = parse(&session.source, &titles, pricing)? {
+            if let Some(detail) = checkpoints.parse(&session.source, &titles, pricing)? {
                 changed.push(ParsedSession {
                     source: session.source.clone(),
                     head: detail.head.clone(),
@@ -523,6 +524,117 @@ pub fn parse(
         parser.feed(line, pricing);
     }
     Ok(parser.finish(titles))
+}
+
+#[cfg(not(test))]
+const CHECKPOINT_MIN_BYTES: u64 = 8 * 1024 * 1024;
+#[cfg(test)]
+const CHECKPOINT_MIN_BYTES: u64 = 1;
+const CHECKPOINT_LIMIT: usize = 2;
+const CHECKPOINT_TAIL_BYTES: usize = 64;
+
+/// Parser state for the few large rollouts that changed most recently.
+#[derive(Default)]
+pub struct Checkpoints(Vec<(PathBuf, Checkpoint)>);
+
+struct Checkpoint {
+    physical: PathBuf,
+    offset: u64,
+    tail: Vec<u8>,
+    generation: u64,
+    parser: Parser,
+}
+
+impl Checkpoints {
+    pub fn parse(
+        &mut self,
+        path: &Path,
+        titles: &HashMap<String, String>,
+        pricing: &Pricing,
+    ) -> Result<Option<SessionDetail>> {
+        let logical = rollout::logical_path(path);
+        let previous = self
+            .0
+            .iter()
+            .position(|(key, _)| *key == logical)
+            .map(|index| self.0.remove(index).1);
+        let Some(physical) = rollout::physical_path(path)?
+            .filter(|physical| physical.extension().is_some_and(|ext| ext == "jsonl"))
+        else {
+            return parse(path, titles, pricing);
+        };
+        let Ok(mut file) = File::open(&physical) else {
+            return parse(path, titles, pricing);
+        };
+        let len = file.metadata()?.len();
+        if len < CHECKPOINT_MIN_BYTES {
+            return parse(path, titles, pricing);
+        }
+        let mut resumed = None;
+        if let Some(checkpoint) = previous
+            && checkpoint.physical == physical
+            && checkpoint.generation == pricing.generation()
+            && checkpoint.offset <= len
+        {
+            let mut tail = vec![0; checkpoint.tail.len()];
+            file.seek(SeekFrom::Start(checkpoint.offset - tail.len() as u64))?;
+            file.read_exact(&mut tail)?;
+            if tail == checkpoint.tail {
+                resumed = Some(checkpoint);
+            }
+        }
+        let (mut parser, mut offset, mut tail) = match resumed {
+            Some(checkpoint) => (Some(checkpoint.parser), checkpoint.offset, checkpoint.tail),
+            None => (None, 0, Vec::new()),
+        };
+        file.seek(SeekFrom::Start(offset))?;
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let mut line = String::new();
+        let mut partial = None;
+        loop {
+            line.clear();
+            let read = reader.read_line(&mut line)?;
+            if read == 0 {
+                break;
+            }
+            // Codex may still be writing the last line; resume before it.
+            if !line.ends_with('\n') {
+                partial = Some(std::mem::take(&mut line));
+                break;
+            }
+            let state = match &mut parser {
+                Some(state) => state,
+                None => match Parser::new(path, &physical, &line)? {
+                    Some(state) => parser.insert(state),
+                    None => return Ok(None),
+                },
+            };
+            state.feed(&line, pricing);
+            offset += read as u64;
+            tail = line.as_bytes()[line.len().saturating_sub(CHECKPOINT_TAIL_BYTES)..].to_vec();
+        }
+        let Some(parser) = parser else {
+            return parse(path, titles, pricing);
+        };
+        let mut current = parser.clone();
+        if let Some(line) = &partial {
+            current.feed(line, pricing);
+        }
+        self.0.push((
+            logical,
+            Checkpoint {
+                physical,
+                offset,
+                tail,
+                generation: pricing.generation(),
+                parser,
+            },
+        ));
+        if self.0.len() > CHECKPOINT_LIMIT {
+            self.0.remove(0);
+        }
+        Ok(current.finish(titles))
+    }
 }
 
 #[derive(Clone)]
@@ -1128,6 +1240,42 @@ mod incremental_tests {
     use std::io::Write;
 
     #[test]
+    fn checkpoints_resume_appends_and_match_full_parses() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000009.jsonl");
+        let pricing = Pricing::bundled();
+        let records = [
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/work","model":"gpt-5"}}),
+            serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Run the tests"}]}}),
+            serde_json::json!({"type":"response_item","timestamp":3000,"payload":{"type":"function_call","name":"exec_command","call_id":"call-1","arguments":"{\"cmd\":\"cargo test\"}"}}),
+            serde_json::json!({"type":"event_msg","timestamp":3500,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}),
+            serde_json::json!({"type":"response_item","timestamp":4000,"payload":{"type":"function_call_output","call_id":"call-1","output":"ok"}}),
+            serde_json::json!({"type":"response_item","timestamp":5000,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Tests pass"}]}}),
+        ];
+        let mut checkpoints = Checkpoints::default();
+        let mut file = File::create(&path).unwrap();
+        for record in &records {
+            let line = format!("{record}\n");
+            let (head, rest) = line.split_at(line.len() / 2);
+            for chunk in [head, rest] {
+                file.write_all(chunk.as_bytes()).unwrap();
+                file.flush().unwrap();
+                assert_eq!(
+                    checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
+                    parse(&path, &HashMap::new(), &pricing).unwrap()
+                );
+            }
+        }
+        std::fs::write(&path, format!("{}\n{}\n", records[0], records[5])).unwrap();
+        assert_eq!(
+            checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
+            parse(&path, &HashMap::new(), &pricing).unwrap()
+        );
+    }
+
+    #[test]
     fn reopening_a_session_does_not_advance_activity_time() {
         let root = tempfile::tempdir().unwrap();
         let sessions = root.path().join("sessions");
@@ -1162,6 +1310,7 @@ mod incremental_tests {
             &pricing,
             std::slice::from_ref(&path),
             &previous,
+            &mut Default::default(),
         )
         .unwrap();
         for result in [&full, &changed.upserts] {
@@ -1170,7 +1319,14 @@ mod incremental_tests {
             assert_eq!(result[0].detail.messages, initial[0].detail.messages);
         }
         writeln!(file, "{}", serde_json::json!({"type":"response_item","timestamp":7000,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}})).unwrap();
-        let continued = scan_changed(root.path(), &pricing, &[path], &previous).unwrap();
+        let continued = scan_changed(
+            root.path(),
+            &pricing,
+            &[path],
+            &previous,
+            &mut Default::default(),
+        )
+        .unwrap();
         assert_eq!(continued.upserts[0].head.time_updated, 7000.0);
         assert_eq!(continued.upserts[0].detail.messages.len(), 2);
     }
@@ -1231,7 +1387,14 @@ mod incremental_tests {
             std::fs::remove_file(&session.source).unwrap();
         }
         let compressed = scan(root.path(), &pricing).unwrap();
-        let incremental = scan_changed(root.path(), &pricing, &[parent_path], &previous).unwrap();
+        let incremental = scan_changed(
+            root.path(),
+            &pricing,
+            &[parent_path],
+            &previous,
+            &mut Default::default(),
+        )
+        .unwrap();
         for result in [&full, &compressed, &incremental.upserts] {
             let messages = &result
                 .iter()
@@ -1282,6 +1445,7 @@ mod incremental_tests {
                     .iter()
                     .map(crate::agents::SessionRecord::from)
                     .collect::<Vec<_>>(),
+                &mut Default::default()
             )
             .is_err()
         );
@@ -1294,6 +1458,7 @@ mod incremental_tests {
                     .iter()
                     .map(crate::agents::SessionRecord::from)
                     .collect::<Vec<_>>(),
+                &mut Default::default()
             )
             .is_err()
         );
@@ -1306,6 +1471,7 @@ mod incremental_tests {
                 .iter()
                 .map(crate::agents::SessionRecord::from)
                 .collect::<Vec<_>>(),
+            &mut Default::default(),
         )
         .unwrap();
         assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
