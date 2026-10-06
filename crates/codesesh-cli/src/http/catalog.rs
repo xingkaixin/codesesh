@@ -496,6 +496,7 @@ fn agent_info(counts: &HashMap<String, usize>) -> Vec<Value> {
         let object = entry.as_object_mut().unwrap();
         object.remove("sourceKind");
         object.remove("toolStrategy");
+        object.remove("support");
         object.insert("count".into(), json!(count));
     }
     entries

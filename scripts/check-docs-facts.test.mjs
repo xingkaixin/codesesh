@@ -125,6 +125,50 @@ describe("CS-172: semantic documentation facts", () => {
     expect(mismatches.every(({ message }) => message.includes('missing ["Fixture"]'))).toBe(true);
   });
 
+  it("reports a capability cell that drifted from the catalog", () => {
+    const dir = fixtureRepo();
+    writeFileSync(
+      join(dir, "README.md"),
+      marked(
+        "agents",
+        "| Agent | Status | Usage | Cost | Tools | Reasoning | Tree | Resume |\n|---|---|---|---|---|---|---|---|\n" +
+          "| Claude Code | Supported | ✓ | — | ✓ | ✓ | ✓ | ✓ |\n| Cursor | Supported | ✓ | — | ✓ | — | — | — |",
+      ),
+    );
+    const support = (usage, reasoning, sessionTree) => ({
+      tier: "full",
+      usage,
+      recordedCost: false,
+      toolResults: true,
+      reasoning,
+      sessionTree,
+    });
+    const agents = [
+      {
+        ...coreFacts.agents[0],
+        resumeCommandPrefix: "claude --resume",
+        support: support("full", true, true),
+      },
+      {
+        ...coreFacts.agents[1],
+        resumeCommandPrefix: null,
+        support: support("partial", false, false),
+      },
+    ];
+
+    expect(
+      findDocumentationFactMismatches(dir, { ...coreFacts, agents }).filter(
+        ({ document, fact }) => document === "README.md" && fact === "agents",
+      ),
+    ).toEqual([
+      {
+        document: "README.md",
+        fact: "agents",
+        message: "Cursor: expected ◐ — ✓ — — —; documented ✓ — ✓ — — —",
+      },
+    ]);
+  });
+
   it("reports every marked pnpm copy after packageManager changes", () => {
     const mismatches = findDocumentationFactMismatches(fixtureRepo("pnpm@11.21.0"), coreFacts);
     const pnpmMismatches = mismatches.filter(({ fact }) => fact === "pnpm-version");
