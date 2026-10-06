@@ -102,6 +102,12 @@ const PLATFORM_NAMES: Record<string, string> = {
   windows: "Windows",
 };
 
-export function hostSummary(host: HostInfo) {
-  return [PLATFORM_NAMES[host.os] ?? host.os, host.arch, host.hostname].filter(Boolean).join(" · ");
+export function hostSummary(host: HostInfo, nodeName: string) {
+  return [
+    PLATFORM_NAMES[host.os] ?? host.os,
+    host.arch,
+    host.hostname !== nodeName && host.hostname,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

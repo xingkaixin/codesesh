@@ -167,7 +167,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                 <h3 className="console-mono break-words text-lg font-semibold">{selected.name}</h3>
                 <p className="console-mono mt-1 break-all text-xs text-[var(--console-muted)]">
                   {[
-                    selected.health?.host && hostSummary(selected.health.host),
+                    selected.health?.host && hostSummary(selected.health.host, selected.name),
                     selected.id === "local" && t("Local source"),
                     `Worker v${selected.version}`,
                   ]
