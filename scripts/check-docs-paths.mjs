@@ -16,12 +16,13 @@ export const CHECKED_DOCUMENTS = [
   "README.md",
   "README_CN.md",
   "crates/codesesh-cli/README.md",
-  "docs/PRD.md",
+  "docs/README.md",
+  "docs/product.md",
   "docs/architecture.md",
-  "docs/performance.md",
-  "docs/scanning-and-caching.md",
-  "docs/sqlite-storage.md",
-  "docs/release-guide.md",
+  "docs/engineering/performance.md",
+  "docs/design/scanning-and-caching.md",
+  "docs/design/sqlite-storage.md",
+  "docs/engineering/release-guide.md",
 ];
 
 /** Directories a repository path must start with to be checked. */
