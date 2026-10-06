@@ -94,6 +94,35 @@ function parseAgentNames(region) {
   return [...region.matchAll(/^\s*-\s+(.+?)\s*$/gm)].map((match) => match[1].trim());
 }
 
+const CAPABILITY_MARK = { full: "✓", partial: "◐", none: "—", true: "✓", false: "—" };
+
+/** Expected matrix cells after the Agent and status columns, in column order. */
+export function agentCapabilityCells({ support, resumeCommandPrefix }) {
+  return [
+    support.usage,
+    support.recordedCost,
+    support.toolResults,
+    support.reasoning,
+    support.sessionTree,
+    resumeCommandPrefix != null,
+  ].map((value) => CAPABILITY_MARK[String(value)]);
+}
+
+function compareCapabilityMatrix(agents, region) {
+  const rows = [...region.matchAll(/^\|(.+)\|\s*$/gm)]
+    .map((match) => match[1].split("|").map((cell) => cell.trim()))
+    .filter((cells) => cells.length > 2 && cells[0] !== "Agent" && !/^-+$/.test(cells[0]));
+  const mismatches = rows.flatMap(([name, , ...documented]) => {
+    const agent = agents.find(({ displayName }) => displayName === name);
+    if (!agent) return [];
+    const expected = agentCapabilityCells(agent);
+    return documented.join(" ") === expected.join(" ")
+      ? []
+      : [`${name}: expected ${expected.join(" ")}; documented ${documented.join(" ")}`];
+  });
+  return mismatches.length > 0 ? mismatches.join("; ") : null;
+}
+
 function parseSourceKindNames(region) {
   const filesystem = /文件(?:系统|型)\s*[:：]\s*([^\n│]+)/u.exec(region)?.[1];
   const sqlite = /SQLite(?:\s+数据库型)?\s*[:：]\s*([^\n│]+)/u.exec(region)?.[1];
@@ -160,9 +189,11 @@ function validateRegion(fact, region, repositoryFacts) {
   }
 
   if (fact === "agents") {
-    return compareNames(
-      repositoryFacts.agents.map(({ displayName }) => displayName),
-      parseAgentNames(region),
+    return (
+      compareNames(
+        repositoryFacts.agents.map(({ displayName }) => displayName),
+        parseAgentNames(region),
+      ) ?? compareCapabilityMatrix(repositoryFacts.agents, region)
     );
   }
 

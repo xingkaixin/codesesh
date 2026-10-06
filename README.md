@@ -56,24 +56,26 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 
 <!-- repo-fact:agents:start -->
 
-| Agent       | Status    |
-| ----------- | --------- |
-| Claude Code | Supported |
-| Cursor      | Supported |
-| Kimi-Cli    | Supported |
-| Kimi-Code   | Supported |
-| Codex       | Supported |
-| Grok        | Supported |
-| Pi          | Supported |
-| OpenCode    | Supported |
-| ZCode       | Supported |
-| DSH         | Supported |
-| DeepChat    | Supported |
-| Cherry Studio | Supported |
-| MiniMax Code | Supported |
-| Antigravity CLI | Partial support |
+| Agent           | Status          | Usage | Recorded cost | Tool results | Reasoning | Session tree | Resume |
+| --------------- | --------------- | ----- | ------------- | ------------ | --------- | ------------ | ------ |
+| Claude Code     | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
+| Cursor          | Supported       | ◐     | —             | ✓            | —         | —            | —      |
+| Kimi-Cli        | Supported       | ◐     | —             | ✓            | ✓         | —            | ✓      |
+| Kimi-Code       | Supported       | ✓     | —             | ✓            | ✓         | —            | ✓      |
+| Codex           | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
+| Grok            | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
+| Pi              | Supported       | ✓     | ✓             | ✓            | ✓         | —            | ✓      |
+| OpenCode        | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
+| ZCode           | Supported       | ◐     | ✓             | ✓            | ✓         | ✓            | —      |
+| MiniMax Code    | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
+| DSH             | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
+| DeepChat        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
+| Cherry Studio   | Supported       | ✓     | ✓             | ✓            | ✓         | —            | —      |
+| Antigravity CLI | Partial support | —     | —             | —            | —         | ✓            | —      |
 
 <!-- repo-fact:agents:end -->
+
+✓ available · ◐ partial (for example, input and output tokens only) · — not available. Without a recorded cost, CodeSesh estimates cost from model prices.
 
 Antigravity CLI supports local SQLite conversations, titles, workspace metadata, and tool calls. Tool outcomes and usage remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
 
