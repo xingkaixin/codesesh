@@ -344,6 +344,22 @@ async fn real_worker_uploads_and_recovers_after_hub_restart() {
         );
         restarted
     };
+    // A confirmation still in flight when the Hub stops could empty the queue after
+    // the outage check below, so start the outage with nothing left to confirm.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let store =
+            codesesh_core::sync::WorkerStore::open(&worker_home.path().join(".codesesh/worker.db"))
+                .unwrap();
+        if store.queue_status().unwrap().batches == 0 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Worker did not drain its queue before the outage"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
     drop(server);
     source(worker_home.path(), "second", "Collected during outage");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
