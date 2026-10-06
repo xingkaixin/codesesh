@@ -302,6 +302,10 @@ pub fn ensure_with_progress(
             ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
             ("cost_only_publication_v1", ""),
             (
+                "duplicate_message_index_v1",
+                "DROP INDEX IF EXISTS idx_messages_session",
+            ),
+            (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
             ),
@@ -336,7 +340,40 @@ pub fn ensure_with_progress(
     }
     result?;
     super::search_text::rebuild(db, progress)?;
-    super::search_text::ensure_index(db, progress)
+    super::search_text::ensure_index(db, progress)?;
+    if path.is_some() {
+        compact(db, COMPACT_MIN_FREE_PAGES, progress)?;
+    }
+    Ok(())
+}
+
+// 64 MB of 4 KB pages; smaller gaps are reused by later writes.
+const COMPACT_MIN_FREE_PAGES: i64 = 16 * 1024;
+
+fn compact(
+    db: &Connection,
+    min_free_pages: i64,
+    progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
+) -> Result<()> {
+    let pages: i64 = db.pragma_query_value(None, "page_count", |row| row.get(0))?;
+    let free: i64 = db.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+    if free < min_free_pages || free * 4 < pages {
+        return Ok(());
+    }
+    progress(super::StorageProgress {
+        phase: format!("Compacting database ({free} of {pages} pages unused)"),
+        done: 0,
+        total: None,
+    })?;
+    // Compaction needs free disk space for a full copy; the cache stays usable without it.
+    if let Err(error) = db.execute_batch("VACUUM") {
+        progress(super::StorageProgress {
+            phase: format!("Database compaction skipped: {error}"),
+            done: 0,
+            total: None,
+        })?;
+    }
+    Ok(())
 }
 
 fn restore_legacy_heads(db: &Connection) -> Result<()> {
@@ -491,6 +528,25 @@ mod tests {
             1
         );
     }
+    #[test]
+    fn compacts_only_when_most_pages_are_free() {
+        let root = tempfile::tempdir().unwrap();
+        let db = Connection::open(root.path().join("cache.db")).unwrap();
+        db.execute_batch("CREATE TABLE filler(value BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<200) INSERT INTO filler SELECT zeroblob(4000) FROM n;").unwrap();
+        let pages = |db: &Connection| {
+            db.pragma_query_value(None, "page_count", |row| row.get::<_, i64>(0))
+                .unwrap()
+        };
+        db.execute_batch("DELETE FROM filler WHERE rowid>180")
+            .unwrap();
+        let before = pages(&db);
+        compact(&db, 1, &mut |_| Ok(())).unwrap();
+        assert_eq!(pages(&db), before);
+        db.execute_batch("DELETE FROM filler").unwrap();
+        compact(&db, 1, &mut |_| Ok(())).unwrap();
+        assert!(pages(&db) < before / 10);
+    }
+
     #[test]
     fn rejects_future_schema_without_writing() {
         let db = Connection::open_in_memory().unwrap();
