@@ -137,7 +137,7 @@ test("copies the install command with the clipboard API", async ({ page }) => {
   });
   await page.goto("/");
 
-  const copy = page.locator("[data-copy-command]").first();
+  const copy = page.locator(".hero [data-copy-command]");
   await copy.click();
 
   await expect(copy).toContainText("Copied");
@@ -145,8 +145,21 @@ test("copies the install command with the clipboard API", async ({ page }) => {
     .poll(() =>
       page.evaluate(() => ("__copiedCommand" in window ? window.__copiedCommand : undefined)),
     )
-    .toBe("npx codesesh@latest");
+    .toBe("npx codesesh");
 
+  await expect
+    .poll(() => page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent))
+    .toEqual({
+      name: "install-copy",
+      data: { method: "npm", placement: "hero", locale: "en" },
+    });
+
+  await page.locator("#cta-install-panel-npm [data-copy-command]").click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => ("__copiedCommand" in window ? window.__copiedCommand : undefined)),
+    )
+    .toBe("npx codesesh@latest");
   await expect
     .poll(() => page.evaluate(() => (window as AnalyticsTestWindow).__trackedEvent))
     .toEqual({
@@ -233,30 +246,29 @@ test("distinguishes repository visits from download intent", async ({ page }) =>
 test("explores each interactive product preview", async ({ page }) => {
   await page.goto("/");
 
-  const overview = page.locator('[data-product-demo="overview"]');
-  const thirtyDays = overview.locator('[data-demo-range="30d"]');
-  await expect(overview.locator('[data-demo-kpi="0"] [data-demo-kpi-value]')).toHaveText("212");
+  const overview = page.locator("[data-overview]");
+  const thirtyDays = overview.locator('[data-range="30d"]');
+  await expect(overview.locator('[data-stat="sessions"]')).toHaveText("128");
   await thirtyDays.click();
   await expect(thirtyDays).toHaveAttribute("aria-pressed", "true");
-  await expect(overview.locator('[data-demo-kpi="0"] [data-demo-kpi-value]')).toHaveText("863");
-  await expect(overview.locator("[data-demo-range-chip]")).toContainText("Last 30d");
-
-  await expect(overview.locator("[data-demo-model-total]")).toContainText("6.42B");
+  await expect(overview.locator('[data-stat="sessions"]')).toHaveText("512");
+  await expect(overview.locator('[data-agent-share="0"]')).toHaveText("51%");
 
   await page.getByRole("tab", { name: "Projects", exact: true }).click();
-  const project = page.locator('[data-product-demo="projects"]');
-  const subsession = project.locator("details[data-demo-subsession]").first();
-  await subsession.locator("summary").click();
-  await expect(subsession).toHaveAttribute("open", "");
-  await expect(subsession).toContainText("Generate step validation schema");
+  const projects = page.locator("[data-projects]");
+  const toggle = projects.locator("[data-sub-toggle]");
+  await expect(projects.locator("[data-sub-row]")).toBeHidden();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(projects.locator("[data-sub-row]")).toContainText("Explore auth middleware");
+  await expect(projects.locator('[data-rollup="messages"]')).toHaveText("3,218");
 
   await page.getByRole("tab", { name: "Projects", exact: true }).press("ArrowRight");
   await expect(page.getByRole("tab", { name: "Replay", exact: true })).toBeFocused();
-  const replay = page.locator('[data-product-demo="replay"]');
-  const tool = replay.locator('details[data-demo-tool="edit_file"]');
-  await tool.locator("summary").click();
-  await expect(tool).toHaveAttribute("open", "");
-  await expect(tool).toContainText("buildClauses(filters)");
+  const replay = page.locator("[data-replay]");
+  await replay.locator('[data-filter="tool"]').click();
+  await expect(replay.locator('[data-step="tool"]').first()).toBeHidden();
+  await expect(replay.locator("[data-visible-status]")).toHaveText("Showing 3 messages");
 });
 
 for (const route of ["/", "/zh/", "/ja/"]) {
@@ -267,16 +279,16 @@ for (const route of ["/", "/zh/", "/ja/"]) {
       await document.fonts.ready;
     });
 
-    await expect(page.locator(".hero__art")).toBeVisible();
+    await expect(page.locator(".hero__visual")).toBeVisible();
     const menu = page.locator("[data-mobile-menu]");
     await menu.locator("summary").click();
     await expect(menu.locator("nav")).toBeVisible();
     await menu.locator("summary").press("Escape");
     await expect(menu).not.toHaveAttribute("open");
     await expect(menu.locator("summary")).toBeFocused();
-    for (const tab of await page.locator(".showcase-tabs [role=tab]").all()) {
+    for (const tab of await page.locator(".tour__tabs [role=tab]").all()) {
       await tab.click();
-      const demo = page.locator(".showcase-panel:not([hidden]) .demo-shell");
+      const demo = page.locator(".tour__scene:not([hidden]) .tour__window");
       expect(await demo.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
@@ -299,10 +311,9 @@ test("removes landing and product preview motion when reduced motion is requeste
   await page.goto("/");
 
   await expect(page.locator(".hero__copy")).toHaveCSS("animation-name", "none");
-  await expect(page.locator(".hero__art")).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".hero__visual")).toHaveCSS("animation-name", "none");
+  await expect(page.locator(".hero__flow").first()).toHaveCSS("animation-name", "none");
   await expect(page.locator(".reveal-pending")).toHaveCount(0);
-  await expect(page.locator('[data-product-demo="overview"] .demo-bar-fill').first()).toHaveCSS(
-    "transition-duration",
-    "0s",
-  );
+  await expect(page.locator("[data-bar]").first()).toHaveCSS("transition-duration", "0s");
+  await expect(page.locator(".agents__track").first()).toHaveCSS("animation-name", "none");
 });

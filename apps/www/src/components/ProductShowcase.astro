@@ -166,7 +166,9 @@ const filters = [
           tabindex={index === 0 ? 0 : -1}
           data-tour-tab={scene}
         >
-          <span class="console-mono">0{index + 1}</span>
+          <span class="console-mono" aria-hidden="true">
+            0{index + 1}
+          </span>
           {t.tabs[index]}
         </button>
       ))}
@@ -1015,6 +1017,10 @@ const filters = [
     .replay__step,
     .replay__steps::after {
       animation: none;
+    }
+    .overview__bars span,
+    .tour__meter span {
+      transition: none;
     }
   }
 </style>
