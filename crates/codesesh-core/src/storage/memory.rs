@@ -1,7 +1,6 @@
 use super::{CACHE_SCHEMA_VERSION, Cache};
-use crate::contract::SessionReference;
 use anyhow::{Result, ensure};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::{cell::Cell, time::Duration};
 
 // Large documents can grow the retained FTS5 token table beyond the page cache.
@@ -11,22 +10,6 @@ pub(super) fn note_document_size(bytes: i64, reclaim: &Cell<bool>) {
     if bytes >= LARGE_INDEX_DOCUMENT_BYTES {
         reclaim.set(true);
     }
-}
-
-pub(super) fn note_previous_document(
-    connection: &Connection,
-    reference: &SessionReference,
-    reclaim: &Cell<bool>,
-) -> Result<()> {
-    if !reclaim.get() {
-        let bytes = connection.query_row(
-            "SELECT octet_length(content_text) FROM session_documents WHERE source_node_id=? AND agent_name=? AND session_id=?",
-            params![reference.source_node_id, reference.agent_name, reference.session_id],
-            |row| row.get::<_, i64>(0),
-        ).optional()?.unwrap_or(0);
-        note_document_size(bytes, reclaim);
-    }
-    Ok(())
 }
 
 impl Cache {
@@ -119,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn large_writes_replacements_and_deletions_release_the_connection() {
+    fn only_large_index_writes_release_the_connection() {
         let root = tempfile::tempdir().unwrap();
         let mut cache = Cache::open(Some(&root.path().join("cache.db"))).unwrap();
         assert!(cache.release_index_memory().unwrap());
@@ -132,6 +115,8 @@ mod tests {
             }];
             cache.publish(std::slice::from_mut(&mut session)).unwrap();
             assert!(cache.release_index_memory().unwrap());
+            assert!(!cache.release_index_memory().unwrap());
+            // Contentless deletes record tombstones without re-tokenizing the old text.
             if remove {
                 cache
                     .apply(&mut [], std::slice::from_ref(&reference))
@@ -140,7 +125,6 @@ mod tests {
                 session.detail.messages[0].parts.clear();
                 cache.publish(std::slice::from_mut(&mut session)).unwrap();
             }
-            assert!(cache.release_index_memory().unwrap());
             assert!(!cache.release_index_memory().unwrap());
         }
         session.detail.messages[0].parts.clear();

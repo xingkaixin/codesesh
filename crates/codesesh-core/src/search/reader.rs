@@ -1,6 +1,6 @@
 use super::*;
 use crate::contract::{CostSource, ProjectIdentity, SessionStats};
-use rusqlite::Row;
+use rusqlite::{OptionalExtension, Row, params};
 
 pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
     let source: Option<String> = row.get("cost_source")?;
@@ -60,45 +60,31 @@ pub(super) fn search_prepared(
 ) -> Result<Vec<SearchResult>> {
     let mut filters = sql::build(options);
     let query = query.trim();
-    let statement = if query.is_empty() {
-        format!(
-            "SELECT s.*, 0 AS document_id FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
-            filters.where_sql()
+    let (statement, any_message) = if query.is_empty() {
+        (
+            format!(
+                "SELECT s.* FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
+                filters.where_sql()
+            ),
+            String::new(),
         )
-    } else if cjk::contains_han(query) {
-        cjk::statement(connection, query, &mut filters)?
     } else {
-        let fts = to_fts_query(query);
-        if fts.is_empty() {
-            return Ok(Vec::new());
+        match cjk::statement(connection, query, &mut filters)? {
+            Some(statement) => (statement.sql, statement.any_message),
+            None => return Ok(Vec::new()),
         }
-        filters.params.insert(0, fts.into());
-        format!(
-            "SELECT s.*, d.id AS document_id FROM session_documents_fts JOIN session_documents d ON d.id = session_documents_fts.rowid JOIN sessions s ON s.source_node_id=d.source_node_id AND s.agent_name = d.agent_name AND s.session_id = d.session_id WHERE session_documents_fts MATCH ? AND s.publication_id IS NULL {} ORDER BY bm25(session_documents_fts,8.0,1.0),s.activity_time DESC LIMIT ?",
-            filters.where_sql()
-        )
     };
     filters
         .params
         .push((options.limit.unwrap_or(50) as i64).into());
     let mut statement = connection.prepare(&statement)?;
     let rows = statement
-        .query_map(params_from_iter(filters.params), |row| {
-            Ok((head(row)?, row.get::<_, i64>("document_id")?))
-        })?
+        .query_map(params_from_iter(filters.params), head)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let terms = snippet::Terms::parse(query);
+    let mut message_matches = message_matches(connection, &rows, &any_message, &terms)?;
     let mut result = Vec::with_capacity(rows.len());
-    let mut message_matches = first_message_matches(connection, &rows, &terms)?;
-    let fallback_ids: Vec<_> = rows
-        .iter()
-        .filter(|(head, _)| {
-            !terms.matches(&head.title) && !message_matches.contains_key(&head.reference)
-        })
-        .map(|(_, id)| *id)
-        .collect();
-    let mut fallbacks = fallback_snippets(connection, query, &fallback_ids)?;
-    for (session, document_id) in rows {
+    for session in rows {
         let (text, ranges, kind, message_index) = if terms.values.is_empty() {
             (
                 format!("Recent session · {}", session.directory),
@@ -113,9 +99,8 @@ pub(super) fn search_prepared(
             message_matches
                 .remove(&session.reference)
                 .unwrap_or_else(|| {
-                    let fallback = fallbacks.remove(&document_id).unwrap_or_default();
-                    let ranges = snippet::highlights(&fallback, &terms);
-                    (fallback, ranges, "assistant_reply", None)
+                    let ranges = snippet::highlights(&session.title, &terms);
+                    (session.title.clone(), ranges, "assistant_reply", None)
                 })
         };
         result.push(SearchResult {
@@ -130,107 +115,115 @@ pub(super) fn search_prepared(
     Ok(result)
 }
 
-fn fallback_snippets(
-    connection: &Connection,
-    query: &str,
-    document_ids: &[i64],
-) -> Result<HashMap<i64, String>> {
-    if document_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let placeholders = vec!["?"; document_ids.len()].join(",");
-    let mut params: Vec<Value> = document_ids.iter().map(|id| (*id).into()).collect();
-    let sql = if cjk::contains_han(query) {
-        format!(
-            "SELECT id,codesesh_cjk_snippet(content_text) FROM session_documents WHERE id IN ({placeholders})"
-        )
-    } else {
-        params.insert(0, to_fts_query(query).into());
-        format!(
-            "SELECT rowid,COALESCE(NULLIF(snippet(session_documents_fts,1,'','',' … ',18),''),highlight(session_documents_fts,0,'','')) FROM session_documents_fts WHERE session_documents_fts MATCH ? AND rowid IN ({placeholders})"
-        )
-    };
-    Ok(connection
-        .prepare(&sql)?
-        .query_map(params_from_iter(params), |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect::<rusqlite::Result<_>>()?)
-}
-
 type MessageMatch = (String, Vec<HighlightRange>, &'static str, Option<usize>);
 
-fn first_message_matches(
+const MESSAGE_MATCH_SCAN_LIMIT: usize = 200;
+
+fn message_matches(
     connection: &Connection,
-    rows: &[(SessionHead, i64)],
+    rows: &[SessionHead],
+    any_message: &str,
     terms: &snippet::Terms,
 ) -> Result<HashMap<SessionReference, MessageMatch>> {
     let candidates: Vec<_> = rows
         .iter()
-        .filter(|(head, _)| !terms.matches(&head.title))
-        .map(|(head, _)| &head.reference)
+        .filter(|head| !terms.matches(&head.title))
+        .map(|head| &head.reference)
         .collect();
     let mut matches = HashMap::new();
-    if candidates.is_empty() {
+    if candidates.is_empty() || terms.values.is_empty() {
         return Ok(matches);
     }
-    let owned_terms = terms.clone();
-    connection.create_scalar_function(
-        "codesesh_message_matches_terms",
-        1,
-        rusqlite::functions::FunctionFlags::SQLITE_UTF8
-            | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
-        move |ctx| {
-            let text = ctx
-                .get_raw(0)
-                .as_str_or_null()
-                .map_err(|error| rusqlite::Error::UserFunctionError(Box::new(error)))?;
-            Ok(owned_terms.matches(text.unwrap_or_default()))
-        },
-    )?;
     let values = vec!["(?, ?, ?)"; candidates.len()].join(",");
-    let params: Vec<Value> = candidates
-        .iter()
-        .flat_map(|r| {
-            [
-                r.source_node_id.clone().into(),
-                r.agent_name.clone().into(),
-                r.session_id.clone().into(),
-            ]
-        })
-        .collect();
-    let mut query=connection.prepare(&format!("WITH candidate_sessions(source_node_id,agent_name,session_id) AS (VALUES {values}), first_message_matches AS MATERIALIZED (SELECT c.source_node_id,c.agent_name,c.session_id,(SELECT m.rowid FROM messages m INDEXED BY idx_messages_session WHERE m.source_node_id=c.source_node_id AND m.agent_name=c.agent_name AND m.session_id=c.session_id AND codesesh_message_matches_terms(m.content_text) ORDER BY m.message_index LIMIT 1) AS message_rowid FROM candidate_sessions c) SELECT m.source_node_id,m.agent_name,m.session_id,m.message_index,m.role,m.mode,m.tool_metadata_json,m.content_text FROM first_message_matches f JOIN messages m ON m.rowid=f.message_rowid"))?;
+    let mut params: Vec<Value> = vec![any_message.to_owned().into()];
+    params.extend(candidates.iter().flat_map(|r| {
+        [
+            r.source_node_id.clone().into(),
+            r.agent_name.clone().into(),
+            r.session_id.clone().into(),
+        ]
+    }));
+    let mut hits: HashMap<SessionReference, Vec<i64>> = HashMap::new();
+    let mut query = connection.prepare(&format!("SELECT m.rowid,m.source_node_id,m.agent_name,m.session_id FROM message_fts JOIN messages m ON m.rowid=message_fts.rowid WHERE message_fts MATCH ? AND (m.source_node_id,m.agent_name,m.session_id) IN (VALUES {values}) ORDER BY m.source_node_id,m.agent_name,m.session_id,m.message_index"))?;
     let mut rows = query.query(params_from_iter(params))?;
     while let Some(row) = rows.next()? {
-        let reference = SessionReference {
-            source_node_id: row.get("source_node_id")?,
-            agent_name: row.get("agent_name")?,
-            session_id: row.get("session_id")?,
-        };
-        let text: String = row.get("content_text")?;
-        let role: String = row.get("role")?;
-        let mode: Option<String> = row.get("mode")?;
-        let tools: Option<String> = row.get("tool_metadata_json")?;
-        let kind = if role == "user" {
-            "user_message"
-        } else if role == "tool"
-            || mode.as_deref() == Some("tool")
-            || tools.as_ref().is_some_and(|s| !s.is_empty())
+        hits.entry(SessionReference {
+            source_node_id: row.get(1)?,
+            agent_name: row.get(2)?,
+            session_id: row.get(3)?,
+        })
+        .or_default()
+        .push(row.get(0)?);
+    }
+    let mut message = connection.prepare_cached(
+        "SELECT message_index,role,mode,tool_metadata_json,content_text FROM messages WHERE rowid=?",
+    )?;
+    for reference in candidates {
+        let mut covered = HashSet::new();
+        let mut covering = Vec::new();
+        for rowid in hits
+            .get(reference)
+            .into_iter()
+            .flatten()
+            .take(MESSAGE_MATCH_SCAN_LIMIT)
         {
-            "tool_output"
+            let (index, role, mode, tools, text) = message.query_row([rowid], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })?;
+            if terms.matches(&text) {
+                let kind = if role == "user" {
+                    "user_message"
+                } else if role == "tool"
+                    || mode.as_deref() == Some("tool")
+                    || tools.is_some_and(|s| !s.is_empty())
+                {
+                    "tool_output"
+                } else {
+                    "assistant_reply"
+                };
+                let (text, ranges) = snippet::build(&text, terms);
+                matches.insert(
+                    reference.clone(),
+                    (text, ranges, kind, Some(index as usize)),
+                );
+                break;
+            }
+            let lower = text.to_lowercase();
+            let before = covered.len();
+            covered.extend(
+                terms
+                    .values
+                    .iter()
+                    .filter(|term| lower.contains(term.as_str())),
+            );
+            if covered.len() > before {
+                covering.push(text);
+            }
+        }
+        if matches.contains_key(reference) {
+            continue;
+        }
+        let text = if covering.is_empty() {
+            connection
+                .query_row(
+                    "SELECT content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND content_text<>'' ORDER BY message_index LIMIT 1",
+                    params![reference.source_node_id, reference.agent_name, reference.session_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
         } else {
-            "assistant_reply"
+            Some(covering.join("\n"))
         };
-        let (text, ranges) = snippet::build(&text, terms);
-        matches.insert(
-            reference,
-            (
-                text,
-                ranges,
-                kind,
-                Some(row.get::<_, i64>("message_index")? as usize),
-            ),
-        );
+        if let Some(text) = text {
+            let (text, ranges) = snippet::build(&text, terms);
+            matches.insert(reference.clone(), (text, ranges, "assistant_reply", None));
+        }
     }
     Ok(matches)
 }

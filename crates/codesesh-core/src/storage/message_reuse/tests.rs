@@ -91,7 +91,17 @@ fn append_preserves_existing_message_rows_and_rewrites_or_truncations_match_a_fu
         .unwrap();
     assert_eq!(tools, ["edit"]);
     for (word, count) in [("oldneedle", 0), ("newneedle", 1)] {
-        assert_eq!(cache.connection().query_row("SELECT COUNT(*) FROM session_documents_fts WHERE session_documents_fts MATCH ?", [word], |r| r.get::<_, i64>(0)).unwrap(), count);
+        assert_eq!(
+            cache
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM message_fts WHERE message_fts MATCH ?",
+                    [word],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            count
+        );
     }
     session.detail.messages.clear();
     session.head.stats.message_count = 0;

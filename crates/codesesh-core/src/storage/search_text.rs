@@ -1,5 +1,5 @@
 use super::StorageProgress;
-use crate::contract::{Message, MessagePart};
+use crate::contract::{Message, MessagePart, SessionReference};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -8,7 +8,21 @@ const REVISION_KEY: &str = "search_text_v2";
 const CURSOR_KEY: &str = "search_text_v2_cursor";
 const TOOL_TEXT_EDGE_BYTES: usize = 64 * 1024;
 const BLOB_MIN_BYTES: usize = 256;
-const REWRITE_BATCH: usize = 500;
+const INDEX_KEY: &str = "message_fts_v1";
+const INDEX_CURSOR_KEY: &str = "message_fts_v1_cursor";
+const BATCH: usize = 500;
+const INDEX_SCHEMA: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(content_text, content='', contentless_delete=1);
+    CREATE VIRTUAL TABLE IF NOT EXISTS session_title_fts USING fts5(title, content='sessions', content_rowid='rowid');
+    CREATE TRIGGER IF NOT EXISTS session_title_ai AFTER INSERT ON sessions BEGIN
+      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
+    END;
+    CREATE TRIGGER IF NOT EXISTS session_title_ad AFTER DELETE ON sessions BEGIN
+      INSERT INTO session_title_fts(session_title_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+    END;
+    CREATE TRIGGER IF NOT EXISTS session_title_au AFTER UPDATE OF title ON sessions BEGIN
+      INSERT INTO session_title_fts(session_title_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
+    END;";
 
 pub(super) fn message_text(message: &Message) -> String {
     text(
@@ -118,9 +132,6 @@ pub(super) fn rebuild(
     let total: i64 = db.query_row("SELECT COALESCE(MAX(rowid),0) FROM messages", [], |row| {
         row.get(0)
     })?;
-    db.execute_batch(
-        "CREATE TABLE IF NOT EXISTS search_text_pending(source_node_id TEXT NOT NULL,agent_name TEXT NOT NULL,session_id TEXT NOT NULL,PRIMARY KEY(source_node_id,agent_name,session_id)) WITHOUT ROWID",
-    )?;
     let mut cursor: i64 = meta(db, CURSOR_KEY)?
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
@@ -130,13 +141,12 @@ pub(super) fn rebuild(
             done: cursor as u64,
             total: Some(total as u64),
         })?;
-        db.execute_batch("BEGIN IMMEDIATE")?;
-        let batch = (|| -> Result<i64> {
+        cursor = batch(db, |db| {
             let mut query = db.prepare_cached(
-                "SELECT rowid,role,agent,model,parts_json,content_text,source_node_id,agent_name,session_id FROM messages WHERE rowid>? AND parts_format_version>=1 ORDER BY rowid LIMIT ?",
+                "SELECT rowid,role,agent,model,parts_json,content_text FROM messages WHERE rowid>? AND parts_format_version>=1 ORDER BY rowid LIMIT ?",
             )?;
             let rows = query
-                .query_map(params![cursor, REWRITE_BATCH as i64], |row| {
+                .query_map(params![cursor, BATCH as i64], |row| {
                     Ok((
                         row.get::<_, i64>(0)?,
                         row.get::<_, String>(1)?,
@@ -144,100 +154,158 @@ pub(super) fn rebuild(
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, String>(4)?,
                         row.get::<_, String>(5)?,
-                        [
-                            row.get::<_, String>(6)?,
-                            row.get::<_, String>(7)?,
-                            row.get::<_, String>(8)?,
-                        ],
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut last = total;
-            for (rowid, role, agent, model, raw, stored, session) in rows {
+            for (rowid, role, agent, model, raw, stored) in rows {
                 let parts: Vec<MessagePart> = serde_json::from_str(&raw)?;
                 let next = text(&role, agent.as_deref(), model.as_deref(), &parts);
                 if next != stored {
                     db.prepare_cached("UPDATE messages SET content_text=? WHERE rowid=?")?
                         .execute(params![next, rowid])?;
-                    db.prepare_cached("INSERT OR IGNORE INTO search_text_pending VALUES(?,?,?)")?
-                        .execute(session)?;
+                    db.execute("DELETE FROM cache_meta WHERE key=?", [INDEX_KEY])?;
                 }
                 last = rowid;
             }
-            db.execute(
-                "INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                params![CURSOR_KEY, last.to_string()],
-            )?;
+            set_meta(db, CURSOR_KEY, &last.to_string())?;
             Ok(last)
-        })();
-        match batch {
-            Ok(last) => {
-                db.execute_batch("COMMIT")?;
-                cursor = last;
-            }
-            Err(error) => {
-                let _ = db.execute_batch("ROLLBACK");
-                return Err(error);
-            }
-        }
+        })?;
     }
-    progress(StorageProgress {
-        phase: "Rebuilding session search index".into(),
-        done: 0,
-        total: None,
-    })?;
-    db.execute_batch("BEGIN IMMEDIATE")?;
-    let documents = (|| -> Result<()> {
-        db.execute_batch("DROP TRIGGER IF EXISTS session_documents_au")?;
-        let mut query = db.prepare(
-            "SELECT d.id,d.source_node_id,d.agent_name,d.session_id,d.title,d.indexed_message_count FROM session_documents d JOIN search_text_pending p USING(source_node_id,agent_name,session_id)",
-        )?;
-        let rows = query
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
-                ))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        drop(query);
-        let changed = !rows.is_empty();
-        let mut messages = db.prepare(
-            "SELECT content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index<? ORDER BY message_index",
-        )?;
-        let mut update = db.prepare("UPDATE session_documents SET content_text=? WHERE id=?")?;
-        for (id, node, agent, session, title, count) in rows {
-            let mut document = title.trim().to_owned();
-            let mut contents = messages.query(params![node, agent, session, count])?;
-            while let Some(row) = contents.next()? {
-                document.push('\n');
-                document.push_str(row.get_ref(0)?.as_str()?);
+    db.execute("DELETE FROM cache_meta WHERE key=?", [CURSOR_KEY])?;
+    set_meta(db, REVISION_KEY, "1")
+}
+
+pub(super) fn ensure_index(
+    db: &Connection,
+    progress: &mut dyn FnMut(StorageProgress) -> Result<()>,
+) -> Result<()> {
+    let legacy = db
+        .prepare("SELECT 1 FROM pragma_table_info('session_documents') WHERE name='content_text'")?
+        .exists([])?;
+    let missing = !db
+        .prepare("SELECT 1 FROM sqlite_master WHERE name IN ('message_fts','session_title_fts')")?
+        .query_map([], |_| Ok(()))?
+        .count()
+        == 2;
+    if legacy || missing {
+        progress(StorageProgress {
+            phase: "Preparing message search index".into(),
+            done: 0,
+            total: None,
+        })?;
+        batch(db, |db| {
+            db.execute_batch(
+                "DROP TRIGGER IF EXISTS session_documents_ai;
+                 DROP TRIGGER IF EXISTS session_documents_ad;
+                 DROP TRIGGER IF EXISTS session_documents_au;
+                 DROP TABLE IF EXISTS session_documents_fts;",
+            )?;
+            if legacy {
+                db.execute_batch("ALTER TABLE session_documents DROP COLUMN content_text")?;
             }
-            update.execute(params![document, id])?;
-        }
-        if changed {
+            db.execute_batch(INDEX_SCHEMA)?;
+            db.execute("DELETE FROM cache_meta WHERE key=?", [INDEX_KEY])?;
+            Ok(())
+        })?;
+    }
+    if meta(db, INDEX_KEY)?.is_some() {
+        return Ok(());
+    }
+    let total: i64 = db.query_row("SELECT COALESCE(MAX(rowid),0) FROM messages", [], |row| {
+        row.get(0)
+    })?;
+    let mut cursor = match meta(db, INDEX_CURSOR_KEY)?.and_then(|value| value.parse().ok()) {
+        Some(cursor) => cursor,
+        None => {
             db.execute(
-                "INSERT INTO session_documents_fts(session_documents_fts) VALUES('rebuild')",
+                "INSERT INTO message_fts(message_fts) VALUES('delete-all')",
                 [],
             )?;
+            0
         }
-        db.execute_batch(super::schema::DOCUMENT_UPDATE_TRIGGER)?;
-        db.execute_batch("DROP TABLE search_text_pending")?;
-        db.execute("DELETE FROM cache_meta WHERE key=?", [CURSOR_KEY])?;
-        db.execute("INSERT INTO cache_meta VALUES(?,'1')", [REVISION_KEY])?;
-        Ok(())
-    })();
-    match documents {
-        Ok(()) => db.execute_batch("COMMIT")?,
+    };
+    while cursor < total {
+        progress(StorageProgress {
+            phase: "Indexing messages for search".into(),
+            done: cursor as u64,
+            total: Some(total as u64),
+        })?;
+        cursor = batch(db, |db| {
+            let mut query = db.prepare_cached(
+                "SELECT rowid,content_text FROM messages WHERE rowid>? ORDER BY rowid LIMIT ?",
+            )?;
+            let mut rows = query.query(params![cursor, BATCH as i64])?;
+            let mut last = total;
+            while let Some(row) = rows.next()? {
+                last = row.get(0)?;
+                index(db, last, row.get_ref(1)?.as_str()?)?;
+            }
+            set_meta(db, INDEX_CURSOR_KEY, &last.to_string())?;
+            Ok(last)
+        })?;
+    }
+    batch(db, |db| {
+        db.execute(
+            "INSERT INTO session_title_fts(session_title_fts) VALUES('rebuild')",
+            [],
+        )?;
+        db.execute("DELETE FROM cache_meta WHERE key=?", [INDEX_CURSOR_KEY])?;
+        set_meta(db, INDEX_KEY, "1")
+    })
+}
+
+pub(super) fn reset_index(db: &Connection) -> Result<()> {
+    db.execute(
+        "DELETE FROM cache_meta WHERE key IN (?,?)",
+        [INDEX_KEY, INDEX_CURSOR_KEY],
+    )?;
+    Ok(())
+}
+
+pub(super) fn index(db: &Connection, rowid: i64, text: &str) -> Result<()> {
+    db.prepare_cached("INSERT INTO message_fts(rowid,content_text) VALUES(?,?)")?
+        .execute(params![rowid, crate::search::index_text(text)])?;
+    Ok(())
+}
+
+pub(super) fn forget(
+    db: &Connection,
+    reference: &SessionReference,
+    indexes: std::ops::Range<i64>,
+) -> Result<()> {
+    db.prepare_cached(
+        "DELETE FROM message_fts WHERE rowid IN (SELECT rowid FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? AND message_index<?)",
+    )?
+    .execute(params![
+        reference.source_node_id,
+        reference.agent_name,
+        reference.session_id,
+        indexes.start,
+        indexes.end
+    ])?;
+    Ok(())
+}
+
+fn batch<T>(db: &Connection, work: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+    db.execute_batch("BEGIN IMMEDIATE")?;
+    match work(db) {
+        Ok(value) => {
+            db.execute_batch("COMMIT")?;
+            Ok(value)
+        }
         Err(error) => {
             let _ = db.execute_batch("ROLLBACK");
-            return Err(error);
+            Err(error)
         }
     }
+}
+
+fn set_meta(db: &Connection, key: &str, value: &str) -> Result<()> {
+    db.execute(
+        "INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        params![key, value],
+    )?;
     Ok(())
 }
 
@@ -305,7 +373,8 @@ mod tests {
             .connection()
             .execute_batch(&format!(
                 "UPDATE messages SET content_text=content_text||' {blob}';
-                 UPDATE session_documents SET content_text=content_text||' {blob}';
+                 DELETE FROM message_fts;
+                 INSERT INTO message_fts(rowid,content_text) SELECT rowid,content_text FROM messages;
                  DELETE FROM cache_meta WHERE key='{REVISION_KEY}';"
             ))
             .unwrap();
@@ -322,5 +391,43 @@ mod tests {
                 .len()
         };
         assert_eq!((search("Fixture"), search(&blob)), (1, 0));
+    }
+
+    #[test]
+    fn legacy_session_documents_move_to_message_index() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("cache.db");
+        let mut session = super::super::tests::source(root.path(), "legacy");
+        let mut cache = super::super::Cache::open(Some(&path)).unwrap();
+        cache.publish(std::slice::from_mut(&mut session)).unwrap();
+        cache
+            .connection()
+            .execute_batch(&format!(
+                "DROP TABLE message_fts;
+                 ALTER TABLE session_documents ADD COLUMN content_text TEXT NOT NULL DEFAULT 'legacy';
+                 CREATE VIRTUAL TABLE session_documents_fts USING fts5(title, content_text, content='session_documents', content_rowid='id');
+                 DELETE FROM cache_meta WHERE key='{INDEX_KEY}';"
+            ))
+            .unwrap();
+        drop(cache);
+        let cache = super::super::Cache::open(Some(&path)).unwrap();
+        let legacy: i64 = cache
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name='session_documents_fts' OR sql LIKE '%content_text TEXT NOT NULL DEFAULT ''legacy''%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy, 0);
+        let search = |query: &str| {
+            crate::search::search_sessions(cache.connection(), query, &Default::default())
+                .unwrap()
+                .len()
+        };
+        assert_eq!(
+            (search("Fixture"), search("中文"), search("legacy")),
+            (1, 1, 0)
+        );
     }
 }

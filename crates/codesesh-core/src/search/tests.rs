@@ -1,6 +1,31 @@
 use super::*;
 use rusqlite::params;
 
+fn index(db: &Connection) {
+    db.execute(
+        "INSERT INTO message_fts(message_fts) VALUES('delete-all')",
+        [],
+    )
+    .unwrap();
+    let mut query = db
+        .prepare("SELECT rowid,content_text FROM messages")
+        .unwrap();
+    let rows = query
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    for (rowid, text) in rows {
+        db.execute(
+            "INSERT INTO message_fts(rowid,content_text) VALUES(?,?)",
+            params![rowid, index_text(&text)],
+        )
+        .unwrap();
+    }
+}
+
 fn database() -> Connection {
     let db = Connection::open_in_memory().unwrap();
     db.execute_batch(include_str!("../storage/schema.sql"))
@@ -18,7 +43,7 @@ fn database() -> Connection {
     ] {
         db.execute("INSERT INTO sessions(agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,smart_tags_json,parent_agent_name,parent_session_id) VALUES('codex',?,?,'/work/app','path','/work/app','app',100,200,200,1,0,0,?,'[\"bugfix\"]',?,?)",params![id,title,cost,parent.map(|_|"codex"),parent]).unwrap();
         db.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex',?,0,'m','user',100,'[]',?)",params![id,body]).unwrap();
-        db.execute("INSERT INTO session_documents(agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at) VALUES('codex',?,?,?,'',1,200)",params![id,title,body]).unwrap();
+        db.execute("INSERT INTO session_documents(agent_name,session_id,title,content_hash,indexed_message_count,indexed_at) VALUES('codex',?,?,'',1,200)",params![id,title]).unwrap();
     }
     db.execute("INSERT INTO session_file_activity VALUES('local','codex','one','/work/app','src/Widget.ts','edit',2,200)",[]).unwrap();
     db.execute(
@@ -26,6 +51,7 @@ fn database() -> Connection {
         [],
     )
     .unwrap();
+    index(&db);
     db
 }
 
@@ -115,8 +141,9 @@ fn chinese_database() -> Connection {
     ] {
         db.execute("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES(?,'codex',?,?,'/chinese','path','/chinese','chinese',10,?,?,1,0,0,0)", params![node,id,title,time,time]).unwrap();
         db.execute("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES(?,'codex',?,0,'m','user',10,'[]',?)", params![node,id,body]).unwrap();
-        db.execute("INSERT INTO session_documents(source_node_id,agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at) VALUES(?,'codex',?,?,?,'',1,200)", params![node,id,title,body]).unwrap();
+        db.execute("INSERT INTO session_documents(source_node_id,agent_name,session_id,title,content_hash,indexed_message_count,indexed_at) VALUES(?,'codex',?,?,'',1,200)", params![node,id,title]).unwrap();
     }
+    index(&db);
     db
 }
 
@@ -600,6 +627,7 @@ fn search_targets_the_first_matching_message_in_source_order() {
     ] {
         db.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex','one',?,'m',?,100,'[]',?)", params![index,role,text]).unwrap();
     }
+    index(&db);
     let results = execute(&db, "hello", &SearchOptions::default()).unwrap();
     let one = results
         .iter()
@@ -628,7 +656,7 @@ fn cross_message_fallbacks_preserve_text_highlights_and_source_identity() {
     let body = "alpha 数据库\nomega 连接";
     db.execute("UPDATE messages SET content_text='alpha 数据库' WHERE source_node_id='local' AND session_id='han-body'", []).unwrap();
     db.execute("INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex','han-body',1,'m','tool',100,'[]','omega 连接')", []).unwrap();
-    db.execute("UPDATE session_documents SET content_text=? WHERE source_node_id='local' AND session_id='han-body'", [body]).unwrap();
+    index(&db);
     for (query, highlights) in [
         (
             "alpha omega",
@@ -664,7 +692,7 @@ fn cross_message_fallbacks_preserve_text_highlights_and_source_identity() {
         }
     }
     db.execute("UPDATE messages SET content_text='alpha omega 数据库连接' WHERE source_node_id='local' AND session_id='han-body' AND message_index=1", []).unwrap();
-    db.execute("UPDATE session_documents SET content_text='alpha 数据库\nalpha omega 数据库连接' WHERE source_node_id='local' AND session_id='han-body'", []).unwrap();
+    index(&db);
     for query in ["alpha omega", "数据库 连接"] {
         let results = execute(&db, query, &SearchOptions::default()).unwrap();
         let local = results
@@ -685,21 +713,17 @@ fn fts_only_matches_keep_body_and_empty_body_fallbacks() {
         [],
     )
     .unwrap();
-    db.execute(
-        "UPDATE session_documents SET title='CAFÉ' WHERE session_id='one'",
-        [],
-    )
-    .unwrap();
     let results = execute(&db, "cafe", &SearchOptions::default()).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].snippet, "🔎 中文 hello Rust world");
     assert_eq!(results[0].message_index, None);
     assert!(results[0].snippet_highlights.is_empty());
     db.execute(
-        "UPDATE session_documents SET content_text='' WHERE session_id='one'",
+        "UPDATE messages SET content_text='' WHERE session_id='one'",
         [],
     )
     .unwrap();
+    index(&db);
     let results = execute(&db, "cafe", &SearchOptions::default()).unwrap();
     assert_eq!(results[0].snippet, "CAFÉ");
     assert_eq!(results[0].message_index, None);
