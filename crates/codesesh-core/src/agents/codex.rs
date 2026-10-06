@@ -515,54 +515,109 @@ pub fn parse(
     let Some(line) = lines.next_line()? else {
         return Ok(None);
     };
-    let first_line = line.to_owned();
-    let Ok(first) = serde_json::from_str::<Value>(&first_line) else {
+    let Some(mut parser) = Parser::new(path, &physical, line)? else {
         return Ok(None);
     };
-    let logical = rollout::logical_path(path);
-    let filename = logical.file_stem().unwrap_or_default().to_string_lossy();
-    let pieces = filename.split('-').collect::<Vec<_>>();
-    let id = pieces[pieces.len().saturating_sub(5)..].join("-");
-    let directory = first["payload"]["cwd"].as_str().unwrap_or("").to_owned();
-    let created = timestamp(&first).max(timestamp(&first["payload"]));
-    let created = if created > 0.0 {
-        created
-    } else {
-        crate::time::file_mtime_ms(&physical)?
-    };
-    let mut updated = created;
-    let mut messages = Vec::<Message>::new();
-    let mut model = None;
-    let mut usage = Usage::default();
-    let mut head_usage = Usage::default();
-    let mut head_model = None;
-    let mut message_count = 0;
-    let mut message_title = None;
-    let mut current: Option<usize> = None;
-    let mut pending_plan = None;
-    let mut latest_text = None;
-    let mut tools = HashMap::<String, (usize, usize)>::new();
-    let mut tool_events = super::codex_tool_events::ToolEvents::default();
-    let mut has_record = false;
-    let mut next_index = 0;
-    loop {
-        let line = if next_index == 0 {
-            first_line.as_str()
-        } else if let Some(line) = lines.next_line()? {
-            line
-        } else {
-            break;
+    parser.feed(line, pricing);
+    while let Some(line) = lines.next_line()? {
+        parser.feed(line, pricing);
+    }
+    Ok(parser.finish(titles))
+}
+
+#[derive(Clone)]
+struct Parser {
+    id: String,
+    directory: String,
+    created: f64,
+    parent: Option<String>,
+    updated: f64,
+    messages: Vec<Message>,
+    model: Option<String>,
+    usage: Usage,
+    head_usage: Usage,
+    head_model: Option<String>,
+    message_count: usize,
+    message_title: Option<String>,
+    current: Option<usize>,
+    pending_plan: Option<MessagePart>,
+    latest_text: Option<usize>,
+    tools: HashMap<String, (usize, usize)>,
+    tool_events: super::codex_tool_events::ToolEvents,
+    has_record: bool,
+    next_index: usize,
+}
+
+impl Parser {
+    fn new(path: &Path, physical: &Path, first_line: &str) -> Result<Option<Self>> {
+        let Ok(first) = serde_json::from_str::<Value>(first_line) else {
+            return Ok(None);
         };
-        let line_index = next_index;
-        next_index += 1;
+        let logical = rollout::logical_path(path);
+        let filename = logical.file_stem().unwrap_or_default().to_string_lossy();
+        let pieces = filename.split('-').collect::<Vec<_>>();
+        let id = pieces[pieces.len().saturating_sub(5)..].join("-");
+        let created = timestamp(&first).max(timestamp(&first["payload"]));
+        let created = if created > 0.0 {
+            created
+        } else {
+            crate::time::file_mtime_ms(physical)?
+        };
+        Ok(Some(Self {
+            id,
+            directory: first["payload"]["cwd"].as_str().unwrap_or("").to_owned(),
+            created,
+            parent: (first["payload"]["thread_source"] == "subagent")
+                .then(|| first["payload"]["parent_thread_id"].as_str())
+                .flatten()
+                .map(str::to_owned),
+            updated: created,
+            messages: Vec::new(),
+            model: None,
+            usage: Usage::default(),
+            head_usage: Usage::default(),
+            head_model: None,
+            message_count: 0,
+            message_title: None,
+            current: None,
+            pending_plan: None,
+            latest_text: None,
+            tools: HashMap::new(),
+            tool_events: Default::default(),
+            has_record: false,
+            next_index: 0,
+        }))
+    }
+
+    fn feed(&mut self, line: &str, pricing: &Pricing) {
+        let Self {
+            updated,
+            messages,
+            model,
+            usage,
+            head_usage,
+            head_model,
+            message_count,
+            message_title,
+            current,
+            pending_plan,
+            latest_text,
+            tools,
+            tool_events,
+            has_record,
+            next_index,
+            ..
+        } = self;
+        let line_index = *next_index;
+        *next_index += 1;
         let Ok(record) = projected_record(line) else {
-            continue;
+            return;
         };
         let payload = &record["payload"];
         if internal(&record["type"]) || internal(&payload["type"]) {
-            continue;
+            return;
         }
-        has_record = true;
+        *has_record = true;
         let time = timestamp(&record).max(timestamp(payload));
         let kind = record["type"].as_str().unwrap_or("");
         let activity = match kind {
@@ -592,44 +647,44 @@ pub fn parse(
             _ => false,
         };
         if activity {
-            updated = updated.max(time);
+            *updated = updated.max(time);
         }
         if matches!(kind, "session_meta" | "turn_context") {
             if let Some(name) = payload["model"].as_str().filter(|s| !s.trim().is_empty()) {
-                model = Some(name.trim().to_owned());
-                head_model = model.clone();
+                *model = Some(name.trim().to_owned());
+                *head_model = model.clone();
             }
-            continue;
+            return;
         }
         if kind == "event_msg" && payload["type"] == "token_count" {
-            usage.consume(payload, model.as_deref(), pricing, &mut messages);
+            usage.consume(payload, model.as_deref(), pricing, messages);
             head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
-            continue;
+            return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
             let item = &payload["item"];
             if item["type"] == "McpToolCall"
-                && let Some(part) = tool_events.complete(item, &mut messages, time)
+                && let Some(part) = tool_events.complete(item, messages, time)
             {
-                current = Some(assistant_part(
-                    &mut messages,
-                    current,
-                    latest_text,
+                *current = Some(assistant_part(
+                    messages,
+                    *current,
+                    *latest_text,
                     part,
                     time,
                     model.clone(),
                 ));
             }
-            continue;
+            return;
         }
         if kind != "response_item" {
-            continue;
+            return;
         }
         if matches!(
             payload["type"].as_str(),
             Some("message" | "function_call" | "function_call_output")
         ) {
-            message_count += 1;
+            *message_count += 1;
         }
         if let Some(name) = payload["info"]
             .get("model")
@@ -637,22 +692,18 @@ pub fn parse(
             .as_str()
             .filter(|name| !name.trim().is_empty())
         {
-            head_model = Some(name.trim().into());
+            *head_model = Some(name.trim().into());
         }
         match payload["type"].as_str().unwrap_or("") {
             "message" => {
                 let role = payload["role"].as_str().unwrap_or("");
                 if !matches!(role, "user" | "assistant") {
-                    continue;
+                    return;
                 }
                 let full_text = content(payload, role == "assistant");
                 let full_text = if role == "user" {
-                    super::codex_tool_events::record_question_reply(
-                        &full_text,
-                        &mut messages,
-                        &tools,
-                    )
-                    .unwrap_or(full_text)
+                    super::codex_tool_events::record_question_reply(&full_text, messages, tools)
+                        .unwrap_or(full_text)
                 } else {
                     full_text
                 };
@@ -661,7 +712,7 @@ pub fn parse(
                 });
                 let text = if role == "assistant" {
                     if let Some(captures) = PLAN.captures(&full_text) {
-                        pending_plan = Some(MessagePart::Plan {
+                        *pending_plan = Some(MessagePart::Plan {
                             text: captures[1].trim().into(),
                             approval_status: "success".into(),
                             time_created: Some(time),
@@ -672,11 +723,11 @@ pub fn parse(
                     clean(&full_text)
                 };
                 if text.trim().is_empty() || (role == "user" && developer_message(&text)) {
-                    continue;
+                    return;
                 }
                 if role == "user"
                     && text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN")
-                    && let (Some(index), Some(plan)) = (current, pending_plan.take())
+                    && let (Some(index), Some(plan)) = (*current, pending_plan.take())
                 {
                     messages[index].parts.push(plan);
                 }
@@ -718,13 +769,13 @@ pub fn parse(
                         notification_message.nickname =
                             (!nickname.is_empty()).then(|| nickname.to_owned());
                         messages.push(notification_message);
-                        current = None;
-                        latest_text = None;
-                        continue;
+                        *current = None;
+                        *latest_text = None;
+                        return;
                     }
                 }
                 if role == "user" && line_index < 20 && message_title.is_none() {
-                    message_title = title(&text);
+                    *message_title = title(&text);
                 }
                 let part = MessagePart::Text {
                     text,
@@ -732,23 +783,17 @@ pub fn parse(
                 };
                 if role == "user" {
                     messages.push(message(Role::User, part, time, None));
-                    current = None;
-                    latest_text = None;
+                    *current = None;
+                    *latest_text = None;
                 } else {
-                    let target = assistant_part(
-                        &mut messages,
-                        current,
-                        latest_text,
-                        part,
-                        time,
-                        model.clone(),
-                    );
-                    current = Some(target);
-                    latest_text = Some(target);
+                    let target =
+                        assistant_part(messages, *current, *latest_text, part, time, model.clone());
+                    *current = Some(target);
+                    *latest_text = Some(target);
                 }
             }
             "reasoning" => {
-                pending_plan = None;
+                *pending_plan = None;
                 let text = payload["summary"]
                     .as_array()
                     .into_iter()
@@ -760,10 +805,10 @@ pub fn parse(
                     .join("\n");
                 let text = clean(&text);
                 if !text.trim().is_empty() {
-                    current = Some(assistant_part(
-                        &mut messages,
-                        current,
-                        latest_text,
+                    *current = Some(assistant_part(
+                        messages,
+                        *current,
+                        *latest_text,
                         MessagePart::Reasoning {
                             text,
                             time_created: Some(time),
@@ -771,14 +816,14 @@ pub fn parse(
                         time,
                         model.clone(),
                     ));
-                    latest_text = None;
+                    *latest_text = None;
                 }
             }
             "function_call" | "custom_tool_call" => {
-                pending_plan = None;
+                *pending_plan = None;
                 let name = payload["name"].as_str().unwrap_or("").trim();
                 if name.is_empty() {
-                    continue;
+                    return;
                 }
                 let call_id = payload["call_id"].as_str().unwrap_or("").trim().to_owned();
                 let input = if payload["type"] == "custom_tool_call" {
@@ -851,7 +896,7 @@ pub fn parse(
                         }),
                         time_created: Some(time),
                     };
-                    let index = if let Some(target) = latest_text.or(current) {
+                    let index = if let Some(target) = latest_text.or(*current) {
                         messages[target].parts.push(part);
                         target
                     } else {
@@ -865,7 +910,7 @@ pub fn parse(
                     let position = (index, messages[index].parts.len() - 1);
                     tool_events.register(&namespace, &name, position);
                     tools.insert(call_id, position);
-                    current = Some(index);
+                    *current = Some(index);
                 }
             }
             "function_call_output" | "custom_tool_call_output" => {
@@ -881,7 +926,7 @@ pub fn parse(
                         state.output = Some(output);
                         state.status = status.into();
                     }
-                    continue;
+                    return;
                 }
                 let output = match &payload["output"] {
                     Value::String(s) => s.clone(),
@@ -910,64 +955,79 @@ pub fn parse(
             _ => {}
         }
     }
-    if let (Some(index), Some(plan)) = (current, pending_plan) {
-        messages[index].parts.push(plan);
-    }
-    if !has_record {
-        return Ok(None);
-    }
-    for (index, message) in messages.iter_mut().enumerate() {
-        message.id = format!("{id}:{index}");
-    }
-    let (project_identity, signature) = path_identity(&directory);
-    let fallback = Path::new(&directory)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned());
-    let title = titles
-        .get(&id)
-        .and_then(|text| title(text))
-        .or(message_title)
-        .or_else(|| fallback.and_then(|text| title(&text)))
-        .unwrap_or_else(|| "Untitled Session".into());
-    let head = SessionHead {
-        version: None,
-        summary_files: None,
-        reference: SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
-            agent_name: "codex".into(),
-            session_id: id,
-        },
-        title,
-        directory,
-        display_title: None,
-        parent_reference: (first["payload"]["thread_source"] == "subagent")
-            .then(|| first["payload"]["parent_thread_id"].as_str())
-            .flatten()
-            .map(|id| SessionReference {
+
+    fn finish(self, titles: &HashMap<String, String>) -> Option<SessionDetail> {
+        let Self {
+            id,
+            directory,
+            created,
+            parent,
+            updated,
+            mut messages,
+            head_usage,
+            message_count,
+            message_title,
+            current,
+            pending_plan,
+            has_record,
+            ..
+        } = self;
+        if let (Some(index), Some(plan)) = (current, pending_plan) {
+            messages[index].parts.push(plan);
+        }
+        if !has_record {
+            return None;
+        }
+        for (index, message) in messages.iter_mut().enumerate() {
+            message.id = format!("{id}:{index}");
+        }
+        let (project_identity, signature) = path_identity(&directory);
+        let fallback = Path::new(&directory)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let title = titles
+            .get(&id)
+            .and_then(|text| title(text))
+            .or(message_title)
+            .or_else(|| fallback.and_then(|text| title(&text)))
+            .unwrap_or_else(|| "Untitled Session".into());
+        let head = SessionHead {
+            version: None,
+            summary_files: None,
+            reference: SessionReference {
                 source_node_id: crate::contract::local_source_node_id(),
                 agent_name: "codex".into(),
-                session_id: id.into(),
+                session_id: id,
+            },
+            title,
+            directory,
+            display_title: None,
+            parent_reference: parent.map(|id| SessionReference {
+                source_node_id: crate::contract::local_source_node_id(),
+                agent_name: "codex".into(),
+                session_id: id,
             }),
-        project_identity,
-        project_identity_resolver_revision: Some("project-identity-v2".into()),
-        project_identity_input_signature: Some(signature),
-        time_created: created,
-        time_updated: updated,
-        stats: head_usage.stats(message_count),
-        model_usage: head_usage.models(),
-        smart_tags: super::smart_tags::classify(&messages),
-        smart_tags_source_updated_at: Some(updated),
-        smart_tags_classifier_revision: Some("smart-tags-v1".into()),
-    };
-    let file_activity = super::file_activity::summarize(&head, &messages);
-    Ok(Some(SessionDetail {
-        head,
-        messages,
-        detail_freshness: "fresh".into(),
-        message_cursor: None,
-        message_update: None,
-        file_activity,
-    }))
+            project_identity,
+            project_identity_resolver_revision: Some("project-identity-v2".into()),
+            project_identity_input_signature: Some(signature),
+            time_created: created,
+            time_updated: updated,
+            stats: head_usage.stats(message_count),
+            model_usage: head_usage.models(),
+            smart_tags: super::smart_tags::classify(&messages),
+            smart_tags_source_updated_at: Some(updated),
+            smart_tags_classifier_revision: Some("smart-tags-v1".into()),
+        };
+        let file_activity = super::file_activity::summarize(&head, &messages);
+        Some(SessionDetail {
+            head,
+            messages,
+            detail_freshness: "fresh".into(),
+            message_cursor: None,
+            message_update: None,
+            file_activity,
+        })
+    }
 }
 
 fn message(role: Role, part: MessagePart, time: f64, model: Option<String>) -> Message {
@@ -1221,7 +1281,7 @@ mod incremental_tests {
                 &previous
                     .iter()
                     .map(crate::agents::SessionRecord::from)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
             )
             .is_err()
         );
@@ -1233,7 +1293,7 @@ mod incremental_tests {
                 &previous
                     .iter()
                     .map(crate::agents::SessionRecord::from)
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
             )
             .is_err()
         );

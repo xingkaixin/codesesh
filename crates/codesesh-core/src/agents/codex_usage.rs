@@ -5,7 +5,7 @@ use crate::{
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Usage {
     previous_total: f64,
     previous: [f64; 4],
