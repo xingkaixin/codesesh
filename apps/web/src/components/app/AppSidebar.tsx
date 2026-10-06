@@ -24,7 +24,7 @@ import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { PanelLeftClose } from "../ui/icons";
 import { Link } from "react-router-dom";
 
-const SIDEBAR_PROJECT_LIMIT = 50;
+const SIDEBAR_PROJECT_LIMIT = 8;
 
 function navItemClass(isSelected: boolean): string {
   return `flex items-center gap-2 rounded-sm px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
@@ -73,6 +73,7 @@ function ProjectNavList({
         return (
           <li key={`${project.identityKind}:${project.identityKey}`}>
             <Link
+              data-fluid-item
               to={getProjectPath(projectIdentity)}
               data-active={isSelected ? "true" : undefined}
               className={`min-w-0 ${navItemClass(isSelected)}`}
@@ -249,50 +250,31 @@ export function AppSidebar({
       onMobileOpenChange={onMobileNavigationOpenChange}
     >
       <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
+        <Link
+          to="/"
+          data-active={isOverviewSelected ? "true" : undefined}
+          className={navItemClass(isOverviewSelected)}
+        >
+          <img src="/logo.svg?v=3" alt={t("Dashboard")} className="size-3.5 rounded-[2px]" />
+          <span className="console-mono line-clamp-1 flex-1 text-xs">{t("Dashboard")}</span>
+        </Link>
+
         <section>
-          <ul
-            ref={hoverRef}
-            data-fluid-hover="y"
-            className="console-scrollbar max-h-[min(320px,calc(100vh-400px))] space-y-1 overflow-y-auto pr-1"
-          >
-            <li className="flex items-center gap-2">
-              <Link
-                data-fluid-item
-                to="/"
-                data-active={isOverviewSelected ? "true" : undefined}
-                className={`min-w-0 flex-1 ${navItemClass(isOverviewSelected)}`}
-              >
-                <img src="/logo.svg?v=3" alt={t("Dashboard")} className="size-3.5 rounded-[2px]" />
-                <span className="console-mono line-clamp-1 flex-1 text-xs">{t("Dashboard")}</span>
-              </Link>
-              {!mobileNavigationOpen ? (
-                <button
-                  type="button"
-                  aria-expanded="true"
-                  aria-label={t("Collapse sidebar")}
-                  title={t("Collapse sidebar")}
-                  onClick={onCollapse}
-                  className="shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-                >
-                  <PanelLeftClose className="size-4" />
-                </button>
-              ) : null}
-            </li>
-            <li>
-              <Link
-                data-fluid-item
-                to="/projects"
-                data-active={isProjectsSelected ? "true" : undefined}
-                className={navItemClass(isProjectsSelected)}
-              >
-                <span className="console-mono min-w-0 flex-1 truncate text-xs">
-                  {t("Projects")}
-                </span>
-                <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                  {projectCount}
-                </span>
-              </Link>
-            </li>
+          <div className="mb-3 flex items-baseline justify-between gap-2">
+            <h3 className="console-eyebrow">{t("PROJECTS")}</h3>
+            <Link
+              to="/projects"
+              data-active={isProjectsSelected ? "true" : undefined}
+              className={`console-mono rounded-sm text-[11px] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+                isProjectsSelected
+                  ? "text-[var(--brand)]"
+                  : "text-[var(--console-muted)] hover:text-[var(--console-text)]"
+              }`}
+            >
+              {t("All {0} →", [projectCount])}
+            </Link>
+          </div>
+          <ul ref={hoverRef} data-fluid-hover="y" className="space-y-1">
             <ProjectNavList
               projects={projects}
               selectedProjectNavigationId={selectedProjectNavigationId}
@@ -315,6 +297,11 @@ export function AppSidebar({
               </li>
             ) : null}
           </ul>
+          {projects.length > 0 ? (
+            <p className="mt-2 px-3 text-[11px] text-[var(--console-muted)]">
+              {t("Most recent first · numbers are session counts")}
+            </p>
+          ) : null}
         </section>
 
         <section>
@@ -449,6 +436,21 @@ export function AppSidebar({
           </section>
         ) : null}
       </div>
+      {!mobileNavigationOpen ? (
+        <div className="flex justify-end border-t border-[var(--console-border)] px-4 py-2.5">
+          <button
+            type="button"
+            aria-expanded="true"
+            aria-label={t("Collapse sidebar")}
+            title={t("Collapse sidebar")}
+            onClick={onCollapse}
+            className="console-mono flex items-center gap-1.5 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1 text-[11px] text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+          >
+            <PanelLeftClose className="size-4" />
+            {t("Collapse")}
+          </button>
+        </div>
+      ) : null}
     </SidebarFrame>
   );
 }

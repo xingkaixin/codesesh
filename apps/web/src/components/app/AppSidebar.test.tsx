@@ -108,10 +108,10 @@ describe("AppSidebar", () => {
       selectedProjectNavigationId: "path:/repo/199",
     });
 
-    expect(screen.getByRole("link", { name: /^Projects 200$/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "All 200 →" }).getAttribute("href")).toBe("/projects");
     expect(
       screen.getAllByRole("link").filter((link) => link.textContent?.includes("project-")),
-    ).toHaveLength(51);
+    ).toHaveLength(9);
     expect(screen.getByRole("link", { name: /project-199/ })).toBeTruthy();
   });
 
@@ -132,14 +132,13 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("link", { name: /Dashboard/ }).dataset.active).toBeUndefined();
   });
 
-  it("renders its collapse control beside the dashboard link", () => {
+  it("renders its collapse control outside the navigation list", () => {
     const onCollapse = vi.fn();
     renderSidebar({}, createActions({ onCollapse }));
 
-    const dashboardLink = screen.getByRole("link", { name: /Dashboard/ });
     const collapseButton = screen.getByRole("button", { name: "Collapse sidebar" });
 
-    expect(collapseButton.closest("li")).toBe(dashboardLink.closest("li"));
+    expect(collapseButton.closest("li")).toBeNull();
     fireEvent.click(collapseButton);
 
     expect(onCollapse).toHaveBeenCalledTimes(1);
