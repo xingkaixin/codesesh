@@ -247,7 +247,16 @@ impl Cache {
             let health = crate::sync::NodeHealth {
                 reported_at: chrono::Utc::now().timestamp_millis(),
                 collection: collection.clone(),
+                host: hello.host.clone(),
             };
+            for (agent, source) in collection.sources.iter().flatten() {
+                if source.presence == crate::discovery::SourcePresence::Available {
+                    tx.execute(
+                        "DELETE FROM hub_ignored_sources WHERE node_id=? AND agent=?",
+                        params![node, agent],
+                    )?;
+                }
+            }
             tx.execute("INSERT INTO hub_node_health VALUES(?,?) ON CONFLICT(node_id) DO UPDATE SET payload=excluded.payload", params![node, serde_json::to_string(&health)?])?;
         } else {
             tx.execute("DELETE FROM hub_node_health WHERE node_id=?", [node])?;

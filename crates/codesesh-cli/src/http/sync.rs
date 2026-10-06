@@ -208,12 +208,28 @@ pub async fn nodes(AxumState(state): AxumState<Arc<State>>) -> Response {
     if !state.hub_enabled {
         return error(StatusCode::NOT_FOUND, "Hub mode is not enabled");
     }
-    let local_sessions = state
-        .runtime
-        .snapshot()
+    let snapshot = state.runtime.snapshot();
+    let local_sessions = snapshot
         .iter()
         .filter(|head| head.reference.source_node_id == "local")
         .count();
+    let mut activity: std::collections::HashMap<
+        &str,
+        std::collections::BTreeMap<String, codesesh_core::sync::NodeAgentActivity>,
+    > = std::collections::HashMap::new();
+    for head in snapshot.iter() {
+        let entry = activity
+            .entry(head.reference.source_node_id.as_str())
+            .or_default()
+            .entry(head.reference.agent_name.clone())
+            .or_default();
+        entry.sessions += 1;
+        entry.last_activity = Some(
+            entry
+                .last_activity
+                .map_or(head.time_updated, |last| last.max(head.time_updated)),
+        );
+    }
     let enabled = !state.runtime.status().agent_statuses.is_empty();
     let local = (enabled || local_sessions > 0).then_some(codesesh_core::sync::LocalNode {
         enabled,
@@ -224,14 +240,19 @@ pub async fn nodes(AxumState(state): AxumState<Arc<State>>) -> Response {
         .hub_control(|cache| Ok((cache.nodes()?, cache.rescan_tasks()?)))
         .await
     {
-        Ok((nodes, tasks)) => Json(codesesh_core::sync::HubNodes {
-            local: local.filter(|_| !nodes.iter().any(|node| node.id == "local")),
-            nodes,
-            tasks,
-            version: env!("CARGO_PKG_VERSION").into(),
-            minimum_worker_version: MINIMUM_WORKER_VERSION.into(),
-        })
-        .into_response(),
+        Ok((mut nodes, tasks)) => {
+            for node in &mut nodes {
+                node.agents = activity.remove(node.id.as_str()).unwrap_or_default();
+            }
+            Json(codesesh_core::sync::HubNodes {
+                local: local.filter(|_| !nodes.iter().any(|node| node.id == "local")),
+                nodes,
+                tasks,
+                version: env!("CARGO_PKG_VERSION").into(),
+                minimum_worker_version: MINIMUM_WORKER_VERSION.into(),
+            })
+            .into_response()
+        }
         Err(_) => retry("Node state is temporarily unavailable"),
     }
 }
@@ -314,6 +335,33 @@ pub async fn rename(
         .await
     {
         Ok(()) => Json(json!({"renamed":true})).into_response(),
+        Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
+        Err(failure) => error(StatusCode::BAD_REQUEST, &failure.to_string()),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct IgnoreSource {
+    ignored: bool,
+}
+
+pub async fn ignore_source(
+    AxumState(state): AxumState<Arc<State>>,
+    Path((node, agent)): Path<(String, String)>,
+    Json(request): Json<IgnoreSource>,
+) -> Response {
+    if !state.hub_enabled {
+        return error(StatusCode::NOT_FOUND, "Hub mode is not enabled");
+    }
+    if !state.known(&agent) {
+        return error(StatusCode::BAD_REQUEST, "Unknown agent");
+    }
+    match state
+        .runtime
+        .hub_control(move |cache| cache.set_source_ignored(&node, &agent, request.ignored))
+        .await
+    {
+        Ok(()) => Json(json!({"ignored":request.ignored})).into_response(),
         Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
         Err(failure) => error(StatusCode::BAD_REQUEST, &failure.to_string()),
     }

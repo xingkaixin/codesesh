@@ -1,3 +1,4 @@
+import { AGENT_CATALOG, type HostInfo } from "@codesesh/contract";
 import { t } from "../../i18n/translate";
 import { isNodeOnline } from "../../hooks/useNodes";
 import type { SourceNode } from "../../lib/api";
@@ -70,9 +71,43 @@ export function collectionStatus(node: SourceNode, now: number) {
   if (!health) return t("Collection details unavailable. Upgrade the Worker to report them.");
   if (!isNodeOnline(node, now) || now - health.reportedAt > 60000)
     return t("Last reported state; Worker status may have changed.");
-  if (health.collection.activeAgent) return t("Scanning {0}", [health.collection.activeAgent]);
+  if (health.collection.activeAgent)
+    return t("Scanning {0}", [agentDisplayName(health.collection.activeAgent)]);
   if (Object.keys(health.collection.errors).length)
     return t("Some Agents failed; other Agents continue collecting.");
   if (node.error || node.revoked) return t("Collection paused or needs attention.");
   return node.collectionComplete ? t("Waiting for the next scan") : t("Collecting history");
+}
+
+export function agentDisplayName(name: string) {
+  return AGENT_CATALOG.find((entry) => entry.name === name)?.displayName ?? name;
+}
+
+/** Sources the Worker found before but cannot find now, minus those the user chose to ignore. */
+export function missingSources(node: SourceNode) {
+  return Object.entries(node.health?.collection.sources ?? {})
+    .filter(
+      ([agent, status]) => status.presence === "missing" && !node.ignoredSources.includes(agent),
+    )
+    .map(([agent]) => agent);
+}
+
+export function nodeNeedsAttention(node: SourceNode) {
+  return !node.revoked && (Boolean(node.error) || missingSources(node).length > 0);
+}
+
+const PLATFORM_NAMES: Record<string, string> = {
+  macos: "macOS",
+  linux: "Linux",
+  windows: "Windows",
+};
+
+export function hostSummary(host: HostInfo, nodeName: string) {
+  return [
+    PLATFORM_NAMES[host.os] ?? host.os,
+    host.arch,
+    host.hostname !== nodeName && host.hostname,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

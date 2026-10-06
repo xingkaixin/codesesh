@@ -17,8 +17,9 @@ function windowKey(window: AppConfig["window"] | null): string {
 export function useProjectPagination(
   window: AppConfig["window"] | null,
   initialPage: ApiProjectPage,
+  sourceNodeId?: string,
 ) {
-  const key = windowKey(window);
+  const key = `${windowKey(window)}:${sourceNodeId ?? ""}`;
   const [navigation, setNavigation] = useState<{ key: string; cursors: string[] }>({
     key,
     cursors: [],
@@ -27,15 +28,15 @@ export function useProjectPagination(
   const cursor = cursors.at(-1);
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: queryKeys.projectPage(window ?? {}, cursor),
-    queryFn: ({ signal }) => fetchProjects(window ?? undefined, { cursor, signal }),
+    queryKey: queryKeys.projectPage(window ?? {}, cursor, sourceNodeId),
+    queryFn: ({ signal }) => fetchProjects(window ?? undefined, { cursor, signal, sourceNodeId }),
     enabled: window != null,
-    initialData: cursor ? undefined : initialPage,
-    placeholderData: cursor ? keepPreviousData : undefined,
+    initialData: cursor || sourceNodeId ? undefined : initialPage,
+    placeholderData: cursor || sourceNodeId ? keepPreviousData : undefined,
     staleTime: PROJECT_QUERY_STALE_TIME_MS,
     retry: false,
   });
-  const page = query.data ?? (cursor ? null : initialPage);
+  const page = query.data ?? (cursor || sourceNodeId ? null : initialPage);
   const staleCursor =
     Boolean(cursor) && query.error instanceof ApiRequestError && query.error.status === 409;
 
@@ -43,7 +44,7 @@ export function useProjectPagination(
     if (!staleCursor) return;
     void queryClient
       .invalidateQueries(
-        { queryKey: queryKeys.projectPage(window ?? {}), exact: true },
+        { queryKey: queryKeys.projectPage(window ?? {}, undefined, sourceNodeId), exact: true },
         { cancelRefetch: true },
       )
       .then(() =>
@@ -51,7 +52,7 @@ export function useProjectPagination(
           current.key === key && current.cursors.at(-1) === cursor ? { key, cursors: [] } : current,
         ),
       );
-  }, [cursor, key, queryClient, staleCursor, window]);
+  }, [cursor, key, queryClient, sourceNodeId, staleCursor, window]);
 
   const next = useCallback(() => {
     const nextCursor = query.data?.nextCursor;

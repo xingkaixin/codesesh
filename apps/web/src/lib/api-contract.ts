@@ -88,6 +88,7 @@ export interface SessionDetailFetchOptions extends FetchOptions {
 export interface ProjectPageOptions extends FetchOptions {
   cursor?: string;
   project?: ProjectIdentityRef;
+  sourceNodeId?: string;
 }
 
 export interface SessionFetchProgress {

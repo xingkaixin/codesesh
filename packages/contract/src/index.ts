@@ -29,3 +29,5 @@ export type { RescanHistory } from "./generated/RescanHistory.js";
 export type { NodeTask } from "./generated/NodeTask.js";
 
 export type { AgentCollectionStatus } from "./generated/AgentCollectionStatus.js";
+export type { HostInfo } from "./generated/HostInfo.js";
+export type { NodeAgentActivity } from "./generated/NodeAgentActivity.js";

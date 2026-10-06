@@ -514,6 +514,7 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
         stream_id: worker.stream_id().unwrap(),
         queue: worker.queue_status().unwrap(),
         rescan: worker.rescan_progress().unwrap(),
+        host: None,
     };
     cache.worker_hello(&grant.node_id, &hello, "1.1.1").unwrap();
     assert_eq!(cache.rescan_tasks().unwrap()[0].status, "running");
@@ -1026,6 +1027,7 @@ fn rescans_deduplicate_cancel_before_dispatch_and_keep_terminal_states() {
             oldest_at: None,
         },
         rescan: None,
+        host: None,
     };
     let offered = cache
         .worker_hello(&grant.node_id, &hello, "1.1.1")
@@ -1233,4 +1235,94 @@ fn local_replacement_requires_installation_proof() {
             .node_id,
         "local"
     );
+}
+
+#[test]
+fn ignored_missing_source_clears_when_worker_finds_it_again() {
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let stream = uuid::Uuid::new_v4().to_string();
+    let grant = cache
+        .pair_worker(&token, "studio", "1.1.1", &stream)
+        .unwrap();
+    let hello = |presence| crate::sync::WorkerHello {
+        collection_status: Some(crate::sync::CollectionStatus {
+            sources: Some(
+                [(
+                    "zcode".into(),
+                    crate::discovery::AgentCollectionStatus {
+                        presence,
+                        complete: true,
+                        error: None,
+                    },
+                )]
+                .into(),
+            ),
+            rescan: None,
+            active_agent: None,
+            last_success_at: None,
+            errors: Default::default(),
+        }),
+        collection_complete: true,
+        collection_error: None,
+        epoch: Some(grant.epoch.clone()),
+        confirmed_sequence: 0,
+        version: "1.1.1".into(),
+        protocol_version: 1,
+        payload_version: 1,
+        stream_id: stream.clone(),
+        queue: crate::sync::QueueStatus {
+            batches: 0,
+            bytes: 0,
+            oldest_at: None,
+        },
+        rescan: None,
+        host: Some(crate::sync::HostInfo {
+            hostname: "studio".into(),
+            os: "linux".into(),
+            arch: "x86_64".into(),
+        }),
+    };
+    let ignored = |cache: &Cache| cache.nodes().unwrap()[0].ignored_sources.clone();
+
+    cache
+        .worker_hello(
+            &grant.node_id,
+            &hello(crate::discovery::SourcePresence::Missing),
+            "1.1.1",
+        )
+        .unwrap();
+    cache
+        .set_source_ignored(&grant.node_id, "zcode", true)
+        .unwrap();
+    cache
+        .worker_hello(
+            &grant.node_id,
+            &hello(crate::discovery::SourcePresence::Missing),
+            "1.1.1",
+        )
+        .unwrap();
+    assert_eq!(ignored(&cache), ["zcode"]);
+    assert_eq!(
+        cache.nodes().unwrap()[0]
+            .health
+            .as_ref()
+            .unwrap()
+            .host
+            .as_ref()
+            .unwrap()
+            .os,
+        "linux"
+    );
+
+    cache
+        .worker_hello(
+            &grant.node_id,
+            &hello(crate::discovery::SourcePresence::Available),
+            "1.1.1",
+        )
+        .unwrap();
+    assert!(ignored(&cache).is_empty());
+    assert!(cache.set_source_ignored("unknown", "zcode", true).is_err());
 }

@@ -36,8 +36,36 @@ impl Collector {
             stream_id: self.store.stream_id()?,
             queue: self.store.queue_status()?,
             rescan: self.store.rescan_progress()?,
+            host: Some(host_info()),
         })
     }
+}
+
+fn host_info() -> codesesh_core::sync::HostInfo {
+    codesesh_core::sync::HostInfo {
+        hostname: host_name().unwrap_or_default(),
+        os: std::env::consts::OS.into(),
+        arch: std::env::consts::ARCH.into(),
+    }
+}
+
+/// Short host name: macOS reports `name.local`, and the domain adds nothing for identification.
+fn host_name() -> Option<String> {
+    #[cfg(unix)]
+    let name = {
+        let mut buffer = [0u8; 256];
+        (unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) } == 0).then(|| {
+            let end = buffer
+                .iter()
+                .position(|byte| *byte == 0)
+                .unwrap_or(buffer.len());
+            String::from_utf8_lossy(&buffer[..end]).into_owned()
+        })
+    };
+    #[cfg(windows)]
+    let name = std::env::var("COMPUTERNAME").ok();
+    name.and_then(|name| name.split('.').next().map(str::to_owned))
+        .filter(|name| !name.is_empty() && name.len() <= 128)
 }
 
 pub async fn run(
@@ -114,7 +142,7 @@ pub async fn run(
                     None
                 };
             let stream = collector.store.stream_id()?;
-            let mut request = client.post(origin.join("api/worker/pair")?).json(&serde_json::json!({"token":token,"name":name.unwrap_or("Worker"),"hello":collector.hello()?}));
+            let mut request = client.post(origin.join("api/worker/pair")?).json(&serde_json::json!({"token":token,"name":name.map(str::to_owned).or_else(host_name).unwrap_or_else(||"Worker".into()),"hello":collector.hello()?}));
             if let Some((hub_id, key)) = &local_identity {
                 request = request
                     .header("x-codesesh-local-hub-id", hub_id.trim())

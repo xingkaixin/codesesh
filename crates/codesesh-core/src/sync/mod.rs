@@ -10,9 +10,9 @@ pub use protocol::{
 pub use worker_store::{PendingUpload, QueueStatus, WorkerStore};
 
 pub use hub_types::{
-    CollectionStatus, HubHello, HubNodes, LocalNode, Node, NodeHealth, NodeTask, PairingGrant,
-    Receipt, Recovery, RescanHistory, RescanProgress, RescanRequest, RescanScanProgress, Upload,
-    WorkerHello,
+    CollectionStatus, HostInfo, HubHello, HubNodes, LocalNode, Node, NodeAgentActivity, NodeHealth,
+    NodeTask, PairingGrant, Receipt, Recovery, RescanHistory, RescanProgress, RescanRequest,
+    RescanScanProgress, Upload, WorkerHello,
 };
 
 fn local_worker_mac(

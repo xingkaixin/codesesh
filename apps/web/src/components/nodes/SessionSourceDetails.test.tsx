@@ -18,6 +18,8 @@ const node: SourceNode = {
   collectionComplete: true,
   queue: null,
   error: null,
+  agents: {},
+  ignoredSources: [] as string[],
 };
 const resumeSession = {
   resumeCommandPrefix: "codex resume",

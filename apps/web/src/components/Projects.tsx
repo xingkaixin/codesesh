@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { Link, useNavigate } from "react-router-dom";
@@ -13,6 +14,7 @@ import { OverviewScreen } from "./overview/OverviewScreen";
 import { ProjectTimeline } from "./project-timeline/ProjectTimeline";
 import { ResourceLoadFailure } from "./ResourceLoadFailure";
 import { Panel } from "./ui/panel";
+import { SourceFilter } from "./nodes/SourceFilter";
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   useLocale();
@@ -129,13 +131,14 @@ export function ProjectsOverview({
 }) {
   useLocale();
 
-  const pagination = useProjectPagination(window, initialPage);
+  const [sourceNodeId, setSourceNodeId] = useState<string>();
+  const pagination = useProjectPagination(window, initialPage, sourceNodeId);
   const page = pagination.page ?? initialPage;
   const projects = page.projects.slice(0, 250);
   const currentError = pagination.error ?? error;
   const retry = pagination.error ? () => void pagination.retry() : onRetry;
 
-  if (page.summary.projects === 0) {
+  if (page.summary.projects === 0 && !sourceNodeId) {
     if (currentError) {
       return (
         <div className="mx-auto max-w-6xl">
@@ -163,6 +166,7 @@ export function ProjectsOverview({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
+      <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />
       {currentError ? (
         <ResourceLoadFailure
           title={t("Couldn't refresh projects.")}
