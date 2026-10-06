@@ -50,12 +50,32 @@ pub struct RescanScanProgress {
     pub total: i64,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfo {
+    pub hostname: String,
+    pub os: String,
+    pub arch: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeHealth {
     #[ts(type = "number")]
     pub reported_at: i64,
     pub collection: CollectionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub host: Option<HostInfo>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeAgentActivity {
+    #[ts(type = "number")]
+    pub sessions: usize,
+    #[ts(type = "number | null")]
+    pub last_activity: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
@@ -79,6 +99,8 @@ pub struct Node {
     pub collection_complete: bool,
     pub queue: Option<QueueStatus>,
     pub error: Option<String>,
+    pub agents: std::collections::BTreeMap<String, NodeAgentActivity>,
+    pub ignored_sources: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -110,6 +132,8 @@ pub struct WorkerHello {
     pub queue: QueueStatus,
     #[serde(default)]
     pub rescan: Option<RescanProgress>,
+    #[serde(default)]
+    pub host: Option<HostInfo>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

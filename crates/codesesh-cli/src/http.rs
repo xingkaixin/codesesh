@@ -146,6 +146,10 @@ pub fn router(state: Arc<State>) -> Router {
             post(sync::cancel_task),
         )
         .route("/api/nodes/{node}/name", put(sync::rename))
+        .route(
+            "/api/nodes/{node}/sources/{agent}/ignored",
+            put(sync::ignore_source),
+        )
         .route("/api/nodes/pairing-token", post(sync::pairing_token))
         .route("/api/nodes/pairing-status", post(sync::pairing_status))
         .route("/api/nodes/{node}/revoke", post(sync::revoke))
