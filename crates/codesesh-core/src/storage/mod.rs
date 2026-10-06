@@ -11,6 +11,7 @@ mod read;
 mod reprice;
 pub(crate) use reprice::reprice_session;
 mod schema;
+pub(crate) use schema::{COMPACT_MIN_FREE_PAGES, sparse_pages};
 mod search_text;
 mod snapshot;
 use crate::{
