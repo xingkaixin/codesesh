@@ -1,4 +1,5 @@
 mod cjk;
+pub(crate) use cjk::index_text;
 mod file_activity;
 mod parser;
 mod reader;

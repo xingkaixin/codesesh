@@ -264,7 +264,7 @@ impl Cache {
             index.validate(transaction)?;
         }
         for reference in removed {
-            memory::note_previous_document(transaction, reference, reclaim_connection)?;
+            search_text::forget(transaction, reference, 0..i64::MAX)?;
             for table in ["pending_reindex", "session_documents", "sessions"] {
                 transaction.execute(
                     &format!("DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"),
@@ -314,13 +314,13 @@ impl Cache {
                     crate::agents::parser_version(&reference.agent_name)
                 ]]
             ]))?;
-            memory::note_previous_document(transaction, reference, reclaim_connection)?;
             transaction.execute(
                 "DELETE FROM session_documents WHERE source_node_id=? AND agent_name=? AND session_id=?",
                 params![reference.source_node_id,reference.agent_name,reference.session_id],
             )?;
             let retained = message_reuse::stored_digests(transaction, reference)?;
             if retained.is_empty() {
+                search_text::forget(transaction, reference, 0..i64::MAX)?;
                 transaction.execute(
                     "DELETE FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
                     params![
@@ -340,6 +340,8 @@ impl Cache {
                         params![reference.source_node_id, reference.agent_name, reference.session_id],
                     )?;
                 }
+                let count = session.detail.messages.len() as i64;
+                search_text::forget(transaction, reference, count..i64::MAX)?;
                 transaction.execute(
                     "DELETE FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=?",
                     params![reference.source_node_id, reference.agent_name, reference.session_id, session.detail.messages.len() as i64],
@@ -355,7 +357,7 @@ impl Cache {
             )?;
             let message_started = std::time::Instant::now();
             let mut digest = cursor::initial(reference);
-            let mut text = session.detail.head.title.trim().to_owned();
+            let mut indexed_bytes = 0;
             for (index, message) in session.detail.messages.iter().enumerate() {
                 let normalized;
                 let message = if message.id.is_empty() {
@@ -373,24 +375,26 @@ impl Cache {
                     .map(|tokens| json::tokens(&reference.agent_name, tokens))
                     .transpose()?;
                 digest = cursor::advance(&digest, message, &parts, tokens.as_deref(), 1)?;
-                let content = search_text::message_text(message);
-                text.push('\n');
-                text.push_str(&content);
                 if retained.get(&(index as i64)) == Some(&digest) {
                     continue;
                 }
+                let content = search_text::message_text(message);
                 if !retained.is_empty() {
+                    let index = index as i64;
+                    search_text::forget(transaction, reference, index..index + 1)?;
                     transaction.prepare_cached("DELETE FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?")?.execute(
-                        params![reference.source_node_id, reference.agent_name, reference.session_id, index as i64],
+                        params![reference.source_node_id, reference.agent_name, reference.session_id, index],
                     )?;
                 }
                 transaction.prepare_cached("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text,tool_metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)")?.execute(
                     params![reference.source_node_id,reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content,facts::tool_metadata(message)?])?;
+                search_text::index(transaction, transaction.last_insert_rowid(), &content)?;
+                indexed_bytes += content.len() as i64;
             }
             message_time += message_started.elapsed();
             let document_started = std::time::Instant::now();
-            memory::note_document_size(text.len() as i64, reclaim_connection);
-            transaction.execute("INSERT INTO session_documents(source_node_id,agent_name,session_id,title,content_text,content_hash,indexed_message_count,indexed_at,detail_version) VALUES(?,?,?,?,?,?,?,?,?)", params![reference.source_node_id,reference.agent_name,reference.session_id,session.detail.head.title,text,facts::content_hash(head)?,session.detail.messages.len() as i64,chrono::Utc::now().timestamp_millis(),detail_version])?;
+            memory::note_document_size(indexed_bytes, reclaim_connection);
+            transaction.execute("INSERT INTO session_documents(source_node_id,agent_name,session_id,title,content_hash,indexed_message_count,indexed_at,detail_version) VALUES(?,?,?,?,?,?,?,?)", params![reference.source_node_id,reference.agent_name,reference.session_id,session.detail.head.title,facts::content_hash(head)?,session.detail.messages.len() as i64,chrono::Utc::now().timestamp_millis(),detail_version])?;
             document_time += document_started.elapsed();
             let facts_started = std::time::Instant::now();
             for activity in &session.detail.file_activity {
@@ -466,13 +470,10 @@ impl Cache {
     pub fn rebuild_search_indexes(&mut self) -> Result<()> {
         self.reclaim_connection.set(true);
         let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "INSERT INTO session_documents_fts(session_documents_fts) VALUES('rebuild')",
-            [],
-        )?;
         transaction.execute("INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts) VALUES('rebuild')",[])?;
+        search_text::reset_index(&transaction)?;
         transaction.commit()?;
-        Ok(())
+        search_text::ensure_index(&self.connection, &mut |_| Ok(()))
     }
 
     pub fn messages(&self, reference: &SessionReference) -> Result<i64> {

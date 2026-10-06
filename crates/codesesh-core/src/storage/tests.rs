@@ -200,7 +200,14 @@ fn schema_and_materialized_messages_survive_reopen() {
         cache.messages(&sessions[0].detail.head.reference).unwrap(),
         1
     );
-    let count: i64 = cache.connection.query_row("SELECT count(*) FROM session_documents_fts WHERE session_documents_fts MATCH 'Fixture'", [], |row|row.get(0)).unwrap();
+    let count: i64 = cache
+        .connection
+        .query_row(
+            "SELECT count(*) FROM message_fts WHERE message_fts MATCH 'Fixture'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert_eq!(count, 1);
     assert_eq!(
         cache
@@ -247,7 +254,17 @@ fn deletion_rolls_back_when_a_later_write_fails() {
         )
         .unwrap();
     assert_eq!(rollup, 1);
-    assert_eq!(cache.connection.query_row("SELECT COUNT(*) FROM session_documents_fts WHERE session_documents_fts MATCH 'Fixture'",[],|row|row.get::<_,i64>(0)).unwrap(),1);
+    assert_eq!(
+        cache
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM message_fts WHERE message_fts MATCH 'Fixture'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
 }
 #[test]
 fn cursor_reads_only_matching_suffix_and_resets_after_rewrite() {
@@ -663,7 +680,17 @@ fn schema34_migration_preserves_heads_content_and_indexes() {
                 .unwrap(),
             content
         );
-        assert_eq!(cache.connection.query_row("SELECT count(*) FROM session_documents_fts WHERE session_documents_fts MATCH 'Fixture'",[],|row|row.get::<_,i64>(0)).unwrap(),3);
+        assert_eq!(
+            cache
+                .connection
+                .query_row(
+                    "SELECT count(*) FROM message_fts WHERE message_fts MATCH 'Fixture'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            3
+        );
         assert_eq!(
             cache
                 .connection

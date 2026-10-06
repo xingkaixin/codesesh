@@ -221,37 +221,12 @@ CREATE TABLE session_documents (
       agent_name TEXT NOT NULL,
       session_id TEXT NOT NULL,
       title TEXT NOT NULL,
-      content_text TEXT NOT NULL,
       content_hash TEXT NOT NULL,
       indexed_message_count INTEGER NOT NULL,
       detail_version TEXT NOT NULL DEFAULT '',
       indexed_at INTEGER NOT NULL,
       UNIQUE(source_node_id, agent_name, session_id)
     );
-
-CREATE VIRTUAL TABLE session_documents_fts USING fts5(
-      title,
-      content_text,
-      content='session_documents',
-      content_rowid='id'
-    );
-
-CREATE TRIGGER session_documents_ai AFTER INSERT ON session_documents BEGIN
-      INSERT INTO session_documents_fts(rowid, title, content_text)
-      VALUES (new.id, new.title, new.content_text);
-    END;
-
-CREATE TRIGGER session_documents_ad AFTER DELETE ON session_documents BEGIN
-      INSERT INTO session_documents_fts(session_documents_fts, rowid, title, content_text)
-      VALUES ('delete', old.id, old.title, old.content_text);
-    END;
-
-CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
-      INSERT INTO session_documents_fts(session_documents_fts, rowid, title, content_text)
-      VALUES ('delete', old.id, old.title, old.content_text);
-      INSERT INTO session_documents_fts(rowid, title, content_text)
-      VALUES (new.id, new.title, new.content_text);
-    END;
 
 CREATE INDEX idx_session_documents_state
       ON session_documents(
@@ -262,6 +237,33 @@ CREATE INDEX idx_session_documents_state
         detail_version
       )
   ;
+
+CREATE VIRTUAL TABLE message_fts USING fts5(
+      content_text,
+      content='',
+      contentless_delete=1
+    );
+
+CREATE VIRTUAL TABLE session_title_fts USING fts5(
+      title,
+      content='sessions',
+      content_rowid='rowid'
+    );
+
+CREATE TRIGGER session_title_ai AFTER INSERT ON sessions BEGIN
+      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
+    END;
+
+CREATE TRIGGER session_title_ad AFTER DELETE ON sessions BEGIN
+      INSERT INTO session_title_fts(session_title_fts, rowid, title)
+      VALUES ('delete', old.rowid, old.title);
+    END;
+
+CREATE TRIGGER session_title_au AFTER UPDATE OF title ON sessions BEGIN
+      INSERT INTO session_title_fts(session_title_fts, rowid, title)
+      VALUES ('delete', old.rowid, old.title);
+      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
+    END;
 
 CREATE VIEW project_groups_v AS
       SELECT

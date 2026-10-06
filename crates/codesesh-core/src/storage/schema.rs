@@ -2,12 +2,6 @@ use anyhow::{Result, bail, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{collections::HashSet, path::Path};
 
-pub(super) const DOCUMENT_UPDATE_TRIGGER: &str = "DROP TRIGGER IF EXISTS session_documents_au;
-     CREATE TRIGGER session_documents_au AFTER UPDATE OF title, content_text ON session_documents BEGIN
-       INSERT INTO session_documents_fts(session_documents_fts,rowid,title,content_text) VALUES('delete',old.id,old.title,old.content_text);
-       INSERT INTO session_documents_fts(rowid,title,content_text) VALUES(new.id,new.title,new.content_text);
-     END;";
-
 fn exists(db: &Connection, name: &str) -> Result<bool> {
     Ok(db
         .query_row(
@@ -133,6 +127,7 @@ fn migrate(
             "DELETE FROM cache_meta WHERE key='covering_read_indexes_v1'",
             [],
         )?;
+        super::search_text::reset_index(db)?;
         db.execute_batch("DROP TABLE IF EXISTS cached_sessions; DROP TABLE IF EXISTS project_sessions; DROP TABLE IF EXISTS search_index_publication_entries;")?;
         if version < 22 {
             db.execute_batch("INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions; UPDATE session_documents SET content_hash='';")?;
@@ -279,9 +274,7 @@ pub fn ensure_with_progress(
             total: None,
         })?;
     }
-    let documents_missing = !exists(db, "session_documents_fts")?;
-    let paths_missing = !exists(db, "session_file_activity_path_fts")?;
-    if documents_missing || paths_missing {
+    if !exists(db, "session_file_activity_path_fts")? {
         let schema = include_str!("schema.sql")
             .replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
             .replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ")
@@ -294,15 +287,7 @@ pub fn ensure_with_progress(
         db.execute_batch("BEGIN IMMEDIATE")?;
         let repaired = (|| -> Result<()> {
             db.execute_batch(&schema)?;
-            if documents_missing {
-                db.execute(
-                    "INSERT INTO session_documents_fts(session_documents_fts) VALUES('rebuild')",
-                    [],
-                )?;
-            }
-            if paths_missing {
-                db.execute("INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts) VALUES('rebuild')",[])?;
-            }
+            db.execute("INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts) VALUES('rebuild')",[])?;
             db.execute_batch("COMMIT")?;
             Ok(())
         })();
@@ -315,7 +300,7 @@ pub fn ensure_with_progress(
     let result = (|| -> Result<()> {
         for (key, sql) in [
             ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
-            ("cost_only_publication_v1", DOCUMENT_UPDATE_TRIGGER),
+            ("cost_only_publication_v1", ""),
             (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
@@ -350,7 +335,8 @@ pub fn ensure_with_progress(
         let _ = db.execute_batch("ROLLBACK");
     }
     result?;
-    super::search_text::rebuild(db, progress)
+    super::search_text::rebuild(db, progress)?;
+    super::search_text::ensure_index(db, progress)
 }
 
 fn restore_legacy_heads(db: &Connection) -> Result<()> {
