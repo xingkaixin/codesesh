@@ -348,18 +348,23 @@ pub fn ensure_with_progress(
 }
 
 // 64 MB of 4 KB pages; smaller gaps are reused by later writes.
-const COMPACT_MIN_FREE_PAGES: i64 = 16 * 1024;
+pub(crate) const COMPACT_MIN_FREE_PAGES: i64 = 16 * 1024;
+
+/// Free and total pages when a VACUUM would reclaim at least a quarter of the file.
+pub(crate) fn sparse_pages(db: &Connection, min_free_pages: i64) -> Result<Option<(i64, i64)>> {
+    let pages: i64 = db.pragma_query_value(None, "page_count", |row| row.get(0))?;
+    let free: i64 = db.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+    Ok((free >= min_free_pages && free * 4 >= pages).then_some((free, pages)))
+}
 
 fn compact(
     db: &Connection,
     min_free_pages: i64,
     progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
 ) -> Result<()> {
-    let pages: i64 = db.pragma_query_value(None, "page_count", |row| row.get(0))?;
-    let free: i64 = db.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
-    if free < min_free_pages || free * 4 < pages {
+    let Some((free, pages)) = sparse_pages(db, min_free_pages)? else {
         return Ok(());
-    }
+    };
     progress(super::StorageProgress {
         phase: format!("Compacting database ({free} of {pages} pages unused)"),
         done: 0,

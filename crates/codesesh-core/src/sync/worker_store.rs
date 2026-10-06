@@ -90,6 +90,10 @@ impl WorkerStore {
             (0..=1).contains(&version),
             "Unsupported Worker state schema {version}"
         );
+        // A drained backlog leaves the queue file at its high-water mark; compaction is best effort.
+        if crate::storage::sparse_pages(&db, crate::storage::COMPACT_MIN_FREE_PAGES)?.is_some() {
+            let _ = db.execute_batch("VACUUM");
+        }
         if version == 0 {
             let tx = db.unchecked_transaction()?;
             tx.execute_batch("CREATE TABLE worker_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
