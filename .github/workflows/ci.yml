@@ -65,8 +65,29 @@ jobs:
       - run: pnpm test:coverage
       - run: pnpm --filter @codesesh/web test:bundle
 
+  web-assets:
+    name: Web assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:web
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web-assets
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
+
   rust:
     name: Rust (${{ matrix.target }})
+    needs: web-assets
     strategy:
       fail-fast: false
       matrix:
@@ -100,10 +121,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: runner.os == 'Linux'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ runner.os == 'Linux' && 'pnpm' || '' }}
       - run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
       - name: Cache Rust dependencies and build outputs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -115,13 +137,21 @@ jobs:
           key: rust-${{ matrix.target }}-1.90.0-${{ hashFiles('Cargo.lock') }}
           restore-keys: rust-${{ matrix.target }}-1.90.0-
       - run: pnpm install --frozen-lockfile
+        if: runner.os == 'Linux'
       - name: Verify generated contracts have no drift
         if: runner.os == 'Linux'
         run: |
           pnpm generate:rust-contract
           git diff --exit-code -- packages/contract/src/generated
       - name: Build contract and Web assets before Rust embedding
+        if: runner.os == 'Linux'
         run: pnpm build:web
+      - name: Download Web assets before Rust embedding
+        if: runner.os != 'Linux'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: web-assets
+          path: apps/web/dist
       - run: cargo fmt --all --check
         if: runner.os == 'Linux'
       # macOS arm64 runs the same OS checks; the code has no CPU architecture branches.
@@ -129,16 +159,17 @@ jobs:
         if: matrix.target != 'x86_64-apple-darwin'
       - run: cargo test --workspace --locked
         if: runner.os == 'Linux'
+      # Only Linux installs Node dependencies; pnpm 12 installs them before running a script.
       - name: Verify platform-dependent Rust behavior
         if: runner.os != 'Linux' && matrix.target != 'x86_64-apple-darwin'
-        run: pnpm test:rust:platform
-      - run: pnpm build:rust
+        run: npm run test:rust:platform
+      - run: npm run build:rust
       - run: node --test scripts/rust/packaging.test.mjs
       - run: node --test scripts/rust/publish.test.mjs
         if: runner.os == 'Linux'
       - name: Verify native process and CLI contracts
         run: |
-          pnpm test:backend
+          npm run test:backend
           node --test tests/backend-contract/lifecycle.test.mjs
       - name: Check algorithmic growth rates
         if: runner.os == 'Linux'
