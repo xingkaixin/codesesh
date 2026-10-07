@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.3.0] - 2026-10-07
+
+This release makes search and live refresh much lighter on large histories, shows which machine and Agent each source comes from in Hub mode, and declares what each Agent adapter can actually read. (#713–#728)
+
+### Features
+
+- Declare a support tier and capability matrix for every Agent: usage, recorded cost, tool results, reasoning, and session tree. The README matrix is checked against the Agent catalog; the `/api/agents` response is unchanged. (#715)
+- Improve Worker details in the source node panel. Workers report host name, OS, and architecture, and pairing without `--name` defaults to the short host name. Each Agent source shows session count and last activity. A missing source can be ignored until the Worker finds it again, and the toolbar counts only missing sources that are not ignored. The Projects page adds a source node filter, and sidebar sessions show the node name when the list spans several nodes. (#717)
+- Simplify sidebar project navigation: show the 8 most recently active projects plus the selected one, link to the full project list, and scroll the sidebar as one region. (#713)
+
+### Performance
+
+- Exclude inline base64 and data-URI content from search text, and keep only the first and last 64 KB of each tool's state text. On a sample of large Codex rollouts, cold scans took less than half the time and the cache shrank by more than half. Matches deeper than 64 KB inside a single tool output are no longer searchable. (#720)
+- Index search text per message instead of per session, so appending a message no longer re-indexes the whole session. Chinese terms use the index instead of scanning every document. Title matches still rank first. (#721)
+- Resume parsing of large, actively written Codex rollouts from a checkpoint instead of re-reading the whole file on every change. (#722)
+- Compact the session cache and the Worker queue file on open when at least a quarter of pages and 64 MB are free. A failed compaction is reported and does not block startup. (#723, #724)
+- Read only the needed session columns for file activity, reducing Dashboard cache-miss time on large histories. (#725)
+- On macOS, poll only recently changed and newly created files between full passes, which run once a minute. A file idle for more than 10 minutes that starts receiving writes is picked up by the next full pass. (#726)
+
+### Documentation
+
+- Reorganize docs around product scope and architecture, and organize README features around finding, seeing, and reusing sessions. (#714, #716)
+- Redesign the product landing page with an animated search hero, an interactive product tour, and new data-boundary and Hub/Worker sections. (#719)
+
+### Build
+
+- Shorten the native Rust CI critical path by building Web assets once, running clippy and platform tests on macOS arm64 only, and reducing the Rust cache size. Stabilize two timing-sensitive tests. (#718, #727, #728)
+
+### Compatibility
+
+- The first start after upgrading rebuilds the search index and may compact the cache. This can take minutes on large caches, and compaction temporarily needs free disk space for a copy of the cache. (#720, #721, #723)
+
 ## [1.2.9] - 2026-10-06
 
 This release shows collection status for local and Worker sources, keeps archived and compressed Codex history available, and adds partial support for Antigravity CLI conversations. (#709–#711)

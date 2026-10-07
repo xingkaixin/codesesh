@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.0",
+        date: "2026-10-07",
+        title: "Faster search on large histories and clearer multi-machine sources",
+        summary:
+          "CodeSesh 1.3.0 makes session search and live refresh much lighter when local AI coding history grows large. In Hub mode, each Worker now shows its machine and per-Agent activity, and every supported Agent declares what CodeSesh can read from it.",
+        direction:
+          "Local history should stay fast to search as it grows to many gigabytes, and every source should show where history comes from and what it includes.",
+        highlights: [
+          {
+            title: "Search large histories with less work",
+            description:
+              "Search indexes each message instead of whole sessions and skips embedded images. Chinese searches use the index, and long active Codex sessions refresh without re-reading the whole file.",
+          },
+          {
+            title: "Keep the local cache smaller",
+            description:
+              "The session cache and Worker queue reclaim free space on open. The first start after upgrading rebuilds the search index, which can take minutes on very large caches.",
+          },
+          {
+            title: "See which machine each source comes from",
+            description:
+              "Workers show host name, OS, and per-Agent session counts and last activity. Ignore an expected missing source, and filter projects by source node.",
+          },
+          {
+            title: "Know what each Agent supports",
+            description:
+              "A capability matrix shows whether each Agent provides usage, recorded cost, tool results, reasoning, and session trees.",
+          },
+        ],
+      },
+      {
         version: "1.2.9",
         date: "2026-10-06",
         title: "See collection progress and recover more coding history",
@@ -669,6 +700,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.0",
+        date: "2026-10-07",
+        title: "大体量历史搜索更快，多机来源更清楚",
+        summary:
+          "CodeSesh 1.3.0 在本地 AI 编码历史持续增长时，显著降低会话搜索与实时刷新的开销。Hub 模式下，每个 Worker 展示所在机器与各 Agent 的活动情况；每个受支持的 Agent 也明确声明 CodeSesh 能读取哪些内容。",
+        direction:
+          "本地历史增长到数 GB 后仍应快速可搜，每个来源都应说明历史来自哪里、包含哪些内容。",
+        highlights: [
+          {
+            title: "以更少开销搜索大体量历史",
+            description:
+              "搜索按消息建立索引，并跳过内嵌图片。中文检索使用索引，正在进行的长 Codex 会话刷新时不再重读整个文件。",
+          },
+          {
+            title: "本地缓存占用更小",
+            description:
+              "会话缓存和 Worker 队列在打开时回收空闲空间。升级后首次启动会重建搜索索引，超大缓存可能需要数分钟。",
+          },
+          {
+            title: "看清每个来源属于哪台机器",
+            description:
+              "Worker 展示主机名、操作系统，以及各 Agent 的会话数与最近活动。可以忽略预期缺失的来源，并按来源节点筛选项目。",
+          },
+          {
+            title: "了解每个 Agent 的支持范围",
+            description:
+              "能力矩阵列出每个 Agent 是否提供用量、记录成本、工具结果、推理过程和会话树。",
+          },
+        ],
+      },
+      {
         version: "1.2.9",
         date: "2026-10-06",
         title: "看清采集进度，找回更多编码历史",
@@ -1247,6 +1309,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.3.0",
+        date: "2026-10-07",
+        title: "大規模な履歴の検索を高速化し、複数マシンのソースを明確に",
+        summary:
+          "CodeSesh 1.3.0 では、ローカル AI コーディング履歴が大きくなっても、セッション検索とリアルタイム更新の負荷を大きく抑えます。Hub モードでは各 Worker のマシン情報と Agent ごとのアクティビティを表示し、対応 Agent ごとに CodeSesh が読み取れる内容を明示します。",
+        direction:
+          "ローカル履歴が数 GB に増えても素早く検索でき、各ソースについて履歴の出どころと含まれる内容がわかるようにします。",
+        highlights: [
+          {
+            title: "大規模な履歴を少ない負荷で検索",
+            description:
+              "検索インデックスをメッセージ単位で作成し、埋め込み画像を除外します。中国語の検索もインデックスを使い、進行中の長い Codex セッションはファイル全体を読み直さずに更新します。",
+          },
+          {
+            title: "ローカルキャッシュを小さく保つ",
+            description:
+              "セッションキャッシュと Worker キューは、開くときに空き領域を回収します。アップグレード後の初回起動では検索インデックスを再構築するため、非常に大きなキャッシュでは数分かかることがあります。",
+          },
+          {
+            title: "各ソースのマシンを確認",
+            description:
+              "Worker のホスト名、OS、Agent ごとのセッション数と最終アクティビティを表示します。想定どおり存在しないソースは無視でき、プロジェクトはソースノードで絞り込めます。",
+          },
+          {
+            title: "Agent ごとの対応範囲を把握",
+            description:
+              "機能マトリクスで、各 Agent が使用量、記録済みコスト、ツール結果、推論、セッションツリーを提供するかを確認できます。",
+          },
+        ],
+      },
       {
         version: "1.2.9",
         date: "2026-10-06",
