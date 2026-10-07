@@ -124,11 +124,13 @@ jobs:
         run: pnpm build:web
       - run: cargo fmt --all --check
         if: runner.os == 'Linux'
+      # macOS arm64 runs the same OS checks; the code has no CPU architecture branches.
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        if: matrix.target != 'x86_64-apple-darwin'
       - run: cargo test --workspace --locked
         if: runner.os == 'Linux'
       - name: Verify platform-dependent Rust behavior
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && matrix.target != 'x86_64-apple-darwin'
         run: pnpm test:rust:platform
       - run: pnpm build:rust
       - run: node --test scripts/rust/packaging.test.mjs

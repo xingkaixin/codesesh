@@ -62,7 +62,7 @@ jobs:
       - run: cargo test --workspace --locked
         if: runner.os == 'Linux'
       - run: pnpm test:rust:platform
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && matrix.target != 'x86_64-apple-darwin'
 
       - name: Build, pack and smoke test native release
         run: |
