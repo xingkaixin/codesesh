@@ -108,6 +108,8 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUST_BACKTRACE: 1
     steps:
       - name: Verify minimum supported Linux glibc
@@ -134,8 +136,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: rust-${{ matrix.target }}-1.90.0-${{ hashFiles('Cargo.lock') }}
-          restore-keys: rust-${{ matrix.target }}-1.90.0-
+          key: rust-v2-${{ matrix.target }}-1.90.0-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-v2-${{ matrix.target }}-1.90.0-
       - run: pnpm install --frozen-lockfile
         if: runner.os == 'Linux'
       - name: Verify generated contracts have no drift
