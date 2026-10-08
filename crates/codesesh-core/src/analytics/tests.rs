@@ -97,6 +97,7 @@ fn reconciled_messages_attribute_cost_to_message_time() {
         messages: vec![MessageCostFact {
             reference: reference.clone(),
             time: 200.0,
+            message_count: 1,
             model: Some("model".into()),
             input_tokens: 10.0,
             output_tokens: 2.0,
@@ -220,7 +221,7 @@ fn sqlite_facts_and_active_hours_respect_effective_time_and_automation() {
         .timestamp_millis();
     let mut session = head("database", None, time);
     session.stats.message_count = 3;
-    let message = json!({"id":"user","role":"user","agent":null,"time_created":time,"time_completed":time as f64+1000.25,"mode":null,"model":"model","provider":null,"tokens":{"input":10.8,"output":2},"cost":1,"parts":[]});
+    let message = json!({"id":"user","role":"user","agent":null,"time_created":time-500,"time_completed":time as f64+1000.25,"mode":null,"model":"model","provider":null,"tokens":{"input":10.8,"output":2},"cost":1,"parts":[]});
     let mut automated = message.clone();
     automated["id"] = json!("automated");
     automated["automated"] = json!(true);
@@ -242,12 +243,12 @@ fn sqlite_facts_and_active_hours_respect_effective_time_and_automation() {
         true,
     )
     .unwrap();
-    assert_eq!(facts.messages.len(), 3);
-    assert_eq!(facts.messages[0].time, time as f64 + 1000.25);
-    assert_eq!(facts.messages[0].input_tokens, 10.0);
+    assert_eq!(facts.messages.len(), 1);
+    assert_eq!(facts.messages[0].time, time as f64);
+    assert_eq!(facts.messages[0].message_count, 3);
+    assert_eq!(facts.messages[0].input_tokens, 30.0);
     assert_eq!(facts.sessions[0].input_tokens, 30.0);
-    let outside =
-        load_cost_facts(cache.connection(), None, Some((time + 1000) as f64), true).unwrap();
+    let outside = load_cost_facts(cache.connection(), None, Some((time - 1) as f64), true).unwrap();
     assert!(outside.messages.is_empty());
     assert_eq!(outside.sessions.len(), 1);
     let hours = active_hours(
@@ -286,23 +287,24 @@ fn fractional_activity_stays_outside_the_inclusive_boundary() {
 
 #[test]
 fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_sources() {
-    let mut parent = head("shared", None, 200);
+    const BUCKET: i64 = 900_000;
+    let mut parent = head("shared", None, 2 * BUCKET + 1_000);
     parent.reference.source_node_id = "worker-a".into();
-    let mut child = head("child", None, 500);
+    let mut child = head("child", None, 5 * BUCKET);
     child.reference.source_node_id = "worker-a".into();
     child.reference.agent_name = "claudecode".into();
     child.project_identity.key = "/child-project".into();
     child.parent_reference = Some(parent.reference.clone());
-    let mut historical = head("historical", None, 900);
+    let mut historical = head("historical", None, 9 * BUCKET);
     historical.reference.source_node_id = "worker-a".into();
-    let local = head("shared", None, 200);
-    let mut outside = head("outside", None, 200);
+    let local = head("shared", None, 2 * BUCKET + 1_000);
+    let mut outside = head("outside", None, 2 * BUCKET + 1_000);
     outside.reference.source_node_id = "worker-a".into();
     outside.project_identity.key = "/other-project".into();
     let mut parsed: Vec<_> = [parent, child, historical, local, outside]
         .into_iter()
         .map(|mut head| {
-            let times = if head.reference.session_id == "child" { vec![0] } else { vec![100, 175] };
+            let times = if head.reference.session_id == "child" { vec![0] } else { vec![BUCKET, 2 * BUCKET] };
             head.stats.message_count = times.len();
             head.stats.total_input_tokens = times.len() as f64 * 10.0;
             head.stats.total_output_tokens = times.len() as f64 * 2.0;
@@ -333,13 +335,14 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
         project_kind: Some("path".into()),
         project_key: Some("/project".into()),
     };
-    let all = load_cost_facts(cache.connection(), Some(50.0), Some(250.0), true).unwrap();
+    let (from, to) = ((2 * BUCKET) as f64, (3 * BUCKET - 1) as f64);
+    let all = load_cost_facts(cache.connection(), Some(BUCKET as f64), Some(to), true).unwrap();
     let scoped = load_scoped_cost_facts(
         cache.connection(),
         &sessions,
         &scope,
-        Some(50.0),
-        Some(250.0),
+        Some(BUCKET as f64),
+        Some(to),
         true,
     )
     .unwrap();
@@ -361,10 +364,10 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
     let options = DashboardOptions {
         by_agent_names: &["codex".into(), "claudecode".into()],
         scope: &scope,
-        from: Some(150.0),
-        to: 250.0,
+        from: Some(from),
+        to,
         agent_info: None,
-        compare: Some((50.0, 149.0)),
+        compare: Some((BUCKET as f64, from - 1.0)),
         cost_facts: Some(&all),
     };
     let expected = build_dashboard(&sessions, &options);
@@ -381,8 +384,8 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
         cache.connection(),
         &sessions,
         &scope,
-        Some(150.0),
-        250.0,
+        Some(from),
+        to,
         "UTC".parse().unwrap(),
     )
     .unwrap();
@@ -510,6 +513,106 @@ fn cost_facts_reuse_the_callers_transaction_without_committing_it() {
 }
 
 #[test]
+fn bucketed_facts_match_message_facts_on_aligned_windows() {
+    const BUCKET: i64 = 900_000;
+    const DAY: i64 = 86_400_000;
+    let start = chrono::DateTime::parse_from_rfc3339("2026-03-08T00:00:00Z")
+        .unwrap()
+        .timestamp_millis();
+    let spec = [
+        (-1, "m1", "recorded", 7, 0, 0.5),
+        (0, "m1", "recorded", 10, 4, 1.0),
+        (10_000, "m2", "estimated", 3, 0, 0.25),
+        (BUCKET - 1, "m1", "recorded", 5, 1, 0.125),
+        (BUCKET, "m1", "", 6, 0, 0.0625),
+        (DAY + 300_000, "m2", "recorded", 20, 8, 2.0),
+        (2 * DAY, "m1", "estimated", 9, 0, 0.75),
+    ];
+    let mut session = head("buckets", None, start + DAY);
+    session.stats = SessionStats {
+        message_count: spec.len(),
+        total_input_tokens: spec.iter().map(|m| m.3 as f64).sum(),
+        total_output_tokens: 2.0 * spec.len() as f64,
+        total_cache_read_tokens: Some(spec.iter().map(|m| m.4 as f64).sum()),
+        total_cost: spec.iter().map(|m| m.5).sum(),
+        ..SessionStats::default()
+    };
+    let messages: Vec<_> = spec.iter().enumerate().map(|(index, (offset, model, source, input, cache_read, cost))| {
+        json!({"id":format!("m{index}"),"role":"assistant","agent":null,"time_created":start + offset,"time_completed":null,"mode":null,"model":model,"provider":null,"tokens":{"input":input,"output":2,"cache_read":cache_read},"cost":cost,"cost_source":(!source.is_empty()).then_some(source),"parts":[]})
+    }).collect();
+    let mut detail = serde_json::to_value(&session).unwrap();
+    detail["messages"] = json!(messages);
+    detail["detail_freshness"] = json!("fresh");
+    detail["file_activity"] = json!([]);
+    let mut cache = crate::storage::Cache::open(None).unwrap();
+    cache
+        .publish(&mut [crate::agents::codex::ParsedSession {
+            head: session.clone(),
+            source: "/fixture/not-required".into(),
+            detail: serde_json::from_value(detail).unwrap(),
+        }])
+        .unwrap();
+    let stored = load_cost_facts(cache.connection(), None, None, true).unwrap();
+    assert!(stored.messages.len() < spec.len());
+    let per_message = CostFactsIndex::from(DashboardCostFacts {
+        messages: spec
+            .iter()
+            .map(
+                |(offset, model, source, input, cache_read, cost)| MessageCostFact {
+                    reference: session.reference.clone(),
+                    time: (start + offset) as f64,
+                    message_count: 1,
+                    model: Some(model.to_string()),
+                    input_tokens: *input as f64,
+                    output_tokens: 2.0,
+                    reasoning_tokens: 0.0,
+                    cache_read_tokens: *cache_read as f64,
+                    cache_create_tokens: 0.0,
+                    cost: *cost,
+                    cost_source: match *source {
+                        "recorded" => Some(crate::contract::CostSource::Recorded),
+                        "estimated" => Some(crate::contract::CostSource::Estimated),
+                        _ => None,
+                    },
+                },
+            )
+            .collect(),
+        sessions: stored.sessions.clone(),
+    });
+    let bucketed = CostFactsIndex::from(stored);
+    let sessions = cache.snapshot().unwrap();
+    let names = vec!["codex".into()];
+    let scope = DashboardScope::default();
+    let projects = vec![json!({"identityKind":"path","identityKey":"/project"})];
+    for (from, to, compare) in [
+        (
+            Some(start as f64),
+            (start + 2 * DAY - 1) as f64,
+            Some(((start - 2 * DAY) as f64, (start - 1) as f64)),
+        ),
+        (None, (start + 3 * DAY) as f64, None),
+    ] {
+        let options = |facts| DashboardOptions {
+            by_agent_names: &names,
+            scope: &scope,
+            from,
+            to,
+            agent_info: None,
+            compare,
+            cost_facts: Some(facts),
+        };
+        assert_eq!(
+            build_dashboard(&sessions, &options(&bucketed)),
+            build_dashboard(&sessions, &options(&per_message))
+        );
+        assert_eq!(
+            attach_project_metrics(&projects, &sessions, from, Some(to), Some(&bucketed)),
+            attach_project_metrics(&projects, &sessions, from, Some(to), Some(&per_message))
+        );
+    }
+}
+
+#[test]
 fn empty_project_rollup_serializes_positive_zero() {
     let result = build_dashboard(
         &[],
@@ -528,54 +631,4 @@ fn empty_project_rollup_serializes_positive_zero() {
         assert_eq!(value, 0.0);
         assert!(!value.is_sign_negative());
     }
-}
-
-#[test]
-fn cost_facts_cache_follows_rewritten_and_removed_sessions() {
-    fn parsed(id: &str, costs: &[f64]) -> crate::agents::codex::ParsedSession {
-        let session = head(id, None, 1_000);
-        let messages: Vec<_> = costs
-            .iter()
-            .enumerate()
-            .map(|(index, cost)| json!({"id":format!("{id}-{index}"),"role":"assistant","agent":null,"time_created":1_000 + index as i64,"time_completed":null,"mode":null,"model":"model","provider":null,"tokens":{"input":10,"output":2},"cost":cost,"parts":[]}))
-            .collect();
-        let detail = serde_json::from_value(json!({"reference":session.reference,"title":session.title,"directory":session.directory,"project_identity":session.project_identity,"time_created":1_000,"time_updated":1_000,"stats":session.stats,"smart_tags":[],"messages":messages,"detail_freshness":"fresh","file_activity":[]})).unwrap();
-        crate::agents::codex::ParsedSession {
-            head: session,
-            source: "/fixture/not-required".into(),
-            detail,
-        }
-    }
-    fn canonical(index: &CostFactsIndex) -> String {
-        let mut sessions: Vec<_> = index.sessions.iter().collect();
-        sessions.sort_by(|a, b| a.0.session_id.cmp(&b.0.session_id));
-        format!("{sessions:?}")
-    }
-    let mut storage = crate::storage::Cache::open(None).unwrap();
-    storage
-        .publish(&mut [
-            parsed("kept", &[1.0]),
-            parsed("rewritten", &[1.0]),
-            parsed("removed", &[1.0]),
-        ])
-        .unwrap();
-    let mut cache = CostFactsCache::default();
-    let full = |storage: &crate::storage::Cache| {
-        canonical(&CostFactsIndex::from(
-            load_cost_facts(storage.connection(), None, None, true).unwrap(),
-        ))
-    };
-    assert_eq!(
-        canonical(&cache.refresh(storage.connection()).unwrap()),
-        full(&storage)
-    );
-    storage
-        .publish(&mut [parsed("rewritten", &[1.0, 2.5])])
-        .unwrap();
-    storage
-        .remove(&[head("removed", None, 1_000).reference])
-        .unwrap();
-    let refreshed = cache.refresh(storage.connection()).unwrap();
-    assert_eq!(canonical(&refreshed), full(&storage));
-    assert_eq!(refreshed.sessions.len(), 2);
 }

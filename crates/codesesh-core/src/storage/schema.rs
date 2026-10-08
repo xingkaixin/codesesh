@@ -52,6 +52,7 @@ fn migrate(
         "messages",
         "session_model_cost",
         "session_cost_summary",
+        "session_usage_bucket",
         "message_tools",
         "session_file_activity",
         "session_documents",
@@ -124,7 +125,7 @@ fn migrate(
         }
         // A full table migration drops the indexes installed by this patch.
         db.execute(
-            "DELETE FROM cache_meta WHERE key='covering_read_indexes_v1'",
+            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1')",
             [],
         )?;
         super::search_text::reset_index(db)?;
@@ -221,8 +222,9 @@ pub fn ensure_with_progress(
             [super::CACHE_SCHEMA_VERSION.to_string()],
         )?;
         db.execute_batch("COMMIT")?;
-    } else if version == 36 {
-        // Schema 37 only changes how message bodies are encoded; `compress_existing` converts them.
+    } else if matches!(version, 36 | 37) {
+        // Schemas 37 and 38 add compressed message bodies and usage buckets;
+        // `compress_existing` and `ensure_usage_buckets` fill them in place.
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
@@ -281,18 +283,9 @@ pub fn ensure_with_progress(
         })?;
     }
     if !exists(db, "session_file_activity_path_fts")? {
-        let schema = include_str!("schema.sql")
-            .replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-            .replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ")
-            .replace(
-                "CREATE VIRTUAL TABLE ",
-                "CREATE VIRTUAL TABLE IF NOT EXISTS ",
-            )
-            .replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ")
-            .replace("CREATE VIEW ", "CREATE VIEW IF NOT EXISTS ");
         db.execute_batch("BEGIN IMMEDIATE")?;
         let repaired = (|| -> Result<()> {
-            db.execute_batch(&schema)?;
+            db.execute_batch(&missing_objects_schema())?;
             db.execute("INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts) VALUES('rebuild')",[])?;
             db.execute_batch("COMMIT")?;
             Ok(())
@@ -304,11 +297,12 @@ pub fn ensure_with_progress(
     }
     db.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| -> Result<()> {
-        // Older schema 37 files predate the column; adding it keeps them readable by both releases.
-        if !columns(db, "session_cost_summary")?.contains("revision") {
-            db.execute_batch(
-                "ALTER TABLE session_cost_summary ADD COLUMN revision INTEGER NOT NULL DEFAULT 0",
-            )?;
+        // Schema 37 builds versioned summaries for an in-memory fact cache; usage buckets replaced it.
+        if columns(db, "session_cost_summary")?.contains("revision") {
+            db.execute_batch("ALTER TABLE session_cost_summary DROP COLUMN revision; DELETE FROM cache_meta WHERE key='cost_facts_revision';")?;
+        }
+        if !exists(db, "session_usage_bucket")? {
+            db.execute_batch(&missing_objects_schema())?;
         }
         for (key, sql) in [
             ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
@@ -316,6 +310,14 @@ pub fn ensure_with_progress(
             (
                 "duplicate_message_index_v1",
                 "DROP INDEX IF EXISTS idx_messages_session",
+            ),
+            (
+                "usage_time_index_retired_v1",
+                "DROP INDEX IF EXISTS idx_messages_usage_time",
+            ),
+            (
+                "visible_sessions_index_v1",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_visible ON sessions(source_node_id,agent_name,session_id,publication_id)",
             ),
             (
                 "pi_automated_messages_v1",
@@ -351,6 +353,7 @@ pub fn ensure_with_progress(
         let _ = db.execute_batch("ROLLBACK");
     }
     result?;
+    ensure_usage_buckets(db, progress)?;
     super::search_text::rebuild(db, progress)?;
     super::search_text::ensure_index(db, progress)?;
     super::body::compress_existing(db, progress)?;
@@ -358,6 +361,69 @@ pub fn ensure_with_progress(
         compact(db, COMPACT_MIN_FREE_PAGES, progress)?;
     }
     Ok(())
+}
+
+fn missing_objects_schema() -> String {
+    include_str!("schema.sql")
+        .replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+        .replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ")
+        .replace(
+            "CREATE VIRTUAL TABLE ",
+            "CREATE VIRTUAL TABLE IF NOT EXISTS ",
+        )
+        .replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ")
+        .replace("CREATE VIEW ", "CREATE VIEW IF NOT EXISTS ")
+}
+
+const USAGE_BUCKETS_KEY: &str = "usage_buckets_v1";
+
+fn ensure_usage_buckets(
+    db: &Connection,
+    progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
+) -> Result<()> {
+    let present = db
+        .query_row(
+            "SELECT 1 FROM cache_meta WHERE key=?",
+            [USAGE_BUCKETS_KEY],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if present {
+        return Ok(());
+    }
+    db.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| -> Result<()> {
+        let references = db
+            .prepare("SELECT source_node_id,agent_name,session_id FROM sessions")?
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        db.execute("DELETE FROM session_usage_bucket", [])?;
+        for (index, (node, agent, id)) in references.iter().enumerate() {
+            if index % 256 == 0 {
+                progress(super::StorageProgress {
+                    phase: "Building usage buckets".into(),
+                    done: index as u64,
+                    total: Some(references.len() as u64),
+                })?;
+            }
+            db.prepare_cached(include_str!("usage-buckets.sql"))?
+                .execute(params![node, agent, id])?;
+        }
+        db.execute("INSERT INTO cache_meta VALUES(?,'1')", [USAGE_BUCKETS_KEY])?;
+        db.execute_batch("COMMIT")?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = db.execute_batch("ROLLBACK");
+    }
+    result
 }
 
 // 64 MB of 4 KB pages; smaller gaps are reused by later writes.

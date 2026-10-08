@@ -91,7 +91,7 @@ pub fn contributions(
                     .unwrap_or_else(|| source.clone());
                 let mut usage = Usage::default();
                 if detailed_messages {
-                    usage.messages = 1;
+                    usage.messages = message.message_count;
                 }
                 if let Some(includes_reasoning) = reasoning {
                     usage.input = message.input_tokens;

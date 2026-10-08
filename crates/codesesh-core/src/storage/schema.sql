@@ -131,12 +131,34 @@ CREATE TABLE session_cost_summary (
       untimed_cache_create_tokens INTEGER NOT NULL DEFAULT 0,
       message_cost REAL NOT NULL,
       untimed_message_cost REAL NOT NULL,
-      revision INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (source_node_id, agent_name, session_id),
       FOREIGN KEY (source_node_id, agent_name, session_id)
         REFERENCES sessions(source_node_id, agent_name, session_id)
         ON DELETE CASCADE
     );
+
+CREATE TABLE session_usage_bucket (
+      bucket_start INTEGER NOT NULL,
+      source_node_id TEXT NOT NULL DEFAULT 'local',
+      agent_name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      cost_source TEXT NOT NULL,
+      message_count INTEGER NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      reasoning_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER NOT NULL,
+      cache_create_tokens INTEGER NOT NULL,
+      cost REAL NOT NULL,
+      PRIMARY KEY (bucket_start, source_node_id, agent_name, session_id, model, cost_source),
+      FOREIGN KEY (source_node_id, agent_name, session_id)
+        REFERENCES sessions(source_node_id, agent_name, session_id)
+        ON DELETE CASCADE
+    ) WITHOUT ROWID;
+
+CREATE INDEX idx_session_usage_bucket_session
+  ON session_usage_bucket(source_node_id, agent_name, session_id);
 
 CREATE TABLE message_tools (
       source_node_id TEXT NOT NULL DEFAULT 'local',

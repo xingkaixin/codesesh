@@ -4,7 +4,7 @@
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 37`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 38`
 <!-- repo-fact:cache-schema-version:end -->
 
 入口是 `crates/codesesh-core/src/storage/mod.rs`，建表定义在
@@ -13,7 +13,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 
 ## 表和索引
 
-持久 schema 包含 14 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
+持久 schema 包含 15 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
 
 | 对象 | 用途 |
 |------|------|
@@ -24,7 +24,8 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `sessions` | 会话身份、项目身份、统计、来源和缓存元数据 |
 | `messages` | 有序结构化消息、用量、费用和增量游标摘要 |
 | `session_model_cost` | 按会话和模型聚合的费用 |
-| `session_cost_summary` | 消息用量与费用归因所需的会话事实；`revision` 在每次重写时取自只增计数器 |
+| `session_cost_summary` | 消息用量与费用归因所需的会话事实 |
+| `session_usage_bucket` | 按会话、15 分钟时间桶、模型和费用来源预聚合的消息用量与费用 |
 | `message_tools` | 消息工具名，用于结构化过滤 |
 | `session_file_activity` | 文件路径、操作类型、次数和最近活动时间 |
 | `session_documents` | 标题、内容签名和已索引消息数 |
@@ -38,18 +39,24 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 在写入或删除消息时同步维护：只索引新增或变化的消息，汉字逐字切分，使中文子串可以按短语
 查询。搜索在会话层面组合各个词的命中，片段从命中消息的 `content_text` 生成。
 
-schema 33 的消息用量时间索引覆盖顺序、模型、tokens 和成本字段。schema 34 保存
-`automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
+schema 34 保存 `automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
 
 schema 35 将展示版本和文件摘要保存在 `head_meta_json`，快照不再读取包含定价明细的
 `meta_json`。展示元数据与会话在同一事务发布；定价元数据由定价路径校验。
 
-Dashboard 和项目统计在进程内按会话缓存成本事实（`analytics::CostFactsCache`）。每次请求只比较
-`session_cost_summary.revision`，重读发生变化的会话；该列由打开数据库时的一次性补丁加入，不改变 schema 版本。
-
 schema 37 将 `messages.parts_json` 存为 zstd 压缩的 BLOB，压缩后不更小的短内容仍存为文本，
 读取时两种编码都接受。`content_text` 保持文本：中文搜索需要逐条校验候选消息原文，压缩它会
 拖慢搜索。编码入口在 `crates/codesesh-core/src/storage/body.rs`。
+
+schema 38 新增 `session_usage_bucket`。`storage::facts::write` 重写会话成本事实时，按会话、
+15 分钟时间桶、模型和费用来源重建该会话的桶行；Dashboard 和项目统计按请求窗口读取桶，
+不再逐条读取消息和解析 `tokens_json`，schema 33 的消息用量时间索引随之删除。进程不常驻
+成本事实，单次请求的内存只随窗口内的桶数增长。`idx_sessions_visible` 覆盖会话身份和
+`publication_id`，成本查询排除未发布会话时不回表读取会话行。升级时同时删除 schema 37
+开发构建为进程内缓存加入的 `session_cost_summary.revision`。
+
+现行时区偏移都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与
+逐条消息归因结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。
 
 ## 读写与发布
 
@@ -79,13 +86,14 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 
 打开数据库时先读取 `PRAGMA user_version`，兼容旧库的 `cache_meta.version`：
 
-1. 新库直接创建 schema 37。
+1. 新库直接创建 schema 38。
 2. schema 35 及更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份；迁移重建带来源维度的键，早于 schema 35 的库同时回填 `head_meta_json`。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
 5. 缺失的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做。
-6. schema 36 升级到 37 不重建表：先写入新版本号，再分批就地压缩旧的文本 `parts_json`，
-   中断后从 checkpoint 续做。
+6. schema 36、37 升级到 38 不重建表：先写入新版本号，再分批就地压缩旧的文本 `parts_json`，
+   中断后从 checkpoint 续做；缺少 `usage_buckets_v1` 标记时，在一个事务中按会话回填
+   `session_usage_bucket`。
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。与固定 Node 参考
