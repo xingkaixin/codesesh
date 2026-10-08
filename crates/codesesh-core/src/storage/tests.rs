@@ -107,6 +107,101 @@ fn schema36_text_parts_are_compressed_in_place() {
     );
 }
 
+type UsageBucketRow = (i64, String, String, i64, i64, f64);
+
+fn usage_buckets(db: &Connection) -> Vec<UsageBucketRow> {
+    db.prepare("SELECT bucket_start,model,cost_source,message_count,input_tokens,cost FROM session_usage_bucket ORDER BY bucket_start,model,cost_source")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+fn bucketed_session(root: &Path) -> ParsedSession {
+    let mut session = source(root, "buckets");
+    let message = |fields: serde_json::Value| {
+        let mut message = serde_json::json!({"role":"assistant","agent":null,"time_completed":null,"mode":null,"provider":null,"parts":[]});
+        message
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        serde_json::from_value(message).unwrap()
+    };
+    let start = BUCKET_START;
+    session.detail.messages = vec![
+        message(
+            serde_json::json!({"id":"first","time_created":start,"model":"m1","cost_source":"recorded","tokens":{"input":10,"output":2},"cost":1.0}),
+        ),
+        message(
+            serde_json::json!({"id":"negative","time_created":start + 899_999,"model":"m1","cost_source":"recorded","tokens":{"input":-5,"output":2},"cost":-1.0}),
+        ),
+        message(
+            serde_json::json!({"id":"other-model","time_created":start + 10,"model":"m2","cost_source":"estimated","tokens":{"input":3,"output":2},"cost":0.25}),
+        ),
+        message(
+            serde_json::json!({"id":"unpriced","time_created":start + 20,"model":null,"tokens":{"input":4,"output":2},"cost":0.0}),
+        ),
+        message(
+            serde_json::json!({"id":"next","time_created":start + 900_000,"model":"m1","cost_source":"recorded","tokens":{"input":7,"output":2},"cost":0.5}),
+        ),
+        message(
+            serde_json::json!({"id":"untimed","time_created":0,"model":"m1","tokens":{"input":100,"output":2},"cost":9.0}),
+        ),
+    ];
+    session
+}
+
+const BUCKET_START: i64 = 1_790_326_800_000;
+
+#[test]
+fn usage_buckets_follow_rewrites_and_removal() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = bucketed_session(root.path());
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    let next = BUCKET_START + 900_000;
+    assert_eq!(
+        usage_buckets(cache.connection()),
+        vec![
+            (BUCKET_START, "".into(), "".into(), 1, 4, 0.0),
+            (BUCKET_START, "m1".into(), "recorded".into(), 2, 10, 1.0),
+            (BUCKET_START, "m2".into(), "estimated".into(), 1, 3, 0.25),
+            (next, "m1".into(), "recorded".into(), 1, 7, 0.5),
+        ]
+    );
+    session.detail.messages.truncate(1);
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    assert_eq!(
+        usage_buckets(cache.connection()),
+        vec![(BUCKET_START, "m1".into(), "recorded".into(), 1, 10, 1.0)]
+    );
+    cache.remove(&[session.head.reference.clone()]).unwrap();
+    assert!(usage_buckets(cache.connection()).is_empty());
+}
+
+#[test]
+fn schema37_builds_usage_buckets_in_place() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = bucketed_session(root.path());
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    let db = cache.connection();
+    let expected = usage_buckets(db);
+    db.execute_batch("DROP TABLE session_usage_bucket; DELETE FROM cache_meta WHERE key='usage_buckets_v1'; PRAGMA user_version=37;").unwrap();
+    for _ in 0..2 {
+        schema::ensure(db, None).unwrap();
+        assert_eq!(
+            db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            CACHE_SCHEMA_VERSION
+        );
+        assert_eq!(usage_buckets(db), expected);
+    }
+}
+
 #[test]
 fn schema36_read_index_patch_preserves_rows_and_uses_covering_plans() {
     let root = tempfile::tempdir().unwrap();

@@ -4,7 +4,7 @@
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 37`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 38`
 <!-- repo-fact:cache-schema-version:end -->
 
 入口是 `crates/codesesh-core/src/storage/mod.rs`，建表定义在
@@ -13,7 +13,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 
 ## 表和索引
 
-持久 schema 包含 14 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
+持久 schema 包含 15 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
 
 | 对象 | 用途 |
 |------|------|
@@ -25,6 +25,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `messages` | 有序结构化消息、用量、费用和增量游标摘要 |
 | `session_model_cost` | 按会话和模型聚合的费用 |
 | `session_cost_summary` | 消息用量与费用归因所需的会话事实；`revision` 在每次重写时取自只增计数器 |
+| `session_usage_bucket` | 按会话、15 分钟时间桶、模型和费用来源预聚合的消息用量与费用 |
 | `message_tools` | 消息工具名，用于结构化过滤 |
 | `session_file_activity` | 文件路径、操作类型、次数和最近活动时间 |
 | `session_documents` | 标题、内容签名和已索引消息数 |
@@ -79,13 +80,14 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 
 打开数据库时先读取 `PRAGMA user_version`，兼容旧库的 `cache_meta.version`：
 
-1. 新库直接创建 schema 37。
+1. 新库直接创建 schema 38。
 2. schema 35 及更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份；迁移重建带来源维度的键，早于 schema 35 的库同时回填 `head_meta_json`。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
 5. 缺失的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做。
-6. schema 36 升级到 37 不重建表：先写入新版本号，再分批就地压缩旧的文本 `parts_json`，
-   中断后从 checkpoint 续做。
+6. schema 36、37 升级到 38 不重建表：先写入新版本号，再分批就地压缩旧的文本 `parts_json`，
+   中断后从 checkpoint 续做；缺少 `usage_buckets_v1` 标记时，在一个事务中按会话回填
+   `session_usage_bucket`。
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。与固定 Node 参考

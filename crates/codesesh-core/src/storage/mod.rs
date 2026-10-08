@@ -23,7 +23,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
-pub const CACHE_SCHEMA_VERSION: i64 = 37;
+pub const CACHE_SCHEMA_VERSION: i64 = 38;
 
 pub struct StorageProgress {
     pub phase: String,
