@@ -84,15 +84,18 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
       void recover();
     };
     startRecoveryRef.current = startRecovery;
+    const scheduleFlush = () => {
+      // A hidden tab only merges events; each applied event refreshes server-side aggregates.
+      if (!pendingEventRef.current || document.visibilityState === "hidden") return;
+      pendingTimerRef.current ??= window.setTimeout(() => flushLiveUpdate(), LIVE_UPDATE_WINDOW_MS);
+    };
+    document.addEventListener("visibilitychange", scheduleFlush);
     const unsubscribe = subscribeSessionUpdates(
       (event) => {
         pendingEventRef.current = pendingEventRef.current
           ? mergeSessionsUpdatedEvents(pendingEventRef.current, event)
           : event;
-        pendingTimerRef.current ??= window.setTimeout(
-          () => flushLiveUpdate(),
-          LIVE_UPDATE_WINDOW_MS,
-        );
+        scheduleFlush();
       },
       setScanStatus,
       () => {
@@ -108,6 +111,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     return () => {
       startRecoveryRef.current = () => {};
       cancelRecovery();
+      document.removeEventListener("visibilitychange", scheduleFlush);
       unsubscribe();
     };
   }, [setScanStatus]);
