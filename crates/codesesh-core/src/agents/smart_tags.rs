@@ -1,10 +1,13 @@
 use crate::contract::{Message, MessagePart, Role};
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use serde_json::Value;
 use std::sync::LazyLock;
 
+fn rule(source: &str) -> String {
+    format!("(?i){}", source.replace(r"\b", r"(?-u:\b)"))
+}
 fn pattern(source: &str) -> Regex {
-    Regex::new(&format!("(?i){}", source.replace(r"\b", r"(?-u:\b)"))).unwrap()
+    Regex::new(&rule(source)).unwrap()
 }
 static USER_RULES: LazyLock<Vec<(usize, Regex)>> = LazyLock::new(|| {
     vec![
@@ -28,12 +31,17 @@ static USER_RULES: LazyLock<Vec<(usize, Regex)>> = LazyLock::new(|| {
         ),
     ]
 });
-static TESTING: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"\b(pytest|vitest|jest|mocha|pnpm\s+test|npm\s+test|yarn\s+test)\b"));
-static GIT: LazyLock<Regex> =
-    LazyLock::new(|| pattern(r"\bgit\s+(push|commit|merge|branch|checkout|switch|rebase|tag)\b"));
-static BUILD: LazyLock<Regex> = LazyLock::new(|| {
-    pattern(r"\b((npm|pnpm|yarn|bun)\s+(run\s+)?build|docker|pm2|deploy|vercel|netlify)\b")
+// Testing, git and build-deploy tags, matched in one pass over each tool payload.
+static PAYLOAD_RULES: LazyLock<RegexSet> = LazyLock::new(|| {
+    RegexSet::new(
+        [
+            r"\b(pytest|vitest|jest|mocha|pnpm\s+test|npm\s+test|yarn\s+test)\b",
+            r"\bgit\s+(push|commit|merge|branch|checkout|switch|rebase|tag)\b",
+            r"\b((npm|pnpm|yarn|bun)\s+(run\s+)?build|docker|pm2|deploy|vercel|netlify)\b",
+        ]
+        .map(rule),
+    )
+    .unwrap()
 });
 static READ: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"\b(read|grep|glob|websearch|web_search|search|find|rg)\b"));
@@ -88,8 +96,9 @@ pub fn classify(messages: &[Message]) -> Vec<String> {
                 // Tool states hold full outputs; skip serializing them once every payload tag is set.
                 if !(tags[3] && tags[5] && tags[6]) {
                     let payload = format!("{name}\n{}", serde_json::to_string(state).unwrap());
-                    for (tag, rule) in [(3, &*TESTING), (5, &*GIT), (6, &*BUILD)] {
-                        tags[tag] = tags[tag] || rule.is_match(&payload);
+                    let matched = PAYLOAD_RULES.matches(&payload);
+                    for (rule, tag) in [3, 5, 6].into_iter().enumerate() {
+                        tags[tag] |= matched.matched(rule);
                     }
                 }
                 tags[4] = tags[4] || state.input.as_ref().is_some_and(doc_path);
@@ -113,4 +122,27 @@ pub fn classify(messages: &[Message]) -> Vec<String> {
     .filter(|(i, _)| tags[*i])
     .map(|(_, tag)| tag.into())
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_payloads_set_their_own_tags() {
+        for (command, tag) in [
+            ("pnpm test", "testing"),
+            ("git push origin main", "git-ops"),
+            ("docker compose up", "build-deploy"),
+        ] {
+            let message: Message = serde_json::from_value(serde_json::json!({
+                "id": "m",
+                "role": "assistant",
+                "time_created": 1,
+                "parts": [{"type": "tool", "tool": "exec_command", "state": {"status": "completed", "input": {"cmd": command}}}],
+            }))
+            .unwrap();
+            assert_eq!(classify(&[message]), [tag], "{command}");
+        }
+    }
 }
