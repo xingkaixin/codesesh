@@ -87,7 +87,7 @@ impl WorkerStore {
         )?;
         let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         ensure!(
-            (0..=1).contains(&version),
+            (0..=2).contains(&version),
             "Unsupported Worker state schema {version}"
         );
         // A drained backlog leaves the queue file at its high-water mark; compaction is best effort.
@@ -98,9 +98,9 @@ impl WorkerStore {
             let tx = db.unchecked_transaction()?;
             tx.execute_batch("CREATE TABLE worker_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
                 CREATE TABLE worker_sources(agent TEXT PRIMARY KEY,state TEXT,checkpoint TEXT,complete INTEGER NOT NULL);
-                CREATE TABLE worker_sessions(agent TEXT NOT NULL,session_id TEXT NOT NULL,head TEXT NOT NULL,source TEXT NOT NULL,attachments TEXT NOT NULL,content_hash TEXT NOT NULL,metadata_hash TEXT NOT NULL,PRIMARY KEY(agent,session_id));
+                CREATE TABLE worker_sessions(agent TEXT NOT NULL,session_id TEXT NOT NULL,head TEXT NOT NULL,source TEXT NOT NULL,attachments TEXT NOT NULL,content_hash TEXT NOT NULL,metadata_hash TEXT NOT NULL,message_digests BLOB,PRIMARY KEY(agent,session_id));
                 CREATE TABLE worker_outbox(sequence INTEGER PRIMARY KEY AUTOINCREMENT,payload_version INTEGER NOT NULL,payload BLOB NOT NULL,digest TEXT NOT NULL,created_at INTEGER NOT NULL);
-                PRAGMA user_version=1;")?;
+                PRAGMA user_version=2;")?;
             tx.execute(
                 "INSERT INTO worker_meta VALUES('stream_id',?)",
                 [uuid::Uuid::new_v4().to_string()],
@@ -110,6 +110,11 @@ impl WorkerStore {
                 [],
             )?;
             tx.commit()?;
+        } else if version == 1 {
+            // Schema 2 adds per-message digests; releases before it refuse the file.
+            db.execute_batch(
+                "BEGIN IMMEDIATE; ALTER TABLE worker_sessions ADD COLUMN message_digests BLOB; PRAGMA user_version=2; COMMIT;",
+            )?;
         }
         #[cfg(unix)]
         {
@@ -278,7 +283,7 @@ impl WorkerStore {
             for agent in &agents {
                 tx.execute("DELETE FROM worker_sources WHERE agent=?", [agent])?;
                 tx.execute(
-                    "UPDATE worker_sessions SET content_hash='',metadata_hash='' WHERE agent=?",
+                    "UPDATE worker_sessions SET content_hash='',metadata_hash='',message_digests=NULL WHERE agent=?",
                     [agent],
                 )?;
             }
@@ -473,11 +478,12 @@ impl WorkerStore {
                 "Scan batch contains a different Agent"
             );
             let captured = CapturedSessionRef::new(session);
-            let content_hash = snapshot::serialized_digest(&(
+            let digests = snapshot::session_digests(
                 &session.detail.messages,
                 &session.detail.file_activity,
                 &captured.message_cost_inputs,
-            ))?;
+            )?;
+            let content_hash = digests.content;
             let mut head = session.head.clone();
             let cost_inputs = std::mem::take(&mut head.stats.cost_inputs);
             let metadata = Operation::Metadata {
@@ -487,22 +493,42 @@ impl WorkerStore {
             };
             let metadata_bytes = serde_json::to_vec(&metadata)?;
             let metadata_hash = digest(&metadata_bytes);
-            let previous: Option<(String,String)> = tx.query_row("SELECT content_hash,metadata_hash FROM worker_sessions WHERE agent=? AND session_id=?", params![agent,session.head.reference.session_id], |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
+            let previous: Option<(String,String,Option<Vec<u8>>)> = tx.query_row("SELECT content_hash,metadata_hash,message_digests FROM worker_sessions WHERE agent=? AND session_id=?", params![agent,session.head.reference.session_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+            let state = super::MessageState {
+                count: u32::try_from(digests.chain.len())?,
+                digest: digests
+                    .chain
+                    .last()
+                    .map(|digest| crate::hash::hex(digest))
+                    .unwrap_or_default(),
+            };
             if previous
                 .as_ref()
-                .is_none_or(|(content, _)| *content != content_hash)
+                .is_none_or(|(content, _, _)| *content != content_hash)
                 || previous
                     .as_ref()
-                    .is_some_and(|(_, hash)| *hash != metadata_hash)
+                    .is_some_and(|(_, hash, _)| *hash != metadata_hash)
                     && metadata_bytes.len() > CHUNK_BYTES
             {
-                snapshot::enqueue_snapshot(&tx, &captured)?;
-            } else if previous.is_some_and(|(_, metadata)| metadata != metadata_hash) {
+                let base = previous
+                    .as_ref()
+                    .and_then(|(_, _, sent)| sent.as_deref())
+                    .and_then(|sent| delta_base(sent, &digests.chain));
+                match base {
+                    Some(base) => snapshot::enqueue_snapshot(
+                        &tx,
+                        &CapturedSessionRef::tail(session, base.keep as usize),
+                        Some(base),
+                        Some(state),
+                    )?,
+                    None => snapshot::enqueue_snapshot(&tx, &captured, None, Some(state))?,
+                }
+            } else if previous.is_some_and(|(_, metadata, _)| metadata != metadata_hash) {
                 enqueue(&tx, &metadata)?;
             }
             let attachments = AttachmentReferences::from_messages(&session.detail.messages);
-            tx.execute("INSERT INTO worker_sessions VALUES(?,?,?,?,?,?,?) ON CONFLICT(agent,session_id) DO UPDATE SET head=excluded.head,source=excluded.source,attachments=excluded.attachments,content_hash=excluded.content_hash,metadata_hash=excluded.metadata_hash",
-                params![agent,session.head.reference.session_id,serde_json::to_string(&session.head)?,captured.source_path,serde_json::to_string(&attachments)?,content_hash,metadata_hash])?;
+            tx.execute("INSERT INTO worker_sessions(agent,session_id,head,source,attachments,content_hash,metadata_hash,message_digests) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(agent,session_id) DO UPDATE SET head=excluded.head,source=excluded.source,attachments=excluded.attachments,content_hash=excluded.content_hash,metadata_hash=excluded.metadata_hash,message_digests=excluded.message_digests",
+                params![agent,session.head.reference.session_id,serde_json::to_string(&session.head)?,captured.source_path,serde_json::to_string(&attachments)?,content_hash,metadata_hash,digests.chain.concat()])?;
         }
         let source_state = batch
             .checkpoint
@@ -596,6 +622,23 @@ impl WorkerStore {
             },
         )?)
     }
+}
+
+/// The unchanged message prefix since the last sent state, when there is one to build on.
+fn delta_base(sent: &[u8], chain: &[[u8; 16]]) -> Option<super::SnapshotBase> {
+    let previous: Vec<_> = sent.chunks_exact(16).collect();
+    let keep = previous
+        .iter()
+        .zip(chain)
+        .take_while(|(sent, current)| **sent == current.as_slice())
+        .count();
+    (keep > 0).then(|| super::SnapshotBase {
+        keep: keep as u32,
+        previous: super::MessageState {
+            count: previous.len() as u32,
+            digest: crate::hash::hex(previous[previous.len() - 1]),
+        },
+    })
 }
 
 fn reset_queue(tx: &rusqlite::Transaction<'_>, stream: &str) -> Result<()> {

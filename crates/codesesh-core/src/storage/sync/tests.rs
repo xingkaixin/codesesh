@@ -1329,3 +1329,96 @@ fn ignored_missing_source_clears_when_worker_finds_it_again() {
     assert!(ignored(&cache).is_empty());
     assert!(cache.set_source_ignored("unknown", "zcode", true).is_err());
 }
+
+#[test]
+fn deltas_rebuild_the_full_session_and_fall_back_to_a_rescan() {
+    let dir = tempfile::tempdir().unwrap();
+    let save = |worker: &mut WorkerStore, session: &crate::agents::ParsedSession| {
+        let mut batch = ScanBatch {
+            source_presence: None,
+            sessions: vec![session.clone()],
+            removed: Vec::new(),
+            checkpoint: None,
+            complete: true,
+            on_reject: None,
+            pricing: None,
+        };
+        worker.save_batch("codex", &mut batch).unwrap();
+    };
+    let connect = |name: &str| {
+        let worker = WorkerStore::open(&dir.path().join(format!("{name}-worker.db"))).unwrap();
+        let mut hub = Cache::open(Some(&dir.path().join(format!("{name}-hub.db")))).unwrap();
+        hub.initialize_hub("hub-fixture").unwrap();
+        let token = hub.create_pairing_token().unwrap();
+        let grant = hub
+            .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+            .unwrap();
+        (worker, hub, grant)
+    };
+    let append = |session: &crate::agents::ParsedSession, id: &str| {
+        let mut next = session.clone();
+        let mut message = next.detail.messages[0].clone();
+        message.id = id.into();
+        next.detail.messages.push(message);
+        next.head.stats.message_count = next.detail.messages.len();
+        next.detail.head = next.head.clone();
+        next
+    };
+    let messages = |hub: &Cache, grant: &PairingGrant| {
+        let mut reference = hub.snapshot().unwrap()[0].reference.clone();
+        reference.source_node_id = grant.node_id.clone();
+        let head = hub.head(&reference).unwrap().unwrap();
+        serde_json::to_value(hub.detail(head).unwrap().unwrap().messages).unwrap()
+    };
+    let first = super::super::tests::source(dir.path(), "shared");
+    let second = append(&first, "second");
+
+    let (mut worker, mut delta_hub, delta_grant) = connect("delta");
+    save(&mut worker, &first);
+    transfer(&mut delta_hub, &mut worker, &delta_grant);
+    save(&mut worker, &second);
+    let mut commits = Vec::new();
+    while let Some(pending) = worker.next_upload().unwrap() {
+        if let Operation::SnapshotCommit { base, .. } = &pending.operation {
+            commits.push(base.clone());
+        }
+        let upload = Upload {
+            epoch: delta_grant.epoch.clone(),
+            stream_id: worker.stream_id().unwrap(),
+            sequence: pending.sequence,
+            payload_version: pending.payload_version,
+            digest: pending.digest,
+            operation: pending.operation,
+        };
+        let receipt = delta_hub
+            .receive_upload(&delta_grant.node_id, &upload, &Pricing::bundled())
+            .unwrap();
+        worker
+            .acknowledge(&receipt.stream_id, receipt.sequence, &receipt.digest)
+            .unwrap();
+    }
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0].as_ref().map(|base| base.keep), Some(1));
+
+    let (mut full_worker, mut full_hub, full_grant) = connect("full");
+    save(&mut full_worker, &second);
+    transfer(&mut full_hub, &mut full_worker, &full_grant);
+    assert_eq!(
+        messages(&delta_hub, &delta_grant),
+        messages(&full_hub, &full_grant)
+    );
+
+    delta_hub
+        .connection()
+        .execute("UPDATE hub_message_bases SET digest='stale'", [])
+        .unwrap();
+    save(&mut worker, &append(&second, "third"));
+    transfer(&mut delta_hub, &mut worker, &delta_grant);
+    assert_eq!(
+        messages(&delta_hub, &delta_grant).as_array().unwrap().len(),
+        2
+    );
+    let rescans = delta_hub.rescan_tasks().unwrap();
+    assert_eq!(rescans.len(), 1);
+    assert_eq!(rescans[0].request.agents, ["codex"]);
+}

@@ -31,10 +31,16 @@ struct DetailRef<'a> {
 
 impl<'a> CapturedSessionRef<'a> {
     pub fn new(session: &'a ParsedSession) -> Self {
+        Self::tail(session, 0)
+    }
+
+    /// The session with only the messages from `keep` on; cost input indexes start at that message.
+    pub fn tail(session: &'a ParsedSession, keep: usize) -> Self {
+        let messages = &session.detail.messages[keep..];
         Self {
             detail: DetailRef {
                 head: &session.head,
-                messages: &session.detail.messages,
+                messages,
                 detail_freshness: &session.detail.detail_freshness,
                 message_cursor: &session.detail.message_cursor,
                 message_update: &session.detail.message_update,
@@ -42,9 +48,7 @@ impl<'a> CapturedSessionRef<'a> {
             },
             source_path: session.source.to_string_lossy(),
             head_cost_inputs: &session.head.stats.cost_inputs,
-            message_cost_inputs: session
-                .detail
-                .messages
+            message_cost_inputs: messages
                 .iter()
                 .enumerate()
                 .filter(|(_, message)| !message.cost_inputs.is_empty())

@@ -247,7 +247,7 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
 fn exact_chunk_boundary_has_no_empty_tail() {
     let (_dir, mut store, _scanner) = setup();
     let tx = store.db.transaction().unwrap();
-    snapshot::enqueue_snapshot(&tx, &"x".repeat(CHUNK_BYTES - 2)).unwrap();
+    snapshot::enqueue_snapshot(&tx, &"x".repeat(CHUNK_BYTES - 2), None, None).unwrap();
     tx.commit().unwrap();
     let chunk = store.next_upload().unwrap().unwrap();
     let Operation::SnapshotChunk { data, index, .. } = chunk.operation else {
@@ -293,4 +293,23 @@ fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     store.update_origin("https://renamed-hub.example/").unwrap();
     assert_eq!(store.binding().unwrap().unwrap().1.node_id, "new-node");
     assert_eq!(store.stream_id().unwrap(), recovery.new_stream);
+}
+
+#[test]
+fn content_hash_keeps_the_serialized_capture_digest() {
+    let (_dir, _store, mut scanner) = setup();
+    let batch = scanner.refresh(None).unwrap();
+    let session = &batch.sessions[0];
+    let captured = CapturedSessionRef::new(session);
+    let fields = (
+        &session.detail.messages,
+        &session.detail.file_activity,
+        &captured.message_cost_inputs,
+    );
+    assert_eq!(
+        snapshot::session_digests(fields.0, fields.1, fields.2)
+            .unwrap()
+            .content,
+        snapshot::serialized_digest(&fields).unwrap()
+    );
 }
