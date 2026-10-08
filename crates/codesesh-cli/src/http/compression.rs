@@ -16,7 +16,7 @@ static COMPRESSIBLE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 pub async fn middleware(request: Request, next: Next) -> Response {
-    let applies = request.uri().path().starts_with("/api/") && request.method() != Method::HEAD;
+    let applies = request.method() != Method::HEAD;
     let accepted = request
         .headers()
         .get(header::ACCEPT_ENCODING)

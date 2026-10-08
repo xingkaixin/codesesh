@@ -675,3 +675,46 @@ async fn session_message_limit_rejects_zero_oversized_and_invalid_pages() {
     }
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn fingerprinted_assets_are_cached_and_compressed() {
+    let Some((_, index)) = crate::assets::lookup("index.html") else {
+        return;
+    };
+    let index = String::from_utf8_lossy(index);
+    let script = index
+        .split("src=\"")
+        .filter_map(|part| part.split('"').next())
+        .find(|path| path.starts_with("/assets/") && path.ends_with(".js"))
+        .unwrap()
+        .to_owned();
+    let (app, runtime, _dir) = app_options(false, None).await;
+    for (path, cache_control) in [
+        (script.as_str(), Some("public, max-age=31536000, immutable")),
+        ("/assets/missing.js", None),
+        ("/", None),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(path)
+                    .header("host", "localhost:4521")
+                    .header("accept-encoding", "gzip")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            response
+                .headers()
+                .get("cache-control")
+                .map(|value| value.to_str().unwrap()),
+            cache_control,
+            "{path}"
+        );
+        assert_eq!(response.headers()["content-encoding"], "gzip", "{path}");
+    }
+    runtime.shutdown().await.unwrap();
+}
