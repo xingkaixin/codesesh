@@ -56,9 +56,6 @@ fn date(time: f64) -> NaiveDate {
         .with_timezone(&Local)
         .date_naive()
 }
-fn day(time: f64) -> String {
-    date(time).format("%Y-%m-%d").to_string()
-}
 fn project_key(s: &SessionHead) -> String {
     format!("{}:{}", s.project_identity.kind, s.project_identity.key)
 }
@@ -100,27 +97,29 @@ struct Acc {
     estimated: f64,
     cache_read: f64,
     agents: Vec<(String, Metrics)>,
+    agent_names: Vec<String>,
     agent_keys: HashSet<String>,
-    daily: BTreeMap<String, Daily>,
+    daily: BTreeMap<NaiveDate, Daily>,
     models: Vec<(String, f64, HashSet<usize>)>,
     model_costs: Vec<SessionModelCostFact>,
     projects: Vec<Project>,
     project_indices: HashMap<String, usize>,
     project_keys: HashSet<String>,
     recent: Vec<usize>,
-    sparkline: HashMap<String, usize>,
+    sparkline: HashMap<NaiveDate, usize>,
 }
 impl Acc {
     fn new(names: &[String], scope: &DashboardScope, to: f64) -> Self {
-        let agents = names
+        let agents: Vec<_> = names
             .iter()
             .filter(|n| scope.agent.as_ref().is_none_or(|a| *a == n.to_lowercase()))
             .map(|n| (n.clone(), Metrics::default()))
             .collect();
+        let agent_names = agents.iter().map(|(n, _)| n.to_lowercase()).collect();
         let mut sparkline = HashMap::new();
         for slot in 0..14 {
             if let Some(d) = date(to).checked_sub_days(Days::new(13 - slot)) {
-                sparkline.insert(d.format("%Y-%m-%d").to_string(), slot as usize);
+                sparkline.insert(d, slot as usize);
             }
         }
         Self {
@@ -129,6 +128,7 @@ impl Acc {
             estimated: 0.0,
             cache_read: 0.0,
             agents,
+            agent_names,
             agent_keys: HashSet::new(),
             daily: BTreeMap::new(),
             models: Vec::new(),
@@ -142,22 +142,22 @@ impl Acc {
     }
     fn agent(&mut self, name: &str) -> &mut Metrics {
         let index = self
-            .agents
+            .agent_names
             .iter()
-            .position(|(n, _)| n.to_lowercase() == name)
+            .position(|n| n == name)
             .unwrap_or_else(|| {
                 self.agents.push((name.to_owned(), Metrics::default()));
+                self.agent_names.push(name.to_lowercase());
                 self.agents.len() - 1
             });
         &mut self.agents[index].1
     }
-    fn project(&mut self, s: &SessionHead) -> &mut Project {
-        let key = project_key(s);
-        let index = if let Some(&index) = self.project_indices.get(&key) {
+    fn project(&mut self, s: &SessionHead, key: &str) -> &mut Project {
+        let index = if let Some(&index) = self.project_indices.get(key) {
             index
         } else {
             let index = self.projects.len();
-            self.project_indices.insert(key, index);
+            self.project_indices.insert(key.to_owned(), index);
             self.projects.push(Project {
                 kind: s.project_identity.kind.clone(),
                 key: s.project_identity.key.clone(),
@@ -181,12 +181,18 @@ fn accumulate(
     fill_days: bool,
 ) -> Acc {
     let mut acc = Acc::new(options.by_agent_names, options.scope, to);
+    // Lowercased agent names and project keys per session, instead of one allocation per fact.
+    let agents: Vec<_> = tree
+        .sessions
+        .iter()
+        .map(|s| s.reference.agent_name.to_lowercase())
+        .collect();
+    let project_keys: Vec<_> = tree.sessions.iter().map(|s| project_key(s)).collect();
     if fill_days && let Some(from) = from {
         let mut current = date(from);
         let end = date(to);
         while current <= end {
-            acc.daily
-                .insert(current.format("%Y-%m-%d").to_string(), Daily::default());
+            acc.daily.insert(current, Daily::default());
             let Some(next) = current.succ_opt() else {
                 break;
             };
@@ -198,7 +204,7 @@ fn accumulate(
         if !options.scope.matches(session) || !in_window(session.time_updated, from, Some(to)) {
             continue;
         }
-        let agent = session.reference.agent_name.to_lowercase();
+        let agent = agents[entry].clone();
         acc.metrics.sessions += 1;
         acc.agent_keys.insert(agent.clone());
         if let Some((_, metric)) = acc
@@ -209,11 +215,11 @@ fn accumulate(
             metric.sessions += 1;
         }
         acc.daily
-            .entry(day(session.time_updated))
+            .entry(date(session.time_updated))
             .or_default()
             .sessions += 1;
-        acc.project_keys.insert(project_key(session));
-        let project = acc.project(session);
+        acc.project_keys.insert(project_keys[entry].clone());
+        let project = acc.project(session, &project_keys[entry]);
         project.metrics.sessions += 1;
         if let Some((_, count)) = project.agents.iter_mut().find(|(name, _)| *name == agent) {
             *count += 1;
@@ -261,16 +267,16 @@ fn accumulate(
                     .push((model.clone(), tokens, HashSet::from([contribution.entry])));
             }
         }
-        let metric = acc.agent(&session.reference.agent_name.to_lowercase());
+        let metric = acc.agent(&agents[contribution.entry]);
         metric.messages += usage.messages;
         metric.tokens += usage.tokens;
-        let bucket = acc.daily.entry(day(contribution.time)).or_default();
+        let bucket = acc.daily.entry(date(contribution.time)).or_default();
         bucket.messages += usage.messages;
         bucket.input += (usage.input - usage.cache_read - usage.cache_create).max(0.0);
         bucket.output += usage.output;
         bucket.cache_read += usage.cache_read;
         bucket.cache_create += usage.cache_create;
-        let project = acc.project(session);
+        let project = acc.project(session, &project_keys[contribution.entry]);
         project.metrics.messages += usage.messages;
         project.metrics.tokens += usage.tokens;
     }
@@ -287,11 +293,11 @@ fn accumulate(
         } else {
             acc.recorded += cost;
         }
-        acc.agent(&session.reference.agent_name.to_lowercase()).cost += cost;
-        let key = day(contribution.time);
-        acc.daily.entry(key.clone()).or_default().cost += cost;
+        acc.agent(&agents[contribution.entry]).cost += cost;
+        let key = date(contribution.time);
+        acc.daily.entry(key).or_default().cost += cost;
         let slot = acc.sparkline.get(&key).copied();
-        let project = acc.project(session);
+        let project = acc.project(session, &project_keys[contribution.entry]);
         project.metrics.cost += cost;
         project.estimated |= estimated;
         if let Some(slot) = slot {
@@ -369,7 +375,7 @@ pub fn build_dashboard(sessions: &[SessionHead], options: &DashboardOptions<'_>)
             v
         })
         .collect();
-    let daily:Vec<_>=acc.daily.iter().map(|(date,b)|json!({"date":date,"sessions":b.sessions,"messages":b.messages,"cost":b.cost,"input":b.input,"output":b.output,"cache_read":b.cache_read,"cache_create":b.cache_create})).collect();
+    let daily:Vec<_>=acc.daily.iter().map(|(date,b)|json!({"date":date.format("%Y-%m-%d").to_string(),"sessions":b.sessions,"messages":b.messages,"cost":b.cost,"input":b.input,"output":b.output,"cache_read":b.cache_read,"cache_create":b.cache_create})).collect();
     acc.models.sort_by(|a, b| b.1.total_cmp(&a.1));
     let models:Vec<_>=acc.models.iter().map(|(model,tokens,sessions)|json!({"model":model,"tokens":tokens,"sessions":sessions.len()})).collect();
     acc.model_costs.sort_by(|a, b| b.cost.total_cmp(&a.cost));

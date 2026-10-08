@@ -26,6 +26,16 @@ impl ProjectMetrics {
     }
 }
 
+fn project_metrics<'a>(
+    metrics: &'a mut HashMap<String, ProjectMetrics>,
+    key: &str,
+) -> &'a mut ProjectMetrics {
+    if !metrics.contains_key(key) {
+        metrics.insert(key.to_owned(), ProjectMetrics::default());
+    }
+    metrics.get_mut(key).unwrap()
+}
+
 pub fn attach_project_metrics(
     projects: &[Value],
     sessions: &[SessionHead],
@@ -34,6 +44,12 @@ pub fn attach_project_metrics(
     facts: Option<&CostFactsIndex>,
 ) -> Vec<Value> {
     let tree = SessionTree::new(sessions);
+    let agents: Vec<_> = tree
+        .sessions
+        .iter()
+        .map(|s| s.reference.agent_name.to_lowercase())
+        .collect();
+    let keys: Vec<_> = tree.sessions.iter().map(|s| project_key(s)).collect();
     let mut metrics = HashMap::<String, ProjectMetrics>::new();
     for &entry in &tree.entries {
         let s = tree.sessions[entry];
@@ -55,11 +71,10 @@ pub fn attach_project_metrics(
         if !c.has_usage {
             continue;
         }
-        let s = tree.sessions[c.entry];
-        let m = metrics.entry(project_key(s)).or_default();
+        let m = project_metrics(&mut metrics, &keys[c.entry]);
         m.total.messages += c.usage.messages;
         m.total.tokens += c.usage.tokens;
-        let a = m.agent(&s.reference.agent_name.to_lowercase());
+        let a = m.agent(&agents[c.entry]);
         a.messages += c.usage.messages;
         a.tokens += c.usage.tokens;
     }
@@ -67,13 +82,12 @@ pub fn attach_project_metrics(
         if c.cost <= 0.0 {
             continue;
         }
-        let s = tree.sessions[c.entry];
-        let m = metrics.entry(project_key(s)).or_default();
+        let m = project_metrics(&mut metrics, &keys[c.entry]);
         m.total.cost += c.cost;
         if c.source == CostSource::Estimated {
             m.estimated = true;
         }
-        m.agent(&s.reference.agent_name.to_lowercase()).cost += c.cost;
+        m.agent(&agents[c.entry]).cost += c.cost;
     }
     projects
         .iter()
