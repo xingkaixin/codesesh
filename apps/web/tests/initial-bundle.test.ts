@@ -15,7 +15,7 @@ const indexHtmlPath = join(distDir, "index.html");
 const INITIAL_JS_GZIP_BUDGET_BYTES = 310_000;
 
 /** Markers for dependencies that must only arrive with the route that needs them. */
-const DEFERRED_DEPENDENCY_MARKERS = ["micromark", "mdast", "prism", "remark"];
+const DEFERRED_DEPENDENCY_MARKERS = ["micromark", "mdast", "prism", "remark", "filetree"];
 
 function initialScripts(): string[] {
   const html = readFileSync(indexHtmlPath, "utf8");
@@ -40,7 +40,7 @@ describe("CS-146: initial bundle", () => {
     expect(total).toBeLessThan(INITIAL_JS_GZIP_BUDGET_BYTES);
   });
 
-  it("does not preload markdown, syntax highlighting or the receipt", () => {
+  it("does not preload markdown, syntax highlighting, the receipt or the session tree", () => {
     const combined = initialScripts()
       .map((path) => readFileSync(join(distDir, path.slice(1)), "utf8").toLowerCase())
       .join("");
