@@ -76,6 +76,34 @@ async fn command(program: &str, args: &[&str], required: bool) -> Result<String>
         String::from_utf8_lossy(&output.stderr)
     ))
 }
+// The installing shell's PATH can include per-run temporary directories; a long-running service
+// must not resolve commands such as `git` from a location another process can recreate.
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+fn service_value<'a>(key: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
+    if key != "PATH" {
+        return value.into();
+    }
+    let temporary: Vec<_> = [
+        std::env::temp_dir(),
+        "/tmp".into(),
+        "/private/tmp".into(),
+        "/var/tmp".into(),
+    ]
+    .into_iter()
+    .flat_map(|directory| [directory.canonicalize().ok(), Some(directory)])
+    .flatten()
+    .collect();
+    let kept = std::env::split_paths(value).filter(|entry| {
+        entry.is_absolute()
+            && !temporary
+                .iter()
+                .any(|directory| entry.starts_with(directory))
+    });
+    match std::env::join_paths(kept) {
+        Ok(path) => path.to_string_lossy().into_owned().into(),
+        Err(_) => value.into(),
+    }
+}
 #[cfg(any(target_os = "macos", test))]
 fn launchd_definition(
     label: &str,
@@ -87,7 +115,13 @@ fn launchd_definition(
 ) -> String {
     let environment = environment
         .iter()
-        .map(|(key, value)| format!("<key>{}</key><string>{}</string>", xml(key), xml(value)))
+        .map(|(key, value)| {
+            format!(
+                "<key>{}</key><string>{}</string>",
+                xml(key),
+                xml(&service_value(key, value))
+            )
+        })
         .collect::<String>();
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -191,7 +225,10 @@ fn systemd_definition(
 ) -> String {
     let vars = environment
         .iter()
-        .map(|(key, value)| format!("Environment={}\n", unit_quote(&format!("{key}={value}"))))
+        .map(|(key, value)| {
+            let value = service_value(key, value);
+            format!("Environment={}\n", unit_quote(&format!("{key}={value}")))
+        })
         .collect::<String>();
     format!(
         "[Unit]\nDescription=CodeSesh {}\nStartLimitIntervalSec=0\n[Service]\nType=simple\nExecStart=:{} --service-run {}\nWorkingDirectory={}\nRestart=on-failure\nRestartSec=30\nTimeoutStopSec=60\n{}StandardOutput=append:{}\nStandardError=append:{}\n",
@@ -394,5 +431,26 @@ mod tests {
         assert!(task.contains("<UserId>user&amp;name</UserId>"));
         assert!(task.contains("<AllowHardTerminate>false</AllowHardTerminate>"));
         assert!(!environment().keys().any(|key| key.contains("TOKEN")));
+    }
+
+    #[test]
+    fn service_path_drops_temporary_and_relative_entries() {
+        let kept = [
+            std::env::current_dir().unwrap().join("bin"),
+            std::env::current_dir().unwrap().join("tools/bin"),
+        ];
+        let path = std::env::join_paths([
+            std::env::temp_dir().join("smoke-data/bin"),
+            kept[0].clone(),
+            "/tmp/agent/bin".into(),
+            "relative/bin".into(),
+            kept[1].clone(),
+        ])
+        .unwrap();
+        assert_eq!(
+            service_value("PATH", &path.to_string_lossy()),
+            std::env::join_paths(&kept).unwrap().to_string_lossy()
+        );
+        assert_eq!(service_value("CODEX_HOME", "/tmp/codex"), "/tmp/codex");
     }
 }
