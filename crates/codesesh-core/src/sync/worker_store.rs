@@ -519,7 +519,8 @@ impl WorkerStore {
                 .map(serde_json::to_string)
                 .transpose()?
         };
-        tx.execute("INSERT INTO worker_sources VALUES(?,?,?,?) ON CONFLICT(agent) DO UPDATE SET state=COALESCE(excluded.state,worker_sources.state),checkpoint=excluded.checkpoint,complete=excluded.complete",
+        // Idle rounds resend the same state; skipping the no-op update avoids rewriting it.
+        tx.execute("INSERT INTO worker_sources VALUES(?,?,?,?) ON CONFLICT(agent) DO UPDATE SET state=COALESCE(excluded.state,worker_sources.state),checkpoint=excluded.checkpoint,complete=excluded.complete WHERE worker_sources.state IS NOT COALESCE(excluded.state,worker_sources.state) OR worker_sources.checkpoint IS NOT excluded.checkpoint OR worker_sources.complete IS NOT excluded.complete",
             params![agent,source_state,checkpoint,batch.complete])?;
         let progress: Option<String> = tx
             .query_row(

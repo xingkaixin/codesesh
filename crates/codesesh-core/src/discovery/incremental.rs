@@ -278,7 +278,8 @@ impl AgentScanner {
                 "emptySources": self.empty_sources,
             });
         }
-        if page_mode && complete && self.cache_path.is_file() {
+        // Workers poll in page mode every round, so reloading their baseline would repeat each time.
+        if page_mode && complete && !self.worker && self.cache_path.is_file() {
             // Release headers interleaved with parsed bodies; the next refresh reloads durable metadata.
             self.previous = Vec::new();
             self.baseline = HashMap::new();
