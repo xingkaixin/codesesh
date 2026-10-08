@@ -286,9 +286,6 @@ fn merge_children(
             .messages
             .sort_by(|a, b| a.time_created.total_cmp(&b.time_created));
         session.detail.head.stats.message_count = session.detail.messages.len();
-        let tags = super::smart_tags::classify(&session.detail.messages);
-        session.head.smart_tags = tags.clone();
-        session.detail.head.smart_tags = tags;
     }
     Ok(())
 }
@@ -1126,7 +1123,7 @@ impl Parser {
             time_updated: updated,
             stats: head_usage.stats(message_count),
             model_usage: head_usage.models(),
-            smart_tags: super::smart_tags::classify(&messages),
+            smart_tags: Vec::new(),
             smart_tags_source_updated_at: Some(updated),
             smart_tags_classifier_revision: Some("smart-tags-v1".into()),
         };

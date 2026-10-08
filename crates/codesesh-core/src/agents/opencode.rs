@@ -169,7 +169,7 @@ fn detail(
         time_updated: updated,
         stats,
         model_usage,
-        smart_tags: super::smart_tags::classify(&messages),
+        smart_tags: Vec::new(),
         smart_tags_source_updated_at: Some(updated),
         smart_tags_classifier_revision: Some("smart-tags-v1".into()),
     };
