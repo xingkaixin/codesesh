@@ -152,7 +152,7 @@ pub(super) fn rebuild(
                         row.get::<_, String>(1)?,
                         row.get::<_, Option<String>>(2)?,
                         row.get::<_, Option<String>>(3)?,
-                        row.get::<_, String>(4)?,
+                        super::body::unpack(row.get_ref(4)?)?.into_owned(),
                         row.get::<_, String>(5)?,
                     ))
                 })?

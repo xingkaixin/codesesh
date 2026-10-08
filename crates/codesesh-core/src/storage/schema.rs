@@ -171,8 +171,8 @@ fn migrate(
         );
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
         db.execute(
-            "INSERT OR REPLACE INTO cache_meta VALUES('version','36')",
-            [],
+            "INSERT OR REPLACE INTO cache_meta VALUES('version',?)",
+            [super::CACHE_SCHEMA_VERSION.to_string()],
         )?;
         db.execute_batch("COMMIT")?;
         Ok(())
@@ -216,8 +216,14 @@ pub fn ensure_with_progress(
             return Err(error.into());
         }
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
-        db.execute("INSERT INTO cache_meta VALUES('version','36')", [])?;
+        db.execute(
+            "INSERT INTO cache_meta VALUES('version',?)",
+            [super::CACHE_SCHEMA_VERSION.to_string()],
+        )?;
         db.execute_batch("COMMIT")?;
+    } else if version == 36 {
+        // Schema 37 only changes how message bodies are encoded; `compress_existing` converts them.
+        db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
             let backup = path.with_extension(format!(
@@ -341,6 +347,7 @@ pub fn ensure_with_progress(
     result?;
     super::search_text::rebuild(db, progress)?;
     super::search_text::ensure_index(db, progress)?;
+    super::body::compress_existing(db, progress)?;
     if path.is_some() {
         compact(db, COMPACT_MIN_FREE_PAGES, progress)?;
     }

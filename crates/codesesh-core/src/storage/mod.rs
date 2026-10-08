@@ -1,3 +1,4 @@
+pub(crate) mod body;
 mod cursor;
 mod json_index;
 mod sync;
@@ -22,7 +23,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
-pub const CACHE_SCHEMA_VERSION: i64 = 36;
+pub const CACHE_SCHEMA_VERSION: i64 = 37;
 
 pub struct StorageProgress {
     pub phase: String,
@@ -388,7 +389,7 @@ impl Cache {
                     )?;
                 }
                 transaction.prepare_cached("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text,tool_metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)")?.execute(
-                    params![reference.source_node_id,reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),parts,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content,facts::tool_metadata(message)?])?;
+                    params![reference.source_node_id,reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),body::pack(&parts)?,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content,facts::tool_metadata(message)?])?;
                 search_text::index(transaction, transaction.last_insert_rowid(), &content)?;
                 indexed_bytes += content.len() as i64;
             }

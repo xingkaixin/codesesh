@@ -114,6 +114,7 @@ pub fn visit_detail_message_page(
         |row| {
             let role: String = row.get("role")?;
             let tokens: Option<String> = row.get("tokens_json")?;
+            let raw_parts = super::body::unpack(row.get_ref("parts_json")?)?.into_owned();
             let cost_source: Option<String> = row.get("cost_source")?;
             let message = Message {
                 cost_inputs: Vec::new(),
@@ -148,9 +149,15 @@ pub fn visit_detail_message_page(
                     _ => None,
                 },
                 parts: if row.get::<_, i64>("parts_format_version")? >= 1 {
-                    json_column(row, "parts_json")?
+                    serde_json::from_str(&raw_parts).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            row.as_ref().column_index("parts_json").unwrap_or(0),
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?
                 } else {
-                    super::legacy_parts::normalize(&row.get::<_, String>("parts_json")?)
+                    super::legacy_parts::normalize(&raw_parts)
                 },
                 subagent_id: row.get("subagent_id")?,
                 nickname: row.get("nickname")?,
@@ -159,7 +166,7 @@ pub fn visit_detail_message_page(
             Ok((
                 message,
                 row.get::<_, Option<String>>("content_chain_digest")?,
-                row.get::<_, String>("parts_json")?,
+                raw_parts,
                 row.get::<_, i64>("parts_format_version")?,
                 tokens,
                 row.get::<_, i64>("message_index")?,
