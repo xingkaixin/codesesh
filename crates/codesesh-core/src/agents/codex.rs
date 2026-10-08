@@ -54,7 +54,7 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
             });
         }
     }
-    merge_children(&mut sessions, pricing, None, &[])?;
+    merge_children(&mut sessions, pricing, None, &[], None)?;
     sessions.sort_by(|a, b| {
         b.detail
             .head
@@ -181,7 +181,13 @@ pub fn scan_changed(
         }
     }
     let mut all = changed;
-    merge_children(&mut all, pricing, Some(&affected), previous)?;
+    merge_children(
+        &mut all,
+        pricing,
+        Some(&affected),
+        previous,
+        Some(&mut checkpoints.children),
+    )?;
     let upserts: Vec<_> = all
         .into_iter()
         .filter(|session| affected.contains(&session.head.reference.session_id))
@@ -210,6 +216,7 @@ fn merge_children(
     pricing: &Pricing,
     selected: Option<&std::collections::HashSet<String>>,
     previous: &[crate::agents::SessionRecord],
+    mut cache: Option<&mut HashMap<PathBuf, ChildSummary>>,
 ) -> Result<()> {
     let mut children = HashMap::<String, Vec<(SessionStats, Option<Message>)>>::new();
     let current: std::collections::HashSet<_> =
@@ -230,11 +237,23 @@ fn merge_children(
         if let Some(parent) = &head.parent_reference
             && selected.is_none_or(|ids| ids.contains(&parent.session_id))
         {
+            let summary = match cache.as_deref_mut() {
+                Some(cache) => cached_child_summary(cache, head, source, pricing)?,
+                None => child_summary(head, source, pricing)?,
+            };
             children
                 .entry(parent.session_id.clone())
                 .or_default()
-                .push(child_summary(head, source, pricing)?);
+                .push(summary);
         }
+    }
+    if let Some(cache) = cache {
+        let known: std::collections::HashSet<_> = sessions
+            .iter()
+            .map(|session| &session.source)
+            .chain(previous.iter().map(|session| &session.source))
+            .collect();
+        cache.retain(|source, _| known.contains(source));
     }
     for session in sessions {
         if selected.is_some_and(|ids| !ids.contains(&session.head.reference.session_id)) {
@@ -286,11 +305,48 @@ fn merge_children(
             .messages
             .sort_by(|a, b| a.time_created.total_cmp(&b.time_created));
         session.detail.head.stats.message_count = session.detail.messages.len();
-        let tags = super::smart_tags::classify(&session.detail.messages);
-        session.head.smart_tags = tags.clone();
-        session.detail.head.smart_tags = tags;
     }
     Ok(())
+}
+
+struct ChildSummary {
+    physical: PathBuf,
+    len: u64,
+    modified: std::time::SystemTime,
+    generation: u64,
+    summary: (SessionStats, Option<Message>),
+}
+
+// A parent refresh re-summarizes every child; unchanged children would be read in full each time.
+fn cached_child_summary(
+    cache: &mut HashMap<PathBuf, ChildSummary>,
+    head: &SessionHead,
+    source: &Path,
+    pricing: &Pricing,
+) -> Result<(SessionStats, Option<Message>)> {
+    let physical = rollout::physical_path(source)?.unwrap_or_else(|| rollout::logical_path(source));
+    let metadata = std::fs::metadata(&physical)?;
+    let modified = metadata.modified()?;
+    if let Some(entry) = cache.get(source)
+        && entry.physical == physical
+        && entry.len == metadata.len()
+        && entry.modified == modified
+        && entry.generation == pricing.generation()
+    {
+        return Ok(entry.summary.clone());
+    }
+    let summary = child_summary(head, source, pricing)?;
+    cache.insert(
+        source.to_owned(),
+        ChildSummary {
+            physical,
+            len: metadata.len(),
+            modified,
+            generation: pricing.generation(),
+            summary: summary.clone(),
+        },
+    );
+    Ok(summary)
 }
 
 fn child_summary(
@@ -533,9 +589,12 @@ const CHECKPOINT_MIN_BYTES: u64 = 1;
 const CHECKPOINT_LIMIT: usize = 2;
 const CHECKPOINT_TAIL_BYTES: usize = 64;
 
-/// Parser state for the few large rollouts that changed most recently.
+/// Parser state for the few large rollouts that changed most recently, and child summaries.
 #[derive(Default)]
-pub struct Checkpoints(Vec<(PathBuf, Checkpoint)>);
+pub struct Checkpoints {
+    parsers: Vec<(PathBuf, Checkpoint)>,
+    children: HashMap<PathBuf, ChildSummary>,
+}
 
 struct Checkpoint {
     physical: PathBuf,
@@ -554,10 +613,10 @@ impl Checkpoints {
     ) -> Result<Option<SessionDetail>> {
         let logical = rollout::logical_path(path);
         let previous = self
-            .0
+            .parsers
             .iter()
             .position(|(key, _)| *key == logical)
-            .map(|index| self.0.remove(index).1);
+            .map(|index| self.parsers.remove(index).1);
         let Some(physical) = rollout::physical_path(path)?
             .filter(|physical| physical.extension().is_some_and(|ext| ext == "jsonl"))
         else {
@@ -620,7 +679,7 @@ impl Checkpoints {
         if let Some(line) = &partial {
             current.feed(line, pricing);
         }
-        self.0.push((
+        self.parsers.push((
             logical,
             Checkpoint {
                 physical,
@@ -630,8 +689,8 @@ impl Checkpoints {
                 parser,
             },
         ));
-        if self.0.len() > CHECKPOINT_LIMIT {
-            self.0.remove(0);
+        if self.parsers.len() > CHECKPOINT_LIMIT {
+            self.parsers.remove(0);
         }
         Ok(current.finish(titles))
     }
@@ -1126,7 +1185,7 @@ impl Parser {
             time_updated: updated,
             stats: head_usage.stats(message_count),
             model_usage: head_usage.models(),
-            smart_tags: super::smart_tags::classify(&messages),
+            smart_tags: Vec::new(),
             smart_tags_source_updated_at: Some(updated),
             smart_tags_classifier_revision: Some("smart-tags-v1".into()),
         };
@@ -1420,6 +1479,56 @@ mod incremental_tests {
                 .collect::<Vec<_>>();
             assert_eq!(texts, ["first", "child result", "last", "same-time"]);
         }
+    }
+
+    #[test]
+    fn parent_refresh_sees_a_child_that_changed_since_the_last_refresh() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "00000000-0000-0000-0000-000000000001";
+        let child = "00000000-0000-0000-0000-000000000002";
+        let write = |id: &str, parent_id: Option<&str>, text: &str| {
+            let records = [
+                serde_json::json!({"type":"session_meta","timestamp":500,"payload":{"id":id,"cwd":"/project","thread_source":parent_id.map(|_| "subagent"),"parent_thread_id":parent_id}}),
+                serde_json::json!({"type":"response_item","timestamp":1000,"payload":{"type":"message","role":if parent_id.is_some() {"assistant"} else {"user"},"phase":"final_answer","content":[{"type":"output_text","text":text}]}}),
+            ];
+            let path = sessions.join(format!("rollout-2026-01-01-{id}.jsonl"));
+            std::fs::write(&path, format!("{}\n{}\n", records[0], records[1])).unwrap();
+            path
+        };
+        let parent_path = write(parent, None, "start");
+        write(child, Some(parent), "child result");
+        let pricing = Pricing::bundled();
+        let previous = scan(root.path(), &pricing)
+            .unwrap()
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect::<Vec<_>>();
+        let mut checkpoints = Checkpoints::default();
+        let mut child_text = || {
+            scan_changed(
+                root.path(),
+                &pricing,
+                std::slice::from_ref(&parent_path),
+                &previous,
+                &mut checkpoints,
+            )
+            .unwrap()
+            .upserts[0]
+                .detail
+                .messages
+                .iter()
+                .filter(|message| message.subagent_id.as_deref() == Some(child))
+                .flat_map(|message| &message.parts)
+                .find_map(|part| match part {
+                    MessagePart::Text { text, .. } => Some(text.clone()),
+                    _ => None,
+                })
+        };
+        assert_eq!(child_text().as_deref(), Some("child result"));
+        write(child, Some(parent), "child result, revised");
+        assert_eq!(child_text().as_deref(), Some("child result, revised"));
     }
 
     #[test]

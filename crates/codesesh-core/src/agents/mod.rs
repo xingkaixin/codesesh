@@ -103,6 +103,7 @@ pub fn scan_agent(
     }
 }
 
+// The only place smart tags are derived; parsers leave them empty for this pass to fill.
 pub fn complete_projections(session: &mut ParsedSession) {
     let source_updated_at = session.head.time_updated;
     let smart_tags = smart_tags::classify(&session.detail.messages);

@@ -205,7 +205,6 @@ fn scan_selected(
             continue;
         }
         let (identity, signature) = path_identity(&directory);
-        let smart_tags = super::smart_tags::classify(&projection.messages);
         let fallback = Path::new(directory.trim_end_matches(['/', '\\']))
             .file_name()
             .and_then(|x| x.to_str())
@@ -242,7 +241,7 @@ fn scan_selected(
             time_updated: projection.updated,
             stats: projection.stats,
             model_usage: (!projection.usage.is_empty()).then_some(projection.usage),
-            smart_tags,
+            smart_tags: Vec::new(),
             smart_tags_source_updated_at: Some(projection.updated),
             smart_tags_classifier_revision: Some("smart-tags-v1".into()),
         };

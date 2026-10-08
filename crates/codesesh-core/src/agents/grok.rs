@@ -179,7 +179,7 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
         time_updated: updated,
         stats,
         model_usage: (!models.is_empty()).then_some(models),
-        smart_tags: super::smart_tags::classify(&messages),
+        smart_tags: Vec::new(),
         smart_tags_source_updated_at: Some(updated),
         smart_tags_classifier_revision: Some("smart-tags-v1".into()),
     };
