@@ -64,6 +64,50 @@ fn source_nodes_isolate_content_search_and_updates() {
 }
 
 #[test]
+fn schema36_text_parts_are_compressed_in_place() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = source(root.path(), "large");
+    session.detail.messages[0].parts = vec![MessagePart::Text {
+        text: "compressible needle ".repeat(500),
+        time_created: None,
+    }];
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    let db = cache.connection();
+    let encoding = |db: &Connection| -> String {
+        db.query_row("SELECT typeof(parts_json) FROM messages", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    };
+    assert_eq!(encoding(db), "blob");
+    let parts: String = db
+        .query_row("SELECT parts_json FROM messages", [], |row| {
+            Ok(body::unpack(row.get_ref(0)?)?.into_owned())
+        })
+        .unwrap();
+    db.execute("UPDATE messages SET parts_json=?", [parts])
+        .unwrap();
+    db.execute_batch(
+        "PRAGMA user_version=36; DELETE FROM cache_meta WHERE key='message_parts_zstd_v1';",
+    )
+    .unwrap();
+    assert_eq!(encoding(db), "text");
+    let detail = serde_json::to_value(cache.detail(session.head.clone()).unwrap()).unwrap();
+    schema::ensure(db, None).unwrap();
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        CACHE_SCHEMA_VERSION
+    );
+    assert_eq!(encoding(db), "blob");
+    assert_eq!(
+        serde_json::to_value(cache.detail(session.head.clone()).unwrap()).unwrap(),
+        detail
+    );
+}
+
+#[test]
 fn schema36_read_index_patch_preserves_rows_and_uses_covering_plans() {
     let root = tempfile::tempdir().unwrap();
     let mut local = source(root.path(), "shared");

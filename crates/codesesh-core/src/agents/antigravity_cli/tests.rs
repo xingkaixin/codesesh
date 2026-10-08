@@ -73,7 +73,7 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
         .query_row(
             "SELECT parts_json FROM messages WHERE message_id='session:3'",
             [],
-            |row| row.get(0),
+            |row| Ok(crate::storage::body::unpack(row.get_ref(0)?)?.into_owned()),
         )
         .unwrap();
     assert!(stored.contains("unknown"));
