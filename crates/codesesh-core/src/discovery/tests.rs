@@ -396,6 +396,47 @@ fn removed_zcode_database_retains_sessions_and_resumes_after_restore() {
     assert!(restored.removed.is_empty());
 }
 
+#[test]
+fn reused_database_inventory_still_lists_new_sessions() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("zcode");
+    let file = root.join("cli/db/db.sqlite");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('first','First',1000,2000,'/project');").unwrap();
+    let source = AgentSource {
+        agent: "zcode".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let db = temporary.path().join("cache.db");
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source, db, std::sync::Arc::new(Pricing::bundled()));
+    let mut ids = |scanner: &mut AgentScanner| {
+        let mut batch = scanner.refresh(None).unwrap();
+        let ids: Vec<_> = batch
+            .sessions
+            .iter()
+            .map(|session| session.head.reference.session_id.clone())
+            .collect();
+        cache
+            .apply_checkpoint(
+                &mut batch.sessions,
+                &batch.removed,
+                "zcode",
+                &batch.checkpoint,
+                batch.complete,
+            )
+            .unwrap();
+        batch.on_reject.take();
+        ids
+    };
+    assert_eq!(ids(&mut scanner), ["first"]);
+    assert!(ids(&mut scanner).is_empty());
+    database.execute("INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('second','Second',3000,4000,'/project')", []).unwrap();
+    assert_eq!(ids(&mut scanner), ["second"]);
+}
+
 fn many_pi(source: &AgentSource, count: usize) -> Vec<std::path::PathBuf> {
     let original = write_pi(source, "History");
     let bytes = std::fs::read(&original).unwrap();

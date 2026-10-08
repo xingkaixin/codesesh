@@ -139,6 +139,26 @@ fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
     }
     Ok((time.as_secs_f64() * 1000.0, stamp))
 }
+/// File state of a database-backed source; `None` for file-backed sources.
+pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
+    let database = match source.agent.as_str() {
+        "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
+        "opencode" => source.scan_path.clone(),
+        "zcode" => source.scan_path.join("cli/db/db.sqlite"),
+        "deepchat" => source.scan_path.join("app_db/agent.db"),
+        "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
+        "minimax-code" => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
+        _ => return Ok(None),
+    };
+    let mut database_stamp = String::new();
+    for suffix in ["", "-wal", "-journal"] {
+        let path = PathBuf::from(format!("{}{suffix}", database.to_string_lossy()));
+        if path.try_exists()? {
+            database_stamp.push_str(&stamp(&path)?.1);
+        }
+    }
+    Ok(Some(database_stamp))
+}
 pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     if source.agent == "codex" {
         return codex_inventory(source);
@@ -179,21 +199,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         _ => None,
     };
     if let Some(keys) = keys {
-        let database = match source.agent.as_str() {
-            "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
-            "opencode" => source.scan_path.clone(),
-            "zcode" => source.scan_path.join("cli/db/db.sqlite"),
-            "deepchat" => source.scan_path.join("app_db/agent.db"),
-            "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
-            _ => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
-        };
-        let mut database_stamp = String::new();
-        for suffix in ["", "-wal", "-journal"] {
-            let path = PathBuf::from(format!("{}{suffix}", database.to_string_lossy()));
-            if path.try_exists()? {
-                database_stamp.push_str(&stamp(&path)?.1);
-            }
-        }
+        let database_stamp = database_stamp(source)?.unwrap_or_default();
         return Ok(keys
             .into_iter()
             .map(|(key, activity)| Item {

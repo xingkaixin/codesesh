@@ -1,6 +1,6 @@
 use super::{
     AgentSource,
-    backfill::{BATCH_SIZE, Backfill, Item, ItemScope, inventory},
+    backfill::{BATCH_SIZE, Backfill, Item, ItemScope, database_stamp, inventory},
     has_sources, scan_source,
 };
 use crate::{
@@ -48,6 +48,7 @@ pub struct AgentScanner {
     price_dependencies: Option<PriceDependencies>,
     file_fingerprints: HashMap<String, String>,
     empty_sources: HashSet<String>,
+    database_inventory: Option<(String, Vec<Item>)>,
 }
 impl AgentScanner {
     pub fn new(source: AgentSource, cache_path: PathBuf, pricing: Arc<Pricing>) -> Self {
@@ -76,6 +77,7 @@ impl AgentScanner {
             price_dependencies: Some(HashMap::new()),
             file_fingerprints: HashMap::new(),
             empty_sources: HashSet::new(),
+            database_inventory: None,
         }
     }
     pub fn with_source_node(mut self, node: &str) -> Self {
@@ -327,7 +329,7 @@ impl AgentScanner {
         if self.backfill.is_none() {
             let local = self.backfill.as_ref().map(Backfill::checkpoint);
             let saved = checkpoint.or(local.as_ref());
-            let mut items = inventory(&self.source)?;
+            let mut items = self.inventory()?;
             self.source_available = Some(!items.is_empty() || has_sources(&self.source)?);
             let present: HashSet<_> = items.iter().map(|item| item.key.as_str()).collect();
             self.file_fingerprints
@@ -448,6 +450,20 @@ impl AgentScanner {
         delta.complete = false;
         Ok((delta, checkpoint, complete))
     }
+    fn inventory(&mut self) -> Result<Vec<Item>> {
+        // Enumerating a database reads every session row; an unchanged file lists the same sessions.
+        let Some(stamp) = database_stamp(&self.source)? else {
+            return inventory(&self.source);
+        };
+        if let Some((cached, items)) = &self.database_inventory
+            && *cached == stamp
+        {
+            return Ok(items.clone());
+        }
+        let items = inventory(&self.source)?;
+        self.database_inventory = Some((stamp, items.clone()));
+        Ok(items)
+    }
     fn matches_scope(
         &self,
         reference: &crate::contract::SessionReference,
@@ -477,9 +493,9 @@ impl AgentScanner {
         false
     }
     fn read_dirty(&mut self) -> Result<ScanDelta> {
+        let current = self.inventory()?;
         let plan = self.backfill.as_ref().unwrap();
         let original: HashSet<_> = plan.items.iter().map(|item| item.key.as_str()).collect();
-        let current = inventory(&self.source)?;
         let added: Vec<_> = current
             .iter()
             .filter(|item| !original.contains(item.key.as_str()))
@@ -600,7 +616,7 @@ impl AgentScanner {
             self.source_available = Some(has_sources(&self.source)?);
             return Ok((self.read(paths)?, None, true));
         }
-        let current = inventory(&self.source)?;
+        let current = self.inventory()?;
         self.source_available = Some(!current.is_empty() || has_sources(&self.source)?);
         if current.is_empty()
             && !self.source.scan_path.try_exists()?
