@@ -66,6 +66,27 @@ describe("useLiveSync", () => {
     expect(deps.applyLiveEvent).toHaveBeenCalledWith(event);
   });
 
+  it("holds session events while the page is hidden and applies them once visible", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const deps = makeDeps();
+    renderHook(() => useLiveSync(deps));
+
+    await act(async () => {
+      sessionsCallback?.(SAMPLE_SESSIONS_UPDATED_EVENT);
+      sessionsCallback?.(SAMPLE_SESSIONS_UPDATED_EVENT);
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(deps.applyLiveEvent).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(deps.applyLiveEvent).toHaveBeenCalledOnce();
+  });
+
   it("surfaces a notice when new sessions arrive", async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useLiveSync(makeDeps(3)));
