@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fs::File,
     io::{self, Read},
     path::{Path, PathBuf},
@@ -37,7 +37,12 @@ pub(crate) fn physical_path(path: &Path) -> io::Result<Option<PathBuf>> {
 }
 
 pub(crate) fn paths(root: &Path) -> Result<Vec<PathBuf>> {
-    let mut paths = BTreeSet::new();
+    Ok(files(root)?.into_keys().collect())
+}
+
+/// Logical rollout paths mapped to the file `physical_path` would choose, without a `stat` per file.
+pub(crate) fn files(root: &Path) -> Result<BTreeMap<PathBuf, PathBuf>> {
+    let mut files = BTreeMap::new();
     for name in ["sessions", "archived_sessions"] {
         let directory = root.join(name);
         if !directory.try_exists()? {
@@ -46,11 +51,18 @@ pub(crate) fn paths(root: &Path) -> Result<Vec<PathBuf>> {
         for entry in walkdir::WalkDir::new(directory).follow_links(false) {
             let entry = entry.context("enumerating Codex sources")?;
             if entry.file_type().is_file() && is_rollout(entry.path()) {
-                paths.insert(logical_path(entry.path()));
+                let logical = logical_path(entry.path());
+                let plain = logical == entry.path();
+                let physical = files
+                    .entry(logical)
+                    .or_insert_with(|| entry.path().to_owned());
+                if plain {
+                    *physical = entry.path().to_owned();
+                }
             }
         }
     }
-    Ok(paths.into_iter().collect())
+    Ok(files)
 }
 
 pub(crate) fn open(path: &Path) -> Result<(Box<dyn Read>, PathBuf)> {

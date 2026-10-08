@@ -104,7 +104,9 @@ impl Backfill {
     }
 }
 fn stamp(path: &Path) -> Result<(f64, String)> {
-    let metadata = std::fs::metadata(path)?;
+    stamp_metadata(&std::fs::metadata(path)?)
+}
+fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
     let time = metadata
         .modified()?
         .duration_since(UNIX_EPOCH)
@@ -136,6 +138,26 @@ fn stamp(path: &Path) -> Result<(f64, String)> {
         ));
     }
     Ok((time.as_secs_f64() * 1000.0, stamp))
+}
+/// File state of a database-backed source; `None` for file-backed sources.
+pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
+    let database = match source.agent.as_str() {
+        "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
+        "opencode" => source.scan_path.clone(),
+        "zcode" => source.scan_path.join("cli/db/db.sqlite"),
+        "deepchat" => source.scan_path.join("app_db/agent.db"),
+        "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
+        "minimax-code" => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
+        _ => return Ok(None),
+    };
+    let mut database_stamp = String::new();
+    for suffix in ["", "-wal", "-journal"] {
+        let path = PathBuf::from(format!("{}{suffix}", database.to_string_lossy()));
+        if path.try_exists()? {
+            database_stamp.push_str(&stamp(&path)?.1);
+        }
+    }
+    Ok(Some(database_stamp))
 }
 pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     if source.agent == "codex" {
@@ -177,21 +199,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         _ => None,
     };
     if let Some(keys) = keys {
-        let database = match source.agent.as_str() {
-            "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
-            "opencode" => source.scan_path.clone(),
-            "zcode" => source.scan_path.join("cli/db/db.sqlite"),
-            "deepchat" => source.scan_path.join("app_db/agent.db"),
-            "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
-            _ => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
-        };
-        let mut database_stamp = String::new();
-        for suffix in ["", "-wal", "-journal"] {
-            let path = PathBuf::from(format!("{}{suffix}", database.to_string_lossy()));
-            if path.try_exists()? {
-                database_stamp.push_str(&stamp(&path)?.1);
-            }
-        }
+        let database_stamp = database_stamp(source)?.unwrap_or_default();
         return Ok(keys
             .into_iter()
             .map(|(key, activity)| Item {
@@ -239,8 +247,22 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
     }
-    for entry in walkdir::WalkDir::new(&root).follow_links(false) {
-        let entry = entry?;
+    let entries = walkdir::WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .collect::<walkdir::Result<Vec<_>>>()?;
+    // Claude Code checks two optional companions per transcript; the walk already lists them.
+    let files: std::collections::HashSet<&Path> = if source.agent == "claudecode" {
+        entries
+            .iter()
+            .filter(|entry| entry.file_type().is_file())
+            .map(walkdir::DirEntry::path)
+            .collect()
+    } else {
+        Default::default()
+    };
+    let mut index_stamps = std::collections::HashMap::new();
+    for entry in &entries {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -283,8 +305,9 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         if !selected {
             continue;
         }
-        let (mut activity, mut fingerprint) = stamp(entry.path())?;
-        let mut bytes = entry.metadata()?.len();
+        let metadata = std::fs::metadata(entry.path())?;
+        let (mut activity, mut fingerprint) = stamp_metadata(&metadata)?;
+        let mut bytes = metadata.len();
         if source.agent == "antigravity-cli" {
             for suffix in ["-wal", "-journal"] {
                 let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
@@ -300,13 +323,17 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             } else {
                 parent
             };
-            for related in [
-                project.join("sessions-index.json"),
-                entry.path().with_extension("meta.json"),
-            ] {
-                if related.try_exists()? {
-                    fingerprint.push_str(&stamp(&related)?.1);
+            let index = project.join("sessions-index.json");
+            if files.contains(index.as_path()) {
+                if !index_stamps.contains_key(&index) {
+                    let value = stamp(&index)?.1;
+                    index_stamps.insert(index.clone(), value);
                 }
+                fingerprint.push_str(&index_stamps[&index]);
+            }
+            let meta = entry.path().with_extension("meta.json");
+            if files.contains(meta.as_path()) {
+                fingerprint.push_str(&stamp(&meta)?.1);
             }
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
@@ -377,11 +404,13 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
     }
     let mut items = Vec::new();
-    for path in codex_rollout::paths(&source.data_root)? {
-        let Some(physical) = codex_rollout::physical_path(&path)? else {
-            continue;
+    for (path, physical) in codex_rollout::files(&source.data_root)? {
+        let metadata = match std::fs::metadata(&physical) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
         };
-        let (activity, mut fingerprint) = stamp(&physical)?;
+        let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
         let stem = path.file_stem().unwrap_or_default().to_string_lossy();
         let pieces: Vec<_> = stem.split('-').collect();
         let id = pieces[pieces.len().saturating_sub(5)..].join("-");
@@ -394,7 +423,7 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
             activity,
             fingerprint,
             target: false,
-            bytes: std::fs::metadata(physical)?.len(),
+            bytes: metadata.len(),
         });
     }
     Ok(items)
