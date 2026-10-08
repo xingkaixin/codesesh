@@ -104,6 +104,23 @@ fn title_only_changes_do_not_requeue_message_content() {
 }
 
 #[test]
+fn unchanged_rounds_do_not_write_the_store() {
+    let (_dir, mut store, mut scanner) = setup();
+    let mut round = |store: &mut WorkerStore| {
+        let checkpoint = store.checkpoint("codex").unwrap();
+        let mut batch = scanner
+            .refresh_with_checkpoint(None, checkpoint.as_ref())
+            .unwrap();
+        store.save_batch("codex", &mut batch).unwrap();
+        batch.sessions.len()
+    };
+    assert_eq!(round(&mut store), 1);
+    let changes = store.db.total_changes();
+    assert_eq!(round(&mut store), 0);
+    assert_eq!(store.db.total_changes(), changes);
+}
+
+#[test]
 fn enqueue_failure_rolls_back_progress_and_can_retry() {
     let (_dir, mut store, mut scanner) = setup();
     let mut batch = scanner.refresh(None).unwrap();
