@@ -1,9 +1,9 @@
-use super::{DashboardCostFacts, DashboardScope, SessionModelCostFact};
+use super::{CostFactsIndex, DashboardScope, SessionModelCostFact};
 use crate::{
     contract::CostSource,
     query::{SessionTree, in_window},
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub struct Usage {
@@ -35,20 +35,8 @@ pub fn contributions(
     scope: &DashboardScope,
     from: Option<f64>,
     to: f64,
-    facts: Option<&DashboardCostFacts>,
+    facts: Option<&CostFactsIndex>,
 ) -> Vec<Contribution> {
-    let summaries: HashMap<_, _> = facts
-        .into_iter()
-        .flat_map(|f| &f.sessions)
-        .map(|s| (&s.reference, s))
-        .collect();
-    let mut messages = HashMap::<_, Vec<_>>::new();
-    for message in facts.into_iter().flat_map(|f| &f.messages) {
-        messages
-            .entry(&message.reference)
-            .or_default()
-            .push(message);
-    }
     let mut output = Vec::new();
     for &entry in &tree.entries {
         if !scope.matches(tree.sessions[entry]) {
@@ -58,7 +46,8 @@ pub fn contributions(
         for index in tree.descendants(entry) {
             let session = tree.sessions[index];
             let stats = &session.stats;
-            let summary = summaries.get(&session.reference).copied();
+            let session_facts = facts.and_then(|facts| facts.sessions.get(&session.reference));
+            let summary = session_facts.and_then(|facts| facts.summary.as_ref());
             let source = stats.cost_source.clone().unwrap_or(CostSource::Recorded);
             let total = stats.total_cost.max(0.0);
             let detailed_cost = total > 0.0
@@ -92,10 +81,10 @@ pub fn contributions(
                     Some(!matches && with_reasoning)
                 }
             });
-            for message in messages.get(&session.reference).into_iter().flatten() {
-                if !in_window(message.time, from, Some(to)) {
-                    continue;
-                }
+            for message in session_facts
+                .into_iter()
+                .flat_map(|facts| facts.messages_in(from, to))
+            {
                 let message_source = message
                     .cost_source
                     .clone()

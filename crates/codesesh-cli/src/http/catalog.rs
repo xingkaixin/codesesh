@@ -159,6 +159,7 @@ pub async fn projects(
     };
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
+    let cost_facts = state.cost_facts.clone();
     let started = Instant::now();
     if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
         log_query(
@@ -204,18 +205,10 @@ pub async fn projects(
                         .collect::<serde_json::Result<Vec<_>>>()?;
                     timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let facts = analytics::load_scoped_cost_facts(
-                        conn,
-                        &sessions,
-                        &analytics::DashboardScope {
-                            agent: None,
-                            project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
-                            project_key: identity.as_ref().map(|(_, key)| key.clone()),
-                        },
-                        from,
-                        to,
-                        false,
-                    )?;
+                    let facts = cost_facts
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("cost facts cache poisoned"))?
+                        .refresh(conn)?;
                     timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
                     let mut groups = analytics::attach_project_metrics(
@@ -336,6 +329,7 @@ pub async fn dashboard(
     let names = state.options.enabled_agents.clone();
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
+    let cost_facts = state.cost_facts.clone();
     // The Node backend reuses open-ended windows until the next local calendar day.
     let cache_to = base_to.unwrap_or_else(|| start_day(to));
     let key = json!([
@@ -368,14 +362,10 @@ pub async fn dashboard(
                 let sessions = super::scoped_heads(&heads, &query_scope);
                 timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
-                let facts = analytics::load_scoped_cost_facts(
-                    conn,
-                    &sessions,
-                    &scope,
-                    compare.map(|(from, _)| from).or(from),
-                    Some(to),
-                    true,
-                )?;
+                let facts = cost_facts
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("cost facts cache poisoned"))?
+                    .refresh(conn)?;
                 timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
                 let info = agent_info(&HashMap::new())

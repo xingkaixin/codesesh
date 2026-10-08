@@ -61,6 +61,7 @@ pub struct State {
     node_uploads: Mutex<HashMap<String, Arc<Semaphore>>>,
     details: Arc<Semaphore>,
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
+    cost_facts: Arc<Mutex<codesesh_core::analytics::CostFactsCache>>,
     query_scope: codesesh_core::search::QueryScope,
 }
 
@@ -98,6 +99,7 @@ impl State {
             node_uploads: Mutex::new(HashMap::new()),
             details: Arc::new(Semaphore::new(2)),
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
+            cost_facts: Arc::default(),
         }
     }
     fn snapshot(&self) -> Arc<Vec<SessionHead>> {

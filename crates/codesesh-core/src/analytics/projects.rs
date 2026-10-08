@@ -1,4 +1,4 @@
-use super::{DashboardCostFacts, DashboardScope, Metrics, attribution, project_key};
+use super::{CostFactsIndex, DashboardScope, Metrics, attribution, project_key};
 use crate::{
     contract::{CostSource, SessionHead},
     query::{SessionTree, in_window},
@@ -31,7 +31,7 @@ pub fn attach_project_metrics(
     sessions: &[SessionHead],
     from: Option<f64>,
     to: Option<f64>,
-    facts: Option<&DashboardCostFacts>,
+    facts: Option<&CostFactsIndex>,
 ) -> Vec<Value> {
     let tree = SessionTree::new(sessions);
     let mut metrics = HashMap::<String, ProjectMetrics>::new();

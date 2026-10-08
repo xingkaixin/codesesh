@@ -8,7 +8,7 @@ mod response;
 mod time_zone;
 pub use facts::*;
 pub use projects::{attach_project_metrics, summarize_projects};
-pub use read::{load_cost_facts, load_scoped_cost_facts};
+pub use read::{CostFactsCache, load_cost_facts, load_scoped_cost_facts};
 pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_response};
 pub use time_zone::DashboardTimeZone;
 
@@ -46,7 +46,7 @@ pub struct DashboardOptions<'a> {
     pub to: f64,
     pub agent_info: Option<&'a HashMap<String, Value>>,
     pub compare: Option<(f64, f64)>,
-    pub cost_facts: Option<&'a DashboardCostFacts>,
+    pub cost_facts: Option<&'a CostFactsIndex>,
 }
 
 fn date(time: f64) -> NaiveDate {
