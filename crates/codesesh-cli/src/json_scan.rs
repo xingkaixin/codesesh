@@ -136,10 +136,6 @@ pub fn run_for_source(
                 for session in &mut scanned.sessions {
                     session.set_source_node(node);
                 }
-                let after = format!("{node}:{}", signature(source)?);
-                if before != after {
-                    bail!("Agent source changed during scan; retaining cached sessions");
-                }
                 let references: HashSet<_> = scanned
                     .sessions
                     .iter()
@@ -170,7 +166,9 @@ pub fn run_for_source(
                 );
                 heads.extend(scanned.sessions.iter().map(|session| session.head.clone()));
                 sessions.extend(scanned.sessions);
-                fingerprints.push((source.agent.clone(), after));
+                // The pre-scan fingerprint: if an agent wrote during the scan, the next run no longer
+                // matches it and scans the source again.
+                fingerprints.push((source.agent.clone(), before));
                 needs_publication = true;
                 Ok(())
             })();
