@@ -1,21 +1,120 @@
-use super::{Child, child, common::changed_sources, parse};
+use super::{Child, Parser, child, common::changed_sources, parse};
 use crate::{
     agents::{ScanDelta, codex::ParsedSession},
     pricing::Pricing,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::Value;
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    fs,
+    fs::{self, File},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
+
+#[cfg(not(test))]
+const CHECKPOINT_MIN_BYTES: u64 = 1024 * 1024;
+#[cfg(test)]
+const CHECKPOINT_MIN_BYTES: u64 = 1;
+const CHECKPOINT_LIMIT: usize = 2;
+const CHECKPOINT_TAIL_BYTES: usize = 64;
+
+/// Parser state for the few large transcripts that changed most recently.
+#[derive(Default)]
+pub struct Checkpoints(Vec<(PathBuf, Checkpoint)>);
+
+struct Checkpoint {
+    offset: u64,
+    tail: Vec<u8>,
+    generation: u64,
+    children: HashMap<String, String>,
+    parser: Parser,
+}
+
+impl Checkpoints {
+    pub(super) fn parse(
+        &mut self,
+        path: &Path,
+        child: Option<&Child>,
+        project: &Path,
+        index: &Value,
+        children: &HashMap<String, String>,
+        pricing: &Pricing,
+    ) -> Result<Option<(crate::contract::SessionHead, crate::contract::SessionDetail)>> {
+        let previous = self
+            .0
+            .iter()
+            .position(|(key, _)| key == path)
+            .map(|index| self.0.remove(index).1);
+        let mut file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
+        let len = file.metadata()?.len();
+        if len < CHECKPOINT_MIN_BYTES {
+            return parse(path, child, project, index, children, pricing);
+        }
+        // Subagent links are resolved while lines are converted, so a changed map needs a full pass.
+        let mut resumed = None;
+        if let Some(checkpoint) = previous
+            && checkpoint.generation == pricing.generation()
+            && checkpoint.children == *children
+            && checkpoint.offset <= len
+        {
+            let mut tail = vec![0; checkpoint.tail.len()];
+            file.seek(SeekFrom::Start(checkpoint.offset - tail.len() as u64))?;
+            file.read_exact(&mut tail)?;
+            if tail == checkpoint.tail {
+                resumed = Some(checkpoint);
+            }
+        }
+        let (mut parser, mut offset, mut tail) = match resumed {
+            Some(checkpoint) => (checkpoint.parser, checkpoint.offset, checkpoint.tail),
+            None => (Parser::new(), 0, Vec::new()),
+        };
+        file.seek(SeekFrom::Start(offset))?;
+        let mut reader = BufReader::with_capacity(64 * 1024, file);
+        let mut line = String::new();
+        let mut partial = None;
+        loop {
+            line.clear();
+            let read = reader.read_line(&mut line)?;
+            if read == 0 {
+                break;
+            }
+            // Claude may still be writing the last line; resume before it.
+            if !line.ends_with('\n') {
+                partial = Some(std::mem::take(&mut line));
+                break;
+            }
+            parser.feed(&line, children, pricing)?;
+            offset += read as u64;
+            tail = line.as_bytes()[line.len().saturating_sub(CHECKPOINT_TAIL_BYTES)..].to_vec();
+        }
+        let mut current = parser.clone();
+        if let Some(line) = &partial {
+            current.feed(line, children, pricing)?;
+        }
+        self.0.push((
+            path.to_owned(),
+            Checkpoint {
+                offset,
+                tail,
+                generation: pricing.generation(),
+                children: children.clone(),
+                parser,
+            },
+        ));
+        if self.0.len() > CHECKPOINT_LIMIT {
+            self.0.remove(0);
+        }
+        current.finish(path, child, project, index, pricing)
+    }
+}
 
 pub fn scan_changed(
     root: &Path,
     pricing: &Pricing,
     changed_paths: &[PathBuf],
     previous: &[crate::agents::SessionRecord],
+    checkpoints: &mut Checkpoints,
 ) -> Result<ScanDelta> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {
@@ -140,7 +239,7 @@ pub fn scan_changed(
                         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
                         .unwrap_or(Value::Null)
                 });
-                parse(&source, context, project, index, &tool_children, pricing)?
+                checkpoints.parse(&source, context, project, index, &tool_children, pricing)?
             }
         };
         if let Some(old) = old

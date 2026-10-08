@@ -5,7 +5,7 @@ use super::codex::{ParsedSession, timestamp};
 use crate::{contract::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use common::*;
-pub use incremental::scan_changed;
+pub use incremental::{Checkpoints, scan_changed};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -210,62 +210,70 @@ fn parse(
     children: &HashMap<String, String>,
     pricing: &Pricing,
 ) -> Result<Option<(SessionHead, SessionDetail)>> {
-    let id = child.map(|c| c.id.clone()).unwrap_or_else(|| {
-        path.file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned()
-    });
-    let explicit = child
-        .and_then(|c| c.title.as_deref())
-        .map(str::to_owned)
-        .or_else(|| {
-            index["entries"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|e| e["sessionId"] == id)
-                .and_then(|e| e.get("summary"))
-                .filter(|v| !v.is_null() && **v != false && **v != "")
-                .map(text)
-        });
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut transcript = Transcript::new();
-    let mut created = 0.0_f64;
-    let mut updated = 0.0_f64;
-    let mut cwd = None;
-    let mut prompt_title = None;
-    let mut visible_count = 0;
-    let mut models = BTreeMap::<String, f64>::new();
-    let mut usage_by_request = HashMap::<String, (Option<String>, MessageTokens)>::new();
-    let mut usage_order = Vec::<String>::new();
-    let mut line_index = 0;
+    let mut parser = Parser::new();
     let mut lines = super::jsonl::JsonLines::new(file);
     while let Some(line) = lines.next_line()? {
-        if line.trim().is_empty() {
-            continue;
+        parser.feed(line, children, pricing)?;
+    }
+    parser.finish(path, child, project, index, pricing)
+}
+
+/// Line-by-line state of one transcript, so an appended transcript can resume where it stopped.
+#[derive(Clone)]
+struct Parser {
+    transcript: Transcript,
+    first_time: f64,
+    latest_time: f64,
+    cwd: Option<String>,
+    prompt_title: Option<String>,
+    visible_count: usize,
+    usage_by_request: HashMap<String, (Option<String>, MessageTokens)>,
+    usage_order: Vec<String>,
+    line_index: usize,
+}
+
+impl Parser {
+    fn new() -> Self {
+        Self {
+            transcript: Transcript::new(),
+            first_time: 0.0,
+            latest_time: 0.0,
+            cwd: None,
+            prompt_title: None,
+            visible_count: 0,
+            usage_by_request: HashMap::new(),
+            usage_order: Vec::new(),
+            line_index: 0,
         }
-        let record_index = line_index;
-        line_index += 1;
+    }
+
+    fn feed(
+        &mut self,
+        line: &str,
+        children: &HashMap<String, String>,
+        pricing: &Pricing,
+    ) -> Result<()> {
+        if line.trim().is_empty() {
+            return Ok(());
+        }
+        let record_index = self.line_index;
+        self.line_index += 1;
         let Ok(record) = serde_json::from_str::<Value>(line) else {
             if record_index == 0 {
                 return Err(InvalidSession("malformed first Claude record").into());
             }
-            continue;
+            return Ok(());
         };
         if record_index == 0 {
-            created = match timestamp(&record) {
-                0.0 => mtime(path)?,
-                t => t,
-            };
-            updated = created;
+            self.first_time = timestamp(&record);
         }
         if internal(&record) {
-            continue;
+            return Ok(());
         }
-        updated = updated.max(timestamp(&record));
-        if cwd.is_none() {
-            cwd = record["cwd"]
+        self.latest_time = self.latest_time.max(timestamp(&record));
+        if self.cwd.is_none() {
+            self.cwd = record["cwd"]
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned);
@@ -294,10 +302,10 @@ fn parse(
             .as_str()
             .is_some_and(|s| !s.trim().is_empty() && (s != "user" || user_title.is_some()))
         {
-            visible_count += 1;
+            self.visible_count += 1;
         }
-        if prompt_title.is_none() && record_index < 20 {
-            prompt_title = user_title;
+        if self.prompt_title.is_none() && record_index < 20 {
+            self.prompt_title = user_title;
         }
         if raw["role"] == "assistant" && raw["usage"].is_object() {
             let key = record["requestId"]
@@ -315,10 +323,10 @@ fn parse(
                 let n = |k: &str| u[k].as_f64().unwrap_or(0.0);
                 let read = n("cache_read_input_tokens");
                 let create = n("cache_creation_input_tokens");
-                if !usage_by_request.contains_key(key) {
-                    usage_order.push(key.into());
+                if !self.usage_by_request.contains_key(key) {
+                    self.usage_order.push(key.into());
                 }
-                usage_by_request.insert(
+                self.usage_by_request.insert(
                     key.into(),
                     (
                         raw["model"]
@@ -337,76 +345,116 @@ fn parse(
                 );
             }
         }
-        transcript.convert(&record, children, pricing);
+        self.transcript.convert(&record, children, pricing);
+        Ok(())
     }
-    if line_index == 0 {
-        return Err(InvalidSession("empty Claude session").into());
-    }
-    if visible_count == 0 {
-        return Ok(None);
-    }
-    let directory = cwd.unwrap_or_else(|| project.to_string_lossy().into_owned());
-    let title = explicit
-        .as_deref()
-        .and_then(title)
-        .or(prompt_title)
-        .or_else(|| {
-            title(
-                &Path::new(&directory)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            )
-        })
-        .or_else(|| title(&project.file_name().unwrap_or_default().to_string_lossy()))
-        .unwrap_or_else(|| "Untitled Session".into());
-    let mut head_stats = SessionStats {
-        message_count: visible_count,
-        total_cache_read_tokens: Some(0.0),
-        total_cache_create_tokens: Some(0.0),
-        ..Default::default()
-    };
-    for key in usage_order {
-        let (model, tokens) = &usage_by_request[&key];
-        head_stats.total_input_tokens += tokens.input.unwrap_or(0.0);
-        head_stats.total_output_tokens += tokens.output.unwrap_or(0.0);
-        *head_stats.total_cache_read_tokens.as_mut().unwrap() += tokens.cache_read.unwrap_or(0.0);
-        *head_stats.total_cache_create_tokens.as_mut().unwrap() +=
-            tokens.cache_create.unwrap_or(0.0);
-        head_stats.total_cost += pricing
-            .estimate_tracked(model.as_deref(), tokens, 0.0, &mut head_stats.cost_inputs)
-            .unwrap_or(0.0);
-        if let Some(model) = model {
-            *models.entry(model.clone()).or_default() +=
-                tokens.input.unwrap_or(0.0) + tokens.output.unwrap_or(0.0);
+
+    fn finish(
+        self,
+        path: &Path,
+        child: Option<&Child>,
+        project: &Path,
+        index: &Value,
+        pricing: &Pricing,
+    ) -> Result<Option<(SessionHead, SessionDetail)>> {
+        if self.line_index == 0 {
+            return Err(InvalidSession("empty Claude session").into());
         }
-    }
-    finish_messages(&mut transcript.messages);
-    let mut detail = detail(
-        SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
-            agent_name: "claudecode".into(),
-            session_id: id,
-        },
-        directory,
-        title,
-        created,
-        updated,
-        transcript.messages,
-        models,
-    );
-    detail.head.parent_reference =
-        child
-            .and_then(|c| c.parent.as_ref())
-            .map(|id| SessionReference {
+        if self.visible_count == 0 {
+            return Ok(None);
+        }
+        let id = child.map(|c| c.id.clone()).unwrap_or_else(|| {
+            path.file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        });
+        let explicit = child
+            .and_then(|c| c.title.as_deref())
+            .map(str::to_owned)
+            .or_else(|| {
+                index["entries"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|e| e["sessionId"] == id)
+                    .and_then(|e| e.get("summary"))
+                    .filter(|v| !v.is_null() && **v != false && **v != "")
+                    .map(text)
+            });
+        let created = match self.first_time {
+            0.0 => mtime(path)?,
+            t => t,
+        };
+        let updated = created.max(self.latest_time);
+        let directory = self
+            .cwd
+            .unwrap_or_else(|| project.to_string_lossy().into_owned());
+        let title = explicit
+            .as_deref()
+            .and_then(title)
+            .or(self.prompt_title)
+            .or_else(|| {
+                title(
+                    &Path::new(&directory)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                )
+            })
+            .or_else(|| title(&project.file_name().unwrap_or_default().to_string_lossy()))
+            .unwrap_or_else(|| "Untitled Session".into());
+        let mut head_stats = SessionStats {
+            message_count: self.visible_count,
+            total_cache_read_tokens: Some(0.0),
+            total_cache_create_tokens: Some(0.0),
+            ..Default::default()
+        };
+        let mut models = BTreeMap::<String, f64>::new();
+        for key in self.usage_order {
+            let (model, tokens) = &self.usage_by_request[&key];
+            head_stats.total_input_tokens += tokens.input.unwrap_or(0.0);
+            head_stats.total_output_tokens += tokens.output.unwrap_or(0.0);
+            *head_stats.total_cache_read_tokens.as_mut().unwrap() +=
+                tokens.cache_read.unwrap_or(0.0);
+            *head_stats.total_cache_create_tokens.as_mut().unwrap() +=
+                tokens.cache_create.unwrap_or(0.0);
+            head_stats.total_cost += pricing
+                .estimate_tracked(model.as_deref(), tokens, 0.0, &mut head_stats.cost_inputs)
+                .unwrap_or(0.0);
+            if let Some(model) = model {
+                *models.entry(model.clone()).or_default() +=
+                    tokens.input.unwrap_or(0.0) + tokens.output.unwrap_or(0.0);
+            }
+        }
+        let mut messages = self.transcript.messages;
+        finish_messages(&mut messages);
+        let mut detail = detail(
+            SessionReference {
                 source_node_id: crate::contract::local_source_node_id(),
                 agent_name: "claudecode".into(),
-                session_id: id.clone(),
-            });
-    head_stats.cost_source = (head_stats.total_cost > 0.0).then_some(CostSource::Estimated);
-    let mut head = detail.head.clone();
-    head.stats = head_stats;
-    Ok(Some((head, detail)))
+                session_id: id,
+            },
+            directory,
+            title,
+            created,
+            updated,
+            messages,
+            models,
+        );
+        detail.head.parent_reference =
+            child
+                .and_then(|c| c.parent.as_ref())
+                .map(|id| SessionReference {
+                    source_node_id: crate::contract::local_source_node_id(),
+                    agent_name: "claudecode".into(),
+                    session_id: id.clone(),
+                });
+        head_stats.cost_source = (head_stats.total_cost > 0.0).then_some(CostSource::Estimated);
+        let mut head = detail.head.clone();
+        head.stats = head_stats;
+        Ok(Some((head, detail)))
+    }
 }
 
 #[cfg(test)]
@@ -456,6 +504,7 @@ mod tests {
         )
         .unwrap();
         fs::create_dir_all(root.path().join("unrelated/session.jsonl")).unwrap();
+        let mut checkpoints = Checkpoints::default();
         let delta = scan_changed(
             root.path(),
             &pricing,
@@ -464,6 +513,7 @@ mod tests {
                 .iter()
                 .map(crate::agents::SessionRecord::from)
                 .collect::<Vec<_>>(),
+            &mut checkpoints,
         )
         .unwrap();
         assert!(!delta.complete);
@@ -489,6 +539,7 @@ mod tests {
                 .iter()
                 .map(crate::agents::SessionRecord::from)
                 .collect::<Vec<_>>(),
+            &mut checkpoints,
         )
         .unwrap();
         assert_eq!(delta.removed[0].session_id, "new-worker");
@@ -592,6 +643,57 @@ mod tests {
             &sessions[0].detail,
             include_str!("claudecode/fixtures/expected.json"),
         );
+    }
+    #[test]
+    fn checkpoints_resume_appends_and_match_full_parses() {
+        use std::io::Write;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project/session.jsonl");
+        let project = path.parent().unwrap().to_owned();
+        fs::create_dir_all(&project).unwrap();
+        let records = [
+            json!({"type":"summary","summary":"Earlier work"}),
+            json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Inspect files"}}),
+            json!({"type":"assistant","uuid":"a","requestId":"r","message":{"role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":2},"content":[{"type":"text","text":"Checking"},{"type":"tool_use","id":"call","name":"Read","input":{"file_path":"a.rs"}}]}}),
+            json!({"type":"progress","timestamp":"2026-04-20T10:00:02Z"}),
+            json!({"type":"assistant","uuid":"b","requestId":"r","message":{"role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":10},"content":[]}}),
+            json!({"type":"user","uuid":"c","sourceToolAssistantUUID":"a","toolUseResult":{"success":false,"commandName":"read"},"message":{"role":"user","content":[{"type":"tool_result","content":"Failed"}]}}),
+            json!({"type":"assistant","uuid":"d","requestId":"s","timestamp":"2026-04-20T10:00:06Z","message":{"role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":5,"output_tokens":1},"content":[{"type":"text","text":"Done"}]}}),
+        ];
+        let pricing = Pricing::bundled();
+        let children = HashMap::new();
+        let mut checkpoints = Checkpoints::default();
+        let compare = |checkpoints: &mut Checkpoints| {
+            let encode = |result: Result<Option<(SessionHead, SessionDetail)>>| {
+                result
+                    .map(|parsed| serde_json::to_value(parsed).unwrap())
+                    .map_err(|error| error.to_string())
+            };
+            assert_eq!(
+                encode(checkpoints.parse(&path, None, &project, &Value::Null, &children, &pricing)),
+                encode(parse(
+                    &path,
+                    None,
+                    &project,
+                    &Value::Null,
+                    &children,
+                    &pricing
+                ))
+            );
+        };
+        let mut file = File::create(&path).unwrap();
+        compare(&mut checkpoints);
+        for record in &records {
+            let line = format!("{record}\n");
+            let (head, rest) = line.split_at(line.len() / 2);
+            for chunk in [head, rest] {
+                file.write_all(chunk.as_bytes()).unwrap();
+                file.flush().unwrap();
+                compare(&mut checkpoints);
+            }
+        }
+        fs::write(&path, format!("{}\n{}\n", records[1], records[6])).unwrap();
+        compare(&mut checkpoints);
     }
     #[test]
     fn deduplicates_request_usage_and_backfills_tool_results() {
