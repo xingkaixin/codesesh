@@ -1,7 +1,7 @@
 import { useFluidHover } from "../../hooks/useFluidHover";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { sourceName } from "../nodes/SourceBadge";
 import type { BookmarkView, ApiProjectGroup, SessionHead, SourceNode } from "../../lib/api";
 import { useScanStatus } from "../../hooks/useScanStatus";
@@ -21,9 +21,12 @@ import { DrawerDialog } from "../DrawerDialog";
 import { RenderProfiler } from "../RenderProfiler";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { SessionActionsMenu } from "../SessionActionsMenu";
-import { SessionTreeSidebar } from "../SessionTreeSidebar";
 import { PanelLeftClose } from "../ui/icons";
 import { Link } from "react-router-dom";
+
+const SessionTreeSidebar = lazy(() =>
+  import("../SessionTreeSidebar").then((module) => ({ default: module.SessionTreeSidebar })),
+);
 
 const SIDEBAR_PROJECT_LIMIT = 8;
 
@@ -433,18 +436,20 @@ export function AppSidebar({
               />
             ) : (
               <RenderProfiler id="SessionTreeSidebar" detail={{ sessions: sidebarSessions.length }}>
-                <SessionTreeSidebar
-                  sessions={sidebarSessions}
-                  activeSessionReference={activeSessionReference}
-                  selectedSessionReference={selectedSessionReference}
-                  onSelectSession={handleSelectSession}
-                  bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
-                  onCopySessionAsMarkdown={onCopySessionAsMarkdown}
-                  onToggleBookmark={onToggleSidebarSessionBookmark}
-                  onRenameSession={onRenameSession}
-                  groupByProject={false}
-                  sourceLabel={sessionSourceLabel}
-                />
+                <Suspense fallback={null}>
+                  <SessionTreeSidebar
+                    sessions={sidebarSessions}
+                    activeSessionReference={activeSessionReference}
+                    selectedSessionReference={selectedSessionReference}
+                    onSelectSession={handleSelectSession}
+                    bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
+                    onCopySessionAsMarkdown={onCopySessionAsMarkdown}
+                    onToggleBookmark={onToggleSidebarSessionBookmark}
+                    onRenameSession={onRenameSession}
+                    groupByProject={false}
+                    sourceLabel={sessionSourceLabel}
+                  />
+                </Suspense>
               </RenderProfiler>
             )}
           </section>
