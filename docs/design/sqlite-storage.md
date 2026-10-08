@@ -39,8 +39,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 在写入或删除消息时同步维护：只索引新增或变化的消息，汉字逐字切分，使中文子串可以按短语
 查询。搜索在会话层面组合各个词的命中，片段从命中消息的 `content_text` 生成。
 
-schema 33 的消息用量时间索引覆盖顺序、模型、tokens 和成本字段。schema 34 保存
-`automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
+schema 34 保存 `automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
 
 schema 35 将展示版本和文件摘要保存在 `head_meta_json`，快照不再读取包含定价明细的
 `meta_json`。展示元数据与会话在同一事务发布；定价元数据由定价路径校验。
@@ -51,6 +50,12 @@ Dashboard 和项目统计在进程内按会话缓存成本事实（`analytics::C
 schema 37 将 `messages.parts_json` 存为 zstd 压缩的 BLOB，压缩后不更小的短内容仍存为文本，
 读取时两种编码都接受。`content_text` 保持文本：中文搜索需要逐条校验候选消息原文，压缩它会
 拖慢搜索。编码入口在 `crates/codesesh-core/src/storage/body.rs`。
+
+schema 38 新增 `session_usage_bucket`。`storage::facts::write` 重写会话成本事实时，按会话、
+15 分钟时间桶、模型和费用来源重建该会话的桶行；Dashboard 和项目统计按请求窗口读取桶，
+不再逐条读取消息和解析 `tokens_json`，schema 33 的消息用量时间索引随之删除。现行时区偏移
+都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与逐条消息归因
+结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。
 
 ## 读写与发布
 

@@ -2,11 +2,15 @@ use crate::contract::{CostSource, SessionReference};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 
+/// Usage of a session's timed messages that share a model and cost source; SQLite reads
+/// return one fact per 15-minute bucket, with `time` at the bucket start.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageCostFact {
     pub reference: SessionReference,
     pub time: f64,
+    #[serde(default = "one")]
+    pub message_count: usize,
     pub model: Option<String>,
     pub input_tokens: f64,
     pub output_tokens: f64,
@@ -15,6 +19,10 @@ pub struct MessageCostFact {
     pub cache_create_tokens: f64,
     pub cost: f64,
     pub cost_source: Option<CostSource>,
+}
+
+fn one() -> usize {
+    1
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

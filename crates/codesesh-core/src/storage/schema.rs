@@ -314,6 +314,10 @@ pub fn ensure_with_progress(
                 "DROP INDEX IF EXISTS idx_messages_session",
             ),
             (
+                "usage_time_index_retired_v1",
+                "DROP INDEX IF EXISTS idx_messages_usage_time",
+            ),
+            (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
             ),

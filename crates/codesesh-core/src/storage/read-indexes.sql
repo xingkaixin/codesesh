@@ -10,16 +10,6 @@ CREATE INDEX idx_sessions_heads ON sessions(
     smart_tags_classifier_revision, head_meta_json
 );
 
-DROP INDEX IF EXISTS idx_messages_usage_time;
-CREATE INDEX idx_messages_usage_time ON messages(
-    CASE
-      WHEN time_completed > 0 THEN time_completed
-      WHEN time_created > 0 THEN time_created
-    END,
-    agent_name, session_id, message_index, model, tokens_json, cost,
-    cost_source, source_node_id
-);
-
 DROP INDEX IF EXISTS idx_messages_user_activity;
 CREATE INDEX idx_messages_user_activity ON messages(
     time_created, agent_name, session_id, source_node_id, role, automated

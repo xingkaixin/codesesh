@@ -144,7 +144,7 @@ fn read_cost_facts(
             [&references],
             |row| row.get::<_, bool>(0),
         )?;
-        // Complete scopes keep the covering time index instead of sorting session-index reads.
+        // Complete scopes read the bucket window in key order without filtering each row.
         (!covers_all).then_some(references)
     } else {
         None
@@ -204,42 +204,44 @@ fn read_cost_facts(
             }
         }
     }
-    let effective = "CASE WHEN m.time_completed > 0 THEN m.time_completed WHEN m.time_created > 0 THEN m.time_created END";
-    let mut conditions = vec![format!("{effective} IS NOT NULL")];
+    let mut conditions = Vec::new();
     let mut values = Vec::new();
-    let index = if let Some(references) = references {
-        conditions.push(reference_condition("m"));
+    if let Some(references) = references {
+        conditions.push(reference_condition("b"));
         values.push(Value::Text(references));
-        ""
-    } else {
-        "INDEXED BY idx_messages_usage_time"
-    };
+    }
     if let Some(from) = from {
-        conditions.push(format!("{effective} >= ?"));
+        conditions.push("b.bucket_start >= ?".to_owned());
         values.push(Value::Real(from));
     }
     if let Some(to) = to {
-        conditions.push(format!("{effective} <= ?"));
+        conditions.push("b.bucket_start <= ?".to_owned());
         values.push(Value::Real(to));
     }
-    let mut query=connection.prepare(&format!("SELECT m.source_node_id,m.agent_name,m.session_id,{effective} AS cost_time,m.model,CAST(COALESCE(json_extract(m.tokens_json,'$.input'),0) AS INTEGER) AS input_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.output'),0) AS INTEGER) AS output_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.reasoning'),0) AS INTEGER) AS reasoning_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.cache_read'),0) AS INTEGER) AS cache_read_tokens,CAST(COALESCE(json_extract(m.tokens_json,'$.cache_create'),0) AS INTEGER) AS cache_create_tokens,m.cost,m.cost_source FROM messages m {index} JOIN sessions s ON s.source_node_id=m.source_node_id AND s.agent_name=m.agent_name AND s.session_id=m.session_id AND s.publication_id IS NULL WHERE {} ORDER BY cost_time,m.agent_name,m.session_id,m.message_index",conditions.join(" AND ")))?;
+    let filter = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+    let mut query=connection.prepare(&format!("SELECT b.* FROM session_usage_bucket b JOIN sessions s ON s.source_node_id=b.source_node_id AND s.agent_name=b.agent_name AND s.session_id=b.session_id AND s.publication_id IS NULL {filter} ORDER BY b.bucket_start,b.source_node_id,b.agent_name,b.session_id,b.model,b.cost_source"))?;
     let messages = query
         .query_map(rusqlite::params_from_iter(values), |r| {
-            let model: Option<String> = r.get("model")?;
-            let source: Option<String> = r.get("cost_source")?;
+            let model: String = r.get("model")?;
+            let source: String = r.get("cost_source")?;
             Ok(MessageCostFact {
                 reference: reference(r)?,
-                time: r.get("cost_time")?,
-                model: model.filter(|m| !m.is_empty()),
-                input_tokens: nonnegative(r, "input_tokens")?,
-                output_tokens: nonnegative(r, "output_tokens")?,
-                reasoning_tokens: nonnegative(r, "reasoning_tokens")?,
-                cache_read_tokens: nonnegative(r, "cache_read_tokens")?,
-                cache_create_tokens: nonnegative(r, "cache_create_tokens")?,
-                cost: r.get::<_, Option<f64>>("cost")?.unwrap_or(0.0),
-                cost_source: match source.as_deref() {
-                    Some("recorded") => Some(CostSource::Recorded),
-                    Some("estimated") => Some(CostSource::Estimated),
+                time: r.get("bucket_start")?,
+                message_count: r.get::<_, i64>("message_count")? as usize,
+                model: (!model.is_empty()).then_some(model),
+                input_tokens: r.get("input_tokens")?,
+                output_tokens: r.get("output_tokens")?,
+                reasoning_tokens: r.get("reasoning_tokens")?,
+                cache_read_tokens: r.get("cache_read_tokens")?,
+                cache_create_tokens: r.get("cache_create_tokens")?,
+                cost: r.get("cost")?,
+                cost_source: match source.as_str() {
+                    "recorded" => Some(CostSource::Recorded),
+                    "estimated" => Some(CostSource::Estimated),
                     _ => None,
                 },
             })
