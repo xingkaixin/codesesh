@@ -104,7 +104,9 @@ impl Backfill {
     }
 }
 fn stamp(path: &Path) -> Result<(f64, String)> {
-    let metadata = std::fs::metadata(path)?;
+    stamp_metadata(&std::fs::metadata(path)?)
+}
+fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
     let time = metadata
         .modified()?
         .duration_since(UNIX_EPOCH)
@@ -239,8 +241,22 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
     }
-    for entry in walkdir::WalkDir::new(&root).follow_links(false) {
-        let entry = entry?;
+    let entries = walkdir::WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .collect::<walkdir::Result<Vec<_>>>()?;
+    // Claude Code checks two optional companions per transcript; the walk already lists them.
+    let files: std::collections::HashSet<&Path> = if source.agent == "claudecode" {
+        entries
+            .iter()
+            .filter(|entry| entry.file_type().is_file())
+            .map(walkdir::DirEntry::path)
+            .collect()
+    } else {
+        Default::default()
+    };
+    let mut index_stamps = std::collections::HashMap::new();
+    for entry in &entries {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -283,8 +299,9 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         if !selected {
             continue;
         }
-        let (mut activity, mut fingerprint) = stamp(entry.path())?;
-        let mut bytes = entry.metadata()?.len();
+        let metadata = std::fs::metadata(entry.path())?;
+        let (mut activity, mut fingerprint) = stamp_metadata(&metadata)?;
+        let mut bytes = metadata.len();
         if source.agent == "antigravity-cli" {
             for suffix in ["-wal", "-journal"] {
                 let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
@@ -300,13 +317,17 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             } else {
                 parent
             };
-            for related in [
-                project.join("sessions-index.json"),
-                entry.path().with_extension("meta.json"),
-            ] {
-                if related.try_exists()? {
-                    fingerprint.push_str(&stamp(&related)?.1);
+            let index = project.join("sessions-index.json");
+            if files.contains(index.as_path()) {
+                if !index_stamps.contains_key(&index) {
+                    let value = stamp(&index)?.1;
+                    index_stamps.insert(index.clone(), value);
                 }
+                fingerprint.push_str(&index_stamps[&index]);
+            }
+            let meta = entry.path().with_extension("meta.json");
+            if files.contains(meta.as_path()) {
+                fingerprint.push_str(&stamp(&meta)?.1);
             }
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
@@ -377,11 +398,13 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
     }
     let mut items = Vec::new();
-    for path in codex_rollout::paths(&source.data_root)? {
-        let Some(physical) = codex_rollout::physical_path(&path)? else {
-            continue;
+    for (path, physical) in codex_rollout::files(&source.data_root)? {
+        let metadata = match std::fs::metadata(&physical) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
         };
-        let (activity, mut fingerprint) = stamp(&physical)?;
+        let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
         let stem = path.file_stem().unwrap_or_default().to_string_lossy();
         let pieces: Vec<_> = stem.split('-').collect();
         let id = pieces[pieces.len().saturating_sub(5)..].join("-");
@@ -394,7 +417,7 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
             activity,
             fingerprint,
             target: false,
-            bytes: std::fs::metadata(physical)?.len(),
+            bytes: metadata.len(),
         });
     }
     Ok(items)
