@@ -304,6 +304,12 @@ pub fn ensure_with_progress(
     }
     db.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| -> Result<()> {
+        // Older schema 37 files predate the column; adding it keeps them readable by both releases.
+        if !columns(db, "session_cost_summary")?.contains("revision") {
+            db.execute_batch(
+                "ALTER TABLE session_cost_summary ADD COLUMN revision INTEGER NOT NULL DEFAULT 0",
+            )?;
+        }
         for (key, sql) in [
             ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
             ("cost_only_publication_v1", ""),

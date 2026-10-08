@@ -78,6 +78,21 @@ pub fn write(
             reference.session_id
         ],
     )?;
+    // In-memory cost fact caches reload a session when this changes; the counter never reuses a value.
+    let revision: i64 = connection.query_row(
+        "INSERT INTO cache_meta VALUES('cost_facts_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1 RETURNING CAST(value AS INTEGER)",
+        [],
+        |row| row.get(0),
+    )?;
+    connection.execute(
+        "UPDATE session_cost_summary SET revision=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
+        params![
+            revision,
+            reference.source_node_id,
+            reference.agent_name,
+            reference.session_id
+        ],
+    )?;
     for (index, message) in messages.iter().enumerate() {
         for part in &message.parts {
             if let MessagePart::Tool { tool, .. } = part {
