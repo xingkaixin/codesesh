@@ -6,6 +6,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{self, Write};
 
+#[cfg(test)]
 pub(super) fn serialized_digest(value: &impl Serialize) -> Result<String> {
     let mut writer = DigestWriter(Sha256::new());
     {
@@ -16,8 +17,10 @@ pub(super) fn serialized_digest(value: &impl Serialize) -> Result<String> {
     Ok(crate::hash::hex(&writer.0.finalize()))
 }
 
+#[cfg(test)]
 struct DigestWriter(Sha256);
 
+#[cfg(test)]
 impl Write for DigestWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.0.update(bytes);
@@ -29,7 +32,53 @@ impl Write for DigestWriter {
     }
 }
 
-pub(super) fn enqueue_snapshot(tx: &Transaction<'_>, snapshot: &impl Serialize) -> Result<()> {
+/// Content hash of a session plus a prefix chain over its messages.
+pub(super) struct SessionDigests {
+    /// Same bytes as `serialized_digest(&(messages, file_activity, cost_inputs))`, so queued
+    /// state from earlier releases still compares equal.
+    pub content: String,
+    pub chain: Vec<[u8; 16]>,
+}
+
+pub(super) fn session_digests(
+    messages: &[crate::contract::Message],
+    file_activity: &[crate::contract::SessionFileActivity],
+    cost_inputs: &std::collections::BTreeMap<usize, &[crate::pricing::CostInput]>,
+) -> Result<SessionDigests> {
+    let mut content = Sha256::new();
+    let mut chain = Vec::with_capacity(messages.len());
+    let mut previous = [0_u8; 16];
+    content.update(b"[[");
+    for (index, message) in messages.iter().enumerate() {
+        if index > 0 {
+            content.update(b",");
+        }
+        let bytes = serde_json::to_vec(message)?;
+        content.update(&bytes);
+        let mut link = Sha256::new();
+        link.update(previous);
+        link.update(&bytes);
+        link.update(serde_json::to_vec(&cost_inputs.get(&index))?);
+        previous.copy_from_slice(&link.finalize()[..16]);
+        chain.push(previous);
+    }
+    content.update(b"],");
+    content.update(serde_json::to_vec(file_activity)?);
+    content.update(b",");
+    content.update(serde_json::to_vec(cost_inputs)?);
+    content.update(b"]");
+    Ok(SessionDigests {
+        content: crate::hash::hex(&content.finalize()),
+        chain,
+    })
+}
+
+pub(super) fn enqueue_snapshot(
+    tx: &Transaction<'_>,
+    snapshot: &impl Serialize,
+    base: Option<crate::sync::SnapshotBase>,
+    messages: Option<crate::sync::MessageState>,
+) -> Result<()> {
     let mut writer = SnapshotWriter {
         tx,
         transfer_id: uuid::Uuid::new_v4().to_string(),
@@ -47,6 +96,8 @@ pub(super) fn enqueue_snapshot(tx: &Transaction<'_>, snapshot: &impl Serialize) 
             chunks: writer.chunks,
             bytes: writer.bytes,
             digest: crate::hash::hex(&writer.hash.finalize()),
+            base,
+            messages,
         },
     )
 }

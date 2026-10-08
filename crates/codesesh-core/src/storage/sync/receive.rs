@@ -153,6 +153,8 @@ fn apply_operation(
             chunks,
             bytes,
             digest: expected,
+            base,
+            messages,
         } => {
             let (stored_chunks, stored_bytes): (i64, i64) = tx.query_row(
                 "SELECT COUNT(*), COALESCE(SUM(length(data)), 0) FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
@@ -178,6 +180,22 @@ fn apply_operation(
             drop(payload);
             let mut session = captured.into_parsed()?;
             namespace(&mut session.head, node)?;
+            if let Some(base) = base
+                && !extend_from_base(tx, &mut session, base)?
+            {
+                // This Hub no longer holds the state the delta extends; the Worker resends the Agent.
+                super::tasks::queue_rescan(
+                    tx,
+                    node,
+                    std::slice::from_ref(&session.head.reference.agent_name),
+                    "Session update did not match the Hub copy",
+                )?;
+                tx.execute(
+                    "DELETE FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
+                    params![node, stream, transfer_id],
+                )?;
+                return Ok(None);
+            }
             session.detail.head = session.head.clone();
             for activity in &mut session.detail.file_activity {
                 activity.project_identity_key = session.head.project_identity.key.clone();
@@ -186,6 +204,26 @@ fn apply_operation(
             crate::storage::reprice::reprice_session(&mut session, pricing);
             let reference = session.head.reference.clone();
             Cache::write_sessions(tx, &[session], &[], None, None, reclaim_connection)?;
+            match messages {
+                Some(state) => tx.execute(
+                    "INSERT OR REPLACE INTO hub_message_bases VALUES(?,?,?,?,?)",
+                    params![
+                        reference.source_node_id,
+                        reference.agent_name,
+                        reference.session_id,
+                        state.count,
+                        state.digest
+                    ],
+                )?,
+                None => tx.execute(
+                    "DELETE FROM hub_message_bases WHERE node_id=? AND agent=? AND session_id=?",
+                    params![
+                        reference.source_node_id,
+                        reference.agent_name,
+                        reference.session_id
+                    ],
+                )?,
+            };
             tx.execute(
                 "DELETE FROM hub_orphans WHERE node_id=? AND agent=? AND session_id=?",
                 params![node, reference.agent_name, reference.session_id],
@@ -219,6 +257,57 @@ fn apply_operation(
             Ok(Some(reference))
         }
     }
+}
+
+/// Prepends the stored messages a delta keeps, if the Hub copy is the state the Worker built on.
+fn extend_from_base(
+    tx: &Transaction<'_>,
+    session: &mut crate::agents::ParsedSession,
+    base: &crate::sync::SnapshotBase,
+) -> Result<bool> {
+    let reference = &session.head.reference;
+    let stored: Option<(u32, String)> = tx
+        .query_row(
+            "SELECT message_count,digest FROM hub_message_bases WHERE node_id=? AND agent=? AND session_id=?",
+            params![reference.source_node_id, reference.agent_name, reference.session_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    if base.keep > base.previous.count
+        || stored.as_ref() != Some(&(base.previous.count, base.previous.digest.clone()))
+    {
+        return Ok(false);
+    }
+    let Some(head) = crate::storage::head_from_connection(tx, reference)? else {
+        return Ok(false);
+    };
+    let Some(detail) = crate::storage::detail_from_connection(tx, head.clone())? else {
+        return Ok(false);
+    };
+    if detail.messages.len() != base.previous.count as usize {
+        return Ok(false);
+    }
+    let raw: String = tx.query_row(
+        "SELECT meta_json FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
+        params![
+            reference.source_node_id,
+            reference.agent_name,
+            reference.session_id
+        ],
+        |r| r.get(0),
+    )?;
+    let metadata: serde_json::Value = serde_json::from_str(&raw)?;
+    let mut stored = crate::agents::ParsedSession {
+        head,
+        detail,
+        source: session.source.clone(),
+    };
+    crate::storage::reprice::restore_inputs(&mut stored, &metadata["rustPricing"])?;
+    let mut messages = stored.detail.messages;
+    messages.truncate(base.keep as usize);
+    messages.append(&mut session.detail.messages);
+    session.detail.messages = messages;
+    Ok(true)
 }
 
 fn update_metadata(

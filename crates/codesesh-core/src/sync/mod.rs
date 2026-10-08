@@ -5,7 +5,8 @@ pub(crate) mod worker_store;
 
 pub use capture::CapturedSession;
 pub use protocol::{
-    Operation, PAYLOAD_VERSION, PROTOCOL_VERSION, PayloadError, check_compatibility,
+    MessageState, Operation, PAYLOAD_VERSION, PROTOCOL_VERSION, PayloadError, SnapshotBase,
+    check_compatibility,
 };
 pub use worker_store::{PendingUpload, QueueStatus, WorkerStore};
 

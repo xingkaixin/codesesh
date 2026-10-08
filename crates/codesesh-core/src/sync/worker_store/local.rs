@@ -51,7 +51,7 @@ impl WorkerStore {
                     Default::default()
                 };
                 tx.execute(
-                    "INSERT INTO worker_sessions VALUES(?,?,?,?,?,'','')",
+                    "INSERT INTO worker_sessions(agent,session_id,head,source,attachments,content_hash,metadata_hash) VALUES(?,?,?,?,?,'','')",
                     params![
                         agent.name,
                         head.reference.session_id,
