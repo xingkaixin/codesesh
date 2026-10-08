@@ -257,3 +257,52 @@ fn price_changes_update_json_costs_without_invalidating_content_fingerprints() {
     .unwrap();
     assert_eq!(stable.sessions[0].stats.total_cost, 12.0);
 }
+#[test]
+fn sources_written_during_a_scan_are_output_and_scanned_again() {
+    use std::{
+        io::Write,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+    let (_temp, source, path) = fixture();
+    let pricing = Pricing::bundled();
+    let file = source.scan_path.join("rollout-first.jsonl");
+    let stop = AtomicBool::new(false);
+    let appended = std::thread::scope(|scope| {
+        let writer = scope.spawn(|| {
+            let mut appended = 0;
+            while !stop.load(Ordering::Relaxed) {
+                let line = serde_json::json!({"type":"response_item","timestamp":"2026-09-01T10:00:02Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":format!("more {appended}")}]}});
+                let mut handle = fs::OpenOptions::new().append(true).open(&file).unwrap();
+                writeln!(handle, "{line}").unwrap();
+                appended += 1;
+                std::thread::sleep(std::time::Duration::from_micros(200));
+            }
+            appended
+        });
+        let scans: Vec<_> = (0..5)
+            .map(|_| {
+                run(
+                    std::slice::from_ref(&source),
+                    &ScanOptions::default(),
+                    &pricing,
+                    &path,
+                    None,
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+            })
+            .collect();
+        stop.store(true, Ordering::Relaxed);
+        assert!(scans.iter().all(Result::is_ok), "{scans:?}");
+        writer.join().unwrap()
+    });
+    let settled = run(
+        std::slice::from_ref(&source),
+        &ScanOptions::default(),
+        &pricing,
+        &path,
+        None,
+    )
+    .unwrap();
+    assert_eq!(settled.sessions[0].stats.message_count, 1 + appended);
+}
