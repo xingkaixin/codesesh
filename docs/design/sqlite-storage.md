@@ -51,8 +51,9 @@ schema 37 将 `messages.parts_json` 存为 zstd 压缩的 BLOB，压缩后不更
 schema 38 新增 `session_usage_bucket`。`storage::facts::write` 重写会话成本事实时，按会话、
 15 分钟时间桶、模型和费用来源重建该会话的桶行；Dashboard 和项目统计按请求窗口读取桶，
 不再逐条读取消息和解析 `tokens_json`，schema 33 的消息用量时间索引随之删除。进程不常驻
-成本事实，单次请求的内存只随窗口内的桶数增长。升级时同时删除 schema 37 开发构建为进程内
-缓存加入的 `session_cost_summary.revision`。
+成本事实，单次请求的内存只随窗口内的桶数增长。`idx_sessions_visible` 覆盖会话身份和
+`publication_id`，成本查询排除未发布会话时不回表读取会话行。升级时同时删除 schema 37
+开发构建为进程内缓存加入的 `session_cost_summary.revision`。
 
 现行时区偏移都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与
 逐条消息归因结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。

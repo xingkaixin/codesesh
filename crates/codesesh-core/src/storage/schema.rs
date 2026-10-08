@@ -125,7 +125,7 @@ fn migrate(
         }
         // A full table migration drops the indexes installed by this patch.
         db.execute(
-            "DELETE FROM cache_meta WHERE key='covering_read_indexes_v1'",
+            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1')",
             [],
         )?;
         super::search_text::reset_index(db)?;
@@ -314,6 +314,10 @@ pub fn ensure_with_progress(
             (
                 "usage_time_index_retired_v1",
                 "DROP INDEX IF EXISTS idx_messages_usage_time",
+            ),
+            (
+                "visible_sessions_index_v1",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_visible ON sessions(source_node_id,agent_name,session_id,publication_id)",
             ),
             (
                 "pi_automated_messages_v1",

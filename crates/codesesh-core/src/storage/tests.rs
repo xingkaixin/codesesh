@@ -224,8 +224,9 @@ fn schema36_read_index_patch_preserves_rows_and_uses_covering_plans() {
     cache.publish(std::slice::from_mut(&mut local)).unwrap();
     cache.publish(std::slice::from_mut(&mut remote)).unwrap();
     let db = cache.connection();
-    db.execute_batch("DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','usage_time_index_retired_v1');
+    db.execute_batch("DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','usage_time_index_retired_v1','visible_sessions_index_v1');
         DROP INDEX idx_sessions_heads;
+        DROP INDEX idx_sessions_visible;
         CREATE INDEX idx_messages_usage_time ON messages(
             CASE WHEN time_completed > 0 THEN time_completed WHEN time_created > 0 THEN time_created END,
             agent_name,session_id,message_index,model,tokens_json,cost,cost_source);
@@ -253,6 +254,7 @@ fn schema36_read_index_patch_preserves_rows_and_uses_covering_plans() {
         );
         for (sql, index) in [
             (format!("SELECT {} FROM sessions WHERE publication_id IS NULL ORDER BY activity_time DESC,agent_name,session_id", snapshot::HEAD_COLUMNS), "idx_sessions_heads"),
+            ("SELECT c.message_cost FROM session_cost_summary c JOIN sessions s ON s.source_node_id=c.source_node_id AND s.agent_name=c.agent_name AND s.session_id=c.session_id AND s.publication_id IS NULL".into(), "idx_sessions_visible"),
             ("SELECT source_node_id,agent_name,session_id,time_created FROM messages INDEXED BY idx_messages_user_activity WHERE role='user' AND automated=0 AND time_created>0".into(), "idx_messages_user_activity"),
         ] {
             let plan: Vec<String> = db.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap()
