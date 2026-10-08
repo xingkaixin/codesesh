@@ -334,6 +334,24 @@ fn filters_include_descendant_cost_tools_files_and_scope() {
 }
 
 #[test]
+fn file_filters_match_activity_on_the_same_node_only() {
+    let db = database();
+    db.execute("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) SELECT 'remote',agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost FROM sessions WHERE session_id='three'",[]).unwrap();
+    db.execute("INSERT INTO session_file_activity VALUES('remote','codex','three','/work/app','src/Gadget.ts','read',1,200)",[]).unwrap();
+    for query in ["file:Gadget", "kind:read"] {
+        let result = execute(&db, query, &SearchOptions::default()).unwrap();
+        assert_eq!(
+            result
+                .iter()
+                .map(|result| result.reference.source_node_id.as_str())
+                .collect::<Vec<_>>(),
+            ["remote"],
+            "{query}"
+        );
+    }
+}
+
+#[test]
 fn highlights_merge_overlaps_and_preserve_astral_offsets() {
     let ranges = snippet::highlights("🔎 foobar", &snippet::Terms::parse("foo foobar foo"));
     assert_eq!(ranges, vec![HighlightRange { start: 3, end: 9 }]);

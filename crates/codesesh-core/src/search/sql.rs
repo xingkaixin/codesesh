@@ -114,6 +114,7 @@ pub fn build(options: &SearchOptions) -> Filters {
     if options.file.is_some() || options.file_kind.is_some() {
         let mut files = Filters::default();
         files.clauses.extend([
+            "fa.source_node_id = s.source_node_id".into(),
             "fa.agent_name = s.agent_name".into(),
             "fa.session_id = s.session_id".into(),
         ]);
