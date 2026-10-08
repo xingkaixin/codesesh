@@ -91,7 +91,8 @@ pub(super) fn statement(
     })?;
     Ok(Some(Statement {
         sql: format!(
-            "SELECT s.* FROM sessions s WHERE s.publication_id IS NULL {} AND ({}) ORDER BY codesesh_title_match(s.title) DESC,s.activity_time DESC LIMIT ?",
+            "SELECT {} FROM sessions s WHERE s.publication_id IS NULL {} AND ({}) ORDER BY codesesh_title_match(s.title) DESC,s.activity_time DESC LIMIT ?",
+            super::reader::HEAD_COLUMNS,
             filters.where_sql(),
             conditions.join(" "),
         ),

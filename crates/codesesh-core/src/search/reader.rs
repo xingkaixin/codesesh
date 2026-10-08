@@ -2,7 +2,7 @@ use super::*;
 use crate::contract::{CostSource, ProjectIdentity, SessionStats};
 use rusqlite::{OptionalExtension, Row, params};
 
-// File activity sorts many joined rows; `s.*` would carry `meta_json` (pricing state) into the sorter.
+// Search sorts many rows; `s.*` would carry `meta_json` (pricing state) into the sorter.
 pub(super) const HEAD_COLUMNS: &str = "s.source_node_id,s.agent_name,s.session_id,s.title,s.directory,s.project_identity_kind,s.project_identity_key,s.project_display_name,s.time_created,s.time_updated,s.message_count,s.total_input_tokens,s.total_output_tokens,s.total_cost,s.total_cache_read_tokens,s.total_cache_create_tokens,s.total_tokens,s.cost_source,s.model_usage_json,s.smart_tags_json,s.smart_tags_source_updated_at";
 
 pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
@@ -66,7 +66,7 @@ pub(super) fn search_prepared(
     let (statement, any_message) = if query.is_empty() {
         (
             format!(
-                "SELECT s.* FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
+                "SELECT {HEAD_COLUMNS} FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
                 filters.where_sql()
             ),
             String::new(),
