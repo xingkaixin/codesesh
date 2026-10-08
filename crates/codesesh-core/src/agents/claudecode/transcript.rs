@@ -4,6 +4,7 @@ use crate::{contract::*, pricing::Pricing};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub(super) struct Transcript {
     pub(super) messages: Vec<Message>,
     current: Option<usize>,
