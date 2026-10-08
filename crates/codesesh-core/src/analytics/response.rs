@@ -1,5 +1,7 @@
 use super::DashboardTimeZone;
-use super::{DashboardOptions, active_hours, build_dashboard, load_scoped_cost_facts};
+use super::{
+    CostFactsIndex, DashboardOptions, active_hours, build_dashboard, load_scoped_cost_facts,
+};
 use crate::{
     contract::SessionHead,
     search::{FileActivityOptions, QueryScope, list_file_activity},
@@ -37,14 +39,14 @@ pub fn dashboard_response(
     let facts = if let Some(facts) = aggregate.cost_facts {
         facts
     } else {
-        loaded_facts = load_scoped_cost_facts(
+        loaded_facts = CostFactsIndex::from(load_scoped_cost_facts(
             connection,
             sessions,
             aggregate.scope,
             aggregate.compare.map(|(from, _)| from).or(aggregate.from),
             Some(aggregate.to),
             true,
-        )?;
+        )?);
         &loaded_facts
     };
     let phase = Instant::now();

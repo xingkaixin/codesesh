@@ -127,6 +127,7 @@ fn reconciled_messages_attribute_cost_to_message_time() {
     };
     let names = vec!["codex".into()];
     let scope = DashboardScope::default();
+    let facts = CostFactsIndex::from(facts);
     let result = build_dashboard(
         &[session],
         &DashboardOptions {
@@ -155,9 +156,9 @@ fn matches_node_reference_for_ranking_windows_and_cost_reconciliation() {
         let options = &fixture["options"];
         let names: Vec<String> = serde_json::from_value(options["byAgentNames"].clone()).unwrap();
         let scope: DashboardScope = serde_json::from_value(options["scope"].clone()).unwrap();
-        let facts = options
-            .get("costFacts")
-            .map(|v| serde_json::from_value::<DashboardCostFacts>(v.clone()).unwrap());
+        let facts = options.get("costFacts").map(|v| {
+            CostFactsIndex::from(serde_json::from_value::<DashboardCostFacts>(v.clone()).unwrap())
+        });
         let actual = build_dashboard(
             &sessions,
             &DashboardOptions {
@@ -356,6 +357,7 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
             .iter()
             .all(|summary| summary.reference.source_node_id == "worker-a")
     );
+    let (all, scoped) = (CostFactsIndex::from(all), CostFactsIndex::from(scoped));
     let options = DashboardOptions {
         by_agent_names: &["codex".into(), "claudecode".into()],
         scope: &scope,
@@ -526,4 +528,54 @@ fn empty_project_rollup_serializes_positive_zero() {
         assert_eq!(value, 0.0);
         assert!(!value.is_sign_negative());
     }
+}
+
+#[test]
+fn cost_facts_cache_follows_rewritten_and_removed_sessions() {
+    fn parsed(id: &str, costs: &[f64]) -> crate::agents::codex::ParsedSession {
+        let session = head(id, None, 1_000);
+        let messages: Vec<_> = costs
+            .iter()
+            .enumerate()
+            .map(|(index, cost)| json!({"id":format!("{id}-{index}"),"role":"assistant","agent":null,"time_created":1_000 + index as i64,"time_completed":null,"mode":null,"model":"model","provider":null,"tokens":{"input":10,"output":2},"cost":cost,"parts":[]}))
+            .collect();
+        let detail = serde_json::from_value(json!({"reference":session.reference,"title":session.title,"directory":session.directory,"project_identity":session.project_identity,"time_created":1_000,"time_updated":1_000,"stats":session.stats,"smart_tags":[],"messages":messages,"detail_freshness":"fresh","file_activity":[]})).unwrap();
+        crate::agents::codex::ParsedSession {
+            head: session,
+            source: "/fixture/not-required".into(),
+            detail,
+        }
+    }
+    fn canonical(index: &CostFactsIndex) -> String {
+        let mut sessions: Vec<_> = index.sessions.iter().collect();
+        sessions.sort_by(|a, b| a.0.session_id.cmp(&b.0.session_id));
+        format!("{sessions:?}")
+    }
+    let mut storage = crate::storage::Cache::open(None).unwrap();
+    storage
+        .publish(&mut [
+            parsed("kept", &[1.0]),
+            parsed("rewritten", &[1.0]),
+            parsed("removed", &[1.0]),
+        ])
+        .unwrap();
+    let mut cache = CostFactsCache::default();
+    let full = |storage: &crate::storage::Cache| {
+        canonical(&CostFactsIndex::from(
+            load_cost_facts(storage.connection(), None, None, true).unwrap(),
+        ))
+    };
+    assert_eq!(
+        canonical(&cache.refresh(storage.connection()).unwrap()),
+        full(&storage)
+    );
+    storage
+        .publish(&mut [parsed("rewritten", &[1.0, 2.5])])
+        .unwrap();
+    storage
+        .remove(&[head("removed", None, 1_000).reference])
+        .unwrap();
+    let refreshed = cache.refresh(storage.connection()).unwrap();
+    assert_eq!(canonical(&refreshed), full(&storage));
+    assert_eq!(refreshed.sessions.len(), 2);
 }

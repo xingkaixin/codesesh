@@ -1,5 +1,6 @@
 use crate::contract::{CostSource, SessionReference};
 use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,4 +50,49 @@ pub struct SessionCostSummary {
 pub struct DashboardCostFacts {
     pub messages: Vec<MessageCostFact>,
     pub sessions: Vec<SessionCostSummary>,
+}
+
+/// One session's cost facts, with message facts in time order.
+#[derive(Clone, Debug, Default)]
+pub struct SessionCostFacts {
+    pub summary: Option<SessionCostSummary>,
+    pub messages: Vec<MessageCostFact>,
+}
+
+impl SessionCostFacts {
+    pub fn messages_in(&self, from: Option<f64>, to: f64) -> &[MessageCostFact] {
+        let start = from.map_or(0, |from| self.messages.partition_point(|m| m.time < from));
+        let end = self.messages.partition_point(|m| m.time <= to);
+        &self.messages[start..end.max(start)]
+    }
+}
+
+/// Cost facts grouped by session, as attribution reads them.
+#[derive(Clone, Debug, Default)]
+pub struct CostFactsIndex {
+    pub sessions: HashMap<SessionReference, Arc<SessionCostFacts>>,
+}
+
+impl From<DashboardCostFacts> for CostFactsIndex {
+    fn from(facts: DashboardCostFacts) -> Self {
+        let mut sessions = HashMap::<SessionReference, SessionCostFacts>::new();
+        for summary in facts.sessions {
+            let reference = summary.reference.clone();
+            sessions.entry(reference).or_default().summary = Some(summary);
+        }
+        // Loaded in time order; a stable grouping keeps that order within each session.
+        for message in facts.messages {
+            sessions
+                .entry(message.reference.clone())
+                .or_default()
+                .messages
+                .push(message);
+        }
+        Self {
+            sessions: sessions
+                .into_iter()
+                .map(|(reference, facts)| (reference, Arc::new(facts)))
+                .collect(),
+        }
+    }
 }
