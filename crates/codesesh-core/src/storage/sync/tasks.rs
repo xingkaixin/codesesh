@@ -39,43 +39,7 @@ impl Cache {
                 )? == 1,
                 "Unknown or revoked node"
             );
-            let mut existing = tx.prepare("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading') ORDER BY rowid")?;
-            let requests_for_node = existing
-                .query_map([&node], |r| r.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            let existing = requests_for_node
-                .into_iter()
-                .map(|raw| serde_json::from_str::<crate::sync::RescanRequest>(&raw))
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            if let Some(request) = existing.into_iter().find(|request| {
-                let mut scope = request.agents.clone();
-                scope.sort();
-                scope.dedup();
-                scope == agents && request.reason == reason
-            }) {
-                requests.push(request);
-                continue;
-            }
-            let request = crate::sync::RescanRequest {
-                id: uuid::Uuid::new_v4().to_string(),
-                agents: agents.clone(),
-                reason: reason.into(),
-                required_revisions: catalog
-                    .iter()
-                    .map(|agent| {
-                        (
-                            agent.name.clone(),
-                            crate::agents::parser_version(&agent.name).into(),
-                        )
-                    })
-                    .collect(),
-                created_at: chrono::Utc::now().timestamp_millis(),
-            };
-            tx.execute(
-                "INSERT INTO hub_rescans VALUES(?,?,?,'waiting',NULL)",
-                params![request.id, node, serde_json::to_string(&request)?],
-            )?;
-            requests.push(request);
+            requests.push(queue_rescan(&tx, &node, &agents, reason)?);
         }
         tx.commit()?;
         Ok(requests)
@@ -330,4 +294,50 @@ impl Cache {
         tx.commit()?;
         Ok(result)
     }
+}
+
+/// Queues a rescan for one node, or returns the matching request already waiting.
+pub(super) fn queue_rescan(
+    tx: &Transaction<'_>,
+    node: &str,
+    agents: &[String],
+    reason: &str,
+) -> Result<crate::sync::RescanRequest> {
+    let catalog = crate::agents::catalog(0);
+    let mut existing = tx.prepare("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading') ORDER BY rowid")?;
+    let requests_for_node = existing
+        .query_map([node], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let existing = requests_for_node
+        .into_iter()
+        .map(|raw| serde_json::from_str::<crate::sync::RescanRequest>(&raw))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if let Some(request) = existing.into_iter().find(|request| {
+        let mut scope = request.agents.clone();
+        scope.sort();
+        scope.dedup();
+        scope == agents && request.reason == reason
+    }) {
+        return Ok(request);
+    }
+    let request = crate::sync::RescanRequest {
+        id: uuid::Uuid::new_v4().to_string(),
+        agents: agents.to_vec(),
+        reason: reason.into(),
+        required_revisions: catalog
+            .iter()
+            .map(|agent| {
+                (
+                    agent.name.clone(),
+                    crate::agents::parser_version(&agent.name).into(),
+                )
+            })
+            .collect(),
+        created_at: chrono::Utc::now().timestamp_millis(),
+    };
+    tx.execute(
+        "INSERT INTO hub_rescans VALUES(?,?,?,'waiting',NULL)",
+        params![request.id, node, serde_json::to_string(&request)?],
+    )?;
+    Ok(request)
 }

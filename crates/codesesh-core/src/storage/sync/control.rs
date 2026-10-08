@@ -71,7 +71,8 @@ impl Cache {
             CREATE TABLE IF NOT EXISTS hub_node_health(node_id TEXT PRIMARY KEY REFERENCES hub_nodes(id),payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS hub_ignored_sources(node_id TEXT NOT NULL REFERENCES hub_nodes(id),agent TEXT NOT NULL,PRIMARY KEY(node_id,agent));
             CREATE TABLE IF NOT EXISTS hub_rescans(id TEXT PRIMARY KEY,node_id TEXT NOT NULL REFERENCES hub_nodes(id),request TEXT NOT NULL,status TEXT NOT NULL,progress TEXT);
-            CREATE TABLE IF NOT EXISTS hub_chunks(node_id TEXT NOT NULL REFERENCES hub_nodes(id),stream_id TEXT NOT NULL,transfer_id TEXT NOT NULL,chunk_index INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(node_id,stream_id,transfer_id,chunk_index));")?;
+            CREATE TABLE IF NOT EXISTS hub_chunks(node_id TEXT NOT NULL REFERENCES hub_nodes(id),stream_id TEXT NOT NULL,transfer_id TEXT NOT NULL,chunk_index INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(node_id,stream_id,transfer_id,chunk_index));
+            CREATE TABLE IF NOT EXISTS hub_message_bases(node_id TEXT NOT NULL,agent TEXT NOT NULL,session_id TEXT NOT NULL,message_count INTEGER NOT NULL,digest TEXT NOT NULL,PRIMARY KEY(node_id,agent,session_id));")?;
         tx.execute(
             "INSERT OR IGNORE INTO hub_meta VALUES('hub_id',?)",
             [hub_id],

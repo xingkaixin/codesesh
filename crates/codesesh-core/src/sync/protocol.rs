@@ -22,7 +22,27 @@ pub enum Operation {
         chunks: u32,
         bytes: u64,
         digest: String,
+        /// Present when the snapshot holds only the messages after `keep` of the last sent state.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<SnapshotBase>,
+        /// The Worker's message state after this snapshot, for the next delta to build on.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        messages: Option<MessageState>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MessageState {
+    pub count: u32,
+    pub digest: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SnapshotBase {
+    pub keep: u32,
+    pub previous: MessageState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

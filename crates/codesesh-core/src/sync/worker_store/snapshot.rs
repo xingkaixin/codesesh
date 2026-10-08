@@ -47,6 +47,8 @@ pub(super) fn enqueue_snapshot(tx: &Transaction<'_>, snapshot: &impl Serialize) 
             chunks: writer.chunks,
             bytes: writer.bytes,
             digest: crate::hash::hex(&writer.hash.finalize()),
+            base: None,
+            messages: None,
         },
     )
 }

@@ -203,6 +203,7 @@ fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
         chunks,
         bytes,
         digest: expected,
+        ..
     } = &commit.operation
     else {
         panic!("expected snapshot commit");
@@ -229,6 +230,8 @@ fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
             chunks: count,
             bytes: length,
             digest: checksum,
+            base: None,
+            messages: None,
         };
         invalid.digest = digest(&serde_json::to_vec(&invalid.operation).unwrap());
         assert_eq!(
