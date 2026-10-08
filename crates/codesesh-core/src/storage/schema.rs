@@ -297,11 +297,9 @@ pub fn ensure_with_progress(
     }
     db.execute_batch("BEGIN IMMEDIATE")?;
     let result = (|| -> Result<()> {
-        // Older schema 37 files predate the column; adding it keeps them readable by both releases.
-        if !columns(db, "session_cost_summary")?.contains("revision") {
-            db.execute_batch(
-                "ALTER TABLE session_cost_summary ADD COLUMN revision INTEGER NOT NULL DEFAULT 0",
-            )?;
+        // Schema 37 builds versioned summaries for an in-memory fact cache; usage buckets replaced it.
+        if columns(db, "session_cost_summary")?.contains("revision") {
+            db.execute_batch("ALTER TABLE session_cost_summary DROP COLUMN revision; DELETE FROM cache_meta WHERE key='cost_facts_revision';")?;
         }
         if !exists(db, "session_usage_bucket")? {
             db.execute_batch(&missing_objects_schema())?;

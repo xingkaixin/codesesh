@@ -131,7 +131,6 @@ CREATE TABLE session_cost_summary (
       untimed_cache_create_tokens INTEGER NOT NULL DEFAULT 0,
       message_cost REAL NOT NULL,
       untimed_message_cost REAL NOT NULL,
-      revision INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (source_node_id, agent_name, session_id),
       FOREIGN KEY (source_node_id, agent_name, session_id)
         REFERENCES sessions(source_node_id, agent_name, session_id)

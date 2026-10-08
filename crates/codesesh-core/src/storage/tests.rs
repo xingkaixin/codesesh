@@ -190,7 +190,12 @@ fn schema37_builds_usage_buckets_in_place() {
     cache.publish(std::slice::from_mut(&mut session)).unwrap();
     let db = cache.connection();
     let expected = usage_buckets(db);
-    db.execute_batch("DROP TABLE session_usage_bucket; DELETE FROM cache_meta WHERE key='usage_buckets_v1'; PRAGMA user_version=37;").unwrap();
+    db.execute_batch(
+        "DROP TABLE session_usage_bucket; DELETE FROM cache_meta WHERE key='usage_buckets_v1';
+        ALTER TABLE session_cost_summary ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+        PRAGMA user_version=37;",
+    )
+    .unwrap();
     for _ in 0..2 {
         schema::ensure(db, None).unwrap();
         assert_eq!(
@@ -199,6 +204,10 @@ fn schema37_builds_usage_buckets_in_place() {
             CACHE_SCHEMA_VERSION
         );
         assert_eq!(usage_buckets(db), expected);
+        assert!(
+            db.prepare("SELECT revision FROM session_cost_summary")
+                .is_err()
+        );
     }
 }
 

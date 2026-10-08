@@ -1,13 +1,12 @@
 use super::{
-    CostFactsIndex, DashboardCostFacts, DashboardScope, MessageCostFact, SessionCostSummary,
-    SessionModelCostFact,
+    DashboardCostFacts, DashboardScope, MessageCostFact, SessionCostSummary, SessionModelCostFact,
 };
 use crate::{
     contract::{CostSource, SessionHead, SessionReference},
     query::SessionTree,
 };
 use rusqlite::{Connection, Row, types::Value};
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 fn nonnegative(row: &Row<'_>, name: &str) -> rusqlite::Result<f64> {
     Ok(row.get::<_, Option<f64>>(name)?.unwrap_or(0.0).max(0.0))
@@ -18,69 +17,6 @@ fn reference(row: &Row<'_>) -> rusqlite::Result<SessionReference> {
         agent_name: row.get("agent_name")?,
         session_id: row.get("session_id")?,
     })
-}
-
-// Past this many changed sessions, one full read is cheaper than reading each session.
-const FULL_RELOAD_SESSIONS: usize = 256;
-
-/// Cost facts for every visible session, kept between requests. Each refresh compares
-/// `session_cost_summary.revision` and re-reads only the sessions whose facts were rewritten.
-#[derive(Default)]
-pub struct CostFactsCache {
-    index: Arc<CostFactsIndex>,
-    revisions: HashMap<SessionReference, i64>,
-}
-
-impl CostFactsCache {
-    pub fn refresh(&mut self, connection: &Connection) -> rusqlite::Result<Arc<CostFactsIndex>> {
-        let transaction = if connection.is_autocommit() {
-            Some(connection.unchecked_transaction()?)
-        } else {
-            None
-        };
-        let current = connection
-            .prepare("SELECT c.source_node_id,c.agent_name,c.session_id,c.revision FROM session_cost_summary c JOIN sessions s ON s.source_node_id=c.source_node_id AND s.agent_name=c.agent_name AND s.session_id=c.session_id AND s.publication_id IS NULL")?
-            .query_map([], |row| Ok((reference(row)?, row.get::<_, i64>("revision")?)))?
-            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
-        let changed: Vec<_> = current
-            .iter()
-            .filter(|(reference, revision)| self.revisions.get(*reference) != Some(*revision))
-            .map(|(reference, _)| reference)
-            .collect();
-        let removed = self
-            .revisions
-            .keys()
-            .any(|reference| !current.contains_key(reference));
-        if !changed.is_empty() || removed {
-            let index = if self.revisions.is_empty() || changed.len() > FULL_RELOAD_SESSIONS {
-                CostFactsIndex::from(read_cost_facts(connection, None, None, true, None)?)
-            } else {
-                let mut sessions = self.index.sessions.clone();
-                sessions.retain(|reference, _| current.contains_key(reference));
-                for reference in &changed {
-                    sessions.remove(*reference);
-                }
-                let references = encode_references(changed.iter().copied());
-                sessions.extend(
-                    CostFactsIndex::from(read_cost_facts(
-                        connection,
-                        None,
-                        None,
-                        true,
-                        Some(references),
-                    )?)
-                    .sessions,
-                );
-                CostFactsIndex { sessions }
-            };
-            self.index = Arc::new(index);
-            self.revisions = current;
-        }
-        if let Some(transaction) = transaction {
-            transaction.commit()?;
-        }
-        Ok(self.index.clone())
-    }
 }
 
 pub fn load_cost_facts(

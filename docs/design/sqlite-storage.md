@@ -24,7 +24,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `sessions` | 会话身份、项目身份、统计、来源和缓存元数据 |
 | `messages` | 有序结构化消息、用量、费用和增量游标摘要 |
 | `session_model_cost` | 按会话和模型聚合的费用 |
-| `session_cost_summary` | 消息用量与费用归因所需的会话事实；`revision` 在每次重写时取自只增计数器 |
+| `session_cost_summary` | 消息用量与费用归因所需的会话事实 |
 | `session_usage_bucket` | 按会话、15 分钟时间桶、模型和费用来源预聚合的消息用量与费用 |
 | `message_tools` | 消息工具名，用于结构化过滤 |
 | `session_file_activity` | 文件路径、操作类型、次数和最近活动时间 |
@@ -44,18 +44,18 @@ schema 34 保存 `automated` 标记，并为非自动用户消息建立部分时
 schema 35 将展示版本和文件摘要保存在 `head_meta_json`，快照不再读取包含定价明细的
 `meta_json`。展示元数据与会话在同一事务发布；定价元数据由定价路径校验。
 
-Dashboard 和项目统计在进程内按会话缓存成本事实（`analytics::CostFactsCache`）。每次请求只比较
-`session_cost_summary.revision`，重读发生变化的会话；该列由打开数据库时的一次性补丁加入，不改变 schema 版本。
-
 schema 37 将 `messages.parts_json` 存为 zstd 压缩的 BLOB，压缩后不更小的短内容仍存为文本，
 读取时两种编码都接受。`content_text` 保持文本：中文搜索需要逐条校验候选消息原文，压缩它会
 拖慢搜索。编码入口在 `crates/codesesh-core/src/storage/body.rs`。
 
 schema 38 新增 `session_usage_bucket`。`storage::facts::write` 重写会话成本事实时，按会话、
 15 分钟时间桶、模型和费用来源重建该会话的桶行；Dashboard 和项目统计按请求窗口读取桶，
-不再逐条读取消息和解析 `tokens_json`，schema 33 的消息用量时间索引随之删除。现行时区偏移
-都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与逐条消息归因
-结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。
+不再逐条读取消息和解析 `tokens_json`，schema 33 的消息用量时间索引随之删除。进程不常驻
+成本事实，单次请求的内存只随窗口内的桶数增长。升级时同时删除 schema 37 开发构建为进程内
+缓存加入的 `session_cost_summary.revision`。
+
+现行时区偏移都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与
+逐条消息归因结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。
 
 ## 读写与发布
 
