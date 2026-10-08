@@ -240,6 +240,19 @@ pub async fn static_file(request: Request) -> Response {
         return (StatusCode::NOT_FOUND, "404 Not Found").into_response();
     }
     let path = request.uri().path();
+    // Vite fingerprints every file under /assets/; the SPA fallback for a missing name must stay uncached.
+    if path.starts_with("/assets/")
+        && let Some((mime, bytes)) = crate::assets::lookup(path)
+    {
+        return (
+            [
+                (header::CONTENT_TYPE, mime),
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            bytes,
+        )
+            .into_response();
+    }
     if let Some((mime, bytes)) = crate::assets::spa(path) {
         return ([(header::CONTENT_TYPE, mime)], bytes).into_response();
     }
