@@ -311,6 +311,7 @@ pub async fn run(
                     Ok(response) if response.status().is_success() => {
                         grant.epoch = recovery.epoch;
                         collector.store.finish_recovery(origin.as_str(), &grant)?;
+                        log_info("worker.recovery.done", serde_json::json!({}));
                         next_hello = Instant::now();
                         false
                     }
@@ -318,12 +319,17 @@ pub async fn run(
                         let status = response.status();
                         let reason = response.text().await?;
                         eprintln!("Worker recovery pending: {reason}");
+                        log_warn(
+                            "worker.recovery.pending",
+                            serde_json::json!({"status":status.as_u16(),"error_code":error_code(&reason)}),
+                        );
                         next_hello = Instant::now() + backoff(15);
                         status == StatusCode::CONFLICT
                             && serde_json::from_str::<serde_json::Value>(&reason)
                                 .is_ok_and(|body| body["error"] == "HUB_EPOCH_CHANGED")
                     }
                     Err(_) => {
+                        request_failed("recover", None);
                         next_hello = Instant::now() + backoff(5);
                         false
                     }
@@ -369,11 +375,18 @@ pub async fn run(
                     collector
                         .store
                         .set_pause(hello.error.map(|_| "VERSION_INCOMPATIBLE"))?;
+                    if !online && !paused {
+                        log_info("worker.connected", serde_json::json!({}));
+                    }
                     online = !paused;
                     if let Some(reason) = hello.error {
                         eprintln!(
                             "Worker paused: {reason:?}; Hub {}, minimum Worker {}",
                             hello.version, hello.minimum_worker_version
+                        );
+                        log_warn(
+                            "worker.paused",
+                            serde_json::json!({"operation":"hello","error_code":reason,"version":hello.version}),
                         );
                     }
                     next_hello = Instant::now()
@@ -393,11 +406,17 @@ pub async fn run(
                     paused = true;
                     online = false;
                     next_hello = Instant::now() + retry_delay(&response, 60);
+                    let status = response.status();
                     let reason = response.text().await?;
                     collector.store.set_pause(Some(&reason))?;
                     eprintln!("Worker paused: {reason}");
+                    log_warn(
+                        "worker.paused",
+                        serde_json::json!({"operation":"hello","status":status.as_u16(),"error_code":error_code(&reason)}),
+                    );
                 }
-                _ => {
+                result => {
+                    request_failed("hello", result.ok().map(|response| response.status()));
                     online = false;
                     next_hello = Instant::now() + backoff(retry_seconds);
                     retry_seconds = (retry_seconds * 2).min(60);
@@ -450,15 +469,22 @@ pub async fn run(
                     paused = true;
                     online = false;
                     next_hello = Instant::now() + retry_delay(&response, 60);
+                    let status = response.status();
                     let error = response.text().await?;
                     collector.store.set_pause(Some(&error))?;
                     eprintln!("Worker upload paused: {error}");
+                    log_warn(
+                        "worker.paused",
+                        serde_json::json!({"operation":"upload","status":status.as_u16(),"error_code":error_code(&error)}),
+                    );
                 }
                 Ok(response) => {
+                    request_failed("upload", Some(response.status()));
                     next_upload = Instant::now() + retry_delay(&response, retry_seconds);
                     retry_seconds = (retry_seconds * 2).min(60);
                 }
                 Err(_) => {
+                    request_failed("upload", None);
                     online = false;
                     next_hello = Instant::now() + backoff(retry_seconds);
                     retry_seconds = (retry_seconds * 2).min(60);
@@ -475,9 +501,12 @@ pub async fn run(
         .await
     {
         Ok(response) if response.status().is_success() => {}
-        _ => eprintln!(
-            "Worker stopped; Hub lease could not be released and will expire automatically."
-        ),
+        _ => {
+            eprintln!(
+                "Worker stopped; Hub lease could not be released and will expire automatically."
+            );
+            log_warn("worker.lease.unreleased", serde_json::json!({}));
+        }
     }
     Ok(())
 }
@@ -491,6 +520,39 @@ fn retry_delay(response: &reqwest::Response, fallback_seconds: u64) -> Duration 
         .unwrap_or(fallback_seconds)
         .clamp(1, 300);
     backoff(seconds)
+}
+
+fn log_info(event: &str, data: serde_json::Value) {
+    if let Some(logger) = crate::logging::current() {
+        logger.info(event, &data);
+    }
+}
+
+fn log_warn(event: &str, data: serde_json::Value) {
+    if let Some(logger) = crate::logging::current() {
+        logger.warn(event, &data);
+    }
+}
+
+fn request_failed(operation: &str, status: Option<StatusCode>) {
+    log_warn(
+        "worker.request.failed",
+        serde_json::json!({"operation":operation,"status":status.map(|status| status.as_u16())}),
+    );
+}
+
+/// Hub errors read `{"error":"CODE: detail"}`; only the leading code is safe to log verbatim.
+fn error_code(body: &str) -> String {
+    let error = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|body| body["error"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| body.to_owned());
+    error
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
 }
 
 fn backoff(seconds: u64) -> Duration {

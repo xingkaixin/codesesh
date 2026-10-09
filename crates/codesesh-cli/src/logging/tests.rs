@@ -32,7 +32,7 @@ fn redacts_secrets_fingerprints_private_values_and_preserves_trace() {
         "authorization":"Bearer secret-token","apiKey":"key-value","nested":{"refreshToken":"refresh-value"},
         "body":"source-body","messages":["source-transcript"],"source_path":"/personal/source/project.rs",
         "url":"https://someone:credential@example.com/private/path?access_token=secret-token",
-        "error":"source-text in error","unknown":"arbitrary source text","method":"GET","duration_ms":12.5,
+        "error":"source-text in error","error_code":"HUB_EPOCH_CHANGED","unknown":"arbitrary source text","method":"GET","duration_ms":12.5,
         "route":"/api?token=secret-token","level":"malicious override","stack":"Error: source-text\n at /frame (file.rs:1) Bearer secret-token"
     }));
     logger.flush().unwrap();
@@ -57,11 +57,12 @@ fn redacts_secrets_fingerprints_private_values_and_preserves_trace() {
     assert_eq!(record["body"], "[omitted]");
     assert_eq!(record["url"], "https://example.com/");
     assert_eq!(record["method"], "GET");
+    assert_eq!(record["error_code"], "HUB_EPOCH_CHANGED");
     assert_eq!(record["duration_ms"], 12.5);
     assert_eq!(record["request_id"], request_id);
     assert_eq!(record["level"], "info");
     assert_eq!(record["schema_version"], 1);
-    logger.info("client.search.done",&json!({"operation_id":"source-id","session":"raw-session-id","mode":"session","agent":"codex","results":3}));
+    logger.info("client.search.done",&json!({"operation_id":"source-id","session":"raw-session-id","mode":"session","agent":"codex","error_code":"raw error text","results":3}));
     logger.shutdown().unwrap();
     let all = records(logger.path());
     assert!(
@@ -78,6 +79,12 @@ fn redacts_secrets_fingerprints_private_values_and_preserves_trace() {
     );
     assert_eq!(all[1]["mode"], "session");
     assert_eq!(all[1]["agent"], "codex");
+    assert!(
+        all[1]["error_code"]
+            .as_str()
+            .unwrap()
+            .starts_with("string:")
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

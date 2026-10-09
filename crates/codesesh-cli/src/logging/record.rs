@@ -67,6 +67,13 @@ fn correlated(key: &str) -> bool {
 fn audited(key: &str, value: &str) -> bool {
     match key {
         "agent" | "agent_name" | "agents" | "failed_agents" => AGENTS.contains(value),
+        "error_code" => {
+            !value.is_empty()
+                && value.len() <= 64
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+        }
         "method" => matches!(
             value,
             "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PATCH" | "POST" | "PUT"

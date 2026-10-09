@@ -58,6 +58,8 @@ codesesh worker stop
 
 项目和 Dashboard 查询超过 500 毫秒时，结构化日志记录 `perf.query`，包含缓存是否命中、读取等待、会话头读取、成本事实读取和响应构建耗时，并通过 `request_id` 与 `http.request` 关联。响应构建包含聚合计算；Dashboard 还包含活跃时间和最近文件活动查询。设置 `CODESESH_LOG_LEVEL=debug` 后，也记录较快的查询。Web 的 `app.load.done` 等待会话、Agent、项目、Dashboard 和收藏的初次加载结束，失败时记录 `app.load.error`。
 
+Worker 的结构化日志记录连接状态变化：`worker.connected` 表示与 Hub 建立或恢复连接，`worker.paused`、`worker.recovery.pending`、`worker.recovery.done` 对应暂停和数据纪元恢复，`worker.request.failed` 记录 hello、恢复或上传请求失败（`status` 为空表示网络层失败），`worker.scan.failed` 记录来源扫描失败，`worker.lease.unreleased` 表示退出时未能释放 Hub 租约。Hub 返回的错误码记录在 `error_code`，其余错误文本按日志规则只保留指纹。
+
 `start` 最多等待约 10 秒并显示进度，较长初始化继续在后台执行；`status --watch` 跟随初始化，直到就绪或 Worker 进入已连接、离线、暂停状态。Ctrl+C 退出观察，不停止服务。备份进度来自 SQLite 实际复制页数；迁移显示当前表和索引重建阶段，没有可靠百分比的阶段只显示活动指示与耗时。非交互输出保留阶段、周期进度和完成信息。完成的备份以 `.db` 结尾，未完成副本为 `.db.partial`。
 
 Hub Web 服务在数据库初始化后才就绪并尝试打开浏览器；浏览器启动失败会输出原因，控制台地址仍可使用。`start` 和 `status` 输出完整控制台链接，可直接点击。本地访问默认免 token；使用 `--auth` 可显式开启认证，`--remote-access` 始终要求认证。启用认证时，控制台链接包含访问 token。`--no-open` 禁止自动打开，`hub open` 可稍后打开已运行后台 Hub。进程自动重启不会重复弹出浏览器。
