@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.3.1] - 2026-10-09
+
+This release shrinks the local cache, lowers the cost of live refresh, Dashboard and project statistics, and Hub sync on large histories, and fixes file filters across nodes and `--json` scans of active Agents. (#730–#747)
+
+### Performance
+
+- Store message parts zstd-compressed. On a real 11.1 GB cache, the result is 7.8 GB. Existing caches are compressed in place in resumable batches instead of being rebuilt. (#736)
+- Aggregate Dashboard and project statistics from per-session 15-minute usage buckets instead of reading every message. On a real cache, requests that miss the response cache during live updates dropped from 208 ms to 108 ms for a 7-day Dashboard and from 1.36 s to 0.33 s for all time, and peak memory during the first requests dropped from 234 MB to 70 MB. A raw API `from`/`to` not aligned to 15 minutes can shift a window edge by up to 15 minutes. (#744, #745, #747)
+- Resume appended Claude Code transcripts from a checkpoint instead of re-parsing the whole file. (#743)
+- Derive smart tags once per session, match payload tag rules in one pass, and reuse Codex subagent summaries until a child rollout changes. Refreshing a sample active Codex session with 7 subagents dropped from about 440 ms to 130 ms. (#740)
+- Workers upload only the messages after an unchanged prefix. The Hub rebuilds the full session from its own copy and queues a rescan when the base does not match. For a sample 8.6 MB transcript, each change uploads about 16 KB instead of 5.3 MB. (#746)
+- Make idle Worker rounds cheaper: keep scanner baselines between rounds, write source state only when it changes, stat each source file once, and reuse database inventories while the database is unchanged. An idle round writes about 4 KB instead of 2.5 MB and uses about half the CPU. (#734, #735)
+- Compress Web assets and cache fingerprinted files as immutable. A first visit downloads about 320 KB instead of 1 MB, and a repeat visit about 5 KB. (#737)
+- Load the sidebar session tree on demand, cutting initial JavaScript from about 300 KB to 225 KB gzip. (#738)
+- Hold live updates while the page is hidden and apply them once when it becomes visible, so a background tab no longer refreshes the Dashboard and projects. (#739)
+
+### Bug Fixes
+
+- Match `file:` and `kind:` filters on the session's own source node, so a session no longer matches file activity recorded by another Worker. These filters now use the primary key; on a real cache they dropped from 5–15 s to under 0.5 s. (#733)
+- Drop empty, relative, and temporary-directory entries from the `PATH` written into background service definitions. Existing services are cleaned the next time they start. (#741)
+- `--json` no longer fails when an active Agent writes to its history during the scan. It returns the scanned sessions, and the next run scans that source again. (#742)
+
+### Build
+
+- Updated React Query, Vite, Tokio, uuid, libc, async-compression, and development dependencies. (#730, #731, #732)
+
+### Compatibility
+
+- The cache moves to schema 38. The first start after upgrading compresses existing messages and builds usage buckets. On large caches this can take several minutes, and the following compaction temporarily needs free disk space for a copy of the cache. Earlier versions refuse to open the upgraded cache. (#736, #747)
+- Worker state moves to schema 2. Upgrade the Hub before its Workers; a Hub still rejects Workers newer than itself. (#746)
+
 ## [1.3.0] - 2026-10-07
 
 This release makes search and live refresh much lighter on large histories, shows which machine and Agent each source comes from in Hub mode, and declares what each Agent adapter can actually read. (#713–#728)

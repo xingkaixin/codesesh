@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.1",
+        date: "2026-10-09",
+        title: "A smaller cache and lighter live updates",
+        summary:
+          "CodeSesh 1.3.1 shrinks the local session cache and cuts the work behind live updates, Dashboard statistics, and Hub sync on large AI coding histories. It also fixes file filters across machines and codesesh --json runs while an Agent is still writing.",
+        direction:
+          "CodeSesh should stay open all day next to working Agents. Its disk, CPU, and network cost should follow what changed, not the size of the whole history.",
+        highlights: [
+          {
+            title: "Use less disk for the same history",
+            description:
+              "Message data is stored compressed. On a real 11 GB cache, the size dropped below 8 GB. The first start after upgrading converts the existing cache in place, which can take several minutes.",
+          },
+          {
+            title: "Keep active sessions and dashboards responsive",
+            description:
+              "Active Claude Code and Codex sessions resume parsing where they left off, and Dashboard and project statistics read compact usage summaries. A hidden browser tab holds updates until you come back.",
+          },
+          {
+            title: "Sync Workers with a fraction of the traffic",
+            description:
+              "Workers send only new messages to the Hub instead of whole sessions, and idle Workers do much less disk and CPU work. Upgrade the Hub before its Workers.",
+          },
+          {
+            title: "Get correct results from filters and JSON output",
+            description:
+              "File and kind filters in search match only activity from the session's own machine and respond much faster. codesesh --json completes even while an Agent is writing.",
+          },
+        ],
+      },
+      {
         version: "1.3.0",
         date: "2026-10-07",
         title: "Faster search on large histories and clearer multi-machine sources",
@@ -700,6 +731,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.1",
+        date: "2026-10-09",
+        title: "缓存更小，实时更新更轻",
+        summary:
+          "CodeSesh 1.3.1 缩小本地会话缓存，并降低大体量 AI 编码历史下实时更新、Dashboard 统计和 Hub 同步的开销。本版还修复了跨机器的文件筛选，以及 Agent 仍在写入时 codesesh --json 失败的问题。",
+        direction:
+          "CodeSesh 应能在 Agent 工作时全天开着。磁盘、CPU 和网络开销应随实际变化增长，而不是随整个历史的体量增长。",
+        highlights: [
+          {
+            title: "同样的历史占用更少磁盘",
+            description:
+              "消息数据改为压缩存储。在一份 11 GB 的真实缓存上，体积降到 8 GB 以内。升级后首次启动会原地转换现有缓存，可能需要数分钟。",
+          },
+          {
+            title: "进行中的会话与 Dashboard 更流畅",
+            description:
+              "进行中的 Claude Code 和 Codex 会话从上次位置继续解析，Dashboard 和项目统计读取紧凑的用量汇总。浏览器标签页隐藏时暂停更新，回到页面后再统一刷新。",
+          },
+          {
+            title: "Worker 同步流量大幅减少",
+            description:
+              "Worker 只向 Hub 发送新消息，不再上传整个会话；空闲时的磁盘和 CPU 开销也明显降低。请先升级 Hub，再升级 Worker。",
+          },
+          {
+            title: "筛选与 JSON 输出结果正确",
+            description:
+              "搜索中的文件和操作类型筛选只匹配会话所在机器的文件活动，响应也快得多。Agent 正在写入时，codesesh --json 也能正常完成。",
+          },
+        ],
+      },
+      {
         version: "1.3.0",
         date: "2026-10-07",
         title: "大体量历史搜索更快，多机来源更清楚",
@@ -1309,6 +1371,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.3.1",
+        date: "2026-10-09",
+        title: "キャッシュを小さく、リアルタイム更新を軽く",
+        summary:
+          "CodeSesh 1.3.1 では、ローカルのセッションキャッシュを小さくし、大規模な AI コーディング履歴でのリアルタイム更新、Dashboard の統計、Hub 同期の負荷を抑えます。あわせて、複数マシン間のファイルフィルターと、Agent の書き込み中に codesesh --json が失敗する問題を修正しました。",
+        direction:
+          "作業中の Agent の横で CodeSesh を一日中開いたままにできるようにします。ディスク・CPU・ネットワークの負荷は、履歴全体の大きさではなく実際の変更量に応じたものにします。",
+        highlights: [
+          {
+            title: "同じ履歴をより少ないディスクで保持",
+            description:
+              "メッセージデータを圧縮して保存します。実際の 11 GB のキャッシュでは 8 GB 未満になりました。アップグレード後の初回起動で既存のキャッシュをその場で変換するため、数分かかることがあります。",
+          },
+          {
+            title: "進行中のセッションと Dashboard を軽快に",
+            description:
+              "進行中の Claude Code と Codex のセッションは前回の位置から解析を再開し、Dashboard とプロジェクトの統計はコンパクトな使用量の集計から読み込みます。ブラウザのタブが非表示の間は更新を保留し、戻ったときにまとめて反映します。",
+          },
+          {
+            title: "Worker の同期通信を大幅に削減",
+            description:
+              "Worker はセッション全体ではなく新しいメッセージだけを Hub に送ります。アイドル時のディスクと CPU の負荷も大きく下がりました。Hub を先にアップグレードしてから Worker を更新してください。",
+          },
+          {
+            title: "フィルターと JSON 出力を正確に",
+            description:
+              "検索のファイルフィルターと操作種別フィルターは、セッションと同じマシンで記録されたファイル操作だけに一致し、応答も大幅に速くなりました。Agent の書き込み中でも codesesh --json が完了します。",
+          },
+        ],
+      },
       {
         version: "1.3.0",
         date: "2026-10-07",
