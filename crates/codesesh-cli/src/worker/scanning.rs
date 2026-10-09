@@ -138,6 +138,10 @@ impl Scanning {
                                     .take(2048)
                                     .collect();
                             eprintln!("Worker scan failed; progress retained: {message}");
+                            super::log_warn(
+                                "worker.scan.failed",
+                                serde_json::json!({"agent":agent,"error":format!("{error:#}")}),
+                            );
                             self.errors.insert(agent.clone(), message);
                             let status = self.source_statuses.entry(agent.clone()).or_default();
                             status.error = self.errors.get(agent).cloned();
