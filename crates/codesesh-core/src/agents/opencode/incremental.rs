@@ -235,6 +235,52 @@ pub(super) fn refresh_scoped(
     })
 }
 
+/// Folds each session fingerprint into its top-level ancestor, the key `enumerate_session_keys` pages.
+pub fn root_fingerprints(
+    path: &Path,
+    agent: &str,
+    supports_v2: bool,
+) -> Result<HashMap<String, String>> {
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("fingerprinting {agent} database {}", path.display()))?;
+    db.execute_batch("BEGIN")?;
+    let v2 = supports_v2 && has_v2(&db)?;
+    let sessions = fingerprints(&db, v2, None)?;
+    let parents: HashMap<_, _> = paging::metadata(&db, v2)?
+        .iter()
+        .filter_map(|row| Some((string(&row["id"]), row["parent_id"].as_str()?.to_owned())))
+        .collect();
+    db.execute_batch("COMMIT")?;
+    let mut trees: HashMap<&str, BTreeMap<&str, &str>> = HashMap::new();
+    for (id, fingerprint) in &sessions {
+        let mut root = id;
+        let mut seen = HashSet::new();
+        while let Some(parent) = parents
+            .get(root)
+            .filter(|parent| sessions.contains_key(*parent))
+            && seen.insert(root)
+        {
+            root = parent;
+        }
+        trees.entry(root).or_default().insert(id, fingerprint);
+    }
+    Ok(trees
+        .into_iter()
+        .map(|(root, tree)| {
+            let mut hash = Sha256::new();
+            for (id, fingerprint) in tree {
+                hash.update(id);
+                hash.update([0]);
+                hash.update(fingerprint);
+                hash.update([0]);
+            }
+            (root.to_owned(), crate::hash::hex(&hash.finalize()))
+        })
+        .collect())
+}
 fn fingerprints(
     db: &Connection,
     v2: bool,

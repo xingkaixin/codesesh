@@ -409,32 +409,97 @@ fn reused_database_inventory_still_lists_new_sessions() {
         data_root: root.clone(),
         scan_path: root,
     };
-    let db = temporary.path().join("cache.db");
-    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
-    let mut scanner = AgentScanner::new(source, db, std::sync::Arc::new(Pricing::bundled()));
-    let mut ids = |scanner: &mut AgentScanner| {
-        let mut batch = scanner.refresh(None).unwrap();
-        let ids: Vec<_> = batch
-            .sessions
-            .iter()
-            .map(|session| session.head.reference.session_id.clone())
-            .collect();
-        cache
-            .apply_checkpoint(
-                &mut batch.sessions,
-                &batch.removed,
-                "zcode",
-                &batch.checkpoint,
-                batch.complete,
-            )
-            .unwrap();
-        batch.on_reject.take();
-        ids
-    };
-    assert_eq!(ids(&mut scanner), ["first"]);
-    assert!(ids(&mut scanner).is_empty());
+    let (mut scanner, mut cache) = database_scanner(temporary.path(), source);
+    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "zcode"), ["first"]);
+    assert!(refreshed_ids(&mut scanner, &mut cache, "zcode").is_empty());
     database.execute("INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('second','Second',3000,4000,'/project')", []).unwrap();
-    assert_eq!(ids(&mut scanner), ["second"]);
+    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "zcode"), ["second"]);
+}
+
+#[test]
+fn unrelated_database_writes_do_not_reparse_desktop_sessions() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("deepchat");
+    let file = root.join("app_db/agent.db");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database
+        .execute_batch(include_str!("../agents/deepchat/fixture.sql"))
+        .unwrap();
+    database.execute_batch("INSERT INTO new_sessions(id,agent_id,title,project_dir) VALUES('s','deepchat','Session','/work'); INSERT INTO deepchat_messages(id,session_id,order_seq,role,content,metadata,created_at,updated_at) VALUES('u','s',1,'user','{\"text\":\"Hello\"}','{}',1000,3000);").unwrap();
+    let source = AgentSource {
+        agent: "deepchat".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let stamp = backfill::database_stamp(&source).unwrap();
+    let (mut scanner, mut cache) = database_scanner(temporary.path(), source.clone());
+    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "deepchat"), ["s"]);
+    database
+        .execute_batch("CREATE TABLE app_settings(key TEXT,value TEXT); INSERT INTO app_settings VALUES('theme','dark');")
+        .unwrap();
+    assert_ne!(backfill::database_stamp(&source).unwrap(), stamp);
+    assert!(refreshed_ids(&mut scanner, &mut cache, "deepchat").is_empty());
+    database
+        .execute("UPDATE deepchat_messages SET content='{\"text\":\"Edited\"}',updated_at=4000 WHERE id='u'", [])
+        .unwrap();
+    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "deepchat"), ["s"]);
+}
+
+#[test]
+fn child_session_changes_refresh_their_database_root() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("zcode");
+    let file = root.join("cli/db/db.sqlite");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); INSERT INTO session(id,parent_id,title,time_created,time_updated,directory) VALUES('root',NULL,'Root',1000,2000,'/project'),('child','root','Child',1000,2000,'/project');").unwrap();
+    let source = AgentSource {
+        agent: "zcode".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let (mut scanner, mut cache) = database_scanner(temporary.path(), source);
+    assert!(!refreshed_ids(&mut scanner, &mut cache, "zcode").is_empty());
+    assert!(refreshed_ids(&mut scanner, &mut cache, "zcode").is_empty());
+    database
+        .execute("UPDATE session SET title='Renamed' WHERE id='child'", [])
+        .unwrap();
+    assert!(refreshed_ids(&mut scanner, &mut cache, "zcode").contains(&"child".to_owned()));
+}
+
+fn database_scanner(
+    directory: &Path,
+    source: AgentSource,
+) -> (AgentScanner, crate::storage::Cache) {
+    let db = directory.join("cache.db");
+    let cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let scanner = AgentScanner::new(source, db, std::sync::Arc::new(Pricing::bundled()));
+    (scanner, cache)
+}
+
+fn refreshed_ids(
+    scanner: &mut AgentScanner,
+    cache: &mut crate::storage::Cache,
+    agent: &str,
+) -> Vec<String> {
+    let mut batch = scanner.refresh(None).unwrap();
+    let ids = batch
+        .sessions
+        .iter()
+        .map(|session| session.head.reference.session_id.clone())
+        .collect();
+    cache
+        .apply_checkpoint(
+            &mut batch.sessions,
+            &batch.removed,
+            agent,
+            &batch.checkpoint,
+            batch.complete,
+        )
+        .unwrap();
+    batch.on_reject.take();
+    ids
 }
 
 fn many_pi(source: &AgentSource, count: usize) -> Vec<std::path::PathBuf> {
