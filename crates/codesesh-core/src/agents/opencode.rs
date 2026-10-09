@@ -11,7 +11,7 @@ use std::{
 mod content;
 mod incremental;
 mod paging;
-pub use incremental::{DatabaseSnapshot, refresh, refresh_database};
+pub use incremental::{DatabaseSnapshot, refresh, refresh_database, root_fingerprints};
 pub use paging::scan_selected_snapshot as refresh_selected_database;
 pub use paging::{enumerate_session_keys, scan_selected_database, scan_selected_snapshot};
 #[cfg(test)]

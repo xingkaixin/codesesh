@@ -3,6 +3,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -159,6 +160,23 @@ pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
     }
     Ok(Some(database_stamp))
 }
+/// Per-session content fingerprints, so writes that leave a session untouched do not invalidate it.
+/// Cursor pages never reuse items and keep the database stamp.
+fn session_fingerprints(source: &AgentSource) -> Result<HashMap<String, String>> {
+    let root = &source.scan_path;
+    match source.agent.as_str() {
+        "opencode" => crate::agents::opencode::root_fingerprints(root, "opencode", true),
+        "zcode" => crate::agents::opencode::root_fingerprints(
+            &root.join("cli/db/db.sqlite"),
+            "zcode",
+            false,
+        ),
+        "deepchat" => crate::agents::deepchat::fingerprints(root),
+        "cherrystudio" => crate::agents::cherrystudio::fingerprints(root),
+        "minimax-code" => crate::agents::minimax_code::fingerprints(root),
+        _ => Ok(HashMap::new()),
+    }
+}
 pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     if source.agent == "codex" {
         return codex_inventory(source);
@@ -200,13 +218,17 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     };
     if let Some(keys) = keys {
         let database_stamp = database_stamp(source)?.unwrap_or_default();
+        let sessions = session_fingerprints(source)?;
         return Ok(keys
             .into_iter()
             .map(|(key, activity)| Item {
+                fingerprint: sessions
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_else(|| format!("{activity}:{database_stamp}")),
                 key,
                 path: None,
                 activity,
-                fingerprint: format!("{activity}:{database_stamp}"),
                 target: false,
                 bytes: 0,
             })
