@@ -3,7 +3,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use regex::Regex;
 use serde_json::{Map, Value, json};
 use sha2::Sha256;
-use std::{path::PathBuf, sync::LazyLock};
+use std::{collections::HashSet, path::PathBuf, sync::LazyLock};
 
 static KEY: LazyLock<String> = LazyLock::new(|| {
     format!(
@@ -11,6 +11,12 @@ static KEY: LazyLock<String> = LazyLock::new(|| {
         uuid::Uuid::new_v4().simple(),
         uuid::Uuid::new_v4().simple()
     )
+});
+static AGENTS: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    codesesh_core::agents::catalog(0)
+        .into_iter()
+        .map(|agent| agent.name)
+        .collect()
 });
 static CAMEL: LazyLock<Regex> = LazyLock::new(|| Regex::new("([a-z0-9])([A-Z])").unwrap());
 static NON_KEY: LazyLock<Regex> = LazyLock::new(|| Regex::new("[^a-zA-Z0-9]+").unwrap());
@@ -60,22 +66,7 @@ fn correlated(key: &str) -> bool {
 }
 fn audited(key: &str, value: &str) -> bool {
     match key {
-        "agent" | "agent_name" | "agents" | "failed_agents" => matches!(
-            value,
-            "claudecode"
-                | "cursor"
-                | "kimi"
-                | "kimi-code"
-                | "codex"
-                | "grok"
-                | "pi"
-                | "opencode"
-                | "zcode"
-                | "minimax-code"
-                | "dsh"
-                | "deepchat"
-                | "cherrystudio"
-        ),
+        "agent" | "agent_name" | "agents" | "failed_agents" => AGENTS.contains(value),
         "method" => matches!(
             value,
             "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PATCH" | "POST" | "PUT"
