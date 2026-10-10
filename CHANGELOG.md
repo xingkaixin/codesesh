@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.2] - 2026-10-10
+
+This patch avoids repeated scans caused by unrelated database writes and makes Worker pauses, recovery, and failures easier to diagnose. (#749, #750)
+
+### Bug Fixes
+
+- Detect database-backed session changes from session content instead of the whole database timestamp in DeepChat, Cherry Studio, MiniMax Code, OpenCode, and ZCode. Unrelated writes no longer trigger full session re-parsing and back-to-back Worker scan rounds. OpenCode and ZCode child-session changes still refresh their root session. (#750)
+
+### Diagnostics
+
+- Add timestamped structured Worker events for connections, pauses, recovery, request and scan failures, and unreleased leases. Record Hub error codes and recognize all catalog Agent names, including Antigravity CLI, while preserving existing error-text fingerprinting. (#749)
+
 ## [1.3.1] - 2026-10-09
 
 This release shrinks the local cache, lowers the cost of live refresh, Dashboard and project statistics, and Hub sync on large histories, and fixes file filters across nodes and `--json` scans of active Agents. (#730–#747)
