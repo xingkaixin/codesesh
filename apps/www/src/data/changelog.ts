@@ -71,6 +71,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.2",
+        date: "2026-10-10",
+        title: "Fewer repeated scans and clearer Worker diagnostics",
+        summary:
+          "CodeSesh 1.3.2 avoids re-reading unchanged AI coding sessions when an Agent writes unrelated database data. Worker logs now show when collection pauses, recovers, or fails, making multi-machine sync easier to troubleshoot.",
+        direction:
+          "Collect local AI coding history with work proportional to actual session changes, and make interruptions traceable.",
+        highlights: [
+          {
+            title: "Skip unchanged database sessions",
+            description:
+              "Unrelated database writes in DeepChat, Cherry Studio, MiniMax Code, OpenCode, and ZCode no longer cause every session to be parsed again. Changes to OpenCode and ZCode child sessions still update their parent history.",
+          },
+          {
+            title: "Trace Worker interruptions",
+            description:
+              "Timestamped structured logs record connections, pauses, recovery, and request or scan failures, with Hub error codes to help identify what happened.",
+          },
+        ],
+      },
+      {
         version: "1.3.1",
         date: "2026-10-09",
         title: "A smaller cache and lighter live updates",
@@ -731,6 +752,26 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.2",
+        date: "2026-10-10",
+        title: "减少重复扫描，更清楚地排查 Worker 问题",
+        summary:
+          "CodeSesh 1.3.2 避免因 Agent 写入无关数据库数据而重新读取未变化的 AI 编码会话。Worker 日志现在能记录采集何时暂停、恢复或失败，方便排查多机同步问题。",
+        direction: "让本地 AI 编码历史采集的开销取决于实际会话变化，并让采集中断有据可查。",
+        highlights: [
+          {
+            title: "跳过未变化的数据库会话",
+            description:
+              "DeepChat、Cherry Studio、MiniMax Code、OpenCode 和 ZCode 的无关数据库写入不再导致全部会话重新解析。OpenCode 和 ZCode 的子会话变化仍会更新所属父会话历史。",
+          },
+          {
+            title: "追踪 Worker 中断原因",
+            description:
+              "带时间戳的结构化日志记录连接、暂停、恢复以及请求或扫描失败，并附带 Hub 错误码，便于确认问题发生的时间和原因。",
+          },
+        ],
+      },
+      {
         version: "1.3.1",
         date: "2026-10-09",
         title: "缓存更小，实时更新更轻",
@@ -1371,6 +1412,27 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.3.2",
+        date: "2026-10-10",
+        title: "不要な再スキャンを削減し、Worker の問題を追いやすく",
+        summary:
+          "CodeSesh 1.3.2 は、Agent が会話と無関係なデータベース情報を書き込んだ際に、変更のない AI コーディングセッションを読み直す処理を省きます。Worker ログには収集の一時停止、復旧、失敗の時刻が残り、複数マシン間の同期の問題を調べやすくなります。",
+        direction:
+          "ローカルの AI コーディング履歴の収集負荷を実際の会話の変更に合わせ、中断の経緯を確認できるようにします。",
+        highlights: [
+          {
+            title: "変更のないデータベース内の会話をスキップ",
+            description:
+              "DeepChat、Cherry Studio、MiniMax Code、OpenCode、ZCode では、無関係なデータベース書き込みによる全会話の再解析を避けます。OpenCode と ZCode の子セッションの変更は、引き続き親の履歴に反映されます。",
+          },
+          {
+            title: "Worker の中断をログで確認",
+            description:
+              "接続、一時停止、復旧、リクエストやスキャンの失敗を、時刻付きの構造化ログに記録します。Hub のエラーコードも残るため、問題の経緯を追えます。",
+          },
+        ],
+      },
       {
         version: "1.3.1",
         date: "2026-10-09",
