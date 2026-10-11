@@ -18,7 +18,9 @@ impl Runtime {
         let (reconcile, mut changes) = watch::channel(0_u64);
         let reset_watches = Arc::new(AtomicBool::new(false));
         let reset_requested = reset_watches.clone();
+        #[cfg(target_os = "macos")]
         let created = Arc::new(std::sync::Mutex::new(Vec::<PathBuf>::new()));
+        #[cfg(target_os = "macos")]
         let created_by_events = created.clone();
         let handler = move |event: notify::Result<notify::Event>| {
             let Some(inner) = weak.upgrade() else {
@@ -29,6 +31,7 @@ impl Runtime {
             }
             match event {
                 Ok(event) if !matches!(event.kind, EventKind::Access(_)) => {
+                    #[cfg(target_os = "macos")]
                     if matches!(event.kind, EventKind::Create(_))
                         && let Ok(mut created) = created_by_events.lock()
                     {
