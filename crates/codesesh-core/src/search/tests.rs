@@ -353,6 +353,14 @@ fn file_filters_match_activity_on_the_same_node_only() {
 }
 
 #[test]
+fn two_character_file_queries_skip_trigram_index() {
+    let db = database();
+    db.execute("INSERT INTO session_file_activity VALUES('local','codex','three','/work/app','src/😀a.ts','read',1,200)",[]).unwrap();
+    let result = execute(&db, "file:😀a", &SearchOptions::default()).unwrap();
+    assert_eq!(result.len(), 1);
+}
+
+#[test]
 fn highlights_merge_overlaps_and_preserve_astral_offsets() {
     let ranges = snippet::highlights("🔎 foobar", &snippet::Terms::parse("foo foobar foo"));
     assert_eq!(ranges, vec![HighlightRange { start: 3, end: 9 }]);
