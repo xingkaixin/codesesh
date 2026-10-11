@@ -14,10 +14,9 @@
  *   - growth-rate checks in scripts/perf-scale.mjs
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -26,9 +25,6 @@ import { nativeBinary } from "./lib/native-command.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const cliPath = nativeBinary;
-const cacheDir = join(homedir(), ".codesesh");
-const cacheFiles = ["codesesh.db", "codesesh.db-wal", "codesesh.db-shm", "scan-cache.json"];
-const activeCacheBackups = new Set();
 const PROFILE_SCENARIOS = ["typing", "sidebar", "live"];
 const PROFILE_TYPING_TEXT = "performance-baseline";
 
@@ -342,58 +338,6 @@ function spawnCli(port, days, coldStart) {
   });
 
   return { child, getOutput: () => output };
-}
-
-function moveCacheAside() {
-  const backupDir = join(cacheDir, `.benchmark-backup-${process.pid}-${Date.now()}`);
-  const moved = [];
-
-  for (const name of cacheFiles) {
-    const source = join(cacheDir, name);
-    if (!existsSync(source)) continue;
-
-    mkdirSync(backupDir, { recursive: true });
-    const target = join(backupDir, name);
-    renameSync(source, target);
-    moved.push({ source, target });
-  }
-
-  const backup = { backupDir, moved, restored: false };
-  activeCacheBackups.add(backup);
-  return backup;
-}
-
-function restoreCache(backup) {
-  if (backup.restored) return;
-  backup.restored = true;
-  activeCacheBackups.delete(backup);
-
-  const { backupDir, moved } = backup;
-  for (const name of cacheFiles) {
-    rmSync(join(cacheDir, name), { force: true });
-  }
-
-  for (const { source, target } of moved) {
-    if (existsSync(target)) {
-      renameSync(target, source);
-    }
-  }
-
-  rmSync(backupDir, { recursive: true, force: true });
-}
-
-function restoreActiveCaches() {
-  for (const backup of activeCacheBackups) {
-    restoreCache(backup);
-  }
-}
-
-process.once("exit", restoreActiveCaches);
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-  process.once(signal, () => {
-    restoreActiveCaches();
-    process.kill(process.pid, signal);
-  });
 }
 
 async function launchBrowser(headless) {
@@ -814,7 +758,6 @@ async function waitForSessionDetailVisible(page, target, timeoutMs) {
 async function runIteration(iteration, options) {
   const port = options.port || (await findFreePort());
   const url = `http://localhost:${port}`;
-  const cacheBackup = options.coldStart ? moveCacheAside() : null;
   const fixture = options.fixtureSessions > 0 ? createFixtureData(options.fixtureSessions) : null;
   let cli = null;
   let browser = null;
@@ -953,7 +896,6 @@ async function runIteration(iteration, options) {
     if (cli) {
       stopCli(cli.child);
     }
-    if (cacheBackup) restoreCache(cacheBackup);
   }
 }
 
