@@ -94,7 +94,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 fn load(home: &Path, role: ServiceRole) -> Result<Configuration> {
-    let config: Configuration =
+    let mut config: Configuration =
         serde_json::from_slice(&std::fs::read(path(home, role, "json")).context(
             "No saved service configuration. Start Hub, or start Worker with --hub, first.",
         )?)?;
@@ -102,6 +102,9 @@ fn load(home: &Path, role: ServiceRole) -> Result<Configuration> {
         config.version == 1,
         "Unsupported service configuration version"
     );
+    for (key, value) in &mut config.environment {
+        *value = native::service_value(key, value).into_owned();
+    }
     Ok(config)
 }
 fn selection(args: &crate::options::Args) -> Option<(ServiceRole, Action)> {
@@ -638,4 +641,37 @@ pub fn paired() {
 
 pub fn take_open_request(home: &Path) -> bool {
     std::fs::remove_file(path(home, ServiceRole::Hub, "open")).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loaded_service_path_drops_temporary_and_relative_entries() {
+        use clap::Parser;
+        let home = tempfile::tempdir().unwrap();
+        let kept = std::env::current_dir().unwrap().join("bin");
+        let saved = std::env::join_paths([
+            std::env::temp_dir().join("smoke-data/bin"),
+            "relative/bin".into(),
+            kept.clone(),
+        ])
+        .unwrap();
+        let config = Configuration {
+            version: 1,
+            args: crate::options::Args::parse_from(["codesesh", "worker", "start"]),
+            directory: home.path().into(),
+            environment: [("PATH".into(), saved.to_string_lossy().into_owned())].into(),
+        };
+        write_private(
+            &path(home.path(), ServiceRole::Worker, "json"),
+            &serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            load(home.path(), ServiceRole::Worker).unwrap().environment["PATH"],
+            kept.to_string_lossy()
+        );
+    }
 }
