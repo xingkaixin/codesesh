@@ -162,7 +162,9 @@ fn scan_directories(
                         }
                     }
                     "assistant" => {
-                        let mut parts = vec![];
+                        let mut parts = r["content"]
+                            .as_str()
+                            .map_or_else(Vec::new, |content| text(content, created));
                         if let Some(content) = r["content"].as_array() {
                             for p in content {
                                 let s = clean(&str_value(
@@ -240,6 +242,7 @@ fn scan_directories(
         }
         let mut open = None::<String>;
         let mut buffers: HashMap<String, String> = HashMap::new();
+        let (mut read, mut create) = (0., 0.);
         for (seq, r) in records(&wire_path)?.enumerate() {
             let r = r?;
             if !context_path.exists() && r["role"] == "_usage" && r["token_count"].is_number() {
@@ -248,21 +251,27 @@ fn scan_directories(
             let msg = &r["message"];
             let p = &msg["payload"];
             let ts = (number(&r["timestamp"]) * 1000.).floor();
-            if let Some(usage) = msg.get("usage").filter(|v| v.is_object()) {
-                let input = number(&usage["input_tokens"]);
-                let output = number(&usage["output_tokens"]);
+            if msg["type"] == "StatusUpdate"
+                && let Some(usage) = p.get("token_usage").filter(|v| v.is_object())
+            {
+                let cache_read = number(&usage["input_cache_read"]);
+                let cache_create = number(&usage["input_cache_creation"]);
+                let input = number(&usage["input_other"]) + cache_read + cache_create;
+                let output = number(&usage["output"]);
                 let tokens = MessageTokens {
                     input: Some(input),
                     output: Some(output),
                     reasoning: None,
-                    cache_read: None,
-                    cache_create: None,
+                    cache_read: Some(cache_read),
+                    cache_create: Some(cache_create),
                 };
                 let cost =
                     pricing.estimate_tracked(model.as_deref(), &tokens, 0., &mut stats.cost_inputs);
                 stats.total_input_tokens += input;
                 stats.total_output_tokens += output;
                 stats.total_cost += cost.unwrap_or(0.);
+                read += cache_read;
+                create += cache_create;
                 if !context_path.exists() && (input != 0. || output != 0.) {
                     builder.usage(
                         tokens,
@@ -375,6 +384,8 @@ fn scan_directories(
                 _ => {}
             }
         }
+        stats.total_cache_read_tokens = (read > 0.).then_some(read);
+        stats.total_cache_create_tokens = (create > 0.).then_some(create);
         let hash = path
             .parent()
             .and_then(Path::file_name)
@@ -593,6 +604,7 @@ mod tests {
             json!({"role":"user","content":"Fix a bug"}),
             json!({"role":"assistant","content":[{"type":"think","think":"Inspect it"}],"tool_calls":[{"id":"c1","function":{"name":"ReadFile","arguments":"{\"path\":\"src/main.rs\"}"}}]}),
             json!({"role":"tool","tool_call_id":"c1","content":"source code"}),
+            json!({"role":"assistant","content":"Checking again","tool_calls":[{"id":"c2","function":{"name":"ReadFile","arguments":"{\"path\":\"src/main.rs\"}"}}]}),
             json!({"role":"_usage","token_count":99}),
         ];
         std::fs::write(
@@ -604,15 +616,40 @@ mod tests {
                 .join("\n"),
         )
         .unwrap();
-        std::fs::write(path.join("wire.jsonl"),json!({"message":{"type":"ContentPart","payload":{"type":"text","text":"Do not duplicate this"},"usage":{"input_tokens":20,"output_tokens":8}}}).to_string()).unwrap();
+        let wire = [
+            json!({"message":{"type":"ContentPart","payload":{"type":"text","text":"Do not duplicate this"}}}),
+            json!({"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":20,"output":8,"input_cache_read":5,"input_cache_creation":2}}}}),
+        ];
+        std::fs::write(
+            path.join("wire.jsonl"),
+            wire.iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
         let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         let detail = &sessions[0].detail;
         assert_eq!(detail.head.directory, cwd);
         assert_eq!(detail.head.title, "Fix a bug");
-        assert_eq!(detail.messages.len(), 2);
+        assert_eq!(detail.messages.len(), 3);
         assert_eq!(detail.head.stats.total_tokens, Some(99.));
-        assert_eq!(detail.head.stats.total_input_tokens, 20.);
+        assert_eq!(detail.head.stats.total_input_tokens, 27.);
+        assert_eq!(detail.head.stats.total_output_tokens, 8.);
+        assert_eq!(detail.head.stats.total_cache_read_tokens, Some(5.));
+        assert_eq!(detail.head.stats.total_cache_create_tokens, Some(2.));
         assert!(detail.messages[1].tokens.is_none());
+        let [
+            MessagePart::Text { text, .. },
+            MessagePart::Tool { call_id, .. },
+        ] = detail.messages[2].parts.as_slice()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            (text.as_str(), call_id.as_deref()),
+            ("Checking again", Some("c2"))
+        );
         let MessagePart::Tool { state, .. } = &detail.messages[1].parts[1] else {
             panic!()
         };
@@ -631,8 +668,8 @@ mod tests {
             json!({"timestamp":2,"message":{"type":"ToolCall","payload":{"id":"read","function":{"name":"ReadFile","arguments":""}}}}),
             json!({"timestamp":3,"message":{"type":"ToolCallPart","payload":{"arguments_part":"{\"path\":\"a.rs\"}"}}}),
             json!({"timestamp":4,"message":{"type":"ToolResult","payload":{"tool_call_id":"read","return_value":{"ok":true}}}}),
-            json!({"timestamp":5,"message":{"type":"StatusUpdate","usage":{"input_tokens":4,"output_tokens":2}}}),
-            json!({"timestamp":6,"message":{"type":"StatusUpdate","usage":{"input_tokens":3,"output_tokens":1}}}),
+            json!({"timestamp":5,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":4,"output":2}}}}),
+            json!({"timestamp":6,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":3,"output":1}}}}),
         ];
         std::fs::write(
             path.join("wire.jsonl"),

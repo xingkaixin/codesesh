@@ -60,7 +60,9 @@
         "provider": null,
         "tokens": {
           "input": 4,
-          "output": 2
+          "output": 2,
+          "cache_read": 0,
+          "cache_create": 0
         },
         "cost": 0,
         "parts": [
