@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.3] - 2026-10-11
+
+This patch fixes blocked Worker uploads, incomplete Agent history and usage, search edge cases, and Dashboard dates across time zones. (#752–#773)
+
+### Bug Fixes
+
+- Sign Worker uploads using the same serialization as the Hub, so payloads with nullable fields no longer fail checksum verification on every retry and block the queue. Track sessions whose incremental upload lost its base as missing until a full snapshot restores them. (#771, #773)
+- Count Codex reasoning tokens only once; read Kimi string replies and recorded token usage; include OpenCode V1 reasoning and cache tokens; mark failed Claude Code tool results as errors. (#753, #763, #768, #770)
+- Rebuild a missing message search index, preserve parent references in search results, count file-query limits in characters, and match descendants of filesystem root scopes. (#754, #762, #764, #767)
+- Use the requested time zone for Dashboard daily buckets, sparklines, window days, and comparison periods. (#772)
+- Resolve Agent links against the full catalog even without recent sessions, allow deeply nested tool JSON to expand, and prune cached session details after copying Markdown. (#757, #758, #761)
+- Validate proxied writes against the configured public URL so HTTPS writes work behind a trusted reverse proxy. Filter unsafe entries from saved service PATH values when loading them. (#755, #759)
+- Retry publishing downloaded prices after a cache-write failure, keep watching the standard OpenCode database path unless a development fallback exists, and restrict the special watcher create-event queue to macOS. (#765, #766, #769)
+
+### Development
+
+- Keep cold benchmarks away from the real user cache and accept the native CLI version format in backend benchmarks. (#752, #756)
+
+### Documentation
+
+- Correct cache schema, pricing refresh, and Hub upload documentation, and update the landing page's supported Agent count to 14. (#760)
+
 ## [1.3.2] - 2026-10-10
 
 This patch avoids repeated scans caused by unrelated database writes and makes Worker pauses, recovery, and failures easier to diagnose. (#749, #750)
