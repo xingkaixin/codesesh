@@ -1,6 +1,6 @@
 //! The embedded name map freezes Node 24.21.0 / ICU 78.3 canonicalization.
 
-use chrono::{DateTime, Datelike, FixedOffset, Timelike, Utc};
+use chrono::{DateTime, Datelike, Days, FixedOffset, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use std::{collections::HashMap, str::FromStr, sync::OnceLock};
 
@@ -81,6 +81,48 @@ impl DashboardTimeZone {
             }
         }
     }
+    pub fn date(&self, time: f64) -> NaiveDate {
+        let time = crate::time::date_time_clip(time)
+            .and_then(DateTime::from_timestamp_millis)
+            .unwrap_or(DateTime::UNIX_EPOCH);
+        match self.zone {
+            Zone::Named(zone) => time.with_timezone(&zone).date_naive(),
+            Zone::Offset(zone) => time.with_timezone(&zone).date_naive(),
+        }
+    }
+    pub fn start_of_day(&self, time: f64) -> f64 {
+        match self.zone {
+            Zone::Named(zone) => start_of_day(&zone, time),
+            Zone::Offset(zone) => start_of_day(&zone, time),
+        }
+    }
+    pub fn add_days(&self, time: f64, days: i64) -> Option<f64> {
+        match self.zone {
+            Zone::Named(zone) => add_days(&zone, time, days),
+            Zone::Offset(zone) => add_days(&zone, time, days),
+        }
+    }
+}
+
+fn start_of_day<Z: TimeZone>(zone: &Z, time: f64) -> f64 {
+    zone.timestamp_millis_opt(time as i64)
+        .single()
+        .and_then(|d| {
+            zone.from_local_datetime(&d.date_naive().and_hms_opt(0, 0, 0)?)
+                .earliest()
+        })
+        .map(|d| d.timestamp_millis() as f64)
+        .unwrap_or(time)
+}
+
+fn add_days<Z: TimeZone>(zone: &Z, time: f64, days: i64) -> Option<f64> {
+    let date = zone.timestamp_millis_opt(time as i64).single()?;
+    let date = if days >= 0 {
+        date.checked_add_days(Days::new(days as u64))?
+    } else {
+        date.checked_sub_days(Days::new(days.unsigned_abs()))?
+    };
+    Some(date.timestamp_millis() as f64)
 }
 
 #[cfg(test)]
