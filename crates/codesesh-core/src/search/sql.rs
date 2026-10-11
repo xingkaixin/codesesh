@@ -42,7 +42,7 @@ pub fn normalize_file(value: &str) -> &str {
 
 pub fn file_filter(filters: &mut Filters, value: &str) {
     let path = normalize_file(value);
-    if path.encode_utf16().count() >= 3 {
+    if path.chars().count() >= 3 {
         filters.text(
             "fa.rowid IN (SELECT rowid FROM session_file_activity_path_fts WHERE path MATCH ?)",
             &format!("\"{}\"", path.replace('"', "\"\"")),
