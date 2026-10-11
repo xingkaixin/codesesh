@@ -34,7 +34,8 @@
 - 否则使用 OPENCODE_DB：绝对路径直接读取，相对路径相对于 OpenCode 数据目录解析。
   显式路径不存在时不回退；`:memory:` 不属于可读取的历史来源。
 - 默认数据目录遵循上游 XDG_DATA_HOME/opencode，未设置时为
-  ~/.local/share/opencode，包括 Windows。保留现有 data/opencode/opencode.db 开发回退。
+  ~/.local/share/opencode，包括 Windows。标准库不存在且 data/opencode/opencode.db 存在时
+  使用该开发回退；两者都不存在时保留标准路径，以便发现之后创建的数据库。
 - 自定义渠道文件通过 OPENCODE_DB 指定；不枚举并合并所有 opencode-*.db。
 - 监听和读取使用相同候选路径。复用现有 pollForChanges 轮询数据库、WAL、journal，
   排除 SHM；没有变化时不查询数据库。恢复命令要求终端使用相同的数据路径环境。
