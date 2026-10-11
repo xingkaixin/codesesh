@@ -161,10 +161,11 @@ impl PathEnvironment {
                     }
                 } else {
                     let primary = data_root.join("opencode.db");
-                    if primary.exists() {
-                        primary
+                    let fallback = fallback.join("opencode.db");
+                    if !primary.exists() && fallback.exists() {
+                        fallback
                     } else {
-                        fallback.join("opencode.db")
+                        primary
                     }
                 }
             }

@@ -41,6 +41,10 @@ fn platform_paths_and_opencode_override_match_existing_rules() {
     assert_eq!(env.data_root("zcode"), Some(env.home.join(".zcode")));
     env.platform = "win32".into();
     assert_eq!(env.data_home(), env.home.join("AppData/Local"));
+    assert_eq!(
+        env.source("opencode").unwrap().scan_path,
+        env.home.join(".local/share/opencode/opencode.db")
+    );
     env.variables
         .insert("OPENCODE_DB".into(), ":memory:".into());
     assert!(env.source("opencode").is_none());
