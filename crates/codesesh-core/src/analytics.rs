@@ -16,7 +16,7 @@ use crate::{
     contract::SessionHead,
     query::{SessionTree, in_window},
 };
-use chrono::{DateTime, Days, Local, NaiveDate};
+use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -47,15 +47,9 @@ pub struct DashboardOptions<'a> {
     pub agent_info: Option<&'a HashMap<String, Value>>,
     pub compare: Option<(f64, f64)>,
     pub cost_facts: Option<&'a CostFactsIndex>,
+    pub time_zone: &'a DashboardTimeZone,
 }
 
-fn date(time: f64) -> NaiveDate {
-    crate::time::date_time_clip(time)
-        .and_then(DateTime::from_timestamp_millis)
-        .unwrap_or(DateTime::UNIX_EPOCH)
-        .with_timezone(&Local)
-        .date_naive()
-}
 fn project_key(s: &SessionHead) -> String {
     format!("{}:{}", s.project_identity.kind, s.project_identity.key)
 }
@@ -109,7 +103,7 @@ struct Acc {
     sparkline: HashMap<NaiveDate, usize>,
 }
 impl Acc {
-    fn new(names: &[String], scope: &DashboardScope, to: f64) -> Self {
+    fn new(names: &[String], scope: &DashboardScope, end: NaiveDate) -> Self {
         let agents: Vec<_> = names
             .iter()
             .filter(|n| scope.agent.as_ref().is_none_or(|a| *a == n.to_lowercase()))
@@ -118,7 +112,7 @@ impl Acc {
         let agent_names = agents.iter().map(|(n, _)| n.to_lowercase()).collect();
         let mut sparkline = HashMap::new();
         for slot in 0..14 {
-            if let Some(d) = date(to).checked_sub_days(Days::new(13 - slot)) {
+            if let Some(d) = end.checked_sub_days(Days::new(13 - slot)) {
                 sparkline.insert(d, slot as usize);
             }
         }
@@ -180,7 +174,8 @@ fn accumulate(
     to: f64,
     fill_days: bool,
 ) -> Acc {
-    let mut acc = Acc::new(options.by_agent_names, options.scope, to);
+    let date = |time| options.time_zone.date(time);
+    let mut acc = Acc::new(options.by_agent_names, options.scope, date(to));
     // Lowercased agent names and project keys per session, instead of one allocation per fact.
     let agents: Vec<_> = tree
         .sessions

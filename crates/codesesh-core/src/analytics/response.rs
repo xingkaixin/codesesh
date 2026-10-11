@@ -1,4 +1,3 @@
-use super::DashboardTimeZone;
 use super::{
     CostFactsIndex, DashboardOptions, active_hours, build_dashboard, load_scoped_cost_facts,
 };
@@ -19,7 +18,6 @@ pub struct DashboardTimings {
 
 pub struct DashboardResponseOptions<'a> {
     pub aggregate: DashboardOptions<'a>,
-    pub time_zone: &'a str,
     pub days: i64,
     pub query_scope: Option<QueryScope>,
 }
@@ -30,10 +28,6 @@ pub fn dashboard_response(
     options: &DashboardResponseOptions<'_>,
 ) -> anyhow::Result<(Value, DashboardTimings)> {
     let mut timings = DashboardTimings::default();
-    let time_zone: DashboardTimeZone = options
-        .time_zone
-        .parse()
-        .map_err(|_| anyhow::anyhow!("timeZone must be a valid IANA time zone"))?;
     let aggregate = &options.aggregate;
     let loaded_facts;
     let facts = if let Some(facts) = aggregate.cost_facts {
@@ -65,7 +59,7 @@ pub fn dashboard_response(
         aggregate.scope,
         aggregate.from,
         aggregate.to,
-        time_zone,
+        aggregate.time_zone.clone(),
     )?;
     timings.active_hours_ms = phase.elapsed().as_secs_f64() * 1000.0;
     let phase = Instant::now();

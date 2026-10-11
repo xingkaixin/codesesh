@@ -79,6 +79,7 @@ fn dashboard_includes_descendants_but_counts_only_entries() {
             agent_info: None,
             compare: None,
             cost_facts: None,
+            time_zone: &"UTC".parse().unwrap(),
         },
     );
     assert_eq!(result["totals"]["sessions"], 1);
@@ -139,6 +140,7 @@ fn reconciled_messages_attribute_cost_to_message_time() {
             agent_info: None,
             compare: None,
             cost_facts: Some(&facts),
+            time_zone: &"UTC".parse().unwrap(),
         },
     );
     assert_eq!(result["totals"]["sessions"], 0);
@@ -172,6 +174,7 @@ fn matches_node_reference_for_ranking_windows_and_cost_reconciliation() {
                     .get("compare")
                     .map(|c| (c["from"].as_f64().unwrap(), c["to"].as_f64().unwrap())),
                 cost_facts: facts.as_ref(),
+                time_zone: &"UTC".parse().unwrap(),
             },
         );
         assert_json_equivalent(&actual, &fixture["expected"], &format!("case {index}"));
@@ -369,6 +372,7 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
         agent_info: None,
         compare: Some((BUCKET as f64, from - 1.0)),
         cost_facts: Some(&all),
+        time_zone: &"UTC".parse().unwrap(),
     };
     let expected = build_dashboard(&sessions, &options);
     let actual = build_dashboard(
@@ -584,6 +588,7 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
     let names = vec!["codex".into()];
     let scope = DashboardScope::default();
     let projects = vec![json!({"identityKind":"path","identityKey":"/project"})];
+    let utc = "UTC".parse().unwrap();
     for (from, to, compare) in [
         (
             Some(start as f64),
@@ -600,6 +605,7 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
             agent_info: None,
             compare,
             cost_facts: Some(facts),
+            time_zone: &utc,
         };
         assert_eq!(
             build_dashboard(&sessions, &options(&bucketed)),
@@ -624,6 +630,7 @@ fn empty_project_rollup_serializes_positive_zero() {
             agent_info: None,
             compare: None,
             cost_facts: None,
+            time_zone: &"UTC".parse().unwrap(),
         },
     );
     for field in ["tokens", "cost"] {

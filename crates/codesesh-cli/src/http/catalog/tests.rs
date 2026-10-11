@@ -187,3 +187,62 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
     assert!(state.catalog_cache.lock().unwrap().entries.len() <= 64);
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn dashboard_days_follow_the_request_time_zone() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("rollout.jsonl");
+    std::fs::write(&source, concat!(
+        "{\"timestamp\":\"2026-09-01T23:30:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
+        "{\"timestamp\":\"2026-09-01T23:30:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Morning\"}]}}\n"
+    )).unwrap();
+    let data = codex::parse(&source, &Default::default(), &Pricing::bundled())
+        .unwrap()
+        .unwrap();
+    let path = dir.path().join("cache.db");
+    Cache::open(Some(&path))
+        .unwrap()
+        .publish(&mut [ParsedSession {
+            head: data.head.clone(),
+            detail: data,
+            source,
+        }])
+        .unwrap();
+    let runtime = Runtime::start(path, vec![], 1).await.unwrap();
+    let state = Arc::new(State::new(
+        runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(StateStore::memory().unwrap()),
+        super::super::Options {
+            token: Some("test".into()),
+            hostname: "127.0.0.1".into(),
+            port: 4521,
+            tls: false,
+            trust_proxy: false,
+            public_origin: None,
+            loopback_authority: true,
+            default_from: None,
+            default_to: None,
+            default_days: Some(0),
+            enabled_agents: vec!["codex".into()],
+            cwd: None,
+        },
+    ));
+    let shanghai_day =
+        "from=2026-09-01T16:00:00Z&to=2026-09-02T15:59:59.999Z&timeZone=Asia/Shanghai";
+    let value = body(
+        dashboard(
+            AxumState(state),
+            RawQuery(Some(shanghai_day.into())),
+            Extension(Default::default()),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(value["window"]["days"], 1);
+    let daily = value["dailyActivity"].as_array().unwrap();
+    assert_eq!(daily.len(), 1);
+    assert_eq!(daily[0]["date"], "2026-09-02");
+    assert_eq!(daily[0]["sessions"], 1);
+    runtime.shutdown().await.unwrap();
+}

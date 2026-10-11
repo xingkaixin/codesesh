@@ -5,7 +5,6 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use chrono::{Days, Local, TimeZone};
 use codesesh_core::{
     analytics, projects,
     query::{self, PaginationError},
@@ -301,6 +300,10 @@ pub async fn dashboard(
         Ok(v) => v,
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
+    let zone: analytics::DashboardTimeZone = match zone.parse() {
+        Ok(v) => v,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
     let to = base_to.unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as f64);
     let parsed_days = query
         .optional("days")
@@ -316,18 +319,20 @@ pub async fn dashboard(
         });
     let request_days = parsed_days.or(state.options.default_days.map(i64::from));
     let (from, days) = if query.optional("from").is_some() {
-        (base_from, count_days(base_from.unwrap(), to))
+        (base_from, count_days(&zone, base_from.unwrap(), to))
     } else if request_days == Some(0) {
         (None, 0)
     } else if let Some(days) = request_days.filter(|v| *v > 0) {
-        (calendar_add(start_day(to), -(days - 1)), days)
+        (zone.add_days(zone.start_of_day(to), -(days - 1)), days)
     } else if let Some(from) = base_from {
-        (Some(from), count_days(from, to))
+        (Some(from), count_days(&zone, from, to))
     } else {
-        (calendar_add(start_day(to), -29), 30)
+        (zone.add_days(zone.start_of_day(to), -29), 30)
     };
-    let compare =
-        from.and_then(|from| calendar_add(from, -days).map(|previous| (previous, from - 1.0)));
+    let compare = from.and_then(|from| {
+        zone.add_days(from, -days)
+            .map(|previous| (previous, from - 1.0))
+    });
     let scope = analytics::DashboardScope {
         agent: query.optional("agent").map(str::to_lowercase),
         project_kind: project.map(|(kind, _)| kind.to_owned()),
@@ -336,8 +341,8 @@ pub async fn dashboard(
     let names = state.options.enabled_agents.clone();
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.catalog_cache.clone();
-    // The Node backend reuses open-ended windows until the next local calendar day.
-    let cache_to = base_to.unwrap_or_else(|| start_day(to));
+    // Open-ended windows are reused until the next calendar day in the request time zone.
+    let cache_to = base_to.unwrap_or_else(|| zone.start_of_day(to));
     let key = json!([
         "dashboard",
         query_scope.source_node_id,
@@ -348,7 +353,7 @@ pub async fn dashboard(
         cache_to,
         compare,
         days,
-        zone
+        zone.name()
     ]);
     let started = Instant::now();
     let result = state
@@ -394,8 +399,8 @@ pub async fn dashboard(
                             agent_info: Some(&info),
                             compare,
                             cost_facts: Some(&facts),
+                            time_zone: &zone,
                         },
-                        time_zone: &zone,
                         days,
                         query_scope: Some(query_scope),
                     },
@@ -422,19 +427,10 @@ pub async fn dashboard(
             log_query(context, "/api/dashboard", started, timings);
             Json(value).into_response()
         }
-        Err(e) => {
-            if e.to_string().contains("timeZone must") {
-                error(
-                    StatusCode::BAD_REQUEST,
-                    "timeZone must be a valid IANA time zone",
-                )
-            } else {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to load dashboard",
-                )
-            }
-        }
+        Err(_) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to load dashboard",
+        ),
     }
 }
 pub fn public_session(value: &mut Value) {
@@ -450,39 +446,8 @@ pub fn public_session(value: &mut Value) {
         }
     }
 }
-fn start_day(time: f64) -> f64 {
-    Local
-        .timestamp_millis_opt(time as i64)
-        .single()
-        .and_then(|d| {
-            Local
-                .from_local_datetime(&d.date_naive().and_hms_opt(0, 0, 0)?)
-                .earliest()
-        })
-        .map(|d| d.timestamp_millis() as f64)
-        .unwrap_or(time)
-}
-fn calendar_add(time: f64, days: i64) -> Option<f64> {
-    let date = Local.timestamp_millis_opt(time as i64).single()?;
-    let date = if days >= 0 {
-        date.checked_add_days(Days::new(days as u64))?
-    } else {
-        date.checked_sub_days(Days::new(days.unsigned_abs()))?
-    };
-    Some(date.timestamp_millis() as f64)
-}
-fn count_days(from: f64, to: f64) -> i64 {
-    let date = |v: f64| {
-        Local
-            .timestamp_millis_opt(v as i64)
-            .single()
-            .map(|d| d.date_naive())
-    };
-    date(from)
-        .zip(date(to))
-        .map(|(a, b)| (b - a).num_days() + 1)
-        .unwrap_or(1)
-        .max(1)
+fn count_days(zone: &analytics::DashboardTimeZone, from: f64, to: f64) -> i64 {
+    ((zone.date(to) - zone.date(from)).num_days() + 1).max(1)
 }
 
 fn agent_info(counts: &HashMap<String, usize>) -> Vec<Value> {
