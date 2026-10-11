@@ -59,7 +59,7 @@ CodeSesh opens a local Web UI at `http://localhost:4521`. The npm launcher requi
 
 ## Data Boundary
 
-CodeSesh does not upload AI coding session data. Session content and the SQLite index remain on the user's computer. No account, cloud sync, or session telemetry is required. CodeSesh may fetch public model pricing metadata for cost estimation; that request does not contain session content.
+By default, CodeSesh does not upload AI coding session data. Session content and the SQLite index remain on the user's computer. A Worker uploads sessions only after the user explicitly pairs it with their own self-hosted Hub. No account, cloud sync, or session telemetry is required. CodeSesh may fetch public model pricing metadata for cost estimation; that request does not contain session content.
 
 ## Key Questions
 
@@ -69,7 +69,7 @@ A local developer tool for discovering, organizing, searching, and replaying AI 
 
 ### Does CodeSesh upload local AI session data?
 
-No. Session content, file paths, token statistics, recorded costs, and the local index remain on the user's computer.
+Not by default. Session content, file paths, token statistics, recorded costs, and the local index remain on the user's computer. An explicitly paired Worker uploads sessions only to the user's own self-hosted Hub, not to a third party.
 
 ### How do I start CodeSesh?
 
@@ -81,7 +81,7 @@ It persists scan progress, restores from a SQLite cache, incrementally watches c
 
 ## Chinese Summary
 
-CodeSesh 将十种 AI 编码 Agent 的本地会话按项目组织到同一个 SQLite 索引中，提供结构化搜索、文件活动索引和完整会话回放。会话数据不上传，无需账号、云同步或会话遥测。
+CodeSesh 将十种 AI 编码 Agent 的本地会话按项目组织到同一个 SQLite 索引中，提供结构化搜索、文件活动索引和完整会话回放。默认不上传会话数据；显式配对的 Worker 只上传到用户自托管的 Hub。无需账号、云同步或会话遥测。
 
 ## Usage guides
 

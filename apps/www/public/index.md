@@ -73,7 +73,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 
 ## Data Boundary
 
-CodeSesh does not upload AI coding session data. Session content, file paths, token statistics, recorded costs, and the SQLite index stay on the user's computer. The product requires no account, cloud sync, or session telemetry.
+By default, CodeSesh does not upload AI coding session data. Session content, file paths, token statistics, recorded costs, and the SQLite index stay on the user's computer. A Worker uploads sessions only after the user explicitly pairs it with their own self-hosted Hub. The product requires no account, cloud sync, or session telemetry.
 
 CodeSesh may fetch public model pricing metadata to estimate costs. That request does not contain session content.
 
@@ -85,7 +85,7 @@ CodeSesh is a local developer tool for discovering, aggregating, searching, and 
 
 ### Does CodeSesh upload local AI session data?
 
-No. CodeSesh serves its Web UI on localhost and stores its index in local SQLite. It does not require an account, cloud sync, or session telemetry.
+Not by default. In standalone mode, CodeSesh serves its Web UI on localhost and stores its index in local SQLite. An explicitly paired Worker uploads sessions only to the user's own self-hosted Hub, not to a third party. It does not require an account, cloud sync, or session telemetry.
 
 ### How do I install and start CodeSesh?
 
