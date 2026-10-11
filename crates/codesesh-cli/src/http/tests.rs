@@ -456,7 +456,7 @@ async fn remote_proxy_accepts_public_authority_but_requires_https() {
     let app = router(Arc::new(State::new(
         runtime.clone(),
         codesesh_core::pricing::PricingController::load(dir.path()),
-        None,
+        Some(StateStore::memory().unwrap()),
         Options {
             token: Some("secret".into()),
             hostname: "127.0.0.1".into(),
@@ -479,6 +479,25 @@ async fn remote_proxy_accepts_public_authority_but_requires_https() {
             .header("x-forwarded-proto", protocol)
             .header("authorization", "Bearer secret")
             .body(Body::empty())
+            .unwrap();
+        assert_eq!(app.clone().oneshot(request).await.unwrap().status(), status);
+    }
+    for (origin, status) in [
+        ("https://codesesh.example.com", StatusCode::OK),
+        ("http://codesesh.example.com", StatusCode::FORBIDDEN),
+        ("https://evil.test", StatusCode::FORBIDDEN),
+    ] {
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("/api/bookmarks")
+            .header("host", "codesesh.example.com")
+            .header("x-forwarded-proto", "https")
+            .header("authorization", "Bearer secret")
+            .header("content-type", "application/json")
+            .header("origin", origin)
+            .body(Body::from(
+                r#"{"reference":{"agentName":"codex","sessionId":"remote"}}"#,
+            ))
             .unwrap();
         assert_eq!(app.clone().oneshot(request).await.unwrap().status(), status);
     }

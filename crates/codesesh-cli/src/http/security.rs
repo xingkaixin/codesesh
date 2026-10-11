@@ -177,10 +177,12 @@ fn validate(state: &State, request: &Request) -> Result<(), (StatusCode, &'stati
             "Write requests require application/json",
         ));
     }
-    let request_origin = format!(
-        "{}://{host}",
-        if state.options.tls { "https" } else { "http" }
-    );
+    let request_origin = state.options.public_origin.clone().unwrap_or_else(|| {
+        format!(
+            "{}://{host}",
+            if state.options.tls { "https" } else { "http" }
+        )
+    });
     let fetch_ok =
         text("sec-fetch-site").is_none_or(|v| v.is_empty() || matches!(v, "same-origin" | "none"));
     let origin_ok = text("origin").is_none_or(|v| {
