@@ -31,7 +31,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 ### Discover
 
 - Zero configuration: scan supported local agent sessions with one command.
-- Unified timeline: browse ten AI coding agents in one interface.
+- Unified timeline: browse 14 AI coding agents in one interface.
 - Live refresh: incrementally index changed sessions while the local server runs.
 
 ### Organize
@@ -81,7 +81,7 @@ CodeSesh may fetch public model pricing metadata to estimate costs. That request
 
 ### What is CodeSesh?
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from ten supported agents into a project-aware engineering memory layer.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from 14 supported agents into a project-aware engineering memory layer.
 
 ### Does CodeSesh upload local AI session data?
 
@@ -109,4 +109,4 @@ The initial scan persists backfill progress. Later starts restore from the SQLit
 
 ## 中文说明
 
-CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放十种 AI 编码 Agent 的本地会话。会话内容与 SQLite 索引保留在用户电脑上，无需账号、云同步或会话遥测。
+CodeSesh 是一个本地开发者工具，用来发现、聚合、搜索和回放 14 种 AI 编码 Agent 的本地会话。会话内容与 SQLite 索引保留在用户电脑上，无需账号、云同步或会话遥测。
