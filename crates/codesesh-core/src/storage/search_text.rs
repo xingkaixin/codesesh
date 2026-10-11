@@ -183,11 +183,11 @@ pub(super) fn ensure_index(
     let legacy = db
         .prepare("SELECT 1 FROM pragma_table_info('session_documents') WHERE name='content_text'")?
         .exists([])?;
-    let missing = !db
+    let missing = db
         .prepare("SELECT 1 FROM sqlite_master WHERE name IN ('message_fts','session_title_fts')")?
         .query_map([], |_| Ok(()))?
         .count()
-        == 2;
+        != 2;
     if legacy || missing {
         progress(StorageProgress {
             phase: "Preparing message search index".into(),
@@ -205,8 +205,7 @@ pub(super) fn ensure_index(
                 db.execute_batch("ALTER TABLE session_documents DROP COLUMN content_text")?;
             }
             db.execute_batch(INDEX_SCHEMA)?;
-            db.execute("DELETE FROM cache_meta WHERE key=?", [INDEX_KEY])?;
-            Ok(())
+            reset_index(db)
         })?;
     }
     if meta(db, INDEX_KEY)?.is_some() {
@@ -391,6 +390,26 @@ mod tests {
                 .len()
         };
         assert_eq!((search("Fixture"), search(&blob)), (1, 0));
+    }
+
+    #[test]
+    fn missing_message_index_is_rebuilt_on_open() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("cache.db");
+        let mut session = super::super::tests::source(root.path(), "missing");
+        let mut cache = super::super::Cache::open(Some(&path)).unwrap();
+        cache.publish(std::slice::from_mut(&mut session)).unwrap();
+        cache
+            .connection()
+            .execute_batch("DROP TABLE message_fts")
+            .unwrap();
+        drop(cache);
+        let mut cache = super::super::Cache::open(Some(&path)).unwrap();
+        cache.publish(std::slice::from_mut(&mut session)).unwrap();
+        let results =
+            crate::search::search_sessions(cache.connection(), "Fixture", &Default::default())
+                .unwrap();
+        assert_eq!(results.len(), 1);
     }
 
     #[test]
