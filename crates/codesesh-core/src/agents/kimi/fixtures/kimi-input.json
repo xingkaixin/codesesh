@@ -51,9 +51,13 @@
     "timestamp": 5,
     "message": {
       "type": "StatusUpdate",
-      "usage": {
-        "input_tokens": 4,
-        "output_tokens": 2
+      "payload": {
+        "token_usage": {
+          "input_other": 4,
+          "output": 2,
+          "input_cache_read": 0,
+          "input_cache_creation": 0
+        }
       }
     }
   }
