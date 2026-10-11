@@ -208,6 +208,26 @@ describe("ToolOutputRenderer", () => {
     expect(view.getByText("Current LTS")).toBeTruthy();
   });
 
+  it("reveals the JSON of values nested beyond the property depth", () => {
+    const view = renderOutput({
+      kind: "property-list",
+      items: [
+        {
+          label: "result",
+          value: { data: { details: { message: "Only diagnostic detail" }, values: [1, 2, 3] } },
+        },
+      ],
+    });
+    expect(view.getByText("3 items")).toBeTruthy();
+    expect(view.queryByText(/Only diagnostic detail/)).toBeNull();
+    const details = view.getByText("1 fields").closest("details")!;
+    act(() => {
+      details.open = true;
+      fireEvent(details, new Event("toggle"));
+    });
+    expect(view.getByText(/"message": "Only diagnostic detail"/)).toBeTruthy();
+  });
+
   it("renders every task status and optional detail", () => {
     const view = renderOutput({
       kind: "task-list",

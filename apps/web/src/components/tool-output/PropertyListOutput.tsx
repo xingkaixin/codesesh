@@ -1,5 +1,9 @@
+import { useState, type ReactNode } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
+import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
+import { ProgressiveText } from "../ProgressiveContent";
+import { toDisplayText } from "../session-detail/tool-normalize";
 import type { PropertyItem } from "./types";
 
 function displayScalar(value: unknown) {
@@ -9,6 +13,33 @@ function displayScalar(value: unknown) {
     return String(value);
   }
   return null;
+}
+
+function NestedJson({ value, children }: { value: unknown; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="min-w-0"
+    >
+      <summary className="cursor-pointer rounded-sm text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">
+        {children}
+      </summary>
+      {open ? (
+        <ProgressiveText
+          text={toDisplayText(value)}
+          initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
+        >
+          {(text) => (
+            <pre className="console-mono mt-1 max-h-[420px] overflow-auto whitespace-pre-wrap break-words">
+              {text}
+            </pre>
+          )}
+        </ProgressiveText>
+      ) : null}
+    </details>
+  );
 }
 
 function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
@@ -22,9 +53,9 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
   if (Array.isArray(value)) {
     if (depth >= 2)
       return (
-        <span>
+        <NestedJson value={value}>
           {value.length} {t("items")}
-        </span>
+        </NestedJson>
       );
     return (
       <div className="flex flex-wrap gap-1.5">
@@ -43,9 +74,9 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
   if (typeof value === "object") {
     if (depth >= 2)
       return (
-        <span>
+        <NestedJson value={value}>
           {Object.keys(value as object).length} {t("fields")}
-        </span>
+        </NestedJson>
       );
     return (
       <dl className="space-y-1.5">
