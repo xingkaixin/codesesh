@@ -42,7 +42,8 @@ for (const scenario of ["version", "cold-json", "warm-json", "web-ready-with-sca
         const result = await runCli(fixture, args, measuredCommand);
         elapsedMs = performance.now() - started;
         assert.equal(result.code, 0, result.stderr);
-        if (scenario === "version") assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+(?:-.+)?$/);
+        if (scenario === "version")
+          assert.match(result.stdout.trim(), /^(?:codesesh )?\d+\.\d+\.\d+(?:-.+)?$/);
         else assert.equal(JSON.parse(result.stdout).sessions.length, 1);
         const macRss = result.stderr.match(/(\d+)\s+maximum resident set size/);
         const linuxRss = result.stderr.match(/Maximum resident set size \(kbytes\):\s*(\d+)/);
