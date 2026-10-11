@@ -30,7 +30,7 @@ pub fn matches_project_scope(session: &SessionHead, scope: &ProjectScopeMatcher)
     }
     let path = normalize_project_scope_path(&session.directory);
     path == scope.path
-        || path.starts_with(&format!("{}/", scope.path))
+        || path.starts_with(&format!("{}/", scope.path.trim_end_matches('/')))
         || scope.path.starts_with(&format!("{path}/"))
 }
 pub fn filter_sessions_by_project_scope<'a>(

@@ -292,12 +292,13 @@ fn filters_include_descendant_cost_tools_files_and_scope() {
             .unwrap()
             .is_empty()
     );
-    assert_eq!(
-        execute(&db, "cwd:/work", &SearchOptions::default())
-            .unwrap()
-            .len(),
-        3
-    );
+    for cwd in ["cwd:/work", "cwd:/"] {
+        assert_eq!(
+            execute(&db, cwd, &SearchOptions::default()).unwrap().len(),
+            3,
+            "{cwd}"
+        );
+    }
     assert!(
         execute(&db, "cwd:/other", &SearchOptions::default())
             .unwrap()
