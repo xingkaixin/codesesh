@@ -3,9 +3,12 @@ use crate::contract::{CostSource, ProjectIdentity, SessionStats};
 use rusqlite::{OptionalExtension, Row, params};
 
 // Search sorts many rows; `s.*` would carry `meta_json` (pricing state) into the sorter.
-pub(super) const HEAD_COLUMNS: &str = "s.source_node_id,s.agent_name,s.session_id,s.title,s.directory,s.project_identity_kind,s.project_identity_key,s.project_display_name,s.time_created,s.time_updated,s.message_count,s.total_input_tokens,s.total_output_tokens,s.total_cost,s.total_cache_read_tokens,s.total_cache_create_tokens,s.total_tokens,s.cost_source,s.model_usage_json,s.smart_tags_json,s.smart_tags_source_updated_at";
+pub(super) const HEAD_COLUMNS: &str = "s.source_node_id,s.agent_name,s.session_id,s.title,s.directory,s.parent_agent_name,s.parent_session_id,s.project_identity_kind,s.project_identity_key,s.project_display_name,s.time_created,s.time_updated,s.message_count,s.total_input_tokens,s.total_output_tokens,s.total_cost,s.total_cache_read_tokens,s.total_cache_create_tokens,s.total_tokens,s.cost_source,s.model_usage_json,s.smart_tags_json,s.smart_tags_source_updated_at";
 
 pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
+    let source_node_id: String = row.get("source_node_id")?;
+    let parent_agent: Option<String> = row.get("parent_agent_name")?;
+    let parent_id: Option<String> = row.get("parent_session_id")?;
     let source: Option<String> = row.get("cost_source")?;
     let usage: Option<String> = row.get("model_usage_json")?;
     let tags: Option<String> = row.get("smart_tags_json")?;
@@ -13,14 +16,20 @@ pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
         version: None,
         summary_files: None,
         reference: SessionReference {
-            source_node_id: row.get("source_node_id")?,
+            source_node_id: source_node_id.clone(),
             agent_name: row.get("agent_name")?,
             session_id: row.get("session_id")?,
         },
         title: row.get("title")?,
         directory: row.get("directory")?,
         display_title: None,
-        parent_reference: None,
+        parent_reference: parent_agent.zip(parent_id).map(|(agent_name, session_id)| {
+            SessionReference {
+                source_node_id,
+                agent_name,
+                session_id,
+            }
+        }),
         project_identity: ProjectIdentity {
             kind: row.get("project_identity_kind")?,
             key: row.get("project_identity_key")?,

@@ -434,6 +434,20 @@ fn snapshot_recent_preserves_order_and_parent_context() {
 }
 
 #[test]
+fn keyword_results_keep_parent_reference() {
+    let result = execute(&database(), "unrelated", &SearchOptions::default()).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(
+        result[0].session.parent_reference,
+        Some(SessionReference {
+            source_node_id: "local".into(),
+            agent_name: "codex".into(),
+            session_id: "one".into(),
+        })
+    );
+}
+
+#[test]
 fn pending_publications_and_query_scope_do_not_leak_into_search() {
     let db = database();
     db.execute(
