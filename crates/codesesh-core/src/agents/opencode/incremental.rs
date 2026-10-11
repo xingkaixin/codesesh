@@ -176,6 +176,11 @@ pub(super) fn refresh_scoped(
                     .extend(children.cost_inputs.iter().cloned());
                 detail.head.stats.total_input_tokens += children.total_input_tokens;
                 detail.head.stats.total_output_tokens += children.total_output_tokens;
+                content::add_cache_tokens(
+                    &mut detail.head.stats,
+                    children.total_cache_read_tokens,
+                    children.total_cache_create_tokens,
+                );
                 if detail.head.stats.total_cost > 0.0 {
                     detail.head.stats.cost_source = Some(
                         if detail.head.stats.cost_source == Some(CostSource::Estimated)

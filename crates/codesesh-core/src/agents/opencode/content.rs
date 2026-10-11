@@ -273,12 +273,19 @@ pub(super) fn v1_message(
     parts: Vec<MessagePart>,
     pricing: &Pricing,
 ) -> Message {
-    let tokens = raw["tokens"].as_object().map(|_| MessageTokens {
-        input: Some(number(&raw["tokens"]["input"])),
-        output: Some(number(&raw["tokens"]["output"])),
-        reasoning: None,
-        cache_read: None,
-        cache_create: None,
+    let tokens = raw["tokens"].as_object().map(|_| {
+        let t = &raw["tokens"];
+        let cache_read = t["cache"]["read"].as_f64();
+        let cache_create = t["cache"]["write"].as_f64();
+        MessageTokens {
+            input: Some(
+                number(&t["input"]) + cache_read.unwrap_or(0.0) + cache_create.unwrap_or(0.0),
+            ),
+            output: Some(number(&t["output"])),
+            reasoning: t["reasoning"].as_f64(),
+            cache_read,
+            cache_create,
+        }
     });
     let model = optional_string(&raw["modelID"]);
     let recorded = number(&raw["cost"]);
@@ -337,7 +344,8 @@ pub(super) fn stats(messages: &[Message]) -> SessionStats {
         stats.cost_inputs.extend(m.cost_inputs.iter().cloned());
         if let Some(t) = &m.tokens {
             stats.total_input_tokens += t.input.unwrap_or(0.0);
-            stats.total_output_tokens += t.output.unwrap_or(0.0);
+            stats.total_output_tokens += t.output.unwrap_or(0.0) + t.reasoning.unwrap_or(0.0);
+            add_cache_tokens(&mut stats, t.cache_read, t.cache_create);
         }
         estimated |= m.cost_source == Some(CostSource::Estimated);
     }
@@ -347,6 +355,16 @@ pub(super) fn stats(messages: &[Message]) -> SessionStats {
         CostSource::Recorded
     });
     stats
+}
+pub(super) fn add_cache_tokens(stats: &mut SessionStats, read: Option<f64>, create: Option<f64>) {
+    for (total, count) in [
+        (&mut stats.total_cache_read_tokens, read),
+        (&mut stats.total_cache_create_tokens, create),
+    ] {
+        if let Some(count) = count {
+            *total = Some(total.unwrap_or(0.0) + count);
+        }
+    }
 }
 pub(super) fn token_total(tokens: &MessageTokens) -> f64 {
     [
