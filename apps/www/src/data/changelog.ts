@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.3",
+        date: "2026-10-11",
+        title: "More reliable sync and more accurate session history",
+        summary:
+          "CodeSesh 1.3.3 fixes uploads that could block Worker sync, fills gaps in Agent replies and token usage, and aligns Dashboard dates with your requested time zone.",
+        direction:
+          "Local AI coding history should preserve what happened and what it cost, while making interruptions in multi-machine collection visible and recoverable.",
+        highlights: [
+          {
+            title: "Keep Worker sync moving",
+            description:
+              "Uploads with nullable fields no longer get stuck on repeated checksum failures. Sessions whose incremental updates cannot be restored are shown as missing until a full copy arrives. Upgrade the Hub before its Workers.",
+          },
+          {
+            title: "Read replies, failures, and usage accurately",
+            description:
+              "Kimi text replies and usage, OpenCode V1 cache and reasoning tokens, and Claude Code tool failures are read correctly. Codex reasoning tokens are no longer counted twice.",
+          },
+          {
+            title: "Find and inspect the right history",
+            description:
+              "Search repairs a missing index and preserves parent session references. Agent links work without recent sessions, and deeply nested tool data can be expanded.",
+          },
+          {
+            title: "Keep daily statistics in your time zone",
+            description:
+              "Dashboard daily totals, sparklines, and comparison periods follow the requested time zone, including when the server runs elsewhere.",
+          },
+        ],
+      },
+      {
         version: "1.3.2",
         date: "2026-10-10",
         title: "Fewer repeated scans and clearer Worker diagnostics",
@@ -752,6 +783,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.3",
+        date: "2026-10-11",
+        title: "同步更可靠，会话记录更准确",
+        summary:
+          "CodeSesh 1.3.3 修复可能阻塞 Worker 同步的上传问题，补全 Agent 回复与 token 用量解析，并让 Dashboard 日期与请求指定的时区一致。",
+        direction:
+          "本地 AI 编码历史应准确保留执行过程与用量，同时让多机器采集中的中断可见、可恢复。",
+        highlights: [
+          {
+            title: "让 Worker 同步继续推进",
+            description:
+              "含可空字段的上传不再反复校验失败而卡住队列。无法恢复增量内容的会话会显示为缺失，直到收到完整副本。请先升级 Hub，再升级 Worker。",
+          },
+          {
+            title: "准确读取回复、失败与用量",
+            description:
+              "正确读取 Kimi 文本回复和用量、OpenCode V1 缓存与推理 token，以及 Claude Code 工具失败结果。Codex 推理 token 不再重复计数。",
+          },
+          {
+            title: "找到并查看需要的历史",
+            description:
+              "搜索可重建缺失索引，并保留父会话引用。Agent 没有近期会话时链接仍可使用，深层工具数据也可以展开查看。",
+          },
+          {
+            title: "按你的时区查看每日统计",
+            description:
+              "Dashboard 每日统计、迷你图与对比周期按请求指定的时区计算，服务器位于其他时区时也能保持一致。",
+          },
+        ],
+      },
+      {
         version: "1.3.2",
         date: "2026-10-10",
         title: "减少重复扫描，更清楚地排查 Worker 问题",
@@ -1412,6 +1474,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.3.3",
+        date: "2026-10-11",
+        title: "同期の安定性と会話履歴の正確さを改善",
+        summary:
+          "CodeSesh 1.3.3 は Worker 同期を妨げるアップロードの問題を修正し、Agent の応答とトークン使用量の読み取りを補完します。Dashboard の日付もリクエストで指定したタイムゾーンに揃います。",
+        direction:
+          "ローカルの AI コーディング履歴では、実行内容と使用量を正確に残し、複数マシンでの収集中断を確認・復旧できることを重視しています。",
+        highlights: [
+          {
+            title: "Worker の同期が滞る問題を修正",
+            description:
+              "null を含むアップロードがチェックサム検証で繰り返し失敗する問題を修正しました。差分を復元できない会話は、完全なコピーが届くまで欠落として表示されます。Worker より先に Hub を更新してください。",
+          },
+          {
+            title: "応答・失敗・使用量を正確に読み取る",
+            description:
+              "Kimi のテキスト応答と使用量、OpenCode V1 のキャッシュと推論トークン、Claude Code のツール失敗を正しく読み取ります。Codex の推論トークンの二重計上も修正しました。",
+          },
+          {
+            title: "必要な履歴を検索して確認",
+            description:
+              "欠落した検索インデックスを再構築し、検索結果の親会話への参照を保持します。最近の会話がない Agent のリンクも開け、深くネストしたツールデータを展開できます。",
+          },
+          {
+            title: "自分のタイムゾーンで日別統計を見る",
+            description:
+              "Dashboard の日別集計、スパークライン、比較期間が指定のタイムゾーンに従います。サーバーが別のタイムゾーンで動いていても日付が揃います。",
+          },
+        ],
+      },
       {
         version: "1.3.2",
         date: "2026-10-10",
