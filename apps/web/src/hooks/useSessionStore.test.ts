@@ -516,7 +516,8 @@ describe("useSessionStore", () => {
     expect(result.current.activeAgents).toEqual([agents[0]]);
     expect(result.current.agentCatalog.byKey.get("codex")).toBe(agents[1]);
     expect(result.current.validAgentKeys.has("claudecode")).toBe(true);
-    expect(result.current.validAgentKeys.has("codex")).toBe(false);
+    expect(result.current.validAgentKeys.has("codex")).toBe(true);
+    expect(result.current.validAgentKeys.has("unknown")).toBe(false);
     expect(result.current.agentNameMap.get("claudecode")).toBe("Claude Code");
     expect(result.current.version).toBeGreaterThan(0);
   });
