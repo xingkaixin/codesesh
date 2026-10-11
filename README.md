@@ -315,7 +315,7 @@ listener directly. The printed and automatically opened startup URL uses `--publ
 Using `--remote-access` without either TLS option still starts on a non-loopback address and prints
 a warning that the transport is unencrypted.
 
-Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.codesesh/models-dev-pricing.json` for one hour. Startup reuses valid cached prices; missing or expired prices are refreshed before scanning, with a 10-second timeout. Network failures fall back to stale cached or bundled prices. Subsequent scans recalculate previously unpriced sessions when their model prices become available.
+Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.codesesh/models-dev-pricing.json` for 24 hours. Startup does not wait for the network: it uses cached prices, even expired ones, or bundled prices when no usable cache exists. Once the server is running, a background task downloads new prices when the cache is missing or expired, with a 10-second timeout, and checks again every 6 hours. `--json` runs use local prices and do not refresh them. Network failures keep the current prices. After new prices are published, existing estimates are recalculated, including sessions that previously had no model price.
 
 ---
 
