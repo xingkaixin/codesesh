@@ -73,6 +73,7 @@ impl Usage {
         if delta.iter().all(|count| *count == 0.0) {
             return;
         }
+        let output = (output - reasoning).max(0.0);
         let tokens = MessageTokens {
             input: Some(input),
             output: Some(output),
@@ -224,6 +225,35 @@ mod tests {
         consume(&mut usage, &mut messages, 10, Some("new"));
         assert_eq!(messages.last().unwrap().cost_inputs.len(), 1);
         assert_eq!(usage.stats(0).total_input_tokens, 70.0);
+    }
+
+    #[test]
+    fn reasoning_tokens_are_counted_once_within_output() {
+        let pricing = Pricing::bundled();
+        let mut usage = Usage::default();
+        let mut messages = vec![message(Role::Assistant, Some("gpt-5"))];
+        usage.consume(
+            &json!({"info":{"last_token_usage":{
+                "input_tokens":100,"output_tokens":10,
+                "reasoning_output_tokens":5,"total_tokens":110
+            }}}),
+            Some("gpt-5"),
+            &pricing,
+            &mut messages,
+        );
+        let plain_output = MessageTokens {
+            input: Some(100.0),
+            output: Some(10.0),
+            reasoning: None,
+            cache_read: None,
+            cache_create: None,
+        };
+        assert_eq!(usage.stats(1).total_output_tokens, 10.0);
+        assert_eq!(
+            messages[0].cost,
+            pricing.estimate(Some("gpt-5"), &plain_output, 0.0)
+        );
+        assert_eq!(usage.models().unwrap()["gpt-5"], 110.0);
     }
 
     #[test]
