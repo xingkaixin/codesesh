@@ -160,6 +160,50 @@ fn v1_normalizes_legacy_tool_state_and_hides_internal_parts() {
 }
 
 #[test]
+fn v1_usage_keeps_reasoning_and_cache_tokens() {
+    let (temp, db) = database(false);
+    db.execute_batch("INSERT INTO session(id,parent_id,title,time_created,time_updated,directory,version,summary_files) VALUES('root',NULL,'Root',1000,2000,'/project','1.2.15',NULL);")
+        .unwrap();
+    db.execute(
+        "INSERT INTO message VALUES('m1','root',?1,1100)",
+        [json!({"role":"assistant","modelID":"gpt-4o","cost":0,"tokens":{"input":10,"output":25,"reasoning":20,"cache":{"read":100,"write":50}}}).to_string()],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO part VALUES('p1','m1',?1,1100)",
+        [json!({"type":"text","text":"Answer"}).to_string()],
+    )
+    .unwrap();
+    let pricing = Pricing::bundled();
+    let sessions = scan(temp.path(), &pricing).unwrap();
+    let detail = &sessions[0].detail;
+    let tokens = MessageTokens {
+        input: Some(160.0),
+        output: Some(25.0),
+        reasoning: Some(20.0),
+        cache_read: Some(100.0),
+        cache_create: Some(50.0),
+    };
+    assert_eq!(detail.messages[0].tokens.as_ref(), Some(&tokens));
+    assert_eq!(
+        detail.messages[0].cost,
+        pricing.estimate(Some("gpt-4o"), &tokens, 0.0)
+    );
+    let stats = &detail.head.stats;
+    assert_eq!(
+        (stats.total_input_tokens, stats.total_output_tokens),
+        (160.0, 45.0)
+    );
+    assert_eq!(
+        (
+            stats.total_cache_read_tokens,
+            stats.total_cache_create_tokens
+        ),
+        (Some(100.0), Some(50.0))
+    );
+}
+
+#[test]
 fn child_usage_only_changes_detail_and_counts_invisible_child_usage() {
     let (temp, db) = database(false);
     db.execute_batch("INSERT INTO session(id,parent_id,title,time_created,time_updated,directory,version,summary_files) VALUES('root',NULL,'Root',1000,2000,'/project',NULL,NULL),('child','root','Child',1000,2000,'/project',NULL,NULL),('grandchild','child','Grandchild',1000,2000,'/project',NULL,NULL);").unwrap();

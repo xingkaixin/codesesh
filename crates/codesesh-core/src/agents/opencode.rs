@@ -450,6 +450,11 @@ fn descendant_usage(
                 stats.cost_inputs.extend(child.cost_inputs.iter().cloned());
                 stats.total_input_tokens += child.total_input_tokens;
                 stats.total_output_tokens += child.total_output_tokens;
+                content::add_cache_tokens(
+                    &mut stats,
+                    child.total_cache_read_tokens,
+                    child.total_cache_create_tokens,
+                );
                 if child.cost_source == Some(CostSource::Estimated) {
                     stats.cost_source = Some(CostSource::Estimated);
                 }
