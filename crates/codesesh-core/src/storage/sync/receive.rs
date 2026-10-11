@@ -190,6 +190,7 @@ fn apply_operation(
                     std::slice::from_ref(&session.head.reference.agent_name),
                     "Session update did not match the Hub copy",
                 )?;
+                tx.execute("INSERT INTO hub_orphans VALUES(?,?,?,?) ON CONFLICT(node_id,agent,session_id) DO UPDATE SET payload=excluded.payload",params![node,session.head.reference.agent_name,session.head.reference.session_id,serde_json::to_string(operation)?])?;
                 tx.execute(
                     "DELETE FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
                     params![node, stream, transfer_id],

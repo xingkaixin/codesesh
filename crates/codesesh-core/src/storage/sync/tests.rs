@@ -1421,4 +1421,11 @@ fn deltas_rebuild_the_full_session_and_fall_back_to_a_rescan() {
     let rescans = delta_hub.rescan_tasks().unwrap();
     assert_eq!(rescans.len(), 1);
     assert_eq!(rescans[0].request.agents, ["codex"]);
+    assert_eq!(delta_hub.nodes().unwrap()[0].incomplete_sessions, 1);
+    worker
+        .begin_rescan(&rescans[0].request, &["codex".into()])
+        .unwrap();
+    save(&mut worker, &append(&second, "third"));
+    transfer(&mut delta_hub, &mut worker, &delta_grant);
+    assert_eq!(delta_hub.nodes().unwrap()[0].incomplete_sessions, 0);
 }
