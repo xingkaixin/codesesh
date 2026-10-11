@@ -269,7 +269,7 @@ agent's own data directory.
 | `--tls-cert` | — | — | Path to a TLS certificate; serves remote access over HTTPS |
 | `--tls-key` | — | — | Path to the private key matching `--tls-cert` |
 | `--trust-proxy` | — | `false` | A reverse proxy in front of CodeSesh terminates TLS |
-| `--public-url` | — | — | Public HTTPS origin used with `--trust-proxy` for startup links |
+| `--public-url` | — | — | Public HTTPS origin used with `--trust-proxy` for startup links and same-origin checks |
 | `--days` | `-d` | `7` | Only include sessions active in the last N local calendar days (`0` = all time) |
 | `--cwd` | — | — | Filter to sessions from a project directory (`.` = current dir) |
 | `--agent` | `-a` | all | Filter to specific agent(s), comma-separated |
