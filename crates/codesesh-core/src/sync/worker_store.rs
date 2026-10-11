@@ -578,7 +578,10 @@ impl WorkerStore {
         raw.map(|(sequence,payload_version,payload,digest)| {
             ensure!(payload_version == PAYLOAD_VERSION, "Unsupported queued payload version {payload_version}; preserve the queue and upgrade Worker");
             ensure!(super::worker_store::digest(&payload) == digest, "Queued payload checksum mismatch; preserve the queue for recovery");
-            Ok(PendingUpload { sequence,payload_version,operation:serde_json::from_slice(&payload)?,digest })
+            let operation: Operation = serde_json::from_slice(&payload)?;
+            // The Hub checks the digest against its own serialization, which drops values such as `Some(null)` that do not survive a round trip.
+            let digest = super::worker_store::digest(&serde_json::to_vec(&operation)?);
+            Ok(PendingUpload { sequence,payload_version,operation,digest })
         }).transpose()
     }
 
