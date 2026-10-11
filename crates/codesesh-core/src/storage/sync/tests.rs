@@ -153,6 +153,39 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
 }
 
 #[test]
+fn receiver_accepts_metadata_that_does_not_survive_a_json_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(Some(&dir.path().join("hub.db"))).unwrap();
+    cache.initialize_hub("hub-fixture").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+        .unwrap();
+    let mut batch = ScanBatch {
+        source_presence: None,
+        sessions: vec![super::super::tests::source(dir.path(), "shared")],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+    batch.sessions[0].head.summary_files = Some(serde_json::Value::Null);
+    batch.sessions[0].head.title = "Renamed".into();
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert!(matches!(
+        worker.next_upload().unwrap().unwrap().operation,
+        Operation::Metadata { .. }
+    ));
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(worker.queue_status().unwrap().batches, 0);
+    assert_eq!(cache.snapshot().unwrap()[0].title, "Renamed");
+}
+
+#[test]
 fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
     let dir = tempfile::tempdir().unwrap();
     let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();

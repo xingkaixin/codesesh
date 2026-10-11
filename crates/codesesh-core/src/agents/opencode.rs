@@ -402,15 +402,13 @@ fn read_v2(
         if row["parent_id"] == row["id"] {
             row["parent_id"] = Value::Null;
         }
-        let mut session = detail(
+        result.push(detail(
             &row,
             "opencode",
             messages,
             stats,
             (message_total == total && unassigned == 0.0).then_some(usage),
-        );
-        session.head.summary_files = row.get("summary_files").cloned();
-        result.push(session);
+        ));
     }
     sort(&mut result);
     Ok(result)
