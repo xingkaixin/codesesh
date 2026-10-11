@@ -53,7 +53,7 @@ pub fn file_filter(filters: &mut Filters, value: &str) {
 }
 
 fn project_scope(filters: &mut Filters, scope: &ProjectScope) {
-    filters.clauses.push("((s.project_identity_kind = ? AND s.project_identity_key = ?) OR (s.directory <> '' AND (codesesh_project_scope_path(s.directory) = ? OR instr(codesesh_project_scope_path(s.directory), ? || '/') = 1 OR instr(?, codesesh_project_scope_path(s.directory) || '/') = 1)))".into());
+    filters.clauses.push("((s.project_identity_kind = ? AND s.project_identity_key = ?) OR (s.directory <> '' AND (codesesh_project_scope_path(s.directory) = ? OR instr(codesesh_project_scope_path(s.directory), rtrim(?, '/') || '/') = 1 OR instr(?, codesesh_project_scope_path(s.directory) || '/') = 1)))".into());
     filters.params.extend([
         scope.identity.kind.clone().into(),
         scope.identity.key.clone().into(),

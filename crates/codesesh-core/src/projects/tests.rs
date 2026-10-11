@@ -196,4 +196,7 @@ fn scopes_match_identity_or_path_ancestors_with_boundaries() {
     assert!(matches_project_scope(&item, &scope));
     item.project_identity.kind = "manifest_path".into();
     assert!(!matches_project_scope(&item, &scope));
+    let root = create_project_scope_matcher_from_identity("/", identity("path", "/", "/".into()));
+    item.directory = "/home/user/project".into();
+    assert!(matches_project_scope(&item, &root));
 }
