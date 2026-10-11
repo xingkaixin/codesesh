@@ -407,10 +407,7 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
     await refetchProjects({ cancelRefetch: true });
   }, [refetchProjects, window]);
   const agentCatalog = useMemo(() => createAgentCatalog(agents), [agents]);
-  const validAgentKeys = useMemo(
-    () => new Set(agentCatalog.active.map((agent) => agent.name.toLowerCase())),
-    [agentCatalog.active],
-  );
+  const validAgentKeys = useMemo(() => new Set(agentCatalog.byKey.keys()), [agentCatalog.byKey]);
   const loadFailed =
     (projectionQuery.isError && projectionQuery.data === undefined) ||
     (agentsQuery.isError && agentsQuery.data === undefined);
