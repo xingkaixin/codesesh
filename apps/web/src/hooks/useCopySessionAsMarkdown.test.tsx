@@ -6,6 +6,7 @@ import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createQueryClient } from "../lib/query-client";
+import { RETAINED_INACTIVE_SESSION_DETAILS } from "../lib/session-detail-cache";
 import { useCopySessionAsMarkdown } from "./useCopySessionAsMarkdown";
 
 const apiMocks = vi.hoisted(() => ({
@@ -85,4 +86,27 @@ it("copies the complete transcript when the detail cache only contains a prefix"
     expect.stringContaining("Unloaded tail"),
   );
   expect(client.getQueryData(key)).toEqual(partial);
+});
+
+it("bounds the inactive details cached by repeated copies", async () => {
+  const { client, Wrapper } = createQueryWrapper();
+  apiMocks.fetchSessionData.mockImplementation(async (_agent, sessionId) => ({
+    ...SAMPLE_SESSION_HEAD,
+    messages: [],
+    reference: { ...SAMPLE_SESSION_HEAD.reference, sessionId },
+  }));
+  clipboardMocks.writeToClipboard.mockResolvedValue(true);
+  const { result } = renderHook(() => useCopySessionAsMarkdown(), { wrapper: Wrapper });
+
+  for (const sessionId of ["one", "two", "three", "four"]) {
+    const head = {
+      ...SAMPLE_SESSION_HEAD,
+      reference: { ...SAMPLE_SESSION_HEAD.reference, sessionId },
+    };
+    await act(() => result.current.copySessionAsMarkdown(head));
+  }
+
+  expect(client.getQueryCache().findAll({ queryKey: queryKeys.sessionDetails })).toHaveLength(
+    RETAINED_INACTIVE_SESSION_DETAILS,
+  );
 });

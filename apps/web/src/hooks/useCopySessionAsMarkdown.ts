@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchSessionData, logClientEvent, type SessionHead } from "../lib/api";
 import { writeToClipboard } from "../lib/clipboard";
 import { queryKeys } from "../lib/query-keys";
+import { pruneSessionDetailCache } from "../lib/session-detail-cache";
 import { formatSessionAsMarkdown } from "../lib/session-markdown";
 
 const COPY_NOTICE_DURATION_MS = 2_500;
@@ -45,6 +46,8 @@ export function useCopySessionAsMarkdown() {
           session: sessionId,
           error_name: error instanceof Error ? error.name : "UnknownError",
         });
+      } finally {
+        pruneSessionDetailCache(queryClient);
       }
     },
     [queryClient],
