@@ -720,6 +720,24 @@ mod tests {
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Failed");
     }
     #[test]
+    fn tool_result_is_error_marks_tool_failed() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            &root.path().join("project/session.jsonl"),
+            &[
+                json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Run tests"}}),
+                json!({"type":"assistant","uuid":"a","message":{"role":"assistant","content":[{"type":"tool_use","id":"call","name":"Bash","input":{"command":"false"}}]}}),
+                json!({"type":"user","uuid":"b","toolUseResult":"Error: Exit code 1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","is_error":true,"content":"Exit code 1"}]}}),
+            ],
+        );
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let MessagePart::Tool { state, .. } = &sessions[0].detail.messages[1].parts[0] else {
+            panic!()
+        };
+        assert_eq!(state.status, "error");
+        assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Exit code 1");
+    }
+    #[test]
     fn child_metadata_links_parent_call_and_nested_session() {
         let root = tempfile::tempdir().unwrap();
         write(

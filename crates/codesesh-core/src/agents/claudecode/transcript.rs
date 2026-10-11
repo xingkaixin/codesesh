@@ -95,7 +95,13 @@ impl Transcript {
         }
         index
     }
-    fn backfill(&mut self, id: &str, output: Vec<MessagePart>, updates: &Value) -> bool {
+    fn backfill(
+        &mut self,
+        id: &str,
+        output: Vec<MessagePart>,
+        updates: &Value,
+        is_error: bool,
+    ) -> bool {
         let Some(&(i, p)) = self.tools.get(id) else {
             return false;
         };
@@ -124,7 +130,9 @@ impl Transcript {
         {
             state.metadata = Some(json!({"commandName":name}));
         }
-        if has_output && state.status == "running" {
+        if is_error {
+            state.status = "error".into();
+        } else if has_output && state.status == "running" {
             state.status = "completed".into();
         }
         true
@@ -272,7 +280,12 @@ impl Transcript {
                                 .unwrap_or_default()
                         };
                         let output = output_parts(&item["content"], time);
-                        if !self.backfill(&resolved, output.clone(), &record["toolUseResult"]) {
+                        if !self.backfill(
+                            &resolved,
+                            output.clone(),
+                            &record["toolUseResult"],
+                            item["is_error"] == true,
+                        ) {
                             self.fallback(&id, time, output);
                         }
                     }
