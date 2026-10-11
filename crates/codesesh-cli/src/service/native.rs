@@ -78,8 +78,7 @@ async fn command(program: &str, args: &[&str], required: bool) -> Result<String>
 }
 // The installing shell's PATH can include per-run temporary directories; a long-running service
 // must not resolve commands such as `git` from a location another process can recreate.
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
-fn service_value<'a>(key: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
+pub(super) fn service_value<'a>(key: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
     if key != "PATH" {
         return value.into();
     }
