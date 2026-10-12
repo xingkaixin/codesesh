@@ -1,6 +1,9 @@
 use super::super::codex::timestamp;
 use super::{common::*, internal, output_parts, user_parts};
-use crate::{contract::*, pricing::Pricing};
+use crate::{
+    contract::*,
+    pricing::{Pricing, priced_model},
+};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -243,9 +246,10 @@ impl Transcript {
                     let m = &mut self.messages[i];
                     m.model = model.map(str::to_owned);
                     m.cost_inputs.clear();
+                    let priced = priced_model(model, raw["usage"]["speed"].as_str());
                     m.cost = Some(
                         pricing
-                            .estimate_tracked(model, &tokens, 0.0, &mut m.cost_inputs)
+                            .estimate_tracked(priced.as_deref(), &tokens, 0.0, &mut m.cost_inputs)
                             .unwrap_or(0.0),
                     );
                     m.cost_source = (m.cost.unwrap_or(0.0) > 0.0).then_some(CostSource::Estimated);

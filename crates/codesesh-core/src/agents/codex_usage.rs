@@ -71,6 +71,7 @@ impl Usage {
         &mut self,
         payload: &Value,
         model: Option<&str>,
+        service_tier: Option<&str>,
         pricing: &Pricing,
         messages: &mut [Message],
     ) {
@@ -100,7 +101,7 @@ impl Usage {
         if delta.iter().any(|count| *count > 0.0) {
             self.latest_record = None;
         }
-        self.add(delta, model, pricing, messages);
+        self.add(delta, model, service_tier, pricing, messages);
     }
 
     pub fn record(&mut self, payload: &Value) {
@@ -117,13 +118,14 @@ impl Usage {
         &mut self,
         payload: &Value,
         model: Option<&str>,
+        service_tier: Option<&str>,
         pricing: &Pricing,
         messages: &mut [Message],
     ) {
         if let Some((id, delta)) = self.latest_record.take()
             && payload["compaction_response_id"] == id.as_str()
         {
-            self.add(delta, model, pricing, messages);
+            self.add(delta, model, service_tier, pricing, messages);
         }
     }
 
@@ -131,6 +133,7 @@ impl Usage {
         &mut self,
         mut delta: [f64; 4],
         model: Option<&str>,
+        service_tier: Option<&str>,
         pricing: &Pricing,
         messages: &mut [Message],
     ) {
@@ -150,7 +153,12 @@ impl Usage {
             cache_create: None,
             cache_create_1h: None,
         };
-        let cost = pricing.estimate_tracked(model, &tokens, 0.0, &mut self.cost_inputs);
+        let cost = pricing.estimate_tracked(
+            crate::pricing::priced_model(model, service_tier).as_deref(),
+            &tokens,
+            0.0,
+            &mut self.cost_inputs,
+        );
         let model_tokens = input + output + reasoning;
         if model_tokens > 0.0
             && let Some(model) = model
@@ -249,6 +257,7 @@ mod tests {
                 "last_token_usage":{"input_tokens":7,"output_tokens":3}
             }}),
             model,
+            None,
             &Pricing::capture_only(),
             messages,
         );
@@ -307,6 +316,7 @@ mod tests {
                 "reasoning_output_tokens":5,"total_tokens":110
             }}}),
             Some("gpt-5"),
+            None,
             &pricing,
             &mut messages,
         );

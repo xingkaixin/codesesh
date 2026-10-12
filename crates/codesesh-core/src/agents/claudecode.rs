@@ -2,13 +2,16 @@ pub(super) mod common;
 mod incremental;
 mod transcript;
 use super::codex::{ParsedSession, timestamp};
-use crate::{contract::*, pricing::Pricing};
+use crate::{
+    contract::*,
+    pricing::{Pricing, priced_model},
+};
 use anyhow::{Context, Result};
 use common::*;
 pub use incremental::{Checkpoints, scan_changed};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
     path::{Path, PathBuf},
 };
@@ -243,6 +246,7 @@ struct Parser {
     visible_count: usize,
     usage_by_request: HashMap<String, (Option<String>, MessageTokens)>,
     usage_order: Vec<String>,
+    fast_requests: HashSet<String>,
     line_index: usize,
 }
 
@@ -259,6 +263,7 @@ impl Parser {
             visible_count: 0,
             usage_by_request: HashMap::new(),
             usage_order: Vec::new(),
+            fast_requests: HashSet::new(),
             line_index: 0,
         }
     }
@@ -363,6 +368,9 @@ impl Parser {
                         usage_tokens(&raw["usage"]),
                     ),
                 );
+                if raw["usage"]["speed"] == "fast" {
+                    self.fast_requests.insert(key.into());
+                }
             }
         }
         self.transcript.convert(&record, children, pricing);
@@ -440,8 +448,14 @@ impl Parser {
                 tokens.cache_read.unwrap_or(0.0);
             *head_stats.total_cache_create_tokens.as_mut().unwrap() +=
                 tokens.cache_create.unwrap_or(0.0);
+            let speed = self.fast_requests.contains(&key).then_some("fast");
             head_stats.total_cost += pricing
-                .estimate_tracked(model.as_deref(), tokens, 0.0, &mut head_stats.cost_inputs)
+                .estimate_tracked(
+                    priced_model(model.as_deref(), speed).as_deref(),
+                    tokens,
+                    0.0,
+                    &mut head_stats.cost_inputs,
+                )
                 .unwrap_or(0.0);
             if let Some(model) = model {
                 *models.entry(model.clone()).or_default() +=
@@ -836,6 +850,30 @@ mod tests {
         };
         assert_eq!(state.status, "error");
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Exit code 1");
+    }
+    #[test]
+    fn fast_requests_use_the_fast_mode_multiplier() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            &root.path().join("project/session.jsonl"),
+            &[
+                json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Inspect files"}}),
+                json!({"type":"assistant","uuid":"a","requestId":"r","message":{"role":"assistant","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":10,"speed":"fast"},"content":[{"type":"text","text":"Checking"}]}}),
+            ],
+        );
+        let pricing = Pricing::bundled();
+        let tokens = serde_json::from_value(json!({"input":100,"output":10})).unwrap();
+        let standard = pricing
+            .estimate(Some("claude-opus-4-6"), &tokens, 0.0)
+            .unwrap();
+        let sessions = scan(root.path(), &pricing).unwrap();
+        assert!((sessions[0].detail.messages[1].cost.unwrap() - standard * 6.0).abs() < 1e-8);
+        assert!((sessions[0].head.stats.total_cost - standard * 6.0).abs() < 1e-8);
+        assert_eq!(
+            sessions[0].detail.messages[1].model.as_deref(),
+            Some("claude-opus-4-6")
+        );
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     }
     #[test]
     fn child_metadata_links_parent_call_and_nested_session() {
