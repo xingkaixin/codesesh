@@ -231,12 +231,15 @@ fn parse(
     };
     let mut models = BTreeMap::new();
     if input + output > 0.0 {
+        // The update keeps this literal compiling when MessageTokens gains fields.
+        #[allow(clippy::needless_update)]
         let tokens = MessageTokens {
             input: Some(input),
             output: Some(output - reasoning),
             reasoning: (reasoning > 0.0).then_some(reasoning),
             cache_read: stats.total_cache_read_tokens,
             cache_create: stats.total_cache_create_tokens,
+            ..Default::default()
         };
         stats.total_cost = pricing
             .estimate_tracked(model.as_deref(), &tokens, 0.0, &mut stats.cost_inputs)
