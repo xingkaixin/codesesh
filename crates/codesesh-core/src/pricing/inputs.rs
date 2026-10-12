@@ -21,13 +21,6 @@ impl super::Price {
     pub fn token_costs(&self, tokens: &MessageTokens) -> TokenCostBreakdown {
         let positive =
             |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
-        let context =
-            positive(tokens.input).max(positive(tokens.cache_read) + positive(tokens.cache_create));
-        if let Some(tier) = &self.long_context
-            && context > tier.threshold
-        {
-            return tier.price.token_costs(tokens);
-        }
         let read = positive(tokens.cache_read);
         let create = positive(tokens.cache_create);
         TokenCostBreakdown {
@@ -36,6 +29,18 @@ impl super::Price {
                 + positive(tokens.reasoning) * self.reasoning_cost_per_token,
             cache_read: read * self.cache_read_cost_per_token,
             cache_create: create * self.cache_create_cost_per_token,
+        }
+    }
+
+    /// The rates for one request: its long-context tier once the context exceeds the threshold.
+    pub fn for_request(&self, tokens: &MessageTokens) -> &Self {
+        let positive =
+            |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
+        let context =
+            positive(tokens.input).max(positive(tokens.cache_read) + positive(tokens.cache_create));
+        match &self.long_context {
+            Some(tier) if context > tier.threshold => &tier.price,
+            _ => self,
         }
     }
 }
@@ -48,6 +53,9 @@ pub struct CostInput {
     pub tokens: MessageTokens,
     pub web_search: f64,
     pub cost: Option<f64>,
+    /// The tokens sum several requests, so long-context tiers do not apply.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub aggregate: bool,
 }
 
 impl Pricing {
@@ -58,8 +66,9 @@ impl Pricing {
         if message.cost_source != Some(crate::contract::CostSource::Estimated) {
             return None;
         }
+        let tokens = message.tokens.as_ref()?;
         let price = self.resolve(message.model.as_deref()?)?;
-        let breakdown = price.token_costs(message.tokens.as_ref()?);
+        let breakdown = price.for_request(tokens).token_costs(tokens);
         // Persisted estimates may predate the current price snapshot; never split a mismatching total.
         ((message.cost? - breakdown.total()).abs() <= 1e-8).then_some(breakdown)
     }
@@ -71,15 +80,49 @@ impl Pricing {
         web_search: f64,
         inputs: &mut Vec<CostInput>,
     ) -> Option<f64> {
-        let cost = self.estimate(model, tokens, web_search);
-        inputs.push(CostInput {
+        self.track(model, tokens, web_search, false, inputs)
+    }
+
+    /// Estimates tokens summed over several requests, such as session totals. The input is
+    /// marked `aggregate`, so long-context tiers do not apply now or when it is repriced.
+    pub fn estimate_aggregate_tracked(
+        &self,
+        model: Option<&str>,
+        tokens: &MessageTokens,
+        web_search: f64,
+        inputs: &mut Vec<CostInput>,
+    ) -> Option<f64> {
+        self.track(model, tokens, web_search, true, inputs)
+    }
+
+    fn track(
+        &self,
+        model: Option<&str>,
+        tokens: &MessageTokens,
+        web_search: f64,
+        aggregate: bool,
+        inputs: &mut Vec<CostInput>,
+    ) -> Option<f64> {
+        let input = CostInput {
             generation: self.generation(),
             model: model.map(str::to_owned),
             tokens: tokens.clone(),
             web_search,
-            cost,
-        });
+            cost: None,
+            aggregate,
+        };
+        let cost = self.estimate_input(&input);
+        inputs.push(CostInput { cost, ..input });
         cost
+    }
+
+    pub(crate) fn estimate_input(&self, input: &CostInput) -> Option<f64> {
+        self.estimate_with(
+            input.model.as_deref(),
+            &input.tokens,
+            input.web_search,
+            input.aggregate,
+        )
     }
 }
 

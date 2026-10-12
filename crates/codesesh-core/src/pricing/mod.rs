@@ -145,10 +145,25 @@ impl Pricing {
         tokens: &MessageTokens,
         web_search: f64,
     ) -> Option<f64> {
+        self.estimate_with(model, tokens, web_search, false)
+    }
+
+    fn estimate_with(
+        &self,
+        model: Option<&str>,
+        tokens: &MessageTokens,
+        web_search: f64,
+        aggregate: bool,
+    ) -> Option<f64> {
         let model = model.filter(|model| !model.is_empty())?;
         let Some(price) = self.resolve(model) else {
             cost::record_miss(model);
             return None;
+        };
+        let price = if aggregate {
+            price
+        } else {
+            price.for_request(tokens)
         };
         let positive = |value: Option<f64>| {
             value

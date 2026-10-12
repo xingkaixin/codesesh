@@ -198,7 +198,10 @@ fn write_cache(path: &Path, prices: &HashMap<String, Price>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{contract::MessageTokens, pricing::capture_misses};
+    use crate::{
+        contract::MessageTokens,
+        pricing::{CostInput, capture_misses},
+    };
     use serde_json::json;
 
     fn server(responses: Vec<(&'static str, Duration)>) -> (String, std::thread::JoinHandle<()>) {
@@ -366,6 +369,35 @@ mod tests {
                 Some(0.97)
             );
         }
+    }
+
+    #[test]
+    fn aggregate_inputs_keep_base_rates_through_repricing() {
+        let home = tempfile::tempdir().unwrap();
+        let mut manager = PricingManager::load(home.path());
+        assert!(manager.stage_remote(&json!({"openai":{"models":{"tiered-p4":{"cost":{
+            "input":2,"output":8,"tiers":[{"input":4,"output":12,"tier":{"type":"context","size":1000}}]
+        }}}}})));
+        manager.publish_pending().unwrap();
+        let pricing = manager.current();
+        let tokens: MessageTokens = serde_json::from_value(json!({"input":1_000_000})).unwrap();
+        let mut inputs = Vec::new();
+        assert_eq!(
+            pricing.estimate_tracked(Some("tiered-p4"), &tokens, 0.0, &mut inputs),
+            Some(4.0)
+        );
+        assert_eq!(
+            pricing.estimate_aggregate_tracked(Some("tiered-p4"), &tokens, 0.0, &mut inputs),
+            Some(2.0)
+        );
+        let stored = serde_json::to_string(&inputs).unwrap();
+        assert_eq!(stored.matches("aggregate").count(), 1);
+        let restored: Vec<CostInput> = serde_json::from_str(&stored).unwrap();
+        let repriced: Vec<_> = restored
+            .iter()
+            .map(|input| pricing.estimate_input(input))
+            .collect();
+        assert_eq!(repriced, [Some(4.0), Some(2.0)]);
     }
 
     #[test]
