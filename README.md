@@ -55,6 +55,8 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | Agent           | Status          | Usage | Recorded cost | Tool results | Reasoning | Session tree | Resume |
 | --------------- | --------------- | ----- | ------------- | ------------ | --------- | ------------ | ------ |
 | Claude Code     | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
+| Qoder           | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
+| Qoder CN        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
 | Cursor          | Supported       | ◐     | —             | ✓            | —         | —            | —      |
 | Kimi-Cli        | Supported       | ◐     | —             | ✓            | ✓         | —            | ✓      |
 | Kimi-Code       | Supported       | ✓     | —             | ✓            | ✓         | —            | ✓      |

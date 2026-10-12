@@ -86,7 +86,7 @@ pub fn scan_agent(
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match agent {
         "antigravity-cli" => antigravity_cli::scan(scan_path, data_root, pricing),
-        "claudecode" => claudecode::scan(scan_path, agent, pricing),
+        "claudecode" | "qoder" | "qoder-cn" => claudecode::scan(scan_path, agent, pricing),
         "codex" => codex::scan(data_root, pricing),
         "cursor" => cursor::scan(scan_path, pricing),
         "kimi" => kimi::scan_with_data_root(scan_path, data_root, pricing),

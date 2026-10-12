@@ -83,6 +83,8 @@ impl PathEnvironment {
     pub fn data_root(&self, agent: &str) -> Option<PathBuf> {
         Some(match agent {
             "claudecode" => self.home_path("CLAUDE_CONFIG_DIR", ".claude"),
+            "qoder" => self.home_path("QODER_CONFIG_DIR", ".qoder"),
+            "qoder-cn" => self.home_path("QODERCN_CONFIG_DIR", ".qoder-cn"),
             "codex" => self.home_path("CODEX_HOME", ".codex"),
             "antigravity-cli" => self
                 .read_env_path("AGY_CONVERSATIONS_DIR")
@@ -140,7 +142,7 @@ impl PathEnvironment {
             "antigravity-cli" => self
                 .read_env_path("AGY_CONVERSATIONS_DIR")
                 .unwrap_or_else(|| data_root.join("conversations")),
-            "claudecode" => data_root.join("projects"),
+            "claudecode" | "qoder" | "qoder-cn" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
             "pi" => data_root.join("agent/sessions"),
             "opencode" => {

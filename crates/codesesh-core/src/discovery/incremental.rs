@@ -1035,14 +1035,16 @@ impl AgentScanner {
                 &self.previous,
                 &mut self.codex,
             ),
-            "claudecode" if paths.is_some() => agents::claudecode::scan_changed(
-                root,
-                &self.source.agent,
-                pricing,
-                paths.unwrap(),
-                &self.previous,
-                &mut self.claude,
-            ),
+            "claudecode" | "qoder" | "qoder-cn" if paths.is_some() => {
+                agents::claudecode::scan_changed(
+                    root,
+                    &self.source.agent,
+                    pricing,
+                    paths.unwrap(),
+                    &self.previous,
+                    &mut self.claude,
+                )
+            }
             "pi" if paths.is_some() => {
                 agents::pi::scan_changed(root, pricing, paths.unwrap(), &self.previous)
             }
