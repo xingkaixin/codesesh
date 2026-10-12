@@ -238,9 +238,9 @@ fn scan_directories(
         let mut open = None::<String>;
         let mut buffers: HashMap<String, String> = HashMap::new();
         let (mut read, mut create) = (0., 0.);
-        let mut count = |stats: &mut SessionStats, tokens: &MessageTokens| {
-            let cost =
-                pricing.estimate_tracked(model.as_deref(), tokens, 0., &mut stats.cost_inputs);
+        let mut count = |stats: &mut SessionStats, tokens: &MessageTokens, ts: f64| {
+            let priced = pricing_model(model.as_deref(), ts);
+            let cost = pricing.estimate_tracked(priced, tokens, 0., &mut stats.cost_inputs);
             stats.total_input_tokens += tokens.input.unwrap_or(0.);
             stats.total_output_tokens += tokens.output.unwrap_or(0.);
             stats.total_cost += cost.unwrap_or(0.);
@@ -257,7 +257,7 @@ fn scan_directories(
             let p = &msg["payload"];
             let ts = (number(&r["timestamp"]) * 1000.).floor();
             if let Some(tokens) = status_tokens(&r) {
-                let cost = count(&mut stats, &tokens);
+                let cost = count(&mut stats, &tokens, ts);
                 if !context_path.exists() && (tokens.input != Some(0.) || tokens.output != Some(0.))
                 {
                     builder.usage(
@@ -373,8 +373,13 @@ fn scan_directories(
         }
         for wire in subagent_wires(&path)? {
             for r in records(&wire)? {
-                if let Some(tokens) = status_tokens(&r?) {
-                    count(&mut stats, &tokens);
+                let r = r?;
+                if let Some(tokens) = status_tokens(&r) {
+                    count(
+                        &mut stats,
+                        &tokens,
+                        (number(&r["timestamp"]) * 1000.).floor(),
+                    );
                 }
             }
         }
@@ -457,6 +462,20 @@ fn source_created_ms(metadata: &std::fs::Metadata) -> anyhow::Result<f64> {
     }
 }
 
+// kimi-for-coding served K2.5 until it switched to K2.6 at this time (the cutoff ccusage uses).
+const KIMI_FOR_CODING_K2_6_MS: f64 = 1_776_698_890_072.;
+fn pricing_model(model: Option<&str>, ts: f64) -> Option<&str> {
+    match model {
+        Some(m) if m.rsplit('/').next() == Some("kimi-for-coding") => {
+            Some(if ts < KIMI_FOR_CODING_K2_6_MS {
+                "moonshotai/kimi-k2.5"
+            } else {
+                "moonshotai/kimi-k2.6"
+            })
+        }
+        model => model,
+    }
+}
 // default_model names a [models."<key>"] table; its `model` field is the id sent to the provider.
 fn configured_model(config: &str) -> Option<String> {
     let key = regex::Regex::new(r#"(?m)^default_model\s*=\s*"([^"]+)""#)
@@ -793,7 +812,8 @@ max_context_size = 262144
         let records = [
             json!({"timestamp":1,"message":{"type":"TurnBegin","payload":{"user_input":[{"text":"Hello"}]}}}),
             json!({"timestamp":2,"message":{"type":"ContentPart","payload":{"type":"text","text":"Hi"}}}),
-            json!({"timestamp":3,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":4,"output":2}}}}),
+            json!({"timestamp":1_776_698_890.0,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":4,"output":2}}}}),
+            json!({"timestamp":1_776_698_891.0,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":4,"output":2}}}}),
         ];
         std::fs::write(
             path.join("wire.jsonl"),
@@ -808,6 +828,11 @@ max_context_size = 262144
         assert_eq!(
             sessions[0].detail.messages[1].model.as_deref(),
             Some("kimi-for-coding")
+        );
+        let priced = sessions[0].head.stats.cost_inputs.iter();
+        assert_eq!(
+            priced.map(|i| i.model.as_deref()).collect::<Vec<_>>(),
+            [Some("moonshotai/kimi-k2.5"), Some("moonshotai/kimi-k2.6")]
         );
     }
 }
