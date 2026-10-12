@@ -69,7 +69,7 @@ CodeSesh 做三件事：
 
 <!-- repo-fact:agents:end -->
 
-✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用时，CodeSesh 按模型价格估算。
+✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用或记录为 0 时，CodeSesh 按模型价格估算。
 
 Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息及工具调用。工具结果与用量仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 

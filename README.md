@@ -71,7 +71,7 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 
 <!-- repo-fact:agents:end -->
 
-✓ available · ◐ partial (for example, input and output tokens only) · — not available. Without a recorded cost, CodeSesh estimates cost from model prices.
+✓ available · ◐ partial (for example, input and output tokens only) · — not available. When an agent records no cost or a cost of 0, CodeSesh estimates cost from model prices.
 
 Antigravity CLI supports local SQLite conversations, titles, workspace metadata, and tool calls. Tool outcomes and usage remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
 
