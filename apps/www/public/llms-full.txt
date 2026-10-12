@@ -86,6 +86,7 @@ CodeSesh currently supports these AI coding agents:
 - Cherry Studio
 - MiniMax Code
 - Antigravity CLI
+- Gemini CLI
 <!-- repo-fact:agents:end -->
 
 Each supported agent has an adapter in the Rust core crate. Adding support for another agent follows the same adapter pattern.

@@ -68,6 +68,7 @@ CodeSesh 做三件事：
 | DeepChat        | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | —        |
 | Cherry Studio   | 已支持   | ✓    | ✓        | ✓        | ✓    | —      | —        |
 | Antigravity CLI | 部分支持 | ✓    | —        | —        | —    | ✓      | —        |
+| Gemini CLI      | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | ✓        |
 
 <!-- repo-fact:agents:end -->
 

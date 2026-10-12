@@ -70,6 +70,7 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | DeepChat        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | Cherry Studio   | Supported       | ✓     | ✓             | ✓            | ✓         | —            | —      |
 | Antigravity CLI | Partial support | ✓     | —             | —            | —         | ✓            | —      |
+| Gemini CLI      | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
 
 <!-- repo-fact:agents:end -->
 
