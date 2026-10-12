@@ -101,7 +101,7 @@ impl Usage {
         if delta.iter().any(|count| *count > 0.0) {
             self.latest_record = None;
         }
-        self.add(delta, model, pricing, messages);
+        self.add(delta, model, service_tier, pricing, messages);
     }
 
     pub fn record(&mut self, payload: &Value) {
@@ -118,13 +118,14 @@ impl Usage {
         &mut self,
         payload: &Value,
         model: Option<&str>,
+        service_tier: Option<&str>,
         pricing: &Pricing,
         messages: &mut [Message],
     ) {
         if let Some((id, delta)) = self.latest_record.take()
             && payload["compaction_response_id"] == id.as_str()
         {
-            self.add(delta, model, pricing, messages);
+            self.add(delta, model, service_tier, pricing, messages);
         }
     }
 
@@ -132,6 +133,7 @@ impl Usage {
         &mut self,
         mut delta: [f64; 4],
         model: Option<&str>,
+        service_tier: Option<&str>,
         pricing: &Pricing,
         messages: &mut [Message],
     ) {

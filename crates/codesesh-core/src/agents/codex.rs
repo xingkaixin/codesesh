@@ -402,7 +402,13 @@ fn child_summary(
                 &mut [],
             ),
             "token_usage_record" => usage.record(payload),
-            "compacted" => usage.compacted(payload, model.as_deref(), pricing, &mut []),
+            "compacted" => usage.compacted(
+                payload,
+                model.as_deref(),
+                service_tier.as_deref(),
+                pricing,
+                &mut [],
+            ),
             "response_item" if payload["type"] == "message" && payload["role"] == "assistant" => {
                 let text = clean(&content(payload, true));
                 if text.is_empty() {
@@ -883,8 +889,9 @@ impl Parser {
             return;
         }
         if kind == "compacted" {
-            usage.compacted(payload, model.as_deref(), pricing, messages);
-            head_usage.compacted(payload, head_model.as_deref(), pricing, &mut []);
+            let tier = service_tier.as_deref();
+            usage.compacted(payload, model.as_deref(), tier, pricing, messages);
+            head_usage.compacted(payload, head_model.as_deref(), tier, pricing, &mut []);
             return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
