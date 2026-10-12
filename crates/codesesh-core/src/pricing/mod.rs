@@ -195,4 +195,17 @@ mod tests {
         assert_eq!(round_cost(3.0 / 512.0), 0.00585938);
         assert_eq!(round_cost(1e-100), 0.0);
     }
+    #[test]
+    fn kimi_aliases_price_the_matching_api_model() {
+        let pricing = Pricing::from_prices(parse_models_dev(&serde_json::json!({
+            "moonshotai":{"models":{
+                "kimi-k2-0905":{"cost":{"input":0.6,"output":2.5}},
+                "kimi-k2.5":{"cost":{"input":0.6,"output":3}},
+                "kimi-k2.6":{"cost":{"input":0.95,"output":4}}}},
+            "kimi-code-plan-global":{"models":{"kimi-for-coding":{"cost":{"input":0,"output":0}}}}
+        })));
+        let output = |model| pricing.resolve(model).map(|p| p.output_cost_per_token);
+        assert_eq!(output("kimi-for-coding"), Some(4e-6));
+        assert_eq!(output("moonshot-cn/kimi-k2.5"), Some(3e-6));
+    }
 }
