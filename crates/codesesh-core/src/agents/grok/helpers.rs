@@ -200,9 +200,9 @@ pub(super) fn usage(v: &Value, pricing: &Pricing) -> Option<Usage> {
                 let billed = MessageTokens {
                     input: Some(count(&v["inputTokens"])),
                     output: Some(count(&v["outputTokens"])),
-                    reasoning: None,
                     cache_read: positive(count(&v["cachedReadTokens"])),
                     cache_create: positive(count(&v["cacheCreationTokens"])),
+                    ..Default::default()
                 };
                 if let Some(cost) =
                     pricing.estimate_tracked(Some(name), &billed, 0.0, &mut cost_inputs)

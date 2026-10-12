@@ -98,9 +98,8 @@ fn zero_recorded_cost_is_estimated() {
             &MessageTokens {
                 input: Some(1000.0),
                 output: Some(100.0),
-                reasoning: Some(0.0),
                 cache_read: Some(200.0),
-                cache_create: Some(0.0),
+                ..Default::default()
             },
             0.0,
         )

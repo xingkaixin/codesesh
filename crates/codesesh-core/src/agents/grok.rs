@@ -342,9 +342,8 @@ mod tests {
                 &MessageTokens {
                     input: Some(1000.0),
                     output: Some(50.0),
-                    reasoning: None,
                     cache_read: Some(400.0),
-                    cache_create: None,
+                    ..Default::default()
                 },
                 0.0,
             )
