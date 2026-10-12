@@ -33,18 +33,21 @@ impl PathEnvironment {
             variables: std::env::vars().collect(),
         })
     }
-    pub fn read_env_path(&self, name: &str) -> Option<PathBuf> {
-        let value = self.variables.get(name)?.trim();
+    fn expand_home(&self, value: &str) -> Option<PathBuf> {
+        let value = value.trim();
         if value.is_empty() {
             return None;
         }
-        let path = if value == "~" {
+        Some(if value == "~" {
             self.home.clone()
         } else if value.starts_with("~/") || value.starts_with("~\\") {
             self.home.join(&value[2..])
         } else {
             PathBuf::from(value)
-        };
+        })
+    }
+    pub fn read_env_path(&self, name: &str) -> Option<PathBuf> {
+        let path = self.expand_home(self.variables.get(name)?)?;
         Some(if path.is_absolute() {
             path
         } else {
@@ -80,6 +83,13 @@ impl PathEnvironment {
                 .join(name),
         }
     }
+    fn pi_settings_session_dir(&self, agent_dir: &Path) -> Option<PathBuf> {
+        let settings: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(agent_dir.join("settings.json")).ok()?).ok()?;
+        // Pi resolves a relative sessionDir from the directory it runs in, which is unknown here.
+        self.expand_home(settings["sessionDir"].as_str()?)
+            .filter(|path| path.is_absolute())
+    }
     pub fn data_root(&self, agent: &str) -> Option<PathBuf> {
         Some(match agent {
             "claudecode" => self.home_path("CLAUDE_CONFIG_DIR", ".claude"),
@@ -91,7 +101,7 @@ impl PathEnvironment {
             "kimi" => self.home_path("KIMI_SHARE_DIR", ".kimi"),
             "kimi-code" => self.home_path("KIMI_CODE_HOME", ".kimi-code"),
             "grok" => self.home_path("GROK_HOME", ".grok"),
-            "pi" => self.home_path("PI_HOME", ".pi"),
+            "pi" => self.home_path("PI_CODING_AGENT_DIR", ".pi/agent"),
             "dsh" => self.home_path("DSH_HOME", ".dsh"),
             "cursor" => match self.read_env_path("CURSOR_DATA_PATH") {
                 Some(path) => path,
@@ -142,7 +152,10 @@ impl PathEnvironment {
                 .unwrap_or_else(|| data_root.join("conversations")),
             "claudecode" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
-            "pi" => data_root.join("agent/sessions"),
+            "pi" => self
+                .read_env_path("PI_CODING_AGENT_SESSION_DIR")
+                .or_else(|| self.pi_settings_session_dir(&data_root))
+                .unwrap_or_else(|| data_root.join("sessions")),
             "opencode" => {
                 if let Some(value) = self
                     .variables
