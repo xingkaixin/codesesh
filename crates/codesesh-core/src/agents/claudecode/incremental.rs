@@ -1,4 +1,4 @@
-use super::{Child, Parser, child, common::changed_sources, parse};
+use super::{Child, Parser, child, common::changed_sources, parse, subagents_dir};
 use crate::{
     agents::{ScanDelta, codex::ParsedSession},
     pricing::Pricing,
@@ -142,11 +142,7 @@ pub fn scan_changed(
     }
     let mut sources = changed_sources(root, &changed, previous)?;
     sources.retain(|path| {
-        path.parent().and_then(Path::parent) == Some(root)
-            || path
-                .parent()
-                .and_then(Path::file_name)
-                .is_some_and(|n| n == "subagents")
+        path.parent().and_then(Path::parent) == Some(root) || subagents_dir(path).is_some()
     });
     let previous_by_source: HashMap<_, _> =
         previous.iter().map(|s| (s.source.as_path(), s)).collect();
@@ -158,11 +154,7 @@ pub fn scan_changed(
     let mut tool_children = HashMap::new();
     let mut containers = BTreeSet::new();
     for source in &sources {
-        if source
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|n| n == "subagents")
-        {
+        if subagents_dir(source).is_some() {
             containers.insert(source.parent().unwrap().to_owned());
         } else if let (Some(project), Some(id)) = (source.parent(), source.file_stem()) {
             containers.insert(project.join(id).join("subagents"));

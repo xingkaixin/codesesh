@@ -293,11 +293,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             "claudecode" => {
                 name.ends_with(".jsonl")
                     && (entry.depth() == 2
-                        || entry
-                            .path()
-                            .parent()
-                            .and_then(Path::file_name)
-                            .is_some_and(|name| name == "subagents"))
+                        || crate::agents::claudecode::subagents_dir(entry.path()).is_some())
             }
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
@@ -339,11 +335,12 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
         if source.agent == "claudecode" {
-            let parent = entry.path().parent().unwrap();
-            let project = if parent.file_name().is_some_and(|name| name == "subagents") {
-                parent.parent().and_then(Path::parent).unwrap_or(parent)
-            } else {
-                parent
+            let project = match crate::agents::claudecode::subagents_dir(entry.path()) {
+                Some(subagents) => subagents
+                    .parent()
+                    .and_then(Path::parent)
+                    .unwrap_or(subagents),
+                None => entry.path().parent().unwrap(),
             };
             let index = project.join("sessions-index.json");
             if files.contains(index.as_path()) {
