@@ -67,12 +67,7 @@ fn scan_directories(
     } else {
         None
     };
-    let model = config.and_then(|s| {
-        regex::Regex::new(r#"(?m)^default_model\s*=\s*"([^"]+)""#)
-            .unwrap()
-            .captures(&s)
-            .map(|c| c[1].to_owned())
-    });
+    let model = config.as_deref().and_then(configured_model);
     let mut projects = HashMap::new();
     if let Ok(content) = std::fs::read(data.join("kimi.json"))
         && let Ok(config) = serde_json::from_slice::<Value>(&content)
@@ -461,6 +456,27 @@ fn source_created_ms(metadata: &std::fs::Metadata) -> anyhow::Result<f64> {
     }
 }
 
+// default_model names a [models."<key>"] table; its `model` field is the id sent to the provider.
+fn configured_model(config: &str) -> Option<String> {
+    let key = regex::Regex::new(r#"(?m)^default_model\s*=\s*"([^"]+)""#)
+        .unwrap()
+        .captures(config)?[1]
+        .to_owned();
+    let escaped = regex::escape(&key);
+    let header = regex::Regex::new(&format!(
+        r#"(?m)^\[models\.(?:"{escaped}"|{escaped})\]\s*$"#
+    ))
+    .unwrap();
+    let model = header.find(config).and_then(|table| {
+        let body = &config[table.end()..];
+        let body = &body[..body.find("\n[").unwrap_or(body.len())];
+        regex::Regex::new(r#"(?m)^\s*model\s*=\s*"([^"]+)""#)
+            .unwrap()
+            .captures(body)
+            .map(|c| c[1].to_owned())
+    });
+    Some(model.unwrap_or(key))
+}
 fn first_user_title(context: &Path, wire: &Path) -> anyhow::Result<Option<String>> {
     for r in records(context)? {
         let r = r?;
@@ -751,5 +767,46 @@ mod tests {
         };
         assert_eq!(state.input.as_ref().unwrap()["path"], "a.rs");
         assert_eq!(state.status, "completed");
+    }
+    #[test]
+    fn default_model_resolves_through_models_table() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("sessions/hash/id");
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(
+            root.path().join("config.toml"),
+            r#"default_model = "kimi-code/kimi-for-coding"
+
+[models."moonshot-cn/kimi-k2.5"]
+provider = "managed:moonshot-cn"
+model = "kimi-k2.5"
+
+[models."kimi-code/kimi-for-coding"]
+provider = "managed:kimi-code"
+model = "kimi-for-coding"
+max_context_size = 262144
+"#,
+        )
+        .unwrap();
+        std::fs::write(path.join("state.json"), "{}").unwrap();
+        let records = [
+            json!({"timestamp":1,"message":{"type":"TurnBegin","payload":{"user_input":[{"text":"Hello"}]}}}),
+            json!({"timestamp":2,"message":{"type":"ContentPart","payload":{"type":"text","text":"Hi"}}}),
+            json!({"timestamp":3,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":4,"output":2}}}}),
+        ];
+        std::fs::write(
+            path.join("wire.jsonl"),
+            records
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        assert_eq!(
+            sessions[0].detail.messages[1].model.as_deref(),
+            Some("kimi-for-coding")
+        );
     }
 }
