@@ -660,7 +660,16 @@ pub fn project(
         human: None,
         updated: 0.0,
     };
-    let seed = head["seedLength"].as_f64().unwrap_or(0.0) as u64;
+    let seed = if head["version"].as_f64().unwrap_or(0.0) < 2.0 {
+        head["seedLength"].as_f64().unwrap_or(0.0) as u64
+    } else if head["isSeeded"] == true {
+        events
+            .iter()
+            .rfind(|e| e["type"] == "session/end-seed" && e["data"]["inherited"] == true)
+            .map_or(0, |e| e["seq"].as_f64().unwrap_or(0.0) as u64 + 1)
+    } else {
+        0
+    };
     for e in events {
         let own = e["seq"].as_f64().unwrap_or(0.0) as u64 >= seed;
         if own {

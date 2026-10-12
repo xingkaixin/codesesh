@@ -243,6 +243,16 @@ fn scan_directories(
         let mut open = None::<String>;
         let mut buffers: HashMap<String, String> = HashMap::new();
         let (mut read, mut create) = (0., 0.);
+        let mut count = |stats: &mut SessionStats, tokens: &MessageTokens| {
+            let cost =
+                pricing.estimate_tracked(model.as_deref(), tokens, 0., &mut stats.cost_inputs);
+            stats.total_input_tokens += tokens.input.unwrap_or(0.);
+            stats.total_output_tokens += tokens.output.unwrap_or(0.);
+            stats.total_cost += cost.unwrap_or(0.);
+            read += tokens.cache_read.unwrap_or(0.);
+            create += tokens.cache_create.unwrap_or(0.);
+            cost
+        };
         for (seq, r) in records(&wire_path)?.enumerate() {
             let r = r?;
             if !context_path.exists() && r["role"] == "_usage" && r["token_count"].is_number() {
@@ -251,29 +261,10 @@ fn scan_directories(
             let msg = &r["message"];
             let p = &msg["payload"];
             let ts = (number(&r["timestamp"]) * 1000.).floor();
-            if msg["type"] == "StatusUpdate"
-                && let Some(usage) = p.get("token_usage").filter(|v| v.is_object())
-            {
-                let cache_read = number(&usage["input_cache_read"]);
-                let cache_create = number(&usage["input_cache_creation"]);
-                let input = number(&usage["input_other"]) + cache_read + cache_create;
-                let output = number(&usage["output"]);
-                let tokens = MessageTokens {
-                    input: Some(input),
-                    output: Some(output),
-                    reasoning: None,
-                    cache_read: Some(cache_read),
-                    cache_create: Some(cache_create),
-                    cache_create_1h: None,
-                };
-                let cost =
-                    pricing.estimate_tracked(model.as_deref(), &tokens, 0., &mut stats.cost_inputs);
-                stats.total_input_tokens += input;
-                stats.total_output_tokens += output;
-                stats.total_cost += cost.unwrap_or(0.);
-                read += cache_read;
-                create += cache_create;
-                if !context_path.exists() && (input != 0. || output != 0.) {
+            if let Some(tokens) = status_tokens(&r) {
+                let cost = count(&mut stats, &tokens);
+                if !context_path.exists() && (tokens.input != Some(0.) || tokens.output != Some(0.))
+                {
                     builder.usage(
                         tokens,
                         model.as_deref(),
@@ -385,6 +376,13 @@ fn scan_directories(
                 _ => {}
             }
         }
+        for wire in subagent_wires(&path)? {
+            for r in records(&wire)? {
+                if let Some(tokens) = status_tokens(&r?) {
+                    count(&mut stats, &tokens);
+                }
+            }
+        }
         stats.total_cache_read_tokens = (read > 0.).then_some(read);
         stats.total_cache_create_tokens = (create > 0.).then_some(create);
         let hash = path
@@ -414,6 +412,37 @@ fn scan_directories(
         });
     }
     Ok(result)
+}
+fn status_tokens(record: &Value) -> Option<MessageTokens> {
+    let message = &record["message"];
+    if message["type"] != "StatusUpdate" {
+        return None;
+    }
+    let usage = message["payload"]
+        .get("token_usage")
+        .filter(|v| v.is_object())?;
+    let cache_read = number(&usage["input_cache_read"]);
+    let cache_create = number(&usage["input_cache_creation"]);
+    Some(MessageTokens {
+        input: Some(number(&usage["input_other"]) + cache_read + cache_create),
+        output: Some(number(&usage["output"])),
+        reasoning: None,
+        cache_read: Some(cache_read),
+        cache_create: Some(cache_create),
+        cache_create_1h: None,
+    })
+}
+// The parent wire mirrors these records as SubagentEvent entries, which are not read.
+fn subagent_wires(session: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let root = session.join("subagents");
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut wires = std::fs::read_dir(root)?
+        .map(|entry| Ok(entry?.path().join("wire.jsonl")))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    wires.sort();
+    Ok(wires)
 }
 fn source_created_ms(metadata: &std::fs::Metadata) -> anyhow::Result<f64> {
     if let Ok(created) = metadata.created() {
@@ -657,6 +686,39 @@ mod tests {
         assert_eq!(state.status, "completed");
         assert_eq!(state.input.as_ref().unwrap()["path"], "src/main.rs");
         assert_eq!(detail.file_activity.len(), 1);
+    }
+    #[test]
+    fn counts_subagent_usage_once_in_parent_session() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("sessions/hash/session");
+        let subagent = path.join("subagents/a1");
+        std::fs::create_dir_all(&subagent).unwrap();
+        std::fs::write(path.join("state.json"), "{}").unwrap();
+        let usage = json!({"type":"StatusUpdate","payload":{"token_usage":{"input_other":30,"output":6,"input_cache_read":10,"input_cache_creation":0}}});
+        let parent = [
+            json!({"timestamp":1,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":20,"output":8,"input_cache_read":5,"input_cache_creation":2}}}}),
+            json!({"timestamp":2,"message":{"type":"SubagentEvent","payload":{"agent_id":"a1","parent_tool_call_id":"c1","subagent_type":"explore","event":usage}}}),
+        ];
+        std::fs::write(
+            path.join("wire.jsonl"),
+            parent
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            subagent.join("wire.jsonl"),
+            json!({"timestamp":2,"message":usage}).to_string(),
+        )
+        .unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let stats = &sessions[0].head.stats;
+        assert_eq!(stats.total_input_tokens, 67.);
+        assert_eq!(stats.total_output_tokens, 14.);
+        assert_eq!(stats.total_cache_read_tokens, Some(15.));
+        assert_eq!(stats.cost_inputs.len(), 2);
     }
     #[test]
     fn wire_streaming_arguments_ignored_tools_and_usage_merge() {

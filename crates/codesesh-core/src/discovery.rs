@@ -226,10 +226,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
                             .join("agents/main/wire.jsonl"),
                     )?
             }
-            "dsh" => {
-                entry.depth() == 3
-                    && matches!(name.as_ref(), "session.jsonl" | "session.jsonl.zstd")
-            }
+            "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),
             _ => false,
         };
         if present {

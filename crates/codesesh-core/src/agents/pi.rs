@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::File,
-    io::{BufRead, BufReader, Seek, SeekFrom},
+    io::{BufReader, Seek, SeekFrom},
     path::Path,
 };
 use walkdir::WalkDir;
@@ -201,11 +201,21 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
     }
     let mut entries = Vec::<Entry>::new();
     let mut offset = 0;
-    let mut lines = super::jsonl::JsonLines::new(file);
-    while let Some(line) = lines.next_line()? {
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    let mut line = String::new();
+    loop {
+        if line.capacity() > 1024 * 1024 {
+            line = String::new();
+        } else {
+            line.clear();
+        }
+        let read = super::jsonl::read_line(&mut reader, &mut line)?;
+        if read == 0 {
+            break;
+        }
         let start = offset;
-        offset += line.len() as u64;
-        let Ok(record) = serde_json::from_str::<Value>(line) else {
+        offset += read as u64;
+        let Ok(record) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
         if !record.is_object() {
@@ -287,7 +297,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
         } else {
             line.clear();
         }
-        position += reader.read_line(&mut line)? as u64;
+        position += super::jsonl::read_line(&mut reader, &mut line)? as u64;
         let entry: Value = serde_json::from_str(&line)?;
         if entry["id"].as_str() != entries[index].id.as_deref()
             || entry["parentId"].as_str() != entries[index].parent.as_deref()
@@ -574,6 +584,28 @@ mod tests {
         .unwrap();
         assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
         assert!(deleted.upserts.is_empty());
+    }
+    #[test]
+    fn invalid_utf8_line_keeps_later_branch_offsets() {
+        let root = tempfile::tempdir().unwrap();
+        let mut bytes =
+            format!("{}\n", json!({"type":"session","cwd":"/tmp/project"})).into_bytes();
+        bytes.extend_from_slice(
+            b"{\"type\":\"message\",\"id\":\"u\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"Bad \xff byte\"}}\n",
+        );
+        bytes.extend_from_slice(json!({"type":"message","id":"v","parentId":"u","message":{"role":"user","content":"After"}}).to_string().as_bytes());
+        std::fs::write(root.path().join("session.jsonl"), bytes).unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let texts: Vec<_> = sessions[0]
+            .detail
+            .messages
+            .iter()
+            .map(|m| match &m.parts[0] {
+                MessagePart::Text { text, .. } => text.as_str(),
+                _ => panic!(),
+            })
+            .collect();
+        assert_eq!(texts, ["Bad \u{fffd} byte", "After"]);
     }
     #[test]
     fn cyclic_branch_terminates_and_first_header_wins() {
