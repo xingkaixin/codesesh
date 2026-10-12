@@ -246,6 +246,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             "conversation_summaries.db-journal",
         ],
         "kimi-code" => &["session_index.jsonl"],
+        "droid" => &["settings.json"],
         "kimi" => &["kimi.json", "config.toml"],
         _ => &[],
     };
@@ -302,6 +303,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "grok" => name == "summary.json",
+            "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
             "dsh" => {
                 entry.depth() == 3
                     && matches!(name.as_ref(), "session.jsonl" | "session.jsonl.zstd")
@@ -381,6 +383,12 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             if updates.try_exists()? {
                 fingerprint.push_str(&stamp(&updates)?.1);
                 bytes = bytes.saturating_add(std::fs::metadata(&updates)?.len());
+            }
+        }
+        if source.agent == "droid" {
+            let settings = path.with_extension("settings.json");
+            if settings.try_exists()? {
+                fingerprint.push_str(&stamp(&settings)?.1);
             }
         }
         if matches!(source.agent.as_str(), "kimi" | "kimi-code") {

@@ -103,6 +103,10 @@ impl PathEnvironment {
                     path
                 }
             },
+            "droid" => self
+                .read_env_path("FACTORY_HOME_OVERRIDE")
+                .unwrap_or_else(|| self.home.clone())
+                .join(".factory"),
             "deepchat" => self
                 .read_env_path("DEEPCHAT_USER_DATA_DIR")
                 .unwrap_or_else(|| self.desktop("DeepChat")),
@@ -142,6 +146,7 @@ impl PathEnvironment {
                 .unwrap_or_else(|| data_root.join("conversations")),
             "claudecode" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
+            "droid" => data_root.join("sessions"),
             "pi" => data_root.join("agent/sessions"),
             "opencode" => {
                 if let Some(value) = self

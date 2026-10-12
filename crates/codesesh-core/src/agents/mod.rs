@@ -14,6 +14,7 @@ mod codex_exec;
 mod codex_tool_events;
 pub mod cursor;
 pub mod deepchat;
+pub mod droid;
 pub mod dsh;
 pub mod grok;
 mod jsonl;
@@ -89,6 +90,7 @@ pub fn scan_agent(
         "claudecode" => claudecode::scan(scan_path, pricing),
         "codex" => codex::scan(data_root, pricing),
         "cursor" => cursor::scan(scan_path, pricing),
+        "droid" => droid::scan(scan_path, data_root, pricing),
         "kimi" => kimi::scan_with_data_root(scan_path, data_root, pricing),
         "kimi-code" => kimi_code::scan(scan_path, pricing),
         "grok" => grok::scan(scan_path, pricing),
