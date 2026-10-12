@@ -98,6 +98,7 @@ export function createFixture() {
     CODEX_HOME: codex,
     CLAUDE_CONFIG_DIR: join(root, "claude"),
     CURSOR_DATA_PATH: join(root, "cursor"),
+    FACTORY_HOME_OVERRIDE: join(root, "factory"),
     KIMI_SHARE_DIR: join(root, "kimi"),
     KIMI_CODE_HOME: join(root, "kimi-code"),
     PI_HOME: join(root, "pi"),
