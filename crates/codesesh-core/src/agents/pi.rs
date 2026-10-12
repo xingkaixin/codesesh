@@ -14,6 +14,10 @@ use std::{
 use walkdir::WalkDir;
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+    scan_as(root, "pi", pricing)
+}
+
+pub(super) fn scan_as(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let nested = root.join("agent/sessions");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -32,7 +36,7 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
         if !entry.file_type().is_file() || entry.path().extension().is_none_or(|e| e != "jsonl") {
             continue;
         }
-        let result = match parse(entry.path(), pricing) {
+        let result = match parse_as(entry.path(), agent, pricing) {
             Err(error) if error.is::<InvalidSession>() => continue,
             result => result?,
         };
@@ -66,6 +70,16 @@ pub fn scan_changed(
     changed_paths: &[std::path::PathBuf],
     previous: &[crate::agents::SessionRecord],
 ) -> Result<super::ScanDelta> {
+    scan_changed_as(root, "pi", pricing, changed_paths, previous)
+}
+
+pub(super) fn scan_changed_as(
+    root: &Path,
+    agent: &str,
+    pricing: &Pricing,
+    changed_paths: &[std::path::PathBuf],
+    previous: &[crate::agents::SessionRecord],
+) -> Result<super::ScanDelta> {
     let nested = root.join("agent/sessions");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -80,7 +94,7 @@ pub fn scan_changed(
         let parsed = match std::fs::metadata(&source) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => return Err(error.into()),
-            Ok(_) => parse(&source, pricing)?,
+            Ok(_) => parse_as(&source, agent, pricing)?,
         };
         for old in old {
             if parsed
@@ -192,6 +206,14 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
 }
 
 pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
+    parse_as(path, "pi", pricing)
+}
+
+pub(super) fn parse_as(
+    path: &Path,
+    agent: &str,
+    pricing: &Pricing,
+) -> Result<Option<SessionDetail>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
     let mut header = None;
     struct Entry {
@@ -324,7 +346,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
                         continue;
                     }
                     let mut m = message(id, Role::Assistant, ts, parts);
-                    m.agent = Some("pi".into());
+                    m.agent = Some(agent.into());
                     m.model = raw["model"].as_str().map(|s| s.trim().into());
                     m.provider = raw["provider"].as_str().map(str::to_owned);
                     let u = &raw["usage"];
@@ -426,7 +448,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
                             .into_iter()
                             .collect(),
                     );
-                    m.agent = Some("pi".into());
+                    m.agent = Some(agent.into());
                     m
                 }
                 _ => continue,
@@ -447,7 +469,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
                 ts,
                 text_part(&value, ts).into_iter().collect(),
             );
-            m.agent = (!custom).then_some("pi".into());
+            m.agent = (!custom).then(|| agent.into());
             m.automated = custom.then_some(true);
             m
         } else {
@@ -488,7 +510,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
     Ok(Some(detail(
         SessionReference {
             source_node_id: crate::contract::local_source_node_id(),
-            agent_name: "pi".into(),
+            agent_name: agent.into(),
             session_id: id,
         },
         cwd,
