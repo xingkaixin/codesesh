@@ -65,13 +65,13 @@ CodeSesh 做三件事：
 | DSH             | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | —        |
 | DeepChat        | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | —        |
 | Cherry Studio   | 已支持   | ✓    | ✓        | ✓        | ✓    | —      | —        |
-| Antigravity CLI | 部分支持 | —    | —        | —        | —    | ✓      | —        |
+| Antigravity CLI | 部分支持 | ✓    | —        | —        | —    | ✓      | —        |
 
 <!-- repo-fact:agents:end -->
 
 ✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用时，CodeSesh 按模型价格估算。
 
-Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息及工具调用。工具结果与用量仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
+Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息、工具调用、步骤时间，以及按请求记录的用量与模型名称；费用按模型价格估算。工具结果仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 
 OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V1 向 V2 迁移期间，尚未复制的会话从 V1 表读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/agents/opencode-v2.md)。
 

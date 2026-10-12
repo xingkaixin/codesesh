@@ -67,13 +67,13 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | DSH             | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | DeepChat        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | Cherry Studio   | Supported       | ✓     | ✓             | ✓            | ✓         | —            | —      |
-| Antigravity CLI | Partial support | —     | —             | —            | —         | ✓            | —      |
+| Antigravity CLI | Partial support | ✓     | —             | —            | —         | ✓            | —      |
 
 <!-- repo-fact:agents:end -->
 
 ✓ available · ◐ partial (for example, input and output tokens only) · — not available. Without a recorded cost, CodeSesh estimates cost from model prices.
 
-Antigravity CLI supports local SQLite conversations, titles, workspace metadata, and tool calls. Tool outcomes and usage remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
+Antigravity CLI supports local SQLite conversations, titles, workspace metadata, tool calls, step times, and per-request token usage with model names; cost is estimated from model prices. Tool outcomes remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
 
 OpenCode supports V1 SQLite history and the V2 `2.0.15` schema. Set `OPENCODE_DB` to select a custom database (relative to `XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` by default). While OpenCode migrates V1 history to V2, sessions not yet copied are read from the V1 tables; session totals prevent copied fork history from being counted again. See the [compatibility design](docs/agents/opencode-v2.md) for supported messages and validation limits.
 
