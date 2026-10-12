@@ -101,7 +101,7 @@ export function createFixture() {
     FACTORY_HOME_OVERRIDE: join(root, "factory"),
     KIMI_SHARE_DIR: join(root, "kimi"),
     KIMI_CODE_HOME: join(root, "kimi-code"),
-    PI_HOME: join(root, "pi"),
+    PI_CODING_AGENT_DIR: join(root, "pi"),
     GROK_HOME: join(root, "grok"),
     DSH_HOME: join(root, "dsh"),
     OPENCODE_DB: join(root, "opencode.db"),

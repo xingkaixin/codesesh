@@ -263,6 +263,28 @@ export function buildCodexToolStrategy(
     };
   }
 
+  if (toolKey === "web_search") {
+    const action = toRecord(state.inputValue);
+    const type = toPlainText(action.type) || "search";
+    const queries = Array.isArray(action.queries) ? action.queries : [action.query];
+    return {
+      ...defaultStrategy,
+      Icon: FileSearch,
+      title:
+        type === "search"
+          ? t("web search")
+          : type === "open_page"
+            ? t("web open")
+            : t("web {0}", [type]),
+      secondaryText:
+        [...queries, action.pattern, action.url].map(toPlainText).filter(Boolean).join(" · ") ||
+        undefined,
+      details: [],
+      expandable: false,
+      showInputPreview: false,
+    };
+  }
+
   if (toolKey === "view_image") {
     const display = buildCodexViewImageDisplay(state.inputValue, formatPathForDisplay);
     return {

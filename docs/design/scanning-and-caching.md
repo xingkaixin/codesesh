@@ -28,7 +28,7 @@ Clap 参数与 PathEnvironment
 ## 数据源与增量读取
 
 <!-- repo-fact:agent-source-kinds:start -->
-- 文件型：Claude Code、Codex、Droid、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
+- 文件型：Claude Code、Qoder、Qoder CN、Codex、Droid、DSH、Grok、Kimi-Cli、Kimi-Code、Pi
 - SQLite 数据库型：OpenCode、Cursor、ZCode、DeepChat、Cherry Studio、MiniMax Code、Antigravity CLI
 <!-- repo-fact:agent-source-kinds:end -->
 

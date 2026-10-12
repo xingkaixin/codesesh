@@ -6,4 +6,5 @@ export type MessageTokens = {
   reasoning?: number;
   cache_read?: number;
   cache_create?: number;
+  cache_create_1h?: number;
 };

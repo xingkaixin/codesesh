@@ -56,6 +56,8 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 
 <!-- repo-fact:agents:start -->
 - Claude Code
+- Qoder
+- Qoder CN
 - Cursor
 - Droid
 - Kimi-Cli

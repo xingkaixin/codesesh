@@ -65,6 +65,21 @@ pub fn message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> Me
     }
 }
 
+pub fn usage_tokens(usage: &Value) -> MessageTokens {
+    let n = |value: &Value| value.as_f64().unwrap_or(0.0);
+    let read = n(&usage["cache_read_input_tokens"]);
+    let create = n(&usage["cache_creation_input_tokens"]);
+    let create_1h = n(&usage["cache_creation"]["ephemeral_1h_input_tokens"]);
+    MessageTokens {
+        input: Some(n(&usage["input_tokens"]) + read + create),
+        output: Some(n(&usage["output_tokens"])),
+        cache_read: Some(read),
+        cache_create: Some(create),
+        cache_create_1h: (create_1h > 0.0).then_some(create_1h),
+        reasoning: None,
+    }
+}
+
 pub fn text_part(value: &str, time: f64) -> Option<MessagePart> {
     let text = clean(value);
     (!text.is_empty()).then_some(MessagePart::Text {

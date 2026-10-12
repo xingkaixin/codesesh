@@ -17,6 +17,103 @@ fn fixture(root: &Path) -> PathBuf {
     path
 }
 
+fn varint(tag: u32, value: u64) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    prost::encoding::uint64::encode(tag, &value, &mut buffer);
+    buffer
+}
+
+fn bytes(tag: u32, value: impl AsRef<[u8]>) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    prost::encoding::bytes::encode(tag, &value.as_ref().to_vec(), &mut buffer);
+    buffer
+}
+
+#[test]
+fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(temp.path());
+    let usage = |response: &str, input, cache_read, visible, reasoning| {
+        [
+            varint(1, 7),
+            varint(2, input),
+            varint(3, visible + reasoning),
+            varint(5, cache_read),
+            bytes(7, format!("bot-{response}")),
+            varint(9, reasoning),
+            varint(10, visible),
+            bytes(11, response),
+        ]
+        .concat()
+    };
+    let created = |seconds| bytes(1, [varint(1, seconds), varint(2, 500_000_000)].concat());
+    let response = bytes(
+        5,
+        [
+            created(1_788_000_000),
+            bytes(9, usage("r1", 100, 40, 20, 10)),
+            bytes(28, bytes(2, usage("r0", 50, 0, 5, 0))),
+            bytes(28, bytes(2, usage("r1", 100, 40, 20, 10))),
+        ]
+        .concat(),
+    );
+    let tool = bytes(
+        5,
+        [
+            created(1_788_000_001),
+            bytes(4, [bytes(1, "call-2"), bytes(2, "list_dir")].concat()),
+        ]
+        .concat(),
+    );
+    let db = Connection::open(&path).unwrap();
+    db.execute(
+        "INSERT INTO gen_metadata VALUES (0, ?1)",
+        [bytes(
+            1,
+            [varint(3, 7), bytes(19, "gemini-2.5-flash")].concat(),
+        )],
+    )
+    .unwrap();
+    db.execute("INSERT INTO steps VALUES (6, 15, 3, ?1)", [response])
+        .unwrap();
+    db.execute("INSERT INTO steps VALUES (7, 132, 3, ?1)", [tool])
+        .unwrap();
+    let scan_root = temp.path().join("conversations");
+    let sessions = scan(&scan_root, temp.path(), &Pricing::bundled()).unwrap();
+    let session = &sessions[0];
+    let message = session.detail.messages.last().unwrap();
+    assert_eq!(message.id, "session:7");
+    assert_eq!(message.time_created, 1_788_000_001_500.0);
+    assert_eq!(message.model.as_deref(), Some("gemini-2.5-flash"));
+    // The struct update keeps this literal compiling when MessageTokens gains fields.
+    #[allow(clippy::needless_update)]
+    let expected = MessageTokens {
+        input: Some(190.0),
+        output: Some(25.0),
+        reasoning: Some(10.0),
+        cache_read: Some(40.0),
+        cache_create: Some(0.0),
+        ..Default::default()
+    };
+    assert_eq!(message.tokens, Some(expected));
+    let stats = &session.head.stats;
+    assert_eq!(stats.message_count, 4);
+    assert_eq!(stats.total_input_tokens, 190.0);
+    assert_eq!(stats.total_output_tokens, 35.0);
+    assert_eq!(stats.total_tokens, Some(225.0));
+    assert_eq!(stats.total_cache_read_tokens, Some(40.0));
+    assert_eq!(stats.cost_source, Some(CostSource::Estimated));
+    assert!(stats.total_cost > 0.0);
+    assert_eq!(message.cost, Some(stats.total_cost));
+    assert_eq!(
+        session.head.model_usage,
+        Some(BTreeMap::from([("gemini-2.5-flash".into(), 225.0)]))
+    );
+    crate::pricing::assert_cached_repricing(|pricing| {
+        scan(&scan_root, temp.path(), pricing).unwrap()
+    });
+}
+
 #[test]
 fn native_steps_preserve_order_tools_and_unknown_usage() {
     let temp = tempfile::tempdir().unwrap();

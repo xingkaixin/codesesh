@@ -15,6 +15,15 @@ pub struct Price {
     pub cache_read_cost_per_token: f64,
     pub reasoning_cost_per_token: f64,
     pub web_search_cost_per_request: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub long_context: Option<Box<LongContext>>,
+}
+
+/// Rates billed for the whole request once its context exceeds `threshold` tokens.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct LongContext {
+    pub threshold: f64,
+    pub price: Price,
 }
 
 impl Price {
@@ -39,6 +48,12 @@ impl Price {
                 .unwrap_or(output),
             web_search_cost_per_request: nonnegative(value.get("webSearchCostPerRequest"))
                 .unwrap_or(0.01),
+            long_context: value.get("longContext").and_then(|tier| {
+                Some(Box::new(LongContext {
+                    threshold: nonnegative(tier.get("threshold"))?,
+                    price: Self::from_cache(tier.get("price")?)?,
+                }))
+            }),
         })
     }
 
@@ -68,6 +83,13 @@ impl Price {
                 "null"
             });
         }
+        if let Some(tier) = &self.long_context {
+            output.push_str(",\"longContext\":{\"threshold\":");
+            output.push_str(buffer.format(tier.threshold));
+            output.push_str(",\"price\":");
+            output.push_str(&tier.price.json());
+            output.push('}');
+        }
         output.push('}');
         output
     }
@@ -93,6 +115,7 @@ pub(super) fn snapshot() -> HashMap<String, Price> {
             cache_read_cost_per_token: nonnegative(values.get(3)).unwrap_or(input * 0.1),
             reasoning_cost_per_token: nonnegative(values.get(4)).unwrap_or(output),
             web_search_cost_per_request: nonnegative(values.get(5)).unwrap_or(0.01),
+            long_context: None,
         };
         let model = normalize(&model);
         prices.insert(model.clone(), price.clone());
@@ -164,7 +187,7 @@ pub fn parse_models_dev(data: &Value) -> HashMap<String, Price> {
             else {
                 continue;
             };
-            let price = Price {
+            let mut price = Price {
                 input_cost_per_token: input,
                 output_cost_per_token: output,
                 cache_create_cost_per_token: nonnegative(cost.get("cache_write"))
@@ -175,13 +198,46 @@ pub fn parse_models_dev(data: &Value) -> HashMap<String, Price> {
                     .unwrap_or(input),
                 reasoning_cost_per_token: output,
                 web_search_cost_per_request: 0.01,
+                long_context: None,
             };
+            price.long_context = long_context(cost.get("tiers"), &price);
             qualified.insert(normalize(&format!("{provider}/{model}")), price.clone());
             aliases.entry(normalize(model)).or_insert(price);
         }
     }
     aliases.extend(qualified);
     aliases
+}
+
+fn long_context(tiers: Option<&Value>, base: &Price) -> Option<Box<LongContext>> {
+    tiers?
+        .as_array()?
+        .iter()
+        .filter(|tier| tier["tier"]["type"] == "context")
+        .filter_map(|tier| {
+            let threshold = tier["tier"]["size"].as_f64().filter(|size| *size > 0.0)?;
+            let rate = |key: &str, fallback: f64| {
+                nonnegative(tier.get(key)).map_or(fallback, |value| value / 1_000_000.0)
+            };
+            let output = rate("output", base.output_cost_per_token);
+            Some(LongContext {
+                threshold,
+                price: Price {
+                    input_cost_per_token: rate("input", base.input_cost_per_token),
+                    output_cost_per_token: output,
+                    cache_create_cost_per_token: rate(
+                        "cache_write",
+                        base.cache_create_cost_per_token,
+                    ),
+                    cache_read_cost_per_token: rate("cache_read", base.cache_read_cost_per_token),
+                    reasoning_cost_per_token: output,
+                    web_search_cost_per_request: base.web_search_cost_per_request,
+                    long_context: None,
+                },
+            })
+        })
+        .min_by(|left, right| left.threshold.total_cmp(&right.threshold))
+        .map(Box::new)
 }
 
 #[cfg(test)]
@@ -218,7 +274,8 @@ mod tests {
                 cache_create_cost_per_token: 0.0,
                 cache_read_cost_per_token: 0.0,
                 reasoning_cost_per_token: 1.0,
-                web_search_cost_per_request: 1.0
+                web_search_cost_per_request: 1.0,
+                long_context: None
             }
             .billable()
         );
