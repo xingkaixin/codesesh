@@ -29,6 +29,26 @@ fn path_overrides_expand_and_fallbacks_preserve_precedence() {
     );
 }
 #[test]
+fn pi_paths_follow_upstream_overrides() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut env = environment(temporary.path());
+    env.variables
+        .insert("PI_CODING_AGENT_DIR".into(), "~/agent".into());
+    let agent = env.home.join("agent");
+    assert_eq!(env.source("pi").unwrap().scan_path, agent.join("sessions"));
+    std::fs::create_dir_all(&agent).unwrap();
+    std::fs::write(agent.join("settings.json"), r#"{"sessionDir":"relative"}"#).unwrap();
+    assert_eq!(env.source("pi").unwrap().scan_path, agent.join("sessions"));
+    std::fs::write(agent.join("settings.json"), r#"{"sessionDir":"~/stored"}"#).unwrap();
+    assert_eq!(env.source("pi").unwrap().scan_path, env.home.join("stored"));
+    env.variables
+        .insert("PI_CODING_AGENT_SESSION_DIR".into(), "~/override".into());
+    assert_eq!(
+        env.source("pi").unwrap().scan_path,
+        env.home.join("override")
+    );
+}
+#[test]
 fn platform_paths_and_opencode_override_match_existing_rules() {
     let temporary = tempfile::tempdir().unwrap();
     let mut env = environment(temporary.path());
