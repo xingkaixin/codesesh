@@ -30,6 +30,7 @@ pub(super) fn environment() -> BTreeMap<String, String> {
         "QODER_CONFIG_DIR",
         "QODERCN_CONFIG_DIR",
         "CURSOR_DATA_PATH",
+        "FACTORY_HOME_OVERRIDE",
         "DEEPCHAT_USER_DATA_DIR",
         "CHERRYSTUDIO_USER_DATA_DIR",
         "DSH_HOME",

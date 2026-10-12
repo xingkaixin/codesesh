@@ -127,6 +127,7 @@ impl AgentScanner {
                 root.join("globalStorage/state.vscdb"),
                 root.join("workspaceStorage"),
             ],
+            "droid" => vec![root.clone(), self.source.data_root.join("settings.json")],
             "deepchat" => vec![root.join("app_db/agent.db")],
             "cherrystudio" => vec![root.join("Data/cherrystudio.sqlite")],
             "minimax-code" => vec![root.join("v2/sqlite/runtime-state.sqlite")],
@@ -931,6 +932,13 @@ impl AgentScanner {
                     removed: delta.removed,
                     complete: false,
                 })
+            }
+            "droid" if paths.is_some() => {
+                let paths = paths.unwrap();
+                let upserts = agents::droid::scan_paths(&self.source.data_root, pricing, paths)?;
+                Ok(selected_delta(upserts, &self.previous, |session| {
+                    paths.contains(&session.source)
+                }))
             }
             "opencode" | "zcode" => {
                 if !has_sources(&self.source)?

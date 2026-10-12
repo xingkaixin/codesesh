@@ -120,6 +120,10 @@ impl PathEnvironment {
                     path
                 }
             },
+            "droid" => self
+                .read_env_path("FACTORY_HOME_OVERRIDE")
+                .unwrap_or_else(|| self.home.clone())
+                .join(".factory"),
             "deepchat" => self
                 .read_env_path("DEEPCHAT_USER_DATA_DIR")
                 .unwrap_or_else(|| self.desktop("DeepChat")),
@@ -160,6 +164,7 @@ impl PathEnvironment {
             "gemini-cli" => data_root.join("tmp"),
             "claudecode" | "qoder" | "qoder-cn" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
+            "droid" => data_root.join("sessions"),
             "pi" => self
                 .read_env_path("PI_CODING_AGENT_SESSION_DIR")
                 .or_else(|| self.pi_settings_session_dir(&data_root))

@@ -66,6 +66,22 @@ export const AGENT_CATALOG = [
     },
   },
   {
+    name: "droid",
+    displayName: "Droid",
+    icon: "/icon/agent/droid.svg",
+    sourceKind: "filesystem",
+    resumeCommandPrefix: "droid --resume",
+    toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "partial",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
+  },
+  {
     name: "kimi",
     displayName: "Kimi-Cli",
     icon: "/icon/agent/kimi.svg",
