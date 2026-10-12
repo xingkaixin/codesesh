@@ -388,6 +388,8 @@ fn child_summary(
             "event_msg" if payload["type"] == "token_count" => {
                 usage.consume(payload, model.as_deref(), pricing, &mut [])
             }
+            "token_usage_record" => usage.record(payload),
+            "compacted" => usage.compacted(payload, model.as_deref(), pricing, &mut []),
             "response_item" if payload["type"] == "message" && payload["role"] == "assistant" => {
                 let text = clean(&content(payload, true));
                 if text.is_empty() {
@@ -528,6 +530,8 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
         model: Value,
         #[serde(default)]
         turn_id: Value,
+        #[serde(default)]
+        compaction_response_id: Value,
         #[serde(default, borrow)]
         item: Option<&'a serde_json::value::RawValue>,
     }
@@ -562,11 +566,12 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
     let payload = if !internal(&record.kind)
         && !internal(&header.kind)
         && (record.kind == "response_item"
+            || record.kind == "token_usage_record"
             || (record.kind == "event_msg" && (header.kind == "token_count" || mcp_completion)))
     {
         serde_json::from_str(raw)?
     } else {
-        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model,"turn_id":header.turn_id})
+        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model,"turn_id":header.turn_id,"compaction_response_id":header.compaction_response_id})
     };
     Ok(serde_json::json!({"type":record.kind,"timestamp":record.timestamp,"payload":payload}))
 }
@@ -844,6 +849,16 @@ impl Parser {
         if kind == "event_msg" && payload["type"] == "token_count" {
             usage.consume(payload, model.as_deref(), pricing, messages);
             head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
+            return;
+        }
+        if kind == "token_usage_record" {
+            usage.record(payload);
+            head_usage.record(payload);
+            return;
+        }
+        if kind == "compacted" {
+            usage.compacted(payload, model.as_deref(), pricing, messages);
+            head_usage.compacted(payload, head_model.as_deref(), pricing, &mut []);
             return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
@@ -1555,6 +1570,43 @@ mod incremental_tests {
             .find(|message| message.subagent_id.as_deref() == Some(child))
             .unwrap();
         assert_eq!(returned.nickname.as_deref(), Some("Pascal"));
+    }
+
+    #[test]
+    fn remote_compaction_usage_is_counted_once() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        let count = |input: u64, total: u64| {
+            serde_json::json!({"type":"event_msg","timestamp":900,"payload":{"type":"token_count","info":{
+                "total_token_usage":{"input_tokens":total,"total_tokens":total},
+                "last_token_usage":{"input_tokens":input,"total_tokens":input}
+            }}})
+        };
+        let record = |id: &str, input: u64| serde_json::json!({"type":"token_usage_record","timestamp":900,"payload":{"response_id":id,"usage":{"input_tokens":input,"total_tokens":input}}});
+        let compacted = |id: &str| serde_json::json!({"type":"compacted","timestamp":900,"payload":{"compaction_response_id":id,"replacement_history":[]}});
+        let lines = [
+            serde_json::json!({"type":"session_meta","timestamp":700,"payload":{"cwd":"/project"}}),
+            serde_json::json!({"type":"turn_context","timestamp":800,"payload":{"model":"gpt-5"}}),
+            record("normal", 10),
+            count(10, 10),
+            record("remote", 50),
+            compacted("remote"),
+            count(0, 10),
+            record("local", 20),
+            count(20, 30),
+            compacted("local"),
+        ];
+        let contents = lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>();
+        std::fs::write(&path, contents).unwrap();
+        let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.head.stats.total_input_tokens, 80.0);
     }
 
     #[test]
