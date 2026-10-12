@@ -291,6 +291,8 @@ fn model_names(db: &Connection, path: &Path) -> Result<HashMap<u64, String>> {
     Ok(models)
 }
 
+// The struct update keeps this literal compiling when MessageTokens gains fields.
+#[allow(clippy::needless_update)]
 fn tokens(usage: &proto::Usage) -> Option<MessageTokens> {
     let input = usage.input as f64 + usage.cache_read as f64 + usage.cache_create as f64;
     let output = usage
@@ -303,6 +305,7 @@ fn tokens(usage: &proto::Usage) -> Option<MessageTokens> {
         reasoning: Some(reasoning),
         cache_read: Some(usage.cache_read as f64),
         cache_create: Some(usage.cache_create as f64),
+        ..Default::default()
     })
 }
 

@@ -85,16 +85,17 @@ fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
     assert_eq!(message.id, "session:7");
     assert_eq!(message.time_created, 1_788_000_001_500.0);
     assert_eq!(message.model.as_deref(), Some("gemini-2.5-flash"));
-    assert_eq!(
-        message.tokens,
-        Some(MessageTokens {
-            input: Some(190.0),
-            output: Some(25.0),
-            reasoning: Some(10.0),
-            cache_read: Some(40.0),
-            cache_create: Some(0.0),
-        })
-    );
+    // The struct update keeps this literal compiling when MessageTokens gains fields.
+    #[allow(clippy::needless_update)]
+    let expected = MessageTokens {
+        input: Some(190.0),
+        output: Some(25.0),
+        reasoning: Some(10.0),
+        cache_read: Some(40.0),
+        cache_create: Some(0.0),
+        ..Default::default()
+    };
+    assert_eq!(message.tokens, Some(expected));
     let stats = &session.head.stats;
     assert_eq!(stats.message_count, 4);
     assert_eq!(stats.total_input_tokens, 190.0);

@@ -207,7 +207,7 @@ impl SessionHead {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 pub struct MessageTokens {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
