@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fs::{self, File},
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -76,7 +76,7 @@ impl Checkpoints {
         let mut partial = None;
         loop {
             line.clear();
-            let read = reader.read_line(&mut line)?;
+            let read = crate::agents::jsonl::read_line(&mut reader, &mut line)?;
             if read == 0 {
                 break;
             }

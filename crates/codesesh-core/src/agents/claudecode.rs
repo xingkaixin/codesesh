@@ -560,6 +560,36 @@ mod tests {
         assert_eq!(sessions[0].detail.messages.len(), 1);
     }
     #[test]
+    fn invalid_utf8_line_is_replaced_instead_of_failing_the_source() {
+        let root = tempfile::tempdir().unwrap();
+        let good = root.path().join("project/good.jsonl");
+        let corrupt = root.path().join("project/corrupt.jsonl");
+        write(
+            &good,
+            &[json!({"type":"user","message":{"role":"user","content":"Good"}})],
+        );
+        fs::write(
+            &corrupt,
+            b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Bad \xff byte\"}}\n",
+        )
+        .unwrap();
+        let pricing = Pricing::bundled();
+        let full = scan(root.path(), &pricing).unwrap();
+        let changed = scan_changed(
+            root.path(),
+            &pricing,
+            &[good, corrupt],
+            &[],
+            &mut Checkpoints::default(),
+        )
+        .unwrap();
+        for sessions in [full, changed.upserts] {
+            let mut titles: Vec<_> = sessions.iter().map(|s| s.head.title.as_str()).collect();
+            titles.sort();
+            assert_eq!(titles, ["Bad \u{fffd} byte", "Good"]);
+        }
+    }
+    #[test]
     fn filters_internal_only_records_and_limits_fallback_title_to_first_twenty() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("project/session.jsonl");
