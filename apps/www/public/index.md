@@ -56,7 +56,10 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 
 <!-- repo-fact:agents:start -->
 - Claude Code
+- Qoder
+- Qoder CN
 - Cursor
+- Droid
 - Kimi-Cli
 - Kimi-Code
 - Codex
@@ -69,6 +72,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Cherry Studio
 - MiniMax Code
 - Antigravity CLI
+- Gemini CLI
 <!-- repo-fact:agents:end -->
 
 ## Data Boundary

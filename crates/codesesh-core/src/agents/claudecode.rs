@@ -2,13 +2,16 @@ pub(super) mod common;
 mod incremental;
 mod transcript;
 use super::codex::{ParsedSession, timestamp};
-use crate::{contract::*, pricing::Pricing};
+use crate::{
+    contract::*,
+    pricing::{Pricing, priced_model},
+};
 use anyhow::{Context, Result};
 use common::*;
-pub use incremental::{Checkpoints, scan_changed};
+pub use incremental::{Checkpoints, scan_changed, scan_changed_as};
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
     path::{Path, PathBuf},
 };
@@ -23,15 +26,26 @@ struct Child {
     project: PathBuf,
 }
 
-fn child(path: &Path) -> Option<Child> {
-    let subagents = path.parent()?;
-    if subagents.file_name()? != "subagents" {
-        return None;
+/// The session's `subagents` directory for `<session>/subagents/*.jsonl` and for workflow agents
+/// in `<session>/subagents/workflows/<run>/agent-*.jsonl`, whose runs also keep a `journal.jsonl`.
+pub fn subagents_dir(path: &Path) -> Option<&Path> {
+    let dir = path.parent()?;
+    if dir.file_name()? == "subagents" {
+        return Some(dir);
     }
-    let parent = subagents.parent()?;
+    let workflows = dir.parent()?;
+    let subagents = workflows.parent()?;
+    (workflows.file_name()? == "workflows"
+        && subagents.file_name()? == "subagents"
+        && path.file_name()?.to_string_lossy().starts_with("agent-"))
+    .then_some(subagents)
+}
+
+fn child(path: &Path) -> Option<Child> {
+    let parent = subagents_dir(path)?.parent()?;
     let project = parent.parent()?.to_owned();
     let stem = path.file_stem()?.to_string_lossy();
-    let metadata: Value = fs::read(subagents.join(format!("{stem}.meta.json")))
+    let metadata: Value = fs::read(path.with_file_name(format!("{stem}.meta.json")))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or(Value::Null);
@@ -58,6 +72,10 @@ fn child(path: &Path) -> Option<Child> {
 }
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+    scan_as(root, "claudecode", pricing)
+}
+
+pub(super) fn scan_as(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -104,7 +122,15 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .unwrap_or(Value::Null)
         });
-        let result = match parse(&path, context, project, index, &tool_children, pricing) {
+        let result = match parse(
+            &path,
+            agent,
+            context,
+            project,
+            index,
+            &tool_children,
+            pricing,
+        ) {
             Err(error) if error.is::<InvalidSession>() => continue,
             result => result?,
         };
@@ -204,6 +230,7 @@ fn output_parts(value: &Value, ts: f64) -> Vec<MessagePart> {
 
 fn parse(
     path: &Path,
+    agent: &str,
     child: Option<&Child>,
     project: &Path,
     index: &Value,
@@ -211,7 +238,7 @@ fn parse(
     pricing: &Pricing,
 ) -> Result<Option<(SessionHead, SessionDetail)>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut parser = Parser::new();
+    let mut parser = Parser::new(agent);
     let mut lines = super::jsonl::JsonLines::new(file);
     while let Some(line) = lines.next_line()? {
         parser.feed(line, children, pricing)?;
@@ -222,28 +249,41 @@ fn parse(
 /// Line-by-line state of one transcript, so an appended transcript can resume where it stopped.
 #[derive(Clone)]
 struct Parser {
+    agent: String,
     transcript: Transcript,
     first_time: f64,
     latest_time: f64,
     cwd: Option<String>,
+    custom_title: Option<String>,
+    ai_title: Option<String>,
     prompt_title: Option<String>,
     visible_count: usize,
     usage_by_request: HashMap<String, (Option<String>, MessageTokens)>,
     usage_order: Vec<String>,
+    fast_requests: HashSet<String>,
     line_index: usize,
 }
 
 impl Parser {
-    fn new() -> Self {
+    fn new(agent: &str) -> Self {
         Self {
-            transcript: Transcript::new(),
+            agent: agent.into(),
+            // Claude Code keeps its original message label so cached search text stays valid.
+            transcript: Transcript::new(if agent == "claudecode" {
+                "claude"
+            } else {
+                agent
+            }),
             first_time: 0.0,
             latest_time: 0.0,
             cwd: None,
+            custom_title: None,
+            ai_title: None,
             prompt_title: None,
             visible_count: 0,
             usage_by_request: HashMap::new(),
             usage_order: Vec::new(),
+            fast_requests: HashSet::new(),
             line_index: 0,
         }
     }
@@ -270,6 +310,21 @@ impl Parser {
         }
         if internal(&record) {
             return Ok(());
+        }
+        match record["type"].as_str() {
+            Some("custom-title") => {
+                if let Some(value) = title(&text(&record["customTitle"])) {
+                    self.custom_title = Some(value);
+                }
+                return Ok(());
+            }
+            Some("ai-title") => {
+                if let Some(value) = title(&text(&record["aiTitle"])) {
+                    self.ai_title = Some(value);
+                }
+                return Ok(());
+            }
+            _ => {}
         }
         self.latest_time = self.latest_time.max(timestamp(&record));
         if self.cwd.is_none() {
@@ -319,10 +374,6 @@ impl Parser {
                         .filter(|s| !s.is_empty())
                 });
             if let Some(key) = key {
-                let u = &raw["usage"];
-                let n = |k: &str| u[k].as_f64().unwrap_or(0.0);
-                let read = n("cache_read_input_tokens");
-                let create = n("cache_creation_input_tokens");
                 if !self.usage_by_request.contains_key(key) {
                     self.usage_order.push(key.into());
                 }
@@ -334,15 +385,12 @@ impl Parser {
                             .map(str::trim)
                             .filter(|s| !s.is_empty())
                             .map(str::to_owned),
-                        MessageTokens {
-                            input: Some(n("input_tokens") + read + create),
-                            output: Some(n("output_tokens")),
-                            cache_read: Some(read),
-                            cache_create: Some(create),
-                            reasoning: None,
-                        },
+                        usage_tokens(&raw["usage"]),
                     ),
                 );
+                if raw["usage"]["speed"] == "fast" {
+                    self.fast_requests.insert(key.into());
+                }
             }
         }
         self.transcript.convert(&record, children, pricing);
@@ -390,9 +438,10 @@ impl Parser {
         let directory = self
             .cwd
             .unwrap_or_else(|| project.to_string_lossy().into_owned());
-        let title = explicit
-            .as_deref()
-            .and_then(title)
+        let title = self
+            .custom_title
+            .or(self.ai_title)
+            .or_else(|| explicit.as_deref().and_then(title))
             .or(self.prompt_title)
             .or_else(|| {
                 title(
@@ -419,8 +468,14 @@ impl Parser {
                 tokens.cache_read.unwrap_or(0.0);
             *head_stats.total_cache_create_tokens.as_mut().unwrap() +=
                 tokens.cache_create.unwrap_or(0.0);
+            let speed = self.fast_requests.contains(&key).then_some("fast");
             head_stats.total_cost += pricing
-                .estimate_tracked(model.as_deref(), tokens, 0.0, &mut head_stats.cost_inputs)
+                .estimate_tracked(
+                    priced_model(model.as_deref(), speed).as_deref(),
+                    tokens,
+                    0.0,
+                    &mut head_stats.cost_inputs,
+                )
                 .unwrap_or(0.0);
             if let Some(model) = model {
                 *models.entry(model.clone()).or_default() +=
@@ -432,7 +487,7 @@ impl Parser {
         let mut detail = detail(
             SessionReference {
                 source_node_id: crate::contract::local_source_node_id(),
-                agent_name: "claudecode".into(),
+                agent_name: self.agent.clone(),
                 session_id: id,
             },
             directory,
@@ -447,7 +502,7 @@ impl Parser {
                 .and_then(|c| c.parent.as_ref())
                 .map(|id| SessionReference {
                     source_node_id: crate::contract::local_source_node_id(),
-                    agent_name: "claudecode".into(),
+                    agent_name: self.agent.clone(),
                     session_id: id.clone(),
                 });
         head_stats.cost_source = (head_stats.total_cost > 0.0).then_some(CostSource::Estimated);
@@ -560,6 +615,36 @@ mod tests {
         assert_eq!(sessions[0].detail.messages.len(), 1);
     }
     #[test]
+    fn invalid_utf8_line_is_replaced_instead_of_failing_the_source() {
+        let root = tempfile::tempdir().unwrap();
+        let good = root.path().join("project/good.jsonl");
+        let corrupt = root.path().join("project/corrupt.jsonl");
+        write(
+            &good,
+            &[json!({"type":"user","message":{"role":"user","content":"Good"}})],
+        );
+        fs::write(
+            &corrupt,
+            b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Bad \xff byte\"}}\n",
+        )
+        .unwrap();
+        let pricing = Pricing::bundled();
+        let full = scan(root.path(), &pricing).unwrap();
+        let changed = scan_changed(
+            root.path(),
+            &pricing,
+            &[good, corrupt],
+            &[],
+            &mut Checkpoints::default(),
+        )
+        .unwrap();
+        for sessions in [full, changed.upserts] {
+            let mut titles: Vec<_> = sessions.iter().map(|s| s.head.title.as_str()).collect();
+            titles.sort();
+            assert_eq!(titles, ["Bad \u{fffd} byte", "Good"]);
+        }
+    }
+    #[test]
     fn filters_internal_only_records_and_limits_fallback_title_to_first_twenty() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("project/session.jsonl");
@@ -579,6 +664,29 @@ mod tests {
                 .title,
             "fallback"
         );
+    }
+    #[test]
+    fn late_custom_title_outranks_ai_title_and_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project/session.jsonl");
+        let mut records = vec![json!({"type":"user","message":{"role":"user","content":"Prompt"}})];
+        records.extend(vec![json!({"type":"progress"}); 20]);
+        records.push(json!({"type":"ai-title","aiTitle":"Generated","sessionId":"session"}));
+        write(&path, &records);
+        let title = || {
+            scan(root.path(), &Pricing::bundled()).unwrap()[0]
+                .head
+                .title
+                .clone()
+        };
+        assert_eq!(title(), "Generated");
+        records.extend([
+            json!({"type":"custom-title","customTitle":"Old name","sessionId":"session"}),
+            json!({"type":"custom-title","customTitle":"New name","sessionId":"session"}),
+            json!({"type":"ai-title","aiTitle":"Regenerated","sessionId":"session"}),
+        ]);
+        write(&path, &records);
+        assert_eq!(title(), "New name");
     }
     #[test]
     fn missing_source_timestamp_preserves_fractional_file_mtime() {
@@ -670,9 +778,18 @@ mod tests {
                     .map_err(|error| error.to_string())
             };
             assert_eq!(
-                encode(checkpoints.parse(&path, None, &project, &Value::Null, &children, &pricing)),
+                encode(checkpoints.parse(
+                    &path,
+                    "claudecode",
+                    None,
+                    &project,
+                    &Value::Null,
+                    &children,
+                    &pricing
+                )),
                 encode(parse(
                     &path,
+                    "claudecode",
                     None,
                     &project,
                     &Value::Null,
@@ -720,6 +837,32 @@ mod tests {
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Failed");
     }
     #[test]
+    fn one_hour_cache_writes_cost_twice_input() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            &root.path().join("project/session.jsonl"),
+            &[
+                json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Inspect files"}}),
+                json!({"type":"assistant","uuid":"a","requestId":"r","message":{"role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}},"content":[{"type":"text","text":"Checking"}]}}),
+            ],
+        );
+        let pricing = Pricing::bundled();
+        let price = pricing.resolve("claude-sonnet-4-5").unwrap();
+        let expected = 10.0 * price.input_cost_per_token
+            + 5.0 * price.output_cost_per_token
+            + 100.0 * price.cache_create_cost_per_token
+            + 300.0 * 2.0 * price.input_cost_per_token;
+        let sessions = scan(root.path(), &pricing).unwrap();
+        let message = &sessions[0].detail.messages[1];
+        assert_eq!(
+            message.tokens.as_ref().unwrap().cache_create_1h,
+            Some(300.0)
+        );
+        assert!((message.cost.unwrap() - expected).abs() < 1e-8);
+        assert!((sessions[0].head.stats.total_cost - expected).abs() < 1e-8);
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
+    }
+    #[test]
     fn tool_result_is_error_marks_tool_failed() {
         let root = tempfile::tempdir().unwrap();
         write(
@@ -736,6 +879,30 @@ mod tests {
         };
         assert_eq!(state.status, "error");
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Exit code 1");
+    }
+    #[test]
+    fn fast_requests_use_the_fast_mode_multiplier() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            &root.path().join("project/session.jsonl"),
+            &[
+                json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Inspect files"}}),
+                json!({"type":"assistant","uuid":"a","requestId":"r","message":{"role":"assistant","model":"claude-opus-4-6","usage":{"input_tokens":100,"output_tokens":10,"speed":"fast"},"content":[{"type":"text","text":"Checking"}]}}),
+            ],
+        );
+        let pricing = Pricing::bundled();
+        let tokens = serde_json::from_value(json!({"input":100,"output":10})).unwrap();
+        let standard = pricing
+            .estimate(Some("claude-opus-4-6"), &tokens, 0.0)
+            .unwrap();
+        let sessions = scan(root.path(), &pricing).unwrap();
+        assert!((sessions[0].detail.messages[1].cost.unwrap() - standard * 6.0).abs() < 1e-8);
+        assert!((sessions[0].head.stats.total_cost - standard * 6.0).abs() < 1e-8);
+        assert_eq!(
+            sessions[0].detail.messages[1].model.as_deref(),
+            Some("claude-opus-4-6")
+        );
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     }
     #[test]
     fn child_metadata_links_parent_call_and_nested_session() {

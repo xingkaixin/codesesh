@@ -285,6 +285,7 @@ pub(super) fn v1_message(
             reasoning: t["reasoning"].as_f64(),
             cache_read,
             cache_create,
+            cache_create_1h: None,
         }
     });
     let model = optional_string(&raw["modelID"]);
@@ -301,6 +302,7 @@ pub(super) fn v1_message(
                 reasoning: None,
                 cache_read: None,
                 cache_create: None,
+                cache_create_1h: None,
             }),
             0.0,
             &mut cost_inputs,
@@ -367,16 +369,10 @@ pub(super) fn add_cache_tokens(stats: &mut SessionStats, read: Option<f64>, crea
     }
 }
 pub(super) fn token_total(tokens: &MessageTokens) -> f64 {
-    [
-        tokens.input,
-        tokens.output,
-        tokens.reasoning,
-        tokens.cache_read,
-        tokens.cache_create,
-    ]
-    .into_iter()
-    .flatten()
-    .sum()
+    [tokens.input, tokens.output, tokens.reasoning]
+        .into_iter()
+        .flatten()
+        .sum()
 }
 
 mod v2;

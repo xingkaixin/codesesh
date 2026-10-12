@@ -64,36 +64,73 @@ fn bound_rows(db: &Connection, query: &str, params: impl rusqlite::Params) -> Re
         })?
         .collect::<rusqlite::Result<_>>()?)
 }
-fn has_v2(db: &Connection) -> Result<bool> {
+enum Layout {
+    V1,
+    V2,
+    Migrating(HashSet<String>),
+}
+impl Layout {
+    fn v2(&self) -> bool {
+        !matches!(self, Self::V1)
+    }
+    fn legacy_scope(&self, scope: Option<&HashSet<String>>) -> Option<HashSet<String>> {
+        match self {
+            Self::Migrating(legacy) => Some(
+                legacy
+                    .iter()
+                    .filter(|id| scope.is_none_or(|scope| scope.contains(*id)))
+                    .cloned()
+                    .collect(),
+            ),
+            _ => scope.cloned(),
+        }
+    }
+}
+fn layout(db: &Connection, supports_v2: bool) -> Result<Layout> {
+    if !supports_v2 {
+        return Ok(Layout::V1);
+    }
     if !table(db, "session_v2")? {
         if table(db, "session_message")? {
             bail!("Unsupported pre-split OpenCode V2 database");
         }
-        return Ok(false);
+        return Ok(Layout::V1);
     }
     if !table(db, "session_message")? {
         bail!("OpenCode V2 session_message table is missing");
     }
     db.prepare("SELECT id, session_id, type, seq, time_created, time_updated, data FROM session_message LIMIT 0")?;
-    if table(db, "session")?
-        && db.query_row("SELECT EXISTS(SELECT 1 FROM session)", [], |r| {
-            r.get::<_, bool>(0)
-        })?
-    {
-        let state = if table(db, "kv")? {
-            rows(db, "SELECT value FROM kv WHERE key='migration.v1-v2'")?
-                .first()
-                .and_then(|row| row["value"].as_str())
-                .map(serde_json::from_str::<Value>)
-                .transpose()?
-        } else {
-            None
-        };
-        if state.as_ref().and_then(|v| v["phase"].as_str()) != Some("completed") {
-            bail!("OpenCode V1 to V2 migration is not complete");
-        }
+    if !table(db, "session")? {
+        return Ok(Layout::V2);
     }
-    Ok(true)
+    let state = if table(db, "kv")? {
+        rows(db, "SELECT value FROM kv WHERE key='migration.v1-v2'")?
+            .first()
+            .and_then(|row| row["value"].as_str())
+            .map(serde_json::from_str::<Value>)
+            .transpose()?
+    } else {
+        None
+    };
+    if state.as_ref().and_then(|v| v["phase"].as_str()) == Some("completed") {
+        return Ok(Layout::V2);
+    }
+    // OpenCode copies V1 sessions in descending id order, one transaction per session, and
+    // records the last copied id as the cursor; ids at or above it are already in session_v2.
+    let cursor = state.as_ref().and_then(|v| v["cursor"].as_str());
+    let legacy: HashSet<_> = bound_rows(
+        db,
+        "SELECT id FROM session WHERE (?1 IS NULL OR id < ?1) AND id NOT IN (SELECT id FROM session_v2)",
+        [cursor],
+    )?
+    .iter()
+    .map(|row| string(&row["id"]))
+    .collect();
+    Ok(if legacy.is_empty() {
+        Layout::V2
+    } else {
+        Layout::Migrating(legacy)
+    })
 }
 fn string(value: &Value) -> String {
     match value {
@@ -227,6 +264,7 @@ fn selected_ids(sessions: &[Value], v2: bool, parent_column: bool) -> HashSet<St
 fn read_v1(
     db: &Connection,
     agent: &str,
+    layout: &Layout,
     pricing: &Pricing,
     previous: Option<&DatabaseSnapshot>,
     changed: &HashSet<String>,
@@ -242,7 +280,7 @@ fn read_v1(
     let columns = rows(db, "PRAGMA table_info(session)")?;
     let selected = selected_ids(
         &sessions,
-        false,
+        layout.v2(),
         columns.iter().any(|c| c["name"] == "parent_id"),
     );
     let has_messages = table(db, "message")?;
@@ -318,7 +356,7 @@ fn read_v1(
 }
 fn read_v2(
     db: &Connection,
-    _pricing: &Pricing,
+    pricing: &Pricing,
     previous: Option<&DatabaseSnapshot>,
     changed: &HashSet<String>,
     scope: Option<&HashSet<String>>,
@@ -340,8 +378,9 @@ fn read_v2(
         let id = string(&row["session_id"]);
         if selected.contains(&id)
             && changed.contains(&id)
-            && let Some(message) = content::v2_message(&row)?
+            && let Some(mut message) = content::v2_message(&row)?
         {
+            pricing.apply_message_cost(&mut message);
             by_session.entry(id).or_default().push(message);
         }
     }
@@ -361,27 +400,38 @@ fn read_v2(
         if messages.is_empty() {
             continue;
         }
-        let total = [
+        let [input, output, reasoning, cache_read, cache_write] = [
             "tokens_input",
             "tokens_output",
             "tokens_reasoning",
             "tokens_cache_read",
             "tokens_cache_write",
         ]
-        .iter()
-        .map(|key| number(&row[key]))
-        .sum::<f64>();
-        let stats = SessionStats {
+        .map(|key| number(&row[key]));
+        let total = input + output + reasoning + cache_read + cache_write;
+        let mut stats = SessionStats {
             cost_inputs: Vec::new(),
             message_count: messages.len(),
-            total_input_tokens: number(&row["tokens_input"]),
-            total_output_tokens: number(&row["tokens_output"]),
+            total_input_tokens: input + cache_read + cache_write,
+            total_output_tokens: output + reasoning,
             total_cost: number(&row["cost"]),
             cost_source: Some(CostSource::Recorded),
             total_tokens: Some(total),
-            total_cache_read_tokens: Some(number(&row["tokens_cache_read"])),
-            total_cache_create_tokens: Some(number(&row["tokens_cache_write"])),
+            total_cache_read_tokens: Some(cache_read),
+            total_cache_create_tokens: Some(cache_write),
         };
+        // A fork copies its parent's messages, but its session cost only counts fork-local usage.
+        if row["fork_session_id"].is_null() {
+            for message in &messages {
+                stats
+                    .cost_inputs
+                    .extend(message.cost_inputs.iter().cloned());
+                if message.cost_source == Some(CostSource::Estimated) {
+                    stats.total_cost += message.cost.unwrap_or(0.0);
+                    stats.cost_source = Some(CostSource::Estimated);
+                }
+            }
+        }
         let mut usage = BTreeMap::new();
         let mut message_total = 0.0;
         let mut unassigned = 0.0;

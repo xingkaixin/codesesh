@@ -102,15 +102,19 @@ pub(super) fn message(row: &Value) -> Result<Option<Message>> {
         .contains(&kind.as_str())
         .then_some(true);
     m.cost = raw["cost"].as_f64();
-    m.cost_source = m.cost.map(|_| CostSource::Recorded);
     m.tokens = raw["tokens"].as_object().map(|_| {
         let t = &raw["tokens"];
+        let cache_read = t["cache"]["read"].as_f64();
+        let cache_create = t["cache"]["write"].as_f64();
         MessageTokens {
-            input: t["input"].as_f64(),
+            input: t["input"]
+                .as_f64()
+                .map(|input| input + cache_read.unwrap_or(0.0) + cache_create.unwrap_or(0.0)),
             output: t["output"].as_f64(),
             reasoning: t["reasoning"].as_f64(),
-            cache_read: t["cache"]["read"].as_f64(),
-            cache_create: t["cache"]["write"].as_f64(),
+            cache_read,
+            cache_create,
+            cache_create_1h: None,
         }
     });
     match kind.as_str() {

@@ -246,6 +246,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             "conversation_summaries.db-journal",
         ],
         "kimi-code" => &["session_index.jsonl"],
+        "droid" => &["settings.json"],
         "kimi" => &["kimi.json", "config.toml"],
         _ => &[],
     };
@@ -274,7 +275,8 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         .into_iter()
         .collect::<walkdir::Result<Vec<_>>>()?;
     // Claude Code checks two optional companions per transcript; the walk already lists them.
-    let files: std::collections::HashSet<&Path> = if source.agent == "claudecode" {
+    let claude_layout = matches!(source.agent.as_str(), "claudecode" | "qoder" | "qoder-cn");
+    let files: std::collections::HashSet<&Path> = if claude_layout {
         entries
             .iter()
             .filter(|entry| entry.file_type().is_file())
@@ -290,22 +292,17 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
         let name = entry.file_name().to_string_lossy();
         let selected = match source.agent.as_str() {
-            "claudecode" => {
+            "claudecode" | "qoder" | "qoder-cn" => {
                 name.ends_with(".jsonl")
                     && (entry.depth() == 2
-                        || entry
-                            .path()
-                            .parent()
-                            .and_then(Path::file_name)
-                            .is_some_and(|name| name == "subagents"))
+                        || crate::agents::claudecode::subagents_dir(entry.path()).is_some())
             }
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
+            "gemini-cli" => crate::agents::gemini_cli::is_source(&root, entry.path()),
             "grok" => name == "summary.json",
-            "dsh" => {
-                entry.depth() == 3
-                    && matches!(name.as_ref(), "session.jsonl" | "session.jsonl.zstd")
-            }
+            "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
+            "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),
             "kimi" => {
                 entry.depth() == 3
                     && (name == "state.json"
@@ -338,12 +335,13 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                 }
             }
         }
-        if source.agent == "claudecode" {
-            let parent = entry.path().parent().unwrap();
-            let project = if parent.file_name().is_some_and(|name| name == "subagents") {
-                parent.parent().and_then(Path::parent).unwrap_or(parent)
-            } else {
-                parent
+        if claude_layout {
+            let project = match crate::agents::claudecode::subagents_dir(entry.path()) {
+                Some(subagents) => subagents
+                    .parent()
+                    .and_then(Path::parent)
+                    .unwrap_or(subagents),
+                None => entry.path().parent().unwrap(),
             };
             let index = project.join("sessions-index.json");
             if files.contains(index.as_path()) {
@@ -381,6 +379,12 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             if updates.try_exists()? {
                 fingerprint.push_str(&stamp(&updates)?.1);
                 bytes = bytes.saturating_add(std::fs::metadata(&updates)?.len());
+            }
+        }
+        if source.agent == "droid" {
+            let settings = path.with_extension("settings.json");
+            if settings.try_exists()? {
+                fingerprint.push_str(&stamp(&settings)?.1);
             }
         }
         if matches!(source.agent.as_str(), "kimi" | "kimi-code") {

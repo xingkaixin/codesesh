@@ -127,6 +127,7 @@ impl AgentScanner {
                 root.join("globalStorage/state.vscdb"),
                 root.join("workspaceStorage"),
             ],
+            "droid" => vec![root.clone(), self.source.data_root.join("settings.json")],
             "deepchat" => vec![root.join("app_db/agent.db")],
             "cherrystudio" => vec![root.join("Data/cherrystudio.sqlite")],
             "minimax-code" => vec![root.join("v2/sqlite/runtime-state.sqlite")],
@@ -932,6 +933,13 @@ impl AgentScanner {
                     complete: false,
                 })
             }
+            "droid" if paths.is_some() => {
+                let paths = paths.unwrap();
+                let upserts = agents::droid::scan_paths(&self.source.data_root, pricing, paths)?;
+                Ok(selected_delta(upserts, &self.previous, |session| {
+                    paths.contains(&session.source)
+                }))
+            }
             "opencode" | "zcode" => {
                 if !has_sources(&self.source)?
                     && (!self.previous.is_empty() || !self.durable_references.is_empty())
@@ -1028,6 +1036,9 @@ impl AgentScanner {
                     paths.contains(&session.source)
                 }))
             }
+            "gemini-cli" if paths.is_some() => {
+                agents::gemini_cli::scan_changed(root, pricing, paths.unwrap(), &self.previous)
+            }
             "codex" if paths.is_some() => agents::codex::scan_changed(
                 &self.source.data_root,
                 pricing,
@@ -1035,13 +1046,16 @@ impl AgentScanner {
                 &self.previous,
                 &mut self.codex,
             ),
-            "claudecode" if paths.is_some() => agents::claudecode::scan_changed(
-                root,
-                pricing,
-                paths.unwrap(),
-                &self.previous,
-                &mut self.claude,
-            ),
+            "claudecode" | "qoder" | "qoder-cn" if paths.is_some() => {
+                agents::claudecode::scan_changed_as(
+                    root,
+                    &self.source.agent,
+                    pricing,
+                    paths.unwrap(),
+                    &self.previous,
+                    &mut self.claude,
+                )
+            }
             "pi" if paths.is_some() => {
                 agents::pi::scan_changed(root, pricing, paths.unwrap(), &self.previous)
             }

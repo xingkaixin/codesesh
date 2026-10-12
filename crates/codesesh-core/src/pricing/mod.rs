@@ -7,12 +7,14 @@ mod manager;
 pub(crate) use inputs::assert_cached_repricing;
 pub use inputs::{CostInput, TokenCostBreakdown};
 mod registry;
+mod tier;
 
 pub use controller::{PricingController, PricingSnapshot};
 pub use cost::{PRICING_CAPTURE_EPOCH, capture_misses};
 pub(crate) use dependencies::{PriceDependencies, capture_dependencies};
 pub use manager::{CACHE_TTL_MS, MODELS_DEV_URL, PricingManager};
 pub use registry::{Price, parse_models_dev};
+pub use tier::priced_model;
 
 use crate::contract::MessageTokens;
 use std::{
@@ -41,6 +43,30 @@ fn normalize(model: &str) -> String {
 }
 fn alias(model: &str) -> &str {
     ALIASES.get(model).map(String::as_str).unwrap_or(model)
+}
+
+fn without_date(model: &str) -> &str {
+    for pattern in ["-########", "-####-##-##"] {
+        if let Some(start) = model.len().checked_sub(pattern.len())
+            && model.as_bytes()[start..]
+                .iter()
+                .zip(pattern.bytes())
+                .all(|(byte, expected)| match expected {
+                    b'#' => byte.is_ascii_digit(),
+                    _ => *byte == expected,
+                })
+        {
+            return &model[..start];
+        }
+    }
+    model
+}
+
+fn drops_version(kept: &str, dropped: &str) -> bool {
+    let digits = dropped.bytes().take_while(u8::is_ascii_digit).count();
+    // An 8-digit date names a snapshot of the kept model, not a newer version.
+    let date = digits == 8 && !dropped[8..].starts_with(|c: char| c.is_ascii_alphanumeric());
+    digits > 0 && !date && kept.ends_with(|c: char| c.is_ascii_digit())
 }
 
 impl Pricing {
@@ -97,13 +123,7 @@ impl Pricing {
         if let Some(price) = self.get(&model) {
             return Some(price);
         }
-        let mut versionless = model.split('@').next().unwrap_or("");
-        if let Some((base, suffix)) = versionless.rsplit_once('-')
-            && suffix.len() == 8
-            && suffix.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            versionless = base;
-        }
+        let versionless = without_date(model.split('@').next().unwrap_or(""));
         let stripped = versionless.rsplit('/').next().unwrap_or(versionless);
         let mut candidates = vec![
             versionless.to_owned(),
@@ -130,6 +150,7 @@ impl Pricing {
         for candidate in &candidates {
             for (index, character) in candidate.char_indices().rev() {
                 if matches!(character, '-' | '@')
+                    && !drops_version(&candidate[..index], &candidate[index + 1..])
                     && let Some(price) = self.get(&candidate[..index])
                 {
                     return Some(price);
@@ -145,17 +166,33 @@ impl Pricing {
         tokens: &MessageTokens,
         web_search: f64,
     ) -> Option<f64> {
+        self.estimate_with(model, tokens, web_search, false)
+    }
+
+    fn estimate_with(
+        &self,
+        model: Option<&str>,
+        tokens: &MessageTokens,
+        web_search: f64,
+        aggregate: bool,
+    ) -> Option<f64> {
         let model = model.filter(|model| !model.is_empty())?;
+        let (model, multiplier) = tier::split(model);
         let Some(price) = self.resolve(model) else {
             cost::record_miss(model);
             return None;
+        };
+        let price = if aggregate {
+            price
+        } else {
+            price.for_request(tokens)
         };
         let positive = |value: Option<f64>| {
             value
                 .filter(|value| value.is_finite() && *value > 0.0)
                 .unwrap_or(0.0)
         };
-        let cost = price.token_costs(tokens).total()
+        let cost = price.token_costs(tokens).total() * multiplier
             + positive(Some(web_search)) * price.web_search_cost_per_request;
         (cost > 0.0 && cost.is_finite()).then(|| round_cost(cost))
     }
@@ -194,5 +231,41 @@ mod tests {
         assert_eq!(round_cost(1.0 / 512.0), 0.00195313);
         assert_eq!(round_cost(3.0 / 512.0), 0.00585938);
         assert_eq!(round_cost(1e-100), 0.0);
+    }
+
+    #[test]
+    fn fallback_never_prices_a_model_as_another_version() {
+        let pricing = Pricing::bundled();
+        let price = |model| pricing.resolve_price(model);
+        assert_eq!(price("claude-opus-4-9"), None);
+        assert_eq!(price("claude-opus-4-9-thinking"), None);
+        assert_eq!(price("claude-opus-4-9@eu"), None);
+        assert_eq!(
+            price("claude-sonnet-4-20250514-thinking"),
+            price("claude-sonnet-4")
+        );
+        assert_eq!(price("gpt-4.1-2025-04-14"), price("gpt-4.1"));
+    }
+
+    #[test]
+    fn aliases_keep_the_model_generation_price() {
+        let pricing = Pricing::bundled();
+        let price = |model| pricing.resolve_price(model);
+        assert_eq!(price("claude-4-opus"), price("claude-opus-4"));
+        assert_eq!(price("gpt-5.1-codex-high"), price("gpt-5.1-codex"));
+    }
+
+    #[test]
+    fn kimi_aliases_price_the_matching_api_model() {
+        let pricing = Pricing::from_prices(parse_models_dev(&serde_json::json!({
+            "moonshotai":{"models":{
+                "kimi-k2-0905":{"cost":{"input":0.6,"output":2.5}},
+                "kimi-k2.5":{"cost":{"input":0.6,"output":3}},
+                "kimi-k2.6":{"cost":{"input":0.95,"output":4}}}},
+            "kimi-code-plan-global":{"models":{"kimi-for-coding":{"cost":{"input":0,"output":0}}}}
+        })));
+        let output = |model| pricing.resolve(model).map(|p| p.output_cost_per_token);
+        assert_eq!(output("kimi-for-coding"), Some(4e-6));
+        assert_eq!(output("moonshot-cn/kimi-k2.5"), Some(3e-6));
     }
 }

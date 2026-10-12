@@ -1,11 +1,15 @@
 use super::super::codex::timestamp;
 use super::{common::*, internal, output_parts, user_parts};
-use crate::{contract::*, pricing::Pricing};
+use crate::{
+    contract::*,
+    pricing::{Pricing, priced_model},
+};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
 #[derive(Clone)]
 pub(super) struct Transcript {
+    agent: String,
     pub(super) messages: Vec<Message>,
     current: Option<usize>,
     latest_text: Option<usize>,
@@ -15,8 +19,9 @@ pub(super) struct Transcript {
     part_flags: HashMap<usize, (bool, bool)>,
 }
 impl Transcript {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(agent: &str) -> Self {
         Self {
+            agent: agent.into(),
             messages: Vec::new(),
             current: None,
             latest_text: None,
@@ -50,7 +55,7 @@ impl Transcript {
         };
         let index = target.unwrap_or_else(|| {
             let mut m = message(id.into(), Role::Assistant, time, Vec::new());
-            m.agent = Some("claude".into());
+            m.agent = Some(self.agent.clone());
             m.model = model.map(str::to_owned);
             if is_tool {
                 m.mode = Some("tool".into());
@@ -232,30 +237,21 @@ impl Transcript {
                 if has_usage {
                     let i = usage_index.unwrap_or_else(|| {
                         let mut m = message(id.clone(), Role::Assistant, time, Vec::new());
-                        m.agent = Some("claude".into());
+                        m.agent = Some(self.agent.clone());
                         m.model = model.map(str::to_owned);
                         self.messages.push(m);
                         self.current = Some(self.messages.len() - 1);
                         self.messages.len() - 1
                     });
                     self.requests.insert(key.into(), i);
-                    let usage = &raw["usage"];
-                    let n = |k: &str| usage[k].as_f64().unwrap_or(0.0);
-                    let read = n("cache_read_input_tokens");
-                    let create = n("cache_creation_input_tokens");
-                    let tokens = MessageTokens {
-                        input: Some(n("input_tokens") + read + create),
-                        output: Some(n("output_tokens")),
-                        cache_read: Some(read),
-                        cache_create: Some(create),
-                        reasoning: None,
-                    };
+                    let tokens = usage_tokens(&raw["usage"]);
                     let m = &mut self.messages[i];
                     m.model = model.map(str::to_owned);
                     m.cost_inputs.clear();
+                    let priced = priced_model(model, raw["usage"]["speed"].as_str());
                     m.cost = Some(
                         pricing
-                            .estimate_tracked(model, &tokens, 0.0, &mut m.cost_inputs)
+                            .estimate_tracked(priced.as_deref(), &tokens, 0.0, &mut m.cost_inputs)
                             .unwrap_or(0.0),
                     );
                     m.cost_source = (m.cost.unwrap_or(0.0) > 0.0).then_some(CostSource::Estimated);

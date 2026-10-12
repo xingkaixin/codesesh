@@ -20,6 +20,7 @@ import { buildKimiCodeToolStrategy } from "./kimi-code";
 import { buildZCodeToolStrategy } from "./zcode";
 import { buildCodexToolStrategy } from "./codex";
 import { buildCursorToolStrategy } from "./cursor";
+import { buildDroidToolStrategy } from "./droid";
 import { buildGrokToolStrategy } from "./grok";
 import { buildPiToolStrategy } from "./pi";
 import { buildDshToolStrategy } from "./dsh";
@@ -52,11 +53,14 @@ type ToolStrategyBuilder = (
 const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   "minimax-code": buildMiniMaxCodeToolStrategy,
   claudecode: buildClaudeToolStrategy,
+  qoder: buildClaudeToolStrategy,
+  "qoder-cn": buildClaudeToolStrategy,
   opencode: buildOpencodeToolStrategy,
   kimi: buildKimiToolStrategy,
   "kimi-code": buildKimiCodeToolStrategy,
   codex: buildCodexToolStrategy,
   cursor: buildCursorToolStrategy,
+  droid: buildDroidToolStrategy,
   grok: buildGrokToolStrategy,
   pi: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
