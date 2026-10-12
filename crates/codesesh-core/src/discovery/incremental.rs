@@ -1037,6 +1037,7 @@ impl AgentScanner {
             ),
             "claudecode" if paths.is_some() => agents::claudecode::scan_changed(
                 root,
+                &self.source.agent,
                 pricing,
                 paths.unwrap(),
                 &self.previous,

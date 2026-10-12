@@ -57,7 +57,7 @@ fn child(path: &Path) -> Option<Child> {
     })
 }
 
-pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+pub fn scan(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -104,7 +104,15 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .unwrap_or(Value::Null)
         });
-        let result = match parse(&path, context, project, index, &tool_children, pricing) {
+        let result = match parse(
+            &path,
+            agent,
+            context,
+            project,
+            index,
+            &tool_children,
+            pricing,
+        ) {
             Err(error) if error.is::<InvalidSession>() => continue,
             result => result?,
         };
@@ -204,6 +212,7 @@ fn output_parts(value: &Value, ts: f64) -> Vec<MessagePart> {
 
 fn parse(
     path: &Path,
+    agent: &str,
     child: Option<&Child>,
     project: &Path,
     index: &Value,
@@ -211,7 +220,7 @@ fn parse(
     pricing: &Pricing,
 ) -> Result<Option<(SessionHead, SessionDetail)>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut parser = Parser::new();
+    let mut parser = Parser::new(agent);
     let mut lines = super::jsonl::JsonLines::new(file);
     while let Some(line) = lines.next_line()? {
         parser.feed(line, children, pricing)?;
@@ -222,6 +231,7 @@ fn parse(
 /// Line-by-line state of one transcript, so an appended transcript can resume where it stopped.
 #[derive(Clone)]
 struct Parser {
+    agent: String,
     transcript: Transcript,
     first_time: f64,
     latest_time: f64,
@@ -234,9 +244,15 @@ struct Parser {
 }
 
 impl Parser {
-    fn new() -> Self {
+    fn new(agent: &str) -> Self {
         Self {
-            transcript: Transcript::new(),
+            agent: agent.into(),
+            // Claude Code keeps its original message label so cached search text stays valid.
+            transcript: Transcript::new(if agent == "claudecode" {
+                "claude"
+            } else {
+                agent
+            }),
             first_time: 0.0,
             latest_time: 0.0,
             cwd: None,
@@ -432,7 +448,7 @@ impl Parser {
         let mut detail = detail(
             SessionReference {
                 source_node_id: crate::contract::local_source_node_id(),
-                agent_name: "claudecode".into(),
+                agent_name: self.agent.clone(),
                 session_id: id,
             },
             directory,
@@ -447,7 +463,7 @@ impl Parser {
                 .and_then(|c| c.parent.as_ref())
                 .map(|id| SessionReference {
                     source_node_id: crate::contract::local_source_node_id(),
-                    agent_name: "claudecode".into(),
+                    agent_name: self.agent.clone(),
                     session_id: id.clone(),
                 });
         head_stats.cost_source = (head_stats.total_cost > 0.0).then_some(CostSource::Estimated);
@@ -497,7 +513,7 @@ mod tests {
         )
         .unwrap();
         let pricing = Pricing::bundled();
-        let previous = scan(root.path(), &pricing).unwrap();
+        let previous = scan(root.path(), "claudecode", &pricing).unwrap();
         fs::write(
             &meta,
             json!({"agentId":"new-worker","toolUseId":"call","name":"Renamed"}).to_string(),
@@ -507,6 +523,7 @@ mod tests {
         let mut checkpoints = Checkpoints::default();
         let delta = scan_changed(
             root.path(),
+            "claudecode",
             &pricing,
             &[meta],
             &previous
@@ -532,6 +549,7 @@ mod tests {
         fs::remove_file(&child).unwrap();
         let delta = scan_changed(
             root.path(),
+            "claudecode",
             &pricing,
             &[child],
             &delta
@@ -552,9 +570,13 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let user = json!({"type":"user","timestamp":"2026-04-20T10:00:00+08:00","message":{"role":"user","content":"Visible"}}).to_string();
         fs::write(&path, format!("invalid\n{user}")).unwrap();
-        assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
+        assert!(
+            scan(root.path(), "claudecode", &Pricing::bundled())
+                .unwrap()
+                .is_empty()
+        );
         fs::write(&path, format!("{user}\ninvalid")).unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].head.time_created, 1776650400000.0);
         assert_eq!(sessions[0].detail.messages.len(), 1);
@@ -569,12 +591,16 @@ mod tests {
                 json!({"type":"user","message":{"role":"user","content":"<local-command-stdout>hidden</local-command-stdout>"}}),
             ],
         );
-        assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
+        assert!(
+            scan(root.path(), "claudecode", &Pricing::bundled())
+                .unwrap()
+                .is_empty()
+        );
         let mut records = vec![json!({"type":"progress","timestamp":"2026-04-20T10:00:00Z"}); 20];
         records.push(json!({"type":"user","cwd":"/tmp/fallback","message":{"role":"user","content":"Too late for title"}}));
         write(&path, &records);
         assert_eq!(
-            scan(root.path(), &Pricing::bundled()).unwrap()[0]
+            scan(root.path(), "claudecode", &Pricing::bundled()).unwrap()[0]
                 .head
                 .title,
             "fallback"
@@ -595,7 +621,7 @@ mod tests {
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
         assert_eq!(sessions[0].head.time_created, 1776679200000.125);
         assert_eq!(sessions[0].head.time_updated, 1776679200000.125);
     }
@@ -616,7 +642,7 @@ mod tests {
                 .join("\n"),
         )
         .unwrap();
-        let mut sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let mut sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
         let expected = include_str!("claudecode/fixtures/fractional-expected.json");
         assert_reference(&sessions[0].head, &sessions[0].detail, expected);
         let expected: Value = serde_json::from_str(expected).unwrap();
@@ -636,8 +662,10 @@ mod tests {
         let records: Vec<Value> =
             serde_json::from_str(include_str!("claudecode/fixtures/records.json")).unwrap();
         write(&root.path().join("project/session.jsonl"), &records);
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
+        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| {
+            scan(root.path(), "claudecode", pricing).unwrap()
+        });
         assert_reference(
             &sessions[0].head,
             &sessions[0].detail,
@@ -670,9 +698,18 @@ mod tests {
                     .map_err(|error| error.to_string())
             };
             assert_eq!(
-                encode(checkpoints.parse(&path, None, &project, &Value::Null, &children, &pricing)),
+                encode(checkpoints.parse(
+                    &path,
+                    "claudecode",
+                    None,
+                    &project,
+                    &Value::Null,
+                    &children,
+                    &pricing
+                )),
                 encode(parse(
                     &path,
+                    "claudecode",
                     None,
                     &project,
                     &Value::Null,
@@ -708,7 +745,7 @@ mod tests {
                 json!({"type":"user","uuid":"c","sourceToolAssistantUUID":"a","toolUseResult":{"success":false,"commandName":"read"},"message":{"role":"user","content":[{"type":"tool_result","content":"Failed"}]}}),
             ],
         );
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
         let d = &sessions[0].detail;
         assert_eq!(d.messages.len(), 2);
         assert_eq!(d.head.stats.total_input_tokens, 100.0);
@@ -730,7 +767,7 @@ mod tests {
                 json!({"type":"user","uuid":"b","toolUseResult":"Error: Exit code 1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","is_error":true,"content":"Exit code 1"}]}}),
             ],
         );
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
         let MessagePart::Tool { state, .. } = &sessions[0].detail.messages[1].parts[0] else {
             panic!()
         };
@@ -754,7 +791,7 @@ mod tests {
             &[json!({"type":"user","message":{"role":"user","content":"Work"}})],
         );
         fs::write(child.with_extension("meta.json"), json!({"agentId":"worker","parentAgentId":"nested","name":"Worker title","toolUseId":"call"}).to_string()).unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
         let parent = sessions
             .iter()
             .find(|s| s.detail.head.reference.session_id == "parent")

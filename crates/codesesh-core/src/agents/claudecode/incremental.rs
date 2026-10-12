@@ -32,9 +32,11 @@ struct Checkpoint {
 }
 
 impl Checkpoints {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn parse(
         &mut self,
         path: &Path,
+        agent: &str,
         child: Option<&Child>,
         project: &Path,
         index: &Value,
@@ -50,7 +52,7 @@ impl Checkpoints {
         let metadata = file.metadata()?;
         let len = metadata.len();
         if len < CHECKPOINT_MIN_BYTES || !crate::agents::jsonl::recently_written(&metadata) {
-            return parse(path, child, project, index, children, pricing);
+            return parse(path, agent, child, project, index, children, pricing);
         }
         // Subagent links are resolved while lines are converted, so a changed map needs a full pass.
         let mut resumed = None;
@@ -68,7 +70,7 @@ impl Checkpoints {
         }
         let (mut parser, mut offset, mut tail) = match resumed {
             Some(checkpoint) => (checkpoint.parser, checkpoint.offset, checkpoint.tail),
-            None => (Parser::new(), 0, Vec::new()),
+            None => (Parser::new(agent), 0, Vec::new()),
         };
         file.seek(SeekFrom::Start(offset))?;
         let mut reader = BufReader::with_capacity(64 * 1024, file);
@@ -112,6 +114,7 @@ impl Checkpoints {
 
 pub fn scan_changed(
     root: &Path,
+    agent: &str,
     pricing: &Pricing,
     changed_paths: &[PathBuf],
     previous: &[crate::agents::SessionRecord],
@@ -240,7 +243,15 @@ pub fn scan_changed(
                         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
                         .unwrap_or(Value::Null)
                 });
-                checkpoints.parse(&source, context, project, index, &tool_children, pricing)?
+                checkpoints.parse(
+                    &source,
+                    agent,
+                    context,
+                    project,
+                    index,
+                    &tool_children,
+                    pricing,
+                )?
             }
         };
         if let Some(old) = old
