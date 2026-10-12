@@ -59,6 +59,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Qoder
 - Qoder CN
 - Cursor
+- Droid
 - Kimi-Cli
 - Kimi-Code
 - Codex
