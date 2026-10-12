@@ -489,7 +489,7 @@ fn parse(path: &Path, root: &Path, pricing: &Pricing) -> Result<Option<ParsedSes
                         output: Some(output),
                         reasoning: (thoughts > 0.0).then_some(thoughts),
                         cache_read: (cached > 0.0).then_some(cached),
-                        cache_create: None,
+                        ..Default::default()
                     };
                     message.cost = pricing.estimate_tracked(
                         message.model.as_deref(),

@@ -121,7 +121,7 @@ fn jsonl_updates_replay_into_messages_tools_and_usage() {
             output: Some(50.0),
             reasoning: Some(30.0),
             cache_read: Some(400.0),
-            cache_create: None,
+            ..Default::default()
         })
     );
     assert_eq!(messages[1].model.as_deref(), Some("gemini-2.5-pro"));
