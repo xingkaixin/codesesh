@@ -71,6 +71,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.4",
+        date: "2026-10-13",
+        title: "More Agents in one history, with clearer usage and costs",
+        summary:
+          "CodeSesh 1.3.4 brings Qoder, Qoder CN, Gemini CLI, Factory Droid, and oh-my-pi into local AI coding history search. It also fills gaps in session replay and usage, and makes cost estimates reflect more of the recorded request details.",
+        direction:
+          "Bring history from more coding tools into one place, while keeping recorded activity, estimated costs, and the limits of each source clear.",
+        highlights: [
+          {
+            title: "Search history from 19 Agents",
+            description:
+              "Find and replay Qoder, Qoder CN, Gemini CLI, Droid, and oh-my-pi sessions alongside your existing history, including tools and subagents. Droid usage is recorded per session; oh-my-pi currently supports the default profile.",
+          },
+          {
+            title: "See more of what happened",
+            description:
+              "Claude Code workflow subagents and renamed sessions appear correctly. Codex timelines include built-in web search, tool search, and image-generation calls, while OpenCode history stays available during V2 migration.",
+          },
+          {
+            title: "Understand usage and estimated cost",
+            description:
+              "Antigravity CLI usage and Kimi-Cli subagent usage are included, and identifiable replayed Codex fork usage is no longer counted twice. Estimates account for supported long-context and service tiers, one-hour cache writes, and corrected model prices.",
+          },
+          {
+            title: "Keep history collection reliable",
+            description:
+              "Damaged text lines no longer fail an entire JSONL source. Idle transcripts stop retaining parser state, and temporary git timeouts no longer trigger unnecessary project-wide rereads. The first refresh after upgrading reparses cached history and may take longer.",
+          },
+        ],
+      },
+      {
         version: "1.3.3",
         date: "2026-10-11",
         title: "More reliable sync and more accurate session history",
@@ -783,6 +814,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.3.4",
+        date: "2026-10-13",
+        title: "汇集更多 Agent 历史，更准确地查看用量与费用",
+        summary:
+          "CodeSesh 1.3.4 将 Qoder、Qoder CN、Gemini CLI、Factory Droid 和 oh-my-pi 纳入本地 AI 编码历史搜索，同时补全会话回放与用量，让费用估算更准确地反映已记录的请求信息。",
+        direction:
+          "把更多编码工具的历史放到同一个界面，同时清楚区分已记录的活动、估算费用和各来源的支持边界。",
+        highlights: [
+          {
+            title: "统一搜索 19 个 Agent 的历史",
+            description:
+              "Qoder、Qoder CN、Gemini CLI、Droid 和 oh-my-pi 的会话、工具调用与子 Agent 可以和现有历史一起查找和回放。Droid 提供会话级用量；oh-my-pi 目前支持默认 profile。",
+          },
+          {
+            title: "补全会话中发生的事情",
+            description:
+              "正确显示 Claude Code workflow 子 Agent 和重命名后的会话。Codex 时间线补全内置网页搜索、工具搜索和图片生成调用，OpenCode 向 V2 迁移期间仍可浏览历史。",
+          },
+          {
+            title: "更准确地理解用量与估算费用",
+            description:
+              "补全 Antigravity CLI 用量与 Kimi-Cli 子 Agent 用量，避免重复计算可识别的 Codex 分叉回放用量。估算覆盖支持的长上下文与服务档位、一小时缓存写入，并修正模型价格。",
+          },
+          {
+            title: "让历史采集更可靠",
+            description:
+              "损坏的文本行不再导致整个 JSONL 来源扫描失败。闲置记录不再保留解析状态，临时 git 超时也不会触发整个项目重复读取。升级后首次刷新会重新解析缓存历史，可能需要更长时间。",
+          },
+        ],
+      },
+      {
         version: "1.3.3",
         date: "2026-10-11",
         title: "同步更可靠，会话记录更准确",
@@ -1474,6 +1536,37 @@ export const changelogCopy = {
       details: "技術的なリリース詳細を見る",
     },
     releases: [
+      {
+        version: "1.3.4",
+        date: "2026-10-13",
+        title: "より多くのエージェントの履歴と、より正確な使用量・コスト表示",
+        summary:
+          "CodeSesh 1.3.4では、Qoder、Qoder CN、Gemini CLI、Factory Droid、oh-my-piのローカルAIコーディング履歴を検索できるようになりました。セッション再生と使用量の欠落も補い、記録されたリクエストの情報をコスト推定に反映します。",
+        direction:
+          "さまざまなコーディングツールの履歴を一か所に集め、記録された操作、推定コスト、各ソースの対応範囲を明確にします。",
+        highlights: [
+          {
+            title: "19種類のエージェントの履歴をまとめて検索",
+            description:
+              "Qoder、Qoder CN、Gemini CLI、Droid、oh-my-piのセッションやツール呼び出し、サブエージェントを、既存の履歴と一緒に検索・再生できます。Droidの使用量はセッション単位で、oh-my-piは現在デフォルトプロファイルに対応しています。",
+          },
+          {
+            title: "セッション内の操作をより詳しく確認",
+            description:
+              "Claude Codeのワークフロー用サブエージェントと変更後のセッション名を正しく表示します。Codexでは組み込みのWeb検索、ツール検索、画像生成の呼び出しを表示し、OpenCodeはV2への移行中も履歴を閲覧できます。",
+          },
+          {
+            title: "使用量と推定コストをより正確に把握",
+            description:
+              "Antigravity CLIの使用量とKimi-Cliのサブエージェントの使用量を補い、識別できるCodexの分岐元履歴の使用量は重複して数えません。対応する長文コンテキスト・サービス階層、1時間キャッシュ書き込み、修正されたモデル価格を推定に反映します。",
+          },
+          {
+            title: "履歴収集の安定性を改善",
+            description:
+              "破損したテキスト行があってもJSONLソース全体の読み取りは失敗しません。更新のない履歴の解析状態を保持せず、一時的なgitのタイムアウトによるプロジェクト全体の再読み取りも防ぎます。更新後の初回読み込みではキャッシュ済み履歴を再解析するため、時間がかかる場合があります。",
+          },
+        ],
+      },
       {
         version: "1.3.3",
         date: "2026-10-11",

@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.3.4] - 2026-10-13
+
+This release brings local history from 19 Agents into CodeSesh, fills gaps in session replay and token usage, and improves cost estimates for model versions, cache writes, and request tiers. (#775–#797)
+
+### Features
+
+- Add Qoder, Qoder CN, Gemini CLI, Factory Droid, and oh-my-pi sessions, including tool calls, reasoning, usage, and session trees. Droid provides session-level usage; oh-my-pi currently reads the default profile. (#783, #788, #789, #792)
+- Read Antigravity CLI per-request token usage, model names, and step timestamps, with estimated costs and usage attributed to the step's day. Tool outcomes and IDE `.pb` histories remain unsupported. (#787)
+- Estimate long-context requests using the available context-tier rates, Claude Code one-hour cache writes using their distinct rate, and recorded Codex priority/flex and Claude Code fast requests using service-tier multipliers. Aggregated usage does not trigger long-context pricing. (#780, #790, #794)
+
+### Bug Fixes
+
+- Avoid counting identifiable replayed parent usage again in Codex forks, include remote compaction usage, and preserve subagent nicknames. Show built-in web search, tool search, and image-generation calls in the timeline. (#791, #795)
+- Read Claude Code workflow subagents and use custom or AI-generated session titles, including titles appended during incremental updates. (#784, #785)
+- Include Kimi-Cli subagent usage, resolve the configured model correctly, and price `kimi-for-coding` by each request's date across the K2.5/K2.6 transition. (#776, #782, #797)
+- Preserve model-version boundaries during price lookup and correct the Claude Opus 4 and GPT-5.1 Codex aliases. Estimate missing or zero costs in OpenCode V2, Grok, MiniMax Code, and Cherry Studio while preserving positive recorded costs. OpenCode V2 input totals now include cache tokens so daily usage can reconcile with message totals. (#778, #793)
+- Keep uncopied OpenCode V1 sessions visible during V2 migration, read newer versioned DSH transcripts, and prevent one invalid DSH session from hiding the whole source. (#779, #781)
+- Discover Pi sessions through `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, and absolute `sessionDir` settings. Tolerate invalid UTF-8 in JSONL transcripts so one damaged line does not fail the whole source. (#777, #786)
+
+### Performance
+
+- Stop retaining parser checkpoints for idle Codex and Claude Code transcripts, and reuse the last project identity after a git timeout to avoid unnecessary project-wide reparsing and Worker uploads. (#775)
+
+### Documentation
+
+- Update supported Agent lists, capability notes, and product-site counts to cover all 19 Agents. (#783, #787, #788, #789, #792, #796)
+
+### Compatibility
+
+- Cached sessions are reparsed after upgrading to apply the corrected titles, usage, tool calls, and pricing inputs. The first refresh can take longer on large histories. (#776, #780, #782, #785, #787, #790, #791, #793, #795)
+- Droid usage is assigned to the root session's last active day, including subagent usage. oh-my-pi named profiles and out-of-transcript `model_usage` records are not included yet. (#789, #792)
+
 ## [1.3.3] - 2026-10-11
 
 This patch fixes blocked Worker uploads, incomplete Agent history and usage, search edge cases, and Dashboard dates across time zones. (#752–#773)
