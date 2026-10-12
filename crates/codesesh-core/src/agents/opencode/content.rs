@@ -367,16 +367,10 @@ pub(super) fn add_cache_tokens(stats: &mut SessionStats, read: Option<f64>, crea
     }
 }
 pub(super) fn token_total(tokens: &MessageTokens) -> f64 {
-    [
-        tokens.input,
-        tokens.output,
-        tokens.reasoning,
-        tokens.cache_read,
-        tokens.cache_create,
-    ]
-    .into_iter()
-    .flatten()
-    .sum()
+    [tokens.input, tokens.output, tokens.reasoning]
+        .into_iter()
+        .flatten()
+        .sum()
 }
 
 mod v2;

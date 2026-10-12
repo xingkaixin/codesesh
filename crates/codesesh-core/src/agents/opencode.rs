@@ -361,26 +361,25 @@ fn read_v2(
         if messages.is_empty() {
             continue;
         }
-        let total = [
+        let [input, output, reasoning, cache_read, cache_write] = [
             "tokens_input",
             "tokens_output",
             "tokens_reasoning",
             "tokens_cache_read",
             "tokens_cache_write",
         ]
-        .iter()
-        .map(|key| number(&row[key]))
-        .sum::<f64>();
+        .map(|key| number(&row[key]));
+        let total = input + output + reasoning + cache_read + cache_write;
         let stats = SessionStats {
             cost_inputs: Vec::new(),
             message_count: messages.len(),
-            total_input_tokens: number(&row["tokens_input"]),
-            total_output_tokens: number(&row["tokens_output"]),
+            total_input_tokens: input + cache_read + cache_write,
+            total_output_tokens: output + reasoning,
             total_cost: number(&row["cost"]),
             cost_source: Some(CostSource::Recorded),
             total_tokens: Some(total),
-            total_cache_read_tokens: Some(number(&row["tokens_cache_read"])),
-            total_cache_create_tokens: Some(number(&row["tokens_cache_write"])),
+            total_cache_read_tokens: Some(cache_read),
+            total_cache_create_tokens: Some(cache_write),
         };
         let mut usage = BTreeMap::new();
         let mut message_total = 0.0;

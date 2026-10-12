@@ -69,6 +69,14 @@ fn v2_preserves_sequence_tools_tokens_children_and_source() {
     );
     assert_eq!(session.head.stats.total_tokens, Some(20.0));
     assert_eq!(
+        (
+            session.detail.messages[1].tokens.as_ref().unwrap().input,
+            session.head.stats.total_input_tokens,
+            session.head.stats.total_output_tokens
+        ),
+        (Some(15.0), 15.0, 5.0)
+    );
+    assert_eq!(
         session.head.model_usage.as_ref().unwrap()["test-model"],
         20.0
     );
