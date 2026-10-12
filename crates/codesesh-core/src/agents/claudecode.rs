@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use common::*;
-pub use incremental::{Checkpoints, scan_changed};
+pub use incremental::{Checkpoints, scan_changed, scan_changed_as};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -72,6 +72,10 @@ fn child(path: &Path) -> Option<Child> {
 }
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+    scan_as(root, "claudecode", pricing)
+}
+
+pub(super) fn scan_as(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -118,7 +122,15 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .unwrap_or(Value::Null)
         });
-        let result = match parse(&path, context, project, index, &tool_children, pricing) {
+        let result = match parse(
+            &path,
+            agent,
+            context,
+            project,
+            index,
+            &tool_children,
+            pricing,
+        ) {
             Err(error) if error.is::<InvalidSession>() => continue,
             result => result?,
         };
@@ -218,6 +230,7 @@ fn output_parts(value: &Value, ts: f64) -> Vec<MessagePart> {
 
 fn parse(
     path: &Path,
+    agent: &str,
     child: Option<&Child>,
     project: &Path,
     index: &Value,
@@ -225,7 +238,7 @@ fn parse(
     pricing: &Pricing,
 ) -> Result<Option<(SessionHead, SessionDetail)>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut parser = Parser::new();
+    let mut parser = Parser::new(agent);
     let mut lines = super::jsonl::JsonLines::new(file);
     while let Some(line) = lines.next_line()? {
         parser.feed(line, children, pricing)?;
@@ -236,6 +249,7 @@ fn parse(
 /// Line-by-line state of one transcript, so an appended transcript can resume where it stopped.
 #[derive(Clone)]
 struct Parser {
+    agent: String,
     transcript: Transcript,
     first_time: f64,
     latest_time: f64,
@@ -251,9 +265,15 @@ struct Parser {
 }
 
 impl Parser {
-    fn new() -> Self {
+    fn new(agent: &str) -> Self {
         Self {
-            transcript: Transcript::new(),
+            agent: agent.into(),
+            // Claude Code keeps its original message label so cached search text stays valid.
+            transcript: Transcript::new(if agent == "claudecode" {
+                "claude"
+            } else {
+                agent
+            }),
             first_time: 0.0,
             latest_time: 0.0,
             cwd: None,
@@ -467,7 +487,7 @@ impl Parser {
         let mut detail = detail(
             SessionReference {
                 source_node_id: crate::contract::local_source_node_id(),
-                agent_name: "claudecode".into(),
+                agent_name: self.agent.clone(),
                 session_id: id,
             },
             directory,
@@ -482,7 +502,7 @@ impl Parser {
                 .and_then(|c| c.parent.as_ref())
                 .map(|id| SessionReference {
                     source_node_id: crate::contract::local_source_node_id(),
-                    agent_name: "claudecode".into(),
+                    agent_name: self.agent.clone(),
                     session_id: id.clone(),
                 });
         head_stats.cost_source = (head_stats.total_cost > 0.0).then_some(CostSource::Estimated);
@@ -758,9 +778,18 @@ mod tests {
                     .map_err(|error| error.to_string())
             };
             assert_eq!(
-                encode(checkpoints.parse(&path, None, &project, &Value::Null, &children, &pricing)),
+                encode(checkpoints.parse(
+                    &path,
+                    "claudecode",
+                    None,
+                    &project,
+                    &Value::Null,
+                    &children,
+                    &pricing
+                )),
                 encode(parse(
                     &path,
+                    "claudecode",
                     None,
                     &project,
                     &Value::Null,

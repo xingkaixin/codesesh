@@ -274,7 +274,8 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         .into_iter()
         .collect::<walkdir::Result<Vec<_>>>()?;
     // Claude Code checks two optional companions per transcript; the walk already lists them.
-    let files: std::collections::HashSet<&Path> = if source.agent == "claudecode" {
+    let claude_layout = matches!(source.agent.as_str(), "claudecode" | "qoder" | "qoder-cn");
+    let files: std::collections::HashSet<&Path> = if claude_layout {
         entries
             .iter()
             .filter(|entry| entry.file_type().is_file())
@@ -290,7 +291,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
         let name = entry.file_name().to_string_lossy();
         let selected = match source.agent.as_str() {
-            "claudecode" => {
+            "claudecode" | "qoder" | "qoder-cn" => {
                 name.ends_with(".jsonl")
                     && (entry.depth() == 2
                         || crate::agents::claudecode::subagents_dir(entry.path()).is_some())
@@ -331,7 +332,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                 }
             }
         }
-        if source.agent == "claudecode" {
+        if claude_layout {
             let project = match crate::agents::claudecode::subagents_dir(entry.path()) {
                 Some(subagents) => subagents
                     .parent()

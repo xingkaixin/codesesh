@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Clone)]
 pub(super) struct Transcript {
+    agent: String,
     pub(super) messages: Vec<Message>,
     current: Option<usize>,
     latest_text: Option<usize>,
@@ -18,8 +19,9 @@ pub(super) struct Transcript {
     part_flags: HashMap<usize, (bool, bool)>,
 }
 impl Transcript {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(agent: &str) -> Self {
         Self {
+            agent: agent.into(),
             messages: Vec::new(),
             current: None,
             latest_text: None,
@@ -53,7 +55,7 @@ impl Transcript {
         };
         let index = target.unwrap_or_else(|| {
             let mut m = message(id.into(), Role::Assistant, time, Vec::new());
-            m.agent = Some("claude".into());
+            m.agent = Some(self.agent.clone());
             m.model = model.map(str::to_owned);
             if is_tool {
                 m.mode = Some("tool".into());
@@ -235,7 +237,7 @@ impl Transcript {
                 if has_usage {
                     let i = usage_index.unwrap_or_else(|| {
                         let mut m = message(id.clone(), Role::Assistant, time, Vec::new());
-                        m.agent = Some("claude".into());
+                        m.agent = Some(self.agent.clone());
                         m.model = model.map(str::to_owned);
                         self.messages.push(m);
                         self.current = Some(self.messages.len() - 1);

@@ -23,6 +23,8 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 
 <!-- repo-fact:agents:start -->
 - Claude Code
+- Qoder
+- Qoder CN
 - Cursor
 - Kimi-Cli
 - Kimi-Code
