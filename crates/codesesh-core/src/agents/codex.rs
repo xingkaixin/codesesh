@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -35,8 +35,9 @@ impl ParsedSession {
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let mut titles = HashMap::new();
     if let Ok(file) = File::open(root.join("session_index.jsonl")) {
-        for line in BufReader::new(file).lines().map_while(Result::ok) {
-            if let Ok(record) = serde_json::from_str::<Value>(&line)
+        let mut lines = super::jsonl::JsonLines::new(file);
+        while let Ok(Some(line)) = lines.next_line() {
+            if let Ok(record) = serde_json::from_str::<Value>(line)
                 && let (Some(id), Some(title)) =
                     (record["id"].as_str(), record["thread_name"].as_str())
             {
@@ -126,8 +127,9 @@ pub fn scan_changed(
     }
     let mut titles = HashMap::new();
     if let Ok(file) = File::open(root.join("session_index.jsonl")) {
-        for line in BufReader::new(file).lines() {
-            if let Ok(value) = serde_json::from_str::<Value>(&line?)
+        let mut lines = super::jsonl::JsonLines::new(file);
+        while let Some(line) = lines.next_line()? {
+            if let Ok(value) = serde_json::from_str::<Value>(line)
                 && let (Some(id), Some(title)) =
                     (value["id"].as_str(), value["thread_name"].as_str())
             {
@@ -361,8 +363,9 @@ fn child_summary(
     let mut final_output = None;
     let (reader, physical) = rollout::open(source)?;
     let fallback = crate::time::file_mtime_ms(&physical)?;
-    for line in BufReader::new(reader).lines() {
-        let Ok(record) = serde_json::from_str::<Value>(&line?) else {
+    let mut lines = super::jsonl::JsonLines::new(reader);
+    while let Some(line) = lines.next_line()? {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         let payload = &record["payload"];
@@ -653,7 +656,7 @@ impl Checkpoints {
         let mut partial = None;
         loop {
             line.clear();
-            let read = reader.read_line(&mut line)?;
+            let read = super::jsonl::read_line(&mut reader, &mut line)?;
             if read == 0 {
                 break;
             }
