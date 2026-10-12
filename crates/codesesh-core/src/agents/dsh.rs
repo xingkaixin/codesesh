@@ -1,6 +1,7 @@
 mod log;
 mod project;
 
+use super::claudecode::common::InvalidSession;
 use crate::{agents::codex::ParsedSession, contract::*, pricing::Pricing, projects::path_identity};
 use anyhow::{Result, ensure};
 use std::{
@@ -116,7 +117,6 @@ fn scan_selected(
         Err(error) => return Err(error.into()),
     };
     let mut artifacts: Vec<(PathBuf, bool)> = Vec::new();
-    let mut encoding = None;
     for project in projects {
         let project = project?;
         if !project.file_type()?.is_dir() {
@@ -131,13 +131,6 @@ fn scan_selected(
         }
         for entry in fs::read_dir(project.path())? {
             let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            ensure!(
-                !entry.file_type()?.is_file()
-                    || (!name.ends_with(".jsonl") && !name.ends_with(".jsonl.zstd")),
-                "unsupported DSH flat-file layout: {}",
-                entry.path().display()
-            );
             if !entry.file_type()?.is_dir() {
                 continue;
             }
@@ -161,11 +154,6 @@ fn scan_selected(
             } else {
                 continue;
             };
-            ensure!(
-                encoding.is_none_or(|previous| previous == is_compressed),
-                "DSH session root mixes encodings"
-            );
-            encoding = Some(is_compressed);
             artifacts.push((path, is_compressed));
         }
     }
@@ -179,7 +167,10 @@ fn scan_selected(
         }) {
             continue;
         }
-        let (header, events) = log::read(&source, compressed)?;
+        let (header, events) = match log::read(&source, compressed) {
+            Err(error) if error.is::<InvalidSession>() => continue,
+            result => result?,
+        };
         let id = project::text(&header["id"]).to_owned();
         let directory = project::text(&header["cwd"]).to_owned();
         let project_key = if header.get("cwd").is_some() {
@@ -195,12 +186,19 @@ fn scan_selected(
             } else {
                 "session.jsonl"
             });
-        ensure!(
-            source == expected || fs::canonicalize(&source)? == fs::canonicalize(&expected)?,
-            "DSH header does not identify artifact path"
-        );
-        ensure!(seen.insert(id.clone()), "duplicate DSH session id {id}");
-        let projection = project::project(&header, &events, &root.join("attachments/v1"), pricing)?;
+        let identified = source == expected
+            || matches!(
+                (fs::canonicalize(&source), fs::canonicalize(&expected)),
+                (Ok(source), Ok(expected)) if source == expected
+            );
+        if !identified || !seen.insert(id.clone()) {
+            continue;
+        }
+        let Ok(projection) =
+            project::project(&header, &events, &root.join("attachments/v1"), pricing)
+        else {
+            continue;
+        };
         if projection.messages.is_empty() {
             continue;
         }

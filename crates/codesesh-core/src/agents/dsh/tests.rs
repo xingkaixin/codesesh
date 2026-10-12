@@ -130,7 +130,7 @@ fn packed_rows_rebuild_stream_and_validate_sequence() {
     let mut bad = rows;
     bad[2]["seq0"] = json!(3);
     fixture(temp.path(), true, json!({}), &bad);
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
+    assert!(scan(temp.path(), &Pricing::bundled()).unwrap().is_empty());
 }
 #[test]
 fn attachments_require_verified_digest_and_keep_missing_placeholders() {
@@ -183,19 +183,9 @@ fn attachments_require_verified_digest_and_keep_missing_placeholders() {
     assert!(deleted.removed.is_empty());
 }
 #[test]
-fn refuses_corrupt_headers_surface_placement_and_mixed_encodings() {
+fn refuses_mixed_encodings_in_one_session_directory() {
     let temp = tempfile::tempdir().unwrap();
-    fixture(
-        temp.path(),
-        false,
-        json!({"version":1}),
-        &[user(0, "prompt")],
-    );
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
-    let mut missing = user(0, "prompt");
-    missing.as_object_mut().unwrap().remove("surfaceOp");
-    fixture(temp.path(), false, json!({}), &[missing]);
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
+    fixture(temp.path(), false, json!({}), &[user(0, "prompt")]);
     fixture(temp.path(), true, json!({}), &[user(0, "prompt")]);
     assert!(scan(temp.path(), &Pricing::bundled()).is_err());
 }
@@ -249,13 +239,27 @@ fn matches_node_projection_for_forked_streamed_tools() {
 }
 
 #[test]
-fn changed_scan_does_not_parse_unrelated_corrupt_artifacts() {
+fn skips_corrupt_sessions_without_failing_the_source() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path(), false, json!({}), &[user(0, "keep")]);
     let other = temp.path().join("sessions/--tmp-project--/other");
     fs::create_dir_all(&other).unwrap();
     fs::write(other.join("session.jsonl"), "invalid header\n").unwrap();
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
+    let mut unplaced = user(0, "prompt");
+    unplaced.as_object_mut().unwrap().remove("surfaceOp");
+    let broken = temp.path().join("sessions/--tmp-project--/broken");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(
+        broken.join("session.jsonl"),
+        format!(
+            "{}\n{unplaced}\n",
+            json!({"type":"session","version":0,"id":"broken","cwd":"/tmp/project","createdAt":100,"delegationDepth":0})
+        ),
+    )
+    .unwrap();
+    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].source, path);
     let parsed = scan_changed(
         temp.path(),
         &Pricing::bundled(),
@@ -292,11 +296,11 @@ fn rejects_fractional_storage_times_and_preserves_safe_integer_precision() {
         json!({"createdAt": 100.25}),
         &[user(0, "prompt")],
     );
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
+    assert!(scan(temp.path(), &Pricing::bundled()).unwrap().is_empty());
     let mut fractional = user(0, "prompt");
     fractional["time"] = json!(100.25);
     fixture(temp.path(), false, json!({}), &[fractional]);
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
+    assert!(scan(temp.path(), &Pricing::bundled()).unwrap().is_empty());
     let mut precise = user(0, "prompt");
     precise["time"] = json!(9_007_199_254_740_991_u64);
     fixture(

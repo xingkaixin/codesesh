@@ -1,4 +1,5 @@
-use anyhow::{Result, bail, ensure};
+use crate::agents::claudecode::common::InvalidSession;
+use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 
@@ -67,6 +68,7 @@ fn header(v: &Value) -> Result<()> {
             "invalid DSH header {key}"
         );
     }
+    ensure!(v["cwd"] != "", "empty DSH project path");
     ensure!(
         v.get("seedLength").is_none_or(count),
         "invalid DSH seedLength"
@@ -220,9 +222,12 @@ pub fn read(path: &Path, compressed: bool) -> Result<(Value, Vec<Value>)> {
         }
     }
     let bytes = stable.ok_or_else(|| anyhow::anyhow!("DSH source changed while reading"))?;
+    decode(path, &bytes, compressed).context(InvalidSession("invalid DSH session log"))
+}
+fn decode(path: &Path, bytes: &[u8], compressed: bool) -> Result<(Value, Vec<Value>)> {
     let mut lines = Vec::new();
     if compressed {
-        let complete = frames(&bytes)?;
+        let complete = frames(bytes)?;
         if complete.iter().map(|frame| frame.len()).sum::<usize>() < bytes.len() {
             warn_tail(path, "zstd");
         }
@@ -244,7 +249,7 @@ pub fn read(path: &Path, compressed: bool) -> Result<(Value, Vec<Value>)> {
             lines.extend(records);
         }
     } else {
-        let text = String::from_utf8_lossy(&bytes);
+        let text = String::from_utf8_lossy(bytes);
         let Some(end) = text.rfind('\n') else {
             bail!("DSH missing complete header");
         };
