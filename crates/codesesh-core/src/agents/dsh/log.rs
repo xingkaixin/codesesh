@@ -50,10 +50,7 @@ fn count(v: &Value) -> bool {
     integer(v) && v.as_f64().unwrap() >= 0.0
 }
 fn header(v: &Value) -> Result<()> {
-    ensure!(
-        v["version"].as_f64() == Some(0.0),
-        "unsupported DSH session format version"
-    );
+    ensure!(count(&v["version"]), "invalid DSH session format version");
     ensure!(
         v["type"] == "session" && v["id"].as_str().is_some_and(|s| !s.is_empty()),
         "invalid DSH session header identity"
@@ -82,11 +79,7 @@ fn header(v: &Value) -> Result<()> {
 fn expand(row: Value) -> Result<Vec<Value>> {
     let tag = row["type"].as_str().unwrap_or("");
     if !["text-chunks", "reasoning-chunks", "tool-call-chunks"].contains(&tag) {
-        const KNOWN: &str = "agent-preset/selected agent/inbox/spliced approval/asked approval/decided approval/policy assistant/chunk assistant/message command/done command/run compaction/end compaction/prune compaction/start compaction/summary feedback/record goal/change hook/invoked hook/result llm/retry llm/retry-started permission/preset plan/mode request/context request/header sandbox/mode schedule/change session/end-seed session/title session/title-llm-request step/end step/start subagent/descriptor todo/write tool-workflow/agent-end tool-workflow/agent-start tool-workflow/run-end tool-workflow/run-start tool/call tool/code-dispatch tool/code-dispatch-start tool/result turn/end turn/start user/message web/deepseek-search-llm-request";
-        ensure!(
-            !tag.is_empty() && (KNOWN.split(' ').any(|x| x == tag) || row["ignorable"] == true),
-            "unsupported required DSH event {tag}"
-        );
+        ensure!(!tag.is_empty(), "missing DSH event type");
         ensure!(
             count(&row["seq"]) && integer(&row["time"]),
             "invalid DSH event seq/time"

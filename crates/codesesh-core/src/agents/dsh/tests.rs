@@ -183,11 +183,75 @@ fn attachments_require_verified_digest_and_keep_missing_placeholders() {
     assert!(deleted.removed.is_empty());
 }
 #[test]
-fn refuses_mixed_encodings_in_one_session_directory() {
+fn reads_the_newest_session_generation() {
     let temp = tempfile::tempdir().unwrap();
-    fixture(temp.path(), false, json!({}), &[user(0, "prompt")]);
-    fixture(temp.path(), true, json!({}), &[user(0, "prompt")]);
-    assert!(scan(temp.path(), &Pricing::bundled()).is_err());
+    let age = |path: &Path, seconds| {
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+            .unwrap();
+    };
+    let plain = fixture(temp.path(), false, json!({}), &[user(0, "Older write")]);
+    let compressed = fixture(temp.path(), true, json!({}), &[user(0, "Newer write")]);
+    age(&plain, 1);
+    age(&compressed, 2);
+    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
+    assert_eq!(parsed[0].source, compressed);
+    assert_eq!(parsed[0].head.title, "Newer write");
+    let current = plain.with_file_name("session.v4.jsonl");
+    fixture(
+        temp.path(),
+        false,
+        json!({"version":4}),
+        &[user(0, "Carried over")],
+    );
+    fs::rename(&plain, &current).unwrap();
+    age(&current, 0);
+    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
+    assert_eq!(parsed[0].source, current);
+    assert_eq!(parsed[0].head.title, "Carried over");
+}
+
+#[test]
+fn excludes_events_seeded_before_the_v2_end_seed_marker() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(
+        temp.path(),
+        false,
+        json!({"version":2,"isSeeded":true}),
+        &[
+            user(0, "Parent prompt"),
+            assistant(1, "Parent reply"),
+            event("session/end-seed", 2, json!({"inherited":true})),
+            user(3, "Child question"),
+            assistant(4, "Child reply"),
+        ],
+    );
+    fs::rename(&path, path.with_file_name("session.v2.jsonl")).unwrap();
+    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
+    let d = &parsed[0].detail;
+    assert_eq!(d.head.title, "Child question");
+    assert_eq!(d.messages.len(), 2);
+    assert_eq!(d.head.stats.total_input_tokens, 15.0);
+}
+
+#[test]
+fn ignores_unknown_events() {
+    let temp = tempfile::tempdir().unwrap();
+    fixture(
+        temp.path(),
+        false,
+        json!({}),
+        &[
+            user(0, "Prompt"),
+            event("future/event", 1, json!({})),
+            assistant(2, "Reply"),
+        ],
+    );
+    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
+    assert_eq!(parsed[0].detail.messages.len(), 2);
 }
 
 #[test]

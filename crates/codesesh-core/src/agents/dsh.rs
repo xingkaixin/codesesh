@@ -3,12 +3,23 @@ mod project;
 
 use super::claudecode::common::InvalidSession;
 use crate::{agents::codex::ParsedSession, contract::*, pricing::Pricing, projects::path_identity};
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
+
+pub fn generation(name: &str) -> Option<(u64, bool)> {
+    static NAME: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"^session(?:\.v(\d+))?\.jsonl(\.zstd)?$").unwrap());
+    let captures = NAME.captures(name)?;
+    let version = captures
+        .get(1)
+        .map_or(Some(0), |version| version.as_str().parse().ok())?;
+    Some((version, captures.get(2).is_some()))
+}
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     scan_selected(root, pricing, None)
@@ -141,20 +152,30 @@ fn scan_selected(
             }) {
                 continue;
             }
-            let plain = entry.path().join("session.jsonl");
-            let compressed = entry.path().join("session.jsonl.zstd");
-            ensure!(
-                !(plain.exists() && compressed.exists()),
-                "DSH session directory holds both encodings"
-            );
-            let (path, is_compressed) = if compressed.exists() {
-                (compressed, true)
-            } else if plain.exists() {
-                (plain, false)
-            } else {
+            let Ok(files) = fs::read_dir(entry.path()) else {
                 continue;
             };
-            artifacts.push((path, is_compressed));
+            // A session carried over to a newer format keeps its older files beside the new one.
+            let mut latest = None;
+            for file in files.flatten() {
+                let Some((version, compressed)) = generation(&file.file_name().to_string_lossy())
+                else {
+                    continue;
+                };
+                let Ok(metadata) = fs::metadata(file.path()) else {
+                    continue;
+                };
+                if !metadata.is_file() {
+                    continue;
+                }
+                let order = (version, metadata.modified()?);
+                if latest.as_ref().is_none_or(|(latest, _, _)| order > *latest) {
+                    latest = Some((order, file.path(), compressed));
+                }
+            }
+            if let Some((_, path, compressed)) = latest {
+                artifacts.push((path, compressed));
+            }
         }
     }
     let mut seen = HashSet::new();
@@ -181,11 +202,7 @@ fn scan_selected(
         let expected = sessions
             .join(project_key)
             .join(log::encode(&id)?)
-            .join(if compressed {
-                "session.jsonl.zstd"
-            } else {
-                "session.jsonl"
-            });
+            .join(source.file_name().unwrap());
         let identified = source == expected
             || matches!(
                 (fs::canonicalize(&source), fs::canonicalize(&expected)),

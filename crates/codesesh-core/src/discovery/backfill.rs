@@ -302,10 +302,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "grok" => name == "summary.json",
-            "dsh" => {
-                entry.depth() == 3
-                    && matches!(name.as_ref(), "session.jsonl" | "session.jsonl.zstd")
-            }
+            "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),
             "kimi" => {
                 entry.depth() == 3
                     && (name == "state.json"
