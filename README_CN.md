@@ -75,7 +75,7 @@ CodeSesh 做三件事：
 
 Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息及工具调用。工具结果与用量仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 
-OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V2 迁移完成后开始读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/agents/opencode-v2.md)。
+OpenCode 支持 V1 SQLite 历史与 V2 `2.0.15` 数据结构。可通过 `OPENCODE_DB` 指定自定义数据库，相对路径基于 `XDG_DATA_HOME/opencode`，默认目录为 `~/.local/share/opencode`。V1 向 V2 迁移期间，尚未复制的会话从 V1 表读取；费用采用会话累计值，避免重复计算 fork 复制的历史。支持内容及验证边界见 [兼容设计](docs/agents/opencode-v2.md)。
 
 MiniMax Code 支持 CLI 0.4.12 的 `v2/sqlite/runtime-state.sqlite`，包含会话树、思考、工具调用和用量。默认依次查找 `~/.minimax`、`~/.minimax-code`，选择首个存在数据库的目录；`MINIMAX_DATA_DIR` 优先于 `MAVIS_DATA_DIR`。同步会识别已有消息的修改和删除，不限于追加消息。媒体仅展示可用引用；旧 ledger 布局和 Desktop 兼容性未验证。详情见 [接入设计](docs/agents/minimax-code.md)。
 

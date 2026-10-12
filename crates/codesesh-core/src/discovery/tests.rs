@@ -29,6 +29,26 @@ fn path_overrides_expand_and_fallbacks_preserve_precedence() {
     );
 }
 #[test]
+fn pi_paths_follow_upstream_overrides() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut env = environment(temporary.path());
+    env.variables
+        .insert("PI_CODING_AGENT_DIR".into(), "~/agent".into());
+    let agent = env.home.join("agent");
+    assert_eq!(env.source("pi").unwrap().scan_path, agent.join("sessions"));
+    std::fs::create_dir_all(&agent).unwrap();
+    std::fs::write(agent.join("settings.json"), r#"{"sessionDir":"relative"}"#).unwrap();
+    assert_eq!(env.source("pi").unwrap().scan_path, agent.join("sessions"));
+    std::fs::write(agent.join("settings.json"), r#"{"sessionDir":"~/stored"}"#).unwrap();
+    assert_eq!(env.source("pi").unwrap().scan_path, env.home.join("stored"));
+    env.variables
+        .insert("PI_CODING_AGENT_SESSION_DIR".into(), "~/override".into());
+    assert_eq!(
+        env.source("pi").unwrap().scan_path,
+        env.home.join("override")
+    );
+}
+#[test]
 fn platform_paths_and_opencode_override_match_existing_rules() {
     let temporary = tempfile::tempdir().unwrap();
     let mut env = environment(temporary.path());
@@ -1285,4 +1305,53 @@ fn codex_compression_during_backfill_does_not_remove_prior_batches() {
         }
     }
     panic!("Codex backfill did not complete");
+}
+
+#[test]
+fn claude_workflow_agents_are_nested_under_their_session() {
+    let temporary = tempfile::tempdir().unwrap();
+    let source = AgentSource {
+        agent: "claudecode".into(),
+        data_root: temporary.path().to_owned(),
+        scan_path: temporary.path().join("projects"),
+    };
+    let run = source
+        .scan_path
+        .join("project/parent/subagents/workflows/wf_run");
+    std::fs::create_dir_all(&run).unwrap();
+    let user = |text: &str| {
+        serde_json::json!({"type":"user","message":{"role":"user","content":text}}).to_string()
+    };
+    std::fs::write(
+        source.scan_path.join("project/parent.jsonl"),
+        user("Parent"),
+    )
+    .unwrap();
+    std::fs::write(run.join("agent-worker.jsonl"), user("Workflow step")).unwrap();
+    std::fs::write(
+        run.join("journal.jsonl"),
+        serde_json::json!({"type":"started","key":"step","agentId":"worker"}).to_string(),
+    )
+    .unwrap();
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let full = scan_source(&source, &pricing).unwrap().sessions;
+    let mut scanner = AgentScanner::new(source, temporary.path().join("cache.db"), pricing);
+    let mut paged = scanner.refresh(None).unwrap();
+    for sessions in [&full, &paged.sessions] {
+        let mut nested: Vec<_> = sessions
+            .iter()
+            .map(|s| {
+                (
+                    s.head.reference.session_id.as_str(),
+                    s.head
+                        .parent_reference
+                        .as_ref()
+                        .map(|r| r.session_id.as_str()),
+                )
+            })
+            .collect();
+        nested.sort();
+        assert_eq!(nested, [("parent", None), ("worker", Some("parent"))]);
+    }
+    paged.on_reject.take();
 }

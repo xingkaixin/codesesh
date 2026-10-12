@@ -19,11 +19,21 @@ impl<R: Read> JsonLines<R> {
         } else {
             self.line.clear();
         }
-        if self.reader.read_line(&mut self.line)? == 0 {
+        if read_line(&mut self.reader, &mut self.line)? == 0 {
             return Ok(None);
         }
         Ok(Some(&self.line))
     }
+}
+
+/// `BufRead::read_line` that replaces invalid UTF-8 instead of failing the whole source.
+/// The count is in source bytes, which can differ from the replaced line's length.
+pub(super) fn read_line(reader: &mut impl BufRead, line: &mut String) -> io::Result<usize> {
+    let mut bytes = std::mem::take(line).into_bytes();
+    let read = reader.read_until(b'\n', &mut bytes)?;
+    *line = String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned());
+    Ok(read)
 }
 
 const ACTIVE_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);

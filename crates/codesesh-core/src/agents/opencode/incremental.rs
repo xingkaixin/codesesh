@@ -71,11 +71,12 @@ pub(super) fn refresh_scoped(
     let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("opening {agent} database {}", path.display()))?;
     db.execute_batch("BEGIN")?;
-    let v2 = supports_v2 && has_v2(&db)?;
+    let layout = layout(&db, supports_v2)?;
+    let v2 = layout.v2();
     let scope = selected
-        .map(|selected| paging::expanded_scope(&db, v2, selected, previous))
+        .map(|selected| paging::expanded_scope(&db, &layout, selected, previous))
         .transpose()?;
-    let mut fingerprints = fingerprints(&db, v2, scope.as_ref())?;
+    let mut fingerprints = fingerprints(&db, &layout, scope.as_ref())?;
     if let (Some(scope), Some(previous)) = (&scope, previous) {
         fingerprints.extend(
             previous
@@ -93,7 +94,7 @@ pub(super) fn refresh_scoped(
         .collect();
     if !v2 && reuse.is_some_and(|snapshot| snapshot.compacted) {
         let mut parents: HashMap<String, HashSet<String>> = HashMap::new();
-        for row in paging::metadata(&db, false)? {
+        for row in paging::metadata(&db, &layout)? {
             if let Some(parent) = row["parent_id"].as_str() {
                 parents
                     .entry(string(&row["id"]))
@@ -130,10 +131,30 @@ pub(super) fn refresh_scoped(
             }
         }
     }
-    let mut details = if v2 {
-        read_v2(&db, pricing, reuse, &changed, scope.as_ref())?
-    } else {
-        read_v1(&db, agent, pricing, reuse, &changed, scope.as_ref())?
+    let mut details = match &layout {
+        Layout::V1 => read_v1(
+            &db,
+            agent,
+            &layout,
+            pricing,
+            reuse,
+            &changed,
+            scope.as_ref(),
+        )?,
+        Layout::V2 => read_v2(&db, pricing, reuse, &changed, scope.as_ref())?,
+        Layout::Migrating(legacy) => {
+            let mut details = read_v2(&db, pricing, reuse, &changed, scope.as_ref())?;
+            details.extend(read_v1(
+                &db,
+                agent,
+                &layout,
+                pricing,
+                reuse,
+                &changed.intersection(legacy).cloned().collect(),
+                layout.legacy_scope(scope.as_ref()).as_ref(),
+            )?);
+            details
+        }
     };
     if let (Some(scope), Some(previous)) = (&scope, previous) {
         details.extend(
@@ -143,8 +164,8 @@ pub(super) fn refresh_scoped(
                 .filter(|(id, _)| !scope.contains(*id))
                 .map(|(_, detail)| detail.clone()),
         );
-        sort(&mut details);
     }
+    sort(&mut details);
     let raw_usage = if v2 {
         HashMap::new()
     } else {
@@ -252,9 +273,9 @@ pub fn root_fingerprints(
     let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("fingerprinting {agent} database {}", path.display()))?;
     db.execute_batch("BEGIN")?;
-    let v2 = supports_v2 && has_v2(&db)?;
-    let sessions = fingerprints(&db, v2, None)?;
-    let parents: HashMap<_, _> = paging::metadata(&db, v2)?
+    let layout = layout(&db, supports_v2)?;
+    let sessions = fingerprints(&db, &layout, None)?;
+    let parents: HashMap<_, _> = paging::metadata(&db, &layout)?
         .iter()
         .filter_map(|row| Some((string(&row["id"]), row["parent_id"].as_str()?.to_owned())))
         .collect();
@@ -288,7 +309,28 @@ pub fn root_fingerprints(
 }
 fn fingerprints(
     db: &Connection,
+    layout: &Layout,
+    scope: Option<&HashSet<String>>,
+) -> Result<HashMap<String, String>> {
+    let mut hashes = if layout.v2() {
+        table_fingerprints(db, true, true, scope)?
+    } else {
+        HashMap::new()
+    };
+    if !matches!(layout, Layout::V2) {
+        hashes.extend(table_fingerprints(
+            db,
+            false,
+            layout.v2(),
+            layout.legacy_scope(scope).as_ref(),
+        )?);
+    }
+    Ok(hashes)
+}
+fn table_fingerprints(
+    db: &Connection,
     v2: bool,
+    v2_selection: bool,
     scope: Option<&HashSet<String>>,
 ) -> Result<HashMap<String, String>> {
     let mut hashes = HashMap::new();
@@ -302,7 +344,7 @@ fn fingerprints(
     let parent_column = rows(db, &format!("PRAGMA table_info({session_table})"))?
         .iter()
         .any(|row| row["name"] == "parent_id");
-    let selected = selected_ids(&session_rows, v2, parent_column);
+    let selected = selected_ids(&session_rows, v2_selection, parent_column);
     for row in session_rows
         .into_iter()
         .filter(|row| selected.contains(&string(&row["id"])))

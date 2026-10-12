@@ -23,15 +23,26 @@ struct Child {
     project: PathBuf,
 }
 
-fn child(path: &Path) -> Option<Child> {
-    let subagents = path.parent()?;
-    if subagents.file_name()? != "subagents" {
-        return None;
+/// The session's `subagents` directory for `<session>/subagents/*.jsonl` and for workflow agents
+/// in `<session>/subagents/workflows/<run>/agent-*.jsonl`, whose runs also keep a `journal.jsonl`.
+pub fn subagents_dir(path: &Path) -> Option<&Path> {
+    let dir = path.parent()?;
+    if dir.file_name()? == "subagents" {
+        return Some(dir);
     }
-    let parent = subagents.parent()?;
+    let workflows = dir.parent()?;
+    let subagents = workflows.parent()?;
+    (workflows.file_name()? == "workflows"
+        && subagents.file_name()? == "subagents"
+        && path.file_name()?.to_string_lossy().starts_with("agent-"))
+    .then_some(subagents)
+}
+
+fn child(path: &Path) -> Option<Child> {
+    let parent = subagents_dir(path)?.parent()?;
     let project = parent.parent()?.to_owned();
     let stem = path.file_stem()?.to_string_lossy();
-    let metadata: Value = fs::read(subagents.join(format!("{stem}.meta.json")))
+    let metadata: Value = fs::read(path.with_file_name(format!("{stem}.meta.json")))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or(Value::Null);
@@ -240,6 +251,8 @@ struct Parser {
     first_time: f64,
     latest_time: f64,
     cwd: Option<String>,
+    custom_title: Option<String>,
+    ai_title: Option<String>,
     prompt_title: Option<String>,
     visible_count: usize,
     usage_by_request: HashMap<String, (Option<String>, MessageTokens)>,
@@ -260,6 +273,8 @@ impl Parser {
             first_time: 0.0,
             latest_time: 0.0,
             cwd: None,
+            custom_title: None,
+            ai_title: None,
             prompt_title: None,
             visible_count: 0,
             usage_by_request: HashMap::new(),
@@ -290,6 +305,21 @@ impl Parser {
         }
         if internal(&record) {
             return Ok(());
+        }
+        match record["type"].as_str() {
+            Some("custom-title") => {
+                if let Some(value) = title(&text(&record["customTitle"])) {
+                    self.custom_title = Some(value);
+                }
+                return Ok(());
+            }
+            Some("ai-title") => {
+                if let Some(value) = title(&text(&record["aiTitle"])) {
+                    self.ai_title = Some(value);
+                }
+                return Ok(());
+            }
+            _ => {}
         }
         self.latest_time = self.latest_time.max(timestamp(&record));
         if self.cwd.is_none() {
@@ -410,9 +440,10 @@ impl Parser {
         let directory = self
             .cwd
             .unwrap_or_else(|| project.to_string_lossy().into_owned());
-        let title = explicit
-            .as_deref()
-            .and_then(title)
+        let title = self
+            .custom_title
+            .or(self.ai_title)
+            .or_else(|| explicit.as_deref().and_then(title))
             .or(self.prompt_title)
             .or_else(|| {
                 title(
@@ -580,6 +611,36 @@ mod tests {
         assert_eq!(sessions[0].detail.messages.len(), 1);
     }
     #[test]
+    fn invalid_utf8_line_is_replaced_instead_of_failing_the_source() {
+        let root = tempfile::tempdir().unwrap();
+        let good = root.path().join("project/good.jsonl");
+        let corrupt = root.path().join("project/corrupt.jsonl");
+        write(
+            &good,
+            &[json!({"type":"user","message":{"role":"user","content":"Good"}})],
+        );
+        fs::write(
+            &corrupt,
+            b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Bad \xff byte\"}}\n",
+        )
+        .unwrap();
+        let pricing = Pricing::bundled();
+        let full = scan(root.path(), &pricing).unwrap();
+        let changed = scan_changed(
+            root.path(),
+            &pricing,
+            &[good, corrupt],
+            &[],
+            &mut Checkpoints::default(),
+        )
+        .unwrap();
+        for sessions in [full, changed.upserts] {
+            let mut titles: Vec<_> = sessions.iter().map(|s| s.head.title.as_str()).collect();
+            titles.sort();
+            assert_eq!(titles, ["Bad \u{fffd} byte", "Good"]);
+        }
+    }
+    #[test]
     fn filters_internal_only_records_and_limits_fallback_title_to_first_twenty() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("project/session.jsonl");
@@ -599,6 +660,29 @@ mod tests {
                 .title,
             "fallback"
         );
+    }
+    #[test]
+    fn late_custom_title_outranks_ai_title_and_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project/session.jsonl");
+        let mut records = vec![json!({"type":"user","message":{"role":"user","content":"Prompt"}})];
+        records.extend(vec![json!({"type":"progress"}); 20]);
+        records.push(json!({"type":"ai-title","aiTitle":"Generated","sessionId":"session"}));
+        write(&path, &records);
+        let title = || {
+            scan(root.path(), &Pricing::bundled()).unwrap()[0]
+                .head
+                .title
+                .clone()
+        };
+        assert_eq!(title(), "Generated");
+        records.extend([
+            json!({"type":"custom-title","customTitle":"Old name","sessionId":"session"}),
+            json!({"type":"custom-title","customTitle":"New name","sessionId":"session"}),
+            json!({"type":"ai-title","aiTitle":"Regenerated","sessionId":"session"}),
+        ]);
+        write(&path, &records);
+        assert_eq!(title(), "New name");
     }
     #[test]
     fn missing_source_timestamp_preserves_fractional_file_mtime() {
