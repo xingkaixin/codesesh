@@ -229,4 +229,21 @@ export const AGENT_CATALOG = [
       sessionTree: true,
     },
   },
+  {
+    name: "gemini-cli",
+    displayName: "Gemini CLI",
+    icon: "/icon/agent/gemini-cli.svg",
+    iconColored: true,
+    sourceKind: "filesystem",
+    resumeCommandPrefix: "gemini --resume",
+    toolStrategy: "default",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
+  },
 ] as const;

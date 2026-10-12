@@ -57,9 +57,9 @@ fn platform_paths_and_opencode_override_match_existing_rules() {
     assert_eq!(selected_sources(&env, &["CODEX".into()]).len(), 1);
 }
 #[test]
-fn counts_and_registry_cover_all_fourteen_agents() {
+fn counts_and_registry_cover_all_fifteen_agents() {
     let catalog = agents::catalog_counts(&HashMap::from([("kimi".into(), 2), ("codex".into(), 3)]));
-    assert_eq!(catalog.len(), 14);
+    assert_eq!(catalog.len(), 15);
     assert_eq!(catalog.iter().map(|agent| agent.count).sum::<usize>(), 5);
     assert_eq!(catalog.iter().filter(|agent| agent.available).count(), 2);
 }
