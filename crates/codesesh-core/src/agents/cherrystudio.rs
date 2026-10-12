@@ -196,15 +196,20 @@ fn transcript(
             )
         } else {
             let cost = tokens.as_ref().and_then(|t| {
-                pricing.estimate_tracked(
-                    model.as_deref(),
-                    &MessageTokens {
-                        reasoning: Some(0.0),
-                        ..t.clone()
-                    },
-                    0.0,
-                    &mut cost_inputs,
-                )
+                let tokens = MessageTokens {
+                    reasoning: Some(0.0),
+                    ..t.clone()
+                };
+                if raw_stats["requestCount"].as_f64().unwrap_or(1.0) > 1.0 {
+                    pricing.estimate_aggregate_tracked(
+                        model.as_deref(),
+                        &tokens,
+                        0.0,
+                        &mut cost_inputs,
+                    )
+                } else {
+                    pricing.estimate_tracked(model.as_deref(), &tokens, 0.0, &mut cost_inputs)
+                }
             });
             (cost, cost.map(|_| CostSource::Estimated))
         };

@@ -2,13 +2,15 @@ use super::*;
 use serde_json::json;
 use tempfile::TempDir;
 
+const V1_TABLES: &str = "CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); CREATE TABLE message(id TEXT PRIMARY KEY,session_id TEXT,data TEXT,time_created INTEGER); CREATE TABLE part(id TEXT PRIMARY KEY,message_id TEXT,data TEXT,time_created INTEGER);";
+
 fn database(v2: bool) -> (TempDir, Connection) {
     let temp = TempDir::new().unwrap();
     let db = Connection::open(temp.path().join("opencode.db")).unwrap();
     if v2 {
         db.execute_batch("CREATE TABLE session_v2(id TEXT PRIMARY KEY,parent_id TEXT,fork_session_id TEXT,title TEXT,directory TEXT DEFAULT '/project',path TEXT,version TEXT DEFAULT '2.0.15',summary_files INTEGER DEFAULT 0,time_created INTEGER DEFAULT 1000,time_updated INTEGER DEFAULT 2000,cost REAL DEFAULT 0,tokens_input INTEGER DEFAULT 0,tokens_output INTEGER DEFAULT 0,tokens_reasoning INTEGER DEFAULT 0,tokens_cache_read INTEGER DEFAULT 0,tokens_cache_write INTEGER DEFAULT 0); CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER DEFAULT 1000,time_updated INTEGER DEFAULT 2000,data TEXT);").unwrap();
     } else {
-        db.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); CREATE TABLE message(id TEXT PRIMARY KEY,session_id TEXT,data TEXT,time_created INTEGER); CREATE TABLE part(id TEXT PRIMARY KEY,message_id TEXT,data TEXT,time_created INTEGER);").unwrap();
+        db.execute_batch(V1_TABLES).unwrap();
     }
     (temp, db)
 }
@@ -140,19 +142,54 @@ fn v2_estimates_unrecorded_message_costs_outside_forks() {
     crate::pricing::assert_cached_repricing(|pricing| scan(temp.path(), pricing).unwrap());
 }
 #[test]
-fn v2_rejects_incomplete_migrations_and_corruption() {
+fn v2_reads_sessions_not_yet_migrated_and_rejects_corruption() {
     let (temp, db) = database(true);
-    db.execute_batch("INSERT INTO session_v2(id) VALUES('root');CREATE TABLE session(id TEXT);INSERT INTO session VALUES('old');CREATE TABLE kv(key TEXT,value TEXT);INSERT INTO kv VALUES('migration.v1-v2','{\"phase\":\"messages\"}');").unwrap();
-    assert!(
-        scan(temp.path(), &Pricing::bundled())
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("not complete")
+    db.execute_batch(V1_TABLES).unwrap();
+    db.execute_batch("INSERT INTO session_v2(id,title) VALUES('ses_c','Copied');INSERT INTO session(id,parent_id,title,time_created,time_updated,directory) VALUES('ses_d',NULL,'Deleted after copy',1000,2000,'/project'),('ses_c',NULL,'Stale',1000,2000,'/project'),('ses_b','ses_c','Pending child',1000,2000,'/project'),('ses_a',NULL,'Pending',1000,2000,'/project');CREATE TABLE kv(key TEXT,value TEXT);INSERT INTO kv VALUES('migration.v1-v2','{\"phase\":\"sessions\",\"cursor\":\"ses_c\"}');").unwrap();
+    message(&db, "copied", "ses_c", "user", 1, json!({"text":"Copied"}));
+    for id in ["ses_d", "ses_c", "ses_b", "ses_a"] {
+        db.execute("INSERT INTO message VALUES(?1,?1,'{}',1000)", [id])
+            .unwrap();
+        db.execute(
+            "INSERT INTO part VALUES(?1,?1,'{\"type\":\"text\",\"text\":\"Legacy\"}',1000)",
+            [id],
+        )
+        .unwrap();
+    }
+    let sessions = scan(temp.path(), &Pricing::bundled()).unwrap();
+    let mut merged: Vec<_> = sessions
+        .iter()
+        .map(|s| {
+            (
+                s.head.reference.session_id.as_str(),
+                s.head.title.as_str(),
+                s.head
+                    .parent_reference
+                    .as_ref()
+                    .map(|p| p.session_id.as_str()),
+            )
+        })
+        .collect();
+    merged.sort();
+    assert_eq!(
+        merged,
+        [
+            ("ses_a", "Pending", None),
+            ("ses_b", "Pending child", Some("ses_c")),
+            ("ses_c", "Copied", None),
+        ]
     );
+    let mut roots: Vec<_> =
+        enumerate_session_keys(&temp.path().join("opencode.db"), "opencode", true)
+            .unwrap()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+    roots.sort();
+    assert_eq!(roots, ["ses_a", "ses_c"]);
     db.execute("UPDATE kv SET value=?1", ["{\"phase\":\"completed\"}"])
         .unwrap();
-    message(&db, "bad", "root", "assistant", 0, json!({}));
+    message(&db, "bad", "ses_c", "assistant", 0, json!({}));
     assert!(
         scan(temp.path(), &Pricing::bundled())
             .err()

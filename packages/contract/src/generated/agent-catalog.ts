@@ -222,7 +222,7 @@ export const AGENT_CATALOG = [
     toolStrategy: "default",
     support: {
       tier: "partial",
-      usage: "none",
+      usage: "full",
       recordedCost: false,
       toolResults: false,
       reasoning: false,

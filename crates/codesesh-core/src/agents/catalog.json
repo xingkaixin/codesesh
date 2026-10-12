@@ -221,7 +221,7 @@
     "toolStrategy": "default",
     "support": {
       "tier": "partial",
-      "usage": "none",
+      "usage": "full",
       "recordedCost": false,
       "toolResults": false,
       "reasoning": false,

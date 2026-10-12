@@ -148,7 +148,9 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
     let mut cost_inputs = Vec::new();
     let cost = tokens
         .as_ref()
-        .and_then(|t| pricing.estimate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs))
+        .and_then(|t| {
+            pricing.estimate_aggregate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs)
+        })
         .unwrap_or(0.0);
     let tokens = tokens.unwrap_or(MessageTokens {
         input: Some(0.0),

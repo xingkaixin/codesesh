@@ -23,7 +23,7 @@ impl CostBasis {
         let mut delta = 0.0;
         let previous_estimate: f64 = self.inputs.iter().filter_map(|input| input.cost).sum();
         for input in &mut self.inputs {
-            let cost = pricing.estimate(input.model.as_deref(), &input.tokens, input.web_search);
+            let cost = pricing.estimate_input(input);
             delta += cost.unwrap_or(0.0) - input.cost.unwrap_or(0.0);
             input.cost = cost;
             input.generation = pricing.generation();
