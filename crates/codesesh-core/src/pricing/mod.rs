@@ -43,6 +43,30 @@ fn alias(model: &str) -> &str {
     ALIASES.get(model).map(String::as_str).unwrap_or(model)
 }
 
+fn without_date(model: &str) -> &str {
+    for pattern in ["-########", "-####-##-##"] {
+        if let Some(start) = model.len().checked_sub(pattern.len())
+            && model.as_bytes()[start..]
+                .iter()
+                .zip(pattern.bytes())
+                .all(|(byte, expected)| match expected {
+                    b'#' => byte.is_ascii_digit(),
+                    _ => *byte == expected,
+                })
+        {
+            return &model[..start];
+        }
+    }
+    model
+}
+
+fn drops_version(kept: &str, dropped: &str) -> bool {
+    let digits = dropped.bytes().take_while(u8::is_ascii_digit).count();
+    // An 8-digit date names a snapshot of the kept model, not a newer version.
+    let date = digits == 8 && !dropped[8..].starts_with(|c: char| c.is_ascii_alphanumeric());
+    digits > 0 && !date && kept.ends_with(|c: char| c.is_ascii_digit())
+}
+
 impl Pricing {
     pub fn capture_only() -> Self {
         Self::from_prices(HashMap::new())
@@ -97,13 +121,7 @@ impl Pricing {
         if let Some(price) = self.get(&model) {
             return Some(price);
         }
-        let mut versionless = model.split('@').next().unwrap_or("");
-        if let Some((base, suffix)) = versionless.rsplit_once('-')
-            && suffix.len() == 8
-            && suffix.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            versionless = base;
-        }
+        let versionless = without_date(model.split('@').next().unwrap_or(""));
         let stripped = versionless.rsplit('/').next().unwrap_or(versionless);
         let mut candidates = vec![
             versionless.to_owned(),
@@ -130,6 +148,7 @@ impl Pricing {
         for candidate in &candidates {
             for (index, character) in candidate.char_indices().rev() {
                 if matches!(character, '-' | '@')
+                    && !drops_version(&candidate[..index], &candidate[index + 1..])
                     && let Some(price) = self.get(&candidate[..index])
                 {
                     return Some(price);
@@ -194,5 +213,19 @@ mod tests {
         assert_eq!(round_cost(1.0 / 512.0), 0.00195313);
         assert_eq!(round_cost(3.0 / 512.0), 0.00585938);
         assert_eq!(round_cost(1e-100), 0.0);
+    }
+
+    #[test]
+    fn fallback_never_prices_a_model_as_another_version() {
+        let pricing = Pricing::bundled();
+        let price = |model| pricing.resolve_price(model);
+        assert_eq!(price("claude-opus-4-9"), None);
+        assert_eq!(price("claude-opus-4-9-thinking"), None);
+        assert_eq!(price("claude-opus-4-9@eu"), None);
+        assert_eq!(
+            price("claude-sonnet-4-20250514-thinking"),
+            price("claude-sonnet-4")
+        );
+        assert_eq!(price("gpt-4.1-2025-04-14"), price("gpt-4.1"));
     }
 }
