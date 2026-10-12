@@ -166,17 +166,21 @@ pub(super) struct Usage {
     pub(super) tokens: MessageTokens,
     pub(super) total: f64,
     pub(super) cost: Option<f64>,
+    pub(super) cost_source: Option<CostSource>,
+    pub(super) cost_inputs: Vec<crate::pricing::CostInput>,
     pub(super) models: BTreeMap<String, f64>,
 }
-pub(super) fn usage(v: &Value) -> Option<Usage> {
+pub(super) fn usage(v: &Value, pricing: &Pricing) -> Option<Usage> {
     let u = v.get("usage").filter(|v| v.is_object())?;
     let input = count(&u["inputTokens"]);
     let output = count(&u["outputTokens"]);
     let total = count(&u["totalTokens"]);
     let ticks = count(&u["costUsdTicks"]);
-    let cost = (u["usageIsIncomplete"] != true && u["costIsPartial"] != true && ticks > 0.0)
+    let recorded = (u["usageIsIncomplete"] != true && u["costIsPartial"] != true && ticks > 0.0)
         .then_some(ticks / 10_000_000_000.0);
     let mut models = BTreeMap::new();
+    let mut estimate = None;
+    let mut cost_inputs = Vec::new();
     if let Some(m) = u["modelUsage"].as_object() {
         for (name, v) in m {
             if !v.is_object() {
@@ -190,6 +194,21 @@ pub(super) fn usage(v: &Value) -> Option<Usage> {
             };
             if n > 0.0 {
                 models.insert(name.clone(), n);
+            }
+            if n > 0.0 && recorded.is_none() {
+                // inputTokens include the cache and outputTokens include reasoningTokens.
+                let billed = MessageTokens {
+                    input: Some(count(&v["inputTokens"])),
+                    output: Some(count(&v["outputTokens"])),
+                    reasoning: None,
+                    cache_read: positive(count(&v["cachedReadTokens"])),
+                    cache_create: positive(count(&v["cacheCreationTokens"])),
+                };
+                if let Some(cost) =
+                    pricing.estimate_tracked(Some(name), &billed, 0.0, &mut cost_inputs)
+                {
+                    *estimate.get_or_insert(0.0) += cost;
+                }
             }
         }
     }
@@ -206,7 +225,13 @@ pub(super) fn usage(v: &Value) -> Option<Usage> {
         } else {
             add(input, output)
         },
-        cost,
+        cost: recorded.or(estimate),
+        cost_source: if recorded.is_some() {
+            Some(CostSource::Recorded)
+        } else {
+            estimate.map(|_| CostSource::Estimated)
+        },
+        cost_inputs,
         models,
     })
 }
