@@ -23,15 +23,26 @@ struct Child {
     project: PathBuf,
 }
 
-fn child(path: &Path) -> Option<Child> {
-    let subagents = path.parent()?;
-    if subagents.file_name()? != "subagents" {
-        return None;
+/// The session's `subagents` directory for `<session>/subagents/*.jsonl` and for workflow agents
+/// in `<session>/subagents/workflows/<run>/agent-*.jsonl`, whose runs also keep a `journal.jsonl`.
+pub fn subagents_dir(path: &Path) -> Option<&Path> {
+    let dir = path.parent()?;
+    if dir.file_name()? == "subagents" {
+        return Some(dir);
     }
-    let parent = subagents.parent()?;
+    let workflows = dir.parent()?;
+    let subagents = workflows.parent()?;
+    (workflows.file_name()? == "workflows"
+        && subagents.file_name()? == "subagents"
+        && path.file_name()?.to_string_lossy().starts_with("agent-"))
+    .then_some(subagents)
+}
+
+fn child(path: &Path) -> Option<Child> {
+    let parent = subagents_dir(path)?.parent()?;
     let project = parent.parent()?.to_owned();
     let stem = path.file_stem()?.to_string_lossy();
-    let metadata: Value = fs::read(subagents.join(format!("{stem}.meta.json")))
+    let metadata: Value = fs::read(path.with_file_name(format!("{stem}.meta.json")))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or(Value::Null);
