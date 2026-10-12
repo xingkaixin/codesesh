@@ -69,3 +69,45 @@ fn turn_usage_attaches_to_last_answer_and_database_remains_unchanged() {
         .unwrap();
     assert!(!fingerprints(root.path()).unwrap().contains_key("s"));
 }
+
+#[test]
+fn zero_recorded_cost_is_estimated() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("v2/sqlite");
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = Connection::open(dir.join("runtime-state.sqlite")).unwrap();
+    db.execute_batch(include_str!("fixture.sql")).unwrap();
+    db.execute_batch(r#"
+      INSERT INTO local_runtime_sessions (session_id,title) VALUES ('s','');
+      INSERT INTO local_runtime_message_rows (session_id,msg_id,role,turn_id,source,created_at_ms,data_json) VALUES
+      ('s','u','user','t','user',1000,'{"msg_id":"u","msg_content":"Hi"}'),
+      ('s','a','assistant','t','user',2000,'{"msg_id":"a","msg_content":"Hello","finish_reason":"stop"}');
+      INSERT INTO local_runtime_token_usage (session_id,turn_id,model,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_write_tokens,cost_usd) VALUES ('s','t','minimax/MiniMax-M3',1000,100,0,200,0,0);
+    "#).unwrap();
+    drop(db);
+    let home = tempfile::tempdir().unwrap();
+    let controller = crate::pricing::PricingController::load(home.path());
+    controller
+        .stage_remote(&serde_json::json!({"minimax":{"models":{"MiniMax-M3":{"cost":{"input":1,"output":4,"cache_read":0.1}}}}}))
+        .unwrap();
+    controller.publish_pending().unwrap();
+    let pricing = controller.snapshot().unwrap().pricing;
+    let expected = pricing
+        .estimate(
+            Some("minimax/MiniMax-M3"),
+            &MessageTokens {
+                input: Some(1000.0),
+                output: Some(100.0),
+                reasoning: Some(0.0),
+                cache_read: Some(200.0),
+                cache_create: Some(0.0),
+            },
+            0.0,
+        )
+        .unwrap();
+    let head = &scan(root.path(), &pricing).unwrap()[0].head;
+    assert_eq!(
+        (head.stats.total_cost, head.stats.cost_source.clone()),
+        (expected, Some(CostSource::Estimated))
+    );
+}
