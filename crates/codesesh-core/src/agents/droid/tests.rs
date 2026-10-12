@@ -138,6 +138,7 @@ fn reads_transcript_tools_and_session_usage() {
     assert_eq!(stats.total_cache_create_tokens, Some(10.0));
     assert!((stats.total_cost - 0.0013875).abs() < 1e-12);
     assert_eq!(stats.cost_source, Some(CostSource::Estimated));
+    assert!(stats.cost_inputs[0].aggregate);
     assert_eq!(
         main.head.model_usage,
         Some(BTreeMap::from([("claude-sonnet-4-5".into(), 1160.0)]))
