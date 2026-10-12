@@ -228,4 +228,12 @@ mod tests {
         );
         assert_eq!(price("gpt-4.1-2025-04-14"), price("gpt-4.1"));
     }
+
+    #[test]
+    fn aliases_keep_the_model_generation_price() {
+        let pricing = Pricing::bundled();
+        let price = |model| pricing.resolve_price(model);
+        assert_eq!(price("claude-4-opus"), price("claude-opus-4"));
+        assert_eq!(price("gpt-5.1-codex-high"), price("gpt-5.1-codex"));
+    }
 }
