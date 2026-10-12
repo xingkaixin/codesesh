@@ -226,6 +226,8 @@ struct Parser {
     first_time: f64,
     latest_time: f64,
     cwd: Option<String>,
+    custom_title: Option<String>,
+    ai_title: Option<String>,
     prompt_title: Option<String>,
     visible_count: usize,
     usage_by_request: HashMap<String, (Option<String>, MessageTokens)>,
@@ -240,6 +242,8 @@ impl Parser {
             first_time: 0.0,
             latest_time: 0.0,
             cwd: None,
+            custom_title: None,
+            ai_title: None,
             prompt_title: None,
             visible_count: 0,
             usage_by_request: HashMap::new(),
@@ -270,6 +274,21 @@ impl Parser {
         }
         if internal(&record) {
             return Ok(());
+        }
+        match record["type"].as_str() {
+            Some("custom-title") => {
+                if let Some(value) = title(&text(&record["customTitle"])) {
+                    self.custom_title = Some(value);
+                }
+                return Ok(());
+            }
+            Some("ai-title") => {
+                if let Some(value) = title(&text(&record["aiTitle"])) {
+                    self.ai_title = Some(value);
+                }
+                return Ok(());
+            }
+            _ => {}
         }
         self.latest_time = self.latest_time.max(timestamp(&record));
         if self.cwd.is_none() {
@@ -390,9 +409,10 @@ impl Parser {
         let directory = self
             .cwd
             .unwrap_or_else(|| project.to_string_lossy().into_owned());
-        let title = explicit
-            .as_deref()
-            .and_then(title)
+        let title = self
+            .custom_title
+            .or(self.ai_title)
+            .or_else(|| explicit.as_deref().and_then(title))
             .or(self.prompt_title)
             .or_else(|| {
                 title(
@@ -579,6 +599,29 @@ mod tests {
                 .title,
             "fallback"
         );
+    }
+    #[test]
+    fn late_custom_title_outranks_ai_title_and_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project/session.jsonl");
+        let mut records = vec![json!({"type":"user","message":{"role":"user","content":"Prompt"}})];
+        records.extend(vec![json!({"type":"progress"}); 20]);
+        records.push(json!({"type":"ai-title","aiTitle":"Generated","sessionId":"session"}));
+        write(&path, &records);
+        let title = || {
+            scan(root.path(), &Pricing::bundled()).unwrap()[0]
+                .head
+                .title
+                .clone()
+        };
+        assert_eq!(title(), "Generated");
+        records.extend([
+            json!({"type":"custom-title","customTitle":"Old name","sessionId":"session"}),
+            json!({"type":"custom-title","customTitle":"New name","sessionId":"session"}),
+            json!({"type":"ai-title","aiTitle":"Regenerated","sessionId":"session"}),
+        ]);
+        write(&path, &records);
+        assert_eq!(title(), "New name");
     }
     #[test]
     fn missing_source_timestamp_preserves_fractional_file_mtime() {
