@@ -64,36 +64,73 @@ fn bound_rows(db: &Connection, query: &str, params: impl rusqlite::Params) -> Re
         })?
         .collect::<rusqlite::Result<_>>()?)
 }
-fn has_v2(db: &Connection) -> Result<bool> {
+enum Layout {
+    V1,
+    V2,
+    Migrating(HashSet<String>),
+}
+impl Layout {
+    fn v2(&self) -> bool {
+        !matches!(self, Self::V1)
+    }
+    fn legacy_scope(&self, scope: Option<&HashSet<String>>) -> Option<HashSet<String>> {
+        match self {
+            Self::Migrating(legacy) => Some(
+                legacy
+                    .iter()
+                    .filter(|id| scope.is_none_or(|scope| scope.contains(*id)))
+                    .cloned()
+                    .collect(),
+            ),
+            _ => scope.cloned(),
+        }
+    }
+}
+fn layout(db: &Connection, supports_v2: bool) -> Result<Layout> {
+    if !supports_v2 {
+        return Ok(Layout::V1);
+    }
     if !table(db, "session_v2")? {
         if table(db, "session_message")? {
             bail!("Unsupported pre-split OpenCode V2 database");
         }
-        return Ok(false);
+        return Ok(Layout::V1);
     }
     if !table(db, "session_message")? {
         bail!("OpenCode V2 session_message table is missing");
     }
     db.prepare("SELECT id, session_id, type, seq, time_created, time_updated, data FROM session_message LIMIT 0")?;
-    if table(db, "session")?
-        && db.query_row("SELECT EXISTS(SELECT 1 FROM session)", [], |r| {
-            r.get::<_, bool>(0)
-        })?
-    {
-        let state = if table(db, "kv")? {
-            rows(db, "SELECT value FROM kv WHERE key='migration.v1-v2'")?
-                .first()
-                .and_then(|row| row["value"].as_str())
-                .map(serde_json::from_str::<Value>)
-                .transpose()?
-        } else {
-            None
-        };
-        if state.as_ref().and_then(|v| v["phase"].as_str()) != Some("completed") {
-            bail!("OpenCode V1 to V2 migration is not complete");
-        }
+    if !table(db, "session")? {
+        return Ok(Layout::V2);
     }
-    Ok(true)
+    let state = if table(db, "kv")? {
+        rows(db, "SELECT value FROM kv WHERE key='migration.v1-v2'")?
+            .first()
+            .and_then(|row| row["value"].as_str())
+            .map(serde_json::from_str::<Value>)
+            .transpose()?
+    } else {
+        None
+    };
+    if state.as_ref().and_then(|v| v["phase"].as_str()) == Some("completed") {
+        return Ok(Layout::V2);
+    }
+    // OpenCode copies V1 sessions in descending id order, one transaction per session, and
+    // records the last copied id as the cursor; ids at or above it are already in session_v2.
+    let cursor = state.as_ref().and_then(|v| v["cursor"].as_str());
+    let legacy: HashSet<_> = bound_rows(
+        db,
+        "SELECT id FROM session WHERE (?1 IS NULL OR id < ?1) AND id NOT IN (SELECT id FROM session_v2)",
+        [cursor],
+    )?
+    .iter()
+    .map(|row| string(&row["id"]))
+    .collect();
+    Ok(if legacy.is_empty() {
+        Layout::V2
+    } else {
+        Layout::Migrating(legacy)
+    })
 }
 fn string(value: &Value) -> String {
     match value {
@@ -227,6 +264,7 @@ fn selected_ids(sessions: &[Value], v2: bool, parent_column: bool) -> HashSet<St
 fn read_v1(
     db: &Connection,
     agent: &str,
+    layout: &Layout,
     pricing: &Pricing,
     previous: Option<&DatabaseSnapshot>,
     changed: &HashSet<String>,
@@ -242,7 +280,7 @@ fn read_v1(
     let columns = rows(db, "PRAGMA table_info(session)")?;
     let selected = selected_ids(
         &sessions,
-        false,
+        layout.v2(),
         columns.iter().any(|c| c["name"] == "parent_id"),
     );
     let has_messages = table(db, "message")?;

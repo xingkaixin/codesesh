@@ -11,13 +11,14 @@ pub fn enumerate_session_keys(
     let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("enumerating {agent} at {}", path.display()))?;
     db.execute_batch("BEGIN")?;
-    let v2 = supports_v2 && has_v2(&db)?;
+    let layout = layout(&db, supports_v2)?;
+    let v2 = layout.v2();
     if v2 {
         db.prepare("SELECT id,parent_id,fork_session_id,title,directory,path,version,summary_files,time_created,time_updated,cost,tokens_input,tokens_output,tokens_reasoning,tokens_cache_read,tokens_cache_write FROM session_v2 LIMIT 0")?;
     } else {
         db.prepare("SELECT id,title,time_created,time_updated,slug,directory,version,summary_files FROM session LIMIT 0")?;
     }
-    let rows = metadata(&db, v2)?;
+    let rows = metadata(&db, &layout)?;
     let known: HashSet<_> = rows.iter().map(|row| string(&row["id"])).collect();
     let mut roots = rows
         .into_iter()
@@ -72,8 +73,22 @@ fn activity(row: &Value) -> f64 {
         .map(number)
         .unwrap_or_else(|| number(&row["time_created"]))
 }
-pub(super) fn metadata(db: &Connection, v2: bool) -> Result<Vec<Value>> {
-    let table = if v2 { "session_v2" } else { "session" };
+pub(super) fn metadata(db: &Connection, layout: &Layout) -> Result<Vec<Value>> {
+    match layout {
+        Layout::V1 => table_metadata(db, "session"),
+        Layout::V2 => table_metadata(db, "session_v2"),
+        Layout::Migrating(legacy) => {
+            let mut rows = table_metadata(db, "session_v2")?;
+            rows.extend(
+                table_metadata(db, "session")?
+                    .into_iter()
+                    .filter(|row| legacy.contains(&string(&row["id"]))),
+            );
+            Ok(rows)
+        }
+    }
+}
+fn table_metadata(db: &Connection, table: &str) -> Result<Vec<Value>> {
     let columns = rows(db, &format!("PRAGMA table_info({table})"))?;
     let has = |name: &str| columns.iter().any(|row| row["name"] == name);
     let parent = if has("parent_id") {
@@ -93,12 +108,12 @@ pub(super) fn metadata(db: &Connection, v2: bool) -> Result<Vec<Value>> {
 }
 pub(super) fn expanded_scope(
     db: &Connection,
-    v2: bool,
+    layout: &Layout,
     selected: &HashSet<String>,
     previous: Option<&DatabaseSnapshot>,
 ) -> Result<HashSet<String>> {
     let mut children: HashMap<String, Vec<String>> = HashMap::new();
-    for row in metadata(db, v2)? {
+    for row in metadata(db, layout)? {
         if let Some(parent) = row["parent_id"].as_str() {
             children
                 .entry(parent.into())
