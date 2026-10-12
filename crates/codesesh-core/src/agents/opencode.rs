@@ -356,7 +356,7 @@ fn read_v1(
 }
 fn read_v2(
     db: &Connection,
-    _pricing: &Pricing,
+    pricing: &Pricing,
     previous: Option<&DatabaseSnapshot>,
     changed: &HashSet<String>,
     scope: Option<&HashSet<String>>,
@@ -378,8 +378,9 @@ fn read_v2(
         let id = string(&row["session_id"]);
         if selected.contains(&id)
             && changed.contains(&id)
-            && let Some(message) = content::v2_message(&row)?
+            && let Some(mut message) = content::v2_message(&row)?
         {
+            pricing.apply_message_cost(&mut message);
             by_session.entry(id).or_default().push(message);
         }
     }
@@ -399,27 +400,38 @@ fn read_v2(
         if messages.is_empty() {
             continue;
         }
-        let total = [
+        let [input, output, reasoning, cache_read, cache_write] = [
             "tokens_input",
             "tokens_output",
             "tokens_reasoning",
             "tokens_cache_read",
             "tokens_cache_write",
         ]
-        .iter()
-        .map(|key| number(&row[key]))
-        .sum::<f64>();
-        let stats = SessionStats {
+        .map(|key| number(&row[key]));
+        let total = input + output + reasoning + cache_read + cache_write;
+        let mut stats = SessionStats {
             cost_inputs: Vec::new(),
             message_count: messages.len(),
-            total_input_tokens: number(&row["tokens_input"]),
-            total_output_tokens: number(&row["tokens_output"]),
+            total_input_tokens: input + cache_read + cache_write,
+            total_output_tokens: output + reasoning,
             total_cost: number(&row["cost"]),
             cost_source: Some(CostSource::Recorded),
             total_tokens: Some(total),
-            total_cache_read_tokens: Some(number(&row["tokens_cache_read"])),
-            total_cache_create_tokens: Some(number(&row["tokens_cache_write"])),
+            total_cache_read_tokens: Some(cache_read),
+            total_cache_create_tokens: Some(cache_write),
         };
+        // A fork copies its parent's messages, but its session cost only counts fork-local usage.
+        if row["fork_session_id"].is_null() {
+            for message in &messages {
+                stats
+                    .cost_inputs
+                    .extend(message.cost_inputs.iter().cloned());
+                if message.cost_source == Some(CostSource::Estimated) {
+                    stats.total_cost += message.cost.unwrap_or(0.0);
+                    stats.cost_source = Some(CostSource::Estimated);
+                }
+            }
+        }
         let mut usage = BTreeMap::new();
         let mut message_total = 0.0;
         let mut unassigned = 0.0;

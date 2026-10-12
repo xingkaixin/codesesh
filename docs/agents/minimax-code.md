@@ -101,7 +101,7 @@ macOS 实测目录监听未报告持续打开的 WAL 的写入，因此不能只
 - input/output/reasoning/cache_read/cache_write 映射到现有 token 字段。
 - 总 token 包含这些独立计数；不再累加展示消息的 usage 或 context window。
 - 按行的 model 汇总 model_usage，支持会话内更换模型和 BYOK。
-- 有非负 `cost_usd` 时保留，包括明确的 0；缺失时调用现有模型定价估算。
+- `cost_usd` 大于 0 时保留；缺失或为 0 时调用现有模型定价估算。
 - 估算失败保留未定价模型，沿用已有定价补全机制，不编造价格。
 - 有明确 turn_id、该 turn 只有一个模型且存在普通助手消息时，将 turn 用量
   汇总附着到该 turn 最后一条普通助手消息，只附着一次。
@@ -158,7 +158,7 @@ SessionWatchTarget 增加可选 pollForChanges 声明，由现有 SessionWatcher
 
 - columnar 元数据优先于误导性的 record_json；标题兜底、归档、时间窗口、父子会话正确。
 - 正文、思考、工具成功/失败/运行状态、损坏参数、生命周期事件、附件、MCP 和子任务可读。
-- usage 行只累计一次，缓存 token、不同模型、明确零费用和估算费用正确。
+- usage 行只累计一次，缓存 token、不同模型、零费用估算和估算费用正确。
 - 不改变源文件；WAL 写入能被检测；等长原地修改且时间不变时仍使 detail version 变化。
 - 删除、撤回、模型/费用更新正确；未变化会话的内容指纹保持稳定。
 - 指定路径、环境变量优先级和两个默认目录的选择正确。

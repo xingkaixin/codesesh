@@ -277,7 +277,7 @@ fn scan_connection(
             .into_iter()
             .flatten()
             .sum();
-            let recorded = row["cost_usd"].as_f64().filter(|n| *n >= 0.0);
+            let recorded = row["cost_usd"].as_f64().filter(|n| *n > 0.0);
             let mut cost_inputs = Vec::new();
             let cost = recorded.or_else(|| {
                 pricing.estimate_tracked(model.as_deref(), &tokens, 0.0, &mut cost_inputs)
