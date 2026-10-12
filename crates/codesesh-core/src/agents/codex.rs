@@ -359,6 +359,7 @@ fn child_summary(
     let mut usage = Usage::default();
     let mut model = None;
     let mut nickname = None;
+    let mut meta_seen = false;
     let mut latest = None;
     let mut final_output = None;
     let (reader, physical) = rollout::open(source)?;
@@ -377,13 +378,21 @@ fn child_summary(
                 {
                     model = Some(value.trim().to_owned());
                 }
-                if record["type"] == "session_meta" {
+                // A forked rollout replays its parent's session_meta later in the file.
+                if record["type"] == "session_meta" && !meta_seen {
+                    meta_seen = true;
                     nickname = payload["agent_nickname"].as_str().map(str::to_owned);
+                    usage = Usage::new(payload);
+                }
+                if record["type"] == "turn_context" {
+                    usage.turn(payload);
                 }
             }
             "event_msg" if payload["type"] == "token_count" => {
                 usage.consume(payload, model.as_deref(), pricing, &mut [])
             }
+            "token_usage_record" => usage.record(payload),
+            "compacted" => usage.compacted(payload, model.as_deref(), pricing, &mut []),
             "response_item" if payload["type"] == "message" && payload["role"] == "assistant" => {
                 let text = clean(&content(payload, true));
                 if text.is_empty() {
@@ -522,6 +531,10 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
         timestamp: Value,
         #[serde(default)]
         model: Value,
+        #[serde(default)]
+        turn_id: Value,
+        #[serde(default)]
+        compaction_response_id: Value,
         #[serde(default, borrow)]
         item: Option<&'a serde_json::value::RawValue>,
     }
@@ -556,11 +569,12 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
     let payload = if !internal(&record.kind)
         && !internal(&header.kind)
         && (record.kind == "response_item"
+            || record.kind == "token_usage_record"
             || (record.kind == "event_msg" && (header.kind == "token_count" || mcp_completion)))
     {
         serde_json::from_str(raw)?
     } else {
-        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model})
+        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model,"turn_id":header.turn_id,"compaction_response_id":header.compaction_response_id})
     };
     Ok(serde_json::json!({"type":record.kind,"timestamp":record.timestamp,"payload":payload}))
 }
@@ -749,8 +763,8 @@ impl Parser {
             updated: created,
             messages: Vec::new(),
             model: None,
-            usage: Usage::default(),
-            head_usage: Usage::default(),
+            usage: Usage::new(&first["payload"]),
+            head_usage: Usage::new(&first["payload"]),
             head_model: None,
             message_count: 0,
             message_title: None,
@@ -829,11 +843,25 @@ impl Parser {
                 *model = Some(name.trim().to_owned());
                 *head_model = model.clone();
             }
+            if kind == "turn_context" {
+                usage.turn(payload);
+                head_usage.turn(payload);
+            }
             return;
         }
         if kind == "event_msg" && payload["type"] == "token_count" {
             usage.consume(payload, model.as_deref(), pricing, messages);
             head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
+            return;
+        }
+        if kind == "token_usage_record" {
+            usage.record(payload);
+            head_usage.record(payload);
+            return;
+        }
+        if kind == "compacted" {
+            usage.compacted(payload, model.as_deref(), pricing, messages);
+            head_usage.compacted(payload, head_model.as_deref(), pricing, &mut []);
             return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
@@ -1508,6 +1536,140 @@ mod incremental_tests {
                 .collect::<Vec<_>>();
             assert_eq!(texts, ["first", "child result", "last", "same-time"]);
         }
+    }
+
+    #[test]
+    fn replayed_parent_metadata_does_not_rename_the_child() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "00000000-0000-0000-0000-000000000001";
+        let child = "00000000-0000-0000-0000-000000000002";
+        let parent_meta = serde_json::json!({"type":"session_meta","timestamp":500,"payload":{"id":parent,"cwd":"/project"}});
+        let records = [
+            serde_json::json!({"type":"session_meta","timestamp":600,"payload":{"id":child,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent,"agent_nickname":"Pascal"}}),
+            parent_meta.clone(),
+            serde_json::json!({"type":"response_item","timestamp":700,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child result"}]}}),
+        ];
+        for (id, lines) in [(parent, vec![parent_meta]), (child, records.to_vec())] {
+            let contents = lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            std::fs::write(
+                sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
+                contents,
+            )
+            .unwrap();
+        }
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let returned = sessions
+            .iter()
+            .find(|session| session.head.reference.session_id == parent)
+            .unwrap()
+            .detail
+            .messages
+            .iter()
+            .find(|message| message.subagent_id.as_deref() == Some(child))
+            .unwrap();
+        assert_eq!(returned.nickname.as_deref(), Some("Pascal"));
+    }
+
+    #[test]
+    fn remote_compaction_usage_is_counted_once() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        let count = |input: u64, total: u64| {
+            serde_json::json!({"type":"event_msg","timestamp":900,"payload":{"type":"token_count","info":{
+                "total_token_usage":{"input_tokens":total,"total_tokens":total},
+                "last_token_usage":{"input_tokens":input,"total_tokens":input}
+            }}})
+        };
+        let record = |id: &str, input: u64| serde_json::json!({"type":"token_usage_record","timestamp":900,"payload":{"response_id":id,"usage":{"input_tokens":input,"total_tokens":input}}});
+        let compacted = |id: &str| serde_json::json!({"type":"compacted","timestamp":900,"payload":{"compaction_response_id":id,"replacement_history":[]}});
+        let lines = [
+            serde_json::json!({"type":"session_meta","timestamp":700,"payload":{"cwd":"/project"}}),
+            serde_json::json!({"type":"turn_context","timestamp":800,"payload":{"model":"gpt-5"}}),
+            record("normal", 10),
+            count(10, 10),
+            record("remote", 50),
+            compacted("remote"),
+            count(0, 10),
+            record("local", 20),
+            count(20, 30),
+            compacted("local"),
+        ];
+        let contents = lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>();
+        std::fs::write(&path, contents).unwrap();
+        let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.head.stats.total_input_tokens, 80.0);
+    }
+
+    #[test]
+    fn forked_rollouts_do_not_count_replayed_parent_usage() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "019e0000-0000-7000-8000-000000000001";
+        let child = "019f0000-0000-7000-8000-000000000002";
+        let usage = |input: u64, total: u64| {
+            serde_json::json!({"type":"event_msg","timestamp":900,"payload":{"type":"token_count","info":{
+                "total_token_usage":{"input_tokens":total,"total_tokens":total},
+                "last_token_usage":{"input_tokens":input,"total_tokens":input}
+            }}})
+        };
+        let parent_turn = serde_json::json!({"type":"turn_context","timestamp":800,"payload":{"turn_id":"019e0000-0001-7000-8000-000000000001","model":"gpt-5"}});
+        let child_turn = serde_json::json!({"type":"turn_context","timestamp":900,"payload":{"turn_id":"019f0000-0001-7000-8000-000000000002","model":"gpt-5"}});
+        for (id, lines) in [
+            (
+                parent,
+                vec![
+                    serde_json::json!({"type":"session_meta","timestamp":700,"payload":{"id":parent,"cwd":"/project"}}),
+                    parent_turn.clone(),
+                    usage(100, 100),
+                ],
+            ),
+            (
+                child,
+                vec![
+                    serde_json::json!({"type":"session_meta","timestamp":900,"payload":{"id":child,"forked_from_id":parent,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent}}),
+                    parent_turn,
+                    usage(100, 100),
+                    child_turn,
+                    usage(7, 107),
+                ],
+            ),
+        ] {
+            let contents = lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            std::fs::write(
+                sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
+                contents,
+            )
+            .unwrap();
+        }
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let input = |id: &str| {
+            sessions
+                .iter()
+                .find(|session| session.head.reference.session_id == id)
+                .unwrap()
+                .detail
+                .head
+                .stats
+                .total_input_tokens
+        };
+        assert_eq!(input(child), 7.0);
+        assert_eq!(input(parent), 107.0);
     }
 
     #[test]
