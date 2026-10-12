@@ -178,9 +178,12 @@ fn transcript(
             .filter(|v| v.is_object())
             .collect();
         let mut cost_inputs = Vec::new();
-        let (cost, source) = if !costs.is_empty() && costs.iter().all(|c| c["currency"] == "USD") {
+        let usd = (!costs.is_empty() && costs.iter().all(|c| c["currency"] == "USD"))
+            .then(|| costs.iter().map(|c| nonnegative(&c["amount"])).sum::<f64>())
+            .filter(|amount| *amount > 0.0);
+        let (cost, source) = if let Some(amount) = usd {
             (
-                Some(costs.iter().map(|c| nonnegative(&c["amount"])).sum()),
+                Some(amount),
                 Some(
                     if costs
                         .iter()

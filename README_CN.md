@@ -71,7 +71,7 @@ CodeSesh 做三件事：
 
 <!-- repo-fact:agents:end -->
 
-✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用时，CodeSesh 按模型价格估算。
+✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用或记录为 0 时，CodeSesh 按模型价格估算。
 
 Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息、工具调用、步骤时间，以及按请求记录的用量与模型名称；费用按模型价格估算。工具结果仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 
@@ -88,8 +88,9 @@ Cherry Studio 支持 2.x 的 `Data/cherrystudio.sqlite`，包含 Agent 会话（
 和普通助手聊天的当前分支。聊天消息及用量按当前分支统计，不包含其他候选回复。
 普通聊天按用户数据目录分组，Agent 会话保留工作目录。自定义或便携版数据目录可通过
 `CHERRYSTUDIO_USER_DATA_DIR` 指定。用量读取 Cherry 已汇总的消息统计，避免重复累计。
-美元费用保留原值；其他币种在有模型定价时估算美元费用。旧版 1.x 的 `agents.db`、
-独立子 Agent 会话树及恢复会话命令暂不支持。会话统一归属 Cherry Studio，不跨 Agent 去重。
+非零美元费用保留原值；零美元费用和其他币种在有模型定价时估算美元费用。旧版 1.x 的
+`agents.db`、独立子 Agent 会话树及恢复会话命令暂不支持。会话统一归属 Cherry Studio，
+不跨 Agent 去重。
 
 更多 Agent 持续接入中。参见[扩展清单](#扩展新-agent)。
 

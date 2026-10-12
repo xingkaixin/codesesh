@@ -5,6 +5,7 @@ pub(super) fn transcript(
     id: &str,
     fallback: f64,
     initial_model: Option<String>,
+    pricing: &Pricing,
 ) -> Vec<Message> {
     let mut messages: Vec<Message> = Vec::new();
     let mut active: Option<usize> = None;
@@ -32,7 +33,7 @@ pub(super) fn transcript(
                     }
                 }
                 "turn_completed" => {
-                    if let Some(usage) = usage(u) {
+                    if let Some(usage) = usage(u, pricing) {
                         let usage_model = if usage.models.len() == 1 {
                             usage.models.keys().next().cloned()
                         } else {
@@ -58,8 +59,11 @@ pub(super) fn transcript(
                                     m.cost = Some(c)
                                 }
                             }
-                            if usage.cost.is_some() {
-                                m.cost_source = Some(CostSource::Recorded)
+                            m.cost_inputs.extend(usage.cost_inputs);
+                            if usage.cost_source.is_some()
+                                && m.cost_source != Some(CostSource::Estimated)
+                            {
+                                m.cost_source = usage.cost_source
                             }
                         }
                     }
