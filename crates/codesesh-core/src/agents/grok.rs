@@ -12,7 +12,7 @@ mod transcript;
 use helpers::*;
 use transcript::transcript;
 
-pub fn scan(root: &Path, _pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {
+pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {
     let sessions = root.join("sessions");
     let base = if sessions.is_dir() {
         sessions.as_path()
@@ -29,7 +29,7 @@ pub fn scan(root: &Path, _pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession
             continue;
         }
         let path = entry.path();
-        if let Some(session) = parse_source(path)? {
+        if let Some(session) = parse_source(path, pricing)? {
             results.push(session);
         }
     }
@@ -51,19 +51,19 @@ pub fn scan(root: &Path, _pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession
 
 pub fn scan_paths(
     _root: &Path,
-    _pricing: &Pricing,
+    pricing: &Pricing,
     sources: &[PathBuf],
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let mut results = Vec::new();
     for source in sources.iter().collect::<std::collections::BTreeSet<_>>() {
-        if let Some(session) = parse_source(source)? {
+        if let Some(session) = parse_source(source, pricing)? {
             results.push(session);
         }
     }
     Ok(results)
 }
 
-fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
+fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedSession>> {
     let summary: Value = match fs::read(path)
         .ok()
         .and_then(|b| serde_json::from_str(&String::from_utf8_lossy(&b)).ok())
@@ -92,7 +92,13 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
     } else {
         Vec::new()
     };
-    let messages = transcript(&records, &id, created, string(&summary["current_model_id"]));
+    let messages = transcript(
+        &records,
+        &id,
+        created,
+        string(&summary["current_model_id"]),
+        pricing,
+    );
     let message_count = head_message_count(&records, created);
     if message_count == 0 {
         return Ok(None);
@@ -104,6 +110,7 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
     };
     let mut models = BTreeMap::new();
     let mut unknown = false;
+    let mut estimated = false;
     let mut cache_read = 0.0;
     let mut cache_create = 0.0;
     for v in &records {
@@ -113,7 +120,9 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
         if e.method != XAI || e.update["sessionUpdate"] != "turn_completed" {
             continue;
         }
-        let Some(u) = usage(e.update) else { continue };
+        let Some(u) = usage(e.update, pricing) else {
+            continue;
+        };
         stats.total_input_tokens = add(stats.total_input_tokens, u.tokens.input.unwrap_or(0.0));
         stats.total_output_tokens = add(stats.total_output_tokens, u.tokens.output.unwrap_or(0.0));
         stats.total_tokens = Some(add(stats.total_tokens.unwrap_or(0.0), u.total));
@@ -121,6 +130,8 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
         cache_create = add(cache_create, u.tokens.cache_create.unwrap_or(0.0));
         stats.total_cost += u.cost.unwrap_or(0.0);
         unknown |= u.cost.is_none() && u.total > 0.0;
+        estimated |= u.cost_source == Some(CostSource::Estimated);
+        stats.cost_inputs.extend(u.cost_inputs);
         for (m, n) in u.models {
             let total = models.entry(m).or_insert(0.0);
             *total = add(*total, n)
@@ -128,7 +139,11 @@ fn parse_source(path: &Path) -> anyhow::Result<Option<ParsedSession>> {
     }
     stats.total_cache_read_tokens = positive(cache_read);
     stats.total_cache_create_tokens = positive(cache_create);
-    stats.cost_source = (stats.total_cost > 0.0 && !unknown).then_some(CostSource::Recorded);
+    stats.cost_source = (stats.total_cost > 0.0 && !unknown).then_some(if estimated {
+        CostSource::Estimated
+    } else {
+        CostSource::Recorded
+    });
     let first = canonical(&records, created)
         .into_iter()
         .filter_map(|index| unpack(&records[index], created))
@@ -269,7 +284,7 @@ mod tests {
             .unwrap();
         let record = json!({"timestamp":0.0005,"params":{"_meta":{"agentTimestampMs":12.125},"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Fractional"}}}});
         fs::write(root.path().join("updates.jsonl"), record.to_string()).unwrap();
-        let result = parse_source(&source).unwrap().unwrap();
+        let result = parse_source(&source, &Pricing::bundled()).unwrap().unwrap();
         let expected = crate::time::file_mtime_ms(&source).unwrap();
         assert_ne!(expected.fract(), 0.0);
         assert_eq!(result.head.time_created, expected);
@@ -278,6 +293,75 @@ mod tests {
         assert!(
             matches!(result.detail.messages[0].parts[0],MessagePart::Text{time_created:Some(t),..} if t == expected)
         );
+    }
+
+    #[test]
+    fn estimates_turns_without_recorded_ticks() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("sessions/project/s");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("summary.json"),
+            json!({"info":{"id":"s","cwd":"/tmp/project"},"created_at":"2026-09-01T00:00:00Z"})
+                .to_string(),
+        )
+        .unwrap();
+        let usage = json!({"inputTokens":1000,"outputTokens":50,"cachedReadTokens":400,"reasoningTokens":20,"totalTokens":1050});
+        let mut turn = usage.clone();
+        turn["modelUsage"] = json!({"grok-test": usage});
+        let records = [
+            update(
+                1,
+                "p",
+                "user_message_chunk",
+                json!({"content":{"type":"text","text":"Hi"}}),
+            ),
+            update(
+                2,
+                "p",
+                "agent_message_chunk",
+                json!({"content":{"type":"text","text":"Hello"}}),
+            ),
+            update(3, "p", "turn_completed", json!({"usage": turn})),
+        ];
+        fs::write(
+            dir.join("updates.jsonl"),
+            records.map(|r| r.to_string()).join("\n"),
+        )
+        .unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let controller = crate::pricing::PricingController::load(home.path());
+        controller
+            .stage_remote(&json!({"xai":{"models":{"grok-test":{"cost":{"input":2,"output":6,"cache_read":0.5}}}}}))
+            .unwrap();
+        controller.publish_pending().unwrap();
+        let pricing = controller.snapshot().unwrap().pricing;
+        let expected = pricing
+            .estimate(
+                Some("grok-test"),
+                &MessageTokens {
+                    input: Some(1000.0),
+                    output: Some(50.0),
+                    cache_read: Some(400.0),
+                    ..Default::default()
+                },
+                0.0,
+            )
+            .unwrap();
+        let session = &scan(root.path(), &pricing).unwrap()[0];
+        let answer = &session.detail.messages[1];
+        assert_eq!(
+            (answer.cost, answer.cost_source.clone()),
+            (Some(expected), Some(CostSource::Estimated))
+        );
+        assert_eq!(
+            (
+                session.head.stats.total_cost,
+                session.head.stats.cost_source.clone()
+            ),
+            (expected, Some(CostSource::Estimated))
+        );
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     }
 
     fn update(time: i64, prompt: &str, kind: &str, fields: Value) -> Value {
@@ -320,7 +404,7 @@ mod tests {
                 json!({"content":{"type":"text","text":"Replace"},"_meta":{"promptIndex":1}}),
             ),
         ];
-        let messages = transcript(&records, "s", 0.0, None);
+        let messages = transcript(&records, "s", 0.0, None, &Pricing::bundled());
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[2].id, "event-6");
         assert!(matches!(&messages[2].parts[0],MessagePart::Text{text,..} if text=="Replace"));
@@ -371,7 +455,7 @@ mod tests {
                 json!({"usage":{"inputTokens":10,"outputTokens":2,"costUsdTicks":10000000}}),
             ),
         ];
-        let messages = transcript(&records, "s", 0.0, Some("grok".into()));
+        let messages = transcript(&records, "s", 0.0, Some("grok".into()), &Pricing::bundled());
         assert_eq!(messages.len(), 1);
         let m = &messages[0];
         assert_eq!(m.parts.len(), 3);

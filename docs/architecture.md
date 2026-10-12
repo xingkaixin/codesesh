@@ -68,7 +68,7 @@ Hub 不采集，Worker 不提供查询界面。同一数据目录的单机模式
 | `packages/contract/src/generated/` | 从 Rust 导出的 TypeScript wire 类型 |
 
 <!-- repo-fact:agent-source-kinds:start -->
-- 文件系统: Claude Code · Qoder · Qoder CN · Codex · DSH · Grok · Kimi-Cli · Kimi-Code · Pi · oh-my-pi
+- 文件系统: Claude Code · Qoder · Qoder CN · Codex · DSH · Gemini CLI · Grok · Kimi-Cli · Kimi-Code · Pi · oh-my-pi
 - SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code · Antigravity CLI
 <!-- repo-fact:agent-source-kinds:end -->
 
