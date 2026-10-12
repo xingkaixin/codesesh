@@ -1068,21 +1068,78 @@ impl Parser {
                         }),
                         time_created: Some(time),
                     };
-                    let index = if let Some(target) = latest_text.or(*current) {
-                        messages[target].parts.push(part);
-                        target
-                    } else {
-                        messages.push(message(Role::Assistant, part, time, model.clone()));
-                        messages.len() - 1
-                    };
-                    messages[index].mode = Some("tool".into());
-                    if messages[index].model.is_none() {
-                        messages[index].model = model.clone();
-                    }
-                    let position = (index, messages[index].parts.len() - 1);
+                    let position = tool_part(messages, latest_text.or(*current), part, time, model);
                     tool_events.register(&namespace, &name, position);
                     tools.insert(call_id, position);
-                    *current = Some(index);
+                    *current = Some(position.0);
+                }
+            }
+            "web_search_call" | "tool_search_call" | "image_generation_call" => {
+                *pending_plan = None;
+                let (tool, input) = match payload["type"].as_str().unwrap_or("") {
+                    "web_search_call" => ("web_search", payload["action"].clone()),
+                    "tool_search_call" => ("tool_search", payload["arguments"].clone()),
+                    _ => (
+                        "image_generation",
+                        serde_json::json!({"revised_prompt": payload["revised_prompt"]}),
+                    ),
+                };
+                let call_id = payload["call_id"].as_str().map(str::to_owned);
+                let part = MessagePart::Tool {
+                    title: Some(format!("Tool: {tool}")),
+                    tool: tool.into(),
+                    call_id: call_id.clone(),
+                    state: Box::new(ToolState {
+                        // Only tool search records its result in a later item.
+                        status: if tool == "tool_search" {
+                            "running"
+                        } else {
+                            "completed"
+                        }
+                        .into(),
+                        input: Some(clean_value(input)),
+                        output: Some(Value::Null),
+                        error: None,
+                        metadata: None,
+                    }),
+                    time_created: Some(time),
+                };
+                let position = tool_part(messages, latest_text.or(*current), part, time, model);
+                if let Some(call_id) = call_id {
+                    tools.insert(call_id, position);
+                }
+                *current = Some(position.0);
+            }
+            "tool_search_output" => {
+                let found = payload["tools"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|tool| {
+                        let name = tool["name"].as_str().unwrap_or("");
+                        let nested = tool["tools"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|tool| tool["name"].as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        if nested.is_empty() {
+                            name.to_owned()
+                        } else {
+                            format!("{name}: {nested}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if let Some((i, p)) = tools.get(payload["call_id"].as_str().unwrap_or(""))
+                    && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
+                    && state.status == "running"
+                {
+                    state.output = Some(
+                        serde_json::json!([{ "type": "text", "text": found, "time_created": time }]),
+                    );
+                    state.status = "completed".into();
                 }
             }
             "function_call_output" | "custom_tool_call_output" => {
@@ -1250,6 +1307,27 @@ fn assistant_part(
     }
 }
 
+fn tool_part(
+    messages: &mut Vec<Message>,
+    target: Option<usize>,
+    part: MessagePart,
+    time: f64,
+    model: &Option<String>,
+) -> (usize, usize) {
+    let index = if let Some(target) = target {
+        messages[target].parts.push(part);
+        target
+    } else {
+        messages.push(message(Role::Assistant, part, time, model.clone()));
+        messages.len() - 1
+    };
+    messages[index].mode = Some("tool".into());
+    if messages[index].model.is_none() {
+        messages[index].model = model.clone();
+    }
+    (index, messages[index].parts.len() - 1)
+}
+
 fn tool_identity(name: &str, namespace: &str) -> (String, Option<Value>) {
     let mapped = match name {
         "exec_command" => Some("bash"),
@@ -1414,6 +1492,68 @@ mod incremental_tests {
         .unwrap();
         assert_eq!(continued.upserts[0].head.time_updated, 7000.0);
         assert_eq!(continued.upserts[0].detail.messages.len(), 2);
+    }
+
+    #[test]
+    fn built_in_tool_items_are_tool_calls() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        let lines = [
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/project"}}),
+            serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"web_search_call","status":"completed","action":{"type":"search","query":"codex rollout"}}}),
+            serde_json::json!({"type":"response_item","timestamp":3000,"payload":{"type":"tool_search_call","call_id":"search-1","status":"completed","execution":"client","arguments":{"query":"simulator"}}}),
+            serde_json::json!({"type":"response_item","timestamp":3001,"payload":{"type":"tool_search_output","call_id":"search-1","status":"completed","tools":[{"type":"namespace","name":"mcp__sim__","tools":[{"type":"function","name":"boot"},{"type":"function","name":"build"}]}]}}),
+            serde_json::json!({"type":"response_item","timestamp":4000,"payload":{"type":"image_generation_call","id":"ig_1","status":"generating","revised_prompt":"A lighthouse","result":"aW1hZ2U="}}),
+        ];
+        let contents = lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>();
+        std::fs::write(&path, contents).unwrap();
+        let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
+            .unwrap()
+            .unwrap();
+        let tools = detail
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                MessagePart::Tool { tool, state, .. } => Some((
+                    tool.as_str(),
+                    state.status.as_str(),
+                    state.input.clone(),
+                    state.output.clone(),
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tools,
+            [
+                (
+                    "web_search",
+                    "completed",
+                    Some(serde_json::json!({"type":"search","query":"codex rollout"})),
+                    Some(Value::Null)
+                ),
+                (
+                    "tool_search",
+                    "completed",
+                    Some(serde_json::json!({"query":"simulator"})),
+                    Some(
+                        serde_json::json!([{"type":"text","text":"mcp__sim__: boot, build","time_created":3001.0}])
+                    )
+                ),
+                (
+                    "image_generation",
+                    "completed",
+                    Some(serde_json::json!({"revised_prompt":"A lighthouse"})),
+                    Some(Value::Null)
+                ),
+            ]
+        );
     }
 
     #[test]
