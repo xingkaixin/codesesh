@@ -16,6 +16,7 @@ pub mod cursor;
 pub mod deepchat;
 pub mod droid;
 pub mod dsh;
+pub mod gemini_cli;
 pub mod grok;
 mod jsonl;
 pub mod kimi;
@@ -87,6 +88,7 @@ pub fn scan_agent(
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match agent {
         "antigravity-cli" => antigravity_cli::scan(scan_path, data_root, pricing),
+        "gemini-cli" => gemini_cli::scan(scan_path, pricing),
         "claudecode" | "qoder" | "qoder-cn" => claudecode::scan_as(scan_path, agent, pricing),
         "codex" => codex::scan(data_root, pricing),
         "cursor" => cursor::scan(scan_path, pricing),

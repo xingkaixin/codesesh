@@ -39,6 +39,7 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 - Cherry Studio
 - MiniMax Code
 - Antigravity CLI
+- Gemini CLI
 <!-- repo-fact:agents:end -->
 
 ## Core Capabilities

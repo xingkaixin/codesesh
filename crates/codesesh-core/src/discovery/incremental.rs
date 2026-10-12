@@ -1036,6 +1036,9 @@ impl AgentScanner {
                     paths.contains(&session.source)
                 }))
             }
+            "gemini-cli" if paths.is_some() => {
+                agents::gemini_cli::scan_changed(root, pricing, paths.unwrap(), &self.previous)
+            }
             "codex" if paths.is_some() => agents::codex::scan_changed(
                 &self.source.data_root,
                 pricing,

@@ -100,6 +100,10 @@ impl PathEnvironment {
                 .read_env_path("AGY_CONVERSATIONS_DIR")
                 .and_then(|path| path.parent().map(Path::to_owned))
                 .unwrap_or_else(|| self.home.join(".gemini/antigravity-cli")),
+            "gemini-cli" => self
+                .read_env_path("GEMINI_CLI_HOME")
+                .unwrap_or_else(|| self.home.clone())
+                .join(".gemini"),
             "kimi" => self.home_path("KIMI_SHARE_DIR", ".kimi"),
             "kimi-code" => self.home_path("KIMI_CODE_HOME", ".kimi-code"),
             "grok" => self.home_path("GROK_HOME", ".grok"),
@@ -156,6 +160,7 @@ impl PathEnvironment {
             "antigravity-cli" => self
                 .read_env_path("AGY_CONVERSATIONS_DIR")
                 .unwrap_or_else(|| data_root.join("conversations")),
+            "gemini-cli" => data_root.join("tmp"),
             "claudecode" | "qoder" | "qoder-cn" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
             "droid" => data_root.join("sessions"),

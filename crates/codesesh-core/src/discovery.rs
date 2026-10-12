@@ -213,6 +213,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
             "claudecode" | "qoder" | "qoder-cn" => entry.depth() == 2 && name.ends_with(".jsonl"),
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
+            "gemini-cli" => agents::gemini_cli::is_source(&root, entry.path()),
             "grok" => name == "summary.json",
             "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
             "kimi" => entry.depth() == 3 && matches!(name.as_ref(), "metadata.json" | "state.json"),

@@ -299,6 +299,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
+            "gemini-cli" => crate::agents::gemini_cli::is_source(&root, entry.path()),
             "grok" => name == "summary.json",
             "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
             "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),

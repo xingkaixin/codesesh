@@ -72,6 +72,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Cherry Studio
 - MiniMax Code
 - Antigravity CLI
+- Gemini CLI
 <!-- repo-fact:agents:end -->
 
 ## Data Boundary
