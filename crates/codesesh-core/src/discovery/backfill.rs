@@ -299,7 +299,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                             .and_then(Path::file_name)
                             .is_some_and(|name| name == "subagents"))
             }
-            "pi" => name.ends_with(".jsonl"),
+            "pi" | "omp" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "grok" => name == "summary.json",
             "dsh" => {

@@ -211,7 +211,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
         let name = entry.file_name().to_string_lossy();
         let present = match source.agent.as_str() {
             "claudecode" => entry.depth() == 2 && name.ends_with(".jsonl"),
-            "pi" => name.ends_with(".jsonl"),
+            "pi" | "omp" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "grok" => name == "summary.json",
             "kimi" => entry.depth() == 3 && matches!(name.as_ref(), "metadata.json" | "state.json"),

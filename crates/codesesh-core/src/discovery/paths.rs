@@ -92,6 +92,7 @@ impl PathEnvironment {
             "kimi-code" => self.home_path("KIMI_CODE_HOME", ".kimi-code"),
             "grok" => self.home_path("GROK_HOME", ".grok"),
             "pi" => self.home_path("PI_HOME", ".pi"),
+            "omp" => self.home.join(".omp"),
             "dsh" => self.home_path("DSH_HOME", ".dsh"),
             "cursor" => match self.read_env_path("CURSOR_DATA_PATH") {
                 Some(path) => path,
@@ -143,6 +144,12 @@ impl PathEnvironment {
             "claudecode" => data_root.join("projects"),
             "codex" | "kimi" | "kimi-code" | "grok" => data_root.join("sessions"),
             "pi" => data_root.join("agent/sessions"),
+            "omp" => match self.read_env_path("XDG_DATA_HOME") {
+                Some(path) if self.platform != "win32" && path.join("omp").exists() => {
+                    path.join("omp/sessions")
+                }
+                _ => data_root.join("agent/sessions"),
+            },
             "opencode" => {
                 if let Some(value) = self
                     .variables

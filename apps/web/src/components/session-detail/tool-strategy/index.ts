@@ -59,6 +59,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   cursor: buildCursorToolStrategy,
   grok: buildGrokToolStrategy,
   pi: buildPiToolStrategy,
+  omp: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
   dsh: buildDshToolStrategy,
   deepchat: buildDeepChatToolStrategy,

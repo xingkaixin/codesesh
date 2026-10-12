@@ -21,6 +21,7 @@ pub mod kimi;
 pub mod kimi_code;
 mod message_text;
 pub mod minimax_code;
+pub mod omp;
 pub mod opencode;
 pub mod pi;
 pub mod zcode;
@@ -93,6 +94,7 @@ pub fn scan_agent(
         "kimi-code" => kimi_code::scan(scan_path, pricing),
         "grok" => grok::scan(scan_path, pricing),
         "pi" => pi::scan(scan_path, pricing),
+        "omp" => omp::scan(scan_path, pricing),
         "opencode" => opencode::scan_database(scan_path, "opencode", true, pricing),
         "zcode" => zcode::scan(scan_path, pricing),
         "minimax-code" => minimax_code::scan(scan_path, pricing),

@@ -216,6 +216,7 @@ pub(super) fn parse_as(
 ) -> Result<Option<SessionDetail>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
     let mut header = None;
+    let mut slot_title = None;
     struct Entry {
         id: Option<String>,
         parent: Option<String>,
@@ -237,6 +238,8 @@ pub(super) fn parse_as(
             if header.is_none() {
                 header = Some(record);
             }
+        } else if record["type"] == "title" {
+            slot_title = title(&text(&record["title"]));
         } else {
             entries.push(Entry {
                 id: record["id"].as_str().map(str::to_owned),
@@ -274,12 +277,17 @@ pub(super) fn parse_as(
     }
     branch.reverse();
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let id = stem
-        .split_once('_')
-        .map(|(_, id)| id)
-        .filter(|id| !id.is_empty())
-        .unwrap_or(&stem)
-        .to_owned();
+    let header_id = text(&header["id"]).trim().to_owned();
+    // omp names subagent and advisor transcripts after the task, so only their header id is unique.
+    let id = if agent == "omp" && !header_id.is_empty() {
+        header_id
+    } else {
+        stem.split_once('_')
+            .map(|(_, id)| id)
+            .filter(|id| !id.is_empty())
+            .unwrap_or(&stem)
+            .to_owned()
+    };
     let cwd = text(&header["cwd"]).trim().to_owned();
     let cwd = if cwd.is_empty() {
         stem.to_string()
@@ -497,6 +505,8 @@ pub(super) fn parse_as(
         return Ok(None);
     }
     let title = explicit_title
+        .or(slot_title)
+        .or_else(|| title(&text(&header["title"])))
         .or(prompt_title)
         .or_else(|| {
             title(
@@ -507,7 +517,7 @@ pub(super) fn parse_as(
             )
         })
         .unwrap_or_else(|| "Untitled Session".into());
-    Ok(Some(detail(
+    let mut detail = detail(
         SessionReference {
             source_node_id: crate::contract::local_source_node_id(),
             agent_name: agent.into(),
@@ -519,7 +529,11 @@ pub(super) fn parse_as(
         updated,
         messages,
         models,
-    )))
+    );
+    if agent == "omp" {
+        detail.head.parent_reference = super::omp::parent(path);
+    }
+    Ok(Some(detail))
 }
 
 #[cfg(test)]

@@ -114,6 +114,22 @@ export const AGENT_CATALOG = [
     },
   },
   {
+    name: "omp",
+    displayName: "oh-my-pi",
+    icon: "/icon/agent/omp.svg",
+    sourceKind: "filesystem",
+    resumeCommandPrefix: "omp --resume",
+    toolStrategy: "custom",
+    support: {
+      tier: "full",
+      usage: "full",
+      recordedCost: true,
+      toolResults: true,
+      reasoning: true,
+      sessionTree: true,
+    },
+  },
+  {
     name: "opencode",
     displayName: "OpenCode",
     icon: "/icon/agent/opencode.svg",
