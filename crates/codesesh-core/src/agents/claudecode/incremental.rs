@@ -1,4 +1,4 @@
-use super::{Child, Parser, child, common::changed_sources, parse};
+use super::{Child, Parser, child, common::changed_sources, parse, subagents_dir};
 use crate::{
     agents::{ScanDelta, codex::ParsedSession},
     pricing::Pricing,
@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fs::{self, File},
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -32,9 +32,11 @@ struct Checkpoint {
 }
 
 impl Checkpoints {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn parse(
         &mut self,
         path: &Path,
+        agent: &str,
         child: Option<&Child>,
         project: &Path,
         index: &Value,
@@ -50,7 +52,7 @@ impl Checkpoints {
         let metadata = file.metadata()?;
         let len = metadata.len();
         if len < CHECKPOINT_MIN_BYTES || !crate::agents::jsonl::recently_written(&metadata) {
-            return parse(path, child, project, index, children, pricing);
+            return parse(path, agent, child, project, index, children, pricing);
         }
         // Subagent links are resolved while lines are converted, so a changed map needs a full pass.
         let mut resumed = None;
@@ -68,7 +70,7 @@ impl Checkpoints {
         }
         let (mut parser, mut offset, mut tail) = match resumed {
             Some(checkpoint) => (checkpoint.parser, checkpoint.offset, checkpoint.tail),
-            None => (Parser::new(), 0, Vec::new()),
+            None => (Parser::new(agent), 0, Vec::new()),
         };
         file.seek(SeekFrom::Start(offset))?;
         let mut reader = BufReader::with_capacity(64 * 1024, file);
@@ -76,7 +78,7 @@ impl Checkpoints {
         let mut partial = None;
         loop {
             line.clear();
-            let read = reader.read_line(&mut line)?;
+            let read = crate::agents::jsonl::read_line(&mut reader, &mut line)?;
             if read == 0 {
                 break;
             }
@@ -117,6 +119,24 @@ pub fn scan_changed(
     previous: &[crate::agents::SessionRecord],
     checkpoints: &mut Checkpoints,
 ) -> Result<ScanDelta> {
+    scan_changed_as(
+        root,
+        "claudecode",
+        pricing,
+        changed_paths,
+        previous,
+        checkpoints,
+    )
+}
+
+pub fn scan_changed_as(
+    root: &Path,
+    agent: &str,
+    pricing: &Pricing,
+    changed_paths: &[PathBuf],
+    previous: &[crate::agents::SessionRecord],
+    checkpoints: &mut Checkpoints,
+) -> Result<ScanDelta> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -142,11 +162,7 @@ pub fn scan_changed(
     }
     let mut sources = changed_sources(root, &changed, previous)?;
     sources.retain(|path| {
-        path.parent().and_then(Path::parent) == Some(root)
-            || path
-                .parent()
-                .and_then(Path::file_name)
-                .is_some_and(|n| n == "subagents")
+        path.parent().and_then(Path::parent) == Some(root) || subagents_dir(path).is_some()
     });
     let previous_by_source: HashMap<_, _> =
         previous.iter().map(|s| (s.source.as_path(), s)).collect();
@@ -158,11 +174,7 @@ pub fn scan_changed(
     let mut tool_children = HashMap::new();
     let mut containers = BTreeSet::new();
     for source in &sources {
-        if source
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|n| n == "subagents")
-        {
+        if subagents_dir(source).is_some() {
             containers.insert(source.parent().unwrap().to_owned());
         } else if let (Some(project), Some(id)) = (source.parent(), source.file_stem()) {
             containers.insert(project.join(id).join("subagents"));
@@ -240,7 +252,15 @@ pub fn scan_changed(
                         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
                         .unwrap_or(Value::Null)
                 });
-                checkpoints.parse(&source, context, project, index, &tool_children, pricing)?
+                checkpoints.parse(
+                    &source,
+                    agent,
+                    context,
+                    project,
+                    index,
+                    &tool_children,
+                    pricing,
+                )?
             }
         };
         if let Some(old) = old

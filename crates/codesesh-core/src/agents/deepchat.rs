@@ -22,6 +22,7 @@ fn tokens(row: &Value) -> Option<MessageTokens> {
         output: Some(nonnegative(&row["outputTokens"])),
         cache_read: Some(read.min(input)),
         cache_create: Some(create.min((n(&row["inputTokens"]) - read).max(0.0))),
+        cache_create_1h: None,
         reasoning: None,
     })
 }
@@ -148,7 +149,9 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
     let mut cost_inputs = Vec::new();
     let cost = tokens
         .as_ref()
-        .and_then(|t| pricing.estimate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs))
+        .and_then(|t| {
+            pricing.estimate_aggregate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs)
+        })
         .unwrap_or(0.0);
     let tokens = tokens.unwrap_or(MessageTokens {
         input: Some(0.0),
@@ -156,6 +159,7 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
         reasoning: None,
         cache_read: Some(0.0),
         cache_create: Some(0.0),
+        cache_create_1h: None,
     });
     add_stats(
         &mut projection.stats,

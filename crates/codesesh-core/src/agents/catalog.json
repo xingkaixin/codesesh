@@ -17,6 +17,38 @@
     }
   },
   {
+    "name": "qoder",
+    "displayName": "Qoder",
+    "icon": "/icon/agent/qoder.svg",
+    "sourceKind": "filesystem",
+    "resumeCommandPrefix": "qodercli --resume",
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
+  },
+  {
+    "name": "qoder-cn",
+    "displayName": "Qoder CN",
+    "icon": "/icon/agent/qoder.svg",
+    "sourceKind": "filesystem",
+    "resumeCommandPrefix": "qoderclicn --resume",
+    "toolStrategy": "custom",
+    "support": {
+      "tier": "full",
+      "usage": "full",
+      "recordedCost": false,
+      "toolResults": true,
+      "reasoning": true,
+      "sessionTree": true
+    }
+  },
+  {
     "name": "cursor",
     "displayName": "Cursor",
     "icon": "/icon/agent/cursor.svg",
@@ -237,7 +269,7 @@
     "toolStrategy": "default",
     "support": {
       "tier": "partial",
-      "usage": "none",
+      "usage": "full",
       "recordedCost": false,
       "toolResults": false,
       "reasoning": false,

@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -35,8 +35,9 @@ impl ParsedSession {
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let mut titles = HashMap::new();
     if let Ok(file) = File::open(root.join("session_index.jsonl")) {
-        for line in BufReader::new(file).lines().map_while(Result::ok) {
-            if let Ok(record) = serde_json::from_str::<Value>(&line)
+        let mut lines = super::jsonl::JsonLines::new(file);
+        while let Ok(Some(line)) = lines.next_line() {
+            if let Ok(record) = serde_json::from_str::<Value>(line)
                 && let (Some(id), Some(title)) =
                     (record["id"].as_str(), record["thread_name"].as_str())
             {
@@ -126,8 +127,9 @@ pub fn scan_changed(
     }
     let mut titles = HashMap::new();
     if let Ok(file) = File::open(root.join("session_index.jsonl")) {
-        for line in BufReader::new(file).lines() {
-            if let Ok(value) = serde_json::from_str::<Value>(&line?)
+        let mut lines = super::jsonl::JsonLines::new(file);
+        while let Some(line) = lines.next_line()? {
+            if let Ok(value) = serde_json::from_str::<Value>(line)
                 && let (Some(id), Some(title)) =
                     (value["id"].as_str(), value["thread_name"].as_str())
             {
@@ -356,13 +358,16 @@ fn child_summary(
 ) -> Result<(SessionStats, Option<Message>)> {
     let mut usage = Usage::default();
     let mut model = None;
+    let mut service_tier = None;
     let mut nickname = None;
+    let mut meta_seen = false;
     let mut latest = None;
     let mut final_output = None;
     let (reader, physical) = rollout::open(source)?;
     let fallback = crate::time::file_mtime_ms(&physical)?;
-    for line in BufReader::new(reader).lines() {
-        let Ok(record) = serde_json::from_str::<Value>(&line?) else {
+    let mut lines = super::jsonl::JsonLines::new(reader);
+    while let Some(line) = lines.next_line()? {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         let payload = &record["payload"];
@@ -374,13 +379,36 @@ fn child_summary(
                 {
                     model = Some(value.trim().to_owned());
                 }
-                if record["type"] == "session_meta" {
+                // A forked rollout replays its parent's session_meta later in the file.
+                if record["type"] == "session_meta" && !meta_seen {
+                    meta_seen = true;
                     nickname = payload["agent_nickname"].as_str().map(str::to_owned);
+                    usage = Usage::new(payload);
+                }
+                if record["type"] == "turn_context" {
+                    usage.turn(payload);
                 }
             }
-            "event_msg" if payload["type"] == "token_count" => {
-                usage.consume(payload, model.as_deref(), pricing, &mut [])
+            "event_msg" if payload["type"] == "thread_settings_applied" => {
+                if let Some(tier) = payload["thread_settings"]["service_tier"].as_str() {
+                    service_tier = Some(tier.to_owned());
+                }
             }
+            "event_msg" if payload["type"] == "token_count" => usage.consume(
+                payload,
+                model.as_deref(),
+                service_tier.as_deref(),
+                pricing,
+                &mut [],
+            ),
+            "token_usage_record" => usage.record(payload),
+            "compacted" => usage.compacted(
+                payload,
+                model.as_deref(),
+                service_tier.as_deref(),
+                pricing,
+                &mut [],
+            ),
             "response_item" if payload["type"] == "message" && payload["role"] == "assistant" => {
                 let text = clean(&content(payload, true));
                 if text.is_empty() {
@@ -519,6 +547,10 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
         timestamp: Value,
         #[serde(default)]
         model: Value,
+        #[serde(default)]
+        turn_id: Value,
+        #[serde(default)]
+        compaction_response_id: Value,
         #[serde(default, borrow)]
         item: Option<&'a serde_json::value::RawValue>,
     }
@@ -553,11 +585,15 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
     let payload = if !internal(&record.kind)
         && !internal(&header.kind)
         && (record.kind == "response_item"
-            || (record.kind == "event_msg" && (header.kind == "token_count" || mcp_completion)))
+            || record.kind == "token_usage_record"
+            || (record.kind == "event_msg"
+                && (header.kind == "token_count"
+                    || header.kind == "thread_settings_applied"
+                    || mcp_completion)))
     {
         serde_json::from_str(raw)?
     } else {
-        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model})
+        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model,"turn_id":header.turn_id,"compaction_response_id":header.compaction_response_id})
     };
     Ok(serde_json::json!({"type":record.kind,"timestamp":record.timestamp,"payload":payload}))
 }
@@ -653,7 +689,7 @@ impl Checkpoints {
         let mut partial = None;
         loop {
             line.clear();
-            let read = reader.read_line(&mut line)?;
+            let read = super::jsonl::read_line(&mut reader, &mut line)?;
             if read == 0 {
                 break;
             }
@@ -706,6 +742,7 @@ struct Parser {
     updated: f64,
     messages: Vec<Message>,
     model: Option<String>,
+    service_tier: Option<String>,
     usage: Usage,
     head_usage: Usage,
     head_model: Option<String>,
@@ -746,8 +783,9 @@ impl Parser {
             updated: created,
             messages: Vec::new(),
             model: None,
-            usage: Usage::default(),
-            head_usage: Usage::default(),
+            service_tier: None,
+            usage: Usage::new(&first["payload"]),
+            head_usage: Usage::new(&first["payload"]),
             head_model: None,
             message_count: 0,
             message_title: None,
@@ -766,6 +804,7 @@ impl Parser {
             updated,
             messages,
             model,
+            service_tier,
             usage,
             head_usage,
             head_model,
@@ -826,11 +865,33 @@ impl Parser {
                 *model = Some(name.trim().to_owned());
                 *head_model = model.clone();
             }
+            if kind == "turn_context" {
+                usage.turn(payload);
+                head_usage.turn(payload);
+            }
+            return;
+        }
+        if kind == "event_msg" && payload["type"] == "thread_settings_applied" {
+            if let Some(tier) = payload["thread_settings"]["service_tier"].as_str() {
+                *service_tier = Some(tier.to_owned());
+            }
             return;
         }
         if kind == "event_msg" && payload["type"] == "token_count" {
-            usage.consume(payload, model.as_deref(), pricing, messages);
-            head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
+            let tier = service_tier.as_deref();
+            usage.consume(payload, model.as_deref(), tier, pricing, messages);
+            head_usage.consume(payload, head_model.as_deref(), tier, pricing, &mut []);
+            return;
+        }
+        if kind == "token_usage_record" {
+            usage.record(payload);
+            head_usage.record(payload);
+            return;
+        }
+        if kind == "compacted" {
+            let tier = service_tier.as_deref();
+            usage.compacted(payload, model.as_deref(), tier, pricing, messages);
+            head_usage.compacted(payload, head_model.as_deref(), tier, pricing, &mut []);
             return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
@@ -1068,21 +1129,78 @@ impl Parser {
                         }),
                         time_created: Some(time),
                     };
-                    let index = if let Some(target) = latest_text.or(*current) {
-                        messages[target].parts.push(part);
-                        target
-                    } else {
-                        messages.push(message(Role::Assistant, part, time, model.clone()));
-                        messages.len() - 1
-                    };
-                    messages[index].mode = Some("tool".into());
-                    if messages[index].model.is_none() {
-                        messages[index].model = model.clone();
-                    }
-                    let position = (index, messages[index].parts.len() - 1);
+                    let position = tool_part(messages, latest_text.or(*current), part, time, model);
                     tool_events.register(&namespace, &name, position);
                     tools.insert(call_id, position);
-                    *current = Some(index);
+                    *current = Some(position.0);
+                }
+            }
+            "web_search_call" | "tool_search_call" | "image_generation_call" => {
+                *pending_plan = None;
+                let (tool, input) = match payload["type"].as_str().unwrap_or("") {
+                    "web_search_call" => ("web_search", payload["action"].clone()),
+                    "tool_search_call" => ("tool_search", payload["arguments"].clone()),
+                    _ => (
+                        "image_generation",
+                        serde_json::json!({"revised_prompt": payload["revised_prompt"]}),
+                    ),
+                };
+                let call_id = payload["call_id"].as_str().map(str::to_owned);
+                let part = MessagePart::Tool {
+                    title: Some(format!("Tool: {tool}")),
+                    tool: tool.into(),
+                    call_id: call_id.clone(),
+                    state: Box::new(ToolState {
+                        // Only tool search records its result in a later item.
+                        status: if tool == "tool_search" {
+                            "running"
+                        } else {
+                            "completed"
+                        }
+                        .into(),
+                        input: Some(clean_value(input)),
+                        output: Some(Value::Null),
+                        error: None,
+                        metadata: None,
+                    }),
+                    time_created: Some(time),
+                };
+                let position = tool_part(messages, latest_text.or(*current), part, time, model);
+                if let Some(call_id) = call_id {
+                    tools.insert(call_id, position);
+                }
+                *current = Some(position.0);
+            }
+            "tool_search_output" => {
+                let found = payload["tools"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|tool| {
+                        let name = tool["name"].as_str().unwrap_or("");
+                        let nested = tool["tools"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|tool| tool["name"].as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        if nested.is_empty() {
+                            name.to_owned()
+                        } else {
+                            format!("{name}: {nested}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if let Some((i, p)) = tools.get(payload["call_id"].as_str().unwrap_or(""))
+                    && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
+                    && state.status == "running"
+                {
+                    state.output = Some(
+                        serde_json::json!([{ "type": "text", "text": found, "time_created": time }]),
+                    );
+                    state.status = "completed".into();
                 }
             }
             "function_call_output" | "custom_tool_call_output" => {
@@ -1250,6 +1368,27 @@ fn assistant_part(
     }
 }
 
+fn tool_part(
+    messages: &mut Vec<Message>,
+    target: Option<usize>,
+    part: MessagePart,
+    time: f64,
+    model: &Option<String>,
+) -> (usize, usize) {
+    let index = if let Some(target) = target {
+        messages[target].parts.push(part);
+        target
+    } else {
+        messages.push(message(Role::Assistant, part, time, model.clone()));
+        messages.len() - 1
+    };
+    messages[index].mode = Some("tool".into());
+    if messages[index].model.is_none() {
+        messages[index].model = model.clone();
+    }
+    (index, messages[index].parts.len() - 1)
+}
+
 fn tool_identity(name: &str, namespace: &str) -> (String, Option<Value>) {
     let mapped = match name {
         "exec_command" => Some("bash"),
@@ -1336,6 +1475,60 @@ mod incremental_tests {
     }
 
     #[test]
+    fn recorded_service_tier_prices_following_usage() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(
+            "sessions/rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000010.jsonl",
+        );
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut lines = vec![
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/work","model":"gpt-5.5"}}),
+        ];
+        for (step, tier) in [None, Some("priority"), Some("flex"), None]
+            .into_iter()
+            .enumerate()
+        {
+            let time = 2000 + step as u64 * 1000;
+            let settings = match tier {
+                Some(tier) => serde_json::json!({"service_tier":tier}),
+                None => serde_json::json!({}),
+            };
+            lines.extend([
+                serde_json::json!({"type":"event_msg","timestamp":time,"payload":{"type":"thread_settings_applied","thread_settings":settings}}),
+                serde_json::json!({"type":"response_item","timestamp":time + 1,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Next"}]}}),
+                serde_json::json!({"type":"response_item","timestamp":time + 2,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}),
+                serde_json::json!({"type":"event_msg","timestamp":time + 3,"payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":(step + 1) * 1100},"last_token_usage":{"input_tokens":1000,"output_tokens":100}}}}),
+            ]);
+        }
+        std::fs::write(
+            &path,
+            lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+        let pricing = Pricing::bundled();
+        let tokens =
+            serde_json::from_value(serde_json::json!({"input":1000,"output":100})).unwrap();
+        let standard = pricing.estimate(Some("gpt-5.5"), &tokens, 0.0).unwrap();
+        let sessions = scan(root.path(), &pricing).unwrap();
+        let costs = sessions[0]
+            .detail
+            .messages
+            .iter()
+            .filter(|message| message.role == Role::Assistant)
+            .map(|message| message.cost.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(costs.len(), 4);
+        for (cost, multiplier) in costs.into_iter().zip([1.0, 2.5, 0.5, 0.5]) {
+            assert!((cost - standard * multiplier).abs() < 1e-8);
+        }
+        assert!((sessions[0].head.stats.total_cost - standard * 4.5).abs() < 1e-8);
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
+    }
+
+    #[test]
     fn idle_rollouts_do_not_keep_parser_state() {
         let root = tempfile::tempdir().unwrap();
         let path = root
@@ -1414,6 +1607,68 @@ mod incremental_tests {
         .unwrap();
         assert_eq!(continued.upserts[0].head.time_updated, 7000.0);
         assert_eq!(continued.upserts[0].detail.messages.len(), 2);
+    }
+
+    #[test]
+    fn built_in_tool_items_are_tool_calls() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        let lines = [
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/project"}}),
+            serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"web_search_call","status":"completed","action":{"type":"search","query":"codex rollout"}}}),
+            serde_json::json!({"type":"response_item","timestamp":3000,"payload":{"type":"tool_search_call","call_id":"search-1","status":"completed","execution":"client","arguments":{"query":"simulator"}}}),
+            serde_json::json!({"type":"response_item","timestamp":3001,"payload":{"type":"tool_search_output","call_id":"search-1","status":"completed","tools":[{"type":"namespace","name":"mcp__sim__","tools":[{"type":"function","name":"boot"},{"type":"function","name":"build"}]}]}}),
+            serde_json::json!({"type":"response_item","timestamp":4000,"payload":{"type":"image_generation_call","id":"ig_1","status":"generating","revised_prompt":"A lighthouse","result":"aW1hZ2U="}}),
+        ];
+        let contents = lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>();
+        std::fs::write(&path, contents).unwrap();
+        let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
+            .unwrap()
+            .unwrap();
+        let tools = detail
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                MessagePart::Tool { tool, state, .. } => Some((
+                    tool.as_str(),
+                    state.status.as_str(),
+                    state.input.clone(),
+                    state.output.clone(),
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tools,
+            [
+                (
+                    "web_search",
+                    "completed",
+                    Some(serde_json::json!({"type":"search","query":"codex rollout"})),
+                    Some(Value::Null)
+                ),
+                (
+                    "tool_search",
+                    "completed",
+                    Some(serde_json::json!({"query":"simulator"})),
+                    Some(
+                        serde_json::json!([{"type":"text","text":"mcp__sim__: boot, build","time_created":3001.0}])
+                    )
+                ),
+                (
+                    "image_generation",
+                    "completed",
+                    Some(serde_json::json!({"revised_prompt":"A lighthouse"})),
+                    Some(Value::Null)
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -1505,6 +1760,140 @@ mod incremental_tests {
                 .collect::<Vec<_>>();
             assert_eq!(texts, ["first", "child result", "last", "same-time"]);
         }
+    }
+
+    #[test]
+    fn replayed_parent_metadata_does_not_rename_the_child() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "00000000-0000-0000-0000-000000000001";
+        let child = "00000000-0000-0000-0000-000000000002";
+        let parent_meta = serde_json::json!({"type":"session_meta","timestamp":500,"payload":{"id":parent,"cwd":"/project"}});
+        let records = [
+            serde_json::json!({"type":"session_meta","timestamp":600,"payload":{"id":child,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent,"agent_nickname":"Pascal"}}),
+            parent_meta.clone(),
+            serde_json::json!({"type":"response_item","timestamp":700,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child result"}]}}),
+        ];
+        for (id, lines) in [(parent, vec![parent_meta]), (child, records.to_vec())] {
+            let contents = lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            std::fs::write(
+                sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
+                contents,
+            )
+            .unwrap();
+        }
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let returned = sessions
+            .iter()
+            .find(|session| session.head.reference.session_id == parent)
+            .unwrap()
+            .detail
+            .messages
+            .iter()
+            .find(|message| message.subagent_id.as_deref() == Some(child))
+            .unwrap();
+        assert_eq!(returned.nickname.as_deref(), Some("Pascal"));
+    }
+
+    #[test]
+    fn remote_compaction_usage_is_counted_once() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
+        let count = |input: u64, total: u64| {
+            serde_json::json!({"type":"event_msg","timestamp":900,"payload":{"type":"token_count","info":{
+                "total_token_usage":{"input_tokens":total,"total_tokens":total},
+                "last_token_usage":{"input_tokens":input,"total_tokens":input}
+            }}})
+        };
+        let record = |id: &str, input: u64| serde_json::json!({"type":"token_usage_record","timestamp":900,"payload":{"response_id":id,"usage":{"input_tokens":input,"total_tokens":input}}});
+        let compacted = |id: &str| serde_json::json!({"type":"compacted","timestamp":900,"payload":{"compaction_response_id":id,"replacement_history":[]}});
+        let lines = [
+            serde_json::json!({"type":"session_meta","timestamp":700,"payload":{"cwd":"/project"}}),
+            serde_json::json!({"type":"turn_context","timestamp":800,"payload":{"model":"gpt-5"}}),
+            record("normal", 10),
+            count(10, 10),
+            record("remote", 50),
+            compacted("remote"),
+            count(0, 10),
+            record("local", 20),
+            count(20, 30),
+            compacted("local"),
+        ];
+        let contents = lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>();
+        std::fs::write(&path, contents).unwrap();
+        let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.head.stats.total_input_tokens, 80.0);
+    }
+
+    #[test]
+    fn forked_rollouts_do_not_count_replayed_parent_usage() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "019e0000-0000-7000-8000-000000000001";
+        let child = "019f0000-0000-7000-8000-000000000002";
+        let usage = |input: u64, total: u64| {
+            serde_json::json!({"type":"event_msg","timestamp":900,"payload":{"type":"token_count","info":{
+                "total_token_usage":{"input_tokens":total,"total_tokens":total},
+                "last_token_usage":{"input_tokens":input,"total_tokens":input}
+            }}})
+        };
+        let parent_turn = serde_json::json!({"type":"turn_context","timestamp":800,"payload":{"turn_id":"019e0000-0001-7000-8000-000000000001","model":"gpt-5"}});
+        let child_turn = serde_json::json!({"type":"turn_context","timestamp":900,"payload":{"turn_id":"019f0000-0001-7000-8000-000000000002","model":"gpt-5"}});
+        for (id, lines) in [
+            (
+                parent,
+                vec![
+                    serde_json::json!({"type":"session_meta","timestamp":700,"payload":{"id":parent,"cwd":"/project"}}),
+                    parent_turn.clone(),
+                    usage(100, 100),
+                ],
+            ),
+            (
+                child,
+                vec![
+                    serde_json::json!({"type":"session_meta","timestamp":900,"payload":{"id":child,"forked_from_id":parent,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent}}),
+                    parent_turn,
+                    usage(100, 100),
+                    child_turn,
+                    usage(7, 107),
+                ],
+            ),
+        ] {
+            let contents = lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            std::fs::write(
+                sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
+                contents,
+            )
+            .unwrap();
+        }
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let input = |id: &str| {
+            sessions
+                .iter()
+                .find(|session| session.head.reference.session_id == id)
+                .unwrap()
+                .detail
+                .head
+                .stats
+                .total_input_tokens
+        };
+        assert_eq!(input(child), 7.0);
+        assert_eq!(input(parent), 107.0);
     }
 
     #[test]

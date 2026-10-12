@@ -16,6 +16,7 @@ fn tokens(input: f64, output: f64) -> MessageTokens {
         reasoning: None,
         cache_read: None,
         cache_create: None,
+        cache_create_1h: None,
     }
 }
 fn map_tool(tool: &str) -> &str {
@@ -246,7 +247,7 @@ pub(super) fn detail_stats(
         .collect();
     if cost == 0.0 {
         cost = pricing
-            .estimate_tracked(
+            .estimate_aggregate_tracked(
                 model(composer),
                 &tokens(input, output),
                 0.0,

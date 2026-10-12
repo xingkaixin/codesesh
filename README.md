@@ -55,6 +55,8 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | Agent           | Status          | Usage | Recorded cost | Tool results | Reasoning | Session tree | Resume |
 | --------------- | --------------- | ----- | ------------- | ------------ | --------- | ------------ | ------ |
 | Claude Code     | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
+| Qoder           | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
+| Qoder CN        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
 | Cursor          | Supported       | ◐     | —             | ✓            | —         | —            | —      |
 | Kimi-Cli        | Supported       | ◐     | —             | ✓            | ✓         | —            | ✓      |
 | Kimi-Code       | Supported       | ✓     | —             | ✓            | ✓         | —            | ✓      |
@@ -68,7 +70,7 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | DSH             | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | DeepChat        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | Cherry Studio   | Supported       | ✓     | ✓             | ✓            | ✓         | —            | —      |
-| Antigravity CLI | Partial support | —     | —             | —            | —         | ✓            | —      |
+| Antigravity CLI | Partial support | ✓     | —             | —            | —         | ✓            | —      |
 
 <!-- repo-fact:agents:end -->
 
@@ -76,9 +78,9 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 
 oh-my-pi reads the default profile from `~/.omp/agent/sessions`, or from `$XDG_DATA_HOME/omp/sessions` on macOS and Linux when `$XDG_DATA_HOME/omp` exists. Subagent and advisor transcripts appear as child sessions. Named profiles and `model_usage` records (model calls outside the transcript, such as title generation) are not included yet.
 
-Antigravity CLI supports local SQLite conversations, titles, workspace metadata, and tool calls. Tool outcomes and usage remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
+Antigravity CLI supports local SQLite conversations, titles, workspace metadata, tool calls, step times, and per-request token usage with model names; cost is estimated from model prices. Tool outcomes remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
 
-OpenCode supports V1 SQLite history and the V2 `2.0.15` schema. Set `OPENCODE_DB` to select a custom database (relative to `XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` by default). V2 migration must finish before scanning; session totals prevent copied fork history from being counted again. See the [compatibility design](docs/agents/opencode-v2.md) for supported messages and validation limits.
+OpenCode supports V1 SQLite history and the V2 `2.0.15` schema. Set `OPENCODE_DB` to select a custom database (relative to `XDG_DATA_HOME/opencode`, or `~/.local/share/opencode` by default). While OpenCode migrates V1 history to V2, sessions not yet copied are read from the V1 tables; session totals prevent copied fork history from being counted again. See the [compatibility design](docs/agents/opencode-v2.md) for supported messages and validation limits.
 
 MiniMax Code supports CLI 0.4.12 `v2/sqlite/runtime-state.sqlite`, including session trees, reasoning, tools, and usage. Discovery selects the first database under `~/.minimax` or `~/.minimax-code`; `MINIMAX_DATA_DIR` takes precedence over `MAVIS_DATA_DIR`. Refresh detects updates and removals as well as new messages. Media retains available references; legacy ledger layouts and Desktop compatibility are unverified. See the [integration design](docs/agents/minimax-code.md).
 

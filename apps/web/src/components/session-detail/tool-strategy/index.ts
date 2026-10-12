@@ -52,6 +52,8 @@ type ToolStrategyBuilder = (
 const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   "minimax-code": buildMiniMaxCodeToolStrategy,
   claudecode: buildClaudeToolStrategy,
+  qoder: buildClaudeToolStrategy,
+  "qoder-cn": buildClaudeToolStrategy,
   opencode: buildOpencodeToolStrategy,
   kimi: buildKimiToolStrategy,
   "kimi-code": buildKimiCodeToolStrategy,
