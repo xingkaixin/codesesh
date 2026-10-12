@@ -16,6 +16,14 @@ pub struct Usage {
     models: BTreeMap<String, f64>,
     cost_inputs: Vec<crate::pricing::CostInput>,
     assigned_prefix: usize,
+    replaying: Option<uuid::Uuid>,
+    latest_record: Option<(String, [f64; 4])>,
+}
+
+fn uuid_v7(value: &Value) -> Option<uuid::Uuid> {
+    uuid::Uuid::parse_str(value.as_str()?)
+        .ok()
+        .filter(|id| id.get_version_num() == 7)
 }
 
 fn count(value: &Value) -> f64 {
@@ -39,6 +47,26 @@ fn counts(value: &Value) -> [f64; 4] {
 }
 
 impl Usage {
+    /// A forked rollout opens with its parent's history, which the parent already counts.
+    pub fn new(meta: &Value) -> Self {
+        let forked = meta["forked_from_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty());
+        Self {
+            replaying: uuid_v7(&meta["id"]).filter(|_| forked),
+            ..Default::default()
+        }
+    }
+
+    // UUIDv7 ids order by creation time; replayed turns started before the fork did.
+    pub fn turn(&mut self, payload: &Value) {
+        if let Some(session) = self.replaying
+            && uuid_v7(&payload["turn_id"]).is_none_or(|turn| turn >= session)
+        {
+            self.replaying = None;
+        }
+    }
+
     pub fn consume(
         &mut self,
         payload: &Value,
@@ -53,7 +81,7 @@ impl Usage {
         if cumulative > 0.0 && cumulative == self.previous_total {
             return;
         }
-        let mut delta = if last.is_object() {
+        let delta = if last.is_object() {
             counts(last)
         } else if total.is_object() && cumulative > 0.0 {
             let next = counts(total);
@@ -67,6 +95,46 @@ impl Usage {
         if cumulative > 0.0 {
             self.previous_total = cumulative;
         }
+        if self.replaying.is_some() {
+            return;
+        }
+        if delta.iter().any(|count| *count > 0.0) {
+            self.latest_record = None;
+        }
+        self.add(delta, model, pricing, messages);
+    }
+
+    pub fn record(&mut self, payload: &Value) {
+        if self.replaying.is_none() {
+            self.latest_record = payload["response_id"]
+                .as_str()
+                .map(|id| (id.to_owned(), counts(&payload["usage"])));
+        }
+    }
+
+    // Remote compaction reports its usage only in a token_usage_record. Local compaction
+    // advances token_count between that record and the compacted marker.
+    pub fn compacted(
+        &mut self,
+        payload: &Value,
+        model: Option<&str>,
+        pricing: &Pricing,
+        messages: &mut [Message],
+    ) {
+        if let Some((id, delta)) = self.latest_record.take()
+            && payload["compaction_response_id"] == id.as_str()
+        {
+            self.add(delta, model, pricing, messages);
+        }
+    }
+
+    fn add(
+        &mut self,
+        mut delta: [f64; 4],
+        model: Option<&str>,
+        pricing: &Pricing,
+        messages: &mut [Message],
+    ) {
         for count in &mut delta {
             *count = count.max(0.0);
         }
