@@ -16,6 +16,7 @@ fn tokens(input: f64, output: f64) -> MessageTokens {
         reasoning: None,
         cache_read: None,
         cache_create: None,
+        cache_create_1h: None,
     }
 }
 fn map_tool(tool: &str) -> &str {

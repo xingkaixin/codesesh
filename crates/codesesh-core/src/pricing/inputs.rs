@@ -23,12 +23,15 @@ impl super::Price {
             |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
         let read = positive(tokens.cache_read);
         let create = positive(tokens.cache_create);
+        let create_1h = positive(tokens.cache_create_1h).min(create);
         TokenCostBreakdown {
             input: (positive(tokens.input) - read - create).max(0.0) * self.input_cost_per_token,
             output: positive(tokens.output) * self.output_cost_per_token
                 + positive(tokens.reasoning) * self.reasoning_cost_per_token,
             cache_read: read * self.cache_read_cost_per_token,
-            cache_create: create * self.cache_create_cost_per_token,
+            // models.dev lists only the 5-minute write price; Anthropic bills 1-hour writes at 2x input.
+            cache_create: (create - create_1h) * self.cache_create_cost_per_token
+                + create_1h * 2.0 * self.input_cost_per_token,
         }
     }
 }

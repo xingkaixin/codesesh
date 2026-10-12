@@ -239,17 +239,7 @@ impl Transcript {
                         self.messages.len() - 1
                     });
                     self.requests.insert(key.into(), i);
-                    let usage = &raw["usage"];
-                    let n = |k: &str| usage[k].as_f64().unwrap_or(0.0);
-                    let read = n("cache_read_input_tokens");
-                    let create = n("cache_creation_input_tokens");
-                    let tokens = MessageTokens {
-                        input: Some(n("input_tokens") + read + create),
-                        output: Some(n("output_tokens")),
-                        cache_read: Some(read),
-                        cache_create: Some(create),
-                        reasoning: None,
-                    };
+                    let tokens = usage_tokens(&raw["usage"]);
                     let m = &mut self.messages[i];
                     m.model = model.map(str::to_owned);
                     m.cost_inputs.clear();

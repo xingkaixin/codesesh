@@ -166,6 +166,7 @@ pub fn empty_tokens() -> MessageTokens {
         reasoning: None,
         cache_read: None,
         cache_create: None,
+        cache_create_1h: None,
     }
 }
 pub fn add_stats(

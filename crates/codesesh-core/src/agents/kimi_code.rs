@@ -109,6 +109,7 @@ fn scan_directories(
                         output: Some(output),
                         cache_read: Some(cache_read),
                         cache_create: Some(cache_create),
+                        cache_create_1h: None,
                         reasoning: None,
                     };
                     let cost =

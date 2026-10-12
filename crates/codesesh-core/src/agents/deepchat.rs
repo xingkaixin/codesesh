@@ -22,6 +22,7 @@ fn tokens(row: &Value) -> Option<MessageTokens> {
         output: Some(nonnegative(&row["outputTokens"])),
         cache_read: Some(read.min(input)),
         cache_create: Some(create.min((n(&row["inputTokens"]) - read).max(0.0))),
+        cache_create_1h: None,
         reasoning: None,
     })
 }
@@ -156,6 +157,7 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
         reasoning: None,
         cache_read: Some(0.0),
         cache_create: Some(0.0),
+        cache_create_1h: None,
     });
     add_stats(
         &mut projection.stats,

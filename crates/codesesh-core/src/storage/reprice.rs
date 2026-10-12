@@ -311,6 +311,7 @@ mod tests {
             reasoning: None,
             cache_read: None,
             cache_create: None,
+            cache_create_1h: None,
         };
         for index in [1, 2] {
             let message = &mut session.detail.messages[index];

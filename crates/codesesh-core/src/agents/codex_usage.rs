@@ -80,6 +80,7 @@ impl Usage {
             reasoning: (reasoning > 0.0).then_some(reasoning),
             cache_read: (cache_read > 0.0).then_some(cache_read),
             cache_create: None,
+            cache_create_1h: None,
         };
         let cost = pricing.estimate_tracked(model, &tokens, 0.0, &mut self.cost_inputs);
         let model_tokens = input + output + reasoning;
@@ -247,6 +248,7 @@ mod tests {
             reasoning: None,
             cache_read: None,
             cache_create: None,
+            cache_create_1h: None,
         };
         assert_eq!(usage.stats(1).total_output_tokens, 10.0);
         assert_eq!(

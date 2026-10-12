@@ -319,10 +319,6 @@ impl Parser {
                         .filter(|s| !s.is_empty())
                 });
             if let Some(key) = key {
-                let u = &raw["usage"];
-                let n = |k: &str| u[k].as_f64().unwrap_or(0.0);
-                let read = n("cache_read_input_tokens");
-                let create = n("cache_creation_input_tokens");
                 if !self.usage_by_request.contains_key(key) {
                     self.usage_order.push(key.into());
                 }
@@ -334,13 +330,7 @@ impl Parser {
                             .map(str::trim)
                             .filter(|s| !s.is_empty())
                             .map(str::to_owned),
-                        MessageTokens {
-                            input: Some(n("input_tokens") + read + create),
-                            output: Some(n("output_tokens")),
-                            cache_read: Some(read),
-                            cache_create: Some(create),
-                            reasoning: None,
-                        },
+                        usage_tokens(&raw["usage"]),
                     ),
                 );
             }
@@ -718,6 +708,32 @@ mod tests {
         };
         assert_eq!(state.status, "error");
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Failed");
+    }
+    #[test]
+    fn one_hour_cache_writes_cost_twice_input() {
+        let root = tempfile::tempdir().unwrap();
+        write(
+            &root.path().join("project/session.jsonl"),
+            &[
+                json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Inspect files"}}),
+                json!({"type":"assistant","uuid":"a","requestId":"r","message":{"role":"assistant","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":400,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":300}},"content":[{"type":"text","text":"Checking"}]}}),
+            ],
+        );
+        let pricing = Pricing::bundled();
+        let price = pricing.resolve("claude-sonnet-4-5").unwrap();
+        let expected = 10.0 * price.input_cost_per_token
+            + 5.0 * price.output_cost_per_token
+            + 100.0 * price.cache_create_cost_per_token
+            + 300.0 * 2.0 * price.input_cost_per_token;
+        let sessions = scan(root.path(), &pricing).unwrap();
+        let message = &sessions[0].detail.messages[1];
+        assert_eq!(
+            message.tokens.as_ref().unwrap().cache_create_1h,
+            Some(300.0)
+        );
+        assert!((message.cost.unwrap() - expected).abs() < 1e-8);
+        assert!((sessions[0].head.stats.total_cost - expected).abs() < 1e-8);
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     }
     #[test]
     fn tool_result_is_error_marks_tool_failed() {

@@ -183,6 +183,7 @@ fn v1_usage_keeps_reasoning_and_cache_tokens() {
         reasoning: Some(20.0),
         cache_read: Some(100.0),
         cache_create: Some(50.0),
+        cache_create_1h: None,
     };
     assert_eq!(detail.messages[0].tokens.as_ref(), Some(&tokens));
     assert_eq!(

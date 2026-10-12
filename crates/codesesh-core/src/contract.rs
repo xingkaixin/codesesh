@@ -224,6 +224,9 @@ pub struct MessageTokens {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cache_create: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cache_create_1h: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]

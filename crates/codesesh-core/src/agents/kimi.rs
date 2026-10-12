@@ -264,6 +264,7 @@ fn scan_directories(
                     reasoning: None,
                     cache_read: Some(cache_read),
                     cache_create: Some(cache_create),
+                    cache_create_1h: None,
                 };
                 let cost =
                     pricing.estimate_tracked(model.as_deref(), &tokens, 0., &mut stats.cost_inputs);

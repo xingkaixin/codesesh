@@ -111,6 +111,7 @@ pub(super) fn message(row: &Value) -> Result<Option<Message>> {
             reasoning: t["reasoning"].as_f64(),
             cache_read: t["cache"]["read"].as_f64(),
             cache_create: t["cache"]["write"].as_f64(),
+            cache_create_1h: None,
         }
     });
     match kind.as_str() {
