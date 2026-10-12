@@ -71,3 +71,38 @@ fn topic_active_branch_omits_deleted_and_alternative_messages() {
             .contains_key("topic:topic")
     );
 }
+
+#[test]
+fn zero_usd_cost_is_estimated() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("Data");
+    std::fs::create_dir(&dir).unwrap();
+    let db = Connection::open(dir.join("cherrystudio.sqlite")).unwrap();
+    db.execute_batch(include_str!("fixture.sql")).unwrap();
+    db.execute_batch(r#"
+    INSERT INTO topic (id,name,active_node_id) VALUES ('topic','Review','b');
+    INSERT INTO message (id,topic_id,parent_id,role,model_id,data,stats,created_at,updated_at) VALUES
+      ('a','topic',NULL,'user',NULL,'{"parts":[{"type":"text","text":"Hi"}]}',NULL,1000,1000),
+      ('b','topic','a','assistant','openai::gpt-4o','{"parts":[{"type":"text","text":"Hello"}]}','{"inputTokens":1000,"outputTokens":100,"costs":[{"currency":"USD","amount":0}]}',2000,2000);
+    "#).unwrap();
+    drop(db);
+    let pricing = Pricing::bundled();
+    let expected = pricing
+        .estimate(
+            Some("gpt-4o"),
+            &MessageTokens {
+                input: Some(1000.0),
+                output: Some(100.0),
+                reasoning: Some(0.0),
+                cache_read: Some(0.0),
+                cache_create: Some(0.0),
+            },
+            0.0,
+        )
+        .unwrap();
+    let head = &scan(root.path(), &pricing).unwrap()[0].head;
+    assert_eq!(
+        (head.stats.total_cost, head.stats.cost_source.clone()),
+        (expected, Some(CostSource::Estimated))
+    );
+}

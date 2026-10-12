@@ -88,10 +88,10 @@ Cherry Studio supports 2.x `Data/cherrystudio.sqlite`: Agent sessions (Claude Co
 and the selected branch of assistant chats. Chat messages and usage follow that branch;
 alternative replies are excluded. Chats are grouped under the user data directory, while Agent
 sessions retain their workspace. Set `CHERRYSTUDIO_USER_DATA_DIR` for custom or portable data
-directories. Message usage is counted once from Cherry's stored statistics. USD costs are
-preserved; other currencies use USD model estimates when pricing is available. Legacy 1.x
-`agents.db`, independent subagent session trees, and resume commands are not supported.
-Sessions are attributed to Cherry Studio without cross-agent deduplication.
+directories. Message usage is counted once from Cherry's stored statistics. Nonzero USD costs
+are preserved; zero USD costs and other currencies use USD model estimates when pricing is
+available. Legacy 1.x `agents.db`, independent subagent session trees, and resume commands
+are not supported. Sessions are attributed to Cherry Studio without cross-agent deduplication.
 
 More agents coming soon. See the [extension checklist](#extending).
 
