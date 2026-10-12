@@ -71,6 +71,8 @@ CodeSesh currently supports these AI coding agents:
 
 <!-- repo-fact:agents:start -->
 - Claude Code
+- Qoder
+- Qoder CN
 - Cursor
 - Kimi-Cli
 - Kimi-Code

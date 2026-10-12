@@ -210,7 +210,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
         }
         let name = entry.file_name().to_string_lossy();
         let present = match source.agent.as_str() {
-            "claudecode" => entry.depth() == 2 && name.ends_with(".jsonl"),
+            "claudecode" | "qoder" | "qoder-cn" => entry.depth() == 2 && name.ends_with(".jsonl"),
             "pi" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "gemini-cli" => agents::gemini_cli::is_source(&root, entry.path()),
@@ -227,10 +227,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
                             .join("agents/main/wire.jsonl"),
                     )?
             }
-            "dsh" => {
-                entry.depth() == 3
-                    && matches!(name.as_ref(), "session.jsonl" | "session.jsonl.zstd")
-            }
+            "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),
             _ => false,
         };
         if present {

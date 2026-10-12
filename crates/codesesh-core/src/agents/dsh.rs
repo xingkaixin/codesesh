@@ -1,13 +1,25 @@
 mod log;
 mod project;
 
+use super::claudecode::common::InvalidSession;
 use crate::{agents::codex::ParsedSession, contract::*, pricing::Pricing, projects::path_identity};
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
+
+pub fn generation(name: &str) -> Option<(u64, bool)> {
+    static NAME: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"^session(?:\.v(\d+))?\.jsonl(\.zstd)?$").unwrap());
+    let captures = NAME.captures(name)?;
+    let version = captures
+        .get(1)
+        .map_or(Some(0), |version| version.as_str().parse().ok())?;
+    Some((version, captures.get(2).is_some()))
+}
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     scan_selected(root, pricing, None)
@@ -116,7 +128,6 @@ fn scan_selected(
         Err(error) => return Err(error.into()),
     };
     let mut artifacts: Vec<(PathBuf, bool)> = Vec::new();
-    let mut encoding = None;
     for project in projects {
         let project = project?;
         if !project.file_type()?.is_dir() {
@@ -131,13 +142,6 @@ fn scan_selected(
         }
         for entry in fs::read_dir(project.path())? {
             let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            ensure!(
-                !entry.file_type()?.is_file()
-                    || (!name.ends_with(".jsonl") && !name.ends_with(".jsonl.zstd")),
-                "unsupported DSH flat-file layout: {}",
-                entry.path().display()
-            );
             if !entry.file_type()?.is_dir() {
                 continue;
             }
@@ -148,25 +152,30 @@ fn scan_selected(
             }) {
                 continue;
             }
-            let plain = entry.path().join("session.jsonl");
-            let compressed = entry.path().join("session.jsonl.zstd");
-            ensure!(
-                !(plain.exists() && compressed.exists()),
-                "DSH session directory holds both encodings"
-            );
-            let (path, is_compressed) = if compressed.exists() {
-                (compressed, true)
-            } else if plain.exists() {
-                (plain, false)
-            } else {
+            let Ok(files) = fs::read_dir(entry.path()) else {
                 continue;
             };
-            ensure!(
-                encoding.is_none_or(|previous| previous == is_compressed),
-                "DSH session root mixes encodings"
-            );
-            encoding = Some(is_compressed);
-            artifacts.push((path, is_compressed));
+            // A session carried over to a newer format keeps its older files beside the new one.
+            let mut latest = None;
+            for file in files.flatten() {
+                let Some((version, compressed)) = generation(&file.file_name().to_string_lossy())
+                else {
+                    continue;
+                };
+                let Ok(metadata) = fs::metadata(file.path()) else {
+                    continue;
+                };
+                if !metadata.is_file() {
+                    continue;
+                }
+                let order = (version, metadata.modified()?);
+                if latest.as_ref().is_none_or(|(latest, _, _)| order > *latest) {
+                    latest = Some((order, file.path(), compressed));
+                }
+            }
+            if let Some((_, path, compressed)) = latest {
+                artifacts.push((path, compressed));
+            }
         }
     }
     let mut seen = HashSet::new();
@@ -179,7 +188,10 @@ fn scan_selected(
         }) {
             continue;
         }
-        let (header, events) = log::read(&source, compressed)?;
+        let (header, events) = match log::read(&source, compressed) {
+            Err(error) if error.is::<InvalidSession>() => continue,
+            result => result?,
+        };
         let id = project::text(&header["id"]).to_owned();
         let directory = project::text(&header["cwd"]).to_owned();
         let project_key = if header.get("cwd").is_some() {
@@ -190,17 +202,20 @@ fn scan_selected(
         let expected = sessions
             .join(project_key)
             .join(log::encode(&id)?)
-            .join(if compressed {
-                "session.jsonl.zstd"
-            } else {
-                "session.jsonl"
-            });
-        ensure!(
-            source == expected || fs::canonicalize(&source)? == fs::canonicalize(&expected)?,
-            "DSH header does not identify artifact path"
-        );
-        ensure!(seen.insert(id.clone()), "duplicate DSH session id {id}");
-        let projection = project::project(&header, &events, &root.join("attachments/v1"), pricing)?;
+            .join(source.file_name().unwrap());
+        let identified = source == expected
+            || matches!(
+                (fs::canonicalize(&source), fs::canonicalize(&expected)),
+                (Ok(source), Ok(expected)) if source == expected
+            );
+        if !identified || !seen.insert(id.clone()) {
+            continue;
+        }
+        let Ok(projection) =
+            project::project(&header, &events, &root.join("attachments/v1"), pricing)
+        else {
+            continue;
+        };
         if projection.messages.is_empty() {
             continue;
         }
