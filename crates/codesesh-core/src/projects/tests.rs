@@ -140,9 +140,18 @@ fn real_git_worktree_shares_common_directory() {
         "Initial",
     ]);
     run(&["worktree", "add", "-b", "other", worktree.to_str().unwrap()]);
-    let first = resolve_identity_projection(root.to_str().unwrap(), &RealFs, "/unused-home", "v1");
-    let other =
-        resolve_identity_projection(worktree.to_str().unwrap(), &RealFs, "/unused-home", "v1");
+    let first = resolve_identity_projection(
+        root.to_str().unwrap(),
+        &RealFs::default(),
+        "/unused-home",
+        "v1",
+    );
+    let other = resolve_identity_projection(
+        worktree.to_str().unwrap(),
+        &RealFs::default(),
+        "/unused-home",
+        "v1",
+    );
     assert_eq!(first.identity.kind, "git_common_dir");
     assert_eq!(
         first.identity.key.replace('\\', "/"),

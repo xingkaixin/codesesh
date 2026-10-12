@@ -19,7 +19,7 @@ const CHECKPOINT_MIN_BYTES: u64 = 1;
 const CHECKPOINT_LIMIT: usize = 2;
 const CHECKPOINT_TAIL_BYTES: usize = 64;
 
-/// Parser state for the few large transcripts that changed most recently.
+/// Parser state for the few large transcripts still being written.
 #[derive(Default)]
 pub struct Checkpoints(Vec<(PathBuf, Checkpoint)>);
 
@@ -47,8 +47,9 @@ impl Checkpoints {
             .position(|(key, _)| key == path)
             .map(|index| self.0.remove(index).1);
         let mut file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
-        let len = file.metadata()?.len();
-        if len < CHECKPOINT_MIN_BYTES {
+        let metadata = file.metadata()?;
+        let len = metadata.len();
+        if len < CHECKPOINT_MIN_BYTES || !crate::agents::jsonl::recently_written(&metadata) {
             return parse(path, child, project, index, children, pricing);
         }
         // Subagent links are resolved while lines are converted, so a changed map needs a full pass.

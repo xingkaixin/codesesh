@@ -11,6 +11,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    cell::Cell,
     collections::VecDeque,
     process::{Command, Stdio},
     sync::{LazyLock, Mutex},
@@ -43,7 +44,10 @@ pub trait IdentityFs {
     fn git(&self, args: &[&str], cwd: &str) -> Option<String>;
 }
 
-pub struct RealFs;
+#[derive(Default)]
+pub struct RealFs {
+    timed_out: Cell<bool>,
+}
 impl IdentityFs for RealFs {
     fn exists(&self, path: &str) -> bool {
         std::path::Path::new(path).exists()
@@ -80,6 +84,7 @@ impl IdentityFs for RealFs {
                 _ => {
                     let _ = child.kill();
                     let _ = child.wait();
+                    self.timed_out.set(true);
                     return None;
                 }
             }
@@ -165,6 +170,7 @@ pub fn compute_identity(directory: &str) -> ProjectIdentity {
 }
 pub fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection {
     let key = path::normalize(directory);
+    let mut previous = None;
     {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(index) = cache.iter().position(|entry| entry.directory == key) {
@@ -174,6 +180,7 @@ pub fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection
                 cache.push_back(entry);
                 return result;
             }
+            previous = Some(entry.projection);
         }
     }
     let home = if cfg!(windows) {
@@ -182,12 +189,14 @@ pub fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection
         std::env::var("HOME")
     }
     .unwrap_or_default();
-    let result = resolve_identity_projection(
-        directory,
-        &RealFs,
-        &home,
-        PROJECT_IDENTITY_RESOLVER_REVISION,
-    );
+    let fs = RealFs::default();
+    let resolved =
+        resolve_identity_projection(directory, &fs, &home, PROJECT_IDENTITY_RESOLVER_REVISION);
+    // A timed-out git lookup is no evidence of a new identity; switching would re-parse the whole project.
+    let result = match previous {
+        Some(previous) if fs.timed_out.get() => previous,
+        _ => resolved,
+    };
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     cache.push_back(CacheEntry {
         directory: key,
