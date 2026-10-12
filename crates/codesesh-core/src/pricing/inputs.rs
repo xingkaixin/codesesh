@@ -21,6 +21,13 @@ impl super::Price {
     pub fn token_costs(&self, tokens: &MessageTokens) -> TokenCostBreakdown {
         let positive =
             |value: Option<f64>| value.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(0.0);
+        let context =
+            positive(tokens.input).max(positive(tokens.cache_read) + positive(tokens.cache_create));
+        if let Some(tier) = &self.long_context
+            && context > tier.threshold
+        {
+            return tier.price.token_costs(tokens);
+        }
         let read = positive(tokens.cache_read);
         let create = positive(tokens.cache_create);
         TokenCostBreakdown {

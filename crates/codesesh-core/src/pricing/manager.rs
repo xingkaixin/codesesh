@@ -338,6 +338,37 @@ mod tests {
     }
 
     #[test]
+    fn long_context_tier_prices_the_whole_request_and_survives_restart() {
+        let home = tempfile::tempdir().unwrap();
+        let mut manager = PricingManager::load(home.path());
+        assert!(
+            manager.stage_remote(&json!({"openai":{"models":{"tiered-p4":{"cost":{
+            "input":2,"output":8,"cache_read":0.5,"tiers":[
+                {"input":9,"output":9,"tier":{"type":"context","size":400_000}},
+                {"input":4,"output":12,"tier":{"type":"context","size":200_000}},
+                {"input":99,"output":99,"tier":{"type":"output","size":1}}
+            ]}}}}}))
+        );
+        manager.publish_pending().unwrap();
+        let tokens = |input: f64| -> MessageTokens {
+            serde_json::from_value(json!({"input":input,"output":10_000,"cache_read":100_000}))
+                .unwrap()
+        };
+        let reloaded = Pricing::load(home.path());
+        assert_eq!(reloaded.generation(), manager.current().generation());
+        for pricing in [manager.current(), reloaded] {
+            assert_eq!(
+                pricing.estimate(Some("tiered-p4"), &tokens(200_000.0), 0.0),
+                Some(0.33)
+            );
+            assert_eq!(
+                pricing.estimate(Some("tiered-p4"), &tokens(300_000.0), 0.0),
+                Some(0.97)
+            );
+        }
+    }
+
+    #[test]
     fn stale_prices_load_but_invalid_and_future_caches_do_not() {
         let home = tempfile::tempdir().unwrap();
         let path = home.path().join(".codesesh/models-dev-pricing.json");
