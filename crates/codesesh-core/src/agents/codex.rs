@@ -357,6 +357,7 @@ fn child_summary(
     let mut usage = Usage::default();
     let mut model = None;
     let mut nickname = None;
+    let mut meta_seen = false;
     let mut latest = None;
     let mut final_output = None;
     let (reader, physical) = rollout::open(source)?;
@@ -374,7 +375,9 @@ fn child_summary(
                 {
                     model = Some(value.trim().to_owned());
                 }
-                if record["type"] == "session_meta" {
+                // A forked rollout replays its parent's session_meta later in the file.
+                if record["type"] == "session_meta" && !meta_seen {
+                    meta_seen = true;
                     nickname = payload["agent_nickname"].as_str().map(str::to_owned);
                 }
             }
@@ -1505,6 +1508,43 @@ mod incremental_tests {
                 .collect::<Vec<_>>();
             assert_eq!(texts, ["first", "child result", "last", "same-time"]);
         }
+    }
+
+    #[test]
+    fn replayed_parent_metadata_does_not_rename_the_child() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "00000000-0000-0000-0000-000000000001";
+        let child = "00000000-0000-0000-0000-000000000002";
+        let parent_meta = serde_json::json!({"type":"session_meta","timestamp":500,"payload":{"id":parent,"cwd":"/project"}});
+        let records = [
+            serde_json::json!({"type":"session_meta","timestamp":600,"payload":{"id":child,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent,"agent_nickname":"Pascal"}}),
+            parent_meta.clone(),
+            serde_json::json!({"type":"response_item","timestamp":700,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child result"}]}}),
+        ];
+        for (id, lines) in [(parent, vec![parent_meta]), (child, records.to_vec())] {
+            let contents = lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            std::fs::write(
+                sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
+                contents,
+            )
+            .unwrap();
+        }
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let returned = sessions
+            .iter()
+            .find(|session| session.head.reference.session_id == parent)
+            .unwrap()
+            .detail
+            .messages
+            .iter()
+            .find(|message| message.subagent_id.as_deref() == Some(child))
+            .unwrap();
+        assert_eq!(returned.nickname.as_deref(), Some("Pascal"));
     }
 
     #[test]
