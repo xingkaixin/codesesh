@@ -1059,6 +1059,9 @@ impl AgentScanner {
             "pi" if paths.is_some() => {
                 agents::pi::scan_changed(root, pricing, paths.unwrap(), &self.previous)
             }
+            "omp" if paths.is_some() => {
+                agents::omp::scan_changed(root, pricing, paths.unwrap(), &self.previous)
+            }
             "dsh" if paths.is_some() => {
                 agents::dsh::scan_changed(root, pricing, paths.unwrap(), &self.previous)
             }

@@ -65,6 +65,7 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | Codex           | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
 | Grok            | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
 | Pi              | Supported       | ✓     | ✓             | ✓            | ✓         | —            | ✓      |
+| oh-my-pi        | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
 | OpenCode        | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
 | ZCode           | Supported       | ◐     | ✓             | ✓            | ✓         | ✓            | —      |
 | MiniMax Code    | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
@@ -77,6 +78,8 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 <!-- repo-fact:agents:end -->
 
 ✓ available · ◐ partial (for example, input and output tokens only) · — not available. When an agent records no cost or a cost of 0, CodeSesh estimates cost from model prices.
+
+oh-my-pi reads the default profile from `~/.omp/agent/sessions`, or from `$XDG_DATA_HOME/omp/sessions` on macOS and Linux when `$XDG_DATA_HOME/omp` exists. Subagent and advisor transcripts appear as child sessions. Named profiles and `model_usage` records (model calls outside the transcript, such as title generation) are not included yet.
 
 Antigravity CLI supports local SQLite conversations, titles, workspace metadata, tool calls, step times, and per-request token usage with model names; cost is estimated from model prices. Tool outcomes remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](../../docs/agents/antigravity-cli.md).
 

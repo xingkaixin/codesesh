@@ -77,9 +77,9 @@ fn platform_paths_and_opencode_override_match_existing_rules() {
     assert_eq!(selected_sources(&env, &["CODEX".into()]).len(), 1);
 }
 #[test]
-fn counts_and_registry_cover_all_eighteen_agents() {
+fn counts_and_registry_cover_all_nineteen_agents() {
     let catalog = agents::catalog_counts(&HashMap::from([("kimi".into(), 2), ("codex".into(), 3)]));
-    assert_eq!(catalog.len(), 18);
+    assert_eq!(catalog.len(), 19);
     assert_eq!(catalog.iter().map(|agent| agent.count).sum::<usize>(), 5);
     assert_eq!(catalog.iter().filter(|agent| agent.available).count(), 2);
 }
@@ -930,6 +930,117 @@ fn qoder_cn_reads_claude_layout_from_its_override_and_reports_deleted_subagents(
     batch.on_reject.take();
     std::fs::remove_file(&child).unwrap();
     let deleted = scanner.refresh(Some(&[child])).unwrap();
+    assert_eq!(deleted.removed, [removed]);
+}
+
+#[test]
+fn omp_reads_xdg_sessions_with_nested_subagents_and_reports_deleted_advisors() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut env = environment(temporary.path());
+    let default = env.home.join(".omp/agent/sessions");
+    let xdg = temporary.path().join("xdg");
+    env.variables
+        .insert("XDG_DATA_HOME".into(), xdg.to_string_lossy().into_owned());
+    assert_eq!(env.source("omp").unwrap().scan_path, default);
+    std::fs::create_dir_all(xdg.join("omp")).unwrap();
+    let source = env.source("omp").unwrap();
+    assert_eq!(source.scan_path, xdg.join("omp/sessions"));
+    let mut windows = env.clone();
+    windows.platform = "win32".into();
+    assert_eq!(windows.source("omp").unwrap().scan_path, default);
+    let stem = "2026-09-28T08-00-00-000Z_019a0000-0000-7000-8000-00000000000a";
+    let project = source.scan_path.join("--work-omp--");
+    let main = project.join(format!("{stem}.jsonl"));
+    let artifacts = project.join(stem);
+    let explore = artifacts.join("0-Explore.jsonl");
+    let find = artifacts.join("0-Explore/0-Find.jsonl");
+    let advisor = artifacts.join("__advisor.jsonl");
+    let write = |path: &Path, records: &[serde_json::Value]| {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let lines: Vec<_> = records.iter().map(serde_json::Value::to_string).collect();
+        std::fs::write(path, lines.join("\n")).unwrap();
+    };
+    write(
+        &main,
+        &[
+            serde_json::json!({"type":"title","v":1,"title":"Port the parser to omp","source":"auto"}),
+            serde_json::json!({"type":"session","version":3,"id":"019a0000-0000-7000-8000-00000000000a","title":"Port the parser","timestamp":"2026-09-28T08:00:00.000Z","cwd":"/work/omp"}),
+            serde_json::json!({"type":"message","id":"a1","parentId":null,"timestamp":"2026-09-28T08:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Port the parser"}]}}),
+            serde_json::json!({"type":"message","id":"a2","parentId":"a1","timestamp":"2026-09-28T08:00:05.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"toolu_1","name":"task","arguments":{"agent":"explore"}}],"provider":"anthropic","model":"claude-opus-5-5","usage":{"input":100,"output":50,"cacheRead":1000,"cacheWrite":200,"totalTokens":1350,"cost":{"total":0}}}}),
+            serde_json::json!({"type":"model_usage","id":"a3","parentId":"a2","timestamp":"2026-09-28T08:00:06.000Z","model":"claude-haiku-5","usage":{"input":20,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":25}}),
+            serde_json::json!({"type":"message","id":"a4","parentId":"a2","timestamp":"2026-09-28T08:00:50.000Z","message":{"role":"toolResult","toolCallId":"toolu_1","toolName":"task","content":[{"type":"text","text":"done"}],"isError":false}}),
+            serde_json::json!({"type":"message","id":"a5","parentId":"a4","timestamp":"2026-09-28T08:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"provider":"anthropic","model":"claude-opus-5-5","usage":{"input":10,"output":5,"cacheRead":500,"cacheWrite":0,"totalTokens":515,"cost":{"total":0}}}}),
+            serde_json::json!({"type":"title_change","id":"a6","parentId":"a5","timestamp":"2026-09-28T08:01:10.000Z","title":"Port the parser to omp","previousTitle":"Port the parser"}),
+        ],
+    );
+    let child = |path: &Path, id: &str, parent: &Path, text: &str| {
+        write(
+            path,
+            &[
+                serde_json::json!({"type":"session","version":3,"id":id,"timestamp":"2026-09-28T08:00:10.000Z","cwd":"/work/omp","parentSession":parent}),
+                serde_json::json!({"type":"message","id":"b1","parentId":null,"timestamp":"2026-09-28T08:00:11.000Z","message":{"role":"user","content":[{"type":"text","text":text}]}}),
+            ],
+        )
+    };
+    child(
+        &explore,
+        "019a0000-0000-7000-8000-00000000001a",
+        &main,
+        "Find the parser",
+    );
+    child(
+        &find,
+        "019a0000-0000-7000-8000-00000000002a",
+        &explore,
+        "Grep for parse",
+    );
+    child(
+        &advisor,
+        "019a0000-0000-7000-8000-00000000003a",
+        &main,
+        "Review the plan",
+    );
+    std::fs::create_dir_all(artifacts.join("btw-history")).unwrap();
+    std::fs::write(artifacts.join("btw-history/1790582450000.json"), "{}").unwrap();
+    let db = temporary.path().join("cache.db");
+    let mut scanner = AgentScanner::new(
+        source.clone(),
+        db.clone(),
+        std::sync::Arc::new(Pricing::bundled()),
+    );
+    let mut batch = scanner.refresh(None).unwrap();
+    assert_eq!(batch.sessions.len(), 4);
+    let session = |id: &str| {
+        batch
+            .sessions
+            .iter()
+            .find(|s| {
+                s.head.reference.session_id == format!("019a0000-0000-7000-8000-00000000{id}")
+            })
+            .unwrap()
+    };
+    let parent = session("000a");
+    assert_eq!(parent.head.reference.agent_name, "omp");
+    assert_eq!(parent.head.title, "Port the parser to omp");
+    assert_eq!(parent.head.parent_reference, None);
+    assert_eq!(parent.head.stats.total_input_tokens, 1810.0);
+    assert_eq!(parent.head.stats.total_output_tokens, 55.0);
+    let message = &parent.detail.messages[1];
+    assert_eq!(message.agent.as_deref(), Some("omp"));
+    let crate::contract::MessagePart::Tool { state, .. } = &message.parts[0] else {
+        panic!()
+    };
+    assert_eq!(state.status, "completed");
+    let reference = |id: &str| Some(session(id).head.reference.clone());
+    assert_eq!(session("001a").head.parent_reference, reference("000a"));
+    assert_eq!(session("002a").head.parent_reference, reference("001a"));
+    assert_eq!(session("003a").head.parent_reference, reference("000a"));
+    let removed = session("003a").head.reference.clone();
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    cache.publish(&mut batch.sessions).unwrap();
+    batch.on_reject.take();
+    std::fs::remove_file(&advisor).unwrap();
+    let deleted = scanner.refresh(Some(&[advisor])).unwrap();
     assert_eq!(deleted.removed, [removed]);
 }
 

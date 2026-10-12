@@ -32,6 +32,7 @@ CodeSesh scans supported local AI coding session stores and presents them throug
 - Codex
 - Grok
 - Pi
+- oh-my-pi
 - OpenCode
 - ZCode
 - DSH

@@ -108,6 +108,7 @@ impl PathEnvironment {
             "kimi-code" => self.home_path("KIMI_CODE_HOME", ".kimi-code"),
             "grok" => self.home_path("GROK_HOME", ".grok"),
             "pi" => self.home_path("PI_CODING_AGENT_DIR", ".pi/agent"),
+            "omp" => self.home.join(".omp"),
             "dsh" => self.home_path("DSH_HOME", ".dsh"),
             "cursor" => match self.read_env_path("CURSOR_DATA_PATH") {
                 Some(path) => path,
@@ -168,6 +169,12 @@ impl PathEnvironment {
                 .read_env_path("PI_CODING_AGENT_SESSION_DIR")
                 .or_else(|| self.pi_settings_session_dir(&data_root))
                 .unwrap_or_else(|| data_root.join("sessions")),
+            "omp" => match self.read_env_path("XDG_DATA_HOME") {
+                Some(path) if self.platform != "win32" && path.join("omp").exists() => {
+                    path.join("omp/sessions")
+                }
+                _ => data_root.join("agent/sessions"),
+            },
             "opencode" => {
                 if let Some(value) = self
                     .variables

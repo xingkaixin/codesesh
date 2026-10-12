@@ -63,6 +63,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   droid: buildDroidToolStrategy,
   grok: buildGrokToolStrategy,
   pi: buildPiToolStrategy,
+  omp: buildPiToolStrategy,
   zcode: buildZCodeToolStrategy,
   dsh: buildDshToolStrategy,
   deepchat: buildDeepChatToolStrategy,

@@ -211,7 +211,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
         let name = entry.file_name().to_string_lossy();
         let present = match source.agent.as_str() {
             "claudecode" | "qoder" | "qoder-cn" => entry.depth() == 2 && name.ends_with(".jsonl"),
-            "pi" => name.ends_with(".jsonl"),
+            "pi" | "omp" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "gemini-cli" => agents::gemini_cli::is_source(&root, entry.path()),
             "grok" => name == "summary.json",

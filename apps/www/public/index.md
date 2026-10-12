@@ -65,6 +65,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Codex
 - Grok
 - Pi
+- oh-my-pi
 - OpenCode
 - ZCode
 - DSH

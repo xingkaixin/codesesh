@@ -80,6 +80,7 @@ CodeSesh currently supports these AI coding agents:
 - Codex
 - Grok
 - Pi
+- oh-my-pi
 - OpenCode
 - ZCode
 - DSH

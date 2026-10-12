@@ -297,7 +297,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
                     && (entry.depth() == 2
                         || crate::agents::claudecode::subagents_dir(entry.path()).is_some())
             }
-            "pi" => name.ends_with(".jsonl"),
+            "pi" | "omp" => name.ends_with(".jsonl"),
             "antigravity-cli" => name.ends_with(".db"),
             "gemini-cli" => crate::agents::gemini_cli::is_source(&root, entry.path()),
             "grok" => name == "summary.json",

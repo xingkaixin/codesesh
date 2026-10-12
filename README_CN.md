@@ -62,6 +62,7 @@ CodeSesh 做三件事：
 | Codex           | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | ✓        |
 | Grok            | 已支持   | ✓    | ✓        | ✓        | ✓    | ✓      | ✓        |
 | Pi              | 已支持   | ✓    | ✓        | ✓        | ✓    | —      | ✓        |
+| oh-my-pi        | 已支持   | ✓    | ✓        | ✓        | ✓    | ✓      | ✓        |
 | OpenCode        | 已支持   | ✓    | ✓        | ✓        | ✓    | ✓      | ✓        |
 | ZCode           | 已支持   | ◐    | ✓        | ✓        | ✓    | ✓      | —        |
 | MiniMax Code    | 已支持   | ✓    | ✓        | ✓        | ✓    | ✓      | ✓        |
@@ -74,6 +75,8 @@ CodeSesh 做三件事：
 <!-- repo-fact:agents:end -->
 
 ✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用或记录为 0 时，CodeSesh 按模型价格估算。
+
+oh-my-pi 读取默认 profile 的 `~/.omp/agent/sessions`；在 macOS 和 Linux 上，若 `$XDG_DATA_HOME/omp` 存在，则读取 `$XDG_DATA_HOME/omp/sessions`。子 Agent 和 advisor 会话显示为子会话。暂不包含命名 profile 和 `model_usage` 记录（标题生成等对话之外的模型调用）。
 
 Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息、工具调用、步骤时间，以及按请求记录的用量与模型名称；费用按模型价格估算。工具结果仍为未知，暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 
