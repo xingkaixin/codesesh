@@ -351,6 +351,7 @@ pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
                         reasoning: None,
                         cache_read: (read != 0.0).then_some(read),
                         cache_create: (write != 0.0).then_some(write),
+                        cache_create_1h: None,
                     };
                     let recorded =
                         coerced_number(&u["cost"]["total"]).filter(|v| v.is_finite() && *v != 0.0);

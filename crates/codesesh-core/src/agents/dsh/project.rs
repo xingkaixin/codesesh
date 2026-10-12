@@ -330,6 +330,7 @@ impl Projector<'_> {
                 reasoning: (reasoning > 0.0).then_some(reasoning),
                 cache_read: (read > 0.0).then_some(read),
                 cache_create: (create > 0.0).then_some(create),
+                cache_create_1h: None,
             };
             m.cost =
                 self.pricing

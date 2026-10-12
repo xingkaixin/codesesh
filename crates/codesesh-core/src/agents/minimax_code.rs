@@ -265,6 +265,7 @@ fn scan_connection(
                 reasoning: Some(nonnegative(&row["reasoning_tokens"])),
                 cache_read: Some(nonnegative(&row["cache_read_tokens"])),
                 cache_create: Some(nonnegative(&row["cache_write_tokens"])),
+                cache_create_1h: None,
             };
             let total = [
                 tokens.input,

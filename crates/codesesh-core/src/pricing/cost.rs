@@ -85,6 +85,7 @@ impl Pricing {
             reasoning: None,
             cache_read: stats.total_cache_read_tokens,
             cache_create: stats.total_cache_create_tokens,
+            cache_create_1h: None,
         };
         if let Some(cost) =
             self.estimate_aggregate_tracked(model, &tokens, 0.0, &mut stats.cost_inputs)

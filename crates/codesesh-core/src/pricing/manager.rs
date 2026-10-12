@@ -309,6 +309,7 @@ mod tests {
             reasoning: None,
             cache_read: None,
             cache_create: None,
+            cache_create_1h: None,
         };
         let (_, misses) = capture_misses(|| {
             assert_eq!(old.estimate(Some("new-p3-model"), &tokens, 0.0), None);

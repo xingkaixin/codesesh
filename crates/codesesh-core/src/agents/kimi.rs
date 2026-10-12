@@ -424,6 +424,7 @@ fn status_tokens(record: &Value) -> Option<MessageTokens> {
         reasoning: None,
         cache_read: Some(cache_read),
         cache_create: Some(cache_create),
+        cache_create_1h: None,
     })
 }
 // The parent wire mirrors these records as SubagentEvent entries, which are not read.
