@@ -89,6 +89,58 @@ fn v2_preserves_sequence_tools_tokens_children_and_source() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 #[test]
+fn v2_estimates_unrecorded_message_costs_outside_forks() {
+    let (temp, db) = database(true);
+    db.execute_batch("INSERT INTO session_v2(id,cost) VALUES('root',0.5);INSERT INTO session_v2(id,fork_session_id) VALUES('fork','root');").unwrap();
+    for session in ["root", "fork"] {
+        message(
+            &db,
+            &format!("{session}-recorded"),
+            session,
+            "assistant",
+            1,
+            json!({"model":{"id":"gpt-4o"},"cost":0.5,"tokens":{"input":10,"output":1,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"text","text":"Recorded"}]}),
+        );
+        message(
+            &db,
+            &format!("{session}-subscription"),
+            session,
+            "assistant",
+            2,
+            json!({"model":{"id":"gpt-4o"},"cost":0,"tokens":{"input":1000,"output":100,"reasoning":0,"cache":{"read":200,"write":0}},"content":[{"type":"text","text":"Free"}]}),
+        );
+    }
+    let pricing = Pricing::bundled();
+    let expected = pricing
+        .estimate(
+            Some("gpt-4o"),
+            &MessageTokens {
+                input: Some(1200.0),
+                output: Some(100.0),
+                reasoning: Some(0.0),
+                cache_read: Some(200.0),
+                cache_create: Some(0.0),
+            },
+            0.0,
+        )
+        .unwrap();
+    let sessions = scan(temp.path(), &pricing).unwrap();
+    let session = |id: &str| {
+        sessions
+            .iter()
+            .find(|s| s.head.reference.session_id == id)
+            .unwrap()
+    };
+    let root = session("root");
+    let estimated = &root.detail.messages[1];
+    assert_eq!(estimated.cost, Some(expected));
+    assert_eq!(estimated.cost_source, Some(CostSource::Estimated));
+    assert_eq!(root.head.stats.total_cost, 0.5 + expected);
+    assert_eq!(root.head.stats.cost_source, Some(CostSource::Estimated));
+    assert_eq!(session("fork").head.stats.total_cost, 0.0);
+    crate::pricing::assert_cached_repricing(|pricing| scan(temp.path(), pricing).unwrap());
+}
+#[test]
 fn v2_rejects_incomplete_migrations_and_corruption() {
     let (temp, db) = database(true);
     db.execute_batch("INSERT INTO session_v2(id) VALUES('root');CREATE TABLE session(id TEXT);INSERT INTO session VALUES('old');CREATE TABLE kv(key TEXT,value TEXT);INSERT INTO kv VALUES('migration.v1-v2','{\"phase\":\"messages\"}');").unwrap();

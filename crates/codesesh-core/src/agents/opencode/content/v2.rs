@@ -102,7 +102,6 @@ pub(super) fn message(row: &Value) -> Result<Option<Message>> {
         .contains(&kind.as_str())
         .then_some(true);
     m.cost = raw["cost"].as_f64();
-    m.cost_source = m.cost.map(|_| CostSource::Recorded);
     m.tokens = raw["tokens"].as_object().map(|_| {
         let t = &raw["tokens"];
         let cache_read = t["cache"]["read"].as_f64();
