@@ -589,7 +589,7 @@ const CHECKPOINT_MIN_BYTES: u64 = 1;
 const CHECKPOINT_LIMIT: usize = 2;
 const CHECKPOINT_TAIL_BYTES: usize = 64;
 
-/// Parser state for the few large rollouts that changed most recently, and child summaries.
+/// Parser state for the few large rollouts still being written, and child summaries.
 #[derive(Default)]
 pub struct Checkpoints {
     parsers: Vec<(PathBuf, Checkpoint)>,
@@ -625,8 +625,9 @@ impl Checkpoints {
         let Ok(mut file) = File::open(&physical) else {
             return parse(path, titles, pricing);
         };
-        let len = file.metadata()?.len();
-        if len < CHECKPOINT_MIN_BYTES {
+        let metadata = file.metadata()?;
+        let len = metadata.len();
+        if len < CHECKPOINT_MIN_BYTES || !super::jsonl::recently_written(&metadata) {
             return parse(path, titles, pricing);
         }
         let mut resumed = None;
@@ -1332,6 +1333,31 @@ mod incremental_tests {
             checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
             parse(&path, &HashMap::new(), &pricing).unwrap()
         );
+    }
+
+    #[test]
+    fn idle_rollouts_do_not_keep_parser_state() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000009.jsonl");
+        std::fs::write(&path, concat!(
+            "{\"type\":\"session_meta\",\"timestamp\":1000,\"payload\":{\"cwd\":\"/work\"}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":2000,\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n"
+        )).unwrap();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+            .unwrap();
+        let pricing = Pricing::bundled();
+        let mut checkpoints = Checkpoints::default();
+        assert_eq!(
+            checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
+            parse(&path, &HashMap::new(), &pricing).unwrap()
+        );
+        assert!(checkpoints.parsers.is_empty());
     }
 
     #[test]

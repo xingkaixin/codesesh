@@ -25,3 +25,14 @@ impl<R: Read> JsonLines<R> {
         Ok(Some(&self.line))
     }
 }
+
+const ACTIVE_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Parser checkpoints only pay off for transcripts that are still being appended to.
+pub(super) fn recently_written(metadata: &std::fs::Metadata) -> bool {
+    match metadata.modified().map(|time| time.elapsed()) {
+        Ok(Ok(age)) => age < ACTIVE_WINDOW,
+        // An unknown or future mtime gives no evidence that the file is idle.
+        _ => true,
+    }
+}
