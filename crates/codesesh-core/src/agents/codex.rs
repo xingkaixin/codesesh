@@ -379,6 +379,10 @@ fn child_summary(
                 if record["type"] == "session_meta" && !meta_seen {
                     meta_seen = true;
                     nickname = payload["agent_nickname"].as_str().map(str::to_owned);
+                    usage = Usage::new(payload);
+                }
+                if record["type"] == "turn_context" {
+                    usage.turn(payload);
                 }
             }
             "event_msg" if payload["type"] == "token_count" => {
@@ -522,6 +526,8 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
         timestamp: Value,
         #[serde(default)]
         model: Value,
+        #[serde(default)]
+        turn_id: Value,
         #[serde(default, borrow)]
         item: Option<&'a serde_json::value::RawValue>,
     }
@@ -560,7 +566,7 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
     {
         serde_json::from_str(raw)?
     } else {
-        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model})
+        serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model,"turn_id":header.turn_id})
     };
     Ok(serde_json::json!({"type":record.kind,"timestamp":record.timestamp,"payload":payload}))
 }
@@ -749,8 +755,8 @@ impl Parser {
             updated: created,
             messages: Vec::new(),
             model: None,
-            usage: Usage::default(),
-            head_usage: Usage::default(),
+            usage: Usage::new(&first["payload"]),
+            head_usage: Usage::new(&first["payload"]),
             head_model: None,
             message_count: 0,
             message_title: None,
@@ -828,6 +834,10 @@ impl Parser {
             if let Some(name) = payload["model"].as_str().filter(|s| !s.trim().is_empty()) {
                 *model = Some(name.trim().to_owned());
                 *head_model = model.clone();
+            }
+            if kind == "turn_context" {
+                usage.turn(payload);
+                head_usage.turn(payload);
             }
             return;
         }
@@ -1545,6 +1555,66 @@ mod incremental_tests {
             .find(|message| message.subagent_id.as_deref() == Some(child))
             .unwrap();
         assert_eq!(returned.nickname.as_deref(), Some("Pascal"));
+    }
+
+    #[test]
+    fn forked_rollouts_do_not_count_replayed_parent_usage() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions = root.path().join("sessions");
+        std::fs::create_dir(&sessions).unwrap();
+        let parent = "019e0000-0000-7000-8000-000000000001";
+        let child = "019f0000-0000-7000-8000-000000000002";
+        let usage = |input: u64, total: u64| {
+            serde_json::json!({"type":"event_msg","timestamp":900,"payload":{"type":"token_count","info":{
+                "total_token_usage":{"input_tokens":total,"total_tokens":total},
+                "last_token_usage":{"input_tokens":input,"total_tokens":input}
+            }}})
+        };
+        let parent_turn = serde_json::json!({"type":"turn_context","timestamp":800,"payload":{"turn_id":"019e0000-0001-7000-8000-000000000001","model":"gpt-5"}});
+        let child_turn = serde_json::json!({"type":"turn_context","timestamp":900,"payload":{"turn_id":"019f0000-0001-7000-8000-000000000002","model":"gpt-5"}});
+        for (id, lines) in [
+            (
+                parent,
+                vec![
+                    serde_json::json!({"type":"session_meta","timestamp":700,"payload":{"id":parent,"cwd":"/project"}}),
+                    parent_turn.clone(),
+                    usage(100, 100),
+                ],
+            ),
+            (
+                child,
+                vec![
+                    serde_json::json!({"type":"session_meta","timestamp":900,"payload":{"id":child,"forked_from_id":parent,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent}}),
+                    parent_turn,
+                    usage(100, 100),
+                    child_turn,
+                    usage(7, 107),
+                ],
+            ),
+        ] {
+            let contents = lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>();
+            std::fs::write(
+                sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
+                contents,
+            )
+            .unwrap();
+        }
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let input = |id: &str| {
+            sessions
+                .iter()
+                .find(|session| session.head.reference.session_id == id)
+                .unwrap()
+                .detail
+                .head
+                .stats
+                .total_input_tokens
+        };
+        assert_eq!(input(child), 7.0);
+        assert_eq!(input(parent), 107.0);
     }
 
     #[test]

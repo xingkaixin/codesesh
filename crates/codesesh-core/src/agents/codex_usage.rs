@@ -16,6 +16,13 @@ pub struct Usage {
     models: BTreeMap<String, f64>,
     cost_inputs: Vec<crate::pricing::CostInput>,
     assigned_prefix: usize,
+    replaying: Option<uuid::Uuid>,
+}
+
+fn uuid_v7(value: &Value) -> Option<uuid::Uuid> {
+    uuid::Uuid::parse_str(value.as_str()?)
+        .ok()
+        .filter(|id| id.get_version_num() == 7)
 }
 
 fn count(value: &Value) -> f64 {
@@ -39,6 +46,26 @@ fn counts(value: &Value) -> [f64; 4] {
 }
 
 impl Usage {
+    /// A forked rollout opens with its parent's history, which the parent already counts.
+    pub fn new(meta: &Value) -> Self {
+        let forked = meta["forked_from_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty());
+        Self {
+            replaying: uuid_v7(&meta["id"]).filter(|_| forked),
+            ..Default::default()
+        }
+    }
+
+    // UUIDv7 ids order by creation time; replayed turns started before the fork did.
+    pub fn turn(&mut self, payload: &Value) {
+        if let Some(session) = self.replaying
+            && uuid_v7(&payload["turn_id"]).is_none_or(|turn| turn >= session)
+        {
+            self.replaying = None;
+        }
+    }
+
     pub fn consume(
         &mut self,
         payload: &Value,
@@ -65,6 +92,9 @@ impl Usage {
         }
         if cumulative > 0.0 {
             self.previous_total = cumulative;
+        }
+        if self.replaying.is_some() {
+            return;
         }
         for count in &mut delta {
             *count = count.max(0.0);
