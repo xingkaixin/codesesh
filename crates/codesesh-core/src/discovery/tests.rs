@@ -77,9 +77,9 @@ fn platform_paths_and_opencode_override_match_existing_rules() {
     assert_eq!(selected_sources(&env, &["CODEX".into()]).len(), 1);
 }
 #[test]
-fn counts_and_registry_cover_all_fourteen_agents() {
+fn counts_and_registry_cover_all_sixteen_agents() {
     let catalog = agents::catalog_counts(&HashMap::from([("kimi".into(), 2), ("codex".into(), 3)]));
-    assert_eq!(catalog.len(), 14);
+    assert_eq!(catalog.len(), 16);
     assert_eq!(catalog.iter().map(|agent| agent.count).sum::<usize>(), 5);
     assert_eq!(catalog.iter().filter(|agent| agent.available).count(), 2);
 }
@@ -852,6 +852,85 @@ fn every_catalog_entry_has_a_source_resolver_and_scanner() {
                 .is_empty()
         );
     }
+}
+
+#[test]
+fn qoder_cn_reads_claude_layout_from_its_override_and_reports_deleted_subagents() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut env = environment(temporary.path());
+    let root = temporary.path().join("qcn");
+    env.variables.insert(
+        "QODERCN_CONFIG_DIR".into(),
+        root.to_string_lossy().into_owned(),
+    );
+    assert_eq!(
+        env.source("qoder").unwrap().scan_path,
+        env.home.join(".qoder/projects")
+    );
+    let source = env.source("qoder-cn").unwrap();
+    assert_eq!(source.scan_path, root.join("projects"));
+    let id = "11111111-aaaa-4bbb-8ccc-000000000002";
+    let session = source.scan_path.join(format!("-work-q/{id}.jsonl"));
+    let child = source
+        .scan_path
+        .join(format!("-work-q/{id}/subagents/agent-a1.jsonl"));
+    let write = |path: &Path, records: &[serde_json::Value]| {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let lines: Vec<_> = records.iter().map(serde_json::Value::to_string).collect();
+        std::fs::write(path, lines.join("\n")).unwrap();
+    };
+    write(
+        &session,
+        &[
+            serde_json::json!({"type":"user","uuid":"u1","timestamp":"2026-09-27T09:00:00.000Z","cwd":"/work/q","sessionId":id,"message":{"role":"user","content":"Explain the cache"}}),
+            serde_json::json!({"type":"assistant","uuid":"a1","timestamp":"2026-09-27T09:00:30.000Z","cwd":"/work/q","sessionId":id,"message":{"model":"glm-5","id":"m1","role":"assistant","content":[{"type":"tool_use","id":"call","name":"Task","input":{"description":"Inspect"}}],"usage":{"input_tokens":40,"cache_creation_input_tokens":0,"cache_read_input_tokens":300,"output_tokens":25}}}),
+            serde_json::json!({"type":"user","uuid":"u2","timestamp":"2026-09-27T09:00:40.000Z","cwd":"/work/q","sessionId":id,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":"Done"}]}}),
+        ],
+    );
+    write(
+        &child,
+        &[
+            serde_json::json!({"isSidechain":true,"type":"assistant","uuid":"a2","timestamp":"2026-09-27T09:00:20.000Z","cwd":"/work/q","sessionId":id,"message":{"model":"glm-5","id":"m2","role":"assistant","content":[{"type":"text","text":"Inspected"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5}}}),
+        ],
+    );
+    let db = temporary.path().join("cache.db");
+    let mut scanner = AgentScanner::new(
+        source.clone(),
+        db.clone(),
+        std::sync::Arc::new(Pricing::bundled()),
+    );
+    let mut batch = scanner.refresh(None).unwrap();
+    let parent = batch
+        .sessions
+        .iter()
+        .find(|s| s.head.reference.session_id == id)
+        .unwrap();
+    let reference = parent.head.reference.clone();
+    assert_eq!(reference.agent_name, "qoder-cn");
+    assert_eq!(parent.head.title, "Explain the cache");
+    assert_eq!(parent.head.directory, "/work/q");
+    assert_eq!(parent.head.stats.total_input_tokens, 340.0);
+    assert_eq!(parent.head.stats.total_output_tokens, 25.0);
+    let message = &parent.detail.messages[1];
+    assert_eq!(message.agent.as_deref(), Some("qoder-cn"));
+    let crate::contract::MessagePart::Tool { state, .. } = &message.parts[0] else {
+        panic!()
+    };
+    assert_eq!(state.status, "completed");
+    let subagent = batch
+        .sessions
+        .iter()
+        .find(|s| s.head.reference.session_id == "a1")
+        .unwrap();
+    assert_eq!(subagent.head.parent_reference.as_ref(), Some(&reference));
+    assert_eq!(subagent.head.stats.total_output_tokens, 5.0);
+    let removed = subagent.head.reference.clone();
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    cache.publish(&mut batch.sessions).unwrap();
+    batch.on_reject.take();
+    std::fs::remove_file(&child).unwrap();
+    let deleted = scanner.refresh(Some(&[child])).unwrap();
+    assert_eq!(deleted.removed, [removed]);
 }
 
 #[test]

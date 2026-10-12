@@ -26,6 +26,8 @@ pub(super) fn environment() -> BTreeMap<String, String> {
         "CODEX_HOME",
         "AGY_CONVERSATIONS_DIR",
         "CLAUDE_CONFIG_DIR",
+        "QODER_CONFIG_DIR",
+        "QODERCN_CONFIG_DIR",
         "CURSOR_DATA_PATH",
         "DEEPCHAT_USER_DATA_DIR",
         "CHERRYSTUDIO_USER_DATA_DIR",

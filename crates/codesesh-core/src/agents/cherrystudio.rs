@@ -158,6 +158,7 @@ fn transcript(
                 )),
                 cache_read: Some(nonnegative(&input["cacheReadTokens"])),
                 cache_create: Some(nonnegative(&input["cacheWriteTokens"])),
+                cache_create_1h: None,
                 reasoning: Some(nonnegative(&output["reasoningTokens"])),
             }
         });

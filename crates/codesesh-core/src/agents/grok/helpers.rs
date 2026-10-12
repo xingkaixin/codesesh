@@ -219,6 +219,7 @@ pub(super) fn usage(v: &Value, pricing: &Pricing) -> Option<Usage> {
             reasoning: positive(count(&u["reasoningTokens"])),
             cache_read: positive(count(&u["cachedReadTokens"])),
             cache_create: positive(count(&u["cacheCreationTokens"])),
+            cache_create_1h: None,
         },
         total: if total > 0.0 {
             total
