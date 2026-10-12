@@ -5,7 +5,7 @@ use super::codex::{ParsedSession, timestamp};
 use crate::{contract::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use common::*;
-pub use incremental::{Checkpoints, scan_changed};
+pub use incremental::{Checkpoints, scan_changed, scan_changed_as};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -57,7 +57,11 @@ fn child(path: &Path) -> Option<Child> {
     })
 }
 
-pub fn scan(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+    scan_as(root, "claudecode", pricing)
+}
+
+pub(super) fn scan_as(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let nested = root.join("projects");
     let root = if nested.is_dir() {
         nested.as_path()
@@ -513,7 +517,7 @@ mod tests {
         )
         .unwrap();
         let pricing = Pricing::bundled();
-        let previous = scan(root.path(), "claudecode", &pricing).unwrap();
+        let previous = scan(root.path(), &pricing).unwrap();
         fs::write(
             &meta,
             json!({"agentId":"new-worker","toolUseId":"call","name":"Renamed"}).to_string(),
@@ -523,7 +527,6 @@ mod tests {
         let mut checkpoints = Checkpoints::default();
         let delta = scan_changed(
             root.path(),
-            "claudecode",
             &pricing,
             &[meta],
             &previous
@@ -549,7 +552,6 @@ mod tests {
         fs::remove_file(&child).unwrap();
         let delta = scan_changed(
             root.path(),
-            "claudecode",
             &pricing,
             &[child],
             &delta
@@ -570,13 +572,9 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let user = json!({"type":"user","timestamp":"2026-04-20T10:00:00+08:00","message":{"role":"user","content":"Visible"}}).to_string();
         fs::write(&path, format!("invalid\n{user}")).unwrap();
-        assert!(
-            scan(root.path(), "claudecode", &Pricing::bundled())
-                .unwrap()
-                .is_empty()
-        );
+        assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
         fs::write(&path, format!("{user}\ninvalid")).unwrap();
-        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].head.time_created, 1776650400000.0);
         assert_eq!(sessions[0].detail.messages.len(), 1);
@@ -591,16 +589,12 @@ mod tests {
                 json!({"type":"user","message":{"role":"user","content":"<local-command-stdout>hidden</local-command-stdout>"}}),
             ],
         );
-        assert!(
-            scan(root.path(), "claudecode", &Pricing::bundled())
-                .unwrap()
-                .is_empty()
-        );
+        assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
         let mut records = vec![json!({"type":"progress","timestamp":"2026-04-20T10:00:00Z"}); 20];
         records.push(json!({"type":"user","cwd":"/tmp/fallback","message":{"role":"user","content":"Too late for title"}}));
         write(&path, &records);
         assert_eq!(
-            scan(root.path(), "claudecode", &Pricing::bundled()).unwrap()[0]
+            scan(root.path(), &Pricing::bundled()).unwrap()[0]
                 .head
                 .title,
             "fallback"
@@ -621,7 +615,7 @@ mod tests {
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
-        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         assert_eq!(sessions[0].head.time_created, 1776679200000.125);
         assert_eq!(sessions[0].head.time_updated, 1776679200000.125);
     }
@@ -642,7 +636,7 @@ mod tests {
                 .join("\n"),
         )
         .unwrap();
-        let mut sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        let mut sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         let expected = include_str!("claudecode/fixtures/fractional-expected.json");
         assert_reference(&sessions[0].head, &sessions[0].detail, expected);
         let expected: Value = serde_json::from_str(expected).unwrap();
@@ -662,10 +656,8 @@ mod tests {
         let records: Vec<Value> =
             serde_json::from_str(include_str!("claudecode/fixtures/records.json")).unwrap();
         write(&root.path().join("project/session.jsonl"), &records);
-        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
-        crate::pricing::assert_cached_repricing(|pricing| {
-            scan(root.path(), "claudecode", pricing).unwrap()
-        });
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
         assert_reference(
             &sessions[0].head,
             &sessions[0].detail,
@@ -745,7 +737,7 @@ mod tests {
                 json!({"type":"user","uuid":"c","sourceToolAssistantUUID":"a","toolUseResult":{"success":false,"commandName":"read"},"message":{"role":"user","content":[{"type":"tool_result","content":"Failed"}]}}),
             ],
         );
-        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         let d = &sessions[0].detail;
         assert_eq!(d.messages.len(), 2);
         assert_eq!(d.head.stats.total_input_tokens, 100.0);
@@ -767,7 +759,7 @@ mod tests {
                 json!({"type":"user","uuid":"b","toolUseResult":"Error: Exit code 1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","is_error":true,"content":"Exit code 1"}]}}),
             ],
         );
-        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         let MessagePart::Tool { state, .. } = &sessions[0].detail.messages[1].parts[0] else {
             panic!()
         };
@@ -791,7 +783,7 @@ mod tests {
             &[json!({"type":"user","message":{"role":"user","content":"Work"}})],
         );
         fs::write(child.with_extension("meta.json"), json!({"agentId":"worker","parentAgentId":"nested","name":"Worker title","toolUseId":"call"}).to_string()).unwrap();
-        let sessions = scan(root.path(), "claudecode", &Pricing::bundled()).unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
         let parent = sessions
             .iter()
             .find(|s| s.detail.head.reference.session_id == "parent")

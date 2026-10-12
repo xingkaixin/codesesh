@@ -114,6 +114,23 @@ impl Checkpoints {
 
 pub fn scan_changed(
     root: &Path,
+    pricing: &Pricing,
+    changed_paths: &[PathBuf],
+    previous: &[crate::agents::SessionRecord],
+    checkpoints: &mut Checkpoints,
+) -> Result<ScanDelta> {
+    scan_changed_as(
+        root,
+        "claudecode",
+        pricing,
+        changed_paths,
+        previous,
+        checkpoints,
+    )
+}
+
+pub fn scan_changed_as(
+    root: &Path,
     agent: &str,
     pricing: &Pricing,
     changed_paths: &[PathBuf],

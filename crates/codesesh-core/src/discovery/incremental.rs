@@ -1036,7 +1036,7 @@ impl AgentScanner {
                 &mut self.codex,
             ),
             "claudecode" | "qoder" | "qoder-cn" if paths.is_some() => {
-                agents::claudecode::scan_changed(
+                agents::claudecode::scan_changed_as(
                     root,
                     &self.source.agent,
                     pricing,
