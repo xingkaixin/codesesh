@@ -356,6 +356,7 @@ fn child_summary(
 ) -> Result<(SessionStats, Option<Message>)> {
     let mut usage = Usage::default();
     let mut model = None;
+    let mut service_tier = None;
     let mut nickname = None;
     let mut latest = None;
     let mut final_output = None;
@@ -378,9 +379,18 @@ fn child_summary(
                     nickname = payload["agent_nickname"].as_str().map(str::to_owned);
                 }
             }
-            "event_msg" if payload["type"] == "token_count" => {
-                usage.consume(payload, model.as_deref(), pricing, &mut [])
+            "event_msg" if payload["type"] == "thread_settings_applied" => {
+                if let Some(tier) = payload["thread_settings"]["service_tier"].as_str() {
+                    service_tier = Some(tier.to_owned());
+                }
             }
+            "event_msg" if payload["type"] == "token_count" => usage.consume(
+                payload,
+                model.as_deref(),
+                service_tier.as_deref(),
+                pricing,
+                &mut [],
+            ),
             "response_item" if payload["type"] == "message" && payload["role"] == "assistant" => {
                 let text = clean(&content(payload, true));
                 if text.is_empty() {
@@ -553,7 +563,10 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
     let payload = if !internal(&record.kind)
         && !internal(&header.kind)
         && (record.kind == "response_item"
-            || (record.kind == "event_msg" && (header.kind == "token_count" || mcp_completion)))
+            || (record.kind == "event_msg"
+                && (header.kind == "token_count"
+                    || header.kind == "thread_settings_applied"
+                    || mcp_completion)))
     {
         serde_json::from_str(raw)?
     } else {
@@ -706,6 +719,7 @@ struct Parser {
     updated: f64,
     messages: Vec<Message>,
     model: Option<String>,
+    service_tier: Option<String>,
     usage: Usage,
     head_usage: Usage,
     head_model: Option<String>,
@@ -746,6 +760,7 @@ impl Parser {
             updated: created,
             messages: Vec::new(),
             model: None,
+            service_tier: None,
             usage: Usage::default(),
             head_usage: Usage::default(),
             head_model: None,
@@ -766,6 +781,7 @@ impl Parser {
             updated,
             messages,
             model,
+            service_tier,
             usage,
             head_usage,
             head_model,
@@ -828,9 +844,16 @@ impl Parser {
             }
             return;
         }
+        if kind == "event_msg" && payload["type"] == "thread_settings_applied" {
+            if let Some(tier) = payload["thread_settings"]["service_tier"].as_str() {
+                *service_tier = Some(tier.to_owned());
+            }
+            return;
+        }
         if kind == "event_msg" && payload["type"] == "token_count" {
-            usage.consume(payload, model.as_deref(), pricing, messages);
-            head_usage.consume(payload, head_model.as_deref(), pricing, &mut []);
+            let tier = service_tier.as_deref();
+            usage.consume(payload, model.as_deref(), tier, pricing, messages);
+            head_usage.consume(payload, head_model.as_deref(), tier, pricing, &mut []);
             return;
         }
         if kind == "event_msg" && payload["type"] == "item_completed" {
@@ -1333,6 +1356,60 @@ mod incremental_tests {
             checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
             parse(&path, &HashMap::new(), &pricing).unwrap()
         );
+    }
+
+    #[test]
+    fn recorded_service_tier_prices_following_usage() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(
+            "sessions/rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000010.jsonl",
+        );
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut lines = vec![
+            serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/work","model":"gpt-5.5"}}),
+        ];
+        for (step, tier) in [None, Some("priority"), Some("flex"), None]
+            .into_iter()
+            .enumerate()
+        {
+            let time = 2000 + step as u64 * 1000;
+            let settings = match tier {
+                Some(tier) => serde_json::json!({"service_tier":tier}),
+                None => serde_json::json!({}),
+            };
+            lines.extend([
+                serde_json::json!({"type":"event_msg","timestamp":time,"payload":{"type":"thread_settings_applied","thread_settings":settings}}),
+                serde_json::json!({"type":"response_item","timestamp":time + 1,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Next"}]}}),
+                serde_json::json!({"type":"response_item","timestamp":time + 2,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done"}]}}),
+                serde_json::json!({"type":"event_msg","timestamp":time + 3,"payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":(step + 1) * 1100},"last_token_usage":{"input_tokens":1000,"output_tokens":100}}}}),
+            ]);
+        }
+        std::fs::write(
+            &path,
+            lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
+        let pricing = Pricing::bundled();
+        let tokens =
+            serde_json::from_value(serde_json::json!({"input":1000,"output":100})).unwrap();
+        let standard = pricing.estimate(Some("gpt-5.5"), &tokens, 0.0).unwrap();
+        let sessions = scan(root.path(), &pricing).unwrap();
+        let costs = sessions[0]
+            .detail
+            .messages
+            .iter()
+            .filter(|message| message.role == Role::Assistant)
+            .map(|message| message.cost.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(costs.len(), 4);
+        for (cost, multiplier) in costs.into_iter().zip([1.0, 2.5, 0.5, 0.5]) {
+            assert!((cost - standard * multiplier).abs() < 1e-8);
+        }
+        assert!((sessions[0].head.stats.total_cost - standard * 4.5).abs() < 1e-8);
+        crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
     }
 
     #[test]
