@@ -1018,4 +1018,6 @@ export const messages = {
   Match: ["命中内容", "一致箇所"],
   Source: ["来源", "ソース"],
   "Open session": ["打开会话", "セッションを開く"],
+  Sort: ["排序", "並べ替え"],
+  "Sort projects": ["项目排序方式", "プロジェクトの並べ替え"],
 } as const;

@@ -57,7 +57,7 @@ describe("ProjectsOverview project-count budget", () => {
       </Wrapper>,
     );
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(250);
+    expect(screen.getAllByRole("rowheader")).toHaveLength(250);
     expect(screen.getAllByText("200,000")).toHaveLength(2);
   });
 
@@ -101,7 +101,7 @@ describe("ProjectsOverview project-count budget", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
     await waitFor(() => expect(screen.getByText("next-project")).toBeTruthy());
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getAllByRole("rowheader")).toHaveLength(1);
     expect(fetchMock.mock.calls[0]?.[0]).toContain("cursor=next-page");
     expect(screen.getByText(/Page 2/)).toBeTruthy();
   });

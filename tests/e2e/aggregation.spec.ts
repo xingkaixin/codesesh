@@ -73,11 +73,11 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
   await expect(codex.getByRole("img", { name: "Codex", exact: true })).toBeVisible();
 
   await page.goto("/projects");
-  const project = page.locator("main").getByRole("link", { name: /codesesh-e2e/ });
-  await expect(project).toContainText("2 sessions");
+  const project = page.locator("main").getByRole("row", { name: /codesesh-e2e/ });
+  await expect(project.getByRole("cell").nth(1)).toHaveText("2");
   await expect(project).toContainText("Claude Code · 1");
   await expect(project).toContainText("Codex · 1");
-  await project.click();
+  await project.getByRole("link", { name: /codesesh-e2e/ }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Claude Code · 1" })).toBeVisible();

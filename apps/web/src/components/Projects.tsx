@@ -14,103 +14,72 @@ import { OverviewScreen } from "./overview/OverviewScreen";
 import { ProjectTimeline } from "./project-timeline/ProjectTimeline";
 import { ResourceLoadFailure } from "./ResourceLoadFailure";
 import { Panel } from "./ui/panel";
+import { SegmentedControl } from "./ui/segmented-control";
+import { cn } from "../lib/utils";
 import { SourceFilter } from "./nodes/SourceFilter";
 
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  useLocale();
+type ProjectSort = "activity" | "sessions" | "cost";
 
+const PAGER_BUTTON_CLASS =
+  "rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40";
+
+function SummaryMetric({
+  label,
+  value,
+  detail,
+  className,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  className?: string;
+}) {
   return (
-    <Panel className="p-[14px_16px]">
-      <p className="console-eyebrow">{label}</p>
-      <p className="console-mono mt-[9px] text-[27px] font-semibold tracking-[-0.02em] text-[var(--console-text)]">
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-1 border-[var(--console-border)] px-5 py-4",
+        className,
+      )}
+    >
+      <span className="text-xs text-[var(--console-muted)]">{label}</span>
+      <span className="console-mono text-[26px] leading-tight font-light text-[var(--console-text)]">
         {value}
-      </p>
-      {hint ? (
-        <p className="console-mono mt-[7px] text-[10.5px] text-[var(--console-muted)]">{hint}</p>
-      ) : null}
-    </Panel>
+      </span>
+      {detail ? <span className="text-[11px] text-[var(--console-muted)]">{detail}</span> : null}
+    </div>
   );
 }
 
-function AgentPills({
+function ProjectAgents({
   agents,
   agentCatalog,
 }: {
   agents: ApiProjectAgentStat[];
   agentCatalog: AgentCatalog;
 }) {
-  useLocale();
-
-  if (agents.length === 0) return null;
-
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
       {agents.slice(0, 4).map((agent) => {
         const agentInfo = findAgent(agentCatalog, agent.name);
+        const label = `${agentInfo?.displayName ?? agent.name} · ${agent.sessions}`;
         return (
-          <span
-            key={agent.name}
-            className="console-mono inline-flex items-center gap-1 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]"
-          >
+          <span key={agent.name} title={label} className="inline-flex items-center gap-1">
             {agentInfo?.icon ? (
               <AgentIcon
                 icon={agentInfo.icon}
                 iconColored={agentInfo.iconColored}
-                alt={agentInfo.displayName}
-                className="size-3 object-contain"
+                alt=""
+                className="size-3.5 object-contain"
               />
             ) : null}
-            {agentInfo?.displayName ?? agent.name} · {agent.sessions}
+            <span className="sr-only">{label}</span>
+            <span aria-hidden className="console-mono text-[11px] text-[var(--console-muted)]">
+              {agent.sessions}
+            </span>
           </span>
         );
       })}
     </div>
-  );
-}
-
-function ProjectListItem({
-  project,
-  agentCatalog,
-}: {
-  project: ApiProjectGroup;
-  agentCatalog: AgentCatalog;
-}) {
-  useLocale();
-
-  return (
-    <li>
-      <Link
-        to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
-        className="block rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)] motion-hover hover:border-[var(--brand-line)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <h2 className="line-clamp-1 text-[13px] font-medium text-[var(--console-text)]">
-              {project.displayName}
-            </h2>
-            <p className="console-mono mt-[5px] break-all text-[10.5px] text-[var(--console-muted)]">
-              {project.identityKey}
-            </p>
-          </div>
-          <div className="console-mono flex shrink-0 flex-wrap gap-2 text-[11px] text-[var(--console-text-secondary)]">
-            <span>
-              {formatNumber(project.sessionCount)} {t("sessions")}
-            </span>
-            <span>
-              {formatCompact(project.tokens)} {t("tokens")}
-            </span>
-            <span className="text-[var(--brand)]">{formatMoney(project.cost)}</span>
-            <span className="text-[var(--console-muted)]">
-              {formatRelativeTime(project.lastActivity)}
-            </span>
-          </div>
-        </div>
-        <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <AgentPills agents={project.agentStats} agentCatalog={agentCatalog} />
-          <span className="console-eyebrow">{project.identityKind}</span>
-        </div>
-      </Link>
-    </li>
   );
 }
 
@@ -135,6 +104,13 @@ export function ProjectsOverview({
   const pagination = useProjectPagination(window, initialPage, sourceNodeId);
   const page = pagination.page ?? initialPage;
   const projects = page.projects.slice(0, 250);
+  const [sort, setSort] = useState<ProjectSort>("activity");
+  const sorted =
+    sort === "sessions"
+      ? projects.toSorted((a, b) => b.sessionCount - a.sessionCount)
+      : sort === "cost"
+        ? projects.toSorted((a, b) => b.cost - a.cost)
+        : projects;
   const currentError = pagination.error ?? error;
   const retry = pagination.error ? () => void pagination.retry() : onRetry;
 
@@ -174,22 +150,109 @@ export function ProjectsOverview({
           onRetry={retry}
         />
       ) : null}
-      <div className="grid gap-3 md:grid-cols-4">
-        <StatCard label={t("Projects")} value={formatNumber(page.summary.projects)} />
-        <StatCard label={t("Sessions")} value={formatNumber(page.summary.sessions)} />
-        <StatCard label={t("Tokens")} value={formatCompact(page.summary.tokens)} />
-        <StatCard
+      <Panel className="grid grid-cols-2 overflow-hidden md:grid-cols-4">
+        <SummaryMetric label={t("Projects")} value={formatNumber(page.summary.projects)} />
+        <SummaryMetric
+          label={t("Sessions")}
+          value={formatNumber(page.summary.sessions)}
+          className="border-l"
+        />
+        <SummaryMetric
+          label={t("Tokens")}
+          value={formatCompact(page.summary.tokens)}
+          className="border-t md:border-t-0 md:border-l"
+        />
+        <SummaryMetric
           label={t("Total Cost")}
           value={formatMoney(page.summary.cost)}
-          hint={
+          detail={
             page.summary.latestActivity
               ? t("Latest {0}", [formatRelativeTime(page.summary.latestActivity)])
               : undefined
           }
+          className="border-t border-l md:border-t-0"
+        />
+      </Panel>
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span className="text-xs text-[var(--console-muted)]">{t("Sort")}</span>
+        <SegmentedControl
+          size="sm"
+          ariaLabel={t("Sort projects")}
+          value={sort}
+          onChange={setSort}
+          options={[
+            { value: "activity", label: t("Latest Activity") },
+            { value: "sessions", label: t("Sessions") },
+            { value: "cost", label: t("Cost") },
+          ]}
         />
       </div>
 
-      <div className="console-mono flex items-center justify-between gap-3 text-[11px] text-[var(--console-muted)]">
+      <Panel className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-xs">
+          <caption className="sr-only">{t("Projects")}</caption>
+          <thead>
+            <tr className="border-b border-[var(--console-border)] text-[11px] text-[var(--console-muted)]">
+              <th scope="col" className="w-2/5 px-4 py-2.5 font-normal">
+                {t("Project")}
+              </th>
+              <th scope="col" className="px-3 py-2.5 font-normal">
+                {t("Agents")}
+              </th>
+              <th scope="col" className="px-3 py-2.5 text-right font-normal">
+                {t("Sessions")}
+              </th>
+              <th scope="col" className="px-3 py-2.5 text-right font-normal">
+                {t("Tokens")}
+              </th>
+              <th scope="col" className="px-3 py-2.5 text-right font-normal">
+                {t("Cost")}
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
+                {t("Latest Activity")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((project) => (
+              <tr
+                key={`${project.identityKind}:${project.identityKey}`}
+                className="border-b border-[var(--console-border)] last:border-b-0 hover:bg-[var(--console-surface-muted)]"
+              >
+                <th scope="row" className="max-w-0 px-4 py-2.5 font-normal">
+                  <Link
+                    to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
+                    className="block truncate text-[13px] font-medium text-[var(--console-text)] hover:text-[var(--brand-ink)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                  >
+                    {project.displayName}
+                  </Link>
+                  <span className="console-mono block truncate text-[11px] text-[var(--console-muted)]">
+                    {project.identityKey}
+                  </span>
+                </th>
+                <td className="px-3 py-2.5">
+                  <ProjectAgents agents={project.agentStats} agentCatalog={agentCatalog} />
+                </td>
+                <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
+                  {formatNumber(project.sessionCount)}
+                </td>
+                <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
+                  {formatCompact(project.tokens)}
+                </td>
+                <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
+                  {formatMoney(project.cost)}
+                </td>
+                <td className="px-4 py-2.5 whitespace-nowrap text-[var(--console-muted)]">
+                  {formatRelativeTime(project.lastActivity)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
+
+      <div className="flex items-center justify-between gap-3 text-xs text-[var(--console-muted)]">
         <span>
           {t("Page {0} · {1} shown", [pagination.pageNumber, formatNumber(projects.length)])}
         </span>
@@ -198,7 +261,7 @@ export function ProjectsOverview({
             type="button"
             disabled={!pagination.canPrevious}
             onClick={pagination.previous}
-            className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            className={PAGER_BUTTON_CLASS}
           >
             {t("Previous")}
           </button>
@@ -206,22 +269,12 @@ export function ProjectsOverview({
             type="button"
             disabled={!pagination.canNext}
             onClick={pagination.next}
-            className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1.5 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            className={PAGER_BUTTON_CLASS}
           >
             {t("Next")}
           </button>
         </div>
       </div>
-
-      <ul className="grid gap-3">
-        {projects.map((project) => (
-          <ProjectListItem
-            key={`${project.identityKind}:${project.identityKey}`}
-            project={project}
-            agentCatalog={agentCatalog}
-          />
-        ))}
-      </ul>
     </div>
   );
 }
