@@ -12,6 +12,7 @@ interface SectionCopy {
     userBadge: string;
     prompt: string;
     firstReply: string;
+    replayReply: string;
     finalReply: string;
   };
   local: {
@@ -32,21 +33,19 @@ interface SectionCopy {
     offline: string;
     queued: string;
     hubRole: string;
-    nodesLabel: string;
     hubFoot: string;
-    workerComment: string;
     guide: string;
   };
   install: {
     label: string;
-    download: string;
   };
 }
 
 export const sections = {
   en: {
     heroResults: "3 sessions · 2 projects",
-    heroVisual: "Sessions from several agents flow into one local, searchable index",
+    heroVisual:
+      "Sessions from several agents flow into one local, searchable index: a search for refresh 401 finds 3 sessions · 2 projects and previews the session replay on the right",
     tour: {
       activity: "Daily activity",
       ranges: ["7d", "30d", "All"],
@@ -57,6 +56,8 @@ export const sections = {
       prompt: "The refresh endpoint sometimes returns 401 twice in a row. Find out why.",
       firstReply:
         "Two requests can start a refresh at the same time. Checking the middleware first.",
+      replayReply:
+        "Two requests can start a refresh at the same time. Checking the middleware first, then when the token is written back.",
       finalReply:
         "Refresh is now single-flight. Concurrent requests share one promise, and the auth tests pass.",
     },
@@ -97,19 +98,17 @@ export const sections = {
       offline: "Offline",
       queued: "{count} queued",
       hubRole: "Query-only Web UI. Collects nothing itself.",
-      nodesLabel: "Source nodes",
       hubFoot: "Search, stats, and cost across machines",
-      workerComment: "On each computer, paste the pairing token from the Hub",
       guide: "Collect history from multiple computers",
     },
     install: {
       label: "Install",
-      download: "Download binaries",
     },
   },
   zh: {
     heroResults: "3 个会话 · 2 个项目",
-    heroVisual: "多个 Agent 的会话汇入同一个可搜索的本地索引",
+    heroVisual:
+      "多个 Agent 的会话汇入同一个可搜索的本地索引：搜索 refresh 401，命中 3 个会话 · 2 个项目，并在右侧预览会话回放",
     tour: {
       activity: "每日活跃",
       ranges: ["7 天", "30 天", "全部"],
@@ -119,6 +118,7 @@ export const sections = {
       userBadge: "用户",
       prompt: "refresh 接口偶尔会连续返回两次 401，帮我查一下原因。",
       firstReply: "两个请求可能同时触发刷新。先看一下中间件。",
+      replayReply: "两个请求可能同时触发刷新。先看一下中间件，再确认 token 写回的时机。",
       finalReply: "刷新改为 single-flight，并发请求共享同一个 Promise，auth 测试全部通过。",
     },
     local: {
@@ -151,19 +151,17 @@ export const sections = {
       offline: "离线",
       queued: "积压 {count}",
       hubRole: "只提供查询和 Web UI，本身不采集。",
-      nodesLabel: "来源节点",
       hubFoot: "跨机器搜索、统计与成本",
-      workerComment: "在每台电脑上粘贴 Hub 生成的配对令牌",
       guide: "用 Hub 和 Worker 汇总多台电脑的历史",
     },
     install: {
       label: "安装",
-      download: "下载二进制",
     },
   },
   ja: {
     heroResults: "3セッション · 2プロジェクト",
-    heroVisual: "複数のエージェントのセッションが1つのローカル検索インデックスに集まる",
+    heroVisual:
+      "複数のエージェントのセッションが1つのローカル検索インデックスに集まる：refresh 401 を検索すると 3セッション · 2プロジェクトがヒットし、右側でセッションのリプレイをプレビュー",
     tour: {
       activity: "日別アクティビティ",
       ranges: ["7日", "30日", "全期間"],
@@ -174,6 +172,8 @@ export const sections = {
       prompt: "refresh エンドポイントがときどき 401 を2回続けて返す。原因を調べて。",
       firstReply:
         "2つのリクエストが同時にリフレッシュを始める可能性があります。まずミドルウェアを確認します。",
+      replayReply:
+        "2つのリクエストが同時にリフレッシュを始める可能性があります。まずミドルウェアを確認し、次に token を書き戻すタイミングを確かめます。",
       finalReply:
         "リフレッシュを single-flight にしました。同時リクエストは同じ Promise を共有し、auth テストは通過しています。",
     },
@@ -214,14 +214,11 @@ export const sections = {
       offline: "オフライン",
       queued: "送信待ち {count}",
       hubRole: "閲覧専用の Web UI。Hub 自体は収集しません。",
-      nodesLabel: "収集元ノード",
       hubFoot: "マシンをまたいだ検索・統計・コスト",
-      workerComment: "各マシンで、Hub が発行したペアリングトークンを貼り付け",
       guide: "複数のパソコンの履歴をまとめる",
     },
     install: {
       label: "インストール",
-      download: "バイナリをダウンロード",
     },
   },
 } satisfies Record<Locale, SectionCopy>;

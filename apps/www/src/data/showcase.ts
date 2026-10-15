@@ -89,6 +89,7 @@ const zh = {
   },
   features: {
     live: "本地会话有变化，已增量写入索引",
+    tokens: "6.1M Token",
     liveCount: "+1 会话",
     alias: "别名：401 修复",
     fileHits: "3 个会话修改过此文件",
@@ -205,6 +206,7 @@ export const showcase = {
     },
     features: {
       live: "A local session changed and was indexed incrementally",
+      tokens: "6.1M tokens",
       liveCount: "+1 session",
       alias: "Alias: 401 fix",
       fileHits: "3 sessions edited this file",
@@ -329,6 +331,7 @@ export const showcase = {
     },
     features: {
       live: "ローカルのセッション変更を差分で索引に反映",
+      tokens: "6.1M トークン",
       liveCount: "+1 セッション",
       alias: "別名：401 修正",
       fileHits: "3 件のセッションがこのファイルを変更",

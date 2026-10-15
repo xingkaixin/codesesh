@@ -33,7 +33,7 @@ const a = showcase[locale].agents;
       <p class="lead agents-body">{copy[locale].agents.body}</p>
     </div>
     <div data-reveal>
-      <ul class="keys">
+      <ul class="keys" aria-label={t.agentsList}>
         {agents.map((agent) => (
           <li class="key">
             <AgentIcon name={agent.name} size={20} />

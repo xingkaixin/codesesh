@@ -343,6 +343,7 @@ const filters = [
   { kind: "tool", label: tour.toolCalls, count: 4 },
 ];
 const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
+const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
 ---
 
 <section id="tour" class="sec" aria-labelledby="tour-heading" data-tour>
@@ -680,7 +681,7 @@ const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
                                 {row.sub ? (
                                   <>
                                     <Icon
-                                      name="chevron-right"
+                                      name="corner-down-right"
                                       class="size-3 sub-arrow"
                                     />
                                     <span class="subtag">sub</span>
@@ -818,7 +819,7 @@ const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
                       <span class="md">claude-sonnet-5-5</span>
                     </div>
                     <div class="txt" data-step="agent">
-                      {s.firstReply}
+                      {s.replayReply}
                     </div>
                     <div class="tools">
                       {tools.map((tool) => (
@@ -914,13 +915,10 @@ const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
                       </button>
                     ))}
                   </div>
-                  <div
-                    class="vis"
-                    aria-live="polite"
-                    data-visible-template={tour.visibleStatus}
-                    data-visible-status
-                  >
-                    {tour.visibleStatus.replace("{count}", String(stepCount))}
+                  <div class="vis" aria-live="polite" data-visible-status>
+                    {visibleBefore}
+                    <b data-visible-count>{stepCount}</b>
+                    {visibleAfter}
                   </div>
                 </div>
                 <div class="side-card">
@@ -1054,7 +1052,7 @@ const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
 
     const replay = tour.querySelector<HTMLElement>("[data-replay]");
     if (replay) {
-      const status = replay.querySelector<HTMLElement>("[data-visible-status]");
+      const status = replay.querySelector<HTMLElement>("[data-visible-count]");
       const filterButtons =
         replay.querySelectorAll<HTMLButtonElement>("[data-filter]");
       filterButtons.forEach((button) => {
@@ -1080,12 +1078,7 @@ const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
             .forEach((group) => {
               group.hidden = !group.querySelector("[data-step]:not([hidden])");
             });
-          if (status) {
-            status.textContent = (status.dataset.visibleTemplate ?? "").replace(
-              "{count}",
-              String(count),
-            );
-          }
+          if (status) status.textContent = String(count);
         });
       });
 
@@ -1868,6 +1861,10 @@ const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
     border-top: 1px solid var(--border);
     color: var(--muted);
     font: 400 10.5px/1.4 var(--mono);
+  }
+  .vis b {
+    color: var(--text);
+    font-weight: 600;
   }
   .ftrack {
     display: flex;

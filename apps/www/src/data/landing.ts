@@ -11,10 +11,11 @@ export type IconName =
   | "bookmark"
   | "database"
   | "eye"
+  | "file"
   | "keyboard"
   | "list-tree"
+  | "play"
   | "search"
-  | "settings"
   | "shield"
   | "tags"
   | "terminal"
@@ -77,9 +78,7 @@ interface LandingCopy {
     copyCommand: string;
   };
   tour: {
-    previewLabel: string;
     sampleLabel: string;
-    search: string;
     range: string;
     overview: string;
     projects: string;
@@ -89,8 +88,6 @@ interface LandingCopy {
     userMessages: string;
     agentResponses: string;
     toolCalls: string;
-    sampleProjects: string;
-    sampleSessions: string;
   };
   scenes: ProductScene[];
   features: {
@@ -99,7 +96,6 @@ interface LandingCopy {
     groups: FeatureGroup[];
   };
   agents: {
-    title: HeadingCopy;
     body: string;
   };
   faq: {
@@ -108,8 +104,6 @@ interface LandingCopy {
     items: FAQItem[];
   };
   cta: {
-    title: HeadingCopy;
-    body: string;
     github: string;
   };
   footer: {
@@ -200,7 +194,7 @@ export const copy = {
     },
     hero: {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
-      title: ["搜索和回放", "你的 AI 编码历史。"],
+      title: ["搜索和回放", "你的\u00a0AI 编码历史。"],
       body: `在本机统一搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用与文件变更。`,
       privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
@@ -211,9 +205,7 @@ export const copy = {
       copyCommand: "复制",
     },
     tour: {
-      previewLabel: "CodeSesh 交互式产品示例",
       sampleLabel: "示例数据",
-      search: "搜索示例会话",
       range: "示例数据时间范围",
       overview: "概览示例界面",
       projects: "项目树示例界面",
@@ -223,8 +215,6 @@ export const copy = {
       userMessages: "用户消息",
       agentResponses: "Agent 回复",
       toolCalls: "工具调用",
-      sampleProjects: "示例项目",
-      sampleSessions: "{label}：{count} 个示例会话",
     },
     scenes: [
       {
@@ -255,7 +245,7 @@ export const copy = {
           description: "把不同 Agent 留下的本地会话统一纳入索引。",
           items: [
             {
-              icon: "settings",
+              icon: "play",
               title: "零配置启动",
               description: "运行一条命令，自动扫描文件系统里的受支持 Agent 会话。",
             },
@@ -302,7 +292,7 @@ export const copy = {
               description: "搜索标题、消息、工具输出和文件路径，再按项目、标签与工具筛选。",
             },
             {
-              icon: "list-tree",
+              icon: "file",
               title: "文件活动索引",
               description: "从一个文件反查读取或修改过它的相关会话。",
             },
@@ -337,7 +327,6 @@ export const copy = {
       ],
     },
     agents: {
-      title: ["覆盖本地", "AI 编码工具链"],
       body: "每种 Agent 通过 core 适配器接入同一个会话、项目、搜索和文件活动索引。",
     },
     faq: {
@@ -376,8 +365,6 @@ export const copy = {
       ],
     },
     cta: {
-      title: "现在就把历史找回来",
-      body: "开源、免费，会话数据留在本机。一条命令即可开始建立可搜索的 AI 编码工程记忆。",
       github: "GitHub",
     },
     footer: {
@@ -422,9 +409,7 @@ export const copy = {
       copyCommand: "Copy",
     },
     tour: {
-      previewLabel: "Interactive CodeSesh product sample",
       sampleLabel: "Sample data",
-      search: "Search sample sessions",
       range: "Sample data time range",
       overview: "Overview demo interface",
       projects: "Project tree demo interface",
@@ -434,8 +419,6 @@ export const copy = {
       userMessages: "User",
       agentResponses: "Agent responses",
       toolCalls: "Tools",
-      sampleProjects: "Sample projects",
-      sampleSessions: "{label}: {count} sample sessions",
     },
     scenes: [
       {
@@ -466,7 +449,7 @@ export const copy = {
           description: "Bring local sessions from different agents into one index.",
           items: [
             {
-              icon: "settings",
+              icon: "play",
               title: "Zero configuration",
               description: "Run one command and scan supported agent sessions on your filesystem.",
             },
@@ -515,7 +498,7 @@ export const copy = {
                 "Search titles, messages, tool output, and paths, then filter the results.",
             },
             {
-              icon: "list-tree",
+              icon: "file",
               title: "File activity index",
               description: "Start with a file and find sessions that read or changed it.",
             },
@@ -551,7 +534,6 @@ export const copy = {
       ],
     },
     agents: {
-      title: "Built for the local AI coding stack",
       body: "Each agent connects through a core adapter and contributes to one index of sessions, projects, search, and file activity.",
     },
     faq: {
@@ -590,8 +572,6 @@ export const copy = {
       ],
     },
     cta: {
-      title: "Bring your coding history back",
-      body: "Open source and free, with session data kept locally. One command starts a searchable engineering memory for your AI coding work.",
       github: "GitHub",
     },
     footer: {
@@ -635,9 +615,7 @@ export const copy = {
       copyCommand: "コピー",
     },
     tour: {
-      previewLabel: "CodeSeshのインタラクティブ製品デモ",
       sampleLabel: "サンプルデータ",
-      search: "サンプルセッションを検索",
       range: "サンプルデータの期間",
       overview: "概要のデモ画面",
       projects: "プロジェクトツリーのデモ画面",
@@ -647,8 +625,6 @@ export const copy = {
       userMessages: "ユーザーメッセージ",
       agentResponses: "エージェントの応答",
       toolCalls: "ツール呼び出し",
-      sampleProjects: "サンプルプロジェクト",
-      sampleSessions: "{label}：サンプルセッション{count}件",
     },
     scenes: [
       {
@@ -682,7 +658,7 @@ export const copy = {
           description: "異なるエージェントのローカルセッションを1つのインデックスに集約します。",
           items: [
             {
-              icon: "settings",
+              icon: "play",
               title: "設定不要",
               description:
                 "コマンドを1つ実行するだけで、ファイルシステム上の対応エージェントのセッションを自動検出します。",
@@ -735,7 +711,7 @@ export const copy = {
                 "タイトル、メッセージ、ツール出力、ファイルパスを検索し、プロジェクト、タグ、ツールで絞り込めます。",
             },
             {
-              icon: "list-tree",
+              icon: "file",
               title: "ファイルアクティビティ索引",
               description:
                 "ファイルを起点に、そのファイルを読み取りまたは変更したセッションを探せます。",
@@ -774,7 +750,6 @@ export const copy = {
       ],
     },
     agents: {
-      title: ["ローカルのAIコーディング環境を", "まとめてカバー"],
       body: "各エージェントはコアアダプターを通じて接続され、セッション、プロジェクト、検索、ファイルアクティビティを1つのインデックスに集約します。",
     },
     faq: {
@@ -813,8 +788,6 @@ export const copy = {
       ],
     },
     cta: {
-      title: "コーディング履歴を、今すぐ取り戻そう",
-      body: "オープンソースで無料。セッションデータはローカルに保持されます。コマンド1つで、AIとの開発履歴を検索できるようになります。",
       github: "GitHub",
     },
     footer: {

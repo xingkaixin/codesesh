@@ -9,9 +9,10 @@ interface Props {
 const { value, secondClass = "dim" } = Astro.props;
 const lines = Array.isArray(value) ? value : [value];
 // CJK headings use keep-all, so each phrase ending in punctuation stays on one
-// line instead of leaving one or two characters orphaned.
+// line instead of leaving one or two characters orphaned. Only ASCII spaces
+// split words, so a no-break space keeps a phrase such as 你的 AI together.
 const phrases = (line: string) =>
-  line.split(/\s+/).map((word) => word.split(/(?<=[、，。：；！？])/u));
+  line.split(/ +/).map((word) => word.split(/(?<=[、，。：；！？])/u));
 ---
 
 {lines.map((line, index) => (

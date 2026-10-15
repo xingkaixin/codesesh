@@ -15,7 +15,7 @@ const t = copy[locale].footer;
   <div class="shell ft-in">
     <div class="ft-l">
       <a href={localeConfig[locale].route} class="ft-brand">
-        <img src="/logo.svg?v=3" alt="" width="24" height="24" />
+        <img src="/logo.svg?v=3" alt="" width="30" height="30" />
         <span>CodeSesh</span>
       </a>
       <span class="ft-note">{t.note}</span>
@@ -53,8 +53,9 @@ const t = copy[locale].footer;
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
+    letter-spacing: -0.01em;
   }
   .ft-note {
     color: var(--muted);

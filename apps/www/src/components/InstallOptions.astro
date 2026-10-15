@@ -16,9 +16,9 @@ const labels = {
     brew: "macOS · Homebrew required · No Node.js required",
     scoop: "Windows x64 · Scoop required · No Node.js required",
     start:
-      "After installing, run codesesh. Stop CodeSesh before updating, then restart it.",
+      "After installing, run {cmd}. Stop CodeSesh before updating, then restart it.",
     update: "Update:",
-    rerun: "Run the install command again.",
+    rerun: "Run the install command again",
   },
   zh: {
     method: "安装方式",
@@ -26,9 +26,9 @@ const labels = {
     curl: "macOS / Linux x64（glibc 2.35+）· 无需 Node.js",
     brew: "macOS · 需要 Homebrew · 无需 Node.js",
     scoop: "Windows x64 · 需要 Scoop · 无需 Node.js",
-    start: "安装后运行 codesesh。更新前停止 CodeSesh，完成后重新启动。",
+    start: "安装后运行 {cmd}。更新前停止 CodeSesh，完成后重新启动。",
     update: "更新：",
-    rerun: "再次运行安装命令。",
+    rerun: "再次运行安装命令",
   },
   ja: {
     method: "インストール方法",
@@ -37,11 +37,12 @@ const labels = {
     brew: "macOS · Homebrewが必要 · Node.js不要",
     scoop: "Windows x64 · Scoopが必要 · Node.js不要",
     start:
-      "インストール後、codeseshを実行。更新前にCodeSeshを停止し、更新後に再起動してください。",
+      "インストール後、{cmd}を実行。更新前にCodeSeshを停止し、更新後に再起動してください。",
     update: "更新：",
-    rerun: "インストールコマンドを再実行。",
+    rerun: "インストールコマンドを再実行",
   },
 }[locale];
+const [startBefore, startAfter] = labels.start.split("{cmd}");
 const methods = [
   {
     id: "npm",
@@ -115,7 +116,9 @@ const methods = [
         {method.id !== "npm" && (
           <>
             <br />
-            {labels.start}
+            {startBefore}
+            <code>codesesh</code>
+            {startAfter}
           </>
         )}
         <br />

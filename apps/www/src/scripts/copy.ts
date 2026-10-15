@@ -47,7 +47,7 @@ export function bindCopyButtons() {
       timer = window.setTimeout(() => {
         if (text) text.textContent = button.dataset.copyLabel ?? "";
         showIcon("idle");
-      }, 2000);
+      }, 1600);
     });
   });
 }

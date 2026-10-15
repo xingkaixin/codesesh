@@ -1,6 +1,7 @@
 ---
 import {
   ArrowDown01Icon,
+  ArrowMoveDownRightIcon,
   ArrowRight01Icon,
   ArrowRight02Icon,
   ArrowUpRight01Icon,
@@ -38,7 +39,6 @@ import {
   Search01Icon,
   SecurityCheckIcon,
   ServerStack01Icon,
-  SettingsIcon,
   ShieldIcon,
   SunIcon,
   TagsIcon,
@@ -59,13 +59,13 @@ export type UiIconName =
   | "chevron-left"
   | "chevron-right"
   | "close"
+  | "corner-down-right"
   | "cloud-off"
   | "compass"
   | "copy"
   | "cursor"
   | "dashboard"
   | "expand"
-  | "file"
   | "folder"
   | "github"
   | "info"
@@ -76,7 +76,6 @@ export type UiIconName =
   | "moon"
   | "network"
   | "pencil"
-  | "play"
   | "plus"
   | "scan"
   | "server"
@@ -104,6 +103,7 @@ const icons = {
   "chevron-right": ChevronRightIcon,
   close: Cancel01Icon,
   "cloud-off": CloudOffIcon,
+  "corner-down-right": ArrowMoveDownRightIcon,
   compass: Compass01Icon,
   copy: CopyIcon,
   cursor: Cursor01Icon,
@@ -129,7 +129,6 @@ const icons = {
   scan: ScanIcon,
   search: Search01Icon,
   server: ServerStack01Icon,
-  settings: SettingsIcon,
   shield: ShieldIcon,
   "shield-check": SecurityCheckIcon,
   sun: SunIcon,
