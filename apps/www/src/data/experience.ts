@@ -16,7 +16,7 @@ export const experience = {
     agentsCount: "supported agents",
     installTitle: ["Keep the context.", "Start here."],
     installBody:
-      "One command opens your local coding history. Choose the installation method that works for you.",
+      "One command opens your local coding history. Choose the installation method that works for you. Open source, free, and your session data stays local.",
     skip: "Skip to content",
     menu: "Menu",
   },
@@ -32,7 +32,7 @@ export const experience = {
     agentsTitle: "不同的 Agent，同一个工作空间。",
     agentsCount: "种受支持的 Agent",
     installTitle: ["保留上下文，", "从这里开始。"],
-    installBody: "一条命令，打开本地编码历史。选择适合你的安装方式。",
+    installBody: "一条命令，打开本地编码历史。选择适合你的安装方式。开源、免费，会话数据留在本机。",
     skip: "跳到正文",
     menu: "菜单",
   },
@@ -51,7 +51,7 @@ export const experience = {
     agentsCount: "種類の対応エージェント",
     installTitle: ["履歴を手元に。", "ここから始める。"],
     installBody:
-      "コマンドひとつで、ローカルのコーディング履歴を表示。使いやすい方法でインストールできます。",
+      "コマンドひとつで、ローカルのコーディング履歴を表示。使いやすい方法でインストールできます。オープンソースで無料、セッションデータはローカルに残ります。",
     skip: "本文へ移動",
     menu: "メニュー",
   },

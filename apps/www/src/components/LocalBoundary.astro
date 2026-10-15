@@ -2,6 +2,7 @@
 import { experience } from "../data/experience";
 import type { Locale } from "../data/landing";
 import { sections } from "../data/sections";
+import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -11,300 +12,319 @@ interface Props {
 const { locale } = Astro.props;
 const t = experience[locale];
 const s = sections[locale].local;
+const nodeIcons = ["file", "scan", "database", "monitor"] as const;
 ---
 
-<section class="local section-shell" aria-labelledby="local-heading">
-  <div class="local__band" data-reveal>
-    <div class="local__copy">
-      <p class="local__kicker console-mono">03 · {s.label}</p>
-      <h2 id="local-heading" class="section-heading">
-        {t.localTitle[0]}
-        <span>{t.localTitle[1]}</span>
-      </h2>
-      <p class="local__body">{t.localBody}</p>
-      <a class="local__link" href="#faq">
-        {t.localLink}
-        <Icon name="arrow-right" />
-      </a>
+<section id="local" class="sec" aria-labelledby="local-heading">
+  <div class="shell">
+    <div class="sec-head" data-reveal>
+      <div>
+        <p class="eyebrow">
+          <span class="n">03</span>
+          <span class="ln"></span>
+          {s.label}
+        </p>
+        <h2 id="local-heading" class="h2">
+          <HeadingText value={t.localTitle} />
+        </h2>
+      </div>
+      <div>
+        <p class="lead">{t.localBody}</p>
+        <a class="tlink local-link" href="#faq">
+          {t.localLink}
+          <Icon name="arrow" />
+        </a>
+      </div>
     </div>
-
-    <div class="local__diagram">
-      <div class="local__boundary">
-        <span class="local__boundary-label console-mono">{s.boundary}</span>
-        <ol class="local__chain">
-          {s.chain.map(([title, detail], index) => (
+    <div class="lb" data-reveal>
+      <div class="bd">
+        <span class="bd-tag">
+          <Icon name="laptop" class="size-3.5" />
+          {s.boundary}
+        </span>
+        <ol class="chain">
+          {s.chain.map(([title, sub], index) => (
             <>
               {index > 0 && (
-                <li
-                  class="local__wire"
-                  aria-hidden="true"
-                  style={`--delay:${index * 0.4}s`}
-                ></li>
+                <li class="conn" aria-hidden="true">
+                  <span class="pk" />
+                </li>
               )}
-              <li class="local__node">
-                <strong class="console-display">{title}</strong>
-                <span class="console-mono">{detail}</span>
+              <li class:list={["node", index === s.chain.length - 1 && "web"]}>
+                <span class="node-ic">
+                  <Icon name={nodeIcons[index]!} />
+                </span>
+                <div class="node-t">{title}</div>
+                <div class="node-s">{sub}</div>
               </li>
             </>
           ))}
         </ol>
       </div>
-      <div class="local__notes">
-        <div class="local__note">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"></path>
-            <path class="local__strike-line" d="M4 4l16 16"></path>
-          </svg>
-          <div>
-            <s>{s.cloud}</s>
-            <span class="console-mono">{s.cloudNote}</span>
-          </div>
-        </div>
-        <a class="local__note" href="#hub">
-          <Icon name="database" />
-          <span>
-            {s.worker} <b aria-hidden="true">→</b>
-          </span>
-        </a>
+      <div class="block" aria-hidden="true">
+        <span class="stop">
+          <Icon name="close" />
+        </span>
+      </div>
+      <div class="cloud">
+        <Icon name="cloud-off" class="size-5.5" />
+        <div class="t">{s.cloud}</div>
+        <div class="s">{s.cloudNote}</div>
       </div>
     </div>
+    <p class="lb-note" data-reveal>
+      <Icon name="server" />
+      {s.worker}
+    </p>
   </div>
 </section>
 
 <style>
-  .local {
-    padding-bottom: clamp(4rem, 7vw, 6rem);
+  .local-link {
+    margin-top: 18px;
   }
-  .local__band {
-    display: grid;
-    grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.5fr);
-    gap: 3.5rem;
-    align-items: center;
-    padding: clamp(1.75rem, 5vw, 4.5rem);
-    border: 1px solid var(--band-line);
-    border-radius: 28px;
-    background: var(--band);
-    color: var(--band-text);
-  }
-  .local__copy {
+  .lb {
     display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
+    align-items: stretch;
   }
-  .local__kicker {
-    margin: 0;
-    color: var(--band-accent);
-    font-size: 0.75rem;
-    letter-spacing: var(--tracking-eyebrow);
-    text-transform: uppercase;
-  }
-  .local .section-heading {
-    font-size: clamp(2rem, 3.4vw, 3.25rem);
-  }
-  .local .section-heading span {
-    display: block;
-    color: var(--band-muted);
-  }
-  .local__body {
-    margin: 0;
-    color: var(--band-muted);
-    font-size: 1rem;
-    line-height: 1.7;
-  }
-  .local__link {
-    display: inline-flex;
-    align-self: flex-start;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 2.75rem;
-    border-bottom: 1px solid currentColor;
-    color: var(--band-accent);
-    font-weight: 500;
-  }
-  .local__diagram {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  .local__boundary {
+  .bd {
     position: relative;
-    padding: 2.5rem 1.5rem 1.5rem;
-    border: 1.5px dashed var(--band-line);
-    border-radius: 20px;
+    flex: 1;
+    min-width: 0;
+    padding: 56px 28px 30px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 24px;
+    background-color: var(--surface);
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 18px 18px;
   }
-  .local__boundary-label {
+  .bd-tag {
     position: absolute;
-    top: -0.7rem;
-    left: 1.25rem;
-    padding: 0 0.6rem;
-    background: var(--band);
-    color: var(--band-accent);
-    font-size: 0.75rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    top: -14px;
+    left: 26px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 13px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--ink-fg);
+    font-size: 12px;
+    font-weight: 600;
   }
-  .local__chain {
+  .chain {
     display: flex;
+    align-items: center;
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .local__node {
-    display: flex;
+  .node {
     flex: 1 1 0;
-    flex-direction: column;
-    gap: 0.4rem;
     min-width: 0;
-    padding: 0.9rem;
-    border: 1px solid var(--band-line);
-    border-radius: 14px;
-    background: var(--band-surface);
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
   }
-  .local__node strong {
-    font-size: 1rem;
+  .node-ic {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    margin-bottom: 14px;
+    border-radius: 11px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+  }
+  .node-t {
+    font-size: 14.5px;
     font-weight: 600;
   }
-  .local__node span {
-    color: var(--band-muted);
-    font-size: 0.72rem;
-    overflow-wrap: anywhere;
+  .node-s {
+    margin-top: 4px;
+    color: var(--muted);
+    font: 400 11px/1.5 var(--mono);
   }
-  .local__wire {
+  .node.web {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--ink-fg);
+  }
+  .node.web .node-s {
+    color: color-mix(in oklab, var(--ink-fg) 72%, transparent);
+  }
+  .node.web .node-ic {
+    background: var(--brand);
+    color: #fff;
+  }
+  .conn {
     position: relative;
-    flex: 0 0 2rem;
+    flex: 0 0 48px;
     height: 2px;
-    align-self: center;
     background: repeating-linear-gradient(
-      90deg,
-      var(--band-line) 0 6px,
-      transparent 6px 12px
+      to right,
+      var(--border-strong) 0 4px,
+      transparent 4px 8px
     );
   }
-  .local__wire::after {
-    content: "";
+  .pk {
     position: absolute;
     top: -3px;
     left: 0;
     width: 8px;
     height: 8px;
-    border-radius: 99px;
-    background: var(--band-accent);
-    animation: local-hop 1.6s var(--delay) var(--ease-out) infinite;
+    border-radius: 2px;
+    background: var(--brand);
+    animation: travel 1.8s linear infinite;
   }
-  .local__notes {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-    gap: 1rem;
+  .conn:nth-child(4) .pk {
+    animation-delay: 0.6s;
   }
-  .local__note {
+  .conn:nth-child(6) .pk {
+    animation-delay: 1.2s;
+  }
+  .block {
+    position: relative;
     display: flex;
+    flex: 0 0 112px;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1.1rem;
-    border: 1px solid var(--band-line);
+    justify-content: center;
+  }
+  .block::before {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    left: 0;
+    border-top: 1.5px dashed var(--border-strong);
+    content: "";
+  }
+  .stop {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1.5px solid var(--err-ink);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--err-ink);
+  }
+  .cloud {
+    flex: 0 0 200px;
+    align-self: center;
+    padding: 18px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 18px;
+    background: var(--panel);
+    color: var(--muted);
+  }
+  .cloud .t {
+    margin-top: 12px;
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: line-through;
+    text-decoration-color: var(--err-ink);
+    text-decoration-thickness: 1.5px;
+  }
+  .cloud .s {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+  .lb-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    max-width: 760px;
+    margin: 28px 0 0;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
     border-radius: 14px;
-    color: var(--band-muted);
-    font-size: 0.8rem;
-    line-height: 1.55;
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: 13.5px;
   }
-  .local__note :global(svg) {
+  .lb-note :global(svg) {
     flex: none;
-  }
-  .local__strike-line {
-    stroke: var(--signal);
-  }
-  .local__note s {
-    display: block;
-    color: var(--band-text);
-    font-size: 0.94rem;
-    font-weight: 500;
-    text-decoration-color: var(--signal);
-  }
-  .local__note div span {
-    display: block;
-    margin-top: 0.25rem;
-    font-size: 0.72rem;
-  }
-  a.local__note {
-    transition: border-color var(--dur-base) var(--ease-out);
-  }
-  a.local__note:hover {
-    border-color: var(--band-accent);
-  }
-  a.local__note b {
-    color: var(--band-accent);
-    font-weight: 500;
+    margin-top: 2px;
+    color: var(--brand-ink);
   }
 
-  @keyframes local-hop {
-    from {
-      left: 0;
+  @keyframes travel {
+    0% {
+      left: -4px;
       opacity: 0;
     }
-    20%,
-    80% {
+    15%,
+    85% {
       opacity: 1;
     }
-    to {
-      left: calc(100% - 8px);
+    100% {
+      left: calc(100% - 4px);
       opacity: 0;
     }
   }
-  @keyframes local-hop-vertical {
-    from {
-      top: 0;
+  @keyframes travel-y {
+    0% {
+      top: -4px;
       opacity: 0;
     }
-    20%,
-    80% {
+    15%,
+    85% {
       opacity: 1;
     }
-    to {
-      top: calc(100% - 8px);
+    100% {
+      top: calc(100% - 4px);
       opacity: 0;
     }
   }
 
-  @media (max-width: 1199px) {
-    .local__band {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-  @media (max-width: 639px) {
-    .local__chain {
+  @media (max-width: 1023px) {
+    .lb {
       flex-direction: column;
     }
-    .local__wire {
-      flex: 0 0 2rem;
-      width: 2px;
-      height: auto;
-      background: repeating-linear-gradient(
-        180deg,
-        var(--band-line) 0 6px,
-        transparent 6px 12px
-      );
+    .block {
+      flex-basis: 64px;
     }
-    .local__wire::after {
+    .block::before {
       top: 0;
-      left: -3px;
-      animation-name: local-hop-vertical;
+      right: auto;
+      bottom: 0;
+      left: 50%;
+      border-top: 0;
+      border-left: 1.5px dashed var(--border-strong);
     }
-    .local__notes {
-      grid-template-columns: minmax(0, 1fr);
+    .cloud {
+      flex-basis: auto;
+      align-self: stretch;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .local__wire::after {
-      animation: none;
+  @media (max-width: 760px) {
+    .chain {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .conn {
+      flex: 0 0 40px;
+      align-self: center;
+      width: 2px;
+      height: 40px;
+      background: repeating-linear-gradient(
+        to bottom,
+        var(--border-strong) 0 4px,
+        transparent 4px 8px
+      );
+    }
+    .pk {
+      top: 0;
+      left: -3px;
+      animation-name: travel-y;
+    }
+    .bd {
+      padding: 52px 16px 18px;
     }
   }
 </style>

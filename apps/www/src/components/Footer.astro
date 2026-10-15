@@ -1,6 +1,6 @@
 ---
 import { copy, localeConfig, type Locale } from "../data/landing";
-import { guideCopy, guideRoutes } from "../data/guides";
+import { guideRoutes } from "../data/guides";
 import { changelogRoutes } from "../data/changelog";
 
 interface Props {
@@ -11,83 +11,77 @@ const { locale } = Astro.props;
 const t = copy[locale].footer;
 ---
 
-<footer class="site-footer">
-  <div class="section-shell footer-content">
-    <a
-      href={localeConfig[locale].route}
-      class="flex items-center gap-2.5 rounded-sm text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-    >
-      <img
-        src="/logo.svg?v=3"
-        alt="CodeSesh"
-        width="20"
-        height="20"
-        class="size-5 rounded-xs"
-      />
-      <span class="console-display text-xs font-bold tracking-[0.06em]">
-        CODESESH
-      </span>
-    </a>
-    <span class="console-mono text-[10px] leading-5 text-[var(--console-muted)]">
-      {t.note}
-    </span>
+<footer class="ft">
+  <div class="shell ft-in">
+    <div class="ft-l">
+      <a href={localeConfig[locale].route} class="ft-brand">
+        <img src="/logo.svg?v=3" alt="" width="24" height="24" />
+        <span>CodeSesh</span>
+      </a>
+      <span class="ft-note">{t.note}</span>
+    </div>
     <nav
-      class="flex flex-wrap gap-x-5 gap-y-3 sm:ml-auto"
+      class="ft-links"
       aria-label={localeConfig[locale].footerNavigationLabel}
     >
-      <a class="footer-link" href="https://github.com/xingkaixin/codesesh">
-        GitHub
-      </a>
-      <a class="footer-link" href={changelogRoutes[locale]}>
-        {t.changelog}
-      </a>
-      <a class="footer-link" href={guideRoutes()[locale]}>
-        {guideCopy[locale].label}
-      </a>
-      <a
-        class="footer-link"
-        href="https://github.com/xingkaixin/codesesh#readme"
-      >
-        {t.docs}
-      </a>
-      <a
-        class="footer-link"
-        href="https://github.com/xingkaixin/codesesh/issues"
-      >
-        {t.issues}
-      </a>
+      <a href={changelogRoutes[locale]}>{t.changelog}</a>
+      <a href={guideRoutes()[locale]}>{t.docs}</a>
+      <a href="https://github.com/xingkaixin/codesesh/issues">{t.issues}</a>
+      <a href="https://github.com/xingkaixin/codesesh">GitHub</a>
     </nav>
   </div>
 </footer>
 
 <style>
-  .site-footer {
-    padding-block: 2.2rem;
+  .ft {
+    padding: 44px 0 36px;
   }
-  .footer-content {
+  .ft-in {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.5rem;
     align-items: center;
+    justify-content: space-between;
+    gap: 24px;
   }
-  .footer-content nav {
-    margin-left: auto;
-  }
-  .footer-content :global(.footer-link) {
-    font-size: 0.72rem;
-    display: inline-flex;
+  .ft-l {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    min-height: 2.75rem;
+    gap: 16px;
   }
-  @media (max-width: 767px) {
-    .footer-content {
+  .ft-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .ft-note {
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .ft-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .ft-links a {
+    padding: 10px 11px;
+    border-radius: 9px;
+    color: var(--text-2);
+    font-size: 12.5px;
+  }
+  .ft-links a:hover {
+    background: var(--side-accent);
+    color: var(--text);
+  }
+  @media (max-width: 760px) {
+    .ft-in {
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.8rem;
     }
-    .footer-content nav {
-      margin: 0;
-      gap: 1.2rem;
+    .ft-links {
+      margin-left: -11px;
     }
   }
 </style>

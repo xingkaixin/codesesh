@@ -1,5 +1,9 @@
 ---
 import { copy, type Locale } from "../data/landing";
+import { showcase } from "../data/showcase";
+import AgentIcon from "./AgentIcon.astro";
+import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -7,186 +11,665 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].features;
-const [title, subtitle] = Array.isArray(t.title) ? t.title : [t.title, ""];
+const f = showcase[locale].features;
+const titles = showcase[locale].titles;
+const tags = showcase[locale].tour.tags;
+const sources = [
+  { agent: "Claude Code", path: "~/.claude", width: "92%", count: 128 },
+  { agent: "Codex", path: "~/.codex", width: "74%", count: 86 },
+  { agent: "Gemini CLI", path: "~/.gemini", width: "38%", count: 23 },
+];
+const fileHits = [
+  { agent: "Claude Code", title: titles.refresh },
+  { agent: "Codex", title: titles.authRefactor },
+  { agent: "Cursor", title: titles.retry },
+];
+const minimap =
+  "u a r r e a r w w e a e e a w r e a u a r e w w e a r e a w e e a r a u"
+    .split(" ")
+    .map(
+      (key) =>
+        ({
+          u: "--tl-user",
+          a: "--tl-agent",
+          r: "--tl-read",
+          w: "--tl-write",
+          e: "--tl-exec",
+        })[key],
+    );
 ---
 
-<section
-  id="capabilities"
-  class="features section-space"
-  aria-labelledby="features-heading"
->
-  <div class="section-shell">
-    <header class="features__header" data-reveal>
-      <p class="landing-kicker">
-        <b>02</b>
-        {copy[locale].header.capabilities}
-      </p>
-      <h2 id="features-heading" class="section-heading">
-        {title}
-        {subtitle && <span>{subtitle}</span>}
-      </h2>
-      <p class="section-body">{t.body}</p>
-    </header>
-
-    <div class="features__track" aria-hidden="true">
-      <span></span>
+<section id="capabilities" class="sec" aria-labelledby="capabilities-heading">
+  <div class="shell">
+    <div class="sec-head" data-reveal>
+      <div>
+        <p class="eyebrow">
+          <span class="n">02</span>
+          <span class="ln"></span>
+          {copy[locale].header.capabilities}
+        </p>
+        <h2 id="capabilities-heading" class="h2">
+          <HeadingText value={t.title} />
+        </h2>
+      </div>
+      <p class="lead">{t.body}</p>
     </div>
-    <ol class="features__grid">
+    <div class="fgrid">
       {t.groups.map((group, index) => (
-        <li class="features__stage" data-reveal>
-          <span
-            class="features__number console-display"
-            style={`animation-delay:${index * 2}s`}
-            aria-hidden="true"
-          >
-            0{index + 1}
-          </span>
-          <h3 class="console-display">{group.title}</h3>
-          <p class="features__description">{group.description}</p>
-          <ul>
-            {group.items.map((item) => (
-              <li>
-                <h4>{item.title}</h4>
-                <p>{item.description}</p>
-              </li>
-            ))}
-          </ul>
-        </li>
+        <article class="fcard" data-reveal>
+          <div class="vg" aria-hidden="true">
+            {index === 0 && (
+              <div class="vs">
+                {sources.map((source) => (
+                  <div class="vs-row">
+                    <AgentIcon name={source.agent} />
+                    <span>{source.path}</span>
+                    <span class="vs-bar">
+                      <i style={`--w:${source.width}`} />
+                    </span>
+                    <span class="vs-n">{source.count}</span>
+                  </div>
+                ))}
+                <div class="vs-live">
+                  <span class="live" />
+                  {f.live}
+                  <span class="mono">{f.liveCount}</span>
+                </div>
+              </div>
+            )}
+            {index === 1 && (
+              <>
+                <div class="vt">
+                  <div class="vt-r">
+                    <Icon name="chevron-right" class="size-3 vt-open" />
+                    <Icon name="folder" class="size-3.5" />
+                    <span class="mono vt-strong">web-app</span>
+                    <span class="c">12</span>
+                  </div>
+                  <div class="vt-r d1 on">
+                    <AgentIcon name="Claude Code" size={15} />
+                    <span class="vt-strong vt-title">{titles.refresh}</span>
+                    <span class="tag pop">
+                      <i style="background:var(--tg-bug)" />
+                      {tags.fix}
+                    </span>
+                  </div>
+                  <div class="vt-r d2 vt-sub">
+                    <span class="subtag">sub</span>
+                    <span class="vt-title">{titles.middleware}</span>
+                  </div>
+                  <div class="vt-r d2 vt-sub">
+                    <span class="subtag">sub</span>
+                    <span class="vt-title">{titles.authTests}</span>
+                  </div>
+                  <div class="vt-r d1">
+                    <AgentIcon name="Codex" size={15} />
+                    <span class="vt-title">{titles.authRefactor}</span>
+                    <span class="tag pop">
+                      <i style="background:var(--tg-ref)" />
+                      {tags.refactor}
+                    </span>
+                  </div>
+                </div>
+                <span class="alias">
+                  <Icon name="bookmark" class="size-3.5" />
+                  {f.alias}
+                </span>
+              </>
+            )}
+            {index === 2 && (
+              <div class="vq">
+                <div class="vq-in">
+                  <Icon name="search" class="size-3.5" />
+                  <span>
+                    <span class="tok">file:</span>
+                    <span class="v">src/auth/refresh.ts</span>{" "}
+                    <span class="tok">tool:</span>
+                    <span class="v">edit</span>
+                  </span>
+                  <span class="kbd">⌘K</span>
+                </div>
+                <div class="vq-res">
+                  <div class="vq-cap">{f.fileHits}</div>
+                  {fileHits.map((hit) => (
+                    <div class="vq-r">
+                      <AgentIcon name={hit.agent} size={15} />
+                      <span class="vq-title">{hit.title}</span>
+                      <span class="k">{f.edited}</span>
+                    </div>
+                  ))}
+                </div>
+                <div class="vq-keys">
+                  <span class="kbd">J</span>
+                  <span class="kbd">K</span>
+                  {f.keys}
+                </div>
+              </div>
+            )}
+            {index === 3 && (
+              <div class="vr">
+                <div class="mm">
+                  {minimap.map((color) => (
+                    <i style={`background:var(${color})`} />
+                  ))}
+                  <span class="scrub" />
+                </div>
+                <div class="tool">
+                  <span class="tic">
+                    <Icon name="pencil" />
+                  </span>
+                  <span class="tn">edit</span>
+                  <code>src/auth/refresh.ts</code>
+                  <span class="diff">
+                    <span class="a">+18</span> <span class="d">−6</span>
+                  </span>
+                </div>
+                <div class="tool">
+                  <span class="tic">
+                    <Icon name="terminal" />
+                  </span>
+                  <span class="tn">bash</span>
+                  <code>pnpm test auth</code>
+                  <span class="ok">24 passed</span>
+                </div>
+                <div class="vr-cost">
+                  <span class="bar2">
+                    <i style="width:3%;background:var(--t-in)" />
+                    <i style="width:2%;background:var(--t-out)" />
+                    <i style="width:5%;background:var(--t-cw)" />
+                    <i class="stripes" style="flex:1" />
+                  </span>
+                  <span class="v">
+                    6.1M Token<small>{f.cost}</small>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div class="fbody">
+            <div>
+              <div class="fhead">
+                <span class="fnum">0{index + 1}</span>
+                <h3 class="ftitle">{group.title}</h3>
+              </div>
+              <p class="fdesc">{group.description}</p>
+            </div>
+            <ul class="flist">
+              {group.items.map((item) => (
+                <li class="fi">
+                  <span class="fi-ic">
+                    <Icon name={item.icon} />
+                  </span>
+                  <div>
+                    <h4 class="fi-t">{item.title}</h4>
+                    <p class="fi-d">{item.description}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </article>
       ))}
-    </ol>
+    </div>
   </div>
 </section>
 
 <style>
-  .features {
-    scroll-margin-top: 4rem;
-  }
-  .features__header {
-    max-width: 54rem;
-  }
-  .features__header h2 span {
-    display: block;
-    color: var(--console-muted);
-  }
-  .features__track {
-    position: relative;
-    height: 2px;
-    margin: 4rem 0 2.25rem;
-    background: var(--console-border-strong);
-  }
-  .features__track span {
-    position: absolute;
-    top: -5px;
-    left: 0;
-    width: 12px;
-    height: 12px;
-    border-radius: 99px;
-    background: var(--signal);
-    box-shadow: 0 0 0 6px var(--signal-soft);
-    animation: features-travel 8s linear infinite;
-  }
-  .features__grid {
+  .fgrid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 2rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
   }
-  .features__stage {
+  .fcard {
     display: flex;
     flex-direction: column;
-    gap: 0.85rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    transition:
+      transform 0.3s var(--ease-out),
+      box-shadow 0.3s,
+      opacity 0.65s var(--ease-out);
   }
-  .features__number {
-    color: var(--console-border-strong);
-    font-size: 3.5rem;
-    font-weight: 600;
-    letter-spacing: -0.04em;
-    line-height: 1;
-    animation: features-lit 8s linear infinite;
+  .fcard:hover {
+    box-shadow: var(--sh-overlay);
+    transform: translateY(-4px);
   }
-  .features__stage h3 {
+  .vg {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 244px;
+    overflow: hidden;
+    padding: 24px;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--panel);
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 16px 16px;
+  }
+  .fbody {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 20px;
+    padding: 26px 30px 30px;
+  }
+  .fhead {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .fnum {
+    color: var(--brand-ink);
+    font: 300 44px/1 var(--mono);
+    letter-spacing: -0.05em;
+  }
+  .ftitle {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
   }
-  .features__description {
-    min-height: 2.75rem;
-    margin: 0 0 0.5rem;
-    color: var(--console-text-secondary);
-    font-size: 0.875rem;
-    line-height: 1.6;
+  .fdesc {
+    margin: 4px 0 0;
+    color: var(--text-2);
+    font-size: 14px;
   }
-  .features__stage ul {
+  .flist {
+    display: grid;
+    gap: 16px;
     margin: 0;
-    padding: 0;
+    padding: 20px 0 0;
+    border-top: 1px solid var(--border);
     list-style: none;
   }
-  .features__stage ul li {
-    padding: 0.9rem 0;
-    border-top: 1px solid var(--console-border);
+  .fi {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
   }
-  .features__stage h4 {
+  .fi-ic {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--muted-bg);
+    color: var(--text-2);
+  }
+  .fi-t {
     margin: 0;
-    font-size: 0.94rem;
+    font-size: 14px;
     font-weight: 600;
   }
-  .features__stage ul p {
-    margin: 0.35rem 0 0;
-    color: var(--console-muted);
-    font-size: 0.875rem;
-    line-height: 1.55;
+  .fi-d {
+    margin: 2px 0 0;
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+  .vs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+  }
+  .vs-row {
+    display: grid;
+    grid-template-columns: 18px 104px minmax(0, 1fr) 34px;
+    gap: 12px;
+    align-items: center;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    font: 500 11px/1 var(--mono);
+  }
+  .vs-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--muted-bg);
+  }
+  .vs-bar i {
+    display: block;
+    width: var(--w);
+    height: 100%;
+    border-radius: 999px;
+    background: var(--brand);
+    animation: fill 5s var(--ease-settle) infinite both;
+  }
+  .vs-row:nth-child(2) .vs-bar i {
+    animation-delay: 0.25s;
+  }
+  .vs-row:nth-child(3) .vs-bar i {
+    animation-delay: 0.5s;
+  }
+  .vs-n {
+    color: var(--text-2);
+    text-align: right;
+  }
+  .vs-live {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 11px;
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: 11.5px;
+    font-weight: 500;
+    animation: live-in 5s var(--ease-settle) infinite both;
+  }
+  .vs-live .mono {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .vt {
+    width: 100%;
+    max-width: 400px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    font-size: 12px;
+  }
+  .vt-r {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 9px;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .vt-r.on {
+    background: var(--brand-soft);
+  }
+  .vt-r :global(.vt-open) {
+    color: var(--muted);
+    transform: rotate(90deg);
+  }
+  .vt-r .c {
+    margin-left: auto;
+    color: var(--muted);
+    font: 500 10px/1 var(--mono);
+  }
+  .vt-r .tag {
+    margin-left: auto;
+  }
+  .vt-strong {
+    font-weight: 600;
+  }
+  .vt-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .vt-r.d1 {
+    padding-left: 28px;
+  }
+  .vt-r.d2 {
+    padding-left: 48px;
+    color: var(--text-2);
+  }
+  .vt-sub {
+    animation: sub-in 5s var(--ease-settle) infinite both;
+  }
+  .vt-sub + .vt-sub {
+    animation-delay: 0.2s;
+  }
+  .pop {
+    animation: pop-in 5s var(--ease-settle) infinite both;
+  }
+  .alias {
+    position: absolute;
+    top: 26px;
+    right: 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--ink);
+    box-shadow: var(--sh-overlay);
+    color: var(--ink-fg);
+    font-size: 11.5px;
+    font-weight: 600;
+    transform: rotate(4deg);
+    animation: alias-in 5s var(--ease-settle) 0.4s infinite both;
+  }
+  .vq,
+  .vr {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 430px;
+  }
+  .vq-in {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 42px;
+    overflow: hidden;
+    padding: 0 10px 0 12px;
+    border: 1.5px solid var(--brand);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 0 0 4px var(--brand-soft);
+    color: var(--muted);
+    font: 500 11.5px/1 var(--mono);
+    white-space: nowrap;
+  }
+  .vq-in .kbd {
+    margin-left: auto;
+  }
+  .vq-in .tok {
+    color: var(--brand-ink);
+  }
+  .vq-in .v {
+    color: var(--text);
+  }
+  .vq-res {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+  }
+  .vq-cap {
+    padding: 10px 12px 8px;
+    color: var(--muted);
+    font: 500 10.5px/1 var(--mono);
+  }
+  .vq-r {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    animation: cyc 4.5s linear infinite;
+  }
+  .vq-r:nth-child(3) {
+    animation-delay: -3s;
+  }
+  .vq-r:nth-child(4) {
+    animation-delay: -1.5s;
+  }
+  .vq-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .vq-r .k {
+    margin-left: auto;
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+    font: 600 9.5px/1 var(--sans);
+  }
+  .vq-keys {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .vr-cost {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+  }
+  .bar2 {
+    display: flex;
+    flex: 1;
+    gap: 2px;
+    height: 10px;
+  }
+  .bar2 i {
+    display: block;
+    border-radius: 2px;
+  }
+  .vr-cost .v {
+    font: 500 11px/1.3 var(--mono);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .vr-cost .v small {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 400;
   }
 
-  @keyframes features-travel {
-    from {
-      left: 0;
+  @keyframes fill {
+    0% {
+      width: 0;
+      opacity: 1;
     }
-    to {
-      left: calc(100% - 12px);
+    50% {
+      width: var(--w);
     }
-  }
-  /* 8s 周期内数字只在光点经过时亮起，四列依次延迟 2s 与光点位置对齐。 */
-  @keyframes features-lit {
-    0%,
-    4% {
-      color: var(--signal);
+    88% {
+      width: var(--w);
+      opacity: 1;
     }
-    18%,
     100% {
-      color: var(--console-border-strong);
+      width: var(--w);
+      opacity: 0;
+    }
+  }
+  @keyframes live-in {
+    0%,
+    58% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    68%,
+    92% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes sub-in {
+    0%,
+    18% {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    28%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    0%,
+    38% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    46%,
+    90% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+      transform: none;
+    }
+  }
+  @keyframes alias-in {
+    0%,
+    38% {
+      opacity: 0;
+      transform: scale(0.6) rotate(4deg);
+    }
+    46%,
+    90% {
+      opacity: 1;
+      transform: rotate(4deg);
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(4deg);
+    }
+  }
+  @keyframes cyc {
+    0%,
+    33% {
+      background: var(--brand-soft);
+    }
+    33.4%,
+    100% {
+      background: transparent;
     }
   }
 
-  @media (max-width: 1023px) {
-    .features__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      row-gap: 3rem;
-    }
-    .features__track {
-      display: none;
-    }
-    .features__grid {
-      margin-top: 3rem;
-    }
-    .features__number {
-      animation: none;
-      color: var(--brand-text);
-    }
-  }
-  @media (max-width: 639px) {
-    .features__grid {
+  @media (max-width: 900px) {
+    .fgrid {
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .features__track span {
-      animation: none;
+  @media (max-width: 760px) {
+    .vg {
+      height: auto;
+      min-height: 220px;
     }
-    .features__number {
-      animation: none;
-      color: var(--brand-text);
+    .vs-row {
+      grid-template-columns: 18px minmax(0, 1fr) 60px 30px;
+    }
+    .fbody {
+      padding: 22px 20px 24px;
     }
   }
 </style>

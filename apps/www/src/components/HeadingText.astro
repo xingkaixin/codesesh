@@ -3,11 +3,29 @@ import type { HeadingCopy } from "../data/landing";
 
 interface Props {
   value: HeadingCopy;
+  secondClass?: string;
 }
 
-const { value } = Astro.props;
+const { value, secondClass = "dim" } = Astro.props;
+const lines = Array.isArray(value) ? value : [value];
+// CJK headings use keep-all, so each phrase ending in punctuation stays on one
+// line instead of leaving one or two characters orphaned.
+const phrases = (line: string) =>
+  line.split(/\s+/).map((word) => word.split(/(?<=[、，。：；！？])/u));
 ---
 
-{Array.isArray(value)
-  ? value.map((line) => <span class="block">{line}</span>)
-  : value}
+{lines.map((line, index) => (
+  <>
+    {index > 0 && <br />}
+    <span class:list={[index > 0 && secondClass]}>
+      {phrases(line).map((word, w) => (
+        <>
+          {w > 0 && " "}
+          {word.map((part) => (
+            <span class="nw">{part}</span>
+          ))}
+        </>
+      ))}
+    </span>
+  </>
+))}

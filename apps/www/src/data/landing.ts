@@ -173,7 +173,8 @@ const agentNamesJa = agentDisplayNames.join("、");
 export const agents = AGENT_CATALOG.map((entry) => ({
   name: entry.displayName,
   icon: entry.icon,
-  ...("iconColored" in entry ? { iconColored: entry.iconColored } : {}),
+  iconColored: "iconColored" in entry && entry.iconColored,
+  partial: entry.support.tier === "partial",
 }));
 
 export const copy = {
@@ -242,7 +243,7 @@ export const copy = {
         title: "一次任务的完整路径逐条还原",
         description:
           "消息、工具调用和文件变更按发生顺序呈现，类型过滤与文件追踪帮助你快速定位关键上下文。",
-        hint: "展开工具调用查看输出，也可以从 TOC 隐藏消息类型",
+        hint: "展开工具调用查看输出，也可以从右侧隐藏消息类型",
       },
     ],
     features: {
@@ -361,7 +362,7 @@ export const copy = {
         {
           question: "为什么找不到某次会话？",
           answer:
-            "默认只显示最近七天活跃的会话。查找旧记录时使用 --days 0，并检查筛选、源文件和自定义数据目录；首次扫描和搜索索引可能仍在进行。CodeSesh 不能恢复已删除的原始记录。",
+            "启动后默认显示最近 7 天活跃的会话，更早的历史在后台继续扫描。在界面的时间范围里切换到 30 天、90 天、全部或自定义区间，就能查看更早的会话；首次扫描完成前，旧记录可能暂时不全。仍然找不到时，检查 Agent 筛选、源文件和自定义数据目录。CodeSesh 不能恢复已删除的原始记录。",
           link: {
             href: "/zh/guides/session-history/#troubleshooting",
             label: "查看缺失会话排查步骤",
@@ -453,7 +454,7 @@ export const copy = {
         title: "Replay the complete path of a task",
         description:
           "Read messages, tool calls, and file changes in sequence, then use type filters and file tracking to find the context that matters.",
-        hint: "Expand tool calls for output, or use the TOC to hide message types",
+        hint: "Expand tool calls for output, or hide message types from the side panel",
       },
     ],
     features: {
@@ -575,7 +576,7 @@ export const copy = {
         {
           question: "Why is a session missing?",
           answer:
-            "By default, CodeSesh includes sessions active in the last seven days. Use --days 0 for older records, check filters and source directories, and allow the initial scan and search indexing to finish. CodeSesh cannot recover deleted source records.",
+            "CodeSesh opens with sessions active in the last 7 days and keeps scanning older history in the background. Switch the time range in the UI to 30 days, 90 days, All, or a custom range to see older sessions. Until the first scan finishes, older records may be incomplete. If a session is still missing, check the agent filter, source files, and custom data directories. CodeSesh cannot recover deleted source records.",
           link: {
             href: "/guides/session-history/#troubleshooting",
             label: "Troubleshoot missing sessions",
@@ -666,7 +667,7 @@ export const copy = {
         title: "タスクの全工程を時系列で再現",
         description:
           "メッセージ、ツール呼び出し、ファイル変更を発生順に表示。種別フィルターとファイル追跡で、必要なコンテキストをすばやく見つけられます。",
-        hint: "ツール呼び出しの出力を展開し、TOCでメッセージ種別を切り替え",
+        hint: "ツール呼び出しの出力を展開し、右側でメッセージ種別を切り替え",
       },
     ],
     features: {
@@ -798,7 +799,7 @@ export const copy = {
         {
           question: "会話が見つからないのはなぜですか？",
           answer:
-            "標準では直近7日間に活動があった会話が対象です。古い記録には --days 0 を使い、フィルター、元ファイル、独自のデータ保存先を確認してください。初回スキャンや検索インデックスの作成中の場合もあります。削除された元の記録は復元できません。",
+            "起動直後は直近7日間に活動があった会話を表示し、それより古い履歴はバックグラウンドでスキャンを続けます。画面の期間を30日、90日、全期間、またはカスタム期間に切り替えると、古い会話も表示できます。初回スキャンが終わるまでは古い記録が揃っていない場合があります。それでも見つからない場合は、エージェントのフィルター、元ファイル、独自のデータ保存先を確認してください。削除された元の記録は復元できません。",
           link: {
             href: "/ja/guides/session-history/#troubleshooting",
             label: "会話が見つからない場合の確認手順",

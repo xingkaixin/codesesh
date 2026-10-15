@@ -1,7 +1,8 @@
 ---
 import { experience } from "../data/experience";
-import type { Locale } from "../data/landing";
+import { copy, type Locale } from "../data/landing";
 import { sections } from "../data/sections";
+import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 import InstallOptions from "./InstallOptions.astro";
 
@@ -14,121 +15,97 @@ const t = experience[locale];
 const s = sections[locale].install;
 ---
 
-<section
-  id="install"
-  class="installation section-shell"
-  aria-labelledby="cta-heading"
->
-  <div class="installation__band" data-reveal>
-    <div class="installation__copy">
-      <p class="installation__kicker console-mono">08 · {s.label}</p>
-      <h2 id="cta-heading" class="section-heading">
-        {t.installTitle[0]}
-        <span>{t.installTitle[1]}</span>
-      </h2>
-      <p class="installation__body">{t.installBody}</p>
-      <div class="installation__links">
-        <a
-          class="installation__github pressable"
-          href="https://github.com/xingkaixin/codesesh"
-        >
-          <Icon name="github" />
-          GitHub
-        </a>
-        <a
-          class="installation__download pressable"
-          href="https://github.com/xingkaixin/codesesh/releases"
-        >
-          {s.download}
-          <Icon name="arrow-up-right" />
-        </a>
+<section id="install" class="cta-sec" aria-labelledby="cta-heading">
+  <div class="shell">
+    <div class="cta" data-reveal>
+      <div>
+        <p class="eyebrow">
+          <span class="n">08</span>
+          <span class="ln"></span>
+          {s.label}
+        </p>
+        <h2 id="cta-heading" class="h2">
+          <HeadingText value={t.installTitle} secondClass="" />
+        </h2>
+        <p class="lead">{t.installBody}</p>
+        <div class="cbtns">
+          <a class="btn white" href="https://github.com/xingkaixin/codesesh">
+            <Icon name="github" />
+            {copy[locale].cta.github}
+          </a>
+        </div>
       </div>
+      <InstallOptions locale={locale} id="cta-install" />
     </div>
-    <InstallOptions locale={locale} id="cta-install" />
   </div>
 </section>
 
 <style>
-  .installation {
-    padding-block: clamp(3rem, 6vw, 5rem) clamp(5rem, 8vw, 7rem);
-    scroll-margin-top: 4rem;
+  .cta-sec {
+    padding: 24px 0 32px;
   }
-  .installation__band {
+  .cta {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-    gap: 3.5rem;
-    align-items: center;
-    padding: clamp(1.75rem, 6vw, 5.5rem);
-    border: 1px solid var(--band-line);
-    border-radius: 28px;
-    background: var(--band);
-    color: var(--band-text);
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 56px;
+    align-items: end;
+    overflow: hidden;
+    padding: 76px 64px;
+    border-radius: 30px;
+    background: linear-gradient(135deg, var(--ember-from), var(--ember-to));
+    color: #fff;
   }
-  .installation__copy {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
+  .cta::before {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.07) 0 2px,
+      transparent 2px 11px
+    );
+    content: "";
+    pointer-events: none;
+    mask-image: linear-gradient(to left, #000, transparent 72%);
   }
-  .installation__kicker {
-    margin: 0;
-    color: var(--band-accent);
-    font-size: 0.75rem;
-    letter-spacing: var(--tracking-eyebrow);
-    text-transform: uppercase;
+  .cta > * {
+    position: relative;
   }
-  .installation .section-heading {
-    font-size: clamp(2.4rem, 5vw, 4.25rem);
+  .cta .eyebrow {
+    color: rgba(255, 255, 255, 0.9);
   }
-  .installation .section-heading span {
-    display: block;
-    color: var(--band-accent);
+  .cta .eyebrow .n {
+    color: #fff;
   }
-  .installation__body {
-    margin: 0;
-    color: var(--band-muted);
-    font-size: 1.05rem;
-    line-height: 1.65;
+  .cta .eyebrow .ln {
+    background: rgba(255, 255, 255, 0.4);
   }
-  .installation__links {
+  .cta .lead {
+    margin-top: 22px;
+    color: rgba(255, 255, 255, 0.9);
+  }
+  .cbtns {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: 10px;
+    margin-top: 36px;
   }
-  .installation__links a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    min-height: 3rem;
-    padding: 0 1.3rem;
-    border: 1px solid var(--band-line);
-    border-radius: var(--radius-pill);
-    font-size: 0.9rem;
-    font-weight: 500;
+  .btn.white {
+    background: #fff;
+    color: #7a3a1d;
   }
-  .installation__github {
-    border-color: var(--band-text);
-    background: var(--band-text);
-    color: var(--band);
+  .btn.white:hover {
+    background: #fdede5;
   }
-  .installation__download:hover {
-    border-color: var(--band-text);
-  }
-  .installation__band :global(.install-options) {
-    --console-surface: var(--band-surface);
-    --console-surface-muted: var(--band);
-    --console-border: var(--band-line);
-    --console-border-strong: var(--band-line);
-    --console-text: var(--band-text);
-    --console-text-secondary: var(--band-muted);
-    --console-muted: var(--band-muted);
-    --elevation-raised: none;
-    --brand: var(--band-accent);
-    --brand-line: var(--band-accent);
-  }
-
-  @media (max-width: 1023px) {
-    .installation__band {
+  @media (max-width: 900px) {
+    .cta {
       grid-template-columns: minmax(0, 1fr);
+      padding: 52px 28px;
+    }
+  }
+  @media (max-width: 760px) {
+    .cta {
+      padding: 40px 20px;
     }
   }
 </style>

@@ -78,7 +78,9 @@ for (const locale of locales) {
     const visibleFaq = [];
     for (let index = 0; index < (await faqItems.count()); index += 1) {
       const item = faqItems.nth(index);
-      await item.locator("summary").click();
+      if (!(await item.evaluate((element) => (element as HTMLDetailsElement).open))) {
+        await item.locator("summary").click();
+      }
       await expect(item.locator("p")).toBeVisible();
       visibleFaq.push({
         name: (await item.locator("h3").innerText()).trim(),
@@ -112,7 +114,7 @@ for (const locale of locales) {
       })),
     ).toEqual(visibleFaq);
 
-    const agentNames = await page.locator("#agents ul > li").allInnerTexts();
+    const agentNames = await page.locator("#agents [data-agent-name]").allInnerTexts();
     expect(agentNames.map((name) => name.trim())).toEqual(supportedAgents);
     await expect(page.getByText("Antigravity", { exact: true })).toHaveCount(0);
   });
@@ -247,21 +249,23 @@ test("explores each interactive product preview", async ({ page }) => {
   await page.goto("/");
 
   const overview = page.locator("[data-overview]");
+  const visibleRange = overview.locator("[data-range-view]:not([hidden])");
   const thirtyDays = overview.locator('[data-range="30d"]');
-  await expect(overview.locator('[data-stat="sessions"]')).toHaveText("128");
+  await expect(visibleRange.locator('[data-stat="sessions"]')).toHaveText("64");
   await thirtyDays.click();
   await expect(thirtyDays).toHaveAttribute("aria-pressed", "true");
-  await expect(overview.locator('[data-stat="sessions"]')).toHaveText("512");
-  await expect(overview.locator('[data-agent-share="0"]')).toHaveText("51%");
+  await expect(visibleRange.locator('[data-stat="sessions"]')).toHaveText("251");
+  await expect(visibleRange.locator('[data-stat="tokens"]')).toHaveText("1.71B");
 
   await page.getByRole("tab", { name: "Projects", exact: true }).click();
   const projects = page.locator("[data-projects]");
   const toggle = projects.locator("[data-sub-toggle]");
-  await expect(projects.locator("[data-sub-row]")).toBeHidden();
+  const subRow = projects.locator("[data-sub-row]").first();
+  await expect(subRow).toBeHidden();
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect(projects.locator("[data-sub-row]")).toContainText("Explore auth middleware");
-  await expect(projects.locator('[data-rollup="messages"]')).toHaveText("3,218");
+  await expect(subRow).toContainText("Explore auth middleware");
+  await expect(projects.locator('[data-rollup="cost"]')).toHaveText("$4.12");
 
   await page.getByRole("tab", { name: "Projects", exact: true }).press("ArrowRight");
   await expect(page.getByRole("tab", { name: "Replay", exact: true })).toBeFocused();

@@ -1,7 +1,9 @@
 ---
-import "@fontsource-variable/ibm-plex-sans";
-import "@fontsource-variable/jetbrains-mono";
-import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/montserrat";
+import "@fontsource/ibm-plex-mono/300.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import {
   copy,
   localeConfig,
@@ -219,48 +221,65 @@ const jsonLd = {
     </script>
     <noscript>
       <style>
-        /* No-JS fallback: follow the OS preference via a plain media query
-           (the `.dark` class-based `dark:` variant never activates without
-           the script above). Covers the two spots that aren't already driven
-           by the --console-* custom properties. */
+        /* No-JS fallback: follow the OS preference with the same dark tokens
+           as .dark in global.css, because the class is set only by script. */
         @media (prefers-color-scheme: dark) {
           :root {
-            --console-bg: #111511;
-            --console-sidebar-bg: #0c100d;
-            --console-surface: #181d18;
-            --console-surface-muted: #1d231e;
-            --console-surface-sunken: #0b0f0c;
-            --console-border: #293229;
-            --console-border-strong: #3b493d;
-            --console-text: #edf1ec;
-            --console-text-secondary: #b9c3bb;
-            --console-muted: #8c9a90;
-            --console-accent: #edf1ec;
-            --console-accent-strong: #f5f8f3;
-            --console-accent-fg: #111511;
-            --brand: #8dac8c;
-            --brand-text: #adc8ad;
-            --brand-hover: #9bbd9c;
-            --brand-soft: #1d2a1e;
-            --brand-line: #415944;
-            --brand-fg: #10140f;
-            --success-text: #82c79a;
-          }
-
-          .hero__image--light {
-            display: none !important;
-          }
-
-          .hero__image--dark {
-            display: block !important;
-          }
-
-          [data-copy-command] {
-            color: var(--brand-fg);
-          }
-
-          [data-copy-command]:hover {
-            background: var(--brand-hover);
+            --frame: #0b0b0d;
+            --panel: #111113;
+            --surface: #18181b;
+            --muted-bg: #1e1e22;
+            --side-accent: #1e1e22;
+            --border: #2a2a30;
+            --border-strong: #3a3a42;
+            --text: #f3f2ef;
+            --text-2: #b6b5bd;
+            --muted: #8e8e98;
+            --ink: #f3f2ef;
+            --ink-fg: #101012;
+            --brand: #ff7a45;
+            --brand-soft: #2a1710;
+            --brand-line: #5a2e19;
+            --brand-ink: #ff7a45;
+            --btn: #ff7a45;
+            --btn-hover: #ff9166;
+            --btn-fg: #101012;
+            --ember-from: #3d1c0d;
+            --ember-to: #5e2f18;
+            --pos: #4fd3b4;
+            --pos-ink: #4fd3b4;
+            --pos-soft: #10251f;
+            --warn-ink: #e8a23b;
+            --warn-soft: #2a1e08;
+            --err-ink: #ff6369;
+            --err-soft: #2a1214;
+            --t-in: #a4491a;
+            --t-out: #d8622a;
+            --t-cr: #ff8f52;
+            --t-cw: #ffb98d;
+            --tl-user: #c98aa8;
+            --tl-agent: #82aed4;
+            --tl-read: #6bb3a0;
+            --tl-write: #d99a5c;
+            --tl-exec: #a89bc9;
+            --tg-bug: #fb7185;
+            --tg-ref: #9b87f0;
+            --tg-feat: #5b9df0;
+            --tg-test: #3fbe80;
+            --tg-docs: #f0a13f;
+            --tg-build: #f0813f;
+            --diff-add: #6fdba3;
+            --diff-rm: #f592a0;
+            --term: #0b0b0d;
+            --grid-dot: rgba(255, 255, 255, 0.07);
+            --mark: #5a2e19;
+            --sh-raised:
+              0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+            --sh-overlay:
+              0 4px 16px rgba(0, 0, 0, 0.5),
+              0 24px 56px -24px rgba(0, 0, 0, 0.8);
+            --sh-hero: 0 50px 110px -40px rgba(0, 0, 0, 0.85);
+            color-scheme: dark;
           }
         }
 

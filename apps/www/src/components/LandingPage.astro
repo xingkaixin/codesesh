@@ -7,12 +7,11 @@ import FAQ from "./FAQ.astro";
 import Features from "./Features.astro";
 import Footer from "./Footer.astro";
 import Header from "./Header.astro";
-import GuidesSection from "./GuidesSection.astro";
 import Hero from "./Hero.astro";
 import HubWorker from "./HubWorker.astro";
-import LatestUpdate from "./LatestUpdate.astro";
 import LocalBoundary from "./LocalBoundary.astro";
 import ProductShowcase from "./ProductShowcase.astro";
+import Updates from "./Updates.astro";
 
 interface Props {
   locale: Locale;
@@ -21,27 +20,24 @@ interface Props {
 const { locale } = Astro.props;
 ---
 
-<div class="landing-page console-ui min-h-dvh bg-[var(--console-bg)] text-[var(--console-text)]">
-  <a class="skip-link" href="#main-content">
-    {experience[locale].skip}
-  </a>
-  <Header locale={locale} />
-  <main id="main-content">
+<a class="skip-link" href="#main-content">
+  {experience[locale].skip}
+</a>
+<Header locale={locale} />
+<div class="frame">
+  <main id="main-content" class="panel">
     <Hero locale={locale} />
     <ProductShowcase locale={locale} />
     <Features locale={locale} />
     <LocalBoundary locale={locale} />
     <HubWorker locale={locale} />
     <Agents locale={locale} />
-    <div class="landing-resources section-shell section-space">
-      <LatestUpdate locale={locale} />
-      <GuidesSection locale={locale} />
-    </div>
+    <Updates locale={locale} />
     <FAQ locale={locale} />
     <CallToAction locale={locale} />
   </main>
-  <Footer locale={locale} />
 </div>
+<Footer locale={locale} />
 
 <script>
   if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -69,23 +65,3 @@ const { locale } = Astro.props;
     );
   }
 </script>
-
-<style>
-  .landing-resources {
-    display: grid;
-    grid-template-columns: 1.15fr 1fr;
-    align-items: center;
-    gap: 5rem;
-  }
-  @media (max-width: 1023px) {
-    .landing-resources {
-      gap: 2.5rem;
-    }
-  }
-  @media (max-width: 767px) {
-    .landing-resources {
-      grid-template-columns: 1fr;
-      gap: 3rem;
-    }
-  }
-</style>
