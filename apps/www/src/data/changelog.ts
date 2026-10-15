@@ -36,6 +36,22 @@ interface ChangelogCopy {
     direction: string;
     details: string;
   };
+  page: {
+    eyebrow: string;
+    home: string;
+    breadcrumb: string;
+    latestVersion: string;
+    included: string;
+    since: string;
+    allReleases: string;
+    jump: string;
+    index: string;
+    latestBadge: string;
+    expand: string;
+    collapse: string;
+    items: string;
+    itemsOne: string;
+  };
   releases: ChangelogRelease[];
 }
 
@@ -68,6 +84,22 @@ export const changelogCopy = {
       changed: "What changed",
       direction: "Product direction",
       details: "View technical release details",
+    },
+    page: {
+      eyebrow: "Product progress and direction",
+      home: "Home",
+      breadcrumb: "Breadcrumb",
+      latestVersion: "Latest version",
+      included: "Releases covered",
+      since: "Since v{version} ({date})",
+      allReleases: "View all releases on GitHub",
+      jump: "Jump to a version",
+      index: "Version index",
+      latestBadge: "Latest",
+      expand: "Show this release",
+      collapse: "Hide",
+      items: "{count} items",
+      itemsOne: "{count} item",
     },
     releases: [
       {
@@ -812,6 +844,22 @@ export const changelogCopy = {
       direction: "产品方向",
       details: "查看技术发布详情",
     },
+    page: {
+      eyebrow: "产品进展与方向",
+      home: "首页",
+      breadcrumb: "面包屑",
+      latestVersion: "最新版本",
+      included: "收录版本",
+      since: "自 v{version}（{date}）",
+      allReleases: "在 GitHub 查看全部发布",
+      jump: "按版本跳转",
+      index: "版本索引",
+      latestBadge: "最新",
+      expand: "展开本次更新",
+      collapse: "收起",
+      items: "{count} 项",
+      itemsOne: "{count} 项",
+    },
     releases: [
       {
         version: "1.3.4",
@@ -1534,6 +1582,22 @@ export const changelogCopy = {
       changed: "主な変更点",
       direction: "製品の方向性",
       details: "技術的なリリース詳細を見る",
+    },
+    page: {
+      eyebrow: "製品の進捗と方向性",
+      home: "ホーム",
+      breadcrumb: "パンくずリスト",
+      latestVersion: "最新バージョン",
+      included: "掲載リリース",
+      since: "v{version}（{date}）から",
+      allReleases: "GitHub ですべてのリリースを見る",
+      jump: "バージョンへ移動",
+      index: "バージョン一覧",
+      latestBadge: "最新",
+      expand: "このリリースを表示",
+      collapse: "閉じる",
+      items: "{count} 件",
+      itemsOne: "{count} 件",
     },
     releases: [
       {
