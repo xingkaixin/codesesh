@@ -36,7 +36,7 @@ pub(super) fn read_line(reader: &mut impl BufRead, line: &mut String) -> io::Res
     Ok(read)
 }
 
-const ACTIVE_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+pub(crate) const ACTIVE_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 /// Parser checkpoints only pay off for transcripts that are still being appended to.
 pub(super) fn recently_written(metadata: &std::fs::Metadata) -> bool {

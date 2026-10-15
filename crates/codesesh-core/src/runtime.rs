@@ -28,7 +28,14 @@ pub struct AgentSource {
     pub name: String,
     pub roots: Vec<PathBuf>,
     pub scan: Arc<Scanner>,
+    /// Drops parser state for files that stopped being written; runs once the source goes quiet.
+    pub release_idle: Option<Arc<dyn Fn() + Send + Sync>>,
 }
+
+#[cfg(not(test))]
+const IDLE_RELEASE_DELAY: Duration = crate::agents::jsonl::ACTIVE_WINDOW;
+#[cfg(test)]
+const IDLE_RELEASE_DELAY: Duration = Duration::from_millis(50);
 
 #[derive(Clone)]
 pub struct Cancellation {
@@ -436,7 +443,9 @@ impl Runtime {
         let mut first = true;
         loop {
             if !first {
-                tokio::select! { result = pending.changed() => if result.is_err() { return; }, _ = shutdown.changed() => return }
+                if !wait_for_change(&source, &mut pending, &mut shutdown).await {
+                    return;
+                }
                 tokio::select! { _ = tokio::time::sleep(Duration::from_millis(150)) => (), _ = shutdown.changed() => return }
             }
             first = false;
@@ -620,6 +629,29 @@ impl Runtime {
                 error,
             })
             .await;
+    }
+}
+
+/// Returns false when the runtime shuts down or stops publishing changes.
+async fn wait_for_change(
+    source: &AgentSource,
+    pending: &mut watch::Receiver<Pending>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> bool {
+    // A file that stops being written raises no change, so nothing else would re-check it.
+    let idle = tokio::time::sleep(IDLE_RELEASE_DELAY);
+    tokio::pin!(idle);
+    let mut release = source.release_idle.clone();
+    loop {
+        tokio::select! {
+            result = pending.changed() => return result.is_ok(),
+            _ = &mut idle, if release.is_some() => {
+                if let Some(release) = release.take() {
+                    let _ = tokio::task::spawn_blocking(move || release()).await;
+                }
+            }
+            _ = shutdown.changed() => return false,
+        }
     }
 }
 
