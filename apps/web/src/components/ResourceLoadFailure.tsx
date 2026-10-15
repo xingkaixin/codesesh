@@ -17,14 +17,14 @@ export function ResourceLoadFailure({
   return (
     <div
       role="alert"
-      className={`rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-4 text-[var(--console-error)] ${className}`}
+      className={`rounded-[10px] bg-[var(--console-error-bg)] px-3 py-2.5 text-[var(--console-error)] shadow-[inset_0_0_0_1px_var(--console-error-border)] ${className}`}
     >
-      <p className="text-sm font-medium">{title}</p>
+      <p className="text-xs font-medium">{title}</p>
       <p className="console-mono mt-1 break-words text-[11px]">{message}</p>
       <button
         type="button"
         onClick={onRetry}
-        className="console-mono mt-3 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-2.5 py-1 text-[11px] font-semibold motion-hover hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        className="mt-2 inline-flex h-6 items-center rounded-md border border-[var(--console-error-border)] bg-[var(--console-surface)] px-2 text-[11px] font-medium motion-hover hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
       >
         {t("Retry")}
       </button>

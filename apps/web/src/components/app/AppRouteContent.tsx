@@ -4,9 +4,12 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useId,
   useMemo,
+  useState,
   type Dispatch,
   type ReactNode,
+  type Ref,
   type SetStateAction,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -28,6 +31,10 @@ import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
+import { SearchControls, type SearchControlsHandle } from "./SearchControls";
+import { BUTTON_PRIMARY_CLASS } from "../ui/dialog-styles";
+import { EmptyState } from "../ui/empty-state";
+import { Funnel, RefreshCw, XCircle } from "../ui/icons";
 
 const DetailLanding = lazy(() =>
   import("../DetailLanding").then((module) => ({ default: module.DetailLanding })),
@@ -76,8 +83,6 @@ interface SessionDetailModel {
 interface OverviewModel {
   window: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
-  onRangeChange: (preset: TimeWindowPreset) => void;
-  onSelectCustom: (from: string, to: string) => void;
 }
 
 interface ProjectAgentFilterModel {
@@ -87,7 +92,6 @@ interface ProjectAgentFilterModel {
 
 interface SearchContentModel {
   active: boolean;
-  window?: AppConfig["window"] | null;
   query: string;
   state: SearchLoadState;
   agentNameMap: ReadonlyMap<string, string>;
@@ -99,6 +103,8 @@ interface SearchContentModel {
   onRetry: () => void;
   selectedIndex: number;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
+  controls: Ref<SearchControlsHandle>;
+  onSubmit: (query: string) => void;
 }
 
 interface BookmarkContentModel {
@@ -171,20 +177,53 @@ function landingAgentItems(agents: AgentInfo[]): LandingAgentItem[] {
   }));
 }
 
-function SearchRouteContent({ search }: { search: SearchContentModel }) {
+function SearchRouteContent({
+  search,
+  controlsRef,
+}: {
+  search: SearchContentModel;
+  controlsRef: Ref<SearchControlsHandle>;
+}) {
   useLocale();
 
+  const filtersId = useId();
+  const activeFilters = Object.values(search.filters).filter(Boolean).length;
+  const [filtersOpen, setFiltersOpen] = useState(activeFilters > 0);
   const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
   return (
     <RenderProfiler
       id="SearchResultsPanel"
       detail={{ results: resultCount, loading: search.state.status === "loading" }}
     >
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <SearchControls
+          ref={controlsRef}
+          onSubmit={search.onSubmit}
+          initialQuery={search.query}
+          autoFocus
+        />
+        <button
+          type="button"
+          aria-expanded={filtersOpen}
+          aria-controls={filtersOpen ? filtersId : undefined}
+          onClick={() => setFiltersOpen((open) => !open)}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 text-xs font-medium text-[var(--console-text)] shadow-[var(--shadow-raised)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        >
+          <Funnel aria-hidden="true" className="size-3.5 text-[var(--console-muted)]" />
+          {t("Filters")}
+          {activeFilters > 0 ? (
+            <span className="console-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--brand-soft)] px-1 text-[10px] text-[var(--brand)]">
+              {activeFilters}
+            </span>
+          ) : null}
+        </button>
+      </div>
       <LazySurface>
         <SearchResultsPanel
           query={search.query}
-          window={search.window}
           state={search.state}
+          filtersOpen={filtersOpen}
+          filtersId={filtersId}
           agentNameMap={search.agentNameMap}
           agents={search.agents}
           projects={search.projectOptions}
@@ -204,19 +243,18 @@ function LoadError({ load }: { load: LoadModel }) {
   useLocale();
 
   return (
-    <div
+    <EmptyState
       role="alert"
-      className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]"
+      tone="error"
+      icon={<XCircle className="size-4" />}
+      title={load.error}
+      className="mx-auto max-w-4xl"
     >
-      <p>{load.error}</p>
-      <button
-        type="button"
-        onClick={load.retry}
-        className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] px-3 py-1.5 text-xs motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-      >
+      <button type="button" onClick={load.retry} className={`${BUTTON_PRIMARY_CLASS} mt-1.5`}>
+        <RefreshCw aria-hidden="true" className="size-3.5" />
         {t("Retry")}
       </button>
-    </div>
+    </EmptyState>
   );
 }
 
@@ -230,8 +268,6 @@ function RootRouteContent({ route }: { route: RootRouteModel }) {
           window={route.overview.window}
           agentCatalog={route.agentCatalog}
           rangePreset={route.overview.rangePreset}
-          onRangeChange={route.overview.onRangeChange}
-          onSelectCustom={route.overview.onSelectCustom}
         />
       </LazySurface>
     </RenderProfiler>
@@ -272,8 +308,6 @@ function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
         onChangeAgent={route.agentFilter.onChangeAgent}
         timeWindow={route.overview.window}
         rangePreset={route.overview.rangePreset}
-        onRangeChange={route.overview.onRangeChange}
-        onSelectCustom={route.overview.onSelectCustom}
       />
     </LazySurface>
   );
@@ -462,7 +496,7 @@ export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
   useLocale();
 
   if (load.loading) return <SessionDetailSkeleton />;
-  if (search.active) return <SearchRouteContent search={search} />;
+  if (search.active) return <SearchRouteContent search={search} controlsRef={search.controls} />;
   if (load.error) return <LoadError load={load} />;
   return <RouteContent route={route} />;
 }

@@ -236,20 +236,11 @@ it("links message matches to their source position", () => {
   ).toBe("/nodes/remote/codex/s1#message-42");
 });
 
-it("explains the selected search window, indexed scope and empty-result recovery", () => {
+it("explains the indexed scope and empty-result recovery", () => {
   setLanguagePreference("zh-CN");
-  const view = renderPanel(
-    { status: "loaded", results: [] },
-    {
-      window: { from: new Date(2026, 8, 1).getTime(), to: new Date(2026, 8, 3).getTime() },
-    },
-  );
-  expect(screen.getByText("搜索时间范围：2026-09-01 → 2026-09-03")).toBeTruthy();
+  renderPanel({ status: "loaded", results: [] });
   expect(screen.getByText(/最多展示 50 个会话/)).toBeTruthy();
   expect(screen.getByText(/更改上方的时间范围/)).toBeTruthy();
-  view.unmount();
-  renderPanel({ status: "loading" }, { window: { from: 0, days: 0 } });
-  expect(screen.getByText("搜索时间范围：全部时间")).toBeTruthy();
 });
 
 it("explains a full result list without claiming additional matches exist", () => {
@@ -281,7 +272,7 @@ it("keeps matching session IDs on different sources distinct", () => {
     };
   });
   const { props } = renderPanel({ status: "loaded", results });
-  const local = screen.getByText("Source: Local source").closest("a");
+  const local = screen.getAllByRole("heading", { level: 2, name: "Session same" })[0]!.closest("a");
   const remote = screen.getByText("Source: worker-one").closest("a");
   expect(local?.getAttribute("href")).toBe("/codex/same");
   expect(remote?.getAttribute("href")).toBe("/nodes/worker-one/codex/same");

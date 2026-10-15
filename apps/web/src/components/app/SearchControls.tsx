@@ -2,6 +2,7 @@ import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { forwardRef, useImperativeHandle, useRef, useState, type FormEvent } from "react";
 import { RenderProfiler } from "../RenderProfiler";
+import { Search } from "../ui/icons";
 
 export interface SearchControlsHandle {
   clear(): void;
@@ -10,11 +11,11 @@ export interface SearchControlsHandle {
 
 export const SearchControls = forwardRef<
   SearchControlsHandle,
-  { onSubmit: (query: string) => void }
->(function SearchControls({ onSubmit }, ref) {
+  { onSubmit: (query: string) => void; initialQuery?: string; autoFocus?: boolean }
+>(function SearchControls({ onSubmit, initialQuery = "", autoFocus = false }, ref) {
   useLocale();
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(
@@ -38,29 +39,29 @@ export const SearchControls = forwardRef<
 
   return (
     <RenderProfiler id="SearchControls">
-      <form
-        className="order-3 col-span-2 flex min-w-0 w-full items-center justify-center gap-2 lg:order-none lg:col-span-1 lg:mx-auto lg:max-w-[440px]"
-        onSubmit={submit}
-      >
-        <label className="flex min-w-0 flex-1 items-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 focus-within:border-[var(--brand-line)] focus-within:ring-2 focus-within:ring-[var(--brand)]">
+      <form role="search" className="min-w-0 flex-[1_1_360px]" onSubmit={submit}>
+        <label className="flex h-11 min-w-0 items-center gap-2.5 rounded-full border border-[var(--console-border)] bg-[var(--console-surface)] pr-2 pl-3.5 shadow-[var(--shadow-raised)] motion-hover focus-within:border-[var(--brand)] focus-within:ring-3 focus-within:ring-[var(--brand)]/15">
+          <Search aria-hidden="true" className="size-4 shrink-0 text-[var(--console-muted)]" />
           <span className="sr-only">{t("Search Sessions")}</span>
           <input
             ref={inputRef}
             type="search"
             name="session-search"
             autoComplete="off"
+            autoFocus={autoFocus}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Search sessions…  /")}
-            className="console-mono w-full min-w-0 bg-transparent text-xs text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
+            placeholder={t("Search sessions…")}
+            className="w-full min-w-0 bg-transparent text-sm text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
           />
+          <button
+            type="submit"
+            className="inline-flex h-[22px] shrink-0 items-center rounded-[4px] border border-b-2 border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 text-[10px] font-semibold text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+          >
+            <span aria-hidden="true">Enter</span>
+            <span className="sr-only">{t("Search")}</span>
+          </button>
         </label>
-        <button
-          type="submit"
-          className="console-mono rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] px-3 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-        >
-          {t("Search")}
-        </button>
       </form>
     </RenderProfiler>
   );

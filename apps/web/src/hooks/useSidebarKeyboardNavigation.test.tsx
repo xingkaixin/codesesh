@@ -36,7 +36,6 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     sessionLookup: buildSidebarSessionLookup(sessions),
     isSearchMode: false,
     shortcutHelpOpen: false,
-    dismissShortcutHint: vi.fn(),
     onOpenSession: vi.fn(),
     ...overrides,
   };
@@ -100,11 +99,11 @@ describe("useSidebarKeyboardNavigation", () => {
     helpHook.unmount();
 
     const deps = makeDeps();
-    renderHook(() => useSidebarKeyboardNavigation(deps));
+    const hook = renderHook(() => useSidebarKeyboardNavigation(deps));
     const input = document.createElement("input");
     document.body.append(input);
     fireEvent.keyDown(input, { key: "j" });
-    expect(deps.dismissShortcutHint).not.toHaveBeenCalled();
+    expect(hook.result.current.selectedSessionReference).toBeNull();
     input.remove();
   });
 });

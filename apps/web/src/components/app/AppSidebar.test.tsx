@@ -33,6 +33,9 @@ function createActions(overrides: Partial<AppSidebarActions> = {}): AppSidebarAc
     onRenameBookmarkedSession: vi.fn(),
     onRetryProjects: vi.fn(),
     onRetryBookmarks: vi.fn(),
+    onOpenSearch: vi.fn(),
+    onChangeTheme: vi.fn(),
+    onShowShortcuts: vi.fn(),
     ...overrides,
   };
 }
@@ -64,7 +67,9 @@ function renderSidebar(
             bookmarkedSidebarSessionReferences: new Set(),
             isSearchMode: false,
             shortcutHelpOpen: false,
-            dismissShortcutHint: vi.fn(),
+            hubEnabled: false,
+            sessionCount: 0,
+            theme: "system",
             ...model,
           }}
           actions={actions}
@@ -108,7 +113,9 @@ describe("AppSidebar", () => {
       selectedProjectNavigationId: "path:/repo/199",
     });
 
-    expect(screen.getByRole("link", { name: "All 200 →" }).getAttribute("href")).toBe("/projects");
+    expect(screen.getByRole("link", { name: "All projects 200" }).getAttribute("href")).toBe(
+      "/projects",
+    );
     expect(
       screen.getAllByRole("link").filter((link) => link.textContent?.includes("project-")),
     ).toHaveLength(9);
@@ -117,7 +124,9 @@ describe("AppSidebar", () => {
 
   it("marks the dashboard entry active only on the root route", () => {
     renderSidebar();
-    expect(screen.getByRole("link", { name: /Dashboard/ }).dataset.active).toBe("true");
+    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
 
     cleanup();
     renderSidebar({
@@ -129,7 +138,7 @@ describe("AppSidebar", () => {
         activeSessionId: null,
       },
     });
-    expect(screen.getByRole("link", { name: /Dashboard/ }).dataset.active).toBeUndefined();
+    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("aria-current")).toBeNull();
   });
 
   it("renders its collapse control outside the navigation list", () => {

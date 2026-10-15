@@ -4,6 +4,18 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useState } from "react";
 import { formatIsoDate } from "../lib/scan-format";
 import type { TimeWindow } from "../lib/time-window";
+import {
+  BUTTON_OUTLINE_CLASS,
+  BUTTON_PRIMARY_CLASS,
+  DIALOG_BODY_CLASS,
+  DIALOG_DESCRIPTION_CLASS,
+  DIALOG_FOOTER_CLASS,
+  DIALOG_HEADER_CLASS,
+  DIALOG_POPUP_CLASS,
+  DIALOG_TITLE_CLASS,
+  FIELD_LABEL_CLASS,
+  INPUT_CLASS,
+} from "./ui/dialog-styles";
 
 export function CustomTimeWindowDialog({
   open,
@@ -58,37 +70,41 @@ function CustomTimeWindowDialogContent({
   return (
     <Dialog.Portal>
       <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-[var(--scrim)]" />
-      <Dialog.Popup className="motion-modal fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-5 shadow-[var(--shadow-overlay)] outline-none">
-        <Dialog.Title className="console-mono text-sm font-semibold text-[var(--console-text)]">
-          {t("Custom time range")}
-        </Dialog.Title>
-        <p className="mt-1 text-xs text-[var(--console-muted)]">{t("Both dates are included.")}</p>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="console-mono text-[11px] uppercase tracking-wide text-[var(--console-muted)]">
-            {t("From")}{" "}
-            <input
-              type="date"
-              value={from}
-              max={to || undefined}
-              onChange={(event) => setFrom(event.target.value)}
-              className="mt-1.5 w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-2 py-2 text-xs normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/25"
-            />
-          </label>
-          <label className="console-mono text-[11px] uppercase tracking-wide text-[var(--console-muted)]">
-            {t("To")}{" "}
-            <input
-              type="date"
-              value={to}
-              min={from || undefined}
-              onChange={(event) => setTo(event.target.value)}
-              className="mt-1.5 w-full rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-2 py-2 text-xs normal-case tracking-normal text-[var(--console-text)] outline-none focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--brand)]/25"
-            />
-          </label>
+      <Dialog.Popup className={`${DIALOG_POPUP_CLASS} max-w-[440px]`}>
+        <div className={DIALOG_HEADER_CLASS}>
+          <div>
+            <Dialog.Title className={DIALOG_TITLE_CLASS}>{t("Custom time range")}</Dialog.Title>
+            <Dialog.Description className={DIALOG_DESCRIPTION_CLASS}>
+              {t("Both dates are included.")}
+            </Dialog.Description>
+          </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Dialog.Close className="rounded-sm border border-[var(--console-border)] px-3 py-1.5 text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]">
-            {t("Cancel")}
-          </Dialog.Close>
+        <div className={DIALOG_BODY_CLASS}>
+          <div className="grid grid-cols-2 gap-3">
+            <label className={FIELD_LABEL_CLASS}>
+              {t("From")}
+              <input
+                type="date"
+                value={from}
+                max={to || undefined}
+                onChange={(event) => setFrom(event.target.value)}
+                className={`${INPUT_CLASS} console-mono`}
+              />
+            </label>
+            <label className={FIELD_LABEL_CLASS}>
+              {t("To")}
+              <input
+                type="date"
+                value={to}
+                min={from || undefined}
+                onChange={(event) => setTo(event.target.value)}
+                className={`${INPUT_CLASS} console-mono`}
+              />
+            </label>
+          </div>
+        </div>
+        <div className={DIALOG_FOOTER_CLASS}>
+          <Dialog.Close className={BUTTON_OUTLINE_CLASS}>{t("Cancel")}</Dialog.Close>
           <button
             type="button"
             disabled={!from || !to || from > to}
@@ -96,7 +112,7 @@ function CustomTimeWindowDialogContent({
               onSelectCustom(from, to);
               onOpenChange(false);
             }}
-            className="rounded-sm border border-[var(--console-accent)] bg-[var(--console-accent)] px-3 py-1.5 text-xs text-[var(--console-accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className={BUTTON_PRIMARY_CLASS}
           >
             {t("Apply range")}
           </button>

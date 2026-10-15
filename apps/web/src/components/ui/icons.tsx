@@ -3,7 +3,9 @@
  * 而不是 `<HugeiconsIcon icon={StarIcon} .../>`。图标选型集中在本文件，换图标只改这里。
  */
 import {
+  ArrowUpRight01Icon,
   BookOpenTextIcon,
+  Bookmark01Icon,
   BrowserIcon,
   CalendarRangeIcon,
   Cancel01Icon,
@@ -21,15 +23,21 @@ import {
   ComputerIcon,
   ComputerTerminal01Icon,
   CopyIcon,
+  DashboardSquare01Icon,
   File01Icon,
   FileAddIcon,
   FileEditIcon,
   FileSearchIcon,
+  Folder01Icon,
   FunnelIcon,
+  GitBranchIcon,
+  Globe02Icon,
   GoalIcon,
   HelpCircleIcon,
   IdeaIcon,
   ImageIcon,
+  InboxIcon,
+  Invoice01Icon,
   Loading02Icon,
   LanguageSkillIcon,
   Message01Icon,
@@ -42,10 +50,12 @@ import {
   PanelLeftOpenIcon,
   PencilIcon,
   Plug01Icon,
+  RefreshIcon,
   RobotIcon,
   Search01Icon,
   StarIcon,
   SunIcon,
+  UnfoldMoreIcon,
   UserIcon,
   UserMultipleIcon,
   WrenchIcon,
@@ -60,7 +70,9 @@ function toIcon(icon: IconSvgElement) {
   };
 }
 
+export const ArrowUpRight = toIcon(ArrowUpRight01Icon);
 export const BookOpenText = toIcon(BookOpenTextIcon);
+export const Bookmark = toIcon(Bookmark01Icon);
 export const Bot = toIcon(RobotIcon);
 export const CalendarRange = toIcon(CalendarRangeIcon);
 export const Check = toIcon(CheckIcon);
@@ -74,12 +86,17 @@ export const CircleDashed = toIcon(CircleDashedIcon);
 export const CircleHelp = toIcon(HelpCircleIcon);
 export const Clock3 = toIcon(Clock01Icon);
 export const Copy = toIcon(CopyIcon);
+export const LayoutDashboard = toIcon(DashboardSquare01Icon);
 export const FilePenLine = toIcon(FileEditIcon);
 export const FilePlus2 = toIcon(FileAddIcon);
 export const FileSearch = toIcon(FileSearchIcon);
 export const FileText = toIcon(File01Icon);
+export const Folder = toIcon(Folder01Icon);
 export const Funnel = toIcon(FunnelIcon);
+export const GitBranch = toIcon(GitBranchIcon);
+export const Globe = toIcon(Globe02Icon);
 export const Image = toIcon(ImageIcon);
+export const Inbox = toIcon(InboxIcon);
 export const Lightbulb = toIcon(IdeaIcon);
 export const ListTodo = toIcon(CheckListIcon);
 export const LoaderCircle = toIcon(Loading02Icon);
@@ -97,10 +114,13 @@ export const PanelLeftOpen = toIcon(PanelLeftCloseIcon);
 export const PanelsTopLeft = toIcon(BrowserIcon);
 export const Pencil = toIcon(PencilIcon);
 export const Plug = toIcon(Plug01Icon);
+export const Receipt = toIcon(Invoice01Icon);
+export const RefreshCw = toIcon(RefreshIcon);
 export const Search = toIcon(Search01Icon);
 export const SquareTerminal = toIcon(ComputerTerminal01Icon);
 export const Star = toIcon(StarIcon);
 export const Sun = toIcon(SunIcon);
+export const ChevronsUpDown = toIcon(UnfoldMoreIcon);
 export const Target = toIcon(GoalIcon);
 export const UserRound = toIcon(UserIcon);
 export const Users = toIcon(UserMultipleIcon);

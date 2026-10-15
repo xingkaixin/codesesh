@@ -38,32 +38,31 @@ import {
   normalizeToolState,
 } from "./tool-strategy";
 
+const STATUS_CHIP_CLASS =
+  "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-[11px] font-medium whitespace-nowrap";
+
 const TOOL_STATUS_META: Record<
   ToolStatus,
   { label: string; className: string; icon: typeof LoaderCircle }
 > = {
   unknown: {
     label: "Unknown",
-    className:
-      "border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] text-[var(--console-muted)]",
+    className: "bg-[var(--console-surface-muted)] text-[var(--console-muted)]",
     icon: CircleHelp,
   },
   completed: {
     label: "Success",
-    className:
-      "border-[var(--console-success-border)] bg-[var(--positive-soft)] text-[var(--positive)]",
+    className: "bg-[var(--positive-soft)] text-[var(--positive)]",
     icon: CheckCircle2,
   },
   error: {
     label: "Failed",
-    className:
-      "border-[var(--console-error-border)] bg-[var(--console-error-bg)] text-[var(--console-error)]",
+    className: "bg-[var(--console-error-bg)] text-[var(--console-error)]",
     icon: XCircle,
   },
   running: {
     label: "Running",
-    className:
-      "border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] text-[var(--console-warning)]",
+    className: "bg-[var(--console-warning-bg)] text-[var(--console-warning)]",
     icon: LoaderCircle,
   },
 };
@@ -148,129 +147,126 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div data-message-id={msg.id}>
       {startsDay ? (
-        <p className="console-mono mb-4 border-b border-[var(--console-border)] pb-2 text-xs font-medium text-[var(--console-muted)]">
+        <p className="console-mono mb-5 flex items-center gap-3 text-[11px] text-[var(--console-muted)] before:h-px before:flex-1 before:bg-[var(--console-border)] after:h-px after:flex-1 after:bg-[var(--console-border)]">
           {date}
         </p>
       ) : null}
       <article
         ref={messageAnchorRef}
         id={messageAnchorId}
-        className="w-full scroll-mt-20 border-l-2 border-[var(--console-thread)] pl-4 pr-3 md:pr-5"
+        className="relative grid w-full scroll-mt-20 grid-cols-[28px_minmax(0,1fr)] gap-x-3.5 pb-[22px] before:absolute before:top-[34px] before:bottom-1.5 before:left-[13.5px] before:w-px before:bg-[var(--console-border)]"
       >
-        <div className="flex gap-4">
-          <div className="shrink-0 pt-1">
-            <div className="flex size-8 items-center justify-center rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)]">
-              {isUser ? (
-                <UserRound className="size-4 text-[var(--console-muted)]" />
-              ) : (
-                getAgentAvatar()
-              )}
-            </div>
-          </div>
-          <div className="min-w-0 flex-1 space-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="console-mono text-sm font-bold tracking-wide text-[var(--console-text)]">
-                {roleLabel}
+        <span
+          className={
+            isUser
+              ? "flex size-7 items-center justify-center rounded-full bg-[var(--console-text)] text-[var(--console-surface)]"
+              : "flex size-7 items-center justify-center rounded-full bg-[var(--console-surface)] text-[var(--console-muted)] shadow-[0_0_0_1px_var(--console-border)]"
+          }
+        >
+          {isUser ? <UserRound className="size-3.5" /> : getAgentAvatar()}
+        </span>
+        <div className="flex min-w-0 flex-col gap-2.5">
+          <div className="flex min-h-7 flex-wrap items-center gap-2 text-xs text-[var(--console-muted)]">
+            <span className="text-[13px] font-semibold text-[var(--console-text)]">
+              {roleLabel}
+            </span>
+            {time ? (
+              <time className="console-mono whitespace-nowrap text-[11px]">{time}</time>
+            ) : null}
+            {modeLabel && (
+              <span className="inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-semibold tracking-[0.05em]">
+                {modeLabel}
               </span>
-              {time ? (
-                <time className="console-mono whitespace-nowrap text-xs text-[var(--console-muted)]">
-                  {time}
-                </time>
-              ) : null}
-              {modeLabel && (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                  {modeLabel}
-                </span>
-              )}
-              {modelLabel && (
-                <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
-                  {modelLabel}
-                </span>
-              )}
-              {childSession ? (
-                <Link
-                  to={getSessionRoutePath(childSession)}
-                  className="console-mono rounded-full border border-[var(--brand-line)] px-1.5 py-0.5 text-[10px] text-[var(--brand)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-hover)]"
-                >
-                  {t("Open sub-session ↗")}
-                </Link>
-              ) : null}
-            </div>
+            )}
+            {modelLabel && (
+              <span className="console-mono inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-medium">
+                {modelLabel}
+              </span>
+            )}
+            {childSession ? (
+              <Link
+                to={getSessionRoutePath(childSession)}
+                className="ml-auto text-xs text-[var(--brand)] hover:text-[var(--brand-hover)] hover:underline"
+              >
+                {t("Open sub-session ↗")}
+              </Link>
+            ) : null}
+          </div>
 
-            {isAbortMessage ? (
-              <AbortToolItem />
-            ) : (
-              blocks.map((block, index) => {
-                const timelineAnchorId = buildBlockTimelineAnchorId(messageIndex, index);
-                if (block.type === "reasoning") {
-                  return (
-                    <ReasoningSection
-                      key={index}
-                      anchorId={timelineAnchorId}
-                      parts={block.parts}
-                      highlightQuery={highlightQuery}
-                    />
-                  );
-                }
-                if (block.type === "plan") {
-                  return (
-                    <PlansSection
-                      key={index}
-                      anchorId={timelineAnchorId}
-                      parts={block.parts}
-                      highlightQuery={highlightQuery}
-                    />
-                  );
-                }
-                if (block.type === "tool") {
-                  return (
-                    <ToolsSection
-                      key={index}
-                      parts={block.parts}
-                      anchorIds={block.anchorIds}
-                      sessionAgentKey={sessionAgentKey}
-                      baseDirectory={baseDirectory}
-                      highlightQuery={highlightQuery}
-                    />
-                  );
-                }
+          {isAbortMessage ? (
+            <AbortToolItem />
+          ) : (
+            blocks.map((block, index) => {
+              const timelineAnchorId = buildBlockTimelineAnchorId(messageIndex, index);
+              if (block.type === "reasoning") {
                 return (
-                  <MessageTextSection
+                  <ReasoningSection
                     key={index}
                     anchorId={timelineAnchorId}
                     parts={block.parts}
                     highlightQuery={highlightQuery}
                   />
                 );
-              })
-            )}
+              }
+              if (block.type === "plan") {
+                return (
+                  <PlansSection
+                    key={index}
+                    anchorId={timelineAnchorId}
+                    parts={block.parts}
+                    highlightQuery={highlightQuery}
+                  />
+                );
+              }
+              if (block.type === "tool") {
+                return (
+                  <ToolsSection
+                    key={index}
+                    parts={block.parts}
+                    anchorIds={block.anchorIds}
+                    sessionAgentKey={sessionAgentKey}
+                    baseDirectory={baseDirectory}
+                    highlightQuery={highlightQuery}
+                  />
+                );
+              }
+              return (
+                <MessageTextSection
+                  key={index}
+                  anchorId={timelineAnchorId}
+                  parts={block.parts}
+                  highlightQuery={highlightQuery}
+                  bubble={isUser}
+                />
+              );
+            })
+          )}
 
-            {!isUser && (msg.tokens || msg.cost) && (
-              <div className="flex flex-wrap gap-2">
-                {msg.tokens?.input ? (
-                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                    {t("INPUT")} {fmtTokens(msg.tokens.input)}
-                  </span>
-                ) : null}
-                {msg.tokens?.output ? (
-                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                    {t("OUTPUT")} {fmtTokens(msg.tokens.output)}
-                  </span>
-                ) : null}
-                {msg.tokens?.reasoning ? (
-                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                    {t("REASONING")} {fmtTokens(msg.tokens.reasoning)}
-                  </span>
-                ) : null}
-                {msg.cost ? (
-                  <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)]">
-                    {msg.cost_source === "estimated" ? t("EST COST") : t("COST")} $
-                    {msg.cost.toFixed(4)}
-                  </span>
-                ) : null}
-              </div>
-            )}
-          </div>
+          {!isUser && (msg.tokens || msg.cost) && (
+            <div className="flex flex-wrap gap-1.5">
+              {msg.tokens?.input ? (
+                <span className="console-mono inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-medium">
+                  {t("INPUT")} {fmtTokens(msg.tokens.input)}
+                </span>
+              ) : null}
+              {msg.tokens?.output ? (
+                <span className="console-mono inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-medium">
+                  {t("OUTPUT")} {fmtTokens(msg.tokens.output)}
+                </span>
+              ) : null}
+              {msg.tokens?.reasoning ? (
+                <span className="console-mono inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-medium">
+                  {t("REASONING")} {fmtTokens(msg.tokens.reasoning)}
+                </span>
+              ) : null}
+              {msg.cost ? (
+                <span className="console-mono inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-medium">
+                  {msg.cost_source === "estimated" ? t("EST COST") : t("COST")} $
+                  {msg.cost.toFixed(4)}
+                </span>
+              ) : null}
+            </div>
+          )}
         </div>
       </article>
     </div>
@@ -281,10 +277,12 @@ const MessageTextSection = memo(function MessageTextSection({
   anchorId,
   parts,
   highlightQuery,
+  bubble,
 }: {
   anchorId: string;
   parts: Array<{ text: string }>;
   highlightQuery?: string;
+  bubble: boolean;
 }) {
   useLocale();
 
@@ -294,9 +292,13 @@ const MessageTextSection = memo(function MessageTextSection({
     <div
       ref={anchorRef}
       id={anchorId}
-      className="scroll-mt-20 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-4 shadow-[var(--shadow-raised)]"
+      className={
+        bubble
+          ? "max-w-[760px] scroll-mt-20 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] px-4 py-3 shadow-[var(--shadow-raised)]"
+          : "max-w-[760px] scroll-mt-20"
+      }
     >
-      <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
+      <div className="console-markdown text-[13px] leading-[1.75] text-[var(--console-text)]">
         {parts.map((part, index) => (
           <MessageMarkdown key={index} text={part.text} highlightQuery={highlightQuery} />
         ))}
@@ -349,27 +351,20 @@ const ReasoningSection = memo(function ReasoningSection({
   );
 
   return (
-    <div
-      ref={anchorRef}
-      id={anchorId}
-      className="scroll-mt-20 overflow-hidden rounded-lg border border-[var(--console-thinking-border)] bg-[var(--console-thinking-bg)]"
-    >
+    <div ref={anchorRef} id={anchorId} className="max-w-[760px] scroll-mt-20">
       <button
         type="button"
-        className="flex w-full items-center justify-between bg-[var(--console-surface-muted)] px-3 py-2 text-left motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand)]"
+        className="motion-hover inline-flex h-8 items-center gap-2 rounded-lg border border-dashed border-[var(--console-border-strong)] px-3 text-xs text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         onClick={() => setExpanded((isExpanded) => !isExpanded)}
         aria-expanded={expanded}
       >
-        <span className="console-mono flex items-center gap-2 text-xs font-medium text-[var(--console-muted)]">
-          <Lightbulb className="size-3.5" /> {t("Thinking")}
-        </span>
-        <span className="text-[var(--console-muted)]">
-          <ChevronDown className="motion-chevron w-4 h-4" data-open={expanded || undefined} />
-        </span>
+        <Lightbulb className="size-3.5" />
+        {t("Thinking")}
+        <ChevronDown className="motion-chevron size-3.5" data-open={expanded || undefined} />
       </button>
       <Collapsible open={expanded}>
         {() => (
-          <div className="border-t border-dashed border-[var(--console-thinking-border)] px-4 py-3">
+          <div className="mt-2 rounded-lg border border-dashed border-[var(--console-border-strong)] px-4 py-3">
             <ProgressiveText text={fullText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
               {(visibleText) => (
                 <div className="console-mono whitespace-pre-wrap text-xs leading-relaxed text-[var(--console-muted)]">
@@ -457,49 +452,37 @@ const PlanItem = memo(function PlanItem({
   const statusMeta =
     display.approvalStatus === "fail" ? TOOL_STATUS_META.error : TOOL_STATUS_META.completed;
   const StatusIcon = statusMeta.icon;
+  const title = (
+    <>
+      <span className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-md bg-[var(--console-surface-muted)] text-[var(--console-text-secondary)]">
+        <CalendarRange className="size-3.5" />
+      </span>
+      <span className="console-mono min-w-0 flex-1 truncate text-xs font-medium text-[var(--console-text)]">
+        {t(display.title)}
+      </span>
+    </>
+  );
 
   return (
-    <div>
-      <div className="flex flex-wrap items-start gap-2">
-        <div
-          className={`w-full md:w-[560px] rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2 text-left shadow-[var(--shadow-raised)] ${
-            display.expandable ? "motion-hover hover:bg-[var(--console-surface-muted)]" : ""
-          }`}
-        >
-          {display.expandable ? (
-            <button
-              type="button"
-              className="flex w-full items-start gap-2 text-left"
-              onClick={() => setExpanded((isExpanded) => !isExpanded)}
-              aria-expanded={expanded}
-            >
-              <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
-              <span className="min-w-0 flex-1">
-                <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {t(display.title)}
-                </span>
-              </span>
-              <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
-                <ChevronDown
-                  className="motion-chevron size-3.5"
-                  data-open={expanded || undefined}
-                />
-              </span>
-            </button>
-          ) : (
-            <div className="flex items-start gap-2">
-              <CalendarRange className="mt-0.5 size-3.5 shrink-0 text-[var(--console-accent)]" />
-              <span className="min-w-0 flex-1">
-                <span className="console-mono block text-xs font-semibold text-[var(--console-text)]">
-                  {t(display.title)}
-                </span>
-              </span>
-            </div>
-          )}
-        </div>
-        <span
-          className={`console-mono inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusMeta.className}`}
-        >
+    <div className="max-w-[760px] overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
+      <div className="flex min-h-10 items-center gap-2.5 py-2 pr-2.5 pl-3">
+        {display.expandable ? (
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+            onClick={() => setExpanded((isExpanded) => !isExpanded)}
+            aria-expanded={expanded}
+          >
+            {title}
+            <ChevronDown
+              className="motion-chevron size-3.5 shrink-0 text-[var(--console-muted)]"
+              data-open={expanded || undefined}
+            />
+          </button>
+        ) : (
+          title
+        )}
+        <span className={`${STATUS_CHIP_CLASS} ${statusMeta.className}`}>
           <StatusIcon className="size-3" />
           {t(statusMeta.label)}
         </span>
@@ -507,16 +490,12 @@ const PlanItem = memo(function PlanItem({
 
       <Collapsible open={display.expandable && expanded}>
         {() => (
-          <div className="mt-2 overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
-            <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
-              <span className="console-mono text-xs text-[var(--console-muted)]">
-                {display.contentLabel}
-              </span>
-            </div>
-            <div className="bg-[var(--console-surface-sunken)] p-4">
-              <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
-                <MessageMarkdown text={display.contentMarkdown} highlightQuery={highlightQuery} />
-              </div>
+          <div className="space-y-2 border-t border-[var(--console-border)] bg-[var(--console-bg)] p-3">
+            <span className="block text-[11px] font-medium text-[var(--console-muted)]">
+              {display.contentLabel}
+            </span>
+            <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
+              <MessageMarkdown text={display.contentMarkdown} highlightQuery={highlightQuery} />
             </div>
           </div>
         )}
@@ -556,77 +535,61 @@ const ToolItem = memo(function ToolItem({
   const statusMeta = TOOL_STATUS_META[state.status];
   const StatusIcon = statusMeta.icon;
   const ToolIcon = strategy.Icon;
+  const header = (
+    <>
+      <span className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-md bg-[var(--console-surface-muted)] text-[var(--console-text-secondary)]">
+        <ToolIcon className="size-3.5" />
+      </span>
+      <span className="console-mono shrink-0 text-xs font-medium text-[var(--console-text)]">
+        {strategy.title}
+      </span>
+      <span
+        className="console-mono min-w-0 flex-1 truncate text-[11px] text-[var(--console-muted)]"
+        title={strategy.secondaryText ?? undefined}
+      >
+        {strategy.secondaryText
+          ? renderHighlightedText(strategy.secondaryText, highlightQuery)
+          : null}
+      </span>
+      <span className={`${STATUS_CHIP_CLASS} ${statusMeta.className}`}>
+        <StatusIcon
+          className={`size-3 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
+        />
+        {t(statusMeta.label)}
+      </span>
+    </>
+  );
 
   return (
-    <div ref={anchorRef} id={anchorId} className="scroll-mt-20">
-      <div className="flex flex-wrap items-start gap-2">
-        <div
-          className={`w-full max-w-[720px] rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-2.5 text-left shadow-[var(--shadow-raised)] ${
-            strategy.expandable ? "motion-hover hover:bg-[var(--console-surface-muted)]" : ""
-          }`}
+    <div
+      ref={anchorRef}
+      id={anchorId}
+      className="max-w-[760px] scroll-mt-20 overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]"
+    >
+      {strategy.expandable ? (
+        <button
+          type="button"
+          className="motion-hover flex min-h-10 w-full items-center gap-2.5 py-2 pr-2.5 pl-3 text-left hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none focus-visible:ring-inset"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
         >
-          {strategy.expandable ? (
-            <button
-              type="button"
-              className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2.5 gap-y-1 text-left active:scale-[0.995] motion-reduce:transform-none"
-              onClick={() => setExpanded(!expanded)}
-              aria-expanded={expanded}
-            >
-              <ToolIcon className="size-4 shrink-0 text-[var(--console-accent)]" />
-              <span className="console-mono min-w-0 break-words text-xs font-semibold text-[var(--console-text)]">
-                {strategy.title}
-              </span>
-              <span
-                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
-              >
-                <StatusIcon
-                  className={`size-2.5 ${state.status === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
-                />
-                {t(statusMeta.label)}
-              </span>
-              <span className="mt-0.5 shrink-0 text-[var(--console-muted)]">
-                <ChevronDown
-                  className="motion-chevron size-3.5"
-                  data-open={expanded || undefined}
-                />
-              </span>
-              {strategy.secondaryText ? (
-                <span className="console-mono col-span-full row-start-2 min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                  {renderHighlightedText(strategy.secondaryText, highlightQuery)}
-                </span>
-              ) : null}
-            </button>
-          ) : (
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1">
-              <ToolIcon className="size-4 shrink-0 text-[var(--console-accent)]" />
-              <span className="console-mono min-w-0 break-words text-xs font-semibold text-[var(--console-text)]">
-                {strategy.title}
-              </span>
-              <span
-                className={`console-mono inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusMeta.className}`}
-              >
-                <StatusIcon className="size-2.5" />
-                {t(statusMeta.label)}
-              </span>
-              {strategy.secondaryText ? (
-                <span className="console-mono col-span-full row-start-2 min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-muted)]">
-                  {renderHighlightedText(strategy.secondaryText, highlightQuery)}
-                </span>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </div>
+          {header}
+          <ChevronDown
+            className="motion-chevron size-3.5 shrink-0 text-[var(--console-muted)]"
+            data-open={expanded || undefined}
+          />
+        </button>
+      ) : (
+        <div className="flex min-h-10 items-center gap-2.5 py-2 pr-2.5 pl-3">{header}</div>
+      )}
 
       <Collapsible open={strategy.expandable && expanded}>
         {() => (
-          <div className="mt-2 overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
-            <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
-              <span className="console-mono text-xs text-[var(--console-muted)]">
+          <div className="border-t border-[var(--console-border)] bg-[var(--console-bg)]">
+            <div className="space-y-2 p-3">
+              <span className="block text-[11px] font-medium text-[var(--console-muted)]">
                 {strategy.contentLabel ?? t("Output")}
               </span>
-            </div>
-            <div className="space-y-3 bg-[var(--console-surface-sunken)] p-3">
               {strategy.details.length > 0 ? (
                 <div className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2">
                   <div className="space-y-2">
@@ -658,7 +621,7 @@ const ToolItem = memo(function ToolItem({
               <ToolOutputRenderer outputContent={strategy.outputContent} />
             </div>
             {strategy.showInputPreview ? (
-              <div className="border-t border-[var(--console-border)] bg-[var(--console-surface-sunken)] px-3 py-2">
+              <div className="border-t border-[var(--console-border)] px-3 py-2">
                 <span className="console-mono text-[11px] text-[var(--console-muted)]">
                   {t("Input Preview")}
                 </span>

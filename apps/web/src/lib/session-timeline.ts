@@ -4,12 +4,13 @@ import { t } from "../i18n/translate";
  * day-grouped tree references and derives bounded row pages from it. Pure —
  * expansion state belongs to the component, never to the model.
  */
-import type { SessionHead, SessionReference, SessionTreeNode } from "@codesesh/contract";
+import type { SessionHead, SessionReference, SessionTreeNode, SmartTag } from "@codesesh/contract";
 import {
   addCalendarDays,
   buildSessionTree,
   getSessionRouteKey,
   groupSessionsByCalendarDay,
+  isSmartTag,
   startOfCalendarDay,
 } from "@codesesh/contract";
 import { formatMonthDay } from "./format";
@@ -31,6 +32,7 @@ export interface TimelineChildRow {
    */
   kind?: string;
   title: string;
+  tags: SmartTag[];
   /** The child's own stats: every descendant is listed as its own row. */
   messageCount: number;
   cost: number;
@@ -41,6 +43,7 @@ export interface TimelineRow {
   reference: SessionReference;
   time: number;
   title: string;
+  tags: SmartTag[];
   agentKey: string;
   /** Descendants at every depth. */
   childCount: number;
@@ -114,6 +117,10 @@ function formatDayLabel(dayStart: number, now: number): string {
   return formatMonthDay(date.getTime());
 }
 
+function sessionTags(session: SessionHead): SmartTag[] {
+  return session.smart_tags?.filter(isSmartTag) ?? [];
+}
+
 function toChildRow(node: SessionTreeNode): TimelineChildRow {
   const { session } = node;
   const reference = referenceOf(session);
@@ -122,6 +129,7 @@ function toChildRow(node: SessionTreeNode): TimelineChildRow {
     reference,
     time: activityTime(session),
     title: getSessionDisplayTitle(session),
+    tags: sessionTags(session),
     messageCount: session.stats.message_count,
     cost: session.stats.total_cost ?? 0,
   };
@@ -170,6 +178,7 @@ function toRow(node: SessionTreeNode, isOrphan: boolean): TimelineRow {
     reference,
     time: activityTime(session),
     title: getSessionDisplayTitle(session),
+    tags: sessionTags(session),
     agentKey: reference.agentName,
     childCount: node.descendantCount,
     childRoots: node.children,

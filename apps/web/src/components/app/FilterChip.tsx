@@ -1,23 +1,31 @@
+import type { ReactNode } from "react";
+import { cn } from "../../lib/utils";
+
 export function FilterChip({
   active,
-  label,
+  mono = false,
   onClick,
+  children,
 }: {
   active: boolean;
-  label: string;
+  mono?: boolean;
   onClick: () => void;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`console-mono rounded-full border px-2.5 py-1 text-[10px] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+      className={cn(
+        "inline-flex h-[26px] items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] whitespace-nowrap motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+        mono && "console-mono",
         active
-          ? "border-[var(--brand)] bg-[var(--brand)] text-[var(--brand-fg)]"
-          : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:bg-[var(--console-surface)] hover:text-[var(--console-text)]"
-      }`}
+          ? "border-[var(--brand-line)] bg-[var(--brand-soft)] text-[var(--brand)]"
+          : "border-[var(--console-border-strong)] bg-[var(--console-surface)] text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]",
+      )}
     >
-      {label}
+      {children}
     </button>
   );
 }

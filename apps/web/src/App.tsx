@@ -1,6 +1,16 @@
 import { useLocale } from "./hooks/useLocale";
 import { t } from "./i18n/translate";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { SessionHead } from "./lib/api";
 import { logClientEvent } from "./lib/api";
@@ -27,16 +37,29 @@ import { AppSidebar } from "./components/app/AppSidebar";
 import type { SearchControlsHandle } from "./components/app/SearchControls";
 import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { AppRouteContent, type AppRouteModel } from "./components/app/AppRouteContent";
-import { AppToolbar } from "./components/app/AppToolbar";
-import { AppPageHeader } from "./components/app/AppPageHeader";
+import { AppPageHeader, AppPageHero } from "./components/app/AppPageHeader";
+import { AppToasts } from "./components/app/AppToasts";
+import { SessionHeaderActions } from "./components/app/SessionHeaderActions";
+import { TimeRangeControl } from "./components/app/TimeRangeControl";
+import { sourceName } from "./components/nodes/SourceBadge";
 import { AppMainContent } from "./components/app/AppMainContent";
-import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey, getProjectPath } from "./lib/projects";
 import { agentRoutePath, buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 import { APP_ROUTE_IDS } from "./lib/app-routes";
+
+const ScanStatusNotice = lazy(() =>
+  import("./components/app/ScanStatusNotice").then((module) => ({
+    default: module.ScanStatusNotice,
+  })),
+);
+const SessionSourceDetails = lazy(() =>
+  import("./components/nodes/SessionSourceDetails").then((module) => ({
+    default: module.SessionSourceDetails,
+  })),
+);
 
 export default function App() {
   useLocale();
@@ -57,7 +80,6 @@ export default function App() {
     projectPage,
     projectsError,
     projectsLoading,
-    dashboard,
     window: loadedWindow,
     validAgentKeys,
     agentNameMap,
@@ -80,14 +102,7 @@ export default function App() {
     (open: boolean) => setMobileNavigationPath(open ? location.pathname : null),
     [location.pathname],
   );
-  const {
-    shortcutHintDismissed,
-    sidebarCollapsed,
-    theme,
-    dismissShortcutHint,
-    setSidebarCollapsed,
-    setTheme,
-  } = useUiPreferences();
+  const { sidebarCollapsed, theme, setSidebarCollapsed, setTheme } = useUiPreferences();
   const resolvedTheme = useTheme(theme);
   const { copySessionAsMarkdown, sessionCopyNotice } = useCopySessionAsMarkdown();
 
@@ -238,23 +253,22 @@ export default function App() {
 
   const sessionAliases = useSessionAliasDialog(reload);
 
-  const searchSubtitle =
-    searchState.status === "failed"
-      ? t('Search failed for "{0}"', [activeSearchQuery])
-      : formatSearchSubtitle(activeSearchQuery, searchLoading, searchResults.length);
-
+  const sessionSourceNodeId =
+    viewState.mode === "session" && session ? (session.reference.sourceNodeId ?? "local") : null;
   const routeHeader = buildRouteHeaderModel({
     viewState,
     isSearchMode,
-    searchSubtitle,
-    dashboard,
+    searchResultCount:
+      searchState.status === "loaded" && !searchLoading ? searchResults.length : null,
     projectCount: projectPage.summary.projects,
-    sessionCount: sessions.length,
     activeProject: activeProject?.project ?? null,
     activeAgent,
     sidebarSessionCount: sidebarSessions.length,
     session,
     sessionError: sessionError?.kind ?? null,
+    sessionSourceLabel: sessionSourceNodeId
+      ? sourceName(sessionSourceNodeId, sourceNodes.data?.nodes)
+      : null,
     selectedProjectIdentity: selectedProjectNavigationIdentity,
     selectedProject: selectedProjectNavigation?.project ?? null,
   });
@@ -262,8 +276,6 @@ export default function App() {
   const overview = {
     window: loadedWindow,
     rangePreset: timeWindowController.preset ?? "all",
-    onRangeChange: timeWindowController.selectPreset,
-    onSelectCustom: timeWindowController.selectCustom,
   };
   const bookmarkActions = {
     isBookmarked: bookmarks.isSessionBookmarked,
@@ -358,7 +370,6 @@ export default function App() {
       search={{
         active: search.searchMode,
         query: search.activeSearchQuery,
-        window: loadedWindow,
         state: search.searchState,
         agentNameMap,
         agents: activeAgents,
@@ -369,6 +380,8 @@ export default function App() {
         onRetry: search.retrySearch,
         selectedIndex: search.selectedSearchIndex,
         registerResultRef: search.registerResultRef,
+        controls: searchControlsRef,
+        onSubmit: submitSearch,
       }}
     />
   );
@@ -379,7 +392,6 @@ export default function App() {
     selectedProjectNavigationIdentity,
     shortcutHelpOpen,
     setShortcutHelpOpen,
-    dismissShortcutHint,
     isSearchMode,
     activeSearchQuery,
     searchResults,
@@ -390,10 +402,7 @@ export default function App() {
     closeSearch,
   });
 
-  const showShortcutHelp = useCallback(() => {
-    setShortcutHelpOpen(true);
-    dismissShortcutHint();
-  }, [dismissShortcutHint]);
+  const showShortcutHelp = useCallback(() => setShortcutHelpOpen(true), []);
   const sessionRouteActive = !isSearchMode && viewState.mode === "session";
   const resumeSession =
     sessionRouteActive && session
@@ -414,116 +423,178 @@ export default function App() {
     !loading && !error && (sessionsLoading || sessionsError)
       ? { loading: sessionsLoading, error: sessionsError }
       : null;
+  const resumeDescriptionId = useId();
+
+  let headerActions: ReactNode = null;
+  if (sessionRouteActive && session && resumeSession) {
+    const agentKey = viewState.activeAgentKey;
+    headerActions = (
+      <SessionHeaderActions
+        back={sessionBack}
+        bookmarked={isSessionBookmarked(
+          agentKey,
+          session.reference.sessionId,
+          session.reference.sourceNodeId,
+        )}
+        onToggleBookmark={() => toggleSessionBookmark(session, agentKey)}
+        onRename={() => sessionAliases.openSession(session)}
+        onCopyAsMarkdown={() => void copySessionAsMarkdown(session)}
+        resume={resumeSession}
+        resumeDescriptionId={resumeDescriptionId}
+      />
+    );
+  } else if (!sessionRouteActive && timeWindow && timeWindowController.preset) {
+    headerActions = (
+      <>
+        <TimeRangeControl
+          window={timeWindow}
+          preset={timeWindowController.preset}
+          customFrom={timeWindowController.customFrom}
+          customTo={timeWindowController.customTo}
+          onSelectPreset={timeWindowController.selectPreset}
+          onSelectCustom={timeWindowController.selectCustom}
+        />
+        {viewState.mode === "root" && !isSearchMode ? (
+          <button
+            type="button"
+            onClick={showShortcutHelp}
+            className="hidden h-7 items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-sidebar-accent)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none sm:inline-flex"
+          >
+            <kbd className="inline-flex h-[18px] items-center rounded-[4px] border border-b-2 border-[var(--console-border)] bg-[var(--console-surface)] px-[5px] text-[10px] font-semibold text-[var(--console-muted)]">
+              ?
+            </kbd>
+            {t("Shortcuts")}
+          </button>
+        ) : null}
+      </>
+    );
+  }
+
+  const scanStatusVisible =
+    appConfig.config != null &&
+    !appConfig.config.hubEnabled &&
+    (viewState.mode === "root" || isSearchMode);
+  const intro = (
+    <>
+      {routeHeader.hero ? (
+        <AppPageHero hero={routeHeader.hero}>
+          {sessionSourceNodeId ? (
+            <Suspense fallback={null}>
+              <SessionSourceDetails
+                sourceNodeId={sessionSourceNodeId}
+                canResume={Boolean(resumeSession?.resumeCommandPrefix)}
+                resumeDescriptionId={resumeDescriptionId}
+              />
+            </Suspense>
+          ) : null}
+        </AppPageHero>
+      ) : null}
+      {scanStatusVisible ? (
+        <Suspense fallback={null}>
+          <ScanStatusNotice visible />
+        </Suspense>
+      ) : null}
+      {sessionLoadNotice ? (
+        <div
+          role={sessionLoadNotice.error ? "alert" : "status"}
+          className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-3 py-2 text-xs text-[var(--console-warning)]"
+        >
+          <span>
+            {sessionLoadNotice.error ?? t("Loading sessions… Results are not yet complete.")}
+          </span>
+          {sessionLoadNotice.error ? (
+            <button
+              type="button"
+              disabled={sessionLoadNotice.loading}
+              onClick={() => void retrySessions()}
+              className="rounded-md border border-current px-2 py-0.5 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:opacity-50"
+            >
+              {t("Retry session load")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+  const hasIntro = Boolean(routeHeader.hero || scanStatusVisible || sessionLoadNotice);
 
   return (
     <ResolvedThemeContext.Provider value={resolvedTheme}>
-      <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
+      <div className="console-ui flex h-screen overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
         <a
           href="#main"
-          className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
+          className="sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
         >
           {t("Skip to content")}
         </a>
-        <AppToolbar
-          hubEnabled={appConfig.config?.hubEnabled}
-          searchControlsRef={searchControlsRef}
-          onSubmitSearch={submitSearch}
-          theme={theme}
-          onChangeTheme={setTheme}
-          onShowShortcuts={showShortcutHelp}
-          timeWindow={
-            timeWindow && timeWindowController.preset
-              ? {
-                  value: timeWindow,
-                  preset: timeWindowController.preset,
-                  customFrom: timeWindowController.customFrom,
-                  customTo: timeWindowController.customTo,
-                  onSelectPreset: timeWindowController.selectPreset,
-                  onSelectCustom: timeWindowController.selectCustom,
-                }
-              : null
-          }
+        <AppSidebar
+          model={{
+            sidebarCollapsed,
+            mobileNavigationOpen,
+            viewState,
+            agentCatalog,
+            projects: resolvedProjects,
+            projectCount: projectPage.summary.projects,
+            projectsError,
+            projectsLoading,
+            selectedProjectNavigationId,
+            bookmarkedSessions,
+            bookmarksError,
+            bookmarksLoading,
+            sidebarSessions,
+            sidebarSessionLookup: sidebar.sidebarSessionLookup,
+            bookmarkedSidebarSessionReferences,
+            sourceNodes: sourceNodes.data?.nodes,
+            isSearchMode,
+            shortcutHelpOpen,
+            hubEnabled: Boolean(appConfig.config?.hubEnabled),
+            sessionCount: sessions.length,
+            theme,
+          }}
+          actions={{
+            onCollapse: () => setSidebarCollapsed(true),
+            onMobileNavigationOpenChange: setMobileNavigationOpen,
+            onToggleBookmark: toggleBookmark,
+            onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
+            onCopySessionAsMarkdown: (sessionHead) => void copySessionAsMarkdown(sessionHead),
+            onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
+            onRenameSession: sessionAliases.openSession,
+            onRenameBookmarkedSession: sessionAliases.openBookmark,
+            onRetryProjects: () => void retryProjects(),
+            onRetryBookmarks: () => void refreshBookmarks(),
+            onOpenSearch: () => {
+              setMobileNavigationOpen(false);
+              openSearchAndFocus();
+            },
+            onChangeTheme: setTheme,
+            onShowShortcuts: showShortcutHelp,
+          }}
         />
 
-        <div className="flex min-h-0 flex-1">
-          <AppSidebar
-            model={{
-              sidebarCollapsed,
-              mobileNavigationOpen,
-              viewState,
-              agentCatalog,
-              projects: resolvedProjects,
-              projectCount: projectPage.summary.projects,
-              projectsError,
-              projectsLoading,
-              selectedProjectNavigationId,
-              bookmarkedSessions,
-              bookmarksError,
-              bookmarksLoading,
-              sidebarSessions,
-              sidebarSessionLookup: sidebar.sidebarSessionLookup,
-              bookmarkedSidebarSessionReferences,
-              sourceNodes: sourceNodes.data?.nodes,
-              isSearchMode,
-              shortcutHelpOpen,
-              dismissShortcutHint,
-            }}
-            actions={{
-              onCollapse: () => setSidebarCollapsed(true),
-              onMobileNavigationOpenChange: setMobileNavigationOpen,
-              onToggleBookmark: toggleBookmark,
-              onSelectFlatSidebarSession: handleSelectFlatSidebarSession,
-              onCopySessionAsMarkdown: (sessionHead) => void copySessionAsMarkdown(sessionHead),
-              onToggleSidebarSessionBookmark: handleToggleSidebarSessionBookmark,
-              onRenameSession: sessionAliases.openSession,
-              onRenameBookmarkedSession: sessionAliases.openBookmark,
-              onRetryProjects: () => void retryProjects(),
-              onRetryBookmarks: () => void refreshBookmarks(),
-            }}
+        <main
+          id="main"
+          tabIndex={-1}
+          className="my-2 mr-2 ml-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] outline-none min-[1025px]:ml-0"
+        >
+          <AppPageHeader
+            route={routeHeader}
+            mobileNavigationOpen={mobileNavigationOpen}
+            sidebarCollapsed={sidebarCollapsed}
+            onOpenMobileNavigation={() => setMobileNavigationOpen(true)}
+            onExpandSidebar={() => setSidebarCollapsed(false)}
+            actions={headerActions}
           />
-
-          <main
-            id="main"
-            tabIndex={-1}
-            className="mr-2 mb-2 ml-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] outline-none min-[1025px]:ml-0"
+          <AppMainContent
+            locationPath={location.pathname}
+            mode={viewState.mode}
+            searchActive={isSearchMode}
+            sessionCount={sessions.length}
+            intro={hasIntro ? intro : undefined}
           >
-            <AppPageHeader
-              model={{
-                mobileNavigationOpen,
-                sidebarCollapsed,
-                route: routeHeader,
-                shortcutHintVisible: !shortcutHintDismissed,
-                sessionBack,
-                resumeSession,
-                sourceNodeId:
-                  sessionRouteActive && session
-                    ? (session.reference.sourceNodeId ?? "local")
-                    : undefined,
-                sessionCopyNotice,
-                liveNotice,
-                scanStatusVisible:
-                  appConfig.config != null &&
-                  !appConfig.config.hubEnabled &&
-                  (viewState.mode === "root" || isSearchMode),
-                sessionLoadNotice,
-              }}
-              actions={{
-                onOpenMobileNavigation: () => setMobileNavigationOpen(true),
-                onExpandSidebar: () => setSidebarCollapsed(false),
-                onDismissShortcutHint: dismissShortcutHint,
-                onRetrySessionLoad: () => void retrySessions(),
-              }}
-            />
-            <AppMainContent
-              locationPath={location.pathname}
-              mode={viewState.mode}
-              searchActive={isSearchMode}
-              sessionCount={sessions.length}
-            >
-              {content}
-            </AppMainContent>
-          </main>
-        </div>
+            {content}
+          </AppMainContent>
+        </main>
+        <AppToasts messages={[sessionCopyNotice, liveNotice]} />
         <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
         <SessionAliasDialog
           target={sessionAliases.target}

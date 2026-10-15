@@ -1,6 +1,6 @@
 import { t } from "../i18n/translate";
 import type { ReactNode } from "react";
-import type { AgentInfo, DashboardData, ApiProjectGroup, SessionDetail } from "../lib/api";
+import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../lib/api";
 import { formatInt, formatRelativeTime } from "../lib/format";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";
@@ -10,205 +10,173 @@ import { SmartTagChips } from "../components/SmartTagChips";
 export interface BreadcrumbItem {
   label: string;
   to?: string;
+  mono?: boolean;
 }
 
 interface RouteHeaderInput {
   viewState: ViewState;
   isSearchMode: boolean;
-  searchSubtitle: string;
-  dashboard: DashboardData | null;
+  searchResultCount: number | null;
   projectCount: number;
-  sessionCount: number;
   activeProject: ApiProjectGroup | null;
   activeAgent: AgentInfo | null;
   sidebarSessionCount: number;
   session: SessionDetail | null;
   sessionError: "missing" | "load-failed" | null;
+  sessionSourceLabel: string | null;
   selectedProjectIdentity: ProjectRouteIdentity | null;
   selectedProject: ApiProjectGroup | null;
 }
 
-export interface RouteHeaderModel {
-  contextLabel: string;
+export interface RouteHero {
+  eyebrow: string;
   title: string;
-  subtitle: ReactNode;
+  subtitle?: ReactNode;
+  tags?: ReactNode;
+}
+
+/**
+ * The page bar shows either a breadcrumb trail (pages under a parent) or a plain
+ * title with an optional count. The hero is the large title block at the top of
+ * the scrolling body; pages that draw their own hero leave it null.
+ */
+export interface RouteHeaderModel {
+  title: string;
+  count: number | null;
   breadcrumbs: BreadcrumbItem[];
+  hero: RouteHero | null;
 }
 
 export function buildRouteHeaderModel(input: RouteHeaderInput): RouteHeaderModel {
-  const titleAndSubtitle = routeTitleAndSubtitle(input);
-  return {
-    contextLabel: routeContextLabel(input),
-    ...titleAndSubtitle,
-    breadcrumbs: routeBreadcrumbs(input),
-  };
-}
+  const { viewState } = input;
+  const dashboard: BreadcrumbItem = { label: t("Dashboard"), to: "/" };
 
-function routeContextLabel(input: RouteHeaderInput): string {
-  if (input.isSearchMode) return t("Search");
+  if (input.isSearchMode) {
+    return { title: t("Search"), count: input.searchResultCount, breadcrumbs: [], hero: null };
+  }
 
-  switch (input.viewState.mode) {
-    case "session":
-      return input.activeAgent
-        ? `${t("Session")} · ${input.activeAgent.displayName}`
-        : t("Session");
+  switch (viewState.mode) {
     case "root":
-      return t("Dashboard");
+      return { title: t("Dashboard"), count: null, breadcrumbs: [], hero: null };
     case "projects":
-      return t("Projects");
-    case "project":
-      return t("Project");
+      return { title: t("All projects"), count: input.projectCount, breadcrumbs: [], hero: null };
+    case "project": {
+      const label = input.activeProject?.displayName ?? viewState.activeProjectKey;
+      return {
+        title: label,
+        count: null,
+        breadcrumbs: [
+          dashboard,
+          { label: t("All projects"), to: "/projects" },
+          { label, mono: true },
+        ],
+        hero: null,
+      };
+    }
+    case "agent": {
+      const label = input.activeAgent?.displayName ?? viewState.activeAgentKey;
+      return {
+        title: label,
+        count: null,
+        breadcrumbs: [dashboard, { label }],
+        hero: {
+          eyebrow: t("Agent"),
+          title: label,
+          subtitle: t("{0} sessions", [formatInt(input.sidebarSessionCount)]),
+        },
+      };
+    }
+    case "session":
+      return sessionHeader(input, dashboard);
+    case "missingAgent":
+      return {
+        title: t("Agent Not Found"),
+        count: null,
+        breadcrumbs: [dashboard, { label: viewState.attemptedKey }],
+        hero: {
+          eyebrow: t("Agent"),
+          title: t("Agent Not Found"),
+          subtitle: t("Requested /{0}", [viewState.attemptedKey]),
+        },
+      };
     default:
-      return t("Landing");
+      return {
+        title: "CodeSesh",
+        count: null,
+        breadcrumbs: [dashboard, { label: t("Invalid Route") }],
+        hero: {
+          eyebrow: "CodeSesh",
+          title: t("Invalid Route"),
+          subtitle: t("Select an agent to browse sessions"),
+        },
+      };
   }
 }
 
-function routeTitleAndSubtitle(input: RouteHeaderInput): {
-  title: string;
-  subtitle: ReactNode;
-} {
-  const { viewState } = input;
-  if (input.isSearchMode) return { title: t("Search"), subtitle: input.searchSubtitle };
-  if (viewState.mode === "root") {
-    const dashboard = input.dashboard;
-    return {
-      title: t("Dashboard"),
-      subtitle: dashboard ? (
-        <span>
-          {t("{0} total sessions across {1} agents", [
-            formatInt(dashboard.totals.sessions),
-            formatInt(dashboard.perAgent.length),
-          ])}
-        </span>
-      ) : (
-        t("Aggregated view across all agents")
-      ),
-    };
-  }
-  if (viewState.mode === "projects") {
-    return {
-      title: t("Projects"),
-      subtitle: (
-        <span>
-          {t("{0} projects across {1} sessions", [
-            formatInt(input.projectCount),
-            formatInt(input.sessionCount),
-          ])}
-        </span>
-      ),
-    };
-  }
-  if (viewState.mode === "project") {
-    const activeProject = input.activeProject;
-    return {
-      title: activeProject?.displayName ?? t("Project"),
-      subtitle: activeProject ? (
-        <span>
-          {t("{0} sessions · {1} agents", [
-            formatInt(activeProject.sessionCount),
-            formatInt(activeProject.agentStats.length),
-          ])}
-        </span>
-      ) : (
-        viewState.activeProjectKey
-      ),
-    };
-  }
-  if (viewState.mode === "agent") {
-    return {
-      title: input.activeAgent?.displayName ?? viewState.activeAgentKey,
-      subtitle: <span>{t("{0} sessions", [formatInt(input.sidebarSessionCount)])}</span>,
-    };
-  }
-  if (viewState.mode === "session") {
-    if (input.sessionError) {
-      return {
-        title: input.sessionError === "missing" ? t("Session Not Found") : t("Session Load Failed"),
-        subtitle: t("Requested /{0}/{1}", [viewState.activeAgentKey, viewState.activeSessionId]),
-      };
-    }
-    if (input.session) {
-      const updated = input.session.time_updated ?? input.session.time_created;
-      return {
-        title: getSessionDisplayTitle(input.session) || t("Session"),
-        subtitle: (
-          <>
-            <span className="console-mono">#{input.session.reference.sessionId.slice(0, 8)}</span>
-            <span>·</span>
-            <span>
-              {t("Updated")} {formatRelativeTime(updated)}
-            </span>
-            {input.session.directory ? (
-              <>
-                <span>·</span>
-                <span className="console-mono min-w-0 break-all">{input.session.directory}</span>
-              </>
-            ) : null}
-            <SmartTagChips tags={input.session.smart_tags} limit={9} className="inline-flex" />
-          </>
-        ),
-      };
-    }
-  }
-  if (viewState.mode === "missingAgent") {
-    return { title: t("Agent Not Found"), subtitle: t("Requested /{0}", [viewState.attemptedKey]) };
-  }
-  return { title: "CodeSesh", subtitle: t("Select an agent to browse sessions") };
-}
+function sessionHeader(input: RouteHeaderInput, dashboard: BreadcrumbItem): RouteHeaderModel {
+  const { viewState, session } = input;
+  if (viewState.mode !== "session") throw new Error("sessionHeader needs a session route");
 
-function routeBreadcrumbs(input: RouteHeaderInput): BreadcrumbItem[] {
-  const { viewState } = input;
-  if (input.isSearchMode) return [{ label: t("Search") }];
-
-  const dashboard: BreadcrumbItem = {
-    label: t("Dashboard"),
-    to: viewState.mode === "root" ? undefined : "/",
-  };
-  if (viewState.mode === "root") return [{ label: t("Dashboard") }];
-  if (viewState.mode === "projects") return [dashboard, { label: t("Projects") }];
-  if (viewState.mode === "project") {
-    return [
-      dashboard,
-      { label: t("Projects"), to: "/projects" },
-      { label: input.activeProject?.displayName ?? viewState.activeProjectKey },
-    ];
-  }
-  if (viewState.mode === "session" && input.selectedProjectIdentity) {
-    return [
-      dashboard,
-      { label: t("Projects"), to: "/projects" },
-      {
+  const sessionLabel = session
+    ? getSessionDisplayTitle(session)
+    : viewState.activeSessionId || t("Session");
+  const parent: BreadcrumbItem = input.selectedProjectIdentity
+    ? {
         label: input.selectedProject?.displayName ?? input.selectedProjectIdentity.key,
         to: getProjectPath(input.selectedProjectIdentity),
-      },
-      {
-        label: input.session
-          ? getSessionDisplayTitle(input.session)
-          : viewState.activeSessionId || t("Session"),
-      },
-    ];
-  }
-  if (viewState.mode === "missingAgent") {
-    return [dashboard, { label: viewState.attemptedKey }];
-  }
+        mono: true,
+      }
+    : {
+        label: input.activeAgent?.displayName ?? viewState.activeAgentKey,
+        to: `/${viewState.activeAgentKey}`,
+      };
+  const breadcrumbs = [dashboard, parent, { label: sessionLabel }];
+  const eyebrow = [t("Session"), input.activeAgent?.displayName, input.sessionSourceLabel]
+    .filter(Boolean)
+    .join(" · ");
 
-  const agentLabel =
-    input.activeAgent?.displayName ?? viewState.activeAgentKey ?? t("Unknown Agent");
-  const agent: BreadcrumbItem = {
-    label: agentLabel,
-    to: viewState.mode === "session" ? `/${viewState.activeAgentKey}` : undefined,
-  };
-  if (viewState.mode === "agent") return [dashboard, { label: agentLabel }];
-  if (viewState.mode === "session") {
-    return [
-      dashboard,
-      agent,
-      {
-        label: input.session
-          ? getSessionDisplayTitle(input.session)
-          : viewState.activeSessionId || t("Session"),
+  if (input.sessionError) {
+    const title =
+      input.sessionError === "missing" ? t("Session Not Found") : t("Session Load Failed");
+    return {
+      title,
+      count: null,
+      breadcrumbs,
+      hero: {
+        eyebrow,
+        title,
+        subtitle: t("Requested /{0}/{1}", [viewState.activeAgentKey, viewState.activeSessionId]),
       },
-    ];
+    };
   }
-  return [dashboard, { label: t("Invalid Route") }];
+  if (!session) return { title: sessionLabel, count: null, breadcrumbs, hero: null };
+
+  const updated = session.time_updated ?? session.time_created;
+  return {
+    title: sessionLabel,
+    count: null,
+    breadcrumbs,
+    hero: {
+      eyebrow,
+      title: getSessionDisplayTitle(session) || t("Session"),
+      subtitle: (
+        <>
+          <span>#{session.reference.sessionId.slice(0, 8)}</span>
+          <span>·</span>
+          <span>
+            {t("Updated")} {formatRelativeTime(updated)}
+          </span>
+          {session.directory ? (
+            <>
+              <span>·</span>
+              <span className="min-w-0 break-all">{session.directory}</span>
+            </>
+          ) : null}
+        </>
+      ),
+      tags: session.smart_tags?.length ? (
+        <SmartTagChips tags={session.smart_tags} limit={9} />
+      ) : undefined,
+    },
+  };
 }

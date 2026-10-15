@@ -12,6 +12,7 @@ import { getSessionDisplayTitle } from "../lib/session-title";
 import { AgentIcon } from "./AgentIcon";
 import { BookmarkButton } from "./BookmarkButton";
 import { SmartTagChips } from "./SmartTagChips";
+import { BUTTON_OUTLINE_CLASS } from "./ui/dialog-styles";
 import { Panel, PanelHeader } from "./ui/panel";
 
 export interface LandingAgentItem {
@@ -85,34 +86,25 @@ function MissingStateHero({
   useLocale();
 
   return (
-    <Panel className="p-5 md:p-6">
-      <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-        <div className="max-w-2xl">
-          <span className="console-eyebrow inline-flex rounded-full border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 py-1">
-            {code}
-          </span>
-          <div className="mt-4 flex items-start gap-3">
-            {iconSrc ? (
-              <AgentIcon
-                icon={iconSrc}
-                iconColored={iconColored}
-                alt={iconAlt || ""}
-                className="mt-1 size-8 shrink-0 object-contain"
-              />
-            ) : null}
-            <h2 className="console-display text-2xl leading-tight font-semibold text-[var(--console-text)] md:text-[2rem]">
-              {title}
-            </h2>
-          </div>
-          <p className="mt-3 max-w-[42rem] text-sm leading-7 text-[var(--console-muted)]">
-            {description}
-          </p>
-        </div>
-        <div className="min-w-0 rounded-md border border-dashed border-[var(--console-border)] bg-[var(--console-surface-muted)] px-4 py-3 md:max-w-xs">
-          <p className="console-eyebrow">{t("STATUS NOTE")}</p>
-          <p className="mt-2 text-sm leading-6 text-[var(--console-text)]">{aside}</p>
-        </div>
+    <Panel className="flex flex-col gap-3 px-6 py-7 md:px-8">
+      <span className="console-eyebrow">{code}</span>
+      <div className="flex items-center gap-3">
+        {iconSrc ? (
+          <AgentIcon
+            icon={iconSrc}
+            iconColored={iconColored}
+            alt={iconAlt || ""}
+            className="size-6 shrink-0 object-contain"
+          />
+        ) : null}
+        <h2 className="text-2xl leading-tight font-semibold text-[var(--console-text)]">{title}</h2>
       </div>
+      <p className="max-w-[42rem] text-[13px] leading-[1.6] text-[var(--console-muted)]">
+        {description}
+      </p>
+      <p className="rounded-[10px] bg-[var(--console-surface-muted)] px-3 py-2.5 text-xs leading-[1.6] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)]">
+        {aside}
+      </p>
     </Panel>
   );
 }
@@ -345,11 +337,7 @@ export const DetailLanding = memo(function DetailLanding({
               value={loadFailureMessage ?? t("Unable to load this session.")}
             />
           </div>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="console-mono shrink-0 rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-          >
+          <button type="button" onClick={onRetry} className={`${BUTTON_OUTLINE_CLASS} shrink-0`}>
             {t("Retry")}
           </button>
         </div>

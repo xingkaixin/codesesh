@@ -11,8 +11,8 @@ import { t } from "../../i18n/translate";
  * The agent filter is self-managed for the global view; the project page passes
  * `onAgentChange` to drive it from the picker that also filters its timeline.
  *
- * The time window is NOT owned here — the range pills report upwards so the
- * app's time-window controller stays the single source of truth.
+ * The time window is NOT owned here — the page bar's range control drives the
+ * app's time-window controller, the single source of truth.
  */
 import { useState, type ReactNode } from "react";
 
@@ -25,6 +25,7 @@ import { OverviewActiveHours } from "./overview-active-hours";
 import { OverviewAgentBreakdown, OverviewModelBreakdown } from "./overview-breakdown";
 import { OverviewDailyTokens } from "./overview-daily-tokens";
 import { OverviewFilterBar } from "./overview-filter-bar";
+import { OverviewProjectKpis } from "./overview-project-kpis";
 import { OverviewSkeleton } from "./overview-skeleton";
 import { OverviewSummary } from "./overview-summary";
 
@@ -35,8 +36,6 @@ export function OverviewScreen({
   window,
   agentCatalog,
   rangePreset,
-  onRangeChange,
-  onSelectCustom,
   children,
 }: {
   children?: ReactNode;
@@ -46,8 +45,6 @@ export function OverviewScreen({
   window: AppConfig["window"] | null;
   agentCatalog: AgentCatalog;
   rangePreset: TimeWindowPreset;
-  onRangeChange: (preset: TimeWindowPreset) => void;
-  onSelectCustom: (from: string, to: string) => void;
 }) {
   useLocale();
 
@@ -59,18 +56,18 @@ export function OverviewScreen({
   const { dashboard, error, retry } = useDashboard(window, filters);
 
   return (
-    <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-4">
-      {!project && <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />}
-      <OverviewFilterBar
-        agent={agent}
-        onAgentChange={onAgentChange ? undefined : setOwnAgent}
-        agentCatalog={agentCatalog}
-        scopeCounts={dashboard?.scopeCounts}
-        window={window}
-        rangePreset={rangePreset}
-        onRangeChange={onRangeChange}
-        onSelectCustom={onSelectCustom}
-      />
+    <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-5">
+      {project ? null : (
+        <OverviewFilterBar
+          agent={agent}
+          onAgentChange={onAgentChange ? undefined : setOwnAgent}
+          agentCatalog={agentCatalog}
+          scopeCounts={dashboard?.scopeCounts}
+          window={window}
+          rangePreset={rangePreset}
+          sourcePicker={<SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />}
+        />
+      )}
 
       {error ? (
         <ResourceLoadFailure
@@ -81,11 +78,19 @@ export function OverviewScreen({
       ) : null}
       {dashboard ? (
         <>
-          <OverviewSummary
-            totals={dashboard.totals}
-            daily={dashboard.dailyActivity}
-            rangeDays={dashboard.window.days}
-          />
+          {project ? (
+            <OverviewProjectKpis
+              totals={dashboard.totals}
+              rangeDays={dashboard.window.days}
+              agentCatalog={agentCatalog}
+            />
+          ) : (
+            <OverviewSummary
+              totals={dashboard.totals}
+              daily={dashboard.dailyActivity}
+              rangeDays={dashboard.window.days}
+            />
+          )}
           {children}
           <OverviewDailyTokens daily={dashboard.dailyActivity} />
           <div className="grid gap-4 lg:grid-cols-2">

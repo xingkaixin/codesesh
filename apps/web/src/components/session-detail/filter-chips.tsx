@@ -43,21 +43,22 @@ export function SessionFilterChips({
       {chips.map((chip) => (
         <span
           key={chip.id}
-          className="console-mono inline-flex items-center gap-1 rounded-full bg-[var(--brand)] px-2.5 py-[3px] text-[10.5px] text-[var(--brand-fg)]"
+          className="inline-flex h-[26px] items-center gap-1 rounded-full border border-[var(--console-border)] bg-[var(--console-surface)] pr-1 pl-2.5 text-xs whitespace-nowrap text-[var(--console-muted)]"
         >
-          {t("Tool ·")} {chip.label}
+          {t("Tool ·")}{" "}
+          <b className="console-mono font-medium text-[var(--console-text)]">{chip.label}</b>
           <button
             type="button"
             aria-label={t("Remove filter {0}", [chip.label])}
             onClick={() => actions.toggleTool(chip.id)}
-            className="motion-hover -mr-1 rounded-full p-0.5 opacity-80 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--brand-fg)] focus-visible:outline-none"
+            className="motion-hover inline-flex size-[18px] items-center justify-center rounded-full hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
           >
-            <X className="size-2.5 stroke-[3]" />
+            <X className="size-3" />
           </button>
         </span>
       ))}
       {contentSummary.length > 0 ? (
-        <span className="console-mono inline-flex items-center rounded-full border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 py-[3px] text-[10.5px] text-[var(--console-muted)]">
+        <span className="inline-flex h-[26px] items-center rounded-full border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 text-xs whitespace-nowrap text-[var(--console-muted)]">
           + {contentSummary.join(" / ")}
         </span>
       ) : null}

@@ -1,232 +1,141 @@
-import { lazy, Suspense, useId } from "react";
+import type { ReactNode } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { Link } from "react-router-dom";
 import type { RouteHeaderModel } from "../../lib/build-route-header-model";
-import { CopyResumeButton } from "../CopyResumeButton";
+import { cn } from "../../lib/utils";
 import { PanelLeftOpen } from "../ui/icons";
 
-const ScanStatusNotice = lazy(() =>
-  import("./ScanStatusNotice").then((module) => ({ default: module.ScanStatusNotice })),
-);
+const BAR_BUTTON_CLASS =
+  "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--console-muted)] motion-hover hover:bg-[var(--console-sidebar-accent)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none";
 
-const SessionSourceDetails = lazy(() =>
-  import("../nodes/SessionSourceDetails").then((module) => ({
-    default: module.SessionSourceDetails,
-  })),
-);
-
-interface ResumeSessionAction {
-  resumeCommandPrefix: string | null;
-  sessionId: string;
-  directory?: string | null;
-}
-
-interface SessionLoadNotice {
-  loading: boolean;
-  error: string | null;
-}
-
-export interface AppPageHeaderModel {
-  sourceNodeId?: string;
+/** The 43px bar on top of the main panel: where you are on the left, page actions on the right. */
+export function AppPageHeader({
+  route,
+  mobileNavigationOpen,
+  sidebarCollapsed,
+  onOpenMobileNavigation,
+  onExpandSidebar,
+  actions,
+}: {
+  route: RouteHeaderModel;
   mobileNavigationOpen: boolean;
   sidebarCollapsed: boolean;
-  route: RouteHeaderModel;
-  shortcutHintVisible: boolean;
-  sessionBack: { to: string; label: string } | null;
-  resumeSession: ResumeSessionAction | null;
-  sessionCopyNotice: string | null;
-  liveNotice: string | null;
-  scanStatusVisible: boolean;
-  sessionLoadNotice: SessionLoadNotice | null;
-}
-
-export interface AppPageHeaderActions {
   onOpenMobileNavigation: () => void;
   onExpandSidebar: () => void;
-  onDismissShortcutHint: () => void;
-  onRetrySessionLoad: () => void;
-}
-
-export function AppPageHeader({
-  model: {
-    mobileNavigationOpen,
-    sidebarCollapsed,
-    route,
-    shortcutHintVisible,
-    sessionBack,
-    resumeSession,
-    sourceNodeId,
-    sessionCopyNotice,
-    liveNotice,
-    scanStatusVisible,
-    sessionLoadNotice,
-  },
-  actions: { onOpenMobileNavigation, onExpandSidebar, onDismissShortcutHint, onRetrySessionLoad },
-}: {
-  model: AppPageHeaderModel;
-  actions: AppPageHeaderActions;
+  actions?: ReactNode;
 }) {
   useLocale();
-  const resumeDescriptionId = useId();
+  const crumbs = route.breadcrumbs;
 
   return (
-    <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] px-4 py-4 md:px-6">
-      <button
-        type="button"
-        aria-expanded={mobileNavigationOpen}
-        aria-label={t("Open navigation")}
-        title={t("Open navigation")}
-        onClick={onOpenMobileNavigation}
-        className="mt-0.5 inline-flex shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:hidden"
-      >
-        <PanelLeftOpen className="size-4" />
-      </button>
-      {sidebarCollapsed ? (
+    <header className="flex min-h-[43px] shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-b border-[var(--console-border)] py-1.5 pr-4 pl-3 md:pl-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <button
           type="button"
-          aria-expanded="false"
-          aria-label={t("Expand sidebar")}
-          title={t("Expand sidebar")}
-          onClick={onExpandSidebar}
-          className="mt-0.5 hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] p-1 text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none min-[1025px]:inline-flex"
+          aria-expanded={mobileNavigationOpen}
+          aria-label={t("Open navigation")}
+          title={t("Open navigation")}
+          onClick={onOpenMobileNavigation}
+          className={cn(BAR_BUTTON_CLASS, "min-[1025px]:hidden")}
         >
           <PanelLeftOpen className="size-4" />
         </button>
-      ) : null}
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          {route.breadcrumbs.length > 1 ? (
-            <nav
-              aria-label={t("Breadcrumb")}
-              className="mb-2 flex min-w-0 flex-wrap items-center gap-1 text-xs text-[var(--console-muted)]"
-            >
-              {route.breadcrumbs.map((item, index) => (
+        {sidebarCollapsed ? (
+          <button
+            type="button"
+            aria-expanded="false"
+            aria-label={t("Expand sidebar")}
+            title={t("Expand sidebar")}
+            onClick={onExpandSidebar}
+            className={cn(BAR_BUTTON_CLASS, "hidden min-[1025px]:inline-flex")}
+          >
+            <PanelLeftOpen className="size-4" />
+          </button>
+        ) : null}
+        {crumbs.length > 0 ? (
+          <nav
+            aria-label={t("Breadcrumb")}
+            className="flex min-w-0 items-center gap-1.5 text-sm text-[var(--console-muted)]"
+          >
+            {crumbs.map((item, index) => {
+              const last = index === crumbs.length - 1;
+              return (
                 <span
                   key={`${item.label}-${index}`}
-                  className={
-                    index === route.breadcrumbs.length - 2
-                      ? "flex min-w-0 items-center gap-1"
-                      : "hidden min-w-0 items-center gap-1 sm:flex"
-                  }
+                  className={cn(
+                    "min-w-0 items-center gap-1.5",
+                    last || index === crumbs.length - 2 ? "flex" : "hidden sm:flex",
+                    last ? "min-w-0 flex-1" : "shrink-0",
+                  )}
                 >
-                  {item.to ? (
+                  {item.to && !last ? (
                     <Link
                       to={item.to}
-                      className="truncate motion-hover hover:text-[var(--console-text)]"
+                      className={cn(
+                        "max-w-48 truncate rounded-sm motion-hover hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+                        item.mono && "console-mono",
+                      )}
                     >
                       {item.label}
                     </Link>
                   ) : (
-                    <span className="text-[var(--console-text)]">{item.label}</span>
+                    <span
+                      aria-current="page"
+                      className={cn(
+                        "truncate text-[var(--console-text)]",
+                        item.mono && "console-mono",
+                      )}
+                    >
+                      {item.label}
+                    </span>
                   )}
-                  {index < route.breadcrumbs.length - 1 ? <span>/</span> : null}
+                  {!last ? (
+                    <span aria-hidden="true" className="text-[var(--console-border-strong)]">
+                      /
+                    </span>
+                  ) : null}
                 </span>
-              ))}
-            </nav>
-          ) : null}
-          {sessionBack || resumeSession ? (
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              {sessionBack ? (
-                <Link
-                  to={sessionBack.to}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--console-text-secondary)] motion-hover hover:bg-[var(--console-sidebar-accent)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-                >
-                  <kbd
-                    aria-hidden
-                    className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1 text-[10px] text-[var(--console-muted)] sm:inline"
-                  >
-                    Esc
-                  </kbd>
-                  {sessionBack.label}
-                </Link>
-              ) : null}
-              {resumeSession ? (
-                <CopyResumeButton
-                  key={resumeSession.sessionId}
-                  {...resumeSession}
-                  descriptionId={resumeDescriptionId}
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {route.contextLabel !== route.title ? (
-          <p className="console-eyebrow mb-1">{route.contextLabel}</p>
-        ) : null}
-        <div className="flex items-center gap-2">
-          <h1 className="console-display min-w-0 break-words text-xl font-light sm:text-[26px] text-[var(--console-text)]">
-            {route.title}
-          </h1>
-        </div>
-        <div className="console-mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--console-muted)]">
-          {route.subtitle}
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {shortcutHintVisible ? (
-            <div className="console-mono hidden items-center gap-2 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)] sm:inline-flex">
-              <span>{t("Keyboard navigation available")}</span>
-              <span className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1">
-                ?
+              );
+            })}
+          </nav>
+        ) : (
+          <h1 className="flex min-w-0 items-center gap-2 text-sm font-normal text-[var(--console-text)]">
+            <span className="truncate">{route.title}</span>
+            {route.count != null ? (
+              <span className="console-mono inline-flex h-5 items-center rounded-[6px] bg-[var(--console-surface-muted)] px-[7px] text-[10px] font-medium text-[var(--console-muted)]">
+                {route.count}
               </span>
-              <button
-                type="button"
-                onClick={onDismissShortcutHint}
-                className="text-[var(--console-muted)] motion-hover hover:text-[var(--console-text)]"
-                aria-label={t("Dismiss keyboard shortcuts hint")}
-              >
-                ×
-              </button>
-            </div>
-          ) : null}
-        </div>
-        {sourceNodeId && (
-          <Suspense fallback={null}>
-            <SessionSourceDetails
-              sourceNodeId={sourceNodeId}
-              canResume={Boolean(resumeSession?.resumeCommandPrefix)}
-              resumeDescriptionId={resumeDescriptionId}
-            />
-          </Suspense>
-        )}
-        <div aria-live="polite">
-          {sessionCopyNotice ? (
-            <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-              {sessionCopyNotice}
-            </p>
-          ) : null}
-          {liveNotice ? (
-            <p className="console-mono mt-2 inline-flex rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-text)]">
-              {liveNotice}
-            </p>
-          ) : null}
-        </div>
-        {scanStatusVisible && (
-          <Suspense fallback={null}>
-            <ScanStatusNotice visible />
-          </Suspense>
-        )}
-        {sessionLoadNotice ? (
-          <div
-            role={sessionLoadNotice.error ? "alert" : "status"}
-            className="console-mono mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 py-1 text-[11px] text-[var(--console-warning)]"
-          >
-            <span>
-              {sessionLoadNotice.error ?? t("Loading sessions… Results are not yet complete.")}
-            </span>
-            {sessionLoadNotice.error ? (
-              <button
-                type="button"
-                disabled={sessionLoadNotice.loading}
-                onClick={onRetrySessionLoad}
-                className="rounded-sm border border-current px-2 py-1 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:opacity-50"
-              >
-                {t("Retry session load")}
-              </button>
             ) : null}
-          </div>
-        ) : null}
+          </h1>
+        )}
       </div>
-    </section>
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </header>
+  );
+}
+
+/** The large title block that opens a page body. */
+export function AppPageHero({
+  hero,
+  children,
+}: {
+  hero: NonNullable<RouteHeaderModel["hero"]>;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <span className="console-eyebrow">{hero.eyebrow}</span>
+      <h1 className="console-display min-w-0 text-2xl leading-tight font-light break-words text-[var(--console-text)] sm:text-[28px]">
+        {hero.title}
+      </h1>
+      {hero.subtitle ? (
+        <p className="console-mono flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--console-muted)]">
+          {hero.subtitle}
+        </p>
+      ) : null}
+      {hero.tags ? <div className="mt-1">{hero.tags}</div> : null}
+      {children}
+    </div>
   );
 }

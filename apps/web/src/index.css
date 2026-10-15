@@ -86,54 +86,10 @@
   --color-chart-9: var(--chart-9);
   --color-chart-10: var(--chart-10);
 
-  @keyframes shortcut-overlay-in {
-    from {
-      opacity: 0;
-    }
-
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes shortcut-overlay-out {
-    from {
-      opacity: 1;
-    }
-
-    to {
-      opacity: 0;
-    }
-  }
-
   /* Content is centered via Tailwind's -translate-x/y-1/2, which compiles to
      the CSS `translate` property. Animate the standalone `scale` property here
      (not `transform`) so the centering translate and the animation compose
      instead of double-shifting the panel. */
-  @keyframes shortcut-content-in {
-    from {
-      opacity: 0;
-      scale: 0.96;
-    }
-
-    to {
-      opacity: 1;
-      scale: 1;
-    }
-  }
-
-  @keyframes shortcut-content-out {
-    from {
-      opacity: 1;
-      scale: 1;
-    }
-
-    to {
-      opacity: 0;
-      scale: 0.96;
-    }
-  }
-
   @keyframes scan-progress-indeterminate {
     from {
       transform: translateX(-100%);
@@ -204,6 +160,15 @@
     /* Brand-hued text: #e8622e is 3.4:1 on white, so links and selected labels
        use this deeper step (5.5:1). */
     --brand-ink: #b4441a;
+
+    /* Sidebar status card: a deep ember gradient with light text on top. */
+    --ember-from: #7a3a1d;
+    --ember-to: #a3552c;
+    --ember-fg: #ffffff;
+    --ember-muted: rgb(255 255 255 / 0.86);
+    --ember-glass: rgb(255 255 255 / 0.2);
+    --ember-glass-hover: rgb(255 255 255 / 0.3);
+    --ember-live: #8be6cf;
 
     /* Positive */
     --positive: #218c77;
@@ -335,6 +300,9 @@
     --brand-line: #5a2e19;
     --brand-fg: #101012;
     --brand-ink: #ff7a45;
+
+    --ember-from: #3d1c0d;
+    --ember-to: #5e2f18;
 
     --positive: #4fd3b4;
     --positive-soft: #10251f;
@@ -497,22 +465,6 @@
     transform: translateX(-100%);
     animation: scan-progress-indeterminate var(--scan-progress-duration) linear infinite;
     will-change: transform;
-  }
-
-  .shortcut-overlay[data-open] {
-    animation: shortcut-overlay-in 200ms var(--ease-out);
-  }
-
-  .shortcut-overlay[data-closed] {
-    animation: shortcut-overlay-out 150ms var(--ease-out);
-  }
-
-  .shortcut-content[data-open] {
-    animation: shortcut-content-in 200ms var(--ease-out);
-  }
-
-  .shortcut-content[data-closed] {
-    animation: shortcut-content-out 150ms var(--ease-out);
   }
 
   .motion-backdrop {
@@ -817,14 +769,6 @@
       color var(--dur-fast) var(--ease-out),
       background-color var(--dur-fast) var(--ease-out),
       border-color var(--dur-fast) var(--ease-out);
-  }
-
-  .shortcut-content[data-open] {
-    animation-name: shortcut-overlay-in;
-  }
-
-  .shortcut-content[data-closed] {
-    animation-name: shortcut-overlay-out;
   }
 
   .t-tt {

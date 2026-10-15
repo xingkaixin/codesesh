@@ -72,6 +72,8 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
       onRetry: vi.fn(),
       selectedIndex: 0,
       registerResultRef: vi.fn(),
+      controls: { current: null },
+      onSubmit: vi.fn(),
     },
   };
 }
@@ -239,13 +241,13 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    await screen.findByText(
-      "git_remote: github.com/acme/app",
-      {},
+    await screen.findByRole(
+      "heading",
+      { level: 1, name: "acme/app" },
       { timeout: LAZY_SURFACE_TIMEOUT_MS },
     );
-    expect(screen.queryByRole("heading", { name: "acme/app" })).toBeNull();
-    expect(screen.getByRole("button", { name: "claudecode · 1" })).toBeTruthy();
+    expect(screen.getByText("github.com/acme/app")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "claudecode 1" })).toBeTruthy();
   });
 
   it("renders search content from the explicit search contract", async () => {

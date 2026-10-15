@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../../lib/api";
 import { createQueryWrapper } from "../../test/query-wrapper";
-import { NodeStatusButton } from "./NodeStatusButton";
+import { NodeSummary } from "../app/SidebarFooter";
 import { NodePanel } from "./NodePanel";
 
 // oxlint-disable-next-line anti-slop/no-module-mocking -- Exercise node actions and failure feedback with controlled server responses.
@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe("NodePanel", () => {
-  it("keeps the toolbar count current and excludes revoked Workers", async () => {
+  it("keeps the sidebar count current and excludes revoked Workers", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(node.lastSeen);
     vi.mocked(api.fetchNodes).mockResolvedValue({
@@ -83,16 +83,14 @@ describe("NodePanel", () => {
     });
     const { client, Wrapper } = createQueryWrapper();
     client.setQueryData(["config"], { window: {}, hubEnabled: true });
-    render(<NodeStatusButton onClick={vi.fn()} />, { wrapper: Wrapper });
+    render(<NodeSummary onManage={vi.fn()} />, { wrapper: Wrapper });
     await act(() => vi.advanceTimersByTimeAsync(10));
-    expect(screen.getByText("1/2 online")).toBeTruthy();
+    expect(screen.getByText("Source nodes 1/2 online")).toBeTruthy();
     await act(() => vi.advanceTimersByTimeAsync(65000));
-    expect(screen.getByText("0/2 online")).toBeTruthy();
+    expect(screen.getByText("Source nodes 0/2 online")).toBeTruthy();
     vi.mocked(api.fetchNodes).mockRejectedValue(new Error("unreachable"));
     await act(() => vi.advanceTimersByTimeAsync(5000));
-    expect(
-      screen.getByRole("button", { name: "Source nodes: Node status unavailable" }),
-    ).toBeTruthy();
+    expect(screen.getByText("Node status unavailable")).toBeTruthy();
   });
   it("flags a missing source until the user ignores it", async () => {
     const missing = {
@@ -118,12 +116,8 @@ describe("NodePanel", () => {
     vi.mocked(api.setSourceIgnored).mockResolvedValue(undefined);
     const { client, Wrapper } = createQueryWrapper();
     client.setQueryData(["config"], { window: {}, hubEnabled: true });
-    render(<NodeStatusButton onClick={vi.fn()} />, { wrapper: Wrapper });
-    expect(
-      await screen.findByRole("button", {
-        name: "Source nodes: 1 online / 1 paired Workers; 1 need attention",
-      }),
-    ).toBeTruthy();
+    render(<NodeSummary onManage={vi.fn()} />, { wrapper: Wrapper });
+    expect(await screen.findByText("1 need attention")).toBeTruthy();
     cleanup();
 
     panel();

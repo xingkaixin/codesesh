@@ -13,7 +13,6 @@ interface KeyboardShortcutsDeps {
   selectedProjectNavigationIdentity: ProjectRouteIdentity | null;
   shortcutHelpOpen: boolean;
   setShortcutHelpOpen: (open: boolean) => void;
-  dismissShortcutHint: () => void;
   isSearchMode: boolean;
   activeSearchQuery: string;
   searchResults: SearchResult[];
@@ -37,7 +36,6 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     selectedProjectNavigationIdentity,
     shortcutHelpOpen,
     setShortcutHelpOpen,
-    dismissShortcutHint,
     isSearchMode,
     activeSearchQuery,
     searchResults,
@@ -82,13 +80,11 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     if (key === "?") {
       event.preventDefault();
       setShortcutHelpOpen(true);
-      dismissShortcutHint();
       return;
     }
 
     if (key === "/") {
       event.preventDefault();
-      dismissShortcutHint();
       openSearch();
       return;
     }
@@ -115,25 +111,21 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
 
       if (key === "j") {
         event.preventDefault();
-        dismissShortcutHint();
         setSelectedSearchIndex((current) => Math.min(current + 1, searchResults.length - 1));
         return;
       }
       if (key === "k") {
         event.preventDefault();
-        dismissShortcutHint();
         setSelectedSearchIndex((current) => Math.max(current - 1, 0));
         return;
       }
       if (key === "g") {
         event.preventDefault();
-        dismissShortcutHint();
         setSelectedSearchIndex(0);
         return;
       }
       if (key === "G") {
         event.preventDefault();
-        dismissShortcutHint();
         setSelectedSearchIndex(searchResults.length - 1);
         return;
       }
@@ -141,7 +133,6 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         const result = searchResults[selectedSearchIndex];
         if (!result) return;
         event.preventDefault();
-        dismissShortcutHint();
         closeSearch();
         navigate(searchResultPath(result), { state: { searchQuery: activeSearchQuery } });
       }

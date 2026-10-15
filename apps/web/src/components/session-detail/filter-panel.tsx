@@ -54,10 +54,10 @@ export function SessionFilterPanel({
   return (
     <section
       aria-label={t("Content filters")}
-      className="flex flex-col rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)]"
+      className="flex flex-col rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)]"
     >
-      <div className="flex items-center gap-3 border-b border-[var(--console-border)] px-3 py-2.5">
-        <span className="console-eyebrow">{t("Content filters")}</span>
+      <div className="flex min-h-[43px] items-center gap-3 border-b border-[var(--console-border)] py-1.5 pr-3 pl-4">
+        <h2 className="text-sm font-normal text-[var(--console-text)]">{t("Content filters")}</h2>
         <button
           type="button"
           onClick={actions.resetAll}
@@ -216,7 +216,7 @@ export function SessionFilterAside({
   useLocale();
 
   return (
-    <aside className="console-scrollbar hidden min-[1280px]:sticky min-[1280px]:top-4 min-[1280px]:block min-[1280px]:max-h-[calc(100dvh-14rem)] min-[1280px]:overflow-y-auto min-[1280px]:overscroll-contain">
+    <aside className="console-scrollbar hidden min-[1280px]:sticky min-[1280px]:top-4 min-[1280px]:col-start-2 min-[1280px]:row-start-1 min-[1280px]:block min-[1280px]:max-h-[calc(100dvh-6rem)] min-[1280px]:overflow-y-auto min-[1280px]:overscroll-contain">
       <div className="space-y-4">
         <SessionFilterPanel {...panelProps} />
         <FileChangeTracker

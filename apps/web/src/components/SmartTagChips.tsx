@@ -4,7 +4,7 @@ import type { SmartTag } from "../lib/api";
 import { cn } from "../lib/utils";
 
 const CHIP_CLASS =
-  "inline-flex items-center gap-1.5 rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[11px] text-[var(--console-text-secondary)]";
+  "inline-flex h-5 items-center gap-[5px] rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[11px] font-medium whitespace-nowrap text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)]";
 
 export function SmartTagChips({
   tags,
@@ -29,7 +29,7 @@ export function SmartTagChips({
           {/* SmartTag values double as the --tag-{tag}-bar color names in index.css. */}
           <span
             aria-hidden
-            className="size-1.5 shrink-0 rounded-full"
+            className="size-1.5 shrink-0 rounded-[2px]"
             style={{ background: `var(--tag-${tag}-bar)` }}
           />
           {t(tag)}

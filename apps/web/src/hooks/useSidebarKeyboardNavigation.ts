@@ -14,7 +14,6 @@ interface SidebarKeyboardNavigationOptions {
   sessionLookup: SidebarSessionLookup;
   isSearchMode: boolean;
   shortcutHelpOpen: boolean;
-  dismissShortcutHint: () => void;
   onOpenSession: (session: SessionHead) => void;
 }
 
@@ -24,7 +23,6 @@ export function useSidebarKeyboardNavigation({
   sessionLookup,
   isSearchMode,
   shortcutHelpOpen,
-  dismissShortcutHint,
   onOpenSession,
 }: SidebarKeyboardNavigationOptions) {
   const routeSessionReference =
@@ -53,7 +51,6 @@ export function useSidebarKeyboardNavigation({
     if (isSearchMode || shortcutHelpOpen || sessions.length === 0) return;
 
     const moveSelection = (offset: number) => {
-      dismissShortcutHint();
       const currentIndex =
         selectedSessionReference == null
           ? -1
@@ -78,7 +75,6 @@ export function useSidebarKeyboardNavigation({
     }
     if (event.key === "g") {
       event.preventDefault();
-      dismissShortcutHint();
       const first = sessions[0];
       if (first) {
         setSelection({ scope: selectionScope, reference: getSessionReferenceKey(first) });
@@ -87,7 +83,6 @@ export function useSidebarKeyboardNavigation({
     }
     if (event.key === "G") {
       event.preventDefault();
-      dismissShortcutHint();
       const last = sessions.at(-1);
       if (last) {
         setSelection({ scope: selectionScope, reference: getSessionReferenceKey(last) });
@@ -99,7 +94,6 @@ export function useSidebarKeyboardNavigation({
     const selected = sessionLookup.byReference.get(selectedSessionReference);
     if (!selected) return;
     event.preventDefault();
-    dismissShortcutHint();
     onOpenSession(selected);
   });
 

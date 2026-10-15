@@ -95,8 +95,6 @@ function renderScreen(props: Partial<ComponentProps<typeof OverviewScreen>> = {}
           window={timeWindow}
           agentCatalog={createAgentCatalog(agents)}
           rangePreset="7d"
-          onRangeChange={vi.fn()}
-          onSelectCustom={vi.fn()}
           {...props}
         />
       </MemoryRouter>
@@ -145,7 +143,7 @@ describe("OverviewScreen", () => {
     expect(screen.getByRole("heading", { name: "By model" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
     expect(screen.getByText("Estimated")).toBeTruthy();
-    expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
+    expect(screen.getByText(/2 agents · 1 projects/)).toBeTruthy();
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
     expect(screen.getAllByTestId("overview-daily-column")).toHaveLength(1);
 
@@ -203,20 +201,5 @@ describe("OverviewScreen", () => {
       { project: { kind: "path", key: "/repo/codesesh" }, agent: "codex" },
       { signal: expect.any(AbortSignal) },
     );
-  });
-
-  it("opens and applies the shared custom time range", async () => {
-    const onSelectCustom = vi.fn();
-    renderScreen({ onSelectCustom });
-
-    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
-    await screen.findByRole("dialog", { name: "Custom time range" });
-
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-07-01" } });
-    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-07-14" } });
-    fireEvent.click(screen.getByRole("button", { name: "Apply range" }));
-
-    expect(onSelectCustom).toHaveBeenCalledWith("2026-07-01", "2026-07-14");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
