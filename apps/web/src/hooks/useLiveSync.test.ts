@@ -143,6 +143,45 @@ describe("useLiveSync", () => {
     );
   });
 
+  it("merges events that arrive during a slow update into one follow-up", async () => {
+    vi.useFakeTimers();
+    const deps = makeDeps();
+    let finishUpdate!: () => void;
+    deps.applyLiveEvent.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpdate = () => resolve({ visibleNewSessions: 0 });
+        }),
+    );
+    renderHook(() => useLiveSync(deps));
+    const refs = ["first", "second", "third"].map((sessionId) => ({
+      agentName: "claudecode",
+      sessionId,
+    }));
+
+    for (const [index, reference] of refs.entries()) {
+      await act(async () => {
+        sessionsCallback?.({
+          ...SAMPLE_SESSIONS_UPDATED_EVENT,
+          newSessionRefs: [reference],
+          changedSessionHeads: [],
+          timestamp: SAMPLE_SESSIONS_UPDATED_EVENT.timestamp + index,
+        });
+        await vi.advanceTimersByTimeAsync(500);
+      });
+    }
+    expect(deps.applyLiveEvent).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      finishUpdate();
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(deps.applyLiveEvent).toHaveBeenCalledTimes(2);
+    expect(deps.applyLiveEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ newSessionRefs: refs.slice(1) }),
+    );
+  });
+
   it("shows a persistent connection notice on disconnect", () => {
     const { result } = renderHook(() => useLiveSync(makeDeps()));
     act(() => disconnectCallback?.());
