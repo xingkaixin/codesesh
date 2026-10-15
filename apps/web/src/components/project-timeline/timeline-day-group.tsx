@@ -1,8 +1,8 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 /**
- * One calendar day on the project timeline: a right-aligned day label plus the
- * day's session cards hanging off a single axis dot.
+ * One calendar day on the project timeline: a group row with the day's counts,
+ * then each main session row with its sub-sessions.
  */
 import type { SessionReference } from "@codesesh/contract";
 import type { AgentCatalog } from "../../lib/agents";
@@ -31,30 +31,33 @@ export function TimelineDayGroup({
   useLocale();
 
   return (
-    <div className="flex gap-5">
-      {/* pt-[14px] optically aligns the day label with the first card's title. */}
-      <div className="w-[84px] shrink-0 pt-[14px] text-right">
-        <div className="console-display text-[15px] font-semibold text-[var(--console-text)]">
-          {day.label}
-        </div>
-        <div className="console-mono mt-0.5 text-[10px] text-[var(--console-muted)]">
-          {day.mainCount} {t("main ·")} {day.subCount} {t("sub")}
-        </div>
-      </div>
-      <div className="relative flex min-w-0 flex-1 flex-col gap-2.5 border-l border-[var(--console-border)] py-2.5 pr-0 pl-[22px]">
-        <span className="absolute top-[18px] -left-[4px] size-[7px] rounded-full bg-[var(--brand)]" />
-        {day.rows.map((row) => (
-          <TimelineSessionRow
-            key={row.routeKey}
-            row={row}
-            mode={mode}
-            expanded={isRowExpanded(row, mode, openIds)}
-            agentCatalog={agentCatalog}
-            onToggle={onToggle}
-            onOpen={onOpen}
-          />
-        ))}
-      </div>
-    </div>
+    <>
+      <tbody>
+        <tr>
+          <th
+            scope="colgroup"
+            colSpan={5}
+            className="border-b border-[var(--console-border)] bg-[var(--console-bg)] px-[18px] py-[7px] text-left text-xs font-normal text-[var(--console-muted)]"
+          >
+            {t("{0} · {1} main sessions · {2} sub-sessions", [
+              day.label,
+              day.mainCount,
+              day.subCount,
+            ])}
+          </th>
+        </tr>
+      </tbody>
+      {day.rows.map((row) => (
+        <TimelineSessionRow
+          key={row.routeKey}
+          row={row}
+          mode={mode}
+          expanded={isRowExpanded(row, mode, openIds)}
+          agentCatalog={agentCatalog}
+          onToggle={onToggle}
+          onOpen={onOpen}
+        />
+      ))}
+    </>
   );
 }

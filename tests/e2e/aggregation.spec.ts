@@ -80,8 +80,8 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
   await project.getByRole("link", { name: /codesesh-e2e/ }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Claude Code · 1" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Codex · 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Claude Code 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Codex 1" })).toBeVisible();
   await expect(sessionsKpi(page.getByTestId("dashboard"))).toContainText("2");
 });
 

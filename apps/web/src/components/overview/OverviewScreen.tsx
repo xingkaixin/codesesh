@@ -25,6 +25,7 @@ import { OverviewActiveHours } from "./overview-active-hours";
 import { OverviewAgentBreakdown, OverviewModelBreakdown } from "./overview-breakdown";
 import { OverviewDailyTokens } from "./overview-daily-tokens";
 import { OverviewFilterBar } from "./overview-filter-bar";
+import { OverviewProjectKpis } from "./overview-project-kpis";
 import { OverviewSkeleton } from "./overview-skeleton";
 import { OverviewSummary } from "./overview-summary";
 
@@ -56,17 +57,17 @@ export function OverviewScreen({
 
   return (
     <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-5">
-      <OverviewFilterBar
-        agent={agent}
-        onAgentChange={onAgentChange ? undefined : setOwnAgent}
-        agentCatalog={agentCatalog}
-        scopeCounts={dashboard?.scopeCounts}
-        window={window}
-        rangePreset={rangePreset}
-        sourcePicker={
-          project ? undefined : <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />
-        }
-      />
+      {project ? null : (
+        <OverviewFilterBar
+          agent={agent}
+          onAgentChange={onAgentChange ? undefined : setOwnAgent}
+          agentCatalog={agentCatalog}
+          scopeCounts={dashboard?.scopeCounts}
+          window={window}
+          rangePreset={rangePreset}
+          sourcePicker={<SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />}
+        />
+      )}
 
       {error ? (
         <ResourceLoadFailure
@@ -77,11 +78,19 @@ export function OverviewScreen({
       ) : null}
       {dashboard ? (
         <>
-          <OverviewSummary
-            totals={dashboard.totals}
-            daily={dashboard.dailyActivity}
-            rangeDays={dashboard.window.days}
-          />
+          {project ? (
+            <OverviewProjectKpis
+              totals={dashboard.totals}
+              rangeDays={dashboard.window.days}
+              agentCatalog={agentCatalog}
+            />
+          ) : (
+            <OverviewSummary
+              totals={dashboard.totals}
+              daily={dashboard.dailyActivity}
+              rangeDays={dashboard.window.days}
+            />
+          )}
           {children}
           <OverviewDailyTokens daily={dashboard.dailyActivity} />
           <div className="grid gap-4 lg:grid-cols-2">

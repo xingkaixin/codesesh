@@ -21,6 +21,7 @@ function createRow(overrides: Partial<TimelineRow> = {}): TimelineRow {
     reference: { agentName: "codex", sessionId: "root" },
     time: new Date(2026, 7, 6, 9, 5).getTime(),
     title: "Refactor the scanner",
+    tags: [],
     agentKey: "codex",
     childCount: 0,
     childRoots: [],
@@ -62,6 +63,7 @@ function renderRow(props: Partial<Parameters<typeof TimelineSessionRow>[0]> = {}
       onOpen={onOpen}
       {...props}
     />,
+    { container: document.body.appendChild(document.createElement("table")) },
   );
   return { onToggle, onOpen, view };
 }
@@ -71,7 +73,7 @@ describe("TimelineSessionRow", () => {
     const row = createRow({ childCount: 1, childRoots: [CHILD] });
     const { onToggle, view } = renderRow({ row });
 
-    const pill = screen.getByRole("button", { name: /⑂/ });
+    const pill = screen.getByRole("button", { name: /^\d+ sub-sessions$/ });
     expect(pill.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Probe the cache")).toBeNull();
 
@@ -89,7 +91,7 @@ describe("TimelineSessionRow", () => {
       />,
     );
 
-    const expandedPill = screen.getByRole("button", { name: /⑂/ });
+    const expandedPill = screen.getByRole("button", { name: /^\d+ sub-sessions$/ });
     expect(expandedPill.getAttribute("aria-expanded")).toBe("true");
     expect(
       document.getElementById(expandedPill.getAttribute("aria-controls") ?? ""),

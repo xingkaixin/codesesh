@@ -81,12 +81,16 @@ describe("ProjectTimeline", () => {
 
     renderTimeline(roots);
 
-    expect(document.querySelectorAll("article")).toHaveLength(TIMELINE_MAIN_PAGE_SIZE);
+    expect(screen.getAllByRole("button", { name: /^large-root-/ })).toHaveLength(
+      TIMELINE_MAIN_PAGE_SIZE,
+    );
     expect(screen.getByText(`Page 1 · ${TIMELINE_MAIN_PAGE_SIZE} shown`)).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Next timeline page" }));
 
-    expect(document.querySelectorAll("article")).toHaveLength(TIMELINE_MAIN_PAGE_SIZE);
+    expect(screen.getAllByRole("button", { name: /^large-root-/ })).toHaveLength(
+      TIMELINE_MAIN_PAGE_SIZE,
+    );
     expect(screen.getByText(`Page 2 · ${TIMELINE_MAIN_PAGE_SIZE} shown`)).not.toBeNull();
   });
 
@@ -102,7 +106,7 @@ describe("ProjectTimeline", () => {
     );
 
     renderTimeline([parent, ...children]);
-    fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^\d+ sub-sessions$/ }));
 
     expect(screen.getAllByRole("button", { name: /large-child-/ })).toHaveLength(
       TIMELINE_CHILD_PAGE_SIZE,
@@ -146,7 +150,7 @@ describe("ProjectTimeline", () => {
   it("expands one row at a time in Collapsed mode without navigating", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
-    fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^\d+ sub-sessions$/ }));
 
     expect(screen.getByRole("button", { name: /Probe the cache/ })).not.toBeNull();
     expect(screen.getByTestId("location").textContent).toBe("/projects/a");
@@ -165,7 +169,7 @@ describe("ProjectTimeline", () => {
   it("keeps a row opened in Collapsed mode open after a round trip through Expand all", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
-    fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^\d+ sub-sessions$/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Expand all" }));
     fireEvent.click(screen.getByRole("radio", { name: "Collapsed" }));
 
@@ -175,10 +179,10 @@ describe("ProjectTimeline", () => {
   it("hides the pill and panel in Hidden mode without changing the parent's numbers", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
-    fireEvent.click(screen.getByRole("button", { name: /⑂/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^\d+ sub-sessions$/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Hidden" }));
 
-    expect(screen.queryByRole("button", { name: /⑂/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^\d+ sub-sessions$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Probe the cache/ })).toBeNull();
     const parent = screen.getByRole("button", { name: /Refactor the scanner/ });
     expect(parent.textContent).toContain("1 sub-sessions");

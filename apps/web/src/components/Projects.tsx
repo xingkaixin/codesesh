@@ -279,71 +279,75 @@ export function ProjectsOverview({
   );
 }
 
-function ProjectAgentFilter({
-  agents,
+function ProjectHero({
+  project,
   agentCatalog,
   activeAgent,
-  onChange,
+  onChangeAgent,
 }: {
-  agents: ApiProjectAgentStat[];
+  project: ApiProjectGroup;
   agentCatalog: AgentCatalog;
   activeAgent?: string;
-  onChange: (agent?: string) => void;
+  onChangeAgent: (agent?: string) => void;
 }) {
   useLocale();
 
-  const pillClass = (active: boolean) =>
-    `console-mono inline-flex items-center gap-1 rounded-full border px-[13px] py-[5px] text-[11px] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+  const chipClass = (active: boolean) =>
+    cn(
+      "motion-hover inline-flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
       active
-        ? "border-[var(--brand)] bg-[var(--brand)] text-[var(--brand-fg)]"
-        : "border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)] hover:border-[var(--brand-line)]"
-    }`;
+        ? "border-[var(--brand-line)] bg-[var(--brand-soft)] text-[var(--brand)]"
+        : "border-[var(--console-border-strong)] text-[var(--console-text)] hover:bg-[var(--console-surface-muted)]",
+    );
 
   return (
-    <Panel className="p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="console-eyebrow">{t("Agent")}</span>
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="console-eyebrow">
+          {t("Project")} · {project.identityKind}
+        </span>
+        <h1 className="console-display min-w-0 text-2xl leading-tight font-light break-words text-[var(--console-text)] sm:text-[28px]">
+          {project.displayName}
+        </h1>
+        <p className="console-mono mt-1 break-all text-xs text-[var(--console-muted)]">
+          {project.identityKey}
+        </p>
+      </div>
+      <div role="group" aria-label={t("Filter by agent")} className="flex flex-wrap gap-1.5">
         <button
           type="button"
-          onClick={() => onChange(undefined)}
-          className={pillClass(!activeAgent)}
+          aria-pressed={!activeAgent}
+          onClick={() => onChangeAgent(undefined)}
+          className={chipClass(!activeAgent)}
         >
-          {t("All Agents")}
+          {t("All agents")}
         </button>
-        {agents.map((agent) => {
+        {project.agentStats.map((agent) => {
           const agentInfo = findAgent(agentCatalog, agent.name);
           const active = activeAgent === agent.name;
           return (
             <button
               key={agent.name}
               type="button"
-              onClick={() => onChange(active ? undefined : agent.name)}
-              className={pillClass(active)}
+              aria-pressed={active}
+              onClick={() => onChangeAgent(active ? undefined : agent.name)}
+              className={chipClass(active)}
             >
               {agentInfo?.icon ? (
                 <AgentIcon
                   icon={agentInfo.icon}
                   iconColored={agentInfo.iconColored}
-                  alt={agentInfo.displayName}
-                  className="size-3 object-contain"
+                  alt=""
+                  className="size-3.5 object-contain"
                 />
               ) : null}
-              {agentInfo?.displayName ?? agent.name} · {agent.sessions}
+              {agentInfo?.displayName ?? agent.name}
+              <span className="console-mono text-[var(--console-muted)]">{agent.sessions}</span>
             </button>
           );
         })}
       </div>
-    </Panel>
-  );
-}
-
-function ProjectHeader({ project }: { project: ApiProjectGroup }) {
-  useLocale();
-
-  return (
-    <p className="console-mono break-all text-xs text-[var(--console-muted)]">
-      {project.identityKind}: {project.identityKey}
-    </p>
+    </div>
   );
 }
 
@@ -420,13 +424,12 @@ export function ProjectDashboardView({
     : sessions;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <ProjectHeader project={project} />
-      <ProjectAgentFilter
-        agents={project.agentStats}
+    <div className="mx-auto max-w-6xl space-y-5">
+      <ProjectHero
+        project={project}
         agentCatalog={agentCatalog}
         activeAgent={activeAgent}
-        onChange={onChangeAgent}
+        onChangeAgent={onChangeAgent}
       />
 
       <OverviewScreen

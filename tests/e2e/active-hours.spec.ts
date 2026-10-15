@@ -32,7 +32,7 @@ for (const width of [1280, 375]) {
     await expect(
       chart.getByRole("button", { name: "Mon · 18:00–20:00 · 3 user messages" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Claude Code · 1" }).click();
+    await page.getByRole("button", { name: "Claude Code 1" }).click();
     await expect(
       chart.getByRole("button", { name: "Mon · 18:00–20:00 · 2 user messages" }),
     ).toBeVisible();

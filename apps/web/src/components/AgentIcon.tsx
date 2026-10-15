@@ -21,8 +21,9 @@ export function AgentIcon({
   const mask = `url("${icon}") center / contain no-repeat`;
   return (
     <span
-      role="img"
-      aria-label={alt}
+      role={alt ? "img" : undefined}
+      aria-label={alt || undefined}
+      aria-hidden={alt ? undefined : true}
       className={`inline-block bg-current ${className ?? ""}`}
       style={{ mask, WebkitMask: mask }}
     />

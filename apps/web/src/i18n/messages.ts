@@ -1037,4 +1037,17 @@ export const messages = {
   "Scanning · {0} sessions so far": ["扫描中 · 已收录 {0} 个会话", "スキャン中 · {0} 件を収録済み"],
   "{0} sessions in range": ["范围内 {0} 个会话", "期間内 {0} 件のセッション"],
   "Search sessions…": ["搜索会话…", "セッションを検索…"],
+  Time: ["时间", "時刻"],
+  Tags: ["标签", "タグ"],
+  Timeline: ["时间线", "タイムライン"],
+  "{0} sub-sessions": ["{0} 个子会话", "サブセッション {0} 件"],
+  "incl. sub-sessions": ["含子会话", "サブセッション込み"],
+  "From this session · {0} msgs": [
+    "源自此会话 · {0} 条消息",
+    "このセッションから · {0} メッセージ",
+  ],
+  "{0} · {1} main sessions · {2} sub-sessions": [
+    "{0} · {1} 个主会话 · {2} 个子会话",
+    "{0} · メイン {1} 件 · サブ {2} 件",
+  ],
 } as const;

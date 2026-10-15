@@ -1,8 +1,8 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 /**
- * The sub-sessions of one timeline row, rendered inside the parent card so a
- * child never gets its own slot on the day axis.
+ * The sub-sessions of one timeline row, rendered as indented rows under the
+ * parent so a child never gets its own place in the day group.
  */
 import type { SessionReference } from "@codesesh/contract";
 import { useMemo, useState } from "react";
@@ -12,6 +12,13 @@ import {
   TIMELINE_CHILD_PAGE_SIZE,
   type TimelineRow,
 } from "../../lib/session-timeline";
+import { cn } from "../../lib/utils";
+import { SmartTagChips } from "../SmartTagChips";
+import { TIMELINE_CELL_CLASS, TIMELINE_TIME_CLASS } from "./timeline-cells";
+
+const CHILD_CELL_CLASS = cn(TIMELINE_CELL_CLASS, "bg-[var(--console-bg)]");
+const PAGER_BUTTON_CLASS =
+  "rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-[11px] text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40";
 
 export function TimelineChildPanel({
   id,
@@ -28,66 +35,74 @@ export function TimelineChildPanel({
   const page = useMemo(() => getTimelineChildPage(row, pageOffset), [pageOffset, row]);
 
   return (
-    <div
-      id={id}
-      // The 66px inset lines the child list up with the parent's title column.
-      className="border-t border-dashed border-[var(--console-border-strong)] bg-[var(--console-surface-muted)] p-[10px_16px_12px_66px]"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="console-eyebrow">{t("Sub-sessions · derived from this session")}</span>
-        {row.childCount > TIMELINE_CHILD_PAGE_SIZE ? (
-          <span className="console-mono text-[10px] text-[var(--console-muted)]">
-            {t("Page {0} · {1} shown", [page.pageNumber, page.rows.length])}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 flex flex-col gap-1.5 border-l border-dashed border-[var(--console-border-strong)] pl-[14px]">
-        {page.rows.map((child) => (
-          <button
-            key={child.routeKey}
-            type="button"
-            onClick={() => onOpen(child.reference)}
-            className="motion-hover flex items-center gap-[11px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-[9px_12px] text-left hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-          >
-            <span className="console-mono w-[34px] shrink-0 text-[10px] text-[var(--console-muted)]">
-              {formatClockTime(child.time)}
-            </span>
-            {child.kind == null ? null : (
-              <span className="console-mono shrink-0 rounded-sm border border-[var(--console-border)] px-1.5 text-[9.5px] text-[var(--console-muted)]">
-                {child.kind}
+    <tbody id={id}>
+      {page.rows.map((child) => (
+        <tr key={child.routeKey}>
+          <td className={cn(CHILD_CELL_CLASS, TIMELINE_TIME_CLASS)}>
+            {formatClockTime(child.time)}
+          </td>
+          <td className={cn(CHILD_CELL_CLASS, "max-w-0 pl-[30px]")}>
+            <button
+              type="button"
+              onClick={() => onOpen(child.reference)}
+              className="block w-full min-w-0 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+            >
+              <span className="flex min-w-0 items-center gap-1.5 leading-[1.35] font-medium">
+                {child.kind == null ? null : (
+                  <span className="console-mono inline-flex h-[18px] shrink-0 items-center rounded-[5px] border border-[var(--console-border)] px-1.5 text-[10px] font-normal text-[var(--console-muted)]">
+                    {child.kind}
+                  </span>
+                )}
+                <span className="truncate">{child.title}</span>
               </span>
+              <span className="mt-0.5 block truncate text-[11px] leading-[1.4] text-[var(--console-muted)]">
+                {t("From this session · {0} msgs", [formatInt(child.messageCount)])}
+              </span>
+            </button>
+          </td>
+          <td className={CHILD_CELL_CLASS}>
+            <SmartTagChips tags={child.tags} limit={3} />
+          </td>
+          <td className={CHILD_CELL_CLASS} />
+          <td
+            className={cn(
+              CHILD_CELL_CLASS,
+              "console-mono pr-[18px] text-right text-xs whitespace-nowrap",
             )}
-            <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--console-text)]">
-              {child.title}
-            </span>
-            <span className="console-mono shrink-0 text-[10px] text-[var(--console-muted)]">
-              {formatInt(child.messageCount)} {t("msgs ·")} {formatUsd(child.cost)}
-            </span>
-          </button>
-        ))}
-      </div>
+          >
+            {formatUsd(child.cost)}
+          </td>
+        </tr>
+      ))}
       {page.hasPrevious || page.hasNext ? (
-        <div className="mt-2 flex justify-end gap-2">
-          <button
-            type="button"
-            aria-label={t("Previous sub-session page")}
-            disabled={!page.hasPrevious}
-            onClick={() => setPageOffset(page.offset - TIMELINE_CHILD_PAGE_SIZE)}
-            className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-[10px] text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t("Previous")}
-          </button>
-          <button
-            type="button"
-            aria-label={t("Next sub-session page")}
-            disabled={!page.hasNext}
-            onClick={() => setPageOffset(page.offset + TIMELINE_CHILD_PAGE_SIZE)}
-            className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2 py-1 text-[10px] text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t("Next")}
-          </button>
-        </div>
+        <tr>
+          <td colSpan={5} className={cn(CHILD_CELL_CLASS, "px-[18px] py-2")}>
+            <div className="flex items-center justify-end gap-2">
+              <span className="mr-auto text-[11px] text-[var(--console-muted)]">
+                {t("Page {0} · {1} shown", [page.pageNumber, page.rows.length])}
+              </span>
+              <button
+                type="button"
+                aria-label={t("Previous sub-session page")}
+                disabled={!page.hasPrevious}
+                onClick={() => setPageOffset(page.offset - TIMELINE_CHILD_PAGE_SIZE)}
+                className={PAGER_BUTTON_CLASS}
+              >
+                {t("Previous")}
+              </button>
+              <button
+                type="button"
+                aria-label={t("Next sub-session page")}
+                disabled={!page.hasNext}
+                onClick={() => setPageOffset(page.offset + TIMELINE_CHILD_PAGE_SIZE)}
+                className={PAGER_BUTTON_CLASS}
+              >
+                {t("Next")}
+              </button>
+            </div>
+          </td>
+        </tr>
       ) : null}
-    </div>
+    </tbody>
   );
 }
