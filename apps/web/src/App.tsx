@@ -411,7 +411,7 @@ export default function App() {
 
   return (
     <ResolvedThemeContext.Provider value={resolvedTheme}>
-      <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-bg)] text-[var(--console-text)]">
+      <div className="console-ui flex h-screen flex-col overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
         <a
           href="#main"
           className="console-mono sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
@@ -476,7 +476,11 @@ export default function App() {
             }}
           />
 
-          <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
+          <main
+            id="main"
+            tabIndex={-1}
+            className="mr-2 mb-2 ml-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] outline-none min-[1025px]:ml-0"
+          >
             <AppPageHeader
               model={{
                 mobileNavigationOpen,

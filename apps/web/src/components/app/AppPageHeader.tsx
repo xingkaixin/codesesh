@@ -69,7 +69,7 @@ export function AppPageHeader({
   useLocale();
 
   return (
-    <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] bg-[var(--console-surface)]/70 px-4 py-3 backdrop-blur-sm md:px-8">
+    <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] px-4 py-4 md:px-6">
       <button
         type="button"
         aria-expanded={mobileNavigationOpen}
@@ -128,7 +128,7 @@ export function AppPageHeader({
               {route.contextLabel}
             </span>
           ) : null}
-          <h1 className="console-display min-w-0 break-words text-xl font-semibold sm:text-2xl text-[var(--console-text)]">
+          <h1 className="console-display min-w-0 break-words text-xl font-light sm:text-[26px] text-[var(--console-text)]">
             {route.title}
           </h1>
         </div>
