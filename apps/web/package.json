@@ -17,13 +17,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@base-ui/react": "^1.8.0",
+    "@base-ui/react": "^1.9.0",
     "@fontsource-variable/montserrat": "catalog:",
     "@fontsource/ibm-plex-mono": "catalog:",
     "@hugeicons/core-free-icons": "catalog:",
     "@hugeicons/react": "^1.1.10",
     "@pierre/trees": "1.0.0-beta.6",
-    "@tanstack/react-query": "^5.104.1",
+    "@tanstack/react-query": "^5.104.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "diff": "^9.0.0",
@@ -31,7 +31,7 @@
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.4",
-    "react-syntax-highlighter": "^16.1.1",
+    "react-syntax-highlighter": "^16.1.2",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.7.0",
     "tailwindcss-animate": "^1.0.7"
