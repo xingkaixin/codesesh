@@ -401,6 +401,7 @@ async fn run() -> Result<()> {
         },
     );
     let state = Arc::new(if hub_enabled { state.with_hub() } else { state });
+    http::spawn_page_expiry(&state);
     let router = http::router(state);
     let origin = plan.public_origin.unwrap_or_else(|| {
         format!(

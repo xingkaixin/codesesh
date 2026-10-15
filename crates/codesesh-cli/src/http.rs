@@ -131,6 +131,27 @@ impl State {
     }
 }
 
+/// Paginate only drops expired snapshots on its next call, which an idle client never makes.
+pub fn spawn_page_expiry(state: &Arc<State>) {
+    let state = Arc::downgrade(state);
+    tokio::spawn(async move {
+        let mut ticks = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            ticks.tick().await;
+            let Some(state) = state.upgrade() else {
+                return;
+            };
+            let now = chrono::Utc::now().timestamp_millis();
+            if let Ok(mut pages) = state.session_pages.lock() {
+                pages.prune(now);
+            }
+            if let Ok(mut pages) = state.project_pages.lock() {
+                pages.prune(now);
+            }
+        }
+    });
+}
+
 pub fn router(state: Arc<State>) -> Router {
     Router::new()
         .route("/api/worker/pair", post(sync::pair))
