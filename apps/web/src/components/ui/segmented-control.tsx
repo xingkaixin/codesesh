@@ -16,8 +16,8 @@ export interface SegmentedOption<T extends string> {
 }
 
 const SIZE_CLASS = {
-  sm: "px-2 py-[3px] text-[10.5px]",
-  md: "px-3 py-[5px] text-xs",
+  sm: "px-2.5 py-[3px] text-[11px]",
+  md: "px-3 py-1 text-xs",
 } as const;
 
 export function SegmentedControl<T extends string>({
@@ -50,7 +50,7 @@ export function SegmentedControl<T extends string>({
       data-fluid-hover="x"
       role="radiogroup"
       aria-label={ariaLabel}
-      className="inline-flex rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-[3px]"
+      className="inline-flex gap-0.5 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-0.5"
     >
       {options.map((option, index) => {
         const selected = index === selectedIndex;
@@ -76,10 +76,10 @@ export function SegmentedControl<T extends string>({
               }
             }}
             className={cn(
-              "console-mono motion-hover rounded-sm border border-transparent whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+              "motion-hover rounded-md font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
               SIZE_CLASS[size],
               selected
-                ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                ? "bg-[var(--console-surface)] text-[var(--console-text)] shadow-[var(--shadow-raised)]"
                 : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
             )}
           >

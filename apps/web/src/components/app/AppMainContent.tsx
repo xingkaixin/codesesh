@@ -16,7 +16,7 @@ export function AppMainContent({
   children: ReactNode;
 }) {
   return (
-    <section className="console-scrollbar bg-grid min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+    <section className="console-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-6">
       <ErrorBoundary key={locationPath}>
         <RenderProfiler
           id="MainContent"

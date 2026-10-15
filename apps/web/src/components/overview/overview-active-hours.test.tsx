@@ -13,51 +13,28 @@ afterEach(() => {
 });
 
 describe("active hours chart", () => {
+  const rowHeaders = () => screen.getAllByRole("rowheader").map((header) => header.textContent);
+  const dotSize = (element: Element) => Number.parseFloat((element as HTMLElement).style.width);
+
   it("reorders weekdays when language changes without moving message counts", () => {
     render(<OverviewActiveHours activity={activity} />);
-    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("Sun");
+    expect(rowHeaders()).toEqual(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
     act(() => setLanguagePreference("zh-CN"));
-    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("周一");
+    expect(rowHeaders()[0]).toBe("周一");
     expect(screen.getByRole("button", { name: "周日 · 00:00–02:00 · 4 条用户消息" })).toBeTruthy();
     act(() => setLanguagePreference("ja"));
-    expect(screen.getAllByRole("columnheader")[2]!.textContent).toBe("日");
-    expect(screen.getByText("タイムゾーン：Asia/Shanghai")).toBeTruthy();
+    expect(rowHeaders()[0]).toBe("日");
+    expect(screen.getByText(/タイムゾーン：Asia\/Shanghai/)).toBeTruthy();
   });
 
-  it("scales circle area and exposes counts with hover, keyboard and touch", () => {
+  it("scales dot area and exposes counts with hover, keyboard and touch", () => {
     render(<OverviewActiveHours activity={activity} />);
-    expect(
-      screen
-        .getAllByRole("rowheader")
-        .filter((header) => header.getAttribute("scope") === "row")
-        .map((header) => header.textContent),
-    ).toEqual([
-      "00:00",
-      "02:00",
-      "04:00",
-      "06:00",
-      "08:00",
-      "10:00",
-      "12:00",
-      "14:00",
-      "16:00",
-      "18:00",
-      "20:00",
-      "22:00",
-    ]);
-    const groups = screen.getAllByRole("rowgroup").slice(1);
-    expect(groups.map((group) => group.querySelector('[scope="rowgroup"]')?.textContent)).toEqual([
-      "Overnight",
-      "Morning",
-      "Afternoon",
-      "Evening",
-    ]);
-    expect(groups.map((group) => group.querySelectorAll("tr").length)).toEqual([3, 3, 3, 3]);
+    expect(screen.getAllByRole("button")).toHaveLength(84);
     const sunday = screen.getByRole("button", { name: "Sun · 00:00–02:00 · 4 user messages" });
     const monday = screen.getByRole("button", { name: "Mon · 00:00–02:00 · 1 user messages" });
-    const radius = (button: HTMLElement) =>
-      Number(button.querySelector("circle")!.getAttribute("r"));
-    expect(radius(sunday) ** 2 / radius(monday) ** 2).toBe(4);
+    expect(dotSize(sunday.firstElementChild!) ** 2 / dotSize(monday.firstElementChild!) ** 2).toBe(
+      4,
+    );
     fireEvent.mouseEnter(sunday);
     expect(screen.getByRole("tooltip").textContent).toBe(sunday.getAttribute("aria-label"));
     fireEvent.mouseLeave(sunday);
@@ -72,14 +49,20 @@ describe("active hours chart", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it("summarizes the busiest slot, period shares and weekend share", () => {
+    render(<OverviewActiveHours activity={activity} />);
+    expect(screen.getByText("Most active").parentElement!.textContent).toContain("Sun 00:00–02:00");
+    const share = (term: string) => screen.getByText(term).nextElementSibling?.textContent;
+    expect(share("Overnight")).toBe("100%");
+    expect(share("Evening")).toBe("0%");
+    expect(share("Weekend")).toBe("80%");
+  });
+
   it.each([2342, 7, 1])("shows a relative area legend and the exact peak of %i", (peak) => {
     render(<OverviewActiveHours activity={{ ...activity, counts: [peak] }} />);
     const legend = screen.getByLabelText("Size reference (messages)");
     expect(legend.textContent).toBe("LessMore");
-    const radii = Array.from(legend.querySelectorAll("svg"), (svg) =>
-      Number(svg.querySelector("circle")!.getAttribute("r")),
-    );
-    expect(radii).toEqual([4, 8, 12]);
+    expect(Array.from(legend.querySelectorAll("span"), dotSize)).toEqual([6, 12, 18]);
     expect(screen.getByText(`Peak: ${peak.toLocaleString("en-US")}`)).toBeTruthy();
   });
 
@@ -88,7 +71,7 @@ describe("active hours chart", () => {
       <OverviewActiveHours activity={{ ...activity, counts: Array<number>(84).fill(0) }} />,
     );
     expect(screen.getByText("No user messages in this range.")).toBeTruthy();
-    expect(screen.getByRole("table").querySelector("circle")).toBeNull();
+    expect(screen.queryByText("Most active")).toBeNull();
     rerender(<OverviewActiveHours activity={null} />);
     expect(screen.getByText("Activity data is unavailable.")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();

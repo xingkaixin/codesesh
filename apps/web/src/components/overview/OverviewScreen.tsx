@@ -21,14 +21,12 @@ import type { AppConfig, DashboardFilters } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import { useDashboard } from "../../hooks/useDashboard";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
-import { OverviewAgentDistribution } from "./overview-agent-distribution";
-import { OverviewCostBreakdown } from "./overview-cost-breakdown";
-import { OverviewFilterBar } from "./overview-filter-bar";
-import { OverviewKpiGrid } from "./overview-kpi-grid";
-import { OverviewModelTokens } from "./overview-model-tokens";
-import { OverviewSkeleton } from "./overview-skeleton";
 import { OverviewActiveHours } from "./overview-active-hours";
-import { OverviewUsageChart } from "./overview-usage-chart";
+import { OverviewAgentBreakdown, OverviewModelBreakdown } from "./overview-breakdown";
+import { OverviewDailyTokens } from "./overview-daily-tokens";
+import { OverviewFilterBar } from "./overview-filter-bar";
+import { OverviewSkeleton } from "./overview-skeleton";
+import { OverviewSummary } from "./overview-summary";
 
 export function OverviewScreen({
   project,
@@ -83,22 +81,22 @@ export function OverviewScreen({
       ) : null}
       {dashboard ? (
         <>
-          <OverviewKpiGrid totals={dashboard.totals} rangeDays={dashboard.window.days} />
-          {children}
-          <OverviewModelTokens
-            models={dashboard.modelDistribution}
-            totalTokens={dashboard.totals.tokens}
+          <OverviewSummary
+            totals={dashboard.totals}
+            daily={dashboard.dailyActivity}
+            rangeDays={dashboard.window.days}
           />
-          <OverviewUsageChart daily={dashboard.dailyActivity} />
-          <OverviewActiveHours activity={dashboard.activeHours} />
+          {children}
+          <OverviewDailyTokens daily={dashboard.dailyActivity} />
           <div className="grid gap-4 lg:grid-cols-2">
-            <OverviewAgentDistribution perAgent={dashboard.perAgent} />
-            <OverviewCostBreakdown
+            <OverviewModelBreakdown
+              models={dashboard.modelDistribution}
               modelCost={dashboard.modelCost}
-              modelDistribution={dashboard.modelDistribution}
               totals={dashboard.totals}
             />
+            <OverviewAgentBreakdown perAgent={dashboard.perAgent} totals={dashboard.totals} />
           </div>
+          <OverviewActiveHours activity={dashboard.activeHours} />
         </>
       ) : error ? null : (
         <OverviewSkeleton />

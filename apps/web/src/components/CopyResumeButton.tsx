@@ -59,16 +59,16 @@ export function CopyResumeButton({
           : t("Copy resume command: {0}", [command])
       }
       title={copied ? t("Copied: {0}", [command]) : t("Copy: {0}", [command])}
-      className={`console-mono motion-hover motion-press inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${className} ${
+      className={`motion-hover motion-press inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none ${className} ${
         copied
           ? "border-[var(--positive)] bg-[var(--positive-soft)] text-[var(--positive)]"
-          : "border-[var(--console-border)] bg-[var(--console-surface-muted)] text-[var(--console-muted)] hover:border-[var(--console-border-strong)] hover:text-[var(--console-text)]"
+          : "border-[var(--brand)] bg-[var(--brand)] text-[var(--brand-fg)] hover:border-[var(--brand-hover)] hover:bg-[var(--brand-hover)]"
       }`}
     >
       {copied ? (
-        <Check className="size-3" strokeWidth={1.8} />
+        <Check className="size-3.5" strokeWidth={1.8} />
       ) : (
-        <Copy className="size-3" strokeWidth={1.8} />
+        <Copy className="size-3.5" strokeWidth={1.8} />
       )}
       <span>{copied ? t("Copied") : t("Copy resume")}</span>
       <span className="sr-only" aria-live="polite">

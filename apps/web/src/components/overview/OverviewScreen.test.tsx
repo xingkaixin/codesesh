@@ -131,26 +131,37 @@ describe("OverviewScreen", () => {
     expect(alert.textContent).toContain("dashboard unavailable");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    await screen.findByRole("heading", { name: "Agents" });
+    await screen.findByRole("heading", { name: "By agent" });
     expect(api.fetchDashboard).toHaveBeenCalledTimes(2);
   });
 
   it("renders the full card set for the global scope", async () => {
     renderScreen();
 
-    await screen.findByRole("heading", { name: "Agents" });
+    await screen.findByRole("heading", { name: "By agent" });
     expect(screen.getByTestId("dashboard")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Daily usage" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Tokens by Model" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
+    for (const name of ["Tokens", "API value", "Sessions", "Token composition", "Daily tokens"])
+      expect(screen.getByRole("heading", { name })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "By model" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
+    expect(screen.getByText("Estimated")).toBeTruthy();
     expect(screen.getByText("1 projects · 2 agents in scope")).toBeTruthy();
     expect(screen.getAllByTestId("overview-agent-row")).toHaveLength(1);
+    expect(screen.getAllByTestId("overview-daily-column")).toHaveLength(1);
+
+    const daily = screen.getByRole("region", { name: "Daily tokens" });
+    expect(
+      daily.querySelector('[role="listbox"] [role="option"]')?.getAttribute("aria-label"),
+    ).toBe("01-01: 5.0k tokens, API value $6.00, 5 sessions");
+    fireEvent.click(screen.getByRole("radio", { name: "Excluding cache reads" }));
+    expect(
+      daily.querySelector('[role="listbox"] [role="option"]')?.getAttribute("aria-label"),
+    ).toBe("01-01: 4.0k tokens, API value $6.00, 5 sessions");
   });
 
   it("issues exactly one new request when the agent filter changes", async () => {
     renderScreen();
-    await screen.findByRole("heading", { name: "Agents" });
+    await screen.findByRole("heading", { name: "By agent" });
     expect(api.fetchDashboard).toHaveBeenCalledTimes(1);
 
     fireEvent.change(screen.getByRole("combobox", { name: "Filter by agent" }), {
@@ -168,8 +179,8 @@ describe("OverviewScreen", () => {
   it("keeps the same cards when mounted for a project", async () => {
     renderScreen({ project: { kind: "path", key: "/repo/codesesh" } });
 
-    await screen.findByRole("heading", { name: "Agents" });
-    expect(screen.getByRole("heading", { name: "Cost by Model" })).toBeTruthy();
+    await screen.findByRole("heading", { name: "By agent" });
+    expect(screen.getByRole("heading", { name: "By model" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Active hours" })).toBeTruthy();
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,
@@ -185,7 +196,7 @@ describe("OverviewScreen", () => {
       onAgentChange: vi.fn(),
     });
 
-    await screen.findByRole("heading", { name: "Agents" });
+    await screen.findByRole("heading", { name: "By agent" });
     expect(screen.queryByRole("combobox", { name: "Filter by agent" })).toBeNull();
     expect(api.fetchDashboard).toHaveBeenLastCalledWith(
       timeWindow,

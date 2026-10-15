@@ -4,15 +4,13 @@ import type { DashboardData } from "@codesesh/contract";
 
 const CODEX_SESSION_ID = "019daaaa-bbbb-7bbb-8bbb-bbbbbbbbbbbb";
 
-/** The overview KPI cards carry no test id; each is a Panel whose text opens with
- *  its own eyebrow label, which makes the label a stable anchor. */
+/** The overview metrics carry no test id; each is a section whose text opens with
+ *  its own label, which makes the label a stable anchor. */
 function sessionsKpi(dashboard: Locator): Locator {
   return dashboard.locator("section").filter({ hasText: /^Sessions/ });
 }
 
-test("keeps model colors consistent across token and cost rankings and project scopes", async ({
-  page,
-}) => {
+test("keeps model colors consistent across models and project scopes", async ({ page }) => {
   await page.route("**/api/dashboard?*", async (route) => {
     const response = await route.fetch();
     const data = (await response.json()) as DashboardData;
@@ -37,40 +35,26 @@ test("keeps model colors consistent across token and cost rankings and project s
     });
   });
   await page.goto("/");
-  const tokens = page.getByRole("region", { name: "Tokens by Model", exact: true });
-  const cost = page.getByRole("region", { name: "Cost by Model", exact: true });
-  const tokenSwatch = (model: string) =>
-    tokens.getByRole("button", { name: new RegExp(`^${model}:`) }).locator("[aria-hidden]");
-  const costSwatch = (model: string) =>
-    cost
-      .getByRole("list")
-      .getByRole("listitem")
-      .filter({ hasText: model })
-      .locator("[aria-hidden]");
-  await expect(tokens.getByRole("button", { name: /^sonnet:/ })).toBeVisible();
-  const sonnetColor = await tokenSwatch("sonnet").evaluate(
+  const models = page.getByRole("region", { name: "By model", exact: true });
+  const row = (model: string) => models.getByRole("row").filter({ hasText: model });
+  const swatch = (model: string) => row(model).locator("[aria-hidden]").first();
+  await expect(row("sonnet")).toContainText("$1.00");
+  await expect(row("haiku")).toContainText("$9.00");
+  const sonnetColor = await swatch("sonnet").evaluate(
     (element) => getComputedStyle(element).backgroundColor,
   );
-  await expect(costSwatch("sonnet")).toHaveCSS("background-color", sonnetColor);
-  const haikuColor = await tokenSwatch("haiku").evaluate(
+  const haikuColor = await swatch("haiku").evaluate(
     (element) => getComputedStyle(element).backgroundColor,
   );
-  await expect(costSwatch("haiku")).toHaveCSS("background-color", haikuColor);
   expect(sonnetColor).not.toBe(haikuColor);
-  const chart = tokens.getByRole("listbox");
-  await chart.getByRole("option").first().focus();
-  await expect(tokens.getByRole("tooltip")).toContainText("sonnet");
-  await page.keyboard.press("ArrowRight");
-  await expect(tokens.getByRole("tooltip")).toContainText("haiku");
-  await expect(tokens.getByRole("tooltip")).toContainText("20 tokens");
 
   await page.goto("/projects");
   await page
     .locator("main")
     .getByRole("link", { name: /codesesh-e2e/ })
     .click();
-  await expect(tokens.getByRole("button", { name: /^sonnet:/ })).toBeVisible();
-  await expect(tokenSwatch("sonnet")).toHaveCSS("background-color", sonnetColor);
+  await expect(row("sonnet")).toBeVisible();
+  await expect(swatch("sonnet")).toHaveCSS("background-color", sonnetColor);
 });
 
 test("aggregates Claude and Codex sessions under one project", async ({ page }) => {
@@ -79,7 +63,6 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
   const dashboard = page.getByTestId("dashboard");
   await expect(sessionsKpi(dashboard)).toContainText("2");
   await expect(dashboard.getByText("1 projects · 2 agents in scope")).toBeVisible();
-  // Neither session has a cost, so the agent bars rank and read by sessions.
   const agentColumns = dashboard.getByTestId("overview-agent-row");
   await expect(agentColumns).toHaveCount(2);
   const claude = agentColumns.filter({ hasText: "Claude Code" });
@@ -90,11 +73,11 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
   await expect(codex.getByRole("img", { name: "Codex", exact: true })).toBeVisible();
 
   await page.goto("/projects");
-  const project = page.locator("main").getByRole("link", { name: /codesesh-e2e/ });
-  await expect(project).toContainText("2 sessions");
+  const project = page.locator("main").getByRole("row", { name: /codesesh-e2e/ });
+  await expect(project.getByRole("cell").nth(1)).toHaveText("2");
   await expect(project).toContainText("Claude Code · 1");
   await expect(project).toContainText("Codex · 1");
-  await project.click();
+  await project.getByRole("link", { name: /codesesh-e2e/ }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "codesesh-e2e" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Claude Code · 1" })).toBeVisible();

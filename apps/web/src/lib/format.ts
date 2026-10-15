@@ -116,6 +116,13 @@ export function formatPercent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
 
+/** A share of a whole: one decimal below 10%, so a thin slice does not read as 0%. */
+export function formatShare(ratio: number): string {
+  if (!Number.isFinite(ratio) || ratio <= 0) return "0%";
+  const percent = ratio * 100;
+  return `${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
+}
+
 function isSameCalendarDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&

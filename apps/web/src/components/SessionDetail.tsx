@@ -35,6 +35,7 @@ import {
 } from "./session-detail/session-detail-aux";
 import { SessionMessageTimeline } from "./session-detail/session-message-timeline";
 import { MessagePagingControls } from "./session-detail/message-paging-controls";
+import { SessionStats } from "./session-detail/session-stats";
 import {
   findScrollParent,
   isWindowScrollParent,
@@ -302,6 +303,7 @@ export function SessionDetail({
       data-testid="session-detail"
       className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
+      <SessionStats session={session} toc={toc} />
       {pageControls}
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}

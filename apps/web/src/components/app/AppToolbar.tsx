@@ -47,14 +47,12 @@ export function AppToolbar({
   const [nodesOpen, setNodesOpen] = useState(false);
 
   return (
-    <header className="shrink-0 border-b border-[var(--console-border)] bg-[var(--console-surface)]/85 backdrop-blur-sm">
-      <div className="grid min-h-14 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:py-0">
+    <header className="shrink-0">
+      <div className="grid min-h-13 grid-cols-[auto_1fr] items-center gap-3 px-4 py-2 lg:grid-cols-[232px_minmax(0,1fr)_auto] lg:py-0 lg:pl-5">
         <div className="flex items-center gap-2">
           <Link to="/" className="flex items-center gap-2 text-[var(--console-text)]">
             <img src="/logo.svg?v=3" alt="CodeSesh" className="h-6 w-6 rounded-sm" />
-            <span className="console-display text-sm font-semibold uppercase tracking-[0.05em]">
-              CodeSesh
-            </span>
+            <span className="console-display text-[15px] font-bold">CodeSesh</span>
           </Link>
         </div>
         <SearchControls ref={searchControlsRef} onSubmit={onSubmitSearch} />

@@ -14,18 +14,18 @@
       /* Duplicates the light/dark tokens of src/index.css so the pre-hydration
          skeleton below paints in the real palette. Keep both in sync. */
       :root {
-        --console-bg: #f7f6f3;
-        --console-sidebar-bg: #fbfaf8;
+        --console-bg: #f9f8f5;
+        --console-sidebar-bg: #f1f0ec;
         --console-surface: #ffffff;
-        --console-surface-muted: #fbfaf8;
+        --console-surface-muted: #f5f4f0;
         --console-surface-sunken: #f1f0ec;
         --console-border: #e6e4de;
         --console-text: #16161a;
-        --console-muted: #71707a;
+        --console-muted: #6b6a73;
       }
 
       .dark {
-        --console-bg: #101012;
+        --console-bg: #111113;
         --console-sidebar-bg: #0b0b0d;
         --console-surface: #18181b;
         --console-surface-muted: #1e1e22;
@@ -37,11 +37,11 @@
 
       body {
         margin: 0;
-        background: var(--console-bg);
+        background: var(--console-sidebar-bg);
         color: var(--console-text);
         font-family:
-          "IBM Plex Sans Variable",
-          "IBM Plex Sans",
+          "Montserrat Variable",
+          Montserrat,
           "PingFang SC",
           "Hiragino Sans GB",
           "Noto Sans SC",
@@ -62,13 +62,7 @@
         grid-template-columns: auto 1fr auto;
         align-items: center;
         gap: 12px;
-        border-bottom: 1px solid var(--console-border);
-        background: rgba(255, 255, 255, 0.85);
         padding: 0 16px;
-      }
-
-      .dark .app-header {
-        background: rgba(24, 24, 27, 0.85);
       }
 
       .app-brand,
@@ -85,12 +79,9 @@
         align-items: center;
         gap: 8px;
         font:
-          600 13px "JetBrains Mono Variable",
-          "JetBrains Mono",
-          "SFMono-Regular",
-          Menlo,
-          monospace;
-        letter-spacing: 0.05em;
+          700 15px "Montserrat Variable",
+          Montserrat,
+          sans-serif;
       }
 
       .app-brand img {
@@ -123,9 +114,7 @@
       }
 
       .app-sidebar {
-        width: 256px;
-        border-right: 1px solid var(--console-border);
-        background: var(--console-sidebar-bg);
+        width: 240px;
         padding: 24px 16px;
       }
 
@@ -138,16 +127,16 @@
       .app-main {
         min-width: 0;
         flex: 1;
+        margin: 0 8px 8px 0;
+        overflow: hidden;
+        border: 1px solid var(--console-border);
+        border-radius: 12px;
+        background: var(--console-bg);
       }
 
       .app-titlebar {
         border-bottom: 1px solid var(--console-border);
-        background: rgba(255, 255, 255, 0.7);
-        padding: 18px 32px;
-      }
-
-      .dark .app-titlebar {
-        background: rgba(24, 24, 27, 0.7);
+        padding: 18px 24px;
       }
 
       .app-title {
@@ -160,7 +149,7 @@
       .app-content {
         display: grid;
         gap: 12px;
-        padding: 24px 32px;
+        padding: 24px;
       }
 
       .app-card {
@@ -187,6 +176,10 @@
       @media (max-width: 1023px) {
         .app-sidebar {
           display: none;
+        }
+
+        .app-main {
+          margin-left: 8px;
         }
 
         .app-header {

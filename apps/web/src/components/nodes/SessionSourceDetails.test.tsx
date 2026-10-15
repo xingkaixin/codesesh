@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import type { SourceNode } from "../../lib/api";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { SessionSourceDetails } from "./SessionSourceDetails";
@@ -21,21 +21,12 @@ const node: SourceNode = {
   agents: {},
   ignoredSources: [] as string[],
 };
-const resumeSession = {
-  resumeCommandPrefix: "codex resume",
-  sessionId: "same-session",
-  directory: "/source/worktree",
-};
+const resume = { canResume: true, resumeDescriptionId: "resume-description" };
 
-it("identifies an offline source and copies a command to run on that machine", async () => {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", {
-    value: { writeText },
-    configurable: true,
-  });
+it("identifies an offline source and where to run its resume command", () => {
   const { client, Wrapper } = createQueryWrapper();
   client.setQueryData(["source-nodes"], { nodes: [node] });
-  render(<SessionSourceDetails sourceNodeId={node.id} resumeSession={resumeSession} />, {
+  render(<SessionSourceDetails sourceNodeId={node.id} {...resume} />, {
     wrapper: Wrapper,
   });
 
@@ -47,35 +38,23 @@ it("identifies an offline source and copies a command to run on that machine", a
   expect(
     screen.getByText("Paths belong to the source machine. Files are not transferred."),
   ).toBeTruthy();
-  const button = screen.getByRole("button", { name: /Copy resume command/ });
-  expect(document.getElementById(button.getAttribute("aria-describedby")!)?.textContent).toBe(
+  expect(document.getElementById(resume.resumeDescriptionId)?.textContent).toBe(
     "Run this command on Office Mac, in a POSIX-compatible shell.",
-  );
-  fireEvent.click(button);
-  await waitFor(() =>
-    expect(writeText).toHaveBeenCalledWith("cd '/source/worktree' && codex resume 'same-session'"),
   );
 });
 
 it("keeps unknown source identity visible and names the CodeSesh host for local commands", () => {
   const { Wrapper } = createQueryWrapper();
-  const view = render(
-    <SessionSourceDetails sourceNodeId="unknown-worker" resumeSession={resumeSession} />,
-    { wrapper: Wrapper },
-  );
+  const view = render(<SessionSourceDetails sourceNodeId="unknown-worker" {...resume} />, {
+    wrapper: Wrapper,
+  });
   expect(screen.getByText("Source: unknown-worker")).toBeTruthy();
   expect(screen.getByText("Node status unavailable")).toBeTruthy();
   expect(screen.getByText(/Run this command on unknown-worker/)).toBeTruthy();
-  view.rerender(<SessionSourceDetails sourceNodeId="local" resumeSession={resumeSession} />);
+  view.rerender(<SessionSourceDetails sourceNodeId="local" {...resume} />);
   expect(screen.getByText("Source: Local source")).toBeTruthy();
   expect(screen.getByText(/Run this command on the machine running CodeSesh/)).toBeTruthy();
   expect(screen.queryByText("Node status unavailable")).toBeNull();
-  view.rerender(
-    <SessionSourceDetails
-      sourceNodeId="local"
-      resumeSession={{ ...resumeSession, resumeCommandPrefix: null }}
-    />,
-  );
-  expect(screen.queryByRole("button")).toBeNull();
+  view.rerender(<SessionSourceDetails sourceNodeId="local" {...resume} canResume={false} />);
   expect(screen.queryByText(/Run this command/)).toBeNull();
 });

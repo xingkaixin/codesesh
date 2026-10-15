@@ -31,10 +31,10 @@ const SessionTreeSidebar = lazy(() =>
 const SIDEBAR_PROJECT_LIMIT = 8;
 
 function navItemClass(isSelected: boolean): string {
-  return `flex items-center gap-2 rounded-sm px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+  return `flex items-center gap-2 rounded-[10px] px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
     isSelected
-      ? "bg-[var(--brand-soft)] text-[var(--brand)]"
-      : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
+      ? "bg-[var(--console-sidebar-accent)] font-medium text-[var(--console-text)]"
+      : "text-[var(--console-text-secondary)] hover:bg-[var(--console-sidebar-accent)]/60 hover:text-[var(--console-text)]"
   }`;
 }
 
@@ -172,9 +172,7 @@ function SidebarFrame({
   return (
     <aside
       aria-label={t("Primary navigation")}
-      className={`w-64 shrink-0 flex-col border-r border-[var(--console-border)] bg-[var(--console-sidebar-bg)] ${
-        collapsed ? "hidden" : "hidden min-[1025px]:flex"
-      }`}
+      className={`w-60 shrink-0 flex-col ${collapsed ? "hidden" : "hidden min-[1025px]:flex"}`}
     >
       {children}
     </aside>
@@ -272,7 +270,7 @@ export function AppSidebar({
           className={navItemClass(isOverviewSelected)}
         >
           <img src="/logo.svg?v=3" alt={t("Dashboard")} className="size-3.5 rounded-[2px]" />
-          <span className="console-mono line-clamp-1 flex-1 text-xs">{t("Dashboard")}</span>
+          <span className="line-clamp-1 flex-1 text-[13px]">{t("Dashboard")}</span>
         </Link>
 
         <section>

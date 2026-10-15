@@ -184,6 +184,7 @@ test("loads a final reply after a large tool output without opening the receipt"
       })
       .toBe(true);
     await page.goto("/claudecode/e2e-large-output");
+    await page.getByTestId("session-message-paging-footer").scrollIntoViewIfNeeded();
     await expect(page.getByText(finalReply, { exact: true })).toBeVisible();
     await expect(page.getByTestId("session-message-paging-footer")).toHaveCount(0);
   } finally {

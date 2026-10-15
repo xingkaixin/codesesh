@@ -1,5 +1,5 @@
 import { createQueryWrapper } from "../../test/query-wrapper";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { SearchResult, SessionHead } from "../../lib/api";
@@ -184,7 +184,7 @@ describe("SearchResultsPanel", () => {
     renderPanel({ status: "loaded", results });
 
     expect(screen.getByText("Parent work")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Child work" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Child work" })).toBeTruthy();
     expect(screen.queryByText("Unmounted")).toBeNull();
   });
 
@@ -222,9 +222,18 @@ it("links message matches to their source position", () => {
       },
     ],
   });
-  expect(screen.getByText("Session s1").closest("a")?.getAttribute("href")).toBe(
-    "/nodes/remote/codex/s1#message-42",
-  );
+  expect(
+    screen
+      .getByRole("heading", { level: 2, name: "Session s1" })
+      .closest("a")
+      ?.getAttribute("href"),
+  ).toBe("/nodes/remote/codex/s1#message-42");
+  const preview = screen.getByRole("complementary", { name: "Result preview" });
+  expect(
+    within(preview)
+      .getByRole("link", { name: /Open session/ })
+      .getAttribute("href"),
+  ).toBe("/nodes/remote/codex/s1#message-42");
 });
 
 it("explains the selected search window, indexed scope and empty-result recovery", () => {

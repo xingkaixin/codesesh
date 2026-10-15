@@ -15,16 +15,15 @@
 @theme {
   /* ---- Typography ------------------------------------------------ */
   --font-display:
-    "Space Grotesk Variable", "Space Grotesk", "PingFang SC", -apple-system, sans-serif;
-  --font-sans:
-    "IBM Plex Sans Variable", "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+    "Montserrat Variable", Montserrat, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
     -apple-system, sans-serif;
-  --font-mono:
-    "JetBrains Mono Variable", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
-    monospace;
+  --font-sans:
+    "Montserrat Variable", Montserrat, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+    -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
 
-  --tracking-display: -0.02em;
-  --tracking-eyebrow: 0.08em;
+  --tracking-display: -0.01em;
+  --tracking-eyebrow: 0.12em;
 
   /* ---- Radius scale -----------------------------------------------
      rounded-sm is the app's default (~170 call sites) and is redefined
@@ -71,6 +70,7 @@
   --color-brand-soft: var(--brand-soft);
   --color-brand-line: var(--brand-line);
   --color-brand-foreground: var(--brand-fg);
+  --color-brand-ink: var(--brand-ink);
   --color-positive: var(--positive);
   --color-positive-soft: var(--positive-soft);
 
@@ -172,11 +172,12 @@
 @layer base {
   :root {
     /* Surfaces */
-    --console-bg: #f7f6f3;
-    --console-sidebar-bg: #fbfaf8;
+    --console-bg: #f9f8f5;
+    --console-sidebar-bg: #f1f0ec;
     --console-surface: #ffffff;
-    --console-surface-muted: #fbfaf8;
+    --console-surface-muted: #f5f4f0;
     --console-surface-sunken: #f1f0ec;
+    --console-sidebar-accent: #e7e5df;
 
     /* Lines */
     --console-border: #e6e4de;
@@ -186,7 +187,7 @@
     /* Text */
     --console-text: #16161a;
     --console-text-secondary: #5c5b63;
-    --console-muted: #71707a;
+    --console-muted: #6b6a73;
 
     /* Ink (high-contrast neutral used for selected chips/badges).
        NOT the brand color -- see --brand. */
@@ -195,13 +196,14 @@
     --console-accent-fg: #ffffff;
 
     /* Brand */
-    --activity-low: #d27845;
-    --activity-high: #b13e16;
     --brand: #e8622e;
     --brand-hover: #c94e1f;
     --brand-soft: #fdede5;
     --brand-line: #f6c7ae;
     --brand-fg: #ffffff;
+    /* Brand-hued text: #e8622e is 3.4:1 on white, so links and selected labels
+       use this deeper step (5.5:1). */
+    --brand-ink: #b4441a;
 
     /* Positive */
     --positive: #218c77;
@@ -229,15 +231,6 @@
     --token-output: #b4501c;
     --token-cache-read: #e07a3a;
     --token-cache-write: #f2a877;
-
-    /* The paper every canvas chart sits on. */
-    --chart-hatch: rgba(79, 96, 132, 0.05);
-
-    /* Tiled area field: unlit cell, then the ramp its lit cells run along. Both
-       ends are OKLCH so the steps between them stay perceptually even. */
-    --tile-rest: oklch(0.925 0.012 45);
-    --tile-wash: oklch(0.86 0.055 45);
-    --tile-ink: oklch(0.62 0.175 45);
 
     /* Chart / categorical ramp */
     --chart-1: #4a9eff;
@@ -270,9 +263,8 @@
     --timeline-tool-execute: #786ca3;
 
     /* Elevation */
-    --elevation-raised: 0 1px 2px rgba(20, 20, 25, 0.05), 0 8px 24px -12px rgba(20, 20, 25, 0.12);
-    --elevation-overlay:
-      0 4px 12px rgba(20, 20, 25, 0.08), 0 24px 48px -24px rgba(20, 20, 25, 0.24);
+    --elevation-raised: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.03);
+    --elevation-overlay: 0 4px 16px rgba(20, 20, 25, 0.12), 0 2px 6px rgba(20, 20, 25, 0.08);
     --elevation-drawer: -12px 0 32px rgba(20, 20, 25, 0.18);
 
     /* Scrim */
@@ -291,41 +283,14 @@
     --code-deleted: #b91c1c;
     --code-inserted: #15803d;
 
-    --tag-bugfix-text: #b42318;
-    --tag-bugfix-border: #fecdca;
-    --tag-bugfix-background: #fef3f2;
     --tag-bugfix-bar: #f04438;
-    --tag-refactoring-text: #6941c6;
-    --tag-refactoring-border: #d9d6fe;
-    --tag-refactoring-background: #f4f3ff;
     --tag-refactoring-bar: #7a5af8;
-    --tag-feature-dev-text: #175cd3;
-    --tag-feature-dev-border: #b2ddff;
-    --tag-feature-dev-background: #eff8ff;
     --tag-feature-dev-bar: #2e90fa;
-    --tag-testing-text: #027a48;
-    --tag-testing-border: #abefc6;
-    --tag-testing-background: #ecfdf3;
     --tag-testing-bar: #12b76a;
-    --tag-docs-text: #b54708;
-    --tag-docs-border: #fedf89;
-    --tag-docs-background: #fffaeb;
     --tag-docs-bar: #f79009;
-    --tag-git-ops-text: #3538cd;
-    --tag-git-ops-border: #c7d7fe;
-    --tag-git-ops-background: #eef4ff;
     --tag-git-ops-bar: #444ce7;
-    --tag-build-deploy-text: #c4320a;
-    --tag-build-deploy-border: #f9dbaf;
-    --tag-build-deploy-background: #fef6ee;
     --tag-build-deploy-bar: #ef6820;
-    --tag-exploration-text: #0e7090;
-    --tag-exploration-border: #a5f0fc;
-    --tag-exploration-background: #ecfdff;
     --tag-exploration-bar: #06aed4;
-    --tag-planning-text: #c11574;
-    --tag-planning-border: #fcceee;
-    --tag-planning-background: #fdf2fa;
     --tag-planning-bar: #ee46bc;
 
     /* Motion */
@@ -345,11 +310,12 @@
   }
 
   .dark {
-    --console-bg: #101012;
+    --console-bg: #111113;
     --console-sidebar-bg: #0b0b0d;
     --console-surface: #18181b;
     --console-surface-muted: #1e1e22;
     --console-surface-sunken: #0b0b0d;
+    --console-sidebar-accent: #1e1e22;
 
     --console-border: #2a2a30;
     --console-border-strong: #3a3a42;
@@ -363,13 +329,12 @@
     --console-accent-strong: #ffffff;
     --console-accent-fg: #101012;
 
-    --activity-low: #ffb38e;
-    --activity-high: #ff7a45;
     --brand: #ff7a45;
     --brand-hover: #ff9166;
     --brand-soft: #2a1710;
     --brand-line: #5a2e19;
     --brand-fg: #101012;
+    --brand-ink: #ff7a45;
 
     --positive: #4fd3b4;
     --positive-soft: #10251f;
@@ -391,11 +356,6 @@
     --token-output: #d8622a;
     --token-cache-read: #ff8f52;
     --token-cache-write: #ffb98d;
-
-    --chart-hatch: rgba(255, 255, 255, 0.04);
-    --tile-rest: oklch(0.32 0.012 45);
-    --tile-wash: oklch(0.44 0.07 45);
-    --tile-ink: oklch(0.78 0.175 45);
 
     --chart-1: #64adff;
     --chart-2: #9179ff;
@@ -441,41 +401,14 @@
     --code-deleted: #ff6369;
     --code-inserted: #4fd3b4;
 
-    --tag-bugfix-text: #f592a0;
-    --tag-bugfix-border: #5c2530;
-    --tag-bugfix-background: #241014;
     --tag-bugfix-bar: #fb7185;
-    --tag-refactoring-text: #b6a4f7;
-    --tag-refactoring-border: #3a2f63;
-    --tag-refactoring-background: #180f2b;
     --tag-refactoring-bar: #9b87f0;
-    --tag-feature-dev-text: #8ec1fb;
-    --tag-feature-dev-border: #1f3a5c;
-    --tag-feature-dev-background: #0e1e30;
     --tag-feature-dev-bar: #5b9df0;
-    --tag-testing-text: #6fdba3;
-    --tag-testing-border: #1c4a30;
-    --tag-testing-background: #0c2318;
     --tag-testing-bar: #3fbe80;
-    --tag-docs-text: #f6b768;
-    --tag-docs-border: #5c3d10;
-    --tag-docs-background: #2a1a06;
     --tag-docs-bar: #f0a13f;
-    --tag-git-ops-text: #a9b3f8;
-    --tag-git-ops-border: #332f66;
-    --tag-git-ops-background: #171531;
     --tag-git-ops-bar: #818cf8;
-    --tag-build-deploy-text: #f6a06a;
-    --tag-build-deploy-border: #5c3416;
-    --tag-build-deploy-background: #2a1708;
     --tag-build-deploy-bar: #f0813f;
-    --tag-exploration-text: #6fd4e8;
-    --tag-exploration-border: #1c4650;
-    --tag-exploration-background: #0c2126;
     --tag-exploration-bar: #3fb8d4;
-    --tag-planning-text: #f593cf;
-    --tag-planning-border: #5c2246;
-    --tag-planning-background: #240f1e;
     --tag-planning-bar: #ef6bc0;
   }
 
@@ -503,17 +436,21 @@
     letter-spacing: var(--tracking-display);
   }
 
-  /* The paper a canvas chart is painted on: too faint to read as content, but
-     it keeps an empty plot from looking broken. */
-  .chart-hatch {
-    background: repeating-linear-gradient(-45deg, var(--chart-hatch) 0 1px, transparent 1px 7px);
+  /* Cache reads are the cheap, reused share of a token stack, so they are
+     hatched rather than filled to keep the fresh tokens below them legible. */
+  .token-stripes {
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--token-cache-read) 0 3px,
+      color-mix(in oklab, var(--token-cache-read) 60%, var(--console-surface)) 3px 6px
+    );
   }
 
-  /* The uppercase mono eyebrow used by every card header. */
+  /* The uppercase eyebrow used by every card header. */
   .console-eyebrow {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: 10px;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: var(--tracking-eyebrow);
     text-transform: uppercase;
     color: var(--console-muted);
@@ -523,7 +460,7 @@
      which no token can reach. */
   mark {
     background: var(--brand-soft);
-    color: var(--brand);
+    color: var(--brand-ink);
     border-radius: var(--radius-xs);
     padding: 0 1px;
   }
@@ -960,7 +897,7 @@
   margin: 0;
   color: var(--console-text);
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: var(--tracking-display);
   line-height: 1.3;
 }
@@ -1055,7 +992,7 @@
 }
 
 .console-markdown a {
-  color: var(--brand);
+  color: var(--brand-ink);
   text-decoration: underline;
 }
 
