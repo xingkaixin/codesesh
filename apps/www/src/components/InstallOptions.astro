@@ -16,9 +16,9 @@ const labels = {
     brew: "macOS · Homebrew required · No Node.js required",
     scoop: "Windows x64 · Scoop required · No Node.js required",
     start:
-      "After installing, run codesesh. Stop CodeSesh before updating, then restart it.",
+      "After installing, run {cmd}. Stop CodeSesh before updating, then restart it.",
     update: "Update:",
-    rerun: "Run the install command again.",
+    rerun: "Run the install command again",
   },
   zh: {
     method: "安装方式",
@@ -26,9 +26,9 @@ const labels = {
     curl: "macOS / Linux x64（glibc 2.35+）· 无需 Node.js",
     brew: "macOS · 需要 Homebrew · 无需 Node.js",
     scoop: "Windows x64 · 需要 Scoop · 无需 Node.js",
-    start: "安装后运行 codesesh。更新前停止 CodeSesh，完成后重新启动。",
+    start: "安装后运行 {cmd}。更新前停止 CodeSesh，完成后重新启动。",
     update: "更新：",
-    rerun: "再次运行安装命令。",
+    rerun: "再次运行安装命令",
   },
   ja: {
     method: "インストール方法",
@@ -37,11 +37,12 @@ const labels = {
     brew: "macOS · Homebrewが必要 · Node.js不要",
     scoop: "Windows x64 · Scoopが必要 · Node.js不要",
     start:
-      "インストール後、codeseshを実行。更新前にCodeSeshを停止し、更新後に再起動してください。",
+      "インストール後、{cmd}を実行。更新前にCodeSeshを停止し、更新後に再起動してください。",
     update: "更新：",
-    rerun: "インストールコマンドを再実行。",
+    rerun: "インストールコマンドを再実行",
   },
 }[locale];
+const [startBefore, startAfter] = labels.start.split("{cmd}");
 const methods = [
   {
     id: "npm",
@@ -76,11 +77,10 @@ const methods = [
 ---
 
 <div class="install-options" data-install-options>
-  <div
-    class="install-options__tabs console-mono"
-    role="tablist"
-    aria-label={labels.method}
-  >
+  <p class="inst-l" id={`${id}-label`}>
+    {labels.method}
+  </p>
+  <div class="ctabs" role="tablist" aria-labelledby={`${id}-label`}>
     {methods.map((method, index) => (
       <button
         type="button"
@@ -97,7 +97,7 @@ const methods = [
   </div>
   {methods.map((method, index) => (
     <div
-      class="install-options__panel"
+      class="ipanel"
       role="tabpanel"
       id={`${id}-panel-${method.id}`}
       aria-labelledby={`${id}-tab-${method.id}`}
@@ -109,14 +109,21 @@ const methods = [
         command={method.command}
         method={method.id}
         placement={id}
+        tone="ember"
       />
-      <div class="install-options__details">
-        <p>{method.note}</p>
-        {method.id !== "npm" && <p>{labels.start}</p>}
-        <p>
-          {labels.update} <span class="console-mono">{method.update}</span>
-        </p>
-      </div>
+      <p class="cnote">
+        {method.note}
+        {method.id !== "npm" && (
+          <>
+            <br />
+            {startBefore}
+            <code>codesesh</code>
+            {startAfter}
+          </>
+        )}
+        <br />
+        {labels.update} <code>{method.update}</code>
+      </p>
     </div>
   ))}
 </div>
@@ -175,85 +182,58 @@ const methods = [
 
 <style>
   .install-options {
-    width: 100%;
     min-width: 0;
-    max-width: 36rem;
-    border: 1px solid var(--console-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--console-surface);
   }
-
-  .install-options__tabs {
-    display: flex;
-    gap: 0.25rem;
-    padding: 0 0.75rem;
-    border-bottom: 1px solid var(--console-border);
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-    background: var(--console-surface-muted);
+  .inst-l {
+    margin: 0 0 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font: 500 11px/1 var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
-
+  .ctabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 13px;
+    background: rgba(0, 0, 0, 0.2);
+  }
   [role="tab"] {
-    position: relative;
-    min-height: 2.75rem;
-    padding: 0.65rem 0.75rem;
-    border: 0;
-    background: transparent;
-    color: var(--console-muted);
-    font: inherit;
-    font-size: 0.8125rem;
+    height: 38px;
+    padding: 0 15px;
+    border-radius: 10px;
+    color: rgba(255, 255, 255, 0.9);
+    font: 600 12.5px/1 var(--mono);
     cursor: pointer;
+    transition:
+      background 0.15s,
+      color 0.15s;
   }
-
   [role="tab"]:hover {
-    color: var(--console-text);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
   }
-
   [role="tab"][aria-selected="true"] {
-    color: var(--console-text);
+    background: #fff;
+    color: #7a3a1d;
   }
-
-  [role="tab"][aria-selected="true"]::after {
-    position: absolute;
-    right: 0.75rem;
-    bottom: -1px;
-    left: 0.75rem;
-    height: 2px;
-    background: var(--brand);
-    content: "";
-  }
-
   [role="tab"]:focus-visible {
-    outline: 2px solid var(--brand);
-    outline-offset: -4px;
-    border-radius: var(--radius-sm);
+    outline-color: #fff;
   }
-
-  .install-options__panel {
-    padding: 0.85rem 0.9rem;
+  .ipanel {
+    margin-top: 12px;
   }
-
-  .install-options__panel :global(.install-command__box) {
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
+  .cnote {
+    margin: 14px 0 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12.5px;
+    line-height: 1.75;
   }
-
-  .install-options__details {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--console-border);
-    color: var(--console-text-secondary);
-    font-size: 0.6875rem;
-    line-height: 1.65;
-  }
-
-  .install-options__details p {
-    margin: 0;
-  }
-
-  .install-options__details p + p {
-    margin-top: 0.25rem;
+  .cnote code {
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.2);
+    font-family: var(--mono);
   }
 </style>

@@ -10,7 +10,7 @@ CodeSesh は複数のパソコンの AI コーディング履歴を一つの Hub
 
 各端末に CodeSesh をインストールします。信頼できる LAN で使う場合、既存の単体モードを停止してから起動します。
 
-```sh
+```sh title="Hub の端末"
 codesesh hub start --host 0.0.0.0 --remote-access --port 4521
 codesesh hub status
 ```
@@ -19,22 +19,22 @@ codesesh hub status
 
 ## 最初の Worker をペアリングする
 
-Hub の Web 画面でソースノードのページを開き、ペアリングトークンを発行します。収集する端末で実行します。
+Hub の Web 画面で**接続ノード → Worker をペアリング**を開き、接続方法と実行方法を選びます。ペアリングコマンドとワンタイムペアリングトークンが生成されます。収集する端末で、生成されたコマンドを実行します。
 
-```sh
-codesesh worker start --hub http://192.168.1.20:4521 --name laptop --pair-token-stdin
+```sh title="Worker の端末"
+codesesh worker start --hub "http://<hub-ip>:4521" --pair-token-stdin
 ```
 
-IP は自分の Hub に置き換えます。入力を求められたらトークンを貼り付けます。トークンは十分間有効で、一度だけ使用できます。`--pair-token-stdin` を使うとコマンド引数やシェル履歴にトークンを残さず入力できます。
+入力を求められたらトークンを貼り付けます。トークンは十分間有効で、一度だけ使用できます。`--pair-token-stdin` を使うとコマンド引数やシェル履歴にトークンを残さず入力できます。
 
 ブラウザー用トークンはペアリング用ではありません。ペアリング後は Worker が専用の認証情報を保存し、通常の再起動で再発行する必要はありません。
 
 ## Hub 本機も収集する
 
-コンソールで別のペアリングトークンを発行し、本機で独立した Worker を起動します。
+コンソールで別のペアリングトークンを発行し、接続方法に「このマシン」を選んで、本機で独立した Worker を起動します。
 
-```sh
-codesesh worker start --hub http://127.0.0.1:4521 --name desktop --pair-token-stdin
+```sh title="Hub の端末"
+codesesh worker start --hub "http://127.0.0.1:4521" --pair-token-stdin
 ```
 
 他の端末でも個別にペアリングします。各 Worker は自分の状態と認証情報を使います。収集対象を絞るには初回の設定に `--agent claudecode,codex` を追加します。既定では有効な Agent の発見可能な全履歴を収集し、Hub 側の期間指定で表示範囲を選びます。
@@ -43,12 +43,12 @@ codesesh worker start --hub http://127.0.0.1:4521 --name desktop --pair-token-st
 
 ## 同期状況を確認する
 
-```sh
+```sh title="いずれかの端末"
 codesesh worker status
 codesesh hub status
 ```
 
-ソースノードの画面には最終接続、未送信バッチ数、バイト数、収集エラーが表示されます。バッチ数は通信操作の数で、会話数ではありません。接続済みでも未送信データが残ることがあります。
+接続ノードの画面には最終接続、未送信バッチ数、バイト数、収集エラーが表示されます。バッチ数は通信操作の数で、会話数ではありません。接続済みでも未送信データが残ることがあります。
 
 Hub が一時的に停止しても Worker は収集を続け、未送信データを自身のデータベースに保存します。復旧後は保存済み認証情報で再接続させてください。一時的な通信障害の対処として Worker の状態を削除しないでください。認証やバージョンの問題は表示された理由を確認し、Hub を先に更新します。
 

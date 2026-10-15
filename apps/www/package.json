@@ -17,13 +17,13 @@
     "deploy:cf": "pnpm build:cf && cf deploy --prebuilt"
   },
   "dependencies": {
-    "@fontsource-variable/ibm-plex-sans": "catalog:",
-    "@fontsource-variable/jetbrains-mono": "catalog:",
-    "@fontsource-variable/space-grotesk": "catalog:",
+    "@fontsource-variable/montserrat": "catalog:",
+    "@fontsource/ibm-plex-mono": "catalog:",
     "astro": "^7.3.5"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@astrojs/markdown-satteri": "0.4.2",
     "@codesesh/contract": "workspace:*",
     "@hugeicons/core-free-icons": "catalog:",
     "@tailwindcss/vite": "catalog:",

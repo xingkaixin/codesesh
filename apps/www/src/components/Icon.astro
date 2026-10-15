@@ -1,46 +1,87 @@
 ---
 import {
+  ArrowDown01Icon,
+  ArrowMoveDownRightIcon,
   ArrowRight01Icon,
+  ArrowRight02Icon,
   ArrowUpRight01Icon,
-  Menu01Icon,
   BookmarkIcon,
+  BookOpen01Icon,
+  Cancel01Icon,
   ChartColumnIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  CloudOffIcon,
+  Compass01Icon,
   ComputerIcon,
   CopyIcon,
+  Cursor01Icon,
+  DashboardSquare01Icon,
   DatabaseIcon,
   ExpandIcon,
   EyeIcon,
+  File01Icon,
+  Folder01Icon,
   GithubIcon,
+  HierarchySquare02Icon,
+  InformationCircleIcon,
   KeyboardIcon,
+  LaptopIcon,
   ListTreeIcon,
+  LockIcon,
+  Menu01Icon,
   MoonIcon,
+  PencilEdit02Icon,
+  PlayIcon,
+  PlusSignIcon,
+  ScanIcon,
   Search01Icon,
-  SettingsIcon,
+  SecurityCheckIcon,
+  ServerStack01Icon,
   ShieldIcon,
   SunIcon,
   TagsIcon,
   TerminalIcon,
   TimerIcon,
+  UserIcon,
 } from "@hugeicons/core-free-icons";
 import type { IconName } from "../data/landing";
 
-type UiIconName =
+export type UiIconName =
   | IconName
   | "arrow-right"
+  | "arrow"
   | "arrow-up-right"
-  | "menu"
+  | "book"
   | "check"
+  | "chevron-down"
   | "chevron-left"
   | "chevron-right"
+  | "close"
+  | "corner-down-right"
+  | "cloud-off"
+  | "compass"
   | "copy"
+  | "cursor"
+  | "dashboard"
   | "expand"
+  | "folder"
   | "github"
-  | "sun"
+  | "info"
+  | "laptop"
+  | "lock"
+  | "menu"
+  | "monitor"
   | "moon"
-  | "monitor";
+  | "network"
+  | "pencil"
+  | "plus"
+  | "scan"
+  | "server"
+  | "shield-check"
+  | "sun"
+  | "user";
 
 interface Props {
   name: UiIconName;
@@ -51,29 +92,50 @@ const { name, class: className = "size-4" } = Astro.props;
 
 const icons = {
   "arrow-right": ArrowRight01Icon,
+  arrow: ArrowRight02Icon,
   "arrow-up-right": ArrowUpRight01Icon,
-  menu: Menu01Icon,
   "bar-chart-3": ChartColumnIcon,
+  book: BookOpen01Icon,
   bookmark: BookmarkIcon,
   check: CheckIcon,
+  "chevron-down": ArrowDown01Icon,
   "chevron-left": ChevronLeftIcon,
   "chevron-right": ChevronRightIcon,
+  close: Cancel01Icon,
+  "cloud-off": CloudOffIcon,
+  "corner-down-right": ArrowMoveDownRightIcon,
+  compass: Compass01Icon,
   copy: CopyIcon,
+  cursor: Cursor01Icon,
+  dashboard: DashboardSquare01Icon,
   database: DatabaseIcon,
   expand: ExpandIcon,
   eye: EyeIcon,
+  file: File01Icon,
+  folder: Folder01Icon,
   github: GithubIcon,
+  info: InformationCircleIcon,
   keyboard: KeyboardIcon,
+  laptop: LaptopIcon,
   "list-tree": ListTreeIcon,
+  lock: LockIcon,
+  menu: Menu01Icon,
   monitor: ComputerIcon,
   moon: MoonIcon,
+  network: HierarchySquare02Icon,
+  pencil: PencilEdit02Icon,
+  play: PlayIcon,
+  plus: PlusSignIcon,
+  scan: ScanIcon,
   search: Search01Icon,
-  settings: SettingsIcon,
+  server: ServerStack01Icon,
   shield: ShieldIcon,
+  "shield-check": SecurityCheckIcon,
   sun: SunIcon,
   tags: TagsIcon,
   terminal: TerminalIcon,
   timer: TimerIcon,
+  user: UserIcon,
 } satisfies Record<UiIconName, unknown>;
 
 // Hugeicons 的图形数据用 React 风格的 camelCase 属性，渲染原生 SVG 需转成 kebab-case。

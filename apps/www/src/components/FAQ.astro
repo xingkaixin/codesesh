@@ -12,46 +12,36 @@ const t = copy[locale].faq;
 const items: FAQItem[] = t.items;
 ---
 
-<section
-  id="faq"
-  class="faq-section section-space"
-  aria-labelledby="faq-heading"
->
-  <div class="section-shell faq-layout">
-    <div class="lg:sticky lg:top-24 lg:self-start">
-      <p class="landing-kicker">
-        <b>07</b>FAQ
+<section id="faq" class="sec" aria-labelledby="faq-heading">
+  <div class="shell faq">
+    <div class="faq-intro" data-reveal>
+      <p class="eyebrow">
+        <span class="n">07</span>
+        <span class="ln"></span>FAQ
       </p>
-      <h2 id="faq-heading" class="section-heading">
+      <h2 id="faq-heading" class="h2">
         <HeadingText value={t.title} />
       </h2>
-      <p class="section-body">{t.body}</p>
+      <p class="lead">{t.body}</p>
     </div>
-
-    <div>
+    <div data-reveal>
       {items.map((item, index) => (
-        <details
-          class:list={[
-            "group border-t border-[var(--console-border)]",
-            index === items.length - 1 && "border-b",
-          ]}
-        >
-          <summary class="flex min-h-16 cursor-pointer list-none items-center gap-4 py-4 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none [&::-webkit-details-marker]:hidden">
-            <h3 class="flex-1 text-[15px] font-semibold text-[var(--console-text)]">
-              {item.question}
-            </h3>
-            <span
-              class="faq-chevron text-[var(--console-muted)]"
-              aria-hidden="true"
-            >
-              <Icon name="chevron-right" class="size-4" />
+        <details class="qa" open={index === 0}>
+          <summary>
+            <span class="qn" aria-hidden="true">
+              0{index + 1}
+            </span>
+            <h3>{item.question}</h3>
+            <span class="pm" aria-hidden="true">
+              <Icon name="plus" />
             </span>
           </summary>
-          <div class="max-w-[64ch] pb-5 pr-8 text-sm leading-7 text-[var(--console-text-secondary)]">
+          <div class="ans">
             <p>{item.answer}</p>
             {item.link && (
-              <a class="footer-link mt-2 block w-fit" href={item.link.href}>
+              <a class="tlink" href={item.link.href}>
                 {item.link.label}
+                <Icon name="arrow" />
               </a>
             )}
           </div>
@@ -62,38 +52,90 @@ const items: FAQItem[] = t.items;
 </section>
 
 <style>
-  .faq-section {
-    border-top: 1px solid var(--console-border);
-    padding-top: 5rem;
-  }
-  .faq-layout {
+  .faq {
     display: grid;
-    grid-template-columns: 1fr 1.15fr;
-    gap: 6rem;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 64px;
   }
-  .faq-layout h2 {
-    max-width: 8em;
-    font-size: clamp(2rem, 3.6vw, 3.4rem);
+  .faq-intro .lead {
+    margin-top: 22px;
   }
-  .faq-layout .section-body {
-    max-width: 22rem;
-    font-size: 0.9rem;
+  .qa {
+    border-top: 1px solid var(--border);
+  }
+  .qa:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 0;
+    list-style: none;
+    cursor: pointer;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary h3 {
+    flex: 1;
+    margin: 0;
+    font-size: 16.5px;
+    font-weight: 500;
+  }
+  .qn {
+    flex: none;
+    width: 24px;
+    color: var(--muted);
+    font: 500 11px/1 var(--mono);
+  }
+  .qa[open] .qn {
+    color: var(--brand-ink);
+  }
+  .pm {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    transition:
+      transform 0.3s var(--ease-out),
+      background 0.2s,
+      border-color 0.2s;
+  }
+  .qa[open] .pm {
+    border-color: var(--brand-line);
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    transform: rotate(45deg);
+  }
+  .ans {
+    padding: 0 56px 26px 40px;
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.85;
+  }
+  .ans p {
+    margin: 0;
+  }
+  .ans .tlink {
+    margin-top: 12px;
+  }
+  .qa[open] .ans {
+    animation: drop 0.35s var(--ease-settle) both;
   }
   @media (max-width: 1023px) {
-    .faq-layout {
-      gap: 3rem;
+    .faq {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 40px;
     }
   }
-  @media (max-width: 767px) {
-    .faq-layout {
-      grid-template-columns: 1fr;
-      gap: 2rem;
-    }
-    .faq-layout h2 {
-      max-width: none;
-    }
-    .faq-section {
-      padding-top: 4rem;
+  @media (max-width: 760px) {
+    .ans {
+      padding: 0 0 24px 40px;
     }
   }
 </style>

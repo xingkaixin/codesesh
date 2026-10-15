@@ -156,8 +156,18 @@ export const guideCopy = {
     start: "Start locally",
     connect: "Connect your devices",
     understand: "Understand usage",
-    intro: "Choose what you want to do",
     by: "By CodeSesh",
+    terminal: "Terminal",
+    copyFailed: "Copy failed",
+    count: "{count} guides",
+    countOne: "{count} guide",
+    startHere: "Start here",
+    startBody: "One command starts CodeSesh and finds supported agent history on this computer.",
+    startComment: "Opens the web UI at http://localhost:4521",
+    readStart: "Read the getting started guide",
+    categories: "Guide categories",
+    breadcrumb: "Breadcrumb",
+    read: "Read",
   },
   zh: {
     title: "CodeSesh 使用指南",
@@ -172,8 +182,18 @@ export const guideCopy = {
     start: "开始在本机使用",
     connect: "连接你的设备",
     understand: "理解用量",
-    intro: "从你想完成的事情开始",
     by: "作者：CodeSesh",
+    terminal: "终端",
+    copyFailed: "复制失败",
+    count: "{count} 篇指南",
+    countOne: "{count} 篇指南",
+    startHere: "从这里开始",
+    startBody: "一条命令启动，自动发现本机受支持的 Agent 历史。",
+    startComment: "在 http://localhost:4521 打开 Web UI",
+    readStart: "阅读入门指南",
+    categories: "指南分类",
+    breadcrumb: "面包屑",
+    read: "阅读",
   },
   ja: {
     title: "CodeSesh の使い方",
@@ -188,10 +208,31 @@ export const guideCopy = {
     start: "ローカルで使う",
     connect: "端末を接続する",
     understand: "使用量を知る",
-    intro: "やりたいことから探す",
     by: "著者：CodeSesh",
+    terminal: "ターミナル",
+    copyFailed: "コピー失敗",
+    count: "{count} 件のガイド",
+    countOne: "{count} 件のガイド",
+    startHere: "ここから始める",
+    startBody: "コマンド一つで起動し、この端末にある対応エージェントの履歴を自動で見つけます。",
+    startComment: "http://localhost:4521 で Web UI を開きます",
+    readStart: "入門ガイドを読む",
+    categories: "ガイドの分類",
+    breadcrumb: "パンくずリスト",
+    read: "読む",
   },
 } satisfies Record<Locale, Record<string, string>>;
+
+export const guideCategories = [
+  { key: "start", icon: "terminal" },
+  { key: "connect", icon: "network" },
+  { key: "understand", icon: "bar-chart-3" },
+] as const;
+
+export function guideCount(locale: Locale, count: number) {
+  const t = guideCopy[locale];
+  return (count === 1 ? t.countOne : t.count).replace("{count}", String(count));
+}
 
 export function guideRoutes(slug = ""): Record<Locale, string> {
   return {

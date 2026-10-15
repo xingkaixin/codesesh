@@ -4,88 +4,122 @@ import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
-  showEndpoint?: boolean;
   command?: string;
   method: string;
   placement: string;
+  tone?: "light" | "ember";
 }
 
-const { locale, showEndpoint = false } = Astro.props;
+const { locale, tone = "light" } = Astro.props;
 const t = copy[locale].hero;
 const command = Astro.props.command ?? t.command;
 ---
 
-<div class="install-command" data-copy-group>
-  <div class="install-command__box">
-    <span
-      class="console-mono text-sm text-[var(--console-muted)]"
-      aria-hidden="true"
-    >
-      $
-    </span>
-    <code class="install-command__code console-mono text-sm text-[var(--console-text)]">
-      {command}
-    </code>
-    <button
-      type="button"
-      data-copy-command={command}
-      data-copy-method={Astro.props.method}
-      data-copy-placement={Astro.props.placement}
-      data-copy-label={t.copyCommand}
-      data-copied-label={t.copied}
-      data-copy-failed-label={t.copyFailed}
-      class="pressable motion-hover console-mono inline-flex min-h-8 min-w-[4.25rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2.5 text-[10px] font-medium text-[var(--console-text-secondary)] hover:border-[var(--brand-line)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-    >
-      <span class="copy-icon-stack inline-grid">
-        <span data-copy-icon="idle" data-active="true">
-          <Icon name="copy" class="size-3.5" />
-        </span>
-        <span data-copy-icon="done">
-          <Icon name="check" class="size-3.5" />
-        </span>
+<div class:list={["cmd", tone === "ember" && "ember"]} data-copy-group>
+  <span class="ps" aria-hidden="true">
+    $
+  </span>
+  <code>{command}</code>
+  <button
+    type="button"
+    class="cp"
+    data-copy-command={command}
+    data-copy-method={Astro.props.method}
+    data-copy-placement={Astro.props.placement}
+    data-copy-label={t.copyCommand}
+    data-copied-label={t.copied}
+    data-copy-failed-label={t.copyFailed}
+  >
+    <span class="copy-icon-stack">
+      <span data-copy-icon="idle" data-active="true">
+        <Icon name="copy" class="size-3.5" />
       </span>
-      <span data-copy-text>{t.copyCommand}</span>
-    </button>
-  </div>
-  {showEndpoint && (
-    <span class="console-mono text-[11px] text-[var(--console-muted)]">
-      <span aria-hidden="true">→ </span>
-      {t.endpoint}
+      <span data-copy-icon="done">
+        <Icon name="check" class="size-3.5" />
+      </span>
     </span>
-  )}
+    <span data-copy-text>{t.copyCommand}</span>
+  </button>
   <span class="sr-only" aria-live="polite" data-copy-status></span>
 </div>
 
-<script>
-  import { trackEvent } from "../scripts/analytics";
-
-  async function copyText(value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return true;
-    } catch {
-      try {
-        const textarea = document.createElement("textarea");
-        textarea.value = value;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "fixed";
-        textarea.style.top = "-9999px";
-        document.body.append(textarea);
-        textarea.select();
-        // Isolate the deprecated API retained for Clipboard API failures.
-        const legacyDocument: {
-          execCommand?: (command: "copy") => boolean;
-        } = document;
-        const copied =
-          typeof legacyDocument.execCommand === "function" &&
-          legacyDocument.execCommand("copy") === true;
-        textarea.remove();
-        return copied;
-      } catch {
-        return false;
-      }
+<style>
+  .cmd {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 8px 8px 20px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    font: 500 15px/1.6 var(--mono);
+  }
+  .ps {
+    flex: none;
+    color: var(--brand-ink);
+  }
+  code {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .cp {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: 11px;
+    background: var(--muted-bg);
+    color: var(--text-2);
+    font: 600 12px/1 var(--sans);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .cp:hover {
+    background: var(--side-accent);
+    color: var(--text);
+  }
+  .ember {
+    align-items: flex-start;
+    padding: 16px 12px 16px 20px;
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(10, 8, 6, 0.42);
+    box-shadow: none;
+    color: #fff;
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .ember .ps {
+    color: #ffb98d;
+  }
+  .ember .cp {
+    height: 36px;
+    padding: 0 13px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+  }
+  .ember .cp:hover {
+    background: rgba(255, 255, 255, 0.26);
+    color: #fff;
+  }
+  @media (max-width: 760px) {
+    .cmd:not(.ember) {
+      font-size: 14px;
     }
   }
+</style>
+
+<script>
+  import { trackEvent } from "../scripts/analytics";
+  import { copyText } from "../scripts/copy";
 
   document
     .querySelectorAll<HTMLElement>("[data-copy-group]")
@@ -130,7 +164,7 @@ const command = Astro.props.command ?? t.command;
           text.textContent = copyLabel;
           idleIcon.dataset.active = "true";
           doneIcon.dataset.active = "false";
-        }, 2000);
+        }, 1600);
       });
     });
 </script>

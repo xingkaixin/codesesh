@@ -2,6 +2,9 @@
 import { experience } from "../data/experience";
 import { copy, type Locale } from "../data/landing";
 import { sections } from "../data/sections";
+import { fill, showcase, splitTitle } from "../data/showcase";
+import AgentIcon from "./AgentIcon.astro";
+import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -13,382 +16,945 @@ const t = experience[locale];
 const tour = copy[locale].tour;
 const scenes = copy[locale].scenes;
 const s = sections[locale].tour;
+const m = showcase[locale].tour;
+const titles = showcase[locale].titles;
 const sceneIds = ["overview", "projects", "replay"] as const;
 
-const ranges = {
-  "7d": {
-    sessions: "128",
-    messages: "9,412",
-    tokens: "18.6M",
-    cost: "$42.17",
-    bars: [34, 52, 41, 68, 59, 86, 72, 45, 63, 91, 77, 58],
-    agents: [58, 27, 15],
+const last7 = [38, 52, 61, 95, 74, 48, 44];
+const last30 = [
+  40,
+  55,
+  48,
+  62,
+  30,
+  22,
+  58,
+  66,
+  71,
+  49,
+  38,
+  44,
+  60,
+  75,
+  82,
+  68,
+  40,
+  35,
+  52,
+  63,
+  70,
+  91,
+  77,
+  ...last7,
+];
+const days30 = Array.from({ length: 30 }, (_, i) => {
+  const date = new Date(Date.UTC(2026, 8, 16 + i));
+  return i === 0 || i % 5 === 4 ? date.toISOString().slice(5, 10) : "";
+});
+const ranges = [
+  {
+    id: "7d",
+    days: 7,
+    from: "2026-10-09",
+    to: "2026-10-15",
+    short: "10-09 → 10-15",
+    agents: 3,
+    projects: 6,
+    tokens: "412.6M",
+    tokensPerDay: "58.9M",
+    tokensDelta: "▲ 12%",
+    cost: "$286.40",
+    costPerDay: "$40.91",
+    costDelta: "▲ 8%",
+    sessions: "64",
+    messages: "4,812",
+    perSession: "75.2",
+    sessionsDelta: "▼ 6%",
+    mix: ["3.1M", "0.8%", "1.9M", "0.5%", "5.2M", "1.3%", "402.4M", "97.5%"],
+    values: last7,
+    sessionSeries: [8, 10, 9, 12, 11, 7, 7],
+    labels: ["10-09", "10-10", "10-11", "10-12", "10-13", "10-14", "10-15"],
+    gap: 16,
+    showValues: true,
   },
-  "30d": {
-    sessions: "512",
-    messages: "38,904",
-    tokens: "71.2M",
-    cost: "$168.40",
-    bars: [62, 48, 74, 81, 55, 69, 92, 66, 58, 84, 71, 79],
-    agents: [51, 33, 16],
+  {
+    id: "30d",
+    days: 30,
+    from: "2026-09-16",
+    to: "2026-10-15",
+    short: "09-16 → 10-15",
+    agents: 4,
+    projects: 9,
+    tokens: "1.71B",
+    tokensPerDay: "56.9M",
+    tokensDelta: "▲ 21%",
+    cost: "$1,185.52",
+    costPerDay: "$39.52",
+    costDelta: "▲ 17%",
+    sessions: "251",
+    messages: "19,307",
+    perSession: "76.9",
+    sessionsDelta: "▲ 4%",
+    mix: ["12.9M", "0.8%", "8.2M", "0.5%", "22.4M", "1.3%", "1.66B", "97.5%"],
+    values: last30,
+    sessionSeries: last30.map((value, i) =>
+      Math.round(value / 8 + ((i * 7) % 3)),
+    ),
+    labels: days30,
+    gap: 4,
+    showValues: false,
   },
-  all: {
-    sessions: "2,184",
-    messages: "166,310",
-    tokens: "302M",
-    cost: "$701.95",
-    bars: [22, 31, 38, 35, 47, 52, 49, 61, 70, 78, 88, 95],
-    agents: [47, 31, 22],
+  {
+    id: "all",
+    days: 0,
+    from: "2025-11-02",
+    to: "2026-10-15",
+    short: "2025-11 → 2026-10",
+    agents: 5,
+    projects: 14,
+    tokens: "6.94B",
+    tokensPerDay: "19.9M",
+    tokensDelta: m.all,
+    cost: "$4,612.75",
+    costPerDay: "$13.26",
+    costDelta: m.all,
+    sessions: "1,032",
+    messages: "78,154",
+    perSession: "75.7",
+    sessionsDelta: m.all,
+    mix: ["52.1M", "0.8%", "33.4M", "0.5%", "90.2M", "1.3%", "6.76B", "97.4%"],
+    values: [210, 260, 330, 380, 450, 520, 560, 610, 690, 760, 1240, 930],
+    sessionSeries: [34, 41, 50, 57, 66, 74, 80, 86, 95, 104, 162, 125],
+    labels: m.months,
+    gap: 12,
+    showValues: false,
   },
+];
+
+function smooth(points: [number, number][]) {
+  const f = (n: number) => n.toFixed(1);
+  let d = `M${f(points[0]![0])},${f(points[0]![1])}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i]!;
+    const p1 = points[i]!;
+    const p2 = points[i + 1]!;
+    const p3 = points[i + 2] ?? p2;
+    d += ` C${f(p1[0] + (p2[0] - p0[0]) / 6)},${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)},${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])},${f(p2[1])}`;
+  }
+  return d;
+}
+
+function spark(values: number[]) {
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const points = values.map((v, i): [number, number] => [
+    (i / (values.length - 1)) * 240,
+    34 - ((v - min) / (max - min || 1)) * 28,
+  ]);
+  const line = smooth(points);
+  return {
+    line,
+    area: `${line} L240,40 L0,40 Z`,
+    endY: (points.at(-1)![1] / 40) * 100,
+  };
+}
+
+const views = ranges.map((range, index) => {
+  const n = range.values.length;
+  const cost = range.values.map(
+    (v, i) => v * 0.62 + ((i * 7) % 5) * (range.values[0]! / 20),
+  );
+  const vmax = Math.max(...range.values);
+  const cmax = Math.max(...cost);
+  const span = [
+    `${range.from} – ${range.to}`,
+    fill(m.agentsProjects, { agents: range.agents, projects: range.projects }),
+    ...(range.days ? [fill(m.compare, { days: range.days })] : []),
+  ].join(" · ");
+  return {
+    ...range,
+    title: m.rangeTitles[index]!,
+    span,
+    kpis: [
+      {
+        key: "tokens",
+        label: m.kpis[0],
+        value: range.tokens,
+        sub: `${fill(m.perDay, { value: range.tokensPerDay })} · ${fill(m.cacheHit, { value: "97%" })}`,
+        delta: range.tokensDelta,
+        estimate: false,
+        ...spark(range.values),
+      },
+      {
+        key: "cost",
+        label: m.kpis[1],
+        value: range.cost,
+        sub: fill(m.perDay, { value: range.costPerDay }),
+        delta: range.costDelta,
+        estimate: true,
+        ...spark(cost),
+      },
+      {
+        key: "sessions",
+        label: m.kpis[2],
+        value: range.sessions,
+        sub: fill(m.messagesPerSession, {
+          messages: range.messages,
+          perSession: range.perSession,
+        }),
+        delta: range.sessionsDelta,
+        estimate: false,
+        ...spark(range.sessionSeries),
+      },
+    ],
+    bars: range.values.map((v, i) => ({
+      height: ((v / vmax) * 82).toFixed(1),
+      delay: Math.round(i * (n > 12 ? 16 : 50)),
+      value: `${v}M`,
+      label: range.labels[i],
+    })),
+    line: cost
+      .map(
+        (y, i) =>
+          `${(((i + 0.5) / n) * 100).toFixed(2)},${(100 - (y / cmax) * 76 - 8).toFixed(2)}`,
+      )
+      .join(" "),
+  };
+});
+const mixColors = ["var(--t-in)", "var(--t-out)", "var(--t-cw)"];
+const mixWidths = ["1.4%", "1.1%", "2.2%"];
+
+const tagColors = {
+  fix: "var(--tg-bug)",
+  test: "var(--tg-test)",
+  refactor: "var(--tg-ref)",
+  feature: "var(--tg-feat)",
+  docs: "var(--tg-docs)",
+  build: "var(--tg-build)",
 };
-const rangeIds = ["7d", "30d", "all"] as const;
-const initial = ranges["7d"];
-const stats = ["sessions", "messages", "tokens", "cost"] as const;
-const statLabels = {
-  en: {
-    sessions: "Sessions",
-    messages: "Messages",
-    tokens: "Tokens",
-    cost: "Cost",
-  },
-  zh: { sessions: "会话", messages: "消息", tokens: "Token", cost: "成本" },
-  ja: {
-    sessions: "セッション",
-    messages: "メッセージ",
-    tokens: "トークン",
-    cost: "コスト",
-  },
-}[locale];
-const agentNames = ["Claude Code", "Codex", "Cursor"];
 
-const tree = [
-  { kind: "project", name: "api-gateway", meta: `42 ${s.sessionsUnit}` },
+type Tag = keyof typeof tagColors;
+
+type Row =
+  | { group: string }
+  | {
+      time: string;
+      agent: string;
+      title: string;
+      messages: number;
+      tokens: string;
+      tags: Tag[];
+      cost: string;
+      subs?: number;
+      sub?: boolean;
+    };
+
+const rows: Row[] = [
+  { group: m.groups[0]! },
   {
-    kind: "parent",
-    name: "Fix refresh token race",
+    time: "14:22",
     agent: "Claude Code",
-    meta: "1.2M",
+    title: titles.refresh,
+    messages: 42,
+    tokens: "6.1M",
+    tags: ["fix", "test"],
+    cost: "$4.12",
+    subs: 2,
   },
   {
-    kind: "sub",
-    name: "Explore auth middleware",
+    time: "14:31",
     agent: "Claude Code",
-    meta: "310K",
+    title: titles.middleware,
+    messages: 9,
+    tokens: "1.2M",
+    tags: ["fix"],
+    cost: "$0.61",
+    sub: true,
   },
   {
-    kind: "session",
-    name: "Add rate-limit headers",
+    time: "14:48",
+    agent: "Claude Code",
+    title: titles.authTests,
+    messages: 7,
+    tokens: "0.8M",
+    tags: ["test"],
+    cost: "$0.38",
+    sub: true,
+  },
+  {
+    time: "11:05",
     agent: "Codex",
-    meta: "640K",
+    title: titles.authRefactor,
+    messages: 31,
+    tokens: "4.4M",
+    tags: ["refactor"],
+    cost: "$2.86",
   },
-  { kind: "project", name: "web-console", meta: `31 ${s.sessionsUnit}` },
   {
-    kind: "session",
-    name: "Virtualize session timeline",
+    time: "09:40",
     agent: "Cursor",
-    meta: "880K",
+    title: titles.loginCopy,
+    messages: 12,
+    tokens: "0.9M",
+    tags: ["feature", "docs"],
+    cost: "$0.52",
+  },
+  { group: m.groups[1]! },
+  {
+    time: "18:12",
+    agent: "Claude Code",
+    title: titles.vite,
+    messages: 26,
+    tokens: "3.2M",
+    tags: ["build"],
+    cost: "$1.94",
   },
   {
-    kind: "session",
-    name: "Theme tokens for dark mode",
-    agent: "OpenCode",
-    meta: "210K",
+    time: "15:30",
+    agent: "Codex",
+    title: titles.apiDocs,
+    messages: 14,
+    tokens: "1.1M",
+    tags: ["docs"],
+    cost: "$0.77",
   },
-  { kind: "project", name: "docs-site", meta: `12 ${s.sessionsUnit}` },
 ];
+const projectValues = ["12", "486", "38.2M", "$24.60"];
 
-const steps = [
-  { kind: "user", badge: s.userBadge, text: s.prompt, meta: "10:02" },
-  { kind: "agent", badge: "Agent", text: s.firstReply, meta: "10:02" },
-  {
-    kind: "tool",
-    badge: "Read",
-    text: "src/auth/refresh.ts",
-    meta: "182 lines",
-  },
-  {
-    kind: "tool",
-    badge: "Grep",
-    text: "refreshToken( in src/",
-    meta: "6 matches",
-  },
-  {
-    kind: "tool",
-    badge: "Edit",
-    text: "src/auth/refresh.ts  +18 −6",
-    meta: "10:07",
-  },
-  {
-    kind: "tool",
-    badge: "Bash",
-    text: "pnpm test auth  ✓ 24 passed",
-    meta: "10:08",
-  },
-  { kind: "agent", badge: "Agent", text: s.finalReply, meta: "10:09" },
-];
+const minimapColors = {
+  u: "--tl-user",
+  a: "--tl-agent",
+  r: "--tl-read",
+  w: "--tl-write",
+  e: "--tl-exec",
+};
+const minimap =
+  "u a r r e a r w w e a e e a w r e a u a r e w w e a r e a w e e a r a u"
+    .split(" ")
+    .map((key) => minimapColors[key as keyof typeof minimapColors]);
+const tools = [
+  { name: "bash", icon: "terminal", target: 'rg -n "refreshToken" src/auth' },
+  { name: "read", icon: "file", target: "src/auth/middleware.ts" },
+  { name: "edit", icon: "pencil", target: "src/auth/refresh.ts", diff: true },
+] as const;
 const filters = [
-  { kind: "user", label: tour.userMessages },
-  { kind: "agent", label: tour.agentResponses },
-  { kind: "tool", label: tour.toolCalls },
+  { kind: "user", label: tour.userMessages, count: 1 },
+  { kind: "agent", label: tour.agentResponses, count: 2 },
+  { kind: "tool", label: tour.toolCalls, count: 4 },
 ];
+const stepCount = filters.reduce((sum, filter) => sum + filter.count, 0);
+const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
 ---
 
-<section
-  id="tour"
-  class="tour section-space"
-  aria-labelledby="tour-heading"
-  data-tour
->
-  <div class="section-shell">
-    <header class="tour__heading" data-reveal>
-      <p class="landing-kicker">
-        <b>01</b>
-        {copy[locale].header.tour}
-      </p>
-      <h2 id="tour-heading" class="section-heading">
-        {t.tourTitle}
-      </h2>
-      <p class="section-body">{t.tourBody}</p>
-    </header>
-
-    <div
-      class="tour__tabs"
-      role="tablist"
-      aria-label={copy[locale].header.tour}
-    >
-      {sceneIds.map((scene, index) => (
-        <button
-          type="button"
-          role="tab"
-          id={`tour-tab-${scene}`}
-          aria-controls={`tour-panel-${scene}`}
-          aria-selected={index === 0 ? "true" : "false"}
-          tabindex={index === 0 ? 0 : -1}
-          data-tour-tab={scene}
-        >
-          <span class="console-mono" aria-hidden="true">
-            0{index + 1}
-          </span>
-          {t.tabs[index]}
-        </button>
-      ))}
+<section id="tour" class="sec" aria-labelledby="tour-heading" data-tour>
+  <div class="shell">
+    <div class="sec-head" data-reveal>
+      <div>
+        <p class="eyebrow">
+          <span class="n">01</span>
+          <span class="ln"></span>
+          {copy[locale].header.tour}
+        </p>
+        <h2 id="tour-heading" class="h2">
+          <HeadingText value={splitTitle(t.tourTitle)} />
+        </h2>
+      </div>
+      <p class="lead">{t.tourBody}</p>
     </div>
 
-    {sceneIds.map((scene, index) => (
+    <div class="tour">
       <div
-        class="tour__scene"
-        role="tabpanel"
-        id={`tour-panel-${scene}`}
-        aria-labelledby={`tour-tab-${scene}`}
-        hidden={index !== 0}
-        data-tour-panel={scene}
+        class="tabs tour__tabs"
+        role="tablist"
+        aria-label={copy[locale].header.tour}
       >
-        <div class="tour__copy">
-          <h3 class="console-display">{scenes[index]!.title}</h3>
-          <p>{scenes[index]!.description}</p>
-          <p class="tour__hint">
-            <Icon name="eye" />
-            {scenes[index]!.hint}
-          </p>
-        </div>
+        {sceneIds.map((scene, index) => (
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id={`tour-tab-${scene}`}
+            aria-controls={`tour-panel-${scene}`}
+            aria-selected={index === 0 ? "true" : "false"}
+            aria-labelledby={`tour-name-${scene}`}
+            aria-describedby={`tour-desc-${scene}`}
+            tabindex={index === 0 ? 0 : -1}
+            data-tour-tab={scene}
+          >
+            <span class="tab-top">
+              <span class="tab-n" aria-hidden="true">
+                0{index + 1}
+              </span>
+              <span class="tab-name" id={`tour-name-${scene}`}>
+                {t.tabs[index]}
+              </span>
+            </span>
+            <span class="tab-t" id={`tour-desc-${scene}`}>
+              {scenes[index]!.title}
+              <span class="tab-more">
+                <span class="tab-d">{scenes[index]!.description}</span>
+                <span class="tab-h">
+                  <Icon name="cursor" class="size-3.5" />
+                  {scenes[index]!.hint}
+                </span>
+              </span>
+            </span>
+            <span class="tab-pg" aria-hidden="true"></span>
+          </button>
+        ))}
+      </div>
 
-        <div class="tour__window" aria-label={tour[scene]}>
-          <div class="tour__bar" aria-hidden="true">
-            <i></i>
-            <i></i>
-            <i></i>
-            <span class="console-mono">codesesh · {t.tabs[index]}</span>
-            <span class="tour__tag console-mono">{tour.sampleLabel}</span>
-          </div>
+      <div class="stagebox">
+        <span class="sample">{tour.sampleLabel}</span>
 
-          {scene === "overview" && (
-            <div
-              class="tour__body overview"
-              data-overview
-              data-ranges={JSON.stringify(ranges)}
-            >
-              <div class="overview__top">
-                <span class="console-mono tour__muted">{s.activity}</span>
-                <div class="tour__seg" role="group" aria-label={tour.range}>
-                  {rangeIds.map((id, i) => (
+        <div
+          class="tour__scene"
+          role="tabpanel"
+          id="tour-panel-overview"
+          aria-labelledby="tour-tab-overview"
+          data-tour-panel="overview"
+        >
+          <div
+            class="appp tour__window"
+            aria-label={tour.overview}
+            data-overview
+          >
+            <div class="a-head">
+              <span class="cur">{showcase[locale].hero.nav[0]}</span>
+              <span class="rt">
+                {views.map((view) => (
+                  <span
+                    class="mono hide-sm a-short"
+                    data-range-view={view.id}
+                    hidden={view.id !== "7d"}
+                  >
+                    {view.short}
+                  </span>
+                ))}
+                <span class="seg" role="group" aria-label={tour.range}>
+                  {views.map((view, i) => (
                     <button
                       type="button"
+                      class="seg-i"
                       aria-pressed={i === 0 ? "true" : "false"}
-                      data-range={id}
+                      data-range={view.id}
                     >
                       {s.ranges[i]}
                     </button>
                   ))}
-                </div>
-              </div>
-              <div class="overview__stats">
-                {stats.map((key) => (
-                  <div class="tour__stat">
-                    <span>{statLabels[key]}</span>
-                    <strong class="console-display" data-stat={key}>
-                      {initial[key]}
-                    </strong>
-                  </div>
-                ))}
-              </div>
-              <div class="overview__charts">
-                <div class="tour__stat overview__bars" aria-hidden="true">
-                  {initial.bars.map((height, i) => (
-                    <span
-                      data-bar
-                      class:list={[i % 3 === 1 && "is-alt"]}
-                      style={`height:${height}%;animation-delay:${i * 45}ms`}
-                    ></span>
-                  ))}
-                </div>
-                <div class="tour__stat overview__agents">
-                  {agentNames.map((name, i) => (
-                    <div>
-                      <p>
-                        <span>{name}</span>
-                        <span class="console-mono" data-agent-share={i}>
-                          {initial.agents[i]}%
-                        </span>
-                      </p>
-                      <span class="tour__meter">
-                        <span
-                          data-agent-meter={i}
-                          style={`width:${initial.agents[i]}%`}
-                        ></span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                </span>
+              </span>
             </div>
-          )}
-
-          {scene === "projects" && (
-            <div class="tour__body projects" data-projects>
-              <div class="projects__tree">
-                <p class="console-mono tour__muted projects__label">
-                  {tour.sampleProjects}
-                </p>
-                {tree.map((row) => (
-                  <div
-                    class:list={["projects__row", `is-${row.kind}`]}
-                    hidden={row.kind === "sub"}
-                    data-sub-row={row.kind === "sub" ? "" : undefined}
-                  >
-                    {row.kind === "project" && <Icon name="list-tree" />}
-                    {row.kind === "parent" && (
-                      <button
-                        type="button"
-                        class="projects__toggle"
-                        aria-expanded="false"
-                        aria-label={s.expand}
-                        data-sub-toggle
-                      >
-                        <Icon name="chevron-right" class="size-3" />
-                      </button>
-                    )}
-                    {row.kind === "sub" && (
-                      <span class="tour__tag is-sub console-mono">sub</span>
-                    )}
-                    <span class="projects__name">{row.name}</span>
-                    <span class="projects__meta">
-                      {row.agent && (
-                        <span class="tour__tag console-mono">{row.agent}</span>
-                      )}
-                      <span class="console-mono tour__muted">{row.meta}</span>
+            {views.map((view) => (
+              <div
+                class="ov"
+                data-range-view={view.id}
+                hidden={view.id !== "7d"}
+              >
+                <div>
+                  <div class="ov-eb">{m.rangeEyebrow}</div>
+                  <div class="ov-title">{view.title}</div>
+                  <div class="ov-span">{view.span}</div>
+                </div>
+                <div class="kcard">
+                  <div class="kpis">
+                    {view.kpis.map((kpi) => (
+                      <div class="kpi">
+                        <div class="kpi-l">
+                          {kpi.label}
+                          {kpi.estimate && (
+                            <span class="est">{m.estimate}</span>
+                          )}
+                          <span class="delta">{kpi.delta}</span>
+                        </div>
+                        <div class="kpi-v" data-stat={kpi.key}>
+                          {kpi.value}
+                        </div>
+                        <div class="kpi-s">{kpi.sub}</div>
+                        <div class="spark">
+                          <svg
+                            viewBox="0 0 240 40"
+                            preserveAspectRatio="none"
+                            aria-hidden="true"
+                          >
+                            <path class="ar" d={kpi.area} />
+                            <path class="ln" d={kpi.line} />
+                          </svg>
+                          <span
+                            class="dot"
+                            style={`top:${kpi.endY.toFixed(1)}%`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div class="comp">
+                    <div class="row-sb">
+                      <span class="ttl">{m.composition}</span>
+                      <span class="mono comp-total">{view.tokens}</span>
+                    </div>
+                    <div class="comp-bar" aria-hidden="true">
+                      {mixColors.map((color, i) => (
+                        <i
+                          style={`width:${mixWidths[i]};background:${color}`}
+                        />
+                      ))}
+                      <i class="stripes" style="flex:1" />
+                    </div>
+                    <div class="comp-leg">
+                      {m.tokenTypes.map((label, i) => (
+                        <div class="leg">
+                          <span
+                            class:list={["sw", i === 3 && "stripes"]}
+                            style={
+                              i < 3 ? `background:${mixColors[i]}` : undefined
+                            }
+                          />
+                          {label}
+                          <b>
+                            {view.mix[i * 2]}
+                            <small>{view.mix[i * 2 + 1]}</small>
+                          </b>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div class="kcard daily">
+                  <div class="row-sb daily-head">
+                    <span class="ttl">{m.daily}</span>
+                    <span class="legend">
+                      {m.tokenTypes.map((label, i) => (
+                        <span>
+                          <span
+                            class:list={["sw", i === 3 && "stripes"]}
+                            style={
+                              i < 3 ? `background:${mixColors[i]}` : undefined
+                            }
+                          />
+                          {label}
+                        </span>
+                      ))}
+                      <span>
+                        <span class="lnk" />
+                        {m.kpis[1]}
+                      </span>
                     </span>
                   </div>
+                  <div class="chart" style={`gap:${view.gap}px`}>
+                    {view.bars.map((bar) => (
+                      <div
+                        class="bar stripes"
+                        data-bar
+                        style={`height:${bar.height}%;animation-delay:${bar.delay}ms`}
+                      >
+                        {view.showValues && <span class="bv">{bar.value}</span>}
+                        <i class="b-cw" />
+                        <i class="b-out" />
+                        <i class="b-in" />
+                      </div>
+                    ))}
+                    <svg
+                      class="cline"
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                      aria-hidden="true"
+                    >
+                      <polyline pathLength="1" points={view.line} />
+                    </svg>
+                  </div>
+                  <div class="xl" style={`gap:${view.gap}px`}>
+                    {view.bars.map((bar) => (
+                      <span>{bar.label}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div
+          class="tour__scene"
+          role="tabpanel"
+          id="tour-panel-projects"
+          aria-labelledby="tour-tab-projects"
+          data-tour-panel="projects"
+          hidden
+        >
+          <div
+            class="appp tour__window"
+            aria-label={tour.projects}
+            data-projects
+          >
+            <div class="a-head">
+              <span>{showcase[locale].hero.nav[0]}</span>
+              <span class="sl">/</span>
+              <span>{showcase[locale].hero.nav[1]}</span>
+              <span class="sl">/</span>
+              <span class="cur">web-app</span>
+            </div>
+            <div class="pj">
+              <div class="pj-head">
+                <div>
+                  <div class="ov-eb">{m.project}</div>
+                  <div class="ov-title">web-app</div>
+                  <div class="ov-span">github.com/acme/web-app</div>
+                </div>
+                <div class="fchips">
+                  <span class="fchip on">{m.allAgents}</span>
+                  {[
+                    ["Claude Code", 7],
+                    ["Codex", 4],
+                    ["Cursor", 1],
+                  ].map(([agent, count]) => (
+                    <span class="fchip">
+                      <AgentIcon name={String(agent)} size={14} />
+                      {agent} {count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div class="mk">
+                {m.projectStats.map(([label, sub], i) => (
+                  <div class="kcard">
+                    <div class="mk-l">
+                      {label}
+                      {i === 3 && <span class="est">{m.estimate}</span>}
+                    </div>
+                    <div class="mk-v">{projectValues[i]}</div>
+                    <div class="mk-s">{sub}</div>
+                  </div>
                 ))}
               </div>
-              <div class="tour__stat projects__rollup">
-                <p class="console-mono tour__muted">api-gateway · {s.rollup}</p>
-                <p>
-                  <span>{statLabels.messages}</span>
-                  <span class="console-mono" data-rollup="messages">
-                    2,904
-                  </span>
-                </p>
-                <p>
-                  <span>{statLabels.tokens}</span>
-                  <span class="console-mono" data-rollup="tokens">
-                    6.1M
-                  </span>
-                </p>
-                <p>
-                  <span>{statLabels.cost}</span>
-                  <span class="console-mono" data-rollup="cost">
-                    $13.75
-                  </span>
-                </p>
+              <div class="kcard">
+                <div class="tl-head">
+                  <div>
+                    <div class="ttl">{m.timeline}</div>
+                    <div class="tl-sub">{m.timelineMeta}</div>
+                  </div>
+                  <div class="seg" role="group" aria-label={m.subSessions}>
+                    <button
+                      type="button"
+                      class="seg-i"
+                      aria-pressed="true"
+                      data-sub-set="false"
+                    >
+                      {m.collapse}
+                    </button>
+                    <button
+                      type="button"
+                      class="seg-i"
+                      aria-pressed="false"
+                      data-sub-set="true"
+                    >
+                      {m.expandAll}
+                    </button>
+                  </div>
+                </div>
+                <div class="tscroll">
+                  <table class="tbl">
+                    <thead>
+                      <tr>
+                        <th class="w-time">{m.columns[0]}</th>
+                        <th>{m.columns[1]}</th>
+                        <th>{m.columns[2]}</th>
+                        <th class="w-sub">{m.columns[3]}</th>
+                        <th class="num w-cost">{m.columns[4]}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) =>
+                        "group" in row ? (
+                          <tr class="grp">
+                            <td colspan="5">{row.group}</td>
+                          </tr>
+                        ) : (
+                          <tr
+                            class:list={[row.sub && "child"]}
+                            hidden={row.sub}
+                            data-sub-row={row.sub ? "" : undefined}
+                          >
+                            <td class="tm">{row.time}</td>
+                            <td>
+                              <div class="s-t">
+                                {row.sub ? (
+                                  <>
+                                    <Icon
+                                      name="corner-down-right"
+                                      class="size-3 sub-arrow"
+                                    />
+                                    <span class="subtag">sub</span>
+                                  </>
+                                ) : (
+                                  <AgentIcon name={row.agent} />
+                                )}
+                                {row.title}
+                              </div>
+                              <div class="s-m">
+                                {fill(m.rowMeta, {
+                                  agent: row.sub
+                                    ? fill(m.subAgent, { agent: row.agent })
+                                    : row.agent,
+                                  messages: row.messages,
+                                  tokens: row.tokens,
+                                })}
+                              </div>
+                            </td>
+                            <td>
+                              {row.tags.map((tag) => (
+                                <span class="tag">
+                                  <i style={`background:${tagColors[tag]}`} />
+                                  {m.tags[tag]}
+                                </span>
+                              ))}
+                            </td>
+                            <td class="tm">
+                              {row.subs ? (
+                                <button
+                                  type="button"
+                                  class="subbtn"
+                                  aria-expanded="false"
+                                  aria-label={s.expand}
+                                  data-sub-toggle
+                                >
+                                  <Icon name="chevron-right" class="size-3" />
+                                  sub {row.subs}
+                                </button>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td class="num">
+                              {row.subs ? (
+                                <>
+                                  <div data-rollup="cost">{row.cost}</div>
+                                  <div class="rollup">{m.withSubs}</div>
+                                </>
+                              ) : (
+                                row.cost
+                              )}
+                            </td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          )}
+          </div>
+        </div>
 
-          {scene === "replay" && (
-            <div class="tour__body replay" data-replay>
-              <div
-                class="replay__filters"
-                role="group"
-                aria-label={tour.filters}
-              >
-                {filters.map((filter) => (
-                  <button
-                    type="button"
-                    aria-pressed="true"
-                    data-filter={filter.kind}
-                    class={`is-${filter.kind}`}
-                  >
-                    <i aria-hidden="true"></i>
-                    {filter.label}
-                  </button>
-                ))}
-                <span
-                  class="console-mono tour__muted replay__status"
-                  aria-live="polite"
-                  data-visible-template={tour.visibleStatus}
-                  data-visible-status
-                >
-                  {tour.visibleStatus.replace("{count}", String(steps.length))}
+        <div
+          class="tour__scene"
+          role="tabpanel"
+          id="tour-panel-replay"
+          aria-labelledby="tour-tab-replay"
+          data-tour-panel="replay"
+          hidden
+        >
+          <div class="appp tour__window" aria-label={tour.replay} data-replay>
+            <div class="a-head">
+              <span class="hide-sm">{showcase[locale].hero.nav[0]}</span>
+              <span class="sl hide-sm">/</span>
+              <span class="hide-sm">web-app</span>
+              <span class="sl hide-sm">/</span>
+              <span class="cur ellipsis">{titles.refresh}</span>
+              <span class="rt">
+                <span class="kbd hide-sm">Esc</span>
+                <span class="mini-btn">
+                  <Icon name="copy" class="size-3.5" />
+                  {m.resume}
+                </span>
+              </span>
+            </div>
+            <div class="rp-head">
+              <div class="ov-eb">{m.replayEyebrow}</div>
+              <div class="rp-title">{titles.refresh}</div>
+              <div class="rp-meta">
+                <span>#7c41e0a2</span>
+                <span>{m.updated}</span>
+                <span>~/code/web-app</span>
+              </div>
+              <div class="rp-tags">
+                <span class="tag">
+                  <i style={`background:${tagColors.fix}`}></i>
+                  {m.tags.fix}
+                </span>
+                <span class="tag">
+                  <i style={`background:${tagColors.test}`}></i>
+                  {m.tags.test}
                 </span>
               </div>
-              <ol class="replay__steps">
-                {steps.map((step, i) => (
-                  <li
-                    class={`replay__step is-${step.kind}`}
-                    data-step={step.kind}
-                    style={`animation-delay:${120 + i * 380}ms`}
-                  >
-                    <span class="replay__badge console-mono">{step.badge}</span>
-                    <span class="replay__text">{step.text}</span>
-                    <span class="replay__meta console-mono">{step.meta}</span>
-                  </li>
-                ))}
-              </ol>
             </div>
-          )}
+            <div class="rp">
+              <div>
+                <div class="mm rp-mm" aria-hidden="true">
+                  {minimap.map((color) => (
+                    <i style={`background:var(${color})`} />
+                  ))}
+                  <span class="scrub"></span>
+                </div>
+                <div class="msg" data-step="user">
+                  <span class="av">
+                    <Icon name="user" />
+                  </span>
+                  <div class="msg-b">
+                    <div class="who">
+                      {s.userBadge}
+                      <span class="t">14:22:05</span>
+                    </div>
+                    <div class="bub">{s.prompt}</div>
+                  </div>
+                </div>
+                <div class="msg" data-step-group>
+                  <span class="av">
+                    <AgentIcon name="Claude Code" size={12} />
+                  </span>
+                  <div class="msg-b">
+                    <div class="who">
+                      {showcase[locale].hero.agent}
+                      <span class="t">14:22:11</span>
+                      <span class="md">claude-sonnet-5-5</span>
+                    </div>
+                    <div class="txt" data-step="agent">
+                      {s.replayReply}
+                    </div>
+                    <div class="tools">
+                      {tools.map((tool) => (
+                        <div class="tool" data-step="tool">
+                          <span class="tic">
+                            <Icon name={tool.icon} />
+                          </span>
+                          <span class="tn">{tool.name}</span>
+                          <code>{tool.target}</code>
+                          {"diff" in tool ? (
+                            <span class="diff">
+                              <span class="a">+18</span>{" "}
+                              <span class="d">−6</span>
+                            </span>
+                          ) : (
+                            <span class="ok">
+                              {showcase[locale].hero.success}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                      <div data-step="tool">
+                        <button
+                          type="button"
+                          class="tool"
+                          aria-expanded="false"
+                          data-tool-toggle
+                        >
+                          <span class="tic">
+                            <Icon name="terminal" />
+                          </span>
+                          <span class="tn">bash</span>
+                          <code>pnpm test auth</code>
+                          <span class="ok">
+                            {showcase[locale].hero.success}
+                          </span>
+                          <Icon name="chevron-right" class="size-3.5 chev" />
+                        </button>
+                        <div class="tout" hidden data-tool-output>
+                          <div>
+                            <span class="ok2">✓</span> auth/refresh.test.ts{" "}
+                            <span class="dim">(9)</span>
+                          </div>
+                          <div>
+                            <span class="ok2">✓</span> auth/middleware.test.ts{" "}
+                            <span class="dim">(15)</span>
+                          </div>
+                          <div class="dim">
+                            Test Files 2 passed · Tests 24 passed · 1.84s
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="usage">
+                      {m.usage.map((item) => (
+                        <span>{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div class="msg" data-step="agent">
+                  <span class="av">
+                    <AgentIcon name="Claude Code" size={12} />
+                  </span>
+                  <div class="msg-b">
+                    <div class="who">
+                      {showcase[locale].hero.agent}
+                      <span class="t">14:26:40</span>
+                    </div>
+                    <div class="txt">{s.finalReply}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="side-col">
+                <div class="side-card">
+                  <div class="side-h">
+                    {m.contentFilters}
+                    <small>{m.sample}</small>
+                  </div>
+                  <div role="group" aria-label={tour.filters}>
+                    {filters.map((filter) => (
+                      <button
+                        type="button"
+                        class="ck"
+                        aria-pressed="true"
+                        data-filter={filter.kind}
+                      >
+                        <span class="box">
+                          <Icon name="check" />
+                        </span>
+                        {filter.label}
+                        <span class="c">{filter.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div class="vis" aria-live="polite" data-visible-status>
+                    {visibleBefore}
+                    <b data-visible-count>{stepCount}</b>
+                    {visibleAfter}
+                  </div>
+                </div>
+                <div class="side-card">
+                  <div class="side-h">
+                    {m.fileTracking}
+                    <small>{m.files}</small>
+                  </div>
+                  <div class="ftrack">
+                    <Icon name="file" class="size-3.5" />
+                    refresh.ts<span class="k w">{m.modified}</span>
+                  </div>
+                  <div class="ftrack">
+                    <Icon name="file" class="size-3.5" />
+                    middleware.ts<span class="k r">{m.read}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    ))}
+    </div>
   </div>
 </section>
 
 <script>
-  type RangeData = {
-    sessions: string;
-    messages: string;
-    tokens: string;
-    cost: string;
-    bars: number[];
-    agents: number[];
-  };
-
   document.querySelectorAll<HTMLElement>("[data-tour]").forEach((tour) => {
     const tabs = [
       ...tour.querySelectorAll<HTMLButtonElement>("[data-tour-tab]"),
     ];
     const panels = [...tour.querySelectorAll<HTMLElement>("[data-tour-panel]")];
+    let current = 0;
+    let timer = 0;
 
     const select = (index: number, focus = false) => {
+      current = index;
       tabs.forEach((tab, i) => {
         const active = i === index;
         tab.setAttribute("aria-selected", String(active));
@@ -396,6 +962,11 @@ const filters = [
         panels[i]!.hidden = !active;
       });
       if (focus) tabs[index]!.focus();
+    };
+
+    const stopAuto = () => {
+      window.clearInterval(timer);
+      tour.dataset.auto = "off";
     };
 
     tabs.forEach((tab, index) => {
@@ -409,71 +980,79 @@ const filters = [
       });
     });
 
+    const tourBody = tour.querySelector<HTMLElement>(".tour");
+    ["pointerenter", "focusin", "pointerdown"].forEach((type) =>
+      tourBody?.addEventListener(type, stopAuto),
+    );
+
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (!entry?.isIntersecting || tour.dataset.auto) return;
+          observer.disconnect();
+          tour.dataset.auto = "on";
+          timer = window.setInterval(() => {
+            if (!document.hidden) select((current + 1) % tabs.length);
+          }, 9000);
+        },
+        { threshold: 0.35 },
+      );
+      observer.observe(tour);
+    }
+
     const overview = tour.querySelector<HTMLElement>("[data-overview]");
-    if (overview) {
-      const ranges = JSON.parse(overview.dataset.ranges ?? "{}") as Record<
-        string,
-        RangeData
-      >;
-      const rangeButtons =
-        overview.querySelectorAll<HTMLButtonElement>("[data-range]");
-      rangeButtons.forEach((button) => {
+    overview
+      ?.querySelectorAll<HTMLButtonElement>("[data-range]")
+      .forEach((button, _, buttons) => {
         button.addEventListener("click", () => {
-          const data = ranges[button.dataset.range ?? ""];
-          if (!data) return;
-          rangeButtons.forEach((item) =>
+          buttons.forEach((item) =>
             item.setAttribute("aria-pressed", String(item === button)),
           );
           overview
-            .querySelectorAll<HTMLElement>("[data-stat]")
-            .forEach((stat) => {
-              stat.textContent = data[stat.dataset.stat as "sessions"];
+            .querySelectorAll<HTMLElement>("[data-range-view]")
+            .forEach((view) => {
+              view.hidden = view.dataset.rangeView !== button.dataset.range;
             });
-          overview
-            .querySelectorAll<HTMLElement>("[data-bar]")
-            .forEach((bar, i) => {
-              bar.style.height = `${data.bars[i]}%`;
-            });
-          data.agents.forEach((share, i) => {
-            const label = overview.querySelector(`[data-agent-share="${i}"]`);
-            const meter = overview.querySelector<HTMLElement>(
-              `[data-agent-meter="${i}"]`,
-            );
-            if (label) label.textContent = `${share}%`;
-            if (meter) meter.style.width = `${share}%`;
-          });
         });
       });
-    }
 
     const projects = tour.querySelector<HTMLElement>("[data-projects]");
-    const toggle =
-      projects?.querySelector<HTMLButtonElement>("[data-sub-toggle]");
-    if (projects && toggle) {
-      const rollups = {
-        collapsed: { messages: "2,904", tokens: "6.1M", cost: "$13.75" },
-        expanded: { messages: "3,218", tokens: "6.4M", cost: "$14.90" },
-      };
-      toggle.addEventListener("click", () => {
-        const expanded = toggle.getAttribute("aria-expanded") !== "true";
-        toggle.setAttribute("aria-expanded", String(expanded));
+    if (projects) {
+      const toggles =
+        projects.querySelectorAll<HTMLButtonElement>("[data-sub-toggle]");
+      const setButtons =
+        projects.querySelectorAll<HTMLButtonElement>("[data-sub-set]");
+      const setExpanded = (expanded: boolean) => {
+        toggles.forEach((toggle) =>
+          toggle.setAttribute("aria-expanded", String(expanded)),
+        );
+        setButtons.forEach((button) =>
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.subSet === String(expanded)),
+          ),
+        );
         projects
           .querySelectorAll<HTMLElement>("[data-sub-row]")
           .forEach((row) => {
             row.hidden = !expanded;
           });
-        const values = rollups[expanded ? "expanded" : "collapsed"];
-        projects
-          .querySelectorAll<HTMLElement>("[data-rollup]")
-          .forEach((cell) => {
-            cell.textContent = values[cell.dataset.rollup as "messages"];
-          });
-      });
+      };
+      toggles.forEach((toggle) =>
+        toggle.addEventListener("click", () =>
+          setExpanded(toggle.getAttribute("aria-expanded") !== "true"),
+        ),
+      );
+      setButtons.forEach((button) =>
+        button.addEventListener("click", () =>
+          setExpanded(button.dataset.subSet === "true"),
+        ),
+      );
     }
 
     const replay = tour.querySelector<HTMLElement>("[data-replay]");
     if (replay) {
-      const status = replay.querySelector<HTMLElement>("[data-visible-status]");
+      const status = replay.querySelector<HTMLElement>("[data-visible-count]");
       const filterButtons =
         replay.querySelectorAll<HTMLButtonElement>("[data-filter]");
       filterButtons.forEach((button) => {
@@ -494,13 +1073,23 @@ const filters = [
               step.hidden = !visible.has(step.dataset.step);
               if (!step.hidden) count += 1;
             });
-          if (status) {
-            status.textContent = (status.dataset.visibleTemplate ?? "").replace(
-              "{count}",
-              String(count),
-            );
-          }
+          replay
+            .querySelectorAll<HTMLElement>("[data-step-group]")
+            .forEach((group) => {
+              group.hidden = !group.querySelector("[data-step]:not([hidden])");
+            });
+          if (status) status.textContent = String(count);
         });
+      });
+
+      const toolToggle =
+        replay.querySelector<HTMLButtonElement>("[data-tool-toggle]");
+      const toolOutput =
+        replay.querySelector<HTMLElement>("[data-tool-output]");
+      toolToggle?.addEventListener("click", () => {
+        const open = toolToggle.getAttribute("aria-expanded") !== "true";
+        toolToggle.setAttribute("aria-expanded", String(open));
+        if (toolOutput) toolOutput.hidden = !open;
       });
     }
   });
@@ -508,519 +1097,850 @@ const filters = [
 
 <style>
   .tour {
-    scroll-margin-top: 4rem;
-  }
-  .tour__heading {
-    max-width: 48rem;
-  }
-  .tour__tabs {
-    display: flex;
-    width: max-content;
-    max-width: 100%;
-    gap: 0.25rem;
-    margin-top: 2.5rem;
-    padding: 0.25rem;
-    overflow-x: auto;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-lg);
-    background: var(--console-surface-muted);
-  }
-  .tour__tabs button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.55rem;
-    min-height: 2.75rem;
-    padding: 0 1.1rem;
-    border-radius: var(--radius-md);
-    color: var(--console-muted);
-    font-size: 0.875rem;
-    font-weight: 500;
-    white-space: nowrap;
-    transition:
-      background var(--dur-base) var(--ease-out),
-      color var(--dur-base) var(--ease-out);
-  }
-  .tour__tabs button span {
-    font-size: 0.7rem;
-  }
-  .tour__tabs button[aria-selected="true"] {
-    background: var(--console-surface);
-    color: var(--console-text);
-    box-shadow: var(--elevation-raised);
-  }
-  .tour__tabs button[aria-selected="true"] span {
-    color: var(--brand-text);
-  }
-  .tour__scene {
     display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
-    gap: 2.5rem;
+    grid-template-columns: 344px minmax(0, 1fr);
+    gap: 28px;
     align-items: start;
-    margin-top: 1.75rem;
-    animation: tour-in 0.5s var(--ease-out) both;
   }
-  .tour__scene[hidden] {
-    display: none;
-  }
-  .tour__copy {
+  .tabs {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding-top: 0.75rem;
+    gap: 8px;
   }
-  .tour__copy h3 {
-    margin: 0;
-    font-size: 1.6rem;
-    font-weight: 600;
-    line-height: 1.2;
-  }
-  .tour__copy p {
-    margin: 0;
-    color: var(--console-text-secondary);
-    font-size: 0.94rem;
-    line-height: 1.7;
-  }
-  .tour__copy p.tour__hint {
-    display: flex;
-    gap: 0.6rem;
-    padding: 0.85rem;
-    border-radius: var(--radius-lg);
-    background: var(--signal-soft);
-    color: var(--signal);
-    font-size: 0.8rem;
-    line-height: 1.5;
-  }
-  .tour__hint :global(svg) {
-    flex: none;
-    margin-top: 0.1rem;
-  }
-  .tour__window {
+  .tab {
+    position: relative;
+    display: block;
+    width: 100%;
     overflow: hidden;
-    border: 1px solid var(--console-border);
-    border-radius: 18px;
-    background: var(--console-surface);
-    box-shadow: var(--elevation-overlay);
+    padding: 20px 22px;
+    border: 1px solid transparent;
+    border-radius: 16px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background 0.2s,
+      border-color 0.2s;
   }
-  .tour__bar {
+  .tab:hover {
+    background: var(--muted-bg);
+  }
+  .tab[aria-selected="true"] {
+    border-color: var(--border);
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+  }
+  .tab-top {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    min-height: 2.75rem;
-    padding: 0 1rem;
-    border-bottom: 1px solid var(--console-border);
-    background: var(--console-surface-muted);
-    color: var(--console-muted);
-    font-size: 0.72rem;
+    gap: 12px;
   }
-  .tour__bar i {
-    width: 10px;
-    height: 10px;
-    border-radius: 99px;
-    background: var(--console-border-strong);
+  .tab-n {
+    color: var(--muted);
+    font: 500 11px/1 var(--mono);
   }
-  .tour__bar span:first-of-type {
-    margin-left: 0.75rem;
+  .tab[aria-selected="true"] .tab-n {
+    color: var(--brand-ink);
   }
-  .tour__bar .tour__tag {
-    margin-left: auto;
+  .tab-name {
+    font-size: 15px;
+    font-weight: 600;
   }
-  .tour__tag {
-    padding: 0.1rem 0.45rem;
-    border: 1px solid var(--console-border-strong);
-    border-radius: var(--radius-sm);
-    color: var(--console-muted);
-    font-size: 0.68rem;
+  .tab-t {
+    display: block;
+    margin-top: 12px;
+    font-size: 19px;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+  }
+  .tab-more {
+    display: none;
+  }
+  .tab[aria-selected="true"] .tab-more {
+    display: block;
+  }
+  .tab-d {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.7;
+    letter-spacing: 0;
+  }
+  .tab-h {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 14px;
+    color: var(--brand-ink);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.5;
+    letter-spacing: 0;
+  }
+  .tab-h :global(svg) {
+    flex: none;
+    margin-top: 1px;
+  }
+  .tab-pg {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    display: none;
+    height: 2px;
+    background: var(--brand);
+    animation: pg 9s linear both;
+  }
+  [data-auto="on"] .tab[aria-selected="true"] .tab-pg {
+    display: block;
+  }
+  .stagebox {
+    position: relative;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--frame);
+    box-shadow: var(--sh-raised);
+  }
+  .sample {
+    position: absolute;
+    top: -11px;
+    right: 22px;
+    z-index: 2;
+    padding: 6px 10px;
+    border: 1px solid var(--brand-line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--brand-ink);
+    font: 600 10px/1 var(--mono);
+    letter-spacing: 0.08em;
+  }
+  .appp {
+    min-height: 640px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: var(--panel);
+  }
+  .a-head {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    height: 48px;
+    overflow: hidden;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 12.5px;
     white-space: nowrap;
   }
-  .tour__tag.is-sub {
-    border-color: var(--signal);
-    color: var(--signal);
+  .a-head .cur {
+    color: var(--text);
+    font-weight: 500;
   }
-  .tour__muted {
-    color: var(--console-muted);
-    font-size: 0.75rem;
-  }
-  .tour__body {
-    padding: 1.4rem;
-  }
-  .tour__stat {
-    padding: 1rem;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-lg);
-    background: var(--console-surface);
-  }
-  .tour__seg {
-    display: inline-flex;
-    padding: 3px;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-pill);
-    background: var(--console-surface-muted);
-  }
-  .tour__seg button {
-    min-height: 2rem;
-    padding: 0 0.7rem;
-    border-radius: var(--radius-pill);
-    color: var(--console-muted);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-  }
-  .tour__seg button[aria-pressed="true"] {
-    background: var(--console-text);
-    color: var(--console-bg);
-  }
-  .tour__meter {
-    display: block;
-    height: 6px;
-    overflow: hidden;
-    border-radius: 99px;
-    background: var(--console-surface-muted);
-  }
-  .tour__meter span {
-    display: block;
-    height: 100%;
-    border-radius: 99px;
-    background: var(--console-text-secondary);
-    transition: width 0.6s var(--ease-out);
-  }
-
-  .overview {
-    display: flex;
-    flex-direction: column;
-    gap: 1.2rem;
-  }
-  .overview__top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-  .overview__stats {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-  .overview__stats .tour__stat span {
-    color: var(--console-muted);
-    font-size: 0.75rem;
-  }
-  .overview__stats strong {
-    display: block;
-    margin-top: 0.35rem;
-    font-size: 1.6rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .overview__charts {
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-    gap: 1rem;
-  }
-  .overview__bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
-    height: 11rem;
-    box-sizing: border-box;
-  }
-  .overview__bars span {
-    flex: 1;
-    border-radius: 6px 6px 2px 2px;
-    background: var(--brand);
-    transform-origin: bottom;
-    transition: height 0.6s var(--ease-out);
-    animation: tour-grow 0.8s var(--ease-out) both;
-  }
-  .overview__bars span.is-alt {
-    background: var(--console-border-strong);
-  }
-  .overview__agents {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.9rem;
-  }
-  .overview__agents p {
-    display: flex;
-    justify-content: space-between;
-    margin: 0 0 0.4rem;
-    font-size: 0.8rem;
-  }
-  .overview__agents p span:last-child {
-    color: var(--console-muted);
-  }
-
-  .projects {
-    display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-    gap: 1rem;
-    padding: 1rem;
-  }
-  .projects__label {
-    margin: 0;
-    padding: 0.5rem 0.85rem;
-  }
-  .projects__row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    min-height: 2.75rem;
-    padding: 0 0.85rem;
-    border-radius: var(--radius-md);
-    font-size: 0.875rem;
-  }
-  .projects__row[hidden] {
-    display: none;
-  }
-  .projects__row:hover {
-    background: var(--console-surface-muted);
-  }
-  .projects__row.is-project {
-    font-weight: 600;
-  }
-  .projects__row.is-project :global(svg) {
-    color: var(--brand-text);
-  }
-  .projects__row.is-parent,
-  .projects__row.is-session {
-    padding-left: 2.2rem;
-  }
-  .projects__row.is-sub {
-    padding-left: 3.6rem;
-    animation: tour-in 0.4s var(--ease-out) both;
-  }
-  .projects__name {
+  .a-head .ellipsis {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .projects__meta {
+  .a-head .sl {
+    color: var(--border-strong);
+  }
+  .a-head .rt {
     display: flex;
-    flex: none;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
     margin-left: auto;
   }
-  .projects__toggle {
+  .a-short {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .mini-btn {
     display: inline-flex;
-    width: 1.75rem;
-    height: 1.75rem;
     align-items: center;
-    justify-content: center;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-sm);
-    background: var(--console-surface);
-    transition: transform var(--dur-base) var(--ease-out);
+    gap: 6px;
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 9px;
+    background: var(--btn);
+    color: var(--btn-fg);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
   }
-  .projects__toggle[aria-expanded="true"] {
-    transform: rotate(90deg);
-  }
-  .projects__rollup {
+  .ov,
+  .pj {
     display: flex;
     flex-direction: column;
-    gap: 0.85rem;
-    align-self: start;
+    gap: 16px;
+    padding: 20px;
   }
-  .projects__rollup p {
+  .ov-eb {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .ov-title {
+    margin-top: 4px;
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+  .ov-span {
+    margin-top: 4px;
+    color: var(--muted);
+    font: 400 11px/1.4 var(--mono);
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .kpi {
+    min-width: 0;
+    padding: 16px 18px 14px;
+    border-left: 1px solid var(--border);
+  }
+  .kpi:first-child {
+    border-left: 0;
+  }
+  .kpi-l {
     display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-2);
+    font-size: 11.5px;
+    font-weight: 500;
+  }
+  .delta {
+    margin-left: auto;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: var(--muted-bg);
+    color: var(--text-2);
+    font: 500 10px/1 var(--mono);
+    white-space: nowrap;
+  }
+  .kpi-v {
+    margin-top: 10px;
+    font: 300 30px/1.1 var(--mono);
+    letter-spacing: -0.03em;
+    white-space: nowrap;
+  }
+  .kpi-s {
+    margin-top: 5px;
+    overflow: hidden;
+    color: var(--muted);
+    font: 400 10.5px/1.4 var(--mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .spark {
+    position: relative;
+    height: 38px;
+    margin-top: 12px;
+  }
+  .spark svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .spark .ln {
+    fill: none;
+    stroke: var(--brand);
+    stroke-width: 1.6;
+    vector-effect: non-scaling-stroke;
+  }
+  .spark .ar {
+    fill: var(--brand);
+    opacity: 0.1;
+  }
+  .spark .dot {
+    position: absolute;
+    right: -3px;
+    width: 7px;
+    height: 7px;
+    margin-top: -3.5px;
+    border-radius: 50%;
+    background: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-soft);
+  }
+  .comp {
+    padding: 14px 18px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .row-sb {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
-    margin: 0;
-    font-size: 0.875rem;
+    gap: 12px;
   }
-  .projects__rollup p span:first-child {
-    color: var(--console-muted);
+  .ttl {
+    font-size: 12.5px;
+    font-weight: 600;
   }
-
-  .replay {
+  .comp-total {
+    color: var(--text-2);
+    font-size: 11px;
+  }
+  .comp-bar {
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    gap: 3px;
+    height: 12px;
+    margin: 10px 0 12px;
   }
-  .replay__filters {
+  .comp-bar i {
+    display: block;
+    min-width: 6px;
+    border-radius: 3px;
+  }
+  .comp-leg {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .leg {
+    min-width: 0;
+    color: var(--text-2);
+    font-size: 11px;
+  }
+  .leg b {
+    display: block;
+    margin-top: 3px;
+    color: var(--text);
+    font: 500 13px/1.3 var(--mono);
+  }
+  .leg small {
+    margin-left: 5px;
+    color: var(--muted);
+    font: 400 10px/1 var(--mono);
+  }
+  .sw {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 6px;
+    border-radius: 2px;
+    vertical-align: -1px;
+  }
+  .daily {
+    padding: 16px 18px 14px;
+  }
+  .daily-head {
+    flex-wrap: wrap;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    color: var(--text-2);
+    font-size: 10.5px;
+  }
+  .legend .lnk {
+    display: inline-block;
+    width: 12px;
+    height: 2px;
+    margin-right: 6px;
+    background: var(--text);
+    vertical-align: 3px;
+  }
+  .chart {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    height: 176px;
+    margin-top: 20px;
+    border-bottom: 1px solid var(--border);
+    background-image: linear-gradient(var(--border) 1px, transparent 1px);
+    background-size: 100% 25%;
+  }
+  .bar {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-width: 0;
+    border-radius: 4px 4px 1px 1px;
+    transform-origin: bottom;
+    animation: grow 0.7s var(--ease-settle) both;
+    transition: height 0.55s var(--ease-settle);
+  }
+  .bv {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    margin-bottom: 5px;
+    color: var(--text-2);
+    font: 500 9.5px/1 var(--mono);
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  .bar i {
+    display: block;
+    flex: none;
+  }
+  .b-cw {
+    height: 3px;
+    background: var(--t-cw);
+  }
+  .b-out {
+    height: 2px;
+    background: var(--t-out);
+  }
+  .b-in {
+    height: 2px;
+    background: var(--t-in);
+  }
+  .cline {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .cline polyline {
+    fill: none;
+    stroke: var(--text);
+    stroke-width: 1.4;
+    stroke-dasharray: 1;
+    vector-effect: non-scaling-stroke;
+    animation: draw 1.2s 0.3s var(--ease-settle) both;
+  }
+  .xl {
+    display: flex;
+    padding-top: 7px;
+  }
+  .xl span {
+    flex: 1;
+    min-width: 0;
+    color: var(--muted);
+    font: 500 9.5px/1 var(--mono);
+    text-align: center;
+    white-space: nowrap;
+  }
+  .pj-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .fchips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .fchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: 11.5px;
+    font-weight: 500;
+  }
+  .fchip.on {
+    border-color: var(--brand-line);
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font-weight: 600;
+  }
+  .mk {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .mk .kcard {
+    padding: 12px 14px;
+  }
+  .mk-l {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-2);
+    font-size: 11px;
+  }
+  .mk-v {
+    margin-top: 6px;
+    font: 300 22px/1.2 var(--mono);
+    letter-spacing: -0.02em;
+  }
+  .mk-s {
+    margin-top: 3px;
+    color: var(--muted);
+    font: 400 10px/1.3 var(--mono);
+  }
+  .tl-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
   }
-  .replay__filters button {
+  .tl-sub {
+    margin-top: 2px;
+    color: var(--muted);
+    font: 400 10.5px/1.4 var(--mono);
+  }
+  .tscroll {
+    overflow-x: auto;
+  }
+  .tbl {
+    width: 100%;
+    min-width: 640px;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .tbl th {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .tbl .w-time {
+    width: 70px;
+  }
+  .tbl .w-sub {
+    width: 92px;
+  }
+  .tbl .w-cost {
+    width: 80px;
+  }
+  .tbl td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .tbl tr:last-child td {
+    border-bottom: 0;
+  }
+  .tbl tbody tr:hover td {
+    background: var(--muted-bg);
+  }
+  .tbl .grp td {
+    padding: 6px 16px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 10.5px;
+  }
+  .tbl .num {
+    font-family: var(--mono);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .tbl .tm {
+    color: var(--text-2);
+    font-family: var(--mono);
+    white-space: nowrap;
+  }
+  .s-t {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .s-m {
+    margin-top: 3px;
+    padding-left: 24px;
+    color: var(--muted);
+    font: 400 10.5px/1.4 var(--mono);
+    white-space: nowrap;
+  }
+  .subbtn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    min-height: 2.25rem;
-    padding: 0 0.75rem;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-pill);
-    color: var(--console-muted);
-    font-size: 0.8rem;
+    gap: 4px;
+    height: 28px;
+    padding: 0 9px;
+    border: 1px solid var(--brand-line);
+    border-radius: 8px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font: 600 11px/1 var(--mono);
+    cursor: pointer;
+  }
+  .subbtn :global(svg) {
+    transition: transform 0.2s var(--ease-out);
+  }
+  .subbtn[aria-expanded="true"] :global(svg) {
+    transform: rotate(90deg);
+  }
+  .tbl .child td {
+    background: color-mix(in oklab, var(--brand-soft) 40%, var(--surface));
+  }
+  .child .s-t {
+    padding-left: 20px;
     font-weight: 500;
   }
-  .replay__filters button[aria-pressed="true"] {
-    border-color: var(--console-border-strong);
-    background: var(--console-surface);
-    color: var(--console-text);
+  .child .s-t :global(.sub-arrow) {
+    color: var(--muted);
   }
-  .replay__filters i {
-    width: 8px;
-    height: 8px;
-    border-radius: 99px;
+  .child .s-m {
+    padding-left: 44px;
   }
-  .replay__filters .is-user i {
-    background: var(--console-text);
+  .child:not([hidden]) {
+    animation: drop 0.4s var(--ease-settle) both;
   }
-  .replay__filters .is-agent i {
-    background: var(--brand);
+  .rollup {
+    color: var(--brand-ink);
+    font: 500 10px/1 var(--mono);
   }
-  .replay__filters .is-tool i {
-    background: var(--signal);
+  .rp-head {
+    padding: 20px 20px 0;
   }
-  .replay__status {
-    margin-left: auto;
+  .rp-title {
+    margin-top: 4px;
+    font-size: 26px;
+    font-weight: 300;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
   }
-  .replay__steps {
-    position: relative;
+  .rp-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-top: 6px;
+    color: var(--muted);
+    font: 400 11px/1.5 var(--mono);
+  }
+  .rp-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: 10px;
+  }
+  .rp {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 224px;
+    gap: 16px;
+    padding: 16px 20px 20px;
+  }
+  .rp-mm {
+    margin-bottom: 16px;
+  }
+  .msg {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .msg-b {
+    flex: 1;
+    min-width: 0;
+  }
+  .tools {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+    gap: 6px;
+    margin-top: 10px;
   }
-  .replay__steps::before,
-  .replay__steps::after {
-    content: "";
-    position: absolute;
-    top: 1.5rem;
-    bottom: 1.5rem;
-    left: 3.05rem;
-    width: 2px;
-    background: var(--console-border);
+  .tools button.tool {
+    cursor: pointer;
   }
-  .replay__steps::after {
-    background: var(--brand);
-    transform-origin: top;
-    animation: tour-rail 3.2s var(--ease-out) both;
+  .tools button.tool[aria-expanded="true"] {
+    border-radius: 9px 9px 0 0;
   }
-  .replay__step {
-    position: relative;
-    z-index: 1;
+  .tools :global(.chev) {
+    color: var(--muted);
+    transition: transform 0.2s var(--ease-out);
+  }
+  .tools [aria-expanded="true"] :global(.chev) {
+    transform: rotate(90deg);
+  }
+  .tout {
+    margin-top: -1px;
+    padding: 10px 12px;
+    border-radius: 0 0 9px 9px;
+    background: var(--term);
+    color: var(--term-fg);
+    font: 400 11px/1.75 var(--mono);
+    animation: drop 0.35s var(--ease-settle) both;
+  }
+  .tout .ok2 {
+    color: #7fd6a8;
+  }
+  .tout .dim {
+    color: var(--term-dim);
+  }
+  .usage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 10px;
+    color: var(--muted);
+    font: 400 10.5px/1.4 var(--mono);
+  }
+  .side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .side-card {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+  }
+  .side-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .side-h small {
+    color: var(--muted);
+    font: 500 10px/1 var(--mono);
+  }
+  .ck {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    height: 36px;
+    padding: 0 6px;
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ck:hover {
+    background: var(--muted-bg);
+  }
+  .box {
     display: grid;
-    grid-template-columns: 4.5rem minmax(0, 1fr) auto;
-    gap: 0.9rem;
-    align-items: start;
-    padding: 0.75rem 0.85rem;
-    border-radius: var(--radius-lg);
-    animation: tour-step 0.55s var(--ease-out) both;
+    flex: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 4px;
+    color: transparent;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
   }
-  .replay__step[hidden] {
-    display: none;
+  .box :global(svg) {
+    width: 11px;
+    height: 11px;
   }
-  .replay__badge {
-    padding: 0.25rem 0.4rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.68rem;
-    text-align: center;
+  .ck[aria-pressed="true"] .box {
+    border-color: var(--brand);
+    background: var(--brand);
+    color: #fff;
   }
-  .is-user .replay__badge {
-    background: var(--console-text);
-    color: var(--console-bg);
+  .ck .c {
+    margin-left: auto;
+    color: var(--muted);
+    font: 500 10.5px/1 var(--mono);
   }
-  .is-agent .replay__badge {
-    background: var(--brand-soft);
-    color: var(--brand-text);
+  .vis {
+    margin-top: 6px;
+    padding: 8px 6px 2px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font: 400 10.5px/1.4 var(--mono);
   }
-  .is-tool .replay__badge {
-    background: var(--signal-soft);
-    color: var(--signal);
+  .vis b {
+    color: var(--text);
+    font-weight: 600;
   }
-  .replay__text {
-    font-size: 0.875rem;
-    line-height: 1.55;
+  .ftrack {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 4px;
+    border-top: 1px solid var(--border);
+    color: var(--text-2);
+    font: 400 10.5px/1.3 var(--mono);
   }
-  .is-tool .replay__text {
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
+  .side-h + .ftrack {
+    border-top: 0;
   }
-  .replay__meta {
-    color: var(--console-muted);
-    font-size: 0.72rem;
+  .ftrack .k {
+    margin-left: auto;
+    padding: 3px 6px;
+    border-radius: 5px;
+    font: 600 9.5px/1 var(--sans);
+    white-space: nowrap;
+  }
+  .ftrack .k.w {
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+  }
+  .ftrack .k.r {
+    background: var(--pos-soft);
+    color: var(--pos-ink);
   }
 
-  @keyframes tour-in {
+  @keyframes pg {
     from {
-      opacity: 0;
-      transform: translateY(12px);
+      width: 0;
     }
     to {
-      opacity: 1;
-      transform: none;
+      width: 100%;
     }
   }
-  @keyframes tour-grow {
+  @keyframes grow {
     from {
       transform: scaleY(0);
     }
-    to {
-      transform: scaleY(1);
-    }
   }
-  @keyframes tour-step {
+  @keyframes draw {
     from {
-      opacity: 0;
-      transform: translateX(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  @keyframes tour-rail {
-    from {
-      transform: scaleY(0);
-    }
-    to {
-      transform: scaleY(1);
+      stroke-dashoffset: 1;
     }
   }
 
   @media (max-width: 1023px) {
-    .tour__scene {
+    .tour {
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  @media (max-width: 767px) {
-    .overview__stats {
+  @media (max-width: 760px) {
+    .kpis {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .kpi {
+      border-top: 1px solid var(--border);
+      border-left: 0;
+    }
+    .kpi:first-child {
+      border-top: 0;
+    }
+    .comp-leg,
+    .mk {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .overview__charts,
-    .projects {
+    .rp {
       grid-template-columns: minmax(0, 1fr);
     }
-    .tour__body {
-      padding: 1rem;
-    }
-    .replay__step {
-      grid-template-columns: 4rem minmax(0, 1fr);
-    }
-    .replay__meta {
+    .hide-sm {
       display: none;
     }
-    .replay__steps::before,
-    .replay__steps::after {
-      left: 2.85rem;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .tour__scene,
-    .overview__bars span,
-    .projects__row.is-sub,
-    .replay__step,
-    .replay__steps::after {
-      animation: none;
-    }
-    .overview__bars span,
-    .tour__meter span {
-      transition: none;
+    .appp {
+      min-height: 0;
     }
   }
 </style>

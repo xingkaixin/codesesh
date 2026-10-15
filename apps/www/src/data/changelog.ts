@@ -36,6 +36,22 @@ interface ChangelogCopy {
     direction: string;
     details: string;
   };
+  page: {
+    eyebrow: string;
+    home: string;
+    breadcrumb: string;
+    latestVersion: string;
+    included: string;
+    since: string;
+    allReleases: string;
+    jump: string;
+    index: string;
+    latestBadge: string;
+    expand: string;
+    collapse: string;
+    items: string;
+    itemsOne: string;
+  };
   releases: ChangelogRelease[];
 }
 
@@ -59,7 +75,7 @@ export const changelogCopy = {
     },
     latest: {
       label: "Latest update",
-      title: "Follow the product, not the commit log",
+      title: "Follow the product, not the commit log.",
       body: "See the improvements that change how CodeSesh feels to use, plus the principles guiding what we build next.",
       link: "Read the product changelog",
     },
@@ -67,7 +83,23 @@ export const changelogCopy = {
       historyLabel: "Release history",
       changed: "What changed",
       direction: "Product direction",
-      details: "View technical release details",
+      details: "Technical release details",
+    },
+    page: {
+      eyebrow: "Product progress and direction",
+      home: "Home",
+      breadcrumb: "Breadcrumb",
+      latestVersion: "Latest version",
+      included: "Releases covered",
+      since: "Since v{version} ({date})",
+      allReleases: "View all releases on GitHub",
+      jump: "Jump to a version",
+      index: "Version index",
+      latestBadge: "Latest",
+      expand: "Show this release",
+      collapse: "Hide",
+      items: "{count} items",
+      itemsOne: "{count} item",
     },
     releases: [
       {
@@ -802,7 +834,7 @@ export const changelogCopy = {
     },
     latest: {
       label: "最新更新",
-      title: "关注产品变化，而不是提交记录",
+      title: "关注产品变化，而不是提交记录。",
       body: "了解真正影响使用体验的改进，也了解我们据此继续建设 CodeSesh 的原则。",
       link: "阅读产品更新日志",
     },
@@ -810,7 +842,23 @@ export const changelogCopy = {
       historyLabel: "版本记录",
       changed: "本次更新",
       direction: "产品方向",
-      details: "查看技术发布详情",
+      details: "技术发布详情",
+    },
+    page: {
+      eyebrow: "产品进展与方向",
+      home: "首页",
+      breadcrumb: "面包屑",
+      latestVersion: "最新版本",
+      included: "收录版本",
+      since: "自 v{version}（{date}）",
+      allReleases: "在 GitHub 查看全部发布",
+      jump: "按版本跳转",
+      index: "版本索引",
+      latestBadge: "最新",
+      expand: "展开本次更新",
+      collapse: "收起",
+      items: "{count} 项",
+      itemsOne: "{count} 项",
     },
     releases: [
       {
@@ -1525,7 +1573,7 @@ export const changelogCopy = {
     },
     latest: {
       label: "最新アップデート",
-      title: "コミットではなく、製品の変化を追う",
+      title: "コミットではなく、製品の変化を追う。",
       body: "日々の使い心地を変える改善と、次の CodeSesh を形作るための原則を紹介します。",
       link: "製品更新履歴を読む",
     },
@@ -1533,7 +1581,23 @@ export const changelogCopy = {
       historyLabel: "リリース履歴",
       changed: "主な変更点",
       direction: "製品の方向性",
-      details: "技術的なリリース詳細を見る",
+      details: "技術的なリリース詳細",
+    },
+    page: {
+      eyebrow: "製品の進捗と方向性",
+      home: "ホーム",
+      breadcrumb: "パンくずリスト",
+      latestVersion: "最新バージョン",
+      included: "掲載リリース",
+      since: "v{version}（{date}）から",
+      allReleases: "GitHub ですべてのリリースを見る",
+      jump: "バージョンへ移動",
+      index: "バージョン一覧",
+      latestBadge: "最新",
+      expand: "このリリースを表示",
+      collapse: "閉じる",
+      items: "{count} 件",
+      itemsOne: "{count} 件",
     },
     releases: [
       {

@@ -10,7 +10,7 @@ CodeSesh can collect AI coding history from multiple computers into one Hub. Run
 
 Install CodeSesh on the participating machines. For a Hub that accepts connections on a trusted LAN, stop any existing standalone process and start:
 
-```sh
+```sh title="Hub computer"
 codesesh hub start --host 0.0.0.0 --remote-access --port 4521
 codesesh hub status
 ```
@@ -19,22 +19,22 @@ If a Hub is already running with different settings, stop it before starting wit
 
 ## Pair the first Worker
 
-In the Hub web interface, open **Source nodes** and create a pairing token. On the machine to collect, run:
+In the Hub web interface, open **Source nodes → Pair a Worker** and choose the connection and run mode. The page generates the pairing command and a one-time pairing token. On the machine to collect, run the generated command:
 
-```sh
-codesesh worker start --hub http://192.168.1.20:4521 --name laptop --pair-token-stdin
+```sh title="Worker computer"
+codesesh worker start --hub "http://<hub-ip>:4521" --pair-token-stdin
 ```
 
-Replace the example IP with your Hub's address. Paste the pairing token at the prompt. It expires after ten minutes and can be used once. `--pair-token-stdin` keeps it out of the command arguments and shell history.
+Paste the pairing token at the prompt. It expires after ten minutes and can be used once. `--pair-token-stdin` keeps it out of the command arguments and shell history.
 
 The browser access token is not a pairing token. After pairing, the Worker stores its own credentials and does not need a new pairing token for normal restarts.
 
 ## Collect the Hub computer too
 
-Create another pairing token in the console and run a separate local Worker:
+Create another pairing token in the console, choose This machine as the connection, and run a separate local Worker:
 
-```sh
-codesesh worker start --hub http://127.0.0.1:4521 --name desktop --pair-token-stdin
+```sh title="Hub computer"
+codesesh worker start --hub "http://127.0.0.1:4521" --pair-token-stdin
 ```
 
 Repeat pairing for every other machine. Each should have its own Worker state and pairing. To restrict collection, include `--agent claudecode,codex` in the initial Worker configuration. By default, Workers collect all discoverable history for enabled agents; the Hub's time range controls what you view.
@@ -43,7 +43,7 @@ When a Worker connects to a different Hub and discovers an older standalone data
 
 ## Check synchronization
 
-```sh
+```sh title="Any computer"
 codesesh worker status
 codesesh hub status
 ```

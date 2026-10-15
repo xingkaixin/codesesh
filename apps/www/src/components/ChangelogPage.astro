@@ -1,10 +1,12 @@
 ---
 import { changelogCopy, formatReleaseDate } from "../data/changelog";
-import type { Locale } from "../data/landing";
+import { experience } from "../data/experience";
+import { localeConfig, type Locale } from "../data/landing";
+import { fill, splitTitle } from "../data/showcase";
 import Footer from "./Footer.astro";
 import Header from "./Header.astro";
+import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
-import SectionBackground from "./SectionBackground.astro";
 
 interface Props {
   locale: Locale;
@@ -12,104 +14,617 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = changelogCopy[locale];
+const p = t.page;
+const releases = t.releases;
+const latest = releases[0]!;
+const first = releases.at(-1)!;
+const releaseId = (version: string) => `v${version.replaceAll(".", "-")}`;
+const series = releases.reduce<{ name: string; versions: string[] }[]>(
+  (groups, release) => {
+    const name = release.version.split(".").slice(0, 2).join(".");
+    const group = groups.find((entry) => entry.name === name);
+    if (group) group.versions.push(release.version);
+    else groups.push({ name, versions: [release.version] });
+    return groups;
+  },
+  [],
+);
+const itemCount = (count: number) =>
+  fill(count === 1 ? p.itemsOne : p.items, { count });
 ---
 
-<div class="console-ui min-h-dvh bg-[var(--console-bg)] text-[var(--console-text)]">
-  <Header locale={locale} page="changelog" />
-  <main>
-    <section class="landing-background overflow-hidden px-4 pb-16 pt-20 sm:px-6 sm:pb-20 lg:px-7">
-      <SectionBackground variant="hero" />
-      <div class="mx-auto max-w-[1180px]">
-        <h1 class="console-display landing-heading max-w-[820px] text-4xl font-semibold leading-[1.08] tracking-[-0.035em] text-[var(--console-text)] sm:text-5xl lg:text-6xl">
-          {t.hero.title}
-        </h1>
-        <p class="mt-6 max-w-[68ch] text-base leading-8 text-[var(--console-text-secondary)] sm:text-lg">
-          {t.hero.body}
-        </p>
+<a class="skip-link" href="#main-content">
+  {experience[locale].skip}
+</a>
+<Header locale={locale} page="changelog" />
+<div class="frame">
+  <main id="main-content" class="panel">
+    <section class="page-hero cl-hero" aria-labelledby="changelog-title">
+      <div class="shell">
+        <nav class="page-crumb" aria-label={p.breadcrumb}>
+          <a href={localeConfig[locale].route}>{p.home}</a>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">{t.navigation}</span>
+        </nav>
+        <div class="cl-top">
+          <div>
+            <p class="eyebrow">
+              <span class="n">CHANGELOG</span>
+              <span class="ln"></span>
+              {p.eyebrow}
+            </p>
+            <h1 id="changelog-title" class="h1">
+              <HeadingText value={splitTitle(t.hero.title)} secondClass="" />
+            </h1>
+            <p class="lead">{t.hero.body}</p>
+          </div>
+          <div class="facts">
+            <dl>
+              <div>
+                <dt>
+                  <span class="live" aria-hidden="true"></span>
+                  {p.latestVersion}
+                </dt>
+                <dd>
+                  <span class="big">v{latest.version}</span>
+                  <span class="sub">
+                    {formatReleaseDate(locale, latest.date)}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>{p.included}</dt>
+                <dd>
+                  <span class="big">{releases.length}</span>
+                  <span class="sub">
+                    {fill(p.since, {
+                      version: first.version,
+                      date: formatReleaseDate(locale, first.date),
+                    })}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+            <a
+              class="tlink"
+              href="https://github.com/xingkaixin/codesesh/releases"
+            >
+              {p.allReleases}
+              <Icon name="arrow-up-right" />
+            </a>
+          </div>
+        </div>
+        <nav class="vix" aria-label={p.index}>
+          <p class="vix-h">{p.jump}</p>
+          {series.map((group) => (
+            <div class="vix-row">
+              <span class="vix-s">{group.name}</span>
+              <ul class="vix-list">
+                {group.versions.map((version) => (
+                  <li>
+                    <a href={`#${releaseId(version)}`} data-release-link>
+                      v{version}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
       </div>
     </section>
-
-    <section
-      class="px-4 pb-10 sm:px-6 lg:px-7"
-      aria-labelledby="release-history-heading"
-    >
-      <div class="mx-auto max-w-[1180px]">
-        <h2
-          id="release-history-heading"
-          class="console-mono border-b border-[var(--console-border)] pb-5 text-xs font-medium text-[var(--console-muted)]"
+    <section class="shell rls" aria-label={t.release.historyLabel}>
+      {releases.map((release, index) => (
+        <article
+          class="rl"
+          id={releaseId(release.version)}
+          aria-labelledby={`release-heading-${release.version}`}
+          data-release
         >
-          {t.release.historyLabel}
-        </h2>
-
-        {t.releases.map((release) => (
-          <article
-            id={`v${release.version.replaceAll(".", "-")}`}
-            class="scroll-mt-24 grid gap-8 border-b border-[var(--console-border)] py-14 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)] lg:gap-[72px] lg:py-20"
-            aria-labelledby={`release-heading-${release.version}`}
-          >
-            <div class="lg:pt-1">
-              <p class="console-mono text-sm font-semibold text-[var(--console-text)]">
-                CodeSesh {release.version}
-              </p>
-              <time
-                datetime={release.date}
-                class="console-mono mt-2 block text-[11px] text-[var(--console-muted)]"
-              >
-                {formatReleaseDate(locale, release.date)}
-              </time>
-              <a
-                href={`https://github.com/xingkaixin/codesesh/releases/tag/v${release.version}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="footer-link mt-6 inline-flex min-h-11 items-center gap-1.5"
-              >
-                {t.release.details}
-                <Icon name="chevron-right" class="size-3.5" />
-              </a>
-            </div>
-
-            <div>
-              <h3
-                id={`release-heading-${release.version}`}
-                class="console-display landing-heading max-w-3xl text-3xl font-semibold leading-[1.15] text-[var(--console-text)] sm:text-4xl"
-              >
-                {release.title}
-              </h3>
-              <p class="mt-5 max-w-[72ch] text-[15px] leading-8 text-[var(--console-text-secondary)]">
-                {release.summary}
-              </p>
-
-              <div class="mt-10">
-                <h4 class="text-sm font-semibold text-[var(--console-text)]">
-                  {t.release.changed}
-                </h4>
-                <ul class="mt-5 grid gap-x-10 gap-y-6 sm:grid-cols-2">
-                  {release.highlights.map((item) => (
-                    <li>
-                      <p class="text-sm font-semibold text-[var(--console-text)]">
-                        {item.title}
-                      </p>
-                      <p class="mt-1.5 text-sm leading-7 text-[var(--console-muted)]">
-                        {item.description}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div class="mt-10 border-l-2 border-[var(--brand)] pl-5 sm:pl-6">
-                <h4 class="text-sm font-semibold text-[var(--console-text)]">
+          <div class="rl-side">
+            <span
+              class:list={["dot", index === 0 && "latest"]}
+              aria-hidden="true"
+            />
+            <p class="rl-v">
+              v{release.version}
+              {index === 0 && <span class="new">{p.latestBadge}</span>}
+            </p>
+            <time class="rl-d" datetime={release.date}>
+              {formatReleaseDate(locale, release.date)}
+            </time>
+            <a
+              class="rl-gh"
+              href={`https://github.com/xingkaixin/codesesh/releases/tag/v${release.version}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t.release.details}
+              <Icon name="arrow-up-right" class="size-3.5" />
+            </a>
+          </div>
+          <div>
+            <h2 class="rl-t" id={`release-heading-${release.version}`}>
+              {release.title}
+            </h2>
+            <p class="rl-s">{release.summary}</p>
+            <div
+              class="rl-body"
+              id={`release-body-${release.version}`}
+              hidden={index === 0 ? undefined : "until-found"}
+              data-release-body
+            >
+              <h3 class="rl-lb">{t.release.changed}</h3>
+              <ol class="hl">
+                {release.highlights.map((item, itemIndex) => (
+                  <li class="hl-i">
+                    <span class="hl-n" aria-hidden="true">
+                      {String(itemIndex + 1).padStart(2, "0")}
+                    </span>
+                    <div>
+                      <p class="hl-t">{item.title}</p>
+                      <p class="hl-d">{item.description}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <div class="dir">
+                <h3 class="dir-h">
+                  <Icon name="compass" />
                   {t.release.direction}
-                </h4>
-                <p class="mt-2 max-w-[68ch] text-sm leading-7 text-[var(--console-text-secondary)]">
-                  {release.direction}
-                </p>
+                </h3>
+                <p>{release.direction}</p>
               </div>
             </div>
-          </article>
-        ))}
-      </div>
+            <button
+              type="button"
+              class="more"
+              aria-expanded={index === 0 ? "true" : "false"}
+              aria-controls={`release-body-${release.version}`}
+              data-release-toggle
+              data-expand-label={p.expand}
+              data-collapse-label={p.collapse}
+            >
+              <span data-release-toggle-label>
+                {index === 0 ? p.collapse : p.expand}
+              </span>
+              <span class="cnt">{itemCount(release.highlights.length)}</span>
+              <Icon name="chevron-down" />
+            </button>
+          </div>
+        </article>
+      ))}
     </section>
   </main>
-  <Footer locale={locale} />
 </div>
+<Footer locale={locale} />
+
+<noscript>
+  <style>
+    [data-release-body][hidden] {
+      display: block !important;
+      content-visibility: visible !important;
+    }
+    [data-release-toggle] {
+      display: none !important;
+    }
+  </style>
+</noscript>
+
+<script>
+  const releases = document.querySelectorAll<HTMLElement>("[data-release]");
+  const setOpen = (release: Element, open: boolean) => {
+    const body = release.querySelector<HTMLElement>("[data-release-body]");
+    const toggle = release.querySelector<HTMLButtonElement>(
+      "[data-release-toggle]",
+    );
+    const label = toggle?.querySelector<HTMLElement>(
+      "[data-release-toggle-label]",
+    );
+    if (!body || !toggle || !label) return;
+    if (open) body.removeAttribute("hidden");
+    else body.setAttribute("hidden", "until-found");
+    toggle.setAttribute("aria-expanded", String(open));
+    label.textContent =
+      (open ? toggle.dataset.collapseLabel : toggle.dataset.expandLabel) ?? "";
+  };
+
+  releases.forEach((release) => {
+    const toggle = release.querySelector<HTMLButtonElement>(
+      "[data-release-toggle]",
+    );
+    toggle?.addEventListener("click", () =>
+      setOpen(release, toggle.getAttribute("aria-expanded") !== "true"),
+    );
+    release
+      .querySelector("[data-release-body]")
+      ?.addEventListener("beforematch", () => setOpen(release, true));
+  });
+
+  const links = document.querySelectorAll<HTMLAnchorElement>(
+    "[data-release-link]",
+  );
+  const openFromHash = () => {
+    const target = location.hash
+      ? document.getElementById(location.hash.slice(1))
+      : null;
+    if (target?.matches("[data-release]")) setOpen(target, true);
+    links.forEach((link) => {
+      if (link.hash === location.hash)
+        link.setAttribute("aria-current", "true");
+      else link.removeAttribute("aria-current");
+    });
+  };
+  links.forEach((link) =>
+    link.addEventListener("click", () => {
+      const target = document.getElementById(link.hash.slice(1));
+      if (target) setOpen(target, true);
+    }),
+  );
+  openFromHash();
+  window.addEventListener("hashchange", openFromHash);
+</script>
+
+<style>
+  .cl-hero {
+    padding: 56px 0 64px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cl-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 64px;
+    align-items: end;
+  }
+  .cl-top .lead {
+    margin-top: 24px;
+  }
+  .facts {
+    padding: 24px 26px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background: var(--surface);
+    box-shadow: var(--sh-overlay);
+  }
+  .facts dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+  }
+  .facts dl > div {
+    padding: 4px 0;
+  }
+  .facts dl > div + div {
+    padding-left: 24px;
+    border-left: 1px solid var(--border);
+  }
+  .facts dt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .facts dd {
+    margin: 0;
+  }
+  .big {
+    display: block;
+    margin-top: 14px;
+    color: var(--text);
+    font: 300 34px/1.1 var(--sans);
+    letter-spacing: -0.02em;
+  }
+  .sub {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-2);
+    font-size: 12.5px;
+  }
+  .facts .tlink {
+    width: 100%;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  .vix {
+    display: grid;
+    gap: 10px;
+    margin-top: 56px;
+  }
+  .vix-h {
+    margin: 0 0 6px;
+    color: var(--muted);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .vix-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+  }
+  .vix-s {
+    width: 44px;
+    color: var(--text);
+    font: 600 12px/1 var(--mono);
+  }
+  .vix-list {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .vix-list a {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 11px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--text-2);
+    font: 500 12px/1 var(--mono);
+    transition:
+      border-color 0.15s,
+      color 0.15s,
+      background 0.15s;
+  }
+  .vix-list a:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .vix-list a[aria-current="true"] {
+    border-color: var(--brand-line);
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+  }
+  .rls {
+    position: relative;
+    padding-top: 24px;
+    padding-bottom: 72px;
+  }
+  .rl {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 64px;
+    padding: 48px 0;
+    border-top: 1px solid var(--border);
+  }
+  .rl:first-child {
+    border-top: 0;
+  }
+  .rl-side {
+    position: relative;
+    padding-left: 28px;
+  }
+  .rl-side::before {
+    position: absolute;
+    top: 22px;
+    bottom: -56px;
+    left: 5px;
+    width: 1px;
+    background: var(--border);
+    content: "";
+  }
+  .rl:last-child .rl-side::before {
+    display: none;
+  }
+  .dot {
+    position: absolute;
+    top: 6px;
+    left: 0;
+    width: 11px;
+    height: 11px;
+    border: 2px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--panel);
+  }
+  .dot.latest {
+    border-color: var(--brand);
+    background: var(--brand);
+    box-shadow: 0 0 0 4px var(--brand-soft);
+  }
+  .rl-v {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    color: var(--text);
+    font: 600 15px/1.4 var(--mono);
+  }
+  .new {
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font: 600 10.5px/1 var(--sans);
+  }
+  .rl-d {
+    display: block;
+    margin-top: 8px;
+    color: var(--muted);
+    font: 500 12px/1.4 var(--mono);
+  }
+  .rl-gh {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    margin-top: 10px;
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .rl-gh:hover {
+    color: var(--brand-ink);
+  }
+  .rl-t {
+    margin: 0;
+    color: var(--text);
+    font-size: 30px;
+    font-weight: 300;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+  .rl-s {
+    max-width: 72ch;
+    margin: 16px 0 0;
+    color: var(--text-2);
+    font-size: 15px;
+    line-height: 1.85;
+  }
+  .rl-body {
+    margin-top: 36px;
+  }
+  .rl-lb {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .hl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 40px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .hl-i {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 4px;
+  }
+  .hl-n {
+    color: var(--brand-ink);
+    font: 600 11px/1.9 var(--mono);
+  }
+  .hl-t {
+    margin: 0;
+    color: var(--text);
+    font-size: 14.5px;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+  .hl-d {
+    margin: 6px 0 0;
+    color: var(--text-2);
+    font-size: 13.5px;
+    line-height: 1.8;
+  }
+  .dir {
+    margin-top: 32px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--muted-bg);
+  }
+  .dir-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--brand-ink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .dir p {
+    margin: 8px 0 0;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .more {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    margin-top: 20px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .more:hover {
+    border-color: var(--border-strong);
+  }
+  .more .cnt {
+    color: var(--muted);
+    font: 500 11.5px/1 var(--mono);
+  }
+  .more :global(svg) {
+    transition: transform 0.2s var(--ease-out);
+  }
+  .more[aria-expanded="true"] :global(svg) {
+    transform: rotate(180deg);
+  }
+  @media (max-width: 1023px) {
+    .cl-top {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
+    }
+    .rl {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+    .rl-side::before {
+      display: none;
+    }
+    .rl-side {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 16px;
+      padding-left: 22px;
+    }
+    .rl-d,
+    .rl-gh {
+      margin-top: 0;
+    }
+  }
+  @media (max-width: 760px) {
+    .cl-hero {
+      padding: 40px 0 48px;
+    }
+    .facts dl {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+    .facts dl > div + div {
+      padding-top: 16px;
+      padding-left: 0;
+      border-top: 1px solid var(--border);
+      border-left: 0;
+    }
+    .vix-s {
+      width: 100%;
+    }
+    .rl {
+      padding: 36px 0;
+    }
+    .rl-t {
+      font-size: 24px;
+    }
+    .hl {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

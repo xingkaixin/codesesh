@@ -1,6 +1,10 @@
 ---
 import { experience } from "../data/experience";
 import { agents, copy, type Locale } from "../data/landing";
+import { showcase, splitTitle } from "../data/showcase";
+import AgentIcon from "./AgentIcon.astro";
+import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -8,169 +12,128 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = experience[locale];
-const half = Math.ceil(agents.length / 2);
-const rows = [agents, [...agents.slice(half), ...agents.slice(0, half)]];
+const a = showcase[locale].agents;
 ---
 
-<section id="agents" class="agents" aria-labelledby="agents-heading">
-  <div class="section-shell agents__intro" data-reveal>
-    <p class="agents__count">
-      <strong class="console-display">{agents.length}</strong>
-      <span class="console-mono">{t.agentsCount}</span>
-    </p>
-    <div>
-      <p class="landing-kicker">
-        <b>05</b>
+<section id="agents" class="sec" aria-labelledby="agents-heading">
+  <div class="shell agw">
+    <div data-reveal>
+      <p class="eyebrow">
+        <span class="n">05</span>
+        <span class="ln"></span>
         {copy[locale].header.agents}
       </p>
-      <h2 id="agents-heading" class="section-heading">
-        {t.agentsTitle}
+      <h2 id="agents-heading" class="h2">
+        <HeadingText value={splitTitle(t.agentsTitle)} />
       </h2>
-      <p class="section-body">{copy[locale].agents.body}</p>
+      <p class="big">
+        <b>{agents.length}</b>
+        <span>{t.agentsCount}</span>
+      </p>
+      <p class="lead agents-body">{copy[locale].agents.body}</p>
     </div>
-  </div>
-
-  <ul class="sr-only">
-    {agents.map((agent) => (
-      <li>{agent.name}</li>
-    ))}
-  </ul>
-  <div class="agents__rows" aria-hidden="true">
-    {rows.map((row, index) => (
-      <div class="agents__viewport">
-        <div class:list={["agents__track", index === 1 && "is-reverse"]}>
-          {[...row, ...row].map((agent, i) => (
-            <span
-              class="agents__item console-display"
-              data-duplicate={i >= row.length ? "" : undefined}
-            >
-              <span class="agents__icon">
-                <span
-                  class="agent-mark"
-                  style={`mask-image:url('${agent.icon}')`}
-                ></span>
-              </span>
-              {agent.name}
-            </span>
-          ))}
-        </div>
-      </div>
-    ))}
+    <div data-reveal>
+      <ul class="keys" aria-label={t.agentsList}>
+        {agents.map((agent) => (
+          <li class="key">
+            <AgentIcon name={agent.name} size={20} />
+            <span data-agent-name>{agent.name}</span>
+            {agent.partial && <span class="partial">{a.partial}</span>}
+          </li>
+        ))}
+      </ul>
+      <p class="ag-foot">
+        <Icon name="info" class="size-3.5" />
+        {a.note}
+      </p>
+    </div>
   </div>
 </section>
 
 <style>
-  .agents {
-    padding-block: clamp(4.5rem, 8vw, 7rem);
-    border-block: 1px solid var(--console-border);
-    background: var(--console-surface-sunken);
-    scroll-margin-top: 4rem;
-  }
-  .agents__intro {
+  .agw {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-    gap: 3rem;
-    align-items: end;
-    margin-bottom: 3.5rem;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: 64px;
+    align-items: center;
   }
-  .agents__count {
+  .big {
     display: flex;
     align-items: flex-end;
-    gap: 1rem;
-    margin: 0;
+    gap: 16px;
+    margin: 40px 0 0;
   }
-  .agents__count strong {
-    font-size: clamp(6rem, 12vw, 10rem);
-    font-weight: 600;
-    letter-spacing: -0.06em;
-    line-height: 0.85;
+  .big b {
+    color: var(--text);
+    font: 300 136px/0.82 var(--mono);
+    letter-spacing: -0.07em;
   }
-  .agents__count span {
-    padding-bottom: 0.9rem;
-    color: var(--console-muted);
-    font-size: 0.8rem;
-  }
-  .agents__rows {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .agents__viewport {
-    overflow: hidden;
-    mask-image: linear-gradient(
-      90deg,
-      transparent,
-      #000 10%,
-      #000 90%,
-      transparent
-    );
-  }
-  .agents__track {
-    display: flex;
-    width: max-content;
-    gap: 0.75rem;
-    animation: agents-marquee 48s linear infinite;
-  }
-  .agents__track.is-reverse {
-    animation-direction: reverse;
-    animation-duration: 56s;
-  }
-  .agents__rows:hover .agents__track {
-    animation-play-state: paused;
-  }
-  .agents__item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-height: 3.75rem;
-    padding: 0 1.4rem 0 0.85rem;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-lg);
-    background: var(--console-surface);
-    font-size: 1rem;
+  .big span {
+    padding-bottom: 6px;
+    color: var(--text-2);
+    font-size: 14px;
     font-weight: 500;
-    white-space: nowrap;
   }
-  .agents__icon {
+  .agents-body {
+    margin-top: 28px;
+  }
+  .keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .key {
     display: inline-flex;
-    width: 2.1rem;
-    height: 2.1rem;
     align-items: center;
-    justify-content: center;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-md);
-    background: var(--console-surface-muted);
-    color: var(--console-text);
+    gap: 9px;
+    height: 46px;
+    padding: 0 16px 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 3px 0 var(--border-strong);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    transition:
+      transform 0.12s var(--ease-out),
+      box-shadow 0.12s var(--ease-out);
   }
-  .agents__icon .agent-mark {
-    width: 1.25rem;
-    height: 1.25rem;
+  .key:hover {
+    box-shadow: 0 1px 0 var(--border-strong);
+    transform: translateY(2px);
   }
-
-  @keyframes agents-marquee {
-    to {
-      transform: translateX(-50%);
-    }
+  .partial {
+    padding: 3px 5px;
+    border-radius: 5px;
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+    font: 600 9.5px/1 var(--sans);
   }
-
+  .ag-foot {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 22px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .ag-foot :global(svg) {
+    flex: none;
+    margin-top: 2px;
+  }
   @media (max-width: 1023px) {
-    .agents__intro {
+    .agw {
       grid-template-columns: minmax(0, 1fr);
-      gap: 2rem;
+      gap: 40px;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .agents__track {
-      flex-wrap: wrap;
-      width: auto;
-      padding-inline: 1.5rem;
-      animation: none;
-    }
-    .agents__rows > :last-child {
-      display: none;
-    }
-    .agents__item[data-duplicate] {
-      display: none;
+  @media (max-width: 760px) {
+    .big b {
+      font-size: 96px;
     }
   }
 </style>

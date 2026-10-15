@@ -1,0 +1,21 @@
+---
+import { agents } from "../data/landing";
+
+interface Props {
+  name: string;
+  size?: number;
+}
+
+const { name, size = 16 } = Astro.props;
+const agent = agents.find((entry) => entry.name === name);
+if (!agent) throw new Error(`Unknown agent: ${name}`);
+---
+
+{agent.iconColored ? (
+  <img src={agent.icon} alt="" width={size} height={size} />
+) : (
+  <span
+    class="mask-ic"
+    style={`--src:url('${agent.icon}');width:${size}px;height:${size}px`}
+  />
+)}

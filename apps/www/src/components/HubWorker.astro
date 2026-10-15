@@ -1,7 +1,9 @@
 ---
-import type { Locale } from "../data/landing";
 import { guideRoutes } from "../data/guides";
+import type { Locale } from "../data/landing";
 import { sections } from "../data/sections";
+import { fill, showcase } from "../data/showcase";
+import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -9,451 +11,410 @@ interface Props {
 }
 
 const { locale } = Astro.props;
-const t = sections[locale].hub;
-const nodes = [
-  {
-    name: "laptop",
-    os: "macOS",
-    agents: "Claude Code · Codex",
-    state: "connected",
-  },
-  {
-    name: "workstation",
-    os: "Linux",
-    agents: "Codex · OpenCode",
-    state: "collecting",
-  },
-  { name: "desktop", os: "Windows", agents: "Cursor", state: "offline" },
-] as const;
-const status = (state: (typeof nodes)[number]["state"], detail = false) =>
-  state === "offline" && detail ? t.queued.replace("{count}", "128") : t[state];
+const s = sections[locale].hub;
+const h = showcase[locale].hub;
 ---
 
-<section id="hub" class="hub section-shell" aria-labelledby="hub-heading">
-  <div class="hub__intro" data-reveal>
-    <div>
-      <p class="landing-kicker">
-        <b>04</b>
-        {t.label}
+<section id="hub" class="sec" aria-labelledby="hub-heading">
+  <div class="shell hub">
+    <div data-reveal>
+      <p class="eyebrow">
+        <span class="n">04</span>
+        <span class="ln"></span>
+        {s.label}
       </p>
-      <h2 id="hub-heading" class="section-heading">
-        {t.title[0]}
-        <span>{t.title[1]}</span>
+      <h2 id="hub-heading" class="h2">
+        <HeadingText value={s.title} />
       </h2>
-      <p class="section-body">{t.body}</p>
-      <a class="text-link" href={guideRoutes("multi-machine-sync")[locale]}>
-        {t.guide}
-        <Icon name="arrow-right" />
+      <p class="lead hub-body">{s.body}</p>
+      <ol class="points">
+        {s.points.map(([title, body], index) => (
+          <li class="pt">
+            <span class="pt-n">0{index + 1}</span>
+            <div>
+              <h3 class="pt-t">{title}</h3>
+              <p class="pt-d">{body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <a
+        class="tlink hub-guide"
+        href={guideRoutes("multi-machine-sync")[locale]}
+      >
+        {s.guide}
+        <Icon name="arrow" />
       </a>
     </div>
-    <ol class="hub__points">
-      {t.points.map(([title, body], index) => (
-        <li>
-          <span class="console-mono">0{index + 1}</span>
+    <div class="hd" data-reveal aria-hidden="true">
+      <div class="hubc">
+        <div class="r1">
+          <span class="ic-w">
+            <Icon name="server" />
+          </span>
           <div>
-            <h3>{title}</h3>
-            <p>{body}</p>
+            Hub<div class="host">{h.host}</div>
           </div>
-        </li>
-      ))}
-    </ol>
-  </div>
-
-  <div class="hub__panel" data-reveal>
-    <div class="hub__topology">
-      <div class="hub__workers">
-        <p class="console-mono hub__label">Workers</p>
-        {nodes.map((node) => (
-          <div class="hub__worker-row">
-            <div class="hub__worker">
-              <div class="hub__worker-head">
-                <Icon name="monitor" />
-                <strong>{node.name}</strong>
-                <span class="console-mono hub__muted">{node.os}</span>
-                <span class={`hub__status is-${node.state} console-mono`}>
-                  <i aria-hidden="true"></i>
-                  {status(node.state)}
-                </span>
-              </div>
-              <p>{node.agents}</p>
-              {node.state === "collecting" && (
-                <span class="hub__progress" aria-hidden="true">
-                  <span></span>
-                </span>
-              )}
-            </div>
-            <span
-              class:list={[
-                "hub__lane",
-                node.state === "offline" && "is-offline",
-              ]}
-              aria-hidden="true"
-            ></span>
-          </div>
-        ))}
-      </div>
-      <span class="hub__bus" aria-hidden="true"></span>
-      <span class="hub__lane hub__lane--trunk" aria-hidden="true"></span>
-      <div class="hub__card">
-        <div class="hub__card-head">
-          <span class="hub__live" aria-hidden="true"></span>
-          <strong class="console-display">Hub</strong>
-          <span class="console-mono hub__muted">history.example.com</span>
         </div>
-        <p class="hub__role">{t.hubRole}</p>
-        <p class="console-mono hub__label">{t.nodesLabel}</p>
-        <ul>
-          {nodes.map((node) => (
-            <li>
-              <span>
-                <strong>{node.name}</strong>
-                <span class="console-mono hub__muted"> · {node.os}</span>
-              </span>
-              <span class={`hub__status is-${node.state} console-mono`}>
-                <i aria-hidden="true"></i>
-                {status(node.state, true)}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p class="hub__foot">{t.hubFoot}</p>
+        <p class="role">{s.hubRole}</p>
+        <div class="stats">
+          <span class="glass">
+            <span class="live"></span>
+            {h.online}
+          </span>
+          <span class="glass">{s.hubFoot}</span>
+        </div>
+      </div>
+      <div class="links">
+        <span class="lk">
+          <span class="up"></span>
+        </span>
+        <span class="lk">
+          <span class="up"></span>
+        </span>
+        <span class="lk off">
+          <span class="x">
+            <Icon name="close" class="size-3" />
+          </span>
+        </span>
+      </div>
+      <div class="wk">
+        <div class="wn">
+          <div class="wn-h">
+            <Icon name="laptop" class="size-3.5" />
+            laptop
+          </div>
+          <div class="wn-os">macOS · Worker</div>
+          <span class="st ok3">
+            <i></i>
+            {s.connected}
+          </span>
+          <div class="wn-f">{h.synced}</div>
+        </div>
+        <div class="wn">
+          <div class="wn-h">
+            <Icon name="server" class="size-3.5" />
+            devbox
+          </div>
+          <div class="wn-os">Linux · Worker</div>
+          <span class="st busy">
+            <i></i>
+            {s.collecting}
+          </span>
+          <div class="prog">
+            <i></i>
+          </div>
+        </div>
+        <div class="wn">
+          <div class="wn-h">
+            <Icon name="monitor" class="size-3.5" />
+            desktop
+          </div>
+          <div class="wn-os">Windows · Worker</div>
+          <span class="st off">
+            <i></i>
+            {s.offline}
+          </span>
+          <div class="wn-f">
+            {fill(s.queued, { count: 12 })} · {h.catchUp}
+          </div>
+        </div>
       </div>
     </div>
-    <pre class="hub__terminal console-mono"><span class="hub__muted"># Hub</span>
-<span class="hub__prompt">$</span> codesesh hub start
-<span class="hub__muted"># {t.workerComment}</span>
-<span class="hub__prompt">$</span> codesesh worker start --hub https://history.example.com --name laptop --pair-token-stdin</pre>
   </div>
 </section>
 
 <style>
   .hub {
-    padding-block: clamp(3rem, 6vw, 5rem) clamp(5rem, 8vw, 7rem);
-    scroll-margin-top: 4rem;
-  }
-  .hub__intro {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 4rem;
-    align-items: start;
-    margin-bottom: 3rem;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 64px;
+    align-items: center;
   }
-  .hub__intro .section-heading span {
-    display: block;
-    color: var(--brand-text);
+  .hub-body {
+    margin-top: 24px;
   }
-  .hub__intro .text-link {
-    margin-top: 1rem;
-    color: var(--brand-text);
-  }
-  .hub__points {
-    margin: 0;
+  .points {
+    display: grid;
+    gap: 22px;
+    margin: 40px 0 0;
     padding: 0;
     list-style: none;
   }
-  .hub__points li {
+  .pt {
     display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr);
-    gap: 0.75rem;
-    padding: 1.1rem 0;
-    border-top: 1px solid var(--console-border);
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 14px;
   }
-  .hub__points li > span {
-    padding-top: 0.2rem;
-    color: var(--brand-text);
-    font-size: 0.75rem;
+  .pt-n {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--brand-line);
+    border-radius: 11px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font: 500 12px/1 var(--mono);
   }
-  .hub__points h3 {
+  .pt-t {
     margin: 0;
-    font-size: 1rem;
+    font-size: 15px;
     font-weight: 600;
   }
-  .hub__points p {
-    margin: 0.35rem 0 0;
-    color: var(--console-text-secondary);
-    font-size: 0.875rem;
-    line-height: 1.6;
+  .pt-d {
+    margin: 4px 0 0;
+    color: var(--text-2);
+    font-size: 13.5px;
+    line-height: 1.7;
   }
-  .hub__panel {
+  .hub-guide {
+    margin-top: 32px;
+  }
+  .hd {
+    position: relative;
+    padding: 28px;
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    background-color: var(--frame);
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .hubc {
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+    padding: 20px 22px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--ember-from), var(--ember-to));
+    box-shadow: var(--sh-overlay);
+    color: #fff;
+  }
+  .hubc::after {
+    position: absolute;
+    top: -30px;
+    right: -30px;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.1) 0 2px,
+      transparent 2px 9px
+    );
+    content: "";
+  }
+  .r1 {
     display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: clamp(1rem, 3vw, 2rem);
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-xl);
-    background: var(--console-surface);
-    box-shadow: var(--elevation-raised);
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
   }
-  .hub__topology {
+  .ic-w {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 2px 3.5rem minmax(0, 1fr);
-    align-items: center;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.18);
   }
-  .hub__workers {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+  .host {
+    color: rgba(255, 255, 255, 0.9);
+    font: 400 11px/1.4 var(--mono);
   }
-  .hub__label {
-    margin: 0;
-    color: var(--console-muted);
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  .role {
+    margin: 12px 0 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12.5px;
   }
-  .hub__muted {
-    color: var(--console-muted);
-    font-size: 0.75rem;
-  }
-  .hub__worker-row {
-    display: flex;
-    align-items: center;
-  }
-  .hub__worker {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 0.9rem 1rem;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-lg);
-    background: var(--console-surface);
-  }
-  .hub__worker-head {
+  .stats {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem;
+    gap: 8px;
+    margin-top: 14px;
   }
-  .hub__worker-head :global(svg) {
-    color: var(--console-muted);
-  }
-  .hub__worker-head .hub__status {
-    margin-left: auto;
-  }
-  .hub__worker p {
-    margin: 0.4rem 0 0;
-    color: var(--console-text-secondary);
-    font-size: 0.8rem;
-  }
-  .hub__status {
+  .glass {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    color: var(--brand-text);
-    font-size: 0.72rem;
+    gap: 7px;
+    min-height: 28px;
+    padding: 4px 11px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font: 500 11px/1.4 var(--mono);
+  }
+  .glass .live {
+    background: var(--live);
+    box-shadow: 0 0 0 3px rgba(139, 230, 207, 0.25);
+  }
+  .links {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    height: 64px;
+  }
+  .lk {
+    position: relative;
+    justify-self: center;
+    width: 2px;
+    height: 100%;
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--border-strong) 0 4px,
+      transparent 4px 8px
+    );
+  }
+  .lk .up {
+    position: absolute;
+    left: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--brand);
+    animation: up 1.5s linear infinite;
+  }
+  .lk:nth-child(2) .up {
+    animation-duration: 2.2s;
+    animation-delay: 0.7s;
+  }
+  .lk.off {
+    opacity: 0.55;
+  }
+  .lk .x {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--muted);
+    transform: translate(-50%, -50%);
+  }
+  .wk {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .wn {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 15px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+  }
+  .wn-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 600 12px/1.2 var(--mono);
+  }
+  .wn-h :global(svg) {
+    color: var(--text-2);
+  }
+  .wn-os {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .st {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    margin-top: 12px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
     white-space: nowrap;
   }
-  .hub__status i {
-    width: 7px;
-    height: 7px;
-    border-radius: 99px;
+  .st.ok3 {
+    background: var(--pos-soft);
+    color: var(--pos-ink);
+  }
+  .st.busy {
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+  }
+  .st.off {
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+  }
+  .st i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
     background: currentColor;
   }
-  .hub__status.is-offline {
-    color: var(--signal);
-  }
-  .hub__status.is-collecting i,
-  .hub__status.is-offline i {
-    animation: hub-pulse 1.6s ease-in-out infinite;
-  }
-  .hub__progress {
-    display: block;
+  .prog {
     height: 4px;
-    margin-top: 0.6rem;
+    margin-top: 10px;
     overflow: hidden;
-    border-radius: 99px;
-    background: var(--console-surface-muted);
+    border-radius: 999px;
+    background: var(--muted-bg);
   }
-  .hub__progress span {
+  .prog i {
     display: block;
+    width: 40%;
     height: 100%;
+    border-radius: 999px;
     background: var(--brand);
-    animation: hub-progress 4.5s var(--ease-out) infinite;
+    animation: indet 1.6s ease-in-out infinite;
   }
-  .hub__lane {
-    position: relative;
-    flex: 0 0 3.5rem;
-    height: 2px;
-    background: repeating-linear-gradient(
-      90deg,
-      var(--console-border-strong) 0 6px,
-      transparent 6px 12px
-    );
-  }
-  .hub__lane::after {
-    content: "";
-    position: absolute;
-    top: -3px;
-    left: 0;
-    width: 8px;
-    height: 8px;
-    border-radius: 99px;
-    background: var(--brand);
-    animation: hub-hop 1.8s var(--ease-out) infinite;
-  }
-  .hub__lane.is-offline {
-    opacity: 0.7;
-    background: repeating-linear-gradient(
-      90deg,
-      var(--signal) 0 2px,
-      transparent 2px 10px
-    );
-  }
-  .hub__lane.is-offline::after {
-    display: none;
-  }
-  .hub__bus {
-    align-self: stretch;
-    margin: 3.5rem 0 3rem;
-    background: var(--console-border-strong);
-  }
-  .hub__card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 1.25rem;
-    border: 1.5px solid var(--brand);
-    border-radius: var(--radius-xl);
-    background: var(--console-surface-muted);
-  }
-  .hub__card-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem;
-  }
-  .hub__card-head strong {
-    font-size: 1.15rem;
-  }
-  .hub__card-head .hub__muted {
-    margin-left: auto;
-  }
-  .hub__live {
-    position: relative;
-    width: 8px;
-    height: 8px;
-    border-radius: 99px;
-    background: var(--brand);
-  }
-  .hub__live::after {
-    content: "";
-    position: absolute;
-    inset: -4px;
-    border: 1px solid var(--brand);
-    border-radius: 99px;
-    animation: hub-ping 2.4s var(--ease-out) infinite;
-  }
-  .hub__role {
-    margin: 0 0 0.75rem;
-    color: var(--console-text-secondary);
-    font-size: 0.8rem;
-  }
-  .hub__card .hub__label {
-    padding-bottom: 0.5rem;
-  }
-  .hub__card ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .hub__card li {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.25rem 0.75rem;
-    padding: 0.75rem 0;
-    border-top: 1px solid var(--console-border);
-    font-size: 0.875rem;
-  }
-  .hub__card li strong {
-    font-weight: 600;
-  }
-  .hub__foot {
-    margin: 0;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--console-border);
-    color: var(--console-muted);
-    font-size: 0.8rem;
-  }
-  .hub__terminal {
-    margin: 0;
-    padding: 1rem 1.1rem;
-    overflow-x: auto;
-    border: 1px solid var(--console-border);
-    border-radius: var(--radius-lg);
-    background: var(--console-bg);
-    font-size: 0.8rem;
-    line-height: 1.9;
-  }
-  .hub__prompt {
-    color: var(--brand-text);
+  .wn-f {
+    margin-top: 10px;
+    color: var(--muted);
+    font: 400 10.5px/1.4 var(--mono);
   }
 
-  @keyframes hub-pulse {
-    50% {
-      opacity: 0.35;
-    }
-  }
-  @keyframes hub-progress {
+  @keyframes up {
     0% {
-      width: 14%;
-    }
-    75%,
-    100% {
-      width: 100%;
-    }
-  }
-  @keyframes hub-hop {
-    from {
-      left: 0;
+      top: calc(100% - 4px);
       opacity: 0;
     }
-    20%,
-    80% {
+    15%,
+    85% {
       opacity: 1;
+    }
+    100% {
+      top: -4px;
+      opacity: 0;
+    }
+  }
+  @keyframes indet {
+    from {
+      transform: translateX(-100%);
     }
     to {
-      left: calc(100% - 8px);
-      opacity: 0;
-    }
-  }
-  @keyframes hub-ping {
-    0% {
-      opacity: 1;
-      transform: scale(0.6);
-    }
-    70%,
-    100% {
-      opacity: 0;
-      transform: scale(1.8);
+      transform: translateX(260%);
     }
   }
 
   @media (max-width: 1023px) {
-    .hub__intro {
+    .hub {
       grid-template-columns: minmax(0, 1fr);
-      gap: 2rem;
+      gap: 40px;
     }
   }
-  @media (max-width: 767px) {
-    .hub__topology {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 1.25rem;
-    }
-    .hub__lane,
-    .hub__bus {
+  @media (max-width: 760px) {
+    .links {
       display: none;
     }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .hub__status i,
-    .hub__progress span,
-    .hub__lane::after,
-    .hub__live::after {
-      animation: none;
+    .wk {
+      grid-template-columns: minmax(0, 1fr);
+      margin-top: 12px;
     }
-    .hub__progress span {
-      width: 64%;
+    .hd {
+      padding: 16px;
     }
   }
 </style>
