@@ -78,7 +78,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:web
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-assets
           path: apps/web/dist
@@ -186,7 +186,7 @@ jobs:
         run: |
           node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
           node scripts/rust/smoke.mjs --contracts
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-${{ matrix.target }}
           path: |
@@ -199,7 +199,7 @@ jobs:
           retention-days: 7
       - name: Upload Playwright failure artifacts
         if: failure() && runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-failure-artifacts
           path: |
@@ -262,7 +262,7 @@ jobs:
             mv "$directory" "artifacts/rust-packaging/${directory##*/native-}"
           done
       - run: node scripts/rust/verify-set.mjs
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-release-set
           path: artifacts/rust-packaging/release-set.json
