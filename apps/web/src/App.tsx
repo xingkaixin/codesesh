@@ -32,8 +32,8 @@ import { AppPageHeader } from "./components/app/AppPageHeader";
 import { AppMainContent } from "./components/app/AppMainContent";
 import { formatSearchSubtitle } from "./lib/scan-format";
 import { findAgent } from "./lib/agents";
-import { getProjectIdentityKey } from "./lib/projects";
-import { buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
+import { getProjectIdentityKey, getProjectPath } from "./lib/projects";
+import { agentRoutePath, buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 import { APP_ROUTE_IDS } from "./lib/app-routes";
@@ -404,6 +404,12 @@ export default function App() {
           directory: session.directory,
         }
       : null;
+  const sessionBack =
+    sessionRouteActive && viewState.activeAgentKey
+      ? selectedProjectNavigationIdentity
+        ? { to: getProjectPath(selectedProjectNavigationIdentity), label: t("Back to project") }
+        : { to: agentRoutePath(viewState.activeAgentKey), label: t("Back to sessions") }
+      : null;
   const sessionLoadNotice =
     !loading && !error && (sessionsLoading || sessionsError)
       ? { loading: sessionsLoading, error: sessionsError }
@@ -487,7 +493,7 @@ export default function App() {
                 sidebarCollapsed,
                 route: routeHeader,
                 shortcutHintVisible: !shortcutHintDismissed,
-                sessionBackHintVisible: sessionRouteActive,
+                sessionBack,
                 resumeSession,
                 sourceNodeId:
                   sessionRouteActive && session

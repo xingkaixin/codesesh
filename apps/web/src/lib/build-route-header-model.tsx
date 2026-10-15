@@ -49,7 +49,9 @@ function routeContextLabel(input: RouteHeaderInput): string {
 
   switch (input.viewState.mode) {
     case "session":
-      return t("Session");
+      return input.activeAgent
+        ? `${t("Session")} · ${input.activeAgent.displayName}`
+        : t("Session");
     case "root":
       return t("Dashboard");
     case "projects":
@@ -131,13 +133,17 @@ function routeTitleAndSubtitle(input: RouteHeaderInput): {
         title: getSessionDisplayTitle(input.session) || t("Session"),
         subtitle: (
           <>
-            <span className="console-mono">
-              ID: #{input.session.reference.sessionId.slice(0, 8)}
-            </span>
+            <span className="console-mono">#{input.session.reference.sessionId.slice(0, 8)}</span>
             <span>·</span>
-            <span className="console-mono">
+            <span>
               {t("Updated")} {formatRelativeTime(updated)}
             </span>
+            {input.session.directory ? (
+              <>
+                <span>·</span>
+                <span className="console-mono min-w-0 break-all">{input.session.directory}</span>
+              </>
+            ) : null}
             <SmartTagChips tags={input.session.smart_tags} limit={9} className="inline-flex" />
           </>
         ),

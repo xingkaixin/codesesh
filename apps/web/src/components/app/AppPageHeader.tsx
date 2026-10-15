@@ -1,8 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useId } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { Link } from "react-router-dom";
 import type { RouteHeaderModel } from "../../lib/build-route-header-model";
+import { CopyResumeButton } from "../CopyResumeButton";
 import { PanelLeftOpen } from "../ui/icons";
 
 const ScanStatusNotice = lazy(() =>
@@ -32,7 +33,7 @@ export interface AppPageHeaderModel {
   sidebarCollapsed: boolean;
   route: RouteHeaderModel;
   shortcutHintVisible: boolean;
-  sessionBackHintVisible: boolean;
+  sessionBack: { to: string; label: string } | null;
   resumeSession: ResumeSessionAction | null;
   sessionCopyNotice: string | null;
   liveNotice: string | null;
@@ -53,7 +54,7 @@ export function AppPageHeader({
     sidebarCollapsed,
     route,
     shortcutHintVisible,
-    sessionBackHintVisible,
+    sessionBack,
     resumeSession,
     sourceNodeId,
     sessionCopyNotice,
@@ -67,6 +68,7 @@ export function AppPageHeader({
   actions: AppPageHeaderActions;
 }) {
   useLocale();
+  const resumeDescriptionId = useId();
 
   return (
     <section className="flex shrink-0 items-start gap-3 border-b border-[var(--console-border)] px-4 py-4 md:px-6">
@@ -93,41 +95,66 @@ export function AppPageHeader({
         </button>
       ) : null}
       <div className="min-w-0 flex-1">
-        {route.breadcrumbs.length > 1 ? (
-          <nav
-            aria-label={t("Breadcrumb")}
-            className="console-mono mb-2 flex flex-wrap items-center gap-1 text-[11px] text-[var(--console-muted)]"
-          >
-            {route.breadcrumbs.map((item, index) => (
-              <span
-                key={`${item.label}-${index}`}
-                className={
-                  index === route.breadcrumbs.length - 2
-                    ? "flex min-w-0 items-center gap-1"
-                    : "hidden min-w-0 items-center gap-1 sm:flex"
-                }
-              >
-                {item.to ? (
-                  <Link
-                    to={item.to}
-                    className="truncate motion-hover hover:text-[var(--console-text)]"
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          {route.breadcrumbs.length > 1 ? (
+            <nav
+              aria-label={t("Breadcrumb")}
+              className="mb-2 flex min-w-0 flex-wrap items-center gap-1 text-xs text-[var(--console-muted)]"
+            >
+              {route.breadcrumbs.map((item, index) => (
+                <span
+                  key={`${item.label}-${index}`}
+                  className={
+                    index === route.breadcrumbs.length - 2
+                      ? "flex min-w-0 items-center gap-1"
+                      : "hidden min-w-0 items-center gap-1 sm:flex"
+                  }
+                >
+                  {item.to ? (
+                    <Link
+                      to={item.to}
+                      className="truncate motion-hover hover:text-[var(--console-text)]"
+                    >
+                      {item.label}
+                    </Link>
+                  ) : (
+                    <span className="text-[var(--console-text)]">{item.label}</span>
+                  )}
+                  {index < route.breadcrumbs.length - 1 ? <span>/</span> : null}
+                </span>
+              ))}
+            </nav>
+          ) : null}
+          {sessionBack || resumeSession ? (
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {sessionBack ? (
+                <Link
+                  to={sessionBack.to}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--console-text-secondary)] motion-hover hover:bg-[var(--console-sidebar-accent)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                >
+                  <kbd
+                    aria-hidden
+                    className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1 text-[10px] text-[var(--console-muted)] sm:inline"
                   >
-                    {item.label}
-                  </Link>
-                ) : (
-                  <span className="text-[var(--console-text)]">{item.label}</span>
-                )}
-                {index < route.breadcrumbs.length - 1 ? <span>/</span> : null}
-              </span>
-            ))}
-          </nav>
+                    Esc
+                  </kbd>
+                  {sessionBack.label}
+                </Link>
+              ) : null}
+              {resumeSession ? (
+                <CopyResumeButton
+                  key={resumeSession.sessionId}
+                  {...resumeSession}
+                  descriptionId={resumeDescriptionId}
+                />
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {route.contextLabel !== route.title ? (
+          <p className="console-eyebrow mb-1">{route.contextLabel}</p>
         ) : null}
         <div className="flex items-center gap-2">
-          {route.contextLabel !== route.title ? (
-            <span className="console-eyebrow hidden shrink-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 sm:inline-flex">
-              {route.contextLabel}
-            </span>
-          ) : null}
           <h1 className="console-display min-w-0 break-words text-xl font-light sm:text-[26px] text-[var(--console-text)]">
             {route.title}
           </h1>
@@ -152,15 +179,14 @@ export function AppPageHeader({
               </button>
             </div>
           ) : null}
-          {sessionBackHintVisible ? (
-            <span className="console-mono hidden rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-[11px] text-[var(--console-muted)] sm:inline-flex">
-              {t("Esc back")}
-            </span>
-          ) : null}
         </div>
         {sourceNodeId && (
           <Suspense fallback={null}>
-            <SessionSourceDetails sourceNodeId={sourceNodeId} resumeSession={resumeSession} />
+            <SessionSourceDetails
+              sourceNodeId={sourceNodeId}
+              canResume={Boolean(resumeSession?.resumeCommandPrefix)}
+              resumeDescriptionId={resumeDescriptionId}
+            />
           </Suspense>
         )}
         <div aria-live="polite">

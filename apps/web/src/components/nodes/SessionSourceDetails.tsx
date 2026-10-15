@@ -1,8 +1,6 @@
-import { useId, type ComponentProps } from "react";
 import { useNodes, useNodeClock } from "../../hooks/useNodes";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import { CopyResumeButton } from "../CopyResumeButton";
 import { SourceBadge, sourceName } from "./SourceBadge";
 import { nodeStatus } from "./node-status";
 
@@ -21,33 +19,26 @@ const MESSAGES = {
 
 export function SessionSourceDetails({
   sourceNodeId,
-  resumeSession,
+  canResume,
+  resumeDescriptionId,
 }: {
   sourceNodeId: string;
-  resumeSession: ComponentProps<typeof CopyResumeButton> | null;
+  canResume: boolean;
+  resumeDescriptionId: string;
 }) {
   const locale = useLocale();
   const nodes = useNodes();
   const now = useNodeClock();
-  const descriptionId = useId();
   const remote = sourceNodeId !== "local";
   const node = nodes.data?.nodes.find((item) => item.id === sourceNodeId);
-  const canResume = Boolean(resumeSession?.resumeCommandPrefix);
 
   return (
     <div className="mt-2 space-y-1 text-xs leading-5 text-[var(--console-muted)]">
       <div className="flex flex-wrap items-center gap-2">
         <SourceBadge sourceNodeId={sourceNodeId} nodes={nodes.data?.nodes} />
-        {resumeSession && (
-          <CopyResumeButton
-            key={`${sourceNodeId}/${resumeSession.sessionId}`}
-            {...resumeSession}
-            descriptionId={descriptionId}
-          />
-        )}
       </div>
       {canResume && (
-        <p id={descriptionId} className="break-words">
+        <p id={resumeDescriptionId} className="break-words">
           {remote
             ? t(
                 "Run this command on {0}, in a POSIX-compatible shell.",

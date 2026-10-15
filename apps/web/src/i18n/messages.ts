@@ -412,7 +412,6 @@ export const messages = {
   "Navigate without leaving the keyboard": ["使用键盘完成导航", "キーボードだけで操作できます"],
   "Keyboard navigation available": ["支持键盘导航", "キーボードで操作できます"],
   "Dismiss keyboard shortcuts hint": ["关闭快捷键提示", "ショートカットのヒントを閉じる"],
-  "Esc back": ["Esc 返回", "Esc 戻る"],
   "Navigate j k · Open Enter": ["j k 导航 · Enter 打开", "j k 移動 · Enter 開く"],
   "Navigate j k · Open Enter · Exit Esc": [
     "j k 导航 · Enter 打开 · Esc 退出",
@@ -1008,4 +1007,11 @@ export const messages = {
   Weekday: ["星期", "曜日"],
   "Most active": ["最活跃", "最も活発"],
   Weekend: ["周末", "週末"],
+  "Back to project": ["返回项目", "プロジェクトへ戻る"],
+  "Back to sessions": ["返回会话列表", "セッション一覧へ戻る"],
+  "You {0} · Agent {1}": ["你 {0} · 智能体 {1}", "あなた {0} · エージェント {1}"],
+  "From {0} of {1} loaded messages": [
+    "基于已加载的 {0} / {1} 条消息",
+    "読み込み済みの {0} / {1} 件のメッセージから集計",
+  ],
 } as const;
