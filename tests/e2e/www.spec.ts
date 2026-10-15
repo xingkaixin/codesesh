@@ -233,8 +233,16 @@ test("distinguishes repository visits from download intent", async ({ page }) =>
   await page.exposeFunction("recordEvent", (name: string) => events.push(name));
   await page.addInitScript(() => {
     Reflect.set(window, "umami", { track: (window as AnalyticsTestWindow).recordEvent });
+    // Keep the page in place: Playwright waits for a started navigation that never commits.
+    window.addEventListener("click", (event) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest('a[href^="https://github.com/"]')
+      ) {
+        event.preventDefault();
+      }
+    });
   });
-  await page.route("https://github.com/**", (route) => route.fulfill({ status: 204 }));
   await page.goto("/guides/getting-started/");
 
   await page.getByRole("link", { name: "GitHub Releases", exact: true }).click();
