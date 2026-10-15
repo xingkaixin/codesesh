@@ -94,10 +94,8 @@ const itemCount = (count: number) =>
             </a>
           </div>
         </div>
-        <nav class="vix" aria-labelledby="version-index">
-          <p class="vix-h" id="version-index">
-            {p.jump}
-          </p>
+        <nav class="vix" aria-label={p.index}>
+          <p class="vix-h">{p.jump}</p>
           {series.map((group) => (
             <div class="vix-row">
               <span class="vix-s">{group.name}</span>
@@ -257,6 +255,12 @@ const itemCount = (count: number) =>
       else link.removeAttribute("aria-current");
     });
   };
+  links.forEach((link) =>
+    link.addEventListener("click", () => {
+      const target = document.getElementById(link.hash.slice(1));
+      if (target) setOpen(target, true);
+    }),
+  );
   openFromHash();
   window.addEventListener("hashchange", openFromHash);
 </script>

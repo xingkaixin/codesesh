@@ -65,7 +65,7 @@ function terminalBlock(source: string, meta: string | null | undefined, locale: 
           dataCopyValue: source,
           dataCopyLabel: labels.copyCommand,
           dataCopiedLabel: labels.copied,
-          dataCopyFailedLabel: labels.copyFailed,
+          dataCopyFailedLabel: guideCopy[locale].copyFailed,
         },
         [
           el("span", { className: ["copy-icon-stack"] }, [

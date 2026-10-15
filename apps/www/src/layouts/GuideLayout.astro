@@ -25,12 +25,11 @@ if (!guide) throw new Error(`Unknown guide: ${slug}`);
 const t = guideCopy[locale];
 const content = guide.copy[locale];
 const category = guideCategories.find((entry) => entry.key === guide.category)!;
-const related = guides.filter(
-  (entry) => entry.slug !== slug && entry.category === guide.category,
-);
-const links = related.length
-  ? related
-  : guides.filter((entry) => entry.slug === "session-history");
+const others = guides.filter((entry) => entry.slug !== slug);
+const links = [
+  ...others.filter((entry) => entry.category === guide.category),
+  ...others.filter((entry) => entry.category !== guide.category),
+].slice(0, 2);
 const toc = headings.filter((heading) => heading.depth === 2);
 ---
 
@@ -157,6 +156,9 @@ const toc = headings.filter((heading) => heading.depth === 2);
   .ar-hero {
     padding: 48px 0 56px;
     border-bottom: 1px solid var(--border);
+  }
+  .ar-hero::before {
+    mask-image: linear-gradient(to bottom, #000, transparent 80%);
   }
   .ar-hero::after {
     top: -260px;
