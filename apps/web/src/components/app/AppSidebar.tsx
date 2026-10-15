@@ -22,6 +22,7 @@ import { RenderProfiler } from "../RenderProfiler";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { SessionActionsMenu } from "../SessionActionsMenu";
 import { Folder, LayoutDashboard, PanelLeftClose, Search } from "../ui/icons";
+import { Kbd } from "../ui/kbd";
 import { Link } from "react-router-dom";
 import type { Theme } from "../../hooks/useUiPreferences";
 import { cn } from "../../lib/utils";
@@ -58,14 +59,6 @@ function NavLabel({ children }: { children: ReactNode }) {
     <div className="flex items-center justify-between gap-2 px-3 pt-2.5 pb-1 text-[11px] text-[var(--console-muted)]">
       {children}
     </div>
-  );
-}
-
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="inline-flex h-[18px] items-center rounded-[4px] border border-b-2 border-[var(--console-border)] bg-[var(--console-surface)] px-[5px] font-sans text-[10px] font-semibold text-[var(--console-muted)]">
-      {children}
-    </kbd>
   );
 }
 

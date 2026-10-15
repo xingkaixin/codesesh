@@ -16,6 +16,7 @@ import { formatInt } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { nodeNeedsAttention } from "../nodes/node-status";
 import { ChevronsUpDown, Globe } from "../ui/icons";
+import { Kbd } from "../ui/kbd";
 
 declare const __APP_VERSION__: string;
 
@@ -185,9 +186,7 @@ export function PreferencesMenu({
             </Menu.RadioGroup>
             <div role="separator" className="mx-0.5 my-1 h-px bg-[var(--console-border)]" />
             <Menu.Item onClick={onShowShortcuts} className={MENU_ITEM_CLASS}>
-              <kbd className="inline-flex h-[18px] items-center rounded-[4px] border border-b-2 border-[var(--console-border)] bg-[var(--console-surface)] px-[5px] text-[10px] font-semibold text-[var(--console-muted)]">
-                ?
-              </kbd>
+              <Kbd>?</Kbd>
               {t("Shortcuts")}
             </Menu.Item>
             <div className="flex items-center justify-between gap-2 px-2 pt-2 pb-1 text-[11px] text-[var(--console-muted)]">

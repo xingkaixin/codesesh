@@ -109,7 +109,6 @@ test("searches indexed messages and opens a result", async ({ page }) => {
     .filter({ hasText: "Core browsing smoke session" })
     .first();
   await expect(searchResult).toContainText("needle");
-  await expect(page.getByText("Search range: All time")).toBeVisible();
   await expect(page.getByText(/Shows up to 50 sessions/)).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect

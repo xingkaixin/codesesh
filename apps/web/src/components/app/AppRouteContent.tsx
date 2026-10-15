@@ -4,7 +4,9 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useId,
   useMemo,
+  useState,
   type Dispatch,
   type ReactNode,
   type Ref,
@@ -30,6 +32,7 @@ import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 import { SearchControls, type SearchControlsHandle } from "./SearchControls";
+import { Funnel } from "../ui/icons";
 
 const DetailLanding = lazy(() =>
   import("../DetailLanding").then((module) => ({ default: module.DetailLanding })),
@@ -87,7 +90,6 @@ interface ProjectAgentFilterModel {
 
 interface SearchContentModel {
   active: boolean;
-  window?: AppConfig["window"] | null;
   query: string;
   state: SearchLoadState;
   agentNameMap: ReadonlyMap<string, string>;
@@ -182,25 +184,44 @@ function SearchRouteContent({
 }) {
   useLocale();
 
+  const filtersId = useId();
+  const activeFilters = Object.values(search.filters).filter(Boolean).length;
+  const [filtersOpen, setFiltersOpen] = useState(activeFilters > 0);
   const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
   return (
     <RenderProfiler
       id="SearchResultsPanel"
       detail={{ results: resultCount, loading: search.state.status === "loading" }}
     >
-      <div className="mb-5 flex flex-wrap items-center gap-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <SearchControls
           ref={controlsRef}
           onSubmit={search.onSubmit}
           initialQuery={search.query}
           autoFocus
         />
+        <button
+          type="button"
+          aria-expanded={filtersOpen}
+          aria-controls={filtersOpen ? filtersId : undefined}
+          onClick={() => setFiltersOpen((open) => !open)}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 text-xs font-medium text-[var(--console-text)] shadow-[var(--shadow-raised)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        >
+          <Funnel aria-hidden="true" className="size-3.5 text-[var(--console-muted)]" />
+          {t("Filters")}
+          {activeFilters > 0 ? (
+            <span className="console-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--brand-soft)] px-1 text-[10px] text-[var(--brand)]">
+              {activeFilters}
+            </span>
+          ) : null}
+        </button>
       </div>
       <LazySurface>
         <SearchResultsPanel
           query={search.query}
-          window={search.window}
           state={search.state}
+          filtersOpen={filtersOpen}
+          filtersId={filtersId}
           agentNameMap={search.agentNameMap}
           agents={search.agents}
           projects={search.projectOptions}
