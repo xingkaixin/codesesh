@@ -72,6 +72,8 @@ function makeProps(): Parameters<typeof AppRouteContent>[0] {
       onRetry: vi.fn(),
       selectedIndex: 0,
       registerResultRef: vi.fn(),
+      controls: { current: null },
+      onSubmit: vi.fn(),
     },
   };
 }

@@ -7,8 +7,8 @@ import type { ToolPart } from "../lib/api";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { LanguageControl } from "../components/app/LanguageControl";
-import { TimeWindowControl } from "../components/TimeWindowControl";
+import { PreferencesMenu } from "../components/app/SidebarFooter";
+import { TimeRangeControl } from "../components/app/TimeRangeControl";
 import { useLocale } from "../hooks/useLocale";
 import {
   getLanguageSnapshot,
@@ -36,11 +36,16 @@ function Preview() {
   const [draft, setDraft] = useState("");
   return (
     <>
-      <LanguageControl />
+      <PreferencesMenu theme="light" onChangeTheme={vi.fn()} onShowShortcuts={vi.fn()} />
       <h1>{t("Dashboard")}</h1>
       <input aria-label="draft" value={draft} onChange={(event) => setDraft(event.target.value)} />
     </>
   );
+}
+
+function chooseLanguage(preferencesLabel: string, language: string) {
+  fireEvent.click(screen.getByRole("button", { name: preferencesLabel }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: language }));
 }
 
 describe("UI language", () => {
@@ -64,7 +69,7 @@ describe("UI language", () => {
     fireEvent.change(screen.getByLabelText("draft"), {
       target: { value: "Dashboard 日本語 /my/project" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "语言" }), { target: { value: "ja" } });
+    chooseLanguage("偏好设置", "日本語");
     expect(screen.getByRole("heading").textContent).toBe("ダッシュボード");
     expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe(
       "Dashboard 日本語 /my/project",
@@ -75,9 +80,7 @@ describe("UI language", () => {
     languages.mockReturnValue(["en-GB"]);
     act(() => window.dispatchEvent(new Event("languagechange")));
     expect(screen.getByRole("heading").textContent).toBe("ダッシュボード");
-    fireEvent.change(screen.getByRole("combobox", { name: "言語" }), {
-      target: { value: "system" },
-    });
+    chooseLanguage("環境設定", "システムに合わせる");
     expect(screen.getByRole("heading").textContent).toBe("Dashboard");
     languages.mockReturnValue(["zh-CN"]);
     act(() => window.dispatchEvent(new Event("languagechange")));
@@ -100,9 +103,7 @@ describe("UI language", () => {
       throw new Error("blocked");
     });
     render(<Preview />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
-      target: { value: "zh-CN" },
-    });
+    chooseLanguage("Preferences", "简体中文");
     expect(screen.getByRole("heading").textContent).toBe("概览");
   });
 
@@ -110,18 +111,16 @@ describe("UI language", () => {
     setLanguagePreference("ja");
     const onSelectPreset = vi.fn();
     render(
-      <TimeWindowControl
+      <TimeRangeControl
         window={{ days: 0 }}
         preset="all"
         onSelectPreset={onSelectPreset}
         onSelectCustom={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByRole("combobox", { name: "セッションの期間" }), {
-      target: { value: "7d" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "7 日" }));
     expect(onSelectPreset).toHaveBeenCalledWith("7d");
-    expect(screen.getByRole("option", { name: "全期間" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "すべて", pressed: true })).toBeDefined();
   });
 });
 

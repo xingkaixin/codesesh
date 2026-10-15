@@ -395,7 +395,9 @@ describe("SessionTreeSidebar selection state", () => {
       expect(activeRows).toHaveLength(1);
       expect(activeRows[0]?.getAttribute("aria-label")).toBe("Second session");
     });
-    expect(tree.style.getPropertyValue("--trees-selected-bg-override")).toBe("var(--brand-soft)");
+    expect(tree.style.getPropertyValue("--trees-selected-bg-override")).toBe(
+      "var(--console-sidebar-accent)",
+    );
     expect(onSelectSession).not.toHaveBeenCalled();
   });
 });

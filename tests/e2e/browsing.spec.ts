@@ -36,14 +36,10 @@ test("persists app shell preferences across reloads", async ({ page }) => {
 
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
   await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
-  await page.getByRole("button", { name: "Dismiss keyboard shortcuts hint" }).click();
 
   await page.reload();
 
   await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Dismiss keyboard shortcuts hint" })).toHaveCount(
-    0,
-  );
 });
 
 test("browses the dashboard and project tree with a keyboard", async ({ page }) => {
@@ -103,11 +99,10 @@ test("searches indexed messages and opens a result", async ({ page }) => {
     .toBe(true);
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Search Sessions" }).click();
   await page.getByRole("searchbox", { name: "Search Sessions" }).fill("needle");
-  await page.getByRole("button", { name: "Search" }).click();
-  const searchHeading = page.getByRole("heading", { level: 1, name: "Search" });
-  await expect(searchHeading).toBeVisible();
-  await expect(searchHeading.locator("..").locator("span")).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Search Sessions" }).press("Enter");
+  await expect(page.getByRole("heading", { level: 1, name: /^Search/ })).toBeVisible();
 
   const searchResult = page
     .getByRole("link")
@@ -172,18 +167,17 @@ test("bookmarks a recent session", async ({ page }) => {
 test("persists the selected time range across navigation", async ({ page }) => {
   await page.goto("/claudecode/e2e-dashboard?range=14d");
 
-  const range = page.getByRole("combobox", { name: "Session time range" });
-  await expect(range).toHaveValue("14d");
-
   await page
     .getByRole("navigation", { name: "Breadcrumb" })
     .getByRole("link", { name: "Dashboard" })
     .click();
   await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("14d");
+  const range = page.getByRole("group", { name: "Session time range" });
+  await expect(range.getByRole("button", { name: "14d" })).toHaveAttribute("aria-pressed", "true");
   await page.reload();
-  await expect(range).toHaveValue("14d");
+  await expect(range.getByRole("button", { name: "14d" })).toHaveAttribute("aria-pressed", "true");
 
-  await range.selectOption("custom");
+  await range.getByRole("button", { name: "Custom" }).click();
   const dialog = page.getByRole("dialog", { name: "Custom time range" });
   await expect(dialog).toBeVisible();
   await expect
@@ -205,11 +199,13 @@ test("persists the selected time range across navigation", async ({ page }) => {
 
 test("keeps the time range when opening a session", async ({ page }) => {
   await page.goto("/claudecode?range=custom&from=2026-04-01&to=2026-04-30");
-  await expect(page.getByRole("combobox", { name: "Session time range" })).toHaveValue("custom");
+  await expect(
+    page.getByRole("group", { name: "Session time range" }).getByRole("button", { name: "Custom" }),
+  ).toHaveAttribute("aria-pressed", "true");
 
   await page.getByText("Core browsing smoke session").first().click();
 
-  await expect(page.getByRole("combobox", { name: "Session time range" })).toHaveValue("custom");
+  await expect(page.getByTestId("session-detail")).toBeVisible();
   await expect.poll(() => new URL(page.url()).searchParams.get("range")).toBe("custom");
 });
 

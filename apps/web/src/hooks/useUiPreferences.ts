@@ -5,7 +5,6 @@ export type Theme = "light" | "dark" | "system";
 const THEMES: readonly Theme[] = ["light", "dark", "system"];
 
 export interface UiPreferences {
-  shortcutHintDismissed: boolean;
   sidebarCollapsed: boolean;
   theme: Theme;
 }
@@ -15,13 +14,11 @@ interface StoredUiPreferences {
   state: UiPreferences;
 }
 
-type UiPreferencesStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">;
+type UiPreferencesStorage = Pick<Storage, "getItem" | "setItem">;
 
 export const UI_PREFERENCES_STORAGE_KEY = "codesesh.ui-preferences";
-export const LEGACY_SHORTCUT_HINT_STORAGE_KEY = "codesesh.shortcuts-hint-dismissed";
 
 const DEFAULT_UI_PREFERENCES: UiPreferences = {
-  shortcutHintDismissed: false,
   sidebarCollapsed: false,
   theme: "system",
 };
@@ -48,14 +45,12 @@ export function parseUiPreferences(raw: string | null): UiPreferences | null {
   try {
     const envelope: unknown = JSON.parse(raw);
     if (!isRecord(envelope) || envelope.version !== 1 || !isRecord(envelope.state)) return null;
-    const { shortcutHintDismissed, sidebarCollapsed, theme } = envelope.state;
-    if (typeof shortcutHintDismissed !== "boolean" || typeof sidebarCollapsed !== "boolean") {
-      return null;
-    }
+    const { sidebarCollapsed, theme } = envelope.state;
+    if (typeof sidebarCollapsed !== "boolean") return null;
     // theme predates CS-89: absent in preferences persisted before this field
     // existed, so treat it as "system" rather than invalidating the envelope.
     if (theme !== undefined && !isTheme(theme)) return null;
-    return { shortcutHintDismissed, sidebarCollapsed, theme: isTheme(theme) ? theme : "system" };
+    return { sidebarCollapsed, theme: isTheme(theme) ? theme : "system" };
   } catch {
     return null;
   }
@@ -67,11 +62,7 @@ function loadUiPreferences(
   if (!storage) return DEFAULT_UI_PREFERENCES;
   try {
     const raw = storage.getItem(UI_PREFERENCES_STORAGE_KEY);
-    if (raw !== null) return parseUiPreferences(raw) ?? DEFAULT_UI_PREFERENCES;
-    return {
-      ...DEFAULT_UI_PREFERENCES,
-      shortcutHintDismissed: storage.getItem(LEGACY_SHORTCUT_HINT_STORAGE_KEY) === "1",
-    };
+    return parseUiPreferences(raw) ?? DEFAULT_UI_PREFERENCES;
   } catch {
     return DEFAULT_UI_PREFERENCES;
   }
@@ -85,14 +76,12 @@ function persistUiPreferences(
   const envelope: StoredUiPreferences = {
     version: 1,
     state: {
-      shortcutHintDismissed: preferences.shortcutHintDismissed,
       sidebarCollapsed: preferences.sidebarCollapsed,
       theme: preferences.theme,
     },
   };
   try {
     storage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify(envelope));
-    storage.removeItem(LEGACY_SHORTCUT_HINT_STORAGE_KEY);
   } catch {
     return;
   }
@@ -107,11 +96,6 @@ export function useUiPreferences() {
     setPreferences(next);
     persistUiPreferences(next);
   }, []);
-
-  const dismissShortcutHint = useCallback(() => {
-    if (preferencesRef.current.shortcutHintDismissed) return;
-    updatePreferences({ ...preferencesRef.current, shortcutHintDismissed: true });
-  }, [updatePreferences]);
 
   const setSidebarCollapsed = useCallback(
     (sidebarCollapsed: boolean) => {
@@ -129,7 +113,6 @@ export function useUiPreferences() {
 
   return {
     ...preferences,
-    dismissShortcutHint,
     setSidebarCollapsed,
     setTheme,
   };

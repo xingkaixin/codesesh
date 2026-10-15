@@ -1,22 +1,28 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 /**
- * Agent filter + range pills for 统计总览.
+ * The overview hero: which range the cards cover, plus the source and agent pickers.
  *
  * Which project the dashboard covers is decided by navigation (the sidebar),
  * not by a control inside the page — so there is no scope switcher here. The
- * project dashboard mounts this bar without the agent picker, because the
- * project page already owns one that also filters its timeline.
+ * time range itself is changed from the page bar.
  */
-import { useState } from "react";
+import type { ReactNode } from "react";
 import type { AgentCatalog } from "../../lib/agents";
+import { formatIsoDate } from "../../lib/scan-format";
 import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
-import { cn } from "../../lib/utils";
-import { CustomTimeWindowDialog } from "../CustomTimeWindowDialog";
-import { ChevronDown } from "../ui/icons";
-import { OVERVIEW_RANGE_PRESETS } from "./types";
+import { NativeSelect } from "../ui/native-select";
 
 const ALL_AGENTS = "__all__";
+
+const PRESET_TITLE: Record<TimeWindowPreset, string> = {
+  "7d": "Last 7 days",
+  "14d": "Last 14 days",
+  "30d": "Last 30 days",
+  "90d": "Last 90 days",
+  all: "All time",
+  custom: "Custom range",
+};
 
 export function OverviewFilterBar({
   agent,
@@ -25,8 +31,7 @@ export function OverviewFilterBar({
   scopeCounts,
   window,
   rangePreset,
-  onRangeChange,
-  onSelectCustom,
+  sourcePicker,
 }: {
   agent?: string;
   onAgentChange?: (agent?: string) => void;
@@ -34,78 +39,49 @@ export function OverviewFilterBar({
   scopeCounts?: { projects: number; agents: number };
   window: TimeWindow | null;
   rangePreset: TimeWindowPreset | null;
-  onRangeChange: (preset: TimeWindowPreset) => void;
-  onSelectCustom: (from: string, to: string) => void;
+  sourcePicker?: ReactNode;
 }) {
   useLocale();
 
-  const [customOpen, setCustomOpen] = useState(false);
+  const bounded = window && window.days !== 0 && window.from != null && window.to != null;
+  const details = [
+    bounded ? `${formatIsoDate(window.from!)} – ${formatIsoDate(window.to!)}` : null,
+    scopeCounts ? t("{0} agents", [scopeCounts.agents]) : null,
+    scopeCounts ? t("{0} projects", [scopeCounts.projects]) : null,
+    bounded && window.days ? t("Compared with the previous {0} days", [window.days]) : null,
+  ].filter(Boolean);
 
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-3">
-        {onAgentChange ? (
-          <div className="relative min-w-0 max-w-full">
-            <select
-              aria-label={t("Filter by agent")}
-              value={agent ?? ALL_AGENTS}
-              onChange={(event) =>
-                onAgentChange(event.target.value === ALL_AGENTS ? undefined : event.target.value)
-              }
-              className="h-8 w-40 max-w-full appearance-none rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] pr-8 pl-3 text-xs text-[var(--console-text)] hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-            >
-              <option value={ALL_AGENTS}>{t("All agents")}</option>
-              {agentCatalog.active.map((entry) => (
-                <option key={entry.name} value={entry.name.toLowerCase()}>
-                  {entry.displayName}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-[var(--console-muted)]"
-            />
-          </div>
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="console-eyebrow">{t("Range")}</span>
+        <h2 className="console-display text-2xl leading-tight font-light text-[var(--console-text)] sm:text-[28px]">
+          {t(PRESET_TITLE[rangePreset ?? "all"])}
+        </h2>
+        {details.length > 0 ? (
+          <p className="text-xs text-[var(--console-muted)]">{details.join(" · ")}</p>
         ) : null}
-
-        {scopeCounts ? (
-          <span className="text-xs text-[var(--console-muted)]">
-            {t("{0} projects · {1} agents in scope", [scopeCounts.projects, scopeCounts.agents])}
-          </span>
-        ) : null}
-
-        <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-0.5">
-          {OVERVIEW_RANGE_PRESETS.map((preset) => {
-            const selected = preset.value === rangePreset;
-            return (
-              <button
-                key={preset.value}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => {
-                  if (preset.value === "custom") setCustomOpen(true);
-                  else onRangeChange(preset.value);
-                }}
-                className={cn(
-                  "motion-hover rounded-md px-3 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
-                  selected
-                    ? "bg-[var(--console-surface)] text-[var(--console-text)] shadow-[var(--shadow-raised)]"
-                    : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
-                )}
-              >
-                {t(preset.label)}
-              </button>
-            );
-          })}
-        </div>
       </div>
-
-      <CustomTimeWindowDialog
-        open={customOpen}
-        onOpenChange={setCustomOpen}
-        window={window}
-        onSelectCustom={onSelectCustom}
-      />
-    </>
+      <div className="flex flex-wrap items-center gap-2">
+        {sourcePicker}
+        {onAgentChange ? (
+          <NativeSelect
+            aria-label={t("Filter by agent")}
+            value={agent ?? ALL_AGENTS}
+            onChange={(event) =>
+              onAgentChange(event.target.value === ALL_AGENTS ? undefined : event.target.value)
+            }
+            className="h-7 rounded-lg border-[var(--console-border)] bg-[var(--console-bg)] py-0 pl-3 text-xs font-medium shadow-[var(--shadow-raised)]"
+          >
+            <option value={ALL_AGENTS}>{t("All agents")}</option>
+            {agentCatalog.active.map((entry) => (
+              <option key={entry.name} value={entry.name.toLowerCase()}>
+                {entry.displayName}
+              </option>
+            ))}
+          </NativeSelect>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   useMemo,
   type Dispatch,
   type ReactNode,
+  type Ref,
   type SetStateAction,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -28,6 +29,7 @@ import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
+import { SearchControls, type SearchControlsHandle } from "./SearchControls";
 
 const DetailLanding = lazy(() =>
   import("../DetailLanding").then((module) => ({ default: module.DetailLanding })),
@@ -76,8 +78,6 @@ interface SessionDetailModel {
 interface OverviewModel {
   window: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
-  onRangeChange: (preset: TimeWindowPreset) => void;
-  onSelectCustom: (from: string, to: string) => void;
 }
 
 interface ProjectAgentFilterModel {
@@ -99,6 +99,8 @@ interface SearchContentModel {
   onRetry: () => void;
   selectedIndex: number;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
+  controls: Ref<SearchControlsHandle>;
+  onSubmit: (query: string) => void;
 }
 
 interface BookmarkContentModel {
@@ -171,7 +173,13 @@ function landingAgentItems(agents: AgentInfo[]): LandingAgentItem[] {
   }));
 }
 
-function SearchRouteContent({ search }: { search: SearchContentModel }) {
+function SearchRouteContent({
+  search,
+  controlsRef,
+}: {
+  search: SearchContentModel;
+  controlsRef: Ref<SearchControlsHandle>;
+}) {
   useLocale();
 
   const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
@@ -180,6 +188,14 @@ function SearchRouteContent({ search }: { search: SearchContentModel }) {
       id="SearchResultsPanel"
       detail={{ results: resultCount, loading: search.state.status === "loading" }}
     >
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <SearchControls
+          ref={controlsRef}
+          onSubmit={search.onSubmit}
+          initialQuery={search.query}
+          autoFocus
+        />
+      </div>
       <LazySurface>
         <SearchResultsPanel
           query={search.query}
@@ -230,8 +246,6 @@ function RootRouteContent({ route }: { route: RootRouteModel }) {
           window={route.overview.window}
           agentCatalog={route.agentCatalog}
           rangePreset={route.overview.rangePreset}
-          onRangeChange={route.overview.onRangeChange}
-          onSelectCustom={route.overview.onSelectCustom}
         />
       </LazySurface>
     </RenderProfiler>
@@ -272,8 +286,6 @@ function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
         onChangeAgent={route.agentFilter.onChangeAgent}
         timeWindow={route.overview.window}
         rangePreset={route.overview.rangePreset}
-        onRangeChange={route.overview.onRangeChange}
-        onSelectCustom={route.overview.onSelectCustom}
       />
     </LazySurface>
   );
@@ -462,7 +474,7 @@ export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
   useLocale();
 
   if (load.loading) return <SessionDetailSkeleton />;
-  if (search.active) return <SearchRouteContent search={search} />;
+  if (search.active) return <SearchRouteContent search={search} controlsRef={search.controls} />;
   if (load.error) return <LoadError load={load} />;
   return <RouteContent route={route} />;
 }

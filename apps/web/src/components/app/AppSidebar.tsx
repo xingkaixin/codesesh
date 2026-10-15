@@ -21,8 +21,13 @@ import { DrawerDialog } from "../DrawerDialog";
 import { RenderProfiler } from "../RenderProfiler";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { SessionActionsMenu } from "../SessionActionsMenu";
-import { PanelLeftClose } from "../ui/icons";
+import { Folder, LayoutDashboard, PanelLeftClose, Search } from "../ui/icons";
 import { Link } from "react-router-dom";
+import type { Theme } from "../../hooks/useUiPreferences";
+import { cn } from "../../lib/utils";
+import { SidebarFooter } from "./SidebarFooter";
+
+declare const __APP_VERSION__: string;
 
 const SessionTreeSidebar = lazy(() =>
   import("../SessionTreeSidebar").then((module) => ({ default: module.SessionTreeSidebar })),
@@ -30,12 +35,38 @@ const SessionTreeSidebar = lazy(() =>
 
 const SIDEBAR_PROJECT_LIMIT = 8;
 
-function navItemClass(isSelected: boolean): string {
-  return `flex items-center gap-2 rounded-[10px] px-3 py-1.5 text-left motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+function navItemClass(isSelected: boolean, size: "md" | "sm" = "md"): string {
+  return cn(
+    "flex w-full items-center gap-2.5 rounded-lg pr-2.5 pl-2 text-left text-[var(--console-text)] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+    size === "md" ? "h-9 text-[13px]" : "h-8 text-xs",
     isSelected
-      ? "bg-[var(--console-sidebar-accent)] font-medium text-[var(--console-text)]"
-      : "text-[var(--console-text-secondary)] hover:bg-[var(--console-sidebar-accent)]/60 hover:text-[var(--console-text)]"
-  }`;
+      ? "bg-[var(--console-sidebar-accent)] font-medium"
+      : "hover:bg-[var(--console-sidebar-accent)]/60",
+  );
+}
+
+function NavCount({ value }: { value: number }) {
+  return (
+    <span className="ml-auto inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--console-sidebar-accent)] px-[5px] text-[10px] font-semibold text-[var(--console-muted)]">
+      {value}
+    </span>
+  );
+}
+
+function NavLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 pt-2.5 pb-1 text-[11px] text-[var(--console-muted)]">
+      {children}
+    </div>
+  );
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="inline-flex h-[18px] items-center rounded-[4px] border border-b-2 border-[var(--console-border)] bg-[var(--console-surface)] px-[5px] font-sans text-[10px] font-semibold text-[var(--console-muted)]">
+      {children}
+    </kbd>
+  );
 }
 
 function ScanAwareEmptyState({ scanning, empty }: { scanning: string; empty: string }) {
@@ -43,7 +74,7 @@ function ScanAwareEmptyState({ scanning, empty }: { scanning: string; empty: str
 
   const scanStatus = useScanStatus();
   return (
-    <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+    <span className="block px-3 py-1.5 text-xs text-[var(--console-muted)]">
       {scanStatus?.active ? scanning : empty}
     </span>
   );
@@ -80,14 +111,15 @@ function ProjectNavList({
               data-fluid-item
               to={getProjectPath(projectIdentity)}
               data-active={isSelected ? "true" : undefined}
-              className={`min-w-0 ${navItemClass(isSelected)}`}
+              aria-current={isSelected ? "page" : undefined}
+              className={cn("min-w-0", navItemClass(isSelected, "sm"))}
             >
-              <span className="console-mono min-w-0 flex-1 truncate text-xs">
-                {project.displayName}
-              </span>
-              <span className="console-mono shrink-0 text-[11px] text-[var(--console-muted)]">
-                {project.sessionCount}
-              </span>
+              <Folder
+                aria-hidden="true"
+                className="size-[18px] shrink-0 text-[var(--console-text-secondary)]"
+              />
+              <span className="console-mono min-w-0 flex-1 truncate">{project.displayName}</span>
+              <NavCount value={project.sessionCount} />
             </Link>
           </li>
         );
@@ -115,7 +147,9 @@ export interface AppSidebarViewModel {
   sourceNodes?: SourceNode[];
   isSearchMode: boolean;
   shortcutHelpOpen: boolean;
-  dismissShortcutHint: () => void;
+  hubEnabled: boolean;
+  sessionCount: number;
+  theme: Theme;
 }
 
 export interface AppSidebarActions {
@@ -129,6 +163,9 @@ export interface AppSidebarActions {
   onRenameBookmarkedSession: (session: BookmarkView) => void;
   onRetryProjects: () => void;
   onRetryBookmarks: () => void;
+  onOpenSearch: () => void;
+  onChangeTheme: (theme: Theme) => void;
+  onShowShortcuts: () => void;
 }
 
 function SidebarFrame({
@@ -172,7 +209,7 @@ function SidebarFrame({
   return (
     <aside
       aria-label={t("Primary navigation")}
-      className={`w-60 shrink-0 flex-col ${collapsed ? "hidden" : "hidden min-[1025px]:flex"}`}
+      className={`w-60 shrink-0 flex-col pb-2 pl-2 ${collapsed ? "hidden" : "hidden min-[1025px]:flex"}`}
     >
       {children}
     </aside>
@@ -199,7 +236,9 @@ export function AppSidebar({
     sourceNodes,
     isSearchMode,
     shortcutHelpOpen,
-    dismissShortcutHint,
+    hubEnabled,
+    sessionCount,
+    theme,
   },
   actions: {
     onCollapse,
@@ -212,6 +251,9 @@ export function AppSidebar({
     onRenameBookmarkedSession,
     onRetryProjects,
     onRetryBookmarks,
+    onOpenSearch,
+    onChangeTheme,
+    onShowShortcuts,
   },
 }: {
   model: AppSidebarViewModel;
@@ -246,7 +288,6 @@ export function AppSidebar({
     sessionLookup: sidebarSessionLookup,
     isSearchMode,
     shortcutHelpOpen,
-    dismissShortcutHint,
     onOpenSession: onSelectFlatSidebarSession,
   });
   const handleSelectSession = useCallback(
@@ -263,32 +304,76 @@ export function AppSidebar({
       mobileOpen={mobileNavigationOpen}
       onMobileOpenChange={onMobileNavigationOpenChange}
     >
-      <div className="console-scrollbar flex-1 space-y-8 overflow-y-auto px-4 py-6">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 pr-3 pl-3">
         <Link
           to="/"
-          data-active={isOverviewSelected ? "true" : undefined}
-          className={navItemClass(isOverviewSelected)}
+          aria-label={t("CodeSesh overview")}
+          className="inline-flex min-w-0 items-center gap-2 rounded-sm text-[15px] font-bold text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          <img src="/logo.svg?v=3" alt={t("Dashboard")} className="size-3.5 rounded-[2px]" />
-          <span className="line-clamp-1 flex-1 text-[13px]">{t("Dashboard")}</span>
+          <img src="/logo.svg?v=3" alt="" className="size-[22px] rounded-sm" />
+          <span className="console-display">CodeSesh</span>
+          <small className="console-mono text-[10px] font-medium text-[var(--console-muted)]">
+            v{__APP_VERSION__}
+          </small>
         </Link>
+        {!mobileNavigationOpen ? (
+          <button
+            type="button"
+            aria-expanded="true"
+            aria-label={t("Collapse sidebar")}
+            title={t("Collapse sidebar")}
+            onClick={onCollapse}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--console-muted)] motion-hover hover:bg-[var(--console-sidebar-accent)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onOpenSearch}
+        className="mr-2 mb-1 flex h-[34px] shrink-0 items-center gap-2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)]/60 pr-2 pl-2.5 text-xs text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+      >
+        <Search aria-hidden="true" className="size-3.5" />
+        <span className="flex-1 text-left">{t("Search Sessions")}</span>
+        <Kbd>⌘K</Kbd>
+      </button>
 
-        <section>
-          <div className="mb-3 flex items-baseline justify-between gap-2">
-            <h3 className="console-eyebrow">{t("PROJECTS")}</h3>
-            <Link
-              to="/projects"
-              data-active={isProjectsSelected ? "true" : undefined}
-              className={`console-mono rounded-sm text-[11px] motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
-                isProjectsSelected
-                  ? "text-[var(--brand)]"
-                  : "text-[var(--console-muted)] hover:text-[var(--console-text)]"
-              }`}
-            >
-              {t("All {0} →", [projectCount])}
-            </Link>
-          </div>
-          <ul ref={hoverRef} data-fluid-hover="y" className="space-y-1">
+      <div className="console-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-2">
+        <nav aria-label={t("Navigation")} className="flex flex-col gap-0.5">
+          <Link
+            to="/"
+            aria-current={isOverviewSelected ? "page" : undefined}
+            className={navItemClass(isOverviewSelected)}
+          >
+            <LayoutDashboard
+              aria-hidden="true"
+              className="size-[18px] shrink-0 text-[var(--console-text-secondary)]"
+            />
+            <span className="min-w-0 flex-1 truncate">{t("Dashboard")}</span>
+          </Link>
+          <Link
+            to="/projects"
+            aria-current={isProjectsSelected ? "page" : undefined}
+            className={navItemClass(isProjectsSelected)}
+          >
+            <Folder
+              aria-hidden="true"
+              className="size-[18px] shrink-0 text-[var(--console-text-secondary)]"
+            />
+            <span className="min-w-0 flex-1 truncate">{t("All projects")}</span>
+            <NavCount value={projectCount} />
+          </Link>
+        </nav>
+
+        <section aria-labelledby="sidebar-recent-projects">
+          <NavLabel>
+            <h3 id="sidebar-recent-projects" className="font-normal">
+              {t("Recent projects")}
+            </h3>
+            <span className="console-mono">{t("Sessions")}</span>
+          </NavLabel>
+          <ul ref={hoverRef} data-fluid-hover="y" className="flex flex-col gap-0.5">
             <ProjectNavList
               projects={projects}
               selectedProjectNavigationId={selectedProjectNavigationId}
@@ -312,14 +397,21 @@ export function AppSidebar({
             ) : null}
           </ul>
           {projects.length > 0 ? (
-            <p className="mt-2 px-3 text-[11px] text-[var(--console-muted)]">
-              {t("Most recent first · numbers are session counts")}
+            <p className="px-3 pt-0.5 text-[10px] text-[var(--console-muted)]">
+              {t("Most recent first")}
             </p>
           ) : null}
         </section>
 
-        <section>
-          <h3 className="console-eyebrow mb-3">{t("BOOKMARKS")}</h3>
+        <section aria-labelledby="sidebar-bookmarks">
+          <NavLabel>
+            <h3 id="sidebar-bookmarks" className="font-normal">
+              {t("Bookmarks")}
+            </h3>
+            {bookmarkedSessions.length > 0 ? (
+              <span className="console-mono">{bookmarkedSessions.length}</span>
+            ) : null}
+          </NavLabel>
           {bookmarksError ? (
             <ResourceLoadFailure
               title={t("Couldn't load bookmarks.")}
@@ -329,15 +421,15 @@ export function AppSidebar({
             />
           ) : null}
           {bookmarkedSessions.length === 0 && bookmarksLoading ? (
-            <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+            <span className="block px-3 py-1.5 text-xs text-[var(--console-muted)]">
               {t("Loading bookmarks...")}
             </span>
           ) : bookmarkedSessions.length === 0 && !bookmarksError ? (
-            <span className="console-mono block rounded-sm px-3 py-1.5 text-xs text-[var(--console-muted)]">
+            <span className="block px-3 py-1.5 text-xs text-[var(--console-muted)]">
               {t("No bookmarks yet")}
             </span>
           ) : (
-            <ul className="space-y-1">
+            <ul className="flex flex-col gap-0.5">
               {bookmarkedSessions.map((bookmark) => {
                 const { reference } = bookmark;
                 const isActive =
@@ -364,39 +456,47 @@ export function AppSidebar({
                       <AgentIcon
                         icon={agent.icon}
                         iconColored={agent.iconColored}
-                        alt={agent.displayName}
-                        className="mt-0.5 size-3.5 shrink-0 object-contain"
+                        alt=""
+                        className="size-4 shrink-0 object-contain"
                       />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <span className="console-mono line-clamp-1 block text-xs">{title}</span>
-                      <span className="console-mono mt-0.5 line-clamp-1 block text-[10px] text-[var(--console-muted)]">
+                    ) : (
+                      <span aria-hidden="true" className="size-4 shrink-0" />
+                    )}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-xs">{title}</span>
+                      <span className="truncate text-[10px] leading-tight text-[var(--console-muted)]">
                         {available
                           ? (agent?.displayName ?? reference.agentName)
                           : unavailableDetail}
                       </span>
-                    </div>
+                    </span>
                   </>
                 );
                 return (
                   <li key={getSessionBookmarkKey(reference)}>
                     <div
                       data-active={isActive ? "true" : undefined}
-                      className={`flex items-start gap-2 rounded-sm px-2 py-1.5 motion-hover ${
+                      className={cn(
+                        "flex min-h-10 items-center gap-1 rounded-lg pr-1 pl-2 motion-hover",
                         isActive
-                          ? "bg-[var(--brand-soft)] text-[var(--brand)]"
-                          : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
-                      }`}
+                          ? "bg-[var(--console-sidebar-accent)] font-medium text-[var(--console-text)]"
+                          : "text-[var(--console-text)] hover:bg-[var(--console-sidebar-accent)]/60",
+                        available ? undefined : "text-[var(--console-muted)]",
+                      )}
                     >
                       {available ? (
                         <Link
                           to={getSessionRoutePath(bookmark.session)}
-                          className="flex min-w-0 flex-1 items-start gap-2"
+                          aria-current={isActive ? "page" : undefined}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm py-1.5 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
                         >
                           {label}
                         </Link>
                       ) : (
-                        <div className="flex min-w-0 flex-1 items-start gap-2" aria-disabled="true">
+                        <div
+                          className="flex min-w-0 flex-1 items-center gap-2.5 py-1.5"
+                          aria-disabled="true"
+                        >
                           {label}
                         </div>
                       )}
@@ -418,15 +518,21 @@ export function AppSidebar({
 
         {/* Sessions belong to a project; without one there is nothing to list. */}
         {selectedProjectNavigationId ? (
-          <section>
-            <h3 className="console-eyebrow mb-3">
-              {t("SESSIONS")}{" "}
+          <section aria-labelledby="sidebar-sessions">
+            <NavLabel>
+              <h3 id="sidebar-sessions" className="font-normal">
+                {t("Sessions")}
+              </h3>
               {sidebarSessions.length > 0 ? (
-                <span className="ml-2 text-[10px] font-normal text-[var(--console-muted)]">
-                  {t("Navigate j k · Open Enter")}
+                <span
+                  className="inline-flex items-center gap-1"
+                  title={t("Navigate j k · Open Enter")}
+                >
+                  <Kbd>J</Kbd>
+                  <Kbd>K</Kbd>
                 </span>
               ) : null}
-            </h3>
+            </NavLabel>
             {sidebarSessions.length === 0 ? (
               <ScanAwareEmptyState
                 scanning={t("Scanning sessions...")}
@@ -453,21 +559,13 @@ export function AppSidebar({
           </section>
         ) : null}
       </div>
-      {!mobileNavigationOpen ? (
-        <div className="flex justify-end border-t border-[var(--console-border)] px-4 py-2.5">
-          <button
-            type="button"
-            aria-expanded="true"
-            aria-label={t("Collapse sidebar")}
-            title={t("Collapse sidebar")}
-            onClick={onCollapse}
-            className="console-mono flex items-center gap-1.5 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1 text-[11px] text-[var(--console-muted)] motion-hover hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-          >
-            <PanelLeftClose className="size-4" />
-            {t("Collapse")}
-          </button>
-        </div>
-      ) : null}
+      <SidebarFooter
+        hubEnabled={hubEnabled}
+        sessionCount={sessionCount}
+        theme={theme}
+        onChangeTheme={onChangeTheme}
+        onShowShortcuts={onShowShortcuts}
+      />
     </SidebarFrame>
   );
 }

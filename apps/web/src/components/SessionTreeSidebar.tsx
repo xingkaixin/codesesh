@@ -356,16 +356,16 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const treeHostStyle: TreeHostStyle = {
     "--trees-bg-override": "transparent",
     "--trees-border-color-override": "var(--console-border)",
-    "--trees-fg-override": "var(--console-text)",
+    "--trees-fg-override": "var(--console-text-secondary)",
     "--trees-fg-muted-override": "var(--console-muted)",
-    "--trees-font-family-override": "var(--font-mono)",
+    "--trees-font-family-override": "var(--font-sans)",
     "--trees-font-size-override": "12px",
     "--trees-item-margin-x-override": "0px",
     "--trees-item-padding-x-override": "4px",
     "--trees-padding-inline-override": "4px",
     "--trees-selected-bg-override": hasPendingSessionSelection
       ? "transparent"
-      : "var(--brand-soft)",
+      : "var(--console-sidebar-accent)",
   };
   // Keep composition unset; @pierre/trees renders it with innerHTML, so session-derived HTML is unsafe.
   const { model } = useFileTree({

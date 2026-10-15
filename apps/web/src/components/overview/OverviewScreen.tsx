@@ -11,8 +11,8 @@ import { t } from "../../i18n/translate";
  * The agent filter is self-managed for the global view; the project page passes
  * `onAgentChange` to drive it from the picker that also filters its timeline.
  *
- * The time window is NOT owned here — the range pills report upwards so the
- * app's time-window controller stays the single source of truth.
+ * The time window is NOT owned here — the page bar's range control drives the
+ * app's time-window controller, the single source of truth.
  */
 import { useState, type ReactNode } from "react";
 
@@ -35,8 +35,6 @@ export function OverviewScreen({
   window,
   agentCatalog,
   rangePreset,
-  onRangeChange,
-  onSelectCustom,
   children,
 }: {
   children?: ReactNode;
@@ -46,8 +44,6 @@ export function OverviewScreen({
   window: AppConfig["window"] | null;
   agentCatalog: AgentCatalog;
   rangePreset: TimeWindowPreset;
-  onRangeChange: (preset: TimeWindowPreset) => void;
-  onSelectCustom: (from: string, to: string) => void;
 }) {
   useLocale();
 
@@ -59,8 +55,7 @@ export function OverviewScreen({
   const { dashboard, error, retry } = useDashboard(window, filters);
 
   return (
-    <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-4">
-      {!project && <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />}
+    <div data-testid="dashboard" className="mx-auto max-w-6xl space-y-5">
       <OverviewFilterBar
         agent={agent}
         onAgentChange={onAgentChange ? undefined : setOwnAgent}
@@ -68,8 +63,9 @@ export function OverviewScreen({
         scopeCounts={dashboard?.scopeCounts}
         window={window}
         rangePreset={rangePreset}
-        onRangeChange={onRangeChange}
-        onSelectCustom={onSelectCustom}
+        sourcePicker={
+          project ? undefined : <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />
+        }
       />
 
       {error ? (

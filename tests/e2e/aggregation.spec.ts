@@ -62,7 +62,7 @@ test("aggregates Claude and Codex sessions under one project", async ({ page }) 
 
   const dashboard = page.getByTestId("dashboard");
   await expect(sessionsKpi(dashboard)).toContainText("2");
-  await expect(dashboard.getByText("1 projects · 2 agents in scope")).toBeVisible();
+  await expect(dashboard.getByText(/2 agents · 1 projects/)).toBeVisible();
   const agentColumns = dashboard.getByTestId("overview-agent-row");
   await expect(agentColumns).toHaveCount(2);
   const claude = agentColumns.filter({ hasText: "Claude Code" });
@@ -99,8 +99,10 @@ test("searches and opens the aggregated Codex session", async ({ page }) => {
     .toBe(true);
 
   await page.goto("/");
-  await page.getByRole("searchbox", { name: "Search Sessions" }).fill("codex-shared-needle");
-  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Search Sessions" }).click();
+  const search = page.getByRole("searchbox", { name: "Search Sessions" });
+  await search.fill("codex-shared-needle");
+  await search.press("Enter");
 
   const result = page
     .getByRole("link")

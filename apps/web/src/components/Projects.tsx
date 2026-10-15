@@ -359,8 +359,6 @@ export function ProjectDashboardView({
   onChangeAgent,
   timeWindow,
   rangePreset,
-  onRangeChange,
-  onSelectCustom,
 }: {
   project: ApiProjectGroup | null;
   loading: boolean;
@@ -373,8 +371,6 @@ export function ProjectDashboardView({
   onChangeAgent: (agent?: string) => void;
   timeWindow: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
-  onRangeChange: (preset: TimeWindowPreset) => void;
-  onSelectCustom: (from: string, to: string) => void;
 }) {
   useLocale();
 
@@ -441,8 +437,6 @@ export function ProjectDashboardView({
         window={timeWindow}
         agentCatalog={agentCatalog}
         rangePreset={rangePreset}
-        onRangeChange={onRangeChange}
-        onSelectCustom={onSelectCustom}
       >
         <ProjectTimeline
           key={`${project.identityKind}:${project.identityKey}:${activeAgent ?? "all"}`}

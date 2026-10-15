@@ -21,23 +21,23 @@ export function SessionActionMenuItems({
     <>
       <Menu.Item
         onClick={onRename}
-        className="motion-hover motion-press flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+        className="motion-hover motion-press flex w-full items-center gap-2 rounded-md p-2 text-left text-xs text-[var(--console-text)] hover:bg-[var(--brand-soft)] data-[highlighted]:bg-[var(--brand-soft)] focus-visible:outline-none"
       >
-        <Pencil className="size-3" aria-hidden="true" /> {t("Rename")}
+        <Pencil className="size-3.5" aria-hidden="true" /> {t("Rename")}
       </Menu.Item>
       {onCopyAsMarkdown ? (
         <Menu.Item
           onClick={onCopyAsMarkdown}
-          className="motion-hover motion-press flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+          className="motion-hover motion-press flex w-full items-center gap-2 rounded-md p-2 text-left text-xs text-[var(--console-text)] hover:bg-[var(--brand-soft)] data-[highlighted]:bg-[var(--brand-soft)] focus-visible:outline-none"
         >
-          <Copy className="size-3" aria-hidden="true" /> {t("Copy as Markdown")}
+          <Copy className="size-3.5" aria-hidden="true" /> {t("Copy as Markdown")}
         </Menu.Item>
       ) : null}
       <Menu.Item
         onClick={onToggleBookmark}
-        className="motion-hover motion-press flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] data-[highlighted]:bg-[var(--console-surface-muted)] focus-visible:outline-none"
+        className="motion-hover motion-press flex w-full items-center gap-2 rounded-md p-2 text-left text-xs text-[var(--console-text)] hover:bg-[var(--brand-soft)] data-[highlighted]:bg-[var(--brand-soft)] focus-visible:outline-none"
       >
-        <Star className="size-3" fill={bookmarked ? "currentColor" : "none"} aria-hidden="true" />
+        <Star className="size-3.5" fill={bookmarked ? "currentColor" : "none"} aria-hidden="true" />
         {bookmarked ? t("Remove bookmark") : t("Add bookmark")}
       </Menu.Item>
     </>
@@ -73,7 +73,7 @@ export function SessionActionsMenu({
         <Menu.Positioner side="bottom" align="end" sideOffset={4} className="z-30">
           <Menu.Popup
             finalFocus={triggerRef}
-            className="motion-menu w-36 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-1 shadow-[var(--shadow-overlay)] focus-visible:outline-none"
+            className="motion-menu w-44 rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] p-1.5 shadow-[var(--shadow-overlay)] focus-visible:outline-none"
           >
             <SessionActionMenuItems
               bookmarked={bookmarked}

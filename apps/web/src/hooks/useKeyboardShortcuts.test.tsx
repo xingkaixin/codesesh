@@ -42,7 +42,6 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     selectedProjectNavigationIdentity: null,
     shortcutHelpOpen: false,
     setShortcutHelpOpen: vi.fn(),
-    dismissShortcutHint: vi.fn(),
     isSearchMode: false,
     activeSearchQuery: "needle",
     searchResults,
@@ -72,11 +71,9 @@ describe("useKeyboardShortcuts", () => {
 
     expect(dispatchKey("/").defaultPrevented).toBe(true);
     expect(deps.openSearch).toHaveBeenCalledTimes(2);
-    expect(deps.dismissShortcutHint).toHaveBeenCalledOnce();
 
     expect(dispatchKey("?").defaultPrevented).toBe(true);
     expect(deps.setShortcutHelpOpen).toHaveBeenCalledWith(true);
-    expect(deps.dismissShortcutHint).toHaveBeenCalledTimes(2);
   });
 
   it("ignores modified, composing, and already-handled events", () => {

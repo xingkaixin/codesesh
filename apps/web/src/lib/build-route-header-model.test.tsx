@@ -11,15 +11,14 @@ function createInput(
   return {
     viewState,
     isSearchMode: false,
-    searchSubtitle: "Search results",
-    dashboard: null,
+    searchResultCount: 3,
     projectCount: 0,
-    sessionCount: 0,
     activeProject: null,
     activeAgent: null,
     sidebarSessionCount: 0,
     session: null,
     sessionError: null,
+    sessionSourceLabel: null,
     selectedProjectIdentity: null,
     selectedProject: null,
     ...overrides,
@@ -47,10 +46,6 @@ describe("buildRouteHeaderModel", () => {
       }),
     );
 
-    expect(model).toMatchObject({
-      contextLabel: "Search",
-      title: "Search",
-      breadcrumbs: [{ label: "Search" }],
-    });
+    expect(model).toMatchObject({ title: "Search", count: 3, breadcrumbs: [], hero: null });
   });
 });

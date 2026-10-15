@@ -205,6 +205,15 @@
        use this deeper step (5.5:1). */
     --brand-ink: #b4441a;
 
+    /* Sidebar status card: a deep ember gradient with light text on top. */
+    --ember-from: #7a3a1d;
+    --ember-to: #a3552c;
+    --ember-fg: #ffffff;
+    --ember-muted: rgb(255 255 255 / 0.86);
+    --ember-glass: rgb(255 255 255 / 0.2);
+    --ember-glass-hover: rgb(255 255 255 / 0.3);
+    --ember-live: #8be6cf;
+
     /* Positive */
     --positive: #218c77;
     --positive-soft: #e4f5f0;
@@ -335,6 +344,9 @@
     --brand-line: #5a2e19;
     --brand-fg: #101012;
     --brand-ink: #ff7a45;
+
+    --ember-from: #3d1c0d;
+    --ember-to: #5e2f18;
 
     --positive: #4fd3b4;
     --positive-soft: #10251f;
