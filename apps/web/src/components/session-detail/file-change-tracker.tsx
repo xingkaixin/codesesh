@@ -52,8 +52,8 @@ export function FileChangeTracker({
   return (
     <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
       <div className="flex items-center gap-2 border-b border-[var(--console-border)] px-4 py-3">
-        <FileText className="size-3.5 text-[var(--console-accent)]" />
-        <span className="console-mono text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
+        <FileText className="size-3.5 text-[var(--console-muted)]" />
+        <span className="text-xs font-semibold text-[var(--console-text)]">
           {t("File Tracker")}
         </span>
       </div>

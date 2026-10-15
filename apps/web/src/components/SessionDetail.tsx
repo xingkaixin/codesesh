@@ -308,7 +308,7 @@ export function SessionDetail({
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
-      <div className="grid gap-6 min-[1280px]:grid-cols-[288px_minmax(0,1fr)] min-[1280px]:items-start">
+      <div className="grid gap-6 min-[1280px]:grid-cols-[minmax(0,1fr)_300px] min-[1280px]:items-start">
         <SessionDetailAuxControls
           toc={toc}
           state={filterState}
@@ -338,7 +338,7 @@ export function SessionDetail({
           baseDirectory={session.directory}
           onJumpToAnchor={handleJumpToAnchor}
         />
-        <div className="flex min-w-0 flex-col gap-8">
+        <div className="flex min-w-0 flex-col gap-6 min-[1280px]:col-start-1 min-[1280px]:row-start-1">
           <SessionFilterChips toc={toc} state={filterState} actions={filterActions} />
           {filteredMessages.length > 0 ? (
             <>
@@ -412,11 +412,12 @@ export function SessionSummarySection({
     <section className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] shadow-[var(--shadow-raised)]">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={expanded}
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-[18px] py-2.5 text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none focus-visible:ring-inset"
         onClick={() => setExpanded((value) => !value)}
       >
-        <span className="console-mono inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--console-text)]">
-          <FileText className="size-3.5 text-[var(--console-accent)]" /> {t("Session Summary")}
+        <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--console-text)]">
+          <FileText className="size-4 text-[var(--console-muted)]" /> {t("Session Summary")}
         </span>
         {expanded ? (
           <ChevronUp className="size-3.5 text-[var(--console-muted)]" />
@@ -425,7 +426,7 @@ export function SessionSummarySection({
         )}
       </button>
       {expanded ? (
-        <div className="border-t border-[var(--console-border)] px-4 py-4">
+        <div className="border-t border-[var(--console-border)] px-[18px] py-4">
           <div className="console-markdown text-sm leading-relaxed text-[var(--console-text)]">
             <MarkdownContent text={content} />
           </div>
