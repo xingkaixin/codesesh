@@ -45,6 +45,10 @@ impl<T, V> Default for SnapshotPaginator<T, V> {
 }
 
 impl<T: Clone, V: Clone> SnapshotPaginator<T, V> {
+    pub fn prune(&mut self, now: i64) {
+        self.snapshots.retain(|s| s.expires > now);
+    }
+
     pub fn paginate(
         &mut self,
         now: i64,
@@ -56,7 +60,7 @@ impl<T: Clone, V: Clone> SnapshotPaginator<T, V> {
         if limit == 0 {
             return Err(PaginationError::InvalidCursor);
         }
-        self.snapshots.retain(|s| s.expires > now);
+        self.prune(now);
         let mut query: Vec<_> = query
             .iter()
             .filter(|(key, _)| key != "cursor" && key != "limit")
