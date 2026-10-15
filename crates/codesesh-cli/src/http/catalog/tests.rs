@@ -11,32 +11,26 @@ use codesesh_core::{
 fn cache_evicts_old_queries_and_failed_builds_are_retryable() {
     let cache = std::sync::Mutex::new(CatalogCache::default());
     for key in 0..64 {
-        cached_catalog(&cache, "1".into(), json!(key), || Ok(json!(key))).unwrap();
+        cached_catalog(&cache, 1, json!(key), || Ok(json!(key))).unwrap();
     }
-    cached_catalog(&cache, "1".into(), json!(0), || panic!("cache miss")).unwrap();
-    cached_catalog(&cache, "1".into(), json!(64), || Ok(json!(64))).unwrap();
+    cached_catalog(&cache, 1, json!(0), || panic!("cache miss")).unwrap();
+    cached_catalog(&cache, 1, json!(64), || Ok(json!(64))).unwrap();
     assert_eq!(cache.lock().unwrap().entries.len(), 64);
-    assert!(cache.lock().unwrap().get("1", &json!(1)).is_none());
-    assert!(
-        cached_catalog(&cache, "2".into(), json!(0), || anyhow::bail!(
-            "read failed"
-        ))
-        .is_err()
-    );
+    assert!(cache.lock().unwrap().get(1, &json!(1)).is_none());
+    assert!(cached_catalog(&cache, 2, json!(0), || anyhow::bail!("read failed")).is_err());
     assert_eq!(
-        cached_catalog(&cache, "2".into(), json!(0), || {
+        cached_catalog(&cache, 2, json!(0), || {
             assert!(cache.try_lock().is_ok());
             Ok(json!("new"))
         })
         .unwrap(),
         json!("new")
     );
-    cached_catalog(&cache, "1".into(), json!(65), || {
-        Ok(json!("late old snapshot"))
-    })
-    .unwrap();
+    assert_eq!(cache.lock().unwrap().entries.len(), 1);
+    cached_catalog(&cache, 1, json!(65), || Ok(json!("late old snapshot"))).unwrap();
+    assert_eq!(cache.lock().unwrap().entries.len(), 1);
     assert_eq!(
-        cached_catalog(&cache, "2".into(), json!(0), || panic!(
+        cached_catalog(&cache, 2, json!(0), || panic!(
             "old snapshot evicted current generation"
         ))
         .unwrap(),
