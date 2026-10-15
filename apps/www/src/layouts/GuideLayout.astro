@@ -2,8 +2,11 @@
 import type { MarkdownLayoutProps } from "astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
+import Icon from "../components/Icon.astro";
+import { experience } from "../data/experience";
 import { localeConfig, type Locale } from "../data/landing";
 import {
+  guideCategories,
   guides,
   guideCopy,
   guideRoutes,
@@ -21,154 +24,444 @@ const guide = guides.find((entry) => entry.slug === slug);
 if (!guide) throw new Error(`Unknown guide: ${slug}`);
 const t = guideCopy[locale];
 const content = guide.copy[locale];
+const category = guideCategories.find((entry) => entry.key === guide.category)!;
 const related = guides.filter(
   (entry) => entry.slug !== slug && entry.category === guide.category,
 );
 const links = related.length
   ? related
   : guides.filter((entry) => entry.slug === "session-history");
+const toc = headings.filter((heading) => heading.depth === 2);
 ---
 
 <LandingLayout locale={locale} page={guidePageConfig(locale, guide)}>
-  <div class="console-ui min-h-dvh bg-[var(--console-bg)] text-[var(--console-text)]">
-    <Header locale={locale} page="guides" languageRoutes={guideRoutes(slug)} />
-    <main class="mx-auto max-w-[1104px] px-4 py-10 sm:px-6 sm:py-14">
-      <nav
-        class="mb-8 flex flex-wrap items-center gap-3 text-sm text-[var(--console-muted)]"
-        aria-label={t.home}
-      >
-        <a class="guide-link" href={localeConfig[locale].route}>
-          {t.home}
-        </a>
-        <span aria-hidden="true">/</span>
-        <a class="guide-link" href={guideRoutes()[locale]}>
-          {t.label}
-        </a>
-      </nav>
-      <header class="mb-10 max-w-[760px] lg:ml-[248px]">
-        <h1 class="console-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-          {content.title}
-        </h1>
-        <p class="mt-5 text-base leading-8 text-[var(--console-text-secondary)]">
-          {content.description}
-        </p>
-        <p class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--console-muted)]">
-          <span>{t.by}</span>
-          <span>
-            {t.updated} <time datetime={guide.updated}>{guide.updated}</time>
-          </span>
-        </p>
+  <a class="skip-link" href="#main-content">
+    {experience[locale].skip}
+  </a>
+  <Header locale={locale} page="guides" languageRoutes={guideRoutes(slug)} />
+  <div class="frame">
+    <main id="main-content" class="panel">
+      <header class="page-hero ar-hero">
+        <div class="shell">
+          <nav class="page-crumb" aria-label={t.breadcrumb}>
+            <a href={localeConfig[locale].route}>{t.home}</a>
+            <span aria-hidden="true">/</span>
+            <a href={guideRoutes()[locale]}>{t.label}</a>
+            <span aria-hidden="true">/</span>
+            <span>{t[guide.category]}</span>
+          </nav>
+          <div class="ar-grid">
+            <div class="ar-spacer"></div>
+            <div>
+              <span class="cat-chip">
+                <Icon name={category.icon} class="size-3.5" />
+                {t[guide.category]}
+              </span>
+              <h1 class="ar-title">{content.title}</h1>
+              <p class="ar-desc">{content.description}</p>
+              <p class="ar-meta">
+                <span>{t.by}</span>
+                <span>
+                  {t.updated}{" "}
+                  <time datetime={guide.updated}>{guide.updated}</time>
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
       </header>
-      <div class="grid gap-10 lg:grid-cols-[200px_minmax(0,760px)] lg:gap-12">
-        <aside>
-          <nav
-            class="border-t border-[var(--console-border)] pt-5 lg:sticky lg:top-24"
-            aria-label={t.contents}
-          >
-            <p class="mb-3 text-sm font-semibold">{t.contents}</p>
-            <ul class="space-y-1">
-              {headings
-                .filter((heading) => heading.depth === 2)
-                .map((heading) => (
+      <div class="ar-body">
+        <div class="shell ar-grid">
+          <aside>
+            <nav class="toc" aria-label={t.contents}>
+              <p class="toc-h">{t.contents}</p>
+              <ol>
+                {toc.map((heading, index) => (
                   <li>
-                    <a
-                      class="guide-link block py-2 text-sm leading-6"
-                      href={`#${heading.slug}`}
-                    >
-                      {heading.text}
+                    <a href={`#${heading.slug}`} data-toc-link>
+                      <span class="n">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span>{heading.text}</span>
                     </a>
                   </li>
                 ))}
-            </ul>
-          </nav>
-        </aside>
-        <article class="min-w-0">
-          <div class="guide-content">
-            <slot />
-          </div>
-          <section
-            class="mt-12 border-t border-[var(--console-border)] pt-7"
-            aria-labelledby="related-guides"
-          >
-            <h2
-              id="related-guides"
-              class="console-display text-xl font-semibold"
-            >
-              {t.related}
-            </h2>
-            <ul class="my-5 space-y-4">
-              {links.map((entry) => (
-                <li>
-                  <a class="guide-link" href={guideRoutes(entry.slug)[locale]}>
-                    {entry.copy[locale].title}
-                  </a>
-                </li>
-              ))}
-            </ul>
-            <a class="guide-link" href={guideRoutes()[locale]}>
-              {t.all}
-            </a>
-          </section>
-        </article>
+              </ol>
+            </nav>
+          </aside>
+          <article class="min-w-0">
+            <div class="prose">
+              <slot />
+            </div>
+            <section class="rel" aria-labelledby="related-guides">
+              <h2 id="related-guides">{t.related}</h2>
+              <ul class="rel-cards">
+                {links.map((entry) => (
+                  <li>
+                    <a class="rcard" href={guideRoutes(entry.slug)[locale]}>
+                      <span class="k">{t[entry.category]}</span>
+                      <h3>{entry.copy[locale].title}</h3>
+                      <span class="go">
+                        {t.read}
+                        <Icon name="arrow" />
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <a class="tlink" href={guideRoutes()[locale]}>
+                {t.all}
+                <Icon name="arrow" />
+              </a>
+            </section>
+          </article>
+        </div>
       </div>
     </main>
-    <Footer locale={locale} />
   </div>
+  <Footer locale={locale} />
+  <p class="sr-only" aria-live="polite" data-copy-value-status></p>
 </LandingLayout>
 
+<script>
+  import { bindCopyButtons } from "../scripts/copy";
+
+  bindCopyButtons();
+
+  const tocLinks = [
+    ...document.querySelectorAll<HTMLAnchorElement>("[data-toc-link]"),
+  ];
+  const sections = tocLinks
+    .map((link) =>
+      document.getElementById(decodeURIComponent(link.hash.slice(1))),
+    )
+    .filter((heading): heading is HTMLElement => Boolean(heading));
+  const markCurrent = () => {
+    const offset = 120;
+    let current = 0;
+    sections.forEach((heading, index) => {
+      if (heading.getBoundingClientRect().top <= offset) current = index;
+    });
+    tocLinks.forEach((link, index) => {
+      if (index === current) link.setAttribute("aria-current", "true");
+      else link.removeAttribute("aria-current");
+    });
+  };
+  if (sections.length) {
+    markCurrent();
+    window.addEventListener("scroll", markCurrent, { passive: true });
+  }
+</script>
+
 <style>
-  .guide-content {
-    color: var(--console-text-secondary);
-    font-size: 1rem;
-    line-height: 1.85;
+  .ar-hero {
+    padding: 48px 0 56px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ar-hero::after {
+    top: -260px;
+    right: -180px;
+    width: 560px;
+    height: 560px;
+  }
+  .page-crumb {
+    margin-bottom: 40px;
+  }
+  .ar-grid {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 760px);
+    gap: 64px;
+  }
+  .cat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .ar-title {
+    margin: 22px 0 0;
+    font-size: clamp(32px, 3.6vw, 46px);
+    font-weight: 300;
+    line-height: 1.18;
+    letter-spacing: -0.02em;
     overflow-wrap: anywhere;
+    text-wrap: balance;
+    word-break: keep-all;
   }
-  .guide-content :global([id]) {
-    scroll-margin-top: 8rem;
+  .ar-desc {
+    margin: 20px 0 0;
+    color: var(--text-2);
+    font-size: 17px;
+    line-height: 1.8;
   }
-  .guide-content :global(h2) {
-    margin: 2.75rem 0 1rem;
-    color: var(--console-text);
-    font-size: 1.5rem;
+  .ar-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    margin: 28px 0 0;
+    color: var(--muted);
+    font: 500 12px/1 var(--mono);
+  }
+  .ar-body {
+    padding: 56px 0 96px;
+  }
+  .toc {
+    position: sticky;
+    top: 96px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .toc-h {
+    margin: 0 0 12px;
+    color: var(--muted);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .toc ol {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .toc a {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.5;
+    transition:
+      background 0.15s,
+      color 0.15s;
+  }
+  .toc a .n {
+    color: var(--muted);
+    font: 500 11px/1 var(--mono);
+  }
+  .toc a:hover {
+    background: var(--side-accent);
+    color: var(--text);
+  }
+  .toc a[aria-current="true"] {
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    color: var(--text);
+  }
+  .toc a[aria-current="true"] .n {
+    color: var(--brand-ink);
+  }
+  .prose {
+    min-width: 0;
+    color: var(--text-2);
+    font-size: 16px;
+    line-height: 1.85;
+    counter-reset: section;
+  }
+  .prose :global(p) {
+    margin: 16px 0;
+  }
+  .prose :global(h2) {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 56px 0 18px;
+    color: var(--text);
+    font-size: 24px;
     font-weight: 600;
     line-height: 1.4;
+    letter-spacing: -0.01em;
+    counter-increment: section;
   }
-  .guide-content :global(p),
-  .guide-content :global(ul),
-  .guide-content :global(ol) {
-    margin: 1rem 0;
+  .prose :global(h2)::before {
+    color: var(--brand-ink);
+    content: counter(section, decimal-leading-zero);
+    font: 600 13px/1 var(--mono);
   }
-  .guide-content :global(ul) {
+  .prose > :global(:first-child) {
+    margin-top: 0;
+  }
+  .prose :global(ul),
+  .prose :global(ol) {
+    margin: 16px 0;
+    padding-left: 1.5rem;
+  }
+  .prose :global(ul) {
     list-style: disc;
-    padding-left: 1.5rem;
   }
-  .guide-content :global(ol) {
+  .prose :global(ol) {
     list-style: decimal;
-    padding-left: 1.5rem;
   }
-  .guide-content :global(li) {
-    margin: 0.6rem 0;
+  .prose :global(li) {
+    margin: 8px 0;
   }
-  .guide-content :global(strong) {
-    color: var(--console-text);
+  .prose :global(li::marker) {
+    color: var(--muted);
   }
-  .guide-content :global(a) {
-    color: var(--brand-text);
+  .prose :global(strong) {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .prose :global(a) {
+    color: var(--brand-ink);
     text-decoration: underline;
     text-underline-offset: 0.2em;
   }
-  .guide-content :global(a:focus-visible) {
-    outline: 2px solid var(--brand);
-    outline-offset: 3px;
+  .prose :global(:not(pre) > code) {
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--muted-bg);
+    color: var(--text);
+    font: 500 0.84em/1 var(--mono);
+    overflow-wrap: anywhere;
   }
-  .guide-content :global(code) {
-    font-family: "JetBrains Mono Variable", monospace;
-    font-size: 0.85em;
+  .prose :global(.code) {
+    margin: 22px 0;
+    overflow: hidden;
+    border-radius: 16px;
+    background: var(--term);
+    box-shadow: var(--sh-raised);
   }
-  .guide-content :global(pre) {
-    margin: 1.25rem 0;
-    padding: 1rem;
-    border-radius: 0.5rem;
+  .prose :global(.code-h) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 7px 7px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--term-dim);
+    font: 500 11px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .prose :global(.code pre) {
+    margin: 0;
+    padding: 16px 18px 18px;
     overflow-x: auto;
+    color: var(--term-fg);
+    font: 400 13px/1.85 var(--mono);
+    white-space: pre;
+  }
+  .prose :global(.code pre code) {
+    font: inherit;
+  }
+  .prose :global(.code .cmd)::before {
+    color: #ff9a6b;
+    content: "$ ";
+  }
+  .prose :global(.code .ph) {
+    color: #ffc29f;
+    font-style: italic;
+  }
+  .rel {
+    margin-top: 64px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+  .rel h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .rel-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rcard {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    color: var(--text);
+    transition:
+      border-color 0.15s,
+      transform 0.2s var(--ease-out),
+      box-shadow 0.2s;
+  }
+  .rcard:hover {
+    border-color: var(--brand-line);
+    box-shadow: var(--sh-overlay);
+    transform: translateY(-2px);
+  }
+  .rcard .k {
+    color: var(--muted);
+    font: 500 11px/1 var(--mono);
+  }
+  .rcard h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.55;
+  }
+  .rcard .go {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 8px;
+    color: var(--brand-ink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .rcard .go :global(svg) {
+    transition: transform 0.2s var(--ease-out);
+  }
+  .rcard:hover .go :global(svg) {
+    transform: translateX(3px);
+  }
+  .rel .tlink {
+    margin-top: 24px;
+  }
+  @media (max-width: 1023px) {
+    .ar-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
+    }
+    .ar-spacer {
+      display: none;
+    }
+    .toc {
+      position: static;
+    }
+  }
+  @media (max-width: 760px) {
+    .ar-hero {
+      padding: 36px 0 44px;
+    }
+    .page-crumb {
+      margin-bottom: 28px;
+    }
+    .ar-body {
+      padding: 40px 0 72px;
+    }
+    .prose {
+      font-size: 15px;
+    }
+    .prose :global(.code pre) {
+      font-size: 12px;
+    }
+    .rel-cards {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>

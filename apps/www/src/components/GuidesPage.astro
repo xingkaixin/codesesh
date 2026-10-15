@@ -1,14 +1,18 @@
 ---
 import Header from "./Header.astro";
 import Footer from "./Footer.astro";
+import Icon from "./Icon.astro";
 import LandingLayout from "../layouts/LandingLayout.astro";
+import { experience } from "../data/experience";
 import {
+  guideCategories,
   guideCopy,
+  guideCount,
   guidePageConfig,
   guideRoutes,
   guides,
 } from "../data/guides";
-import type { Locale } from "../data/landing";
+import { copy, localeConfig, type Locale } from "../data/landing";
 
 interface Props {
   locale: Locale;
@@ -16,54 +20,373 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = guideCopy[locale];
-const categories = ["start", "connect", "understand"] as const;
+const labels = copy[locale].hero;
+const startGuide = guides.find((guide) => guide.slug === "getting-started")!;
+const startCommand = "npx codesesh@latest";
+const categories = guideCategories.map((category, index) => ({
+  ...category,
+  number: String(index + 1).padStart(2, "0"),
+  items: guides.filter((guide) => guide.category === category.key),
+}));
 ---
 
 <LandingLayout locale={locale} page={guidePageConfig(locale)}>
-  <div class="console-ui min-h-dvh bg-[var(--console-bg)] text-[var(--console-text)]">
-    <Header locale={locale} page="guides" languageRoutes={guideRoutes()} />
-    <main class="mx-auto max-w-[1056px] px-4 py-14 sm:px-6 sm:py-20">
-      <header class="mb-14 max-w-[680px]">
-        <h1 class="console-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-          {t.title}
-        </h1>
-        <p class="mt-6 text-lg leading-8 text-[var(--console-text-secondary)]">
-          {t.description}
-        </p>
-      </header>
+  <a class="skip-link" href="#main-content">
+    {experience[locale].skip}
+  </a>
+  <Header locale={locale} page="guides" languageRoutes={guideRoutes()} />
+  <div class="frame">
+    <main id="main-content" class="panel">
+      <section class="page-hero gx-hero" aria-labelledby="guides-title">
+        <div class="shell">
+          <nav class="page-crumb" aria-label={t.breadcrumb}>
+            <a href={localeConfig[locale].route}>{t.home}</a>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">{t.label}</span>
+          </nav>
+          <div class="gx-top">
+            <div>
+              <p class="eyebrow">
+                <span class="n">GUIDES</span>
+                <span class="ln"></span>
+                {guideCount(locale, guides.length)}
+              </p>
+              <h1 id="guides-title" class="h1">
+                {t.title}
+              </h1>
+              <p class="lead">{t.description}</p>
+              <nav class="jump" aria-label={t.categories}>
+                {categories.map((category) => (
+                  <a href={`#${category.key}`}>
+                    {t[category.key]}
+                    <span class="c">{category.items.length}</span>
+                  </a>
+                ))}
+              </nav>
+            </div>
+            <aside class="start" aria-labelledby="start-title">
+              <p class="start-eb">
+                <Icon name="terminal" />
+                {t.startHere}
+              </p>
+              <h2 id="start-title">{startGuide.copy[locale].title}</h2>
+              <p class="start-body">{t.startBody}</p>
+              <div class="tm">
+                <pre><span class="ps">$</span> {startCommand}
+<span class="cm"># {t.startComment}</span></pre>
+                <button
+                  type="button"
+                  class="term-cp"
+                  data-copy-value={startCommand}
+                  data-copy-label={labels.copyCommand}
+                  data-copied-label={labels.copied}
+                  data-copy-failed-label={labels.copyFailed}
+                >
+                  <span class="copy-icon-stack">
+                    <span data-copy-icon="idle" data-active="true">
+                      <Icon name="copy" />
+                    </span>
+                    <span data-copy-icon="done">
+                      <Icon name="check" />
+                    </span>
+                  </span>
+                  <span data-copy-text>{labels.copyCommand}</span>
+                </button>
+              </div>
+              <a class="tlink" href={guideRoutes(startGuide.slug)[locale]}>
+                {t.readStart}
+                <Icon name="arrow" />
+              </a>
+            </aside>
+          </div>
+        </div>
+      </section>
       {categories.map((category) => (
         <section
-          class="grid gap-5 border-t border-[var(--console-border)] py-9 md:grid-cols-[200px_minmax(0,1fr)] md:gap-12"
-          aria-labelledby={`category-${category}`}
+          class="gx-cat"
+          id={category.key}
+          aria-labelledby={`cat-${category.key}`}
         >
-          <h2
-            id={`category-${category}`}
-            class="console-display text-xl font-semibold"
-          >
-            {t[category]}
-          </h2>
-          <ul class="space-y-8">
-            {guides
-              .filter((guide) => guide.category === category)
-              .map((guide) => (
+          <div class="shell gx-cat-in">
+            <div>
+              <span class="cat-ic">
+                <Icon name={category.icon} class="size-5" />
+              </span>
+              <p class="cat-n">{category.number}</p>
+              <h2 class="cat-t" id={`cat-${category.key}`}>
+                {t[category.key]}
+              </h2>
+              <p class="cat-c">{guideCount(locale, category.items.length)}</p>
+            </div>
+            <ul class="cards">
+              {category.items.map((guide) => (
                 <li>
-                  <h3 class="text-lg font-semibold leading-7">
-                    <a
-                      class="guide-link"
-                      href={guideRoutes(guide.slug)[locale]}
-                    >
-                      {guide.copy[locale].title}
-                    </a>
-                  </h3>
-                  <p class="mt-2 max-w-[68ch] text-sm leading-7 text-[var(--console-text-secondary)]">
-                    {guide.copy[locale].description}
-                  </p>
+                  <a class="card" href={guideRoutes(guide.slug)[locale]}>
+                    <h3>{guide.copy[locale].title}</h3>
+                    <p>{guide.copy[locale].description}</p>
+                    <p class="meta">
+                      {t.updated}{" "}
+                      <time datetime={guide.updated}>{guide.updated}</time>
+                    </p>
+                    <span class="go" aria-hidden="true">
+                      <Icon name="arrow" />
+                    </span>
+                  </a>
                 </li>
               ))}
-          </ul>
+            </ul>
+          </div>
         </section>
       ))}
     </main>
-    <Footer locale={locale} />
   </div>
+  <Footer locale={locale} />
+  <p class="sr-only" aria-live="polite" data-copy-value-status></p>
 </LandingLayout>
+
+<script>
+  import { bindCopyButtons } from "../scripts/copy";
+
+  bindCopyButtons();
+</script>
+
+<style>
+  .gx-hero {
+    padding: 56px 0 80px;
+  }
+  .gx-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 64px;
+    align-items: end;
+  }
+  .gx-top .lead {
+    margin-top: 24px;
+  }
+  .jump {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 36px;
+  }
+  .jump a {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 8px 0 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    transition:
+      border-color 0.15s,
+      transform 0.2s var(--ease-out);
+  }
+  .jump a:hover {
+    border-color: var(--brand-line);
+    transform: translateY(-1px);
+  }
+  .jump .c {
+    padding: 7px 9px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font: 600 11px/1 var(--mono);
+  }
+  .start {
+    padding: 26px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background: var(--surface);
+    box-shadow: var(--sh-overlay);
+  }
+  .start-eb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--brand-ink);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .start h2 {
+    margin: 16px 0 0;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+  }
+  .start-body {
+    margin: 8px 0 0;
+    color: var(--text-2);
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .tm {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-top: 20px;
+    padding: 14px 14px 14px 18px;
+    border-radius: 14px;
+    background: var(--term);
+    color: var(--term-fg);
+  }
+  .tm pre {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font: 400 12.5px/1.85 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .tm .ps {
+    color: #ff9a6b;
+  }
+  .tm .cm {
+    color: var(--term-dim);
+  }
+  .start .tlink {
+    margin-top: 20px;
+  }
+  .gx-cat {
+    padding: 56px 0;
+    border-top: 1px solid var(--border);
+  }
+  .gx-cat:last-child {
+    padding-bottom: 88px;
+  }
+  .gx-cat-in {
+    display: grid;
+    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+    gap: 64px;
+  }
+  .cat-ic {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+  }
+  .cat-n {
+    margin: 24px 0 0;
+    color: var(--brand-ink);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+  }
+  .cat-t {
+    margin: 12px 0 0;
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    word-break: keep-all;
+  }
+  .cat-c {
+    margin: 14px 0 0;
+    color: var(--muted);
+    font: 500 12px/1 var(--mono);
+  }
+  .cards {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 28px;
+    align-items: center;
+    padding: 24px 26px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+    color: var(--text);
+    transition:
+      border-color 0.15s,
+      transform 0.2s var(--ease-out),
+      box-shadow 0.2s;
+  }
+  .card:hover {
+    border-color: var(--brand-line);
+    box-shadow: var(--sh-overlay);
+    transform: translateY(-2px);
+  }
+  .card h3 {
+    grid-column: 1;
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .card p {
+    grid-column: 1;
+    max-width: 64ch;
+    margin: 8px 0 0;
+    color: var(--text-2);
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .card .meta {
+    margin-top: 16px;
+    color: var(--muted);
+    font: 500 11px/1 var(--mono);
+  }
+  .go {
+    display: grid;
+    grid-row: 1 / span 3;
+    grid-column: 2;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: var(--muted-bg);
+    color: var(--text-2);
+    transition:
+      background 0.15s,
+      color 0.15s;
+  }
+  .go :global(svg) {
+    transition: transform 0.2s var(--ease-out);
+  }
+  .card:hover .go {
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+  }
+  .card:hover .go :global(svg) {
+    transform: translateX(2px);
+  }
+  @media (max-width: 1023px) {
+    .gx-top,
+    .gx-cat-in {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
+    }
+  }
+  @media (max-width: 760px) {
+    .gx-hero {
+      padding: 40px 0 56px;
+    }
+    .gx-cat {
+      padding: 40px 0;
+    }
+    .card {
+      grid-template-columns: minmax(0, 1fr);
+      padding: 20px;
+    }
+    .go {
+      display: none;
+    }
+  }
+</style>
