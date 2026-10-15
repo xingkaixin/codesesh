@@ -24,7 +24,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
   >("connected");
   const pendingEventRef = useRef<SessionsUpdatedEvent | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
-  const updateChainRef = useRef(Promise.resolve());
+  const inFlightUpdateRef = useRef<Promise<void> | null>(null);
   const startRecoveryRef = useRef(() => {});
 
   const syncLiveUpdate = useEffectEvent(async (event: SessionsUpdatedEvent) => {
@@ -39,12 +39,22 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     }
   });
 
+  const scheduleFlush = useEffectEvent(() => {
+    // A hidden tab only merges events; each applied event refreshes server-side aggregates.
+    if (!pendingEventRef.current || document.visibilityState === "hidden") return;
+    pendingTimerRef.current ??= window.setTimeout(() => flushLiveUpdate(), LIVE_UPDATE_WINDOW_MS);
+  });
+
+  // Events that arrive while an update runs stay merged in pendingEventRef.
   const flushLiveUpdate = useEffectEvent(() => {
     pendingTimerRef.current = null;
     const event = pendingEventRef.current;
+    if (!event || inFlightUpdateRef.current) return;
     pendingEventRef.current = null;
-    if (!event) return;
-    updateChainRef.current = updateChainRef.current.then(() => syncLiveUpdate(event));
+    inFlightUpdateRef.current = syncLiveUpdate(event).finally(() => {
+      inFlightUpdateRef.current = null;
+      scheduleFlush();
+    });
   });
 
   const clearPendingLiveUpdate = useEffectEvent(() => {
@@ -55,7 +65,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
   });
 
   const resync = useEffectEvent(async () => {
-    await updateChainRef.current;
+    await inFlightUpdateRef.current;
     await resyncLiveState();
   });
 
@@ -84,12 +94,8 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
       void recover();
     };
     startRecoveryRef.current = startRecovery;
-    const scheduleFlush = () => {
-      // A hidden tab only merges events; each applied event refreshes server-side aggregates.
-      if (!pendingEventRef.current || document.visibilityState === "hidden") return;
-      pendingTimerRef.current ??= window.setTimeout(() => flushLiveUpdate(), LIVE_UPDATE_WINDOW_MS);
-    };
-    document.addEventListener("visibilitychange", scheduleFlush);
+    const onVisibilityChange = () => scheduleFlush();
+    document.addEventListener("visibilitychange", onVisibilityChange);
     const unsubscribe = subscribeSessionUpdates(
       (event) => {
         pendingEventRef.current = pendingEventRef.current
@@ -111,7 +117,7 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     return () => {
       startRecoveryRef.current = () => {};
       cancelRecovery();
-      document.removeEventListener("visibilitychange", scheduleFlush);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       unsubscribe();
     };
   }, [setScanStatus]);
