@@ -50,47 +50,58 @@ fn log_query(
 }
 
 const ANALYTICS_REVISION_QUERY: &str = concat!(
-    "SELECT COALESCE((SELECT value FROM cache_meta ",
-    "WHERE key='analytics_revision'), '0')"
+    "SELECT CAST(COALESCE((SELECT value FROM cache_meta ",
+    "WHERE key='analytics_revision'), '0') AS INTEGER)"
 );
 
 #[derive(Default)]
 pub struct CatalogCache {
-    entries: VecDeque<(String, Value, Value)>,
+    revision: i64,
+    entries: VecDeque<(Value, Value)>,
 }
 
 impl CatalogCache {
-    fn get(&mut self, revision: &str, key: &Value) -> Option<Value> {
+    fn get(&mut self, revision: i64, key: &Value) -> Option<Value> {
+        if revision != self.revision {
+            return None;
+        }
         let index = self
             .entries
             .iter()
-            .position(|(generation, candidate, _)| generation == revision && candidate == key)?;
+            .position(|(candidate, _)| candidate == key)?;
         let entry = self.entries.remove(index)?;
-        let result = entry.2.clone();
+        let result = entry.1.clone();
         self.entries.push_back(entry);
         Some(result)
     }
 
-    fn insert(&mut self, revision: String, key: Value, value: Value) {
-        self.entries
-            .retain(|(generation, candidate, _)| generation != &revision || candidate != &key);
+    fn insert(&mut self, revision: i64, key: Value, value: Value) {
+        // A read that began before the latest commit must not evict newer results.
+        if revision < self.revision {
+            return;
+        }
+        if revision > self.revision {
+            self.revision = revision;
+            self.entries.clear();
+        }
+        self.entries.retain(|(candidate, _)| candidate != &key);
         if self.entries.len() == 64 {
             self.entries.pop_front();
         }
-        self.entries.push_back((revision, key, value));
+        self.entries.push_back((key, value));
     }
 }
 
 fn cached_catalog(
     cache: &std::sync::Mutex<CatalogCache>,
-    revision: String,
+    revision: i64,
     key: Value,
     build: impl FnOnce() -> anyhow::Result<Value>,
 ) -> anyhow::Result<Value> {
     let cached = cache
         .lock()
         .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?
-        .get(&revision, &key);
+        .get(revision, &key);
     if let Some(value) = cached {
         return Ok(value);
     }
@@ -180,7 +191,7 @@ pub async fn projects(
                 ..Default::default()
             };
             let revision =
-                conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
+                conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
             let value = cached_catalog(
                 &cache,
                 revision,
@@ -365,7 +376,7 @@ pub async fn dashboard(
                 ..Default::default()
             };
             let revision =
-                conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, String>(0))?;
+                conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
             let value = cached_catalog(&cache, revision, key, || {
                 timings.cache_hit = false;
                 let phase = Instant::now();
