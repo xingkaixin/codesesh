@@ -1,23 +1,32 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { Dialog } from "@base-ui/react/dialog";
+import { Fragment } from "react";
+import { Kbd } from "../ui/kbd";
+import {
+  BUTTON_GHOST_CLASS,
+  DIALOG_BODY_CLASS,
+  DIALOG_HEADER_CLASS,
+  DIALOG_POPUP_CLASS,
+  DIALOG_TITLE_CLASS,
+} from "../ui/dialog-styles";
 
 const SHORTCUT_GROUPS = [
   {
     title: "Navigation",
     items: [
-      { keys: "j / k", description: "Move through sessions or search results" },
-      { keys: "Enter", description: "Open the current selection" },
-      { keys: "g / G", description: "Jump to the first or last item" },
+      { keys: ["J", "K"], description: "Move through sessions or search results" },
+      { keys: ["Enter"], description: "Open the current selection" },
+      { keys: ["G", "⇧ G"], description: "Jump to the first or last item" },
     ],
   },
   {
     title: "Search & Help",
     items: [
-      { keys: "Cmd/Ctrl K", description: "Open global search" },
-      { keys: "/", description: "Focus the search box" },
-      { keys: "Esc", description: "Exit search or close the current detail view" },
-      { keys: "?", description: "Open this shortcuts panel" },
+      { keys: ["⌘ K"], description: "Open global search" },
+      { keys: ["/"], description: "Focus the search box" },
+      { keys: ["Esc"], description: "Exit search or close the current detail view" },
+      { keys: ["?"], description: "Open this shortcuts panel" },
     ],
   },
 ] as const;
@@ -28,39 +37,46 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (!next ? onClose() : undefined)}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="shortcut-overlay fixed inset-0 z-50 bg-[var(--scrim)]" />
-        <Dialog.Popup className="shortcut-content fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl origin-center -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-5 shadow-[var(--shadow-overlay)] outline-none">
-          <div className="flex items-start justify-between gap-4">
+        <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-[var(--scrim)]" />
+        <Dialog.Popup className={`${DIALOG_POPUP_CLASS} max-w-[720px]`}>
+          <div className={DIALOG_HEADER_CLASS}>
             <div>
               <p className="console-eyebrow">{t("Keyboard Shortcuts")}</p>
-              <Dialog.Title className="console-display mt-2 text-[19px] font-semibold text-[var(--console-text)]">
+              <Dialog.Title className={`${DIALOG_TITLE_CLASS} mt-1`}>
                 {t("Navigate without leaving the keyboard")}
               </Dialog.Title>
             </div>
-            <Dialog.Close className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-2 py-1 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none">
-              Esc
+            <Dialog.Close aria-label={t("Close")} className={BUTTON_GHOST_CLASS}>
+              <Kbd>Esc</Kbd>
+              {t("Close")}
             </Dialog.Close>
           </div>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {SHORTCUT_GROUPS.map((group) => (
-              <div
-                key={t(group.title)}
-                className="rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-4"
-              >
-                <h3 className="console-eyebrow">{t(group.title)}</h3>
-                <div className="mt-3 space-y-3">
+          <div className={`${DIALOG_BODY_CLASS} pb-6`}>
+            <div className="grid gap-x-8 gap-y-4 md:grid-cols-2">
+              {SHORTCUT_GROUPS.map((group) => (
+                <section key={group.title}>
+                  <h3 className="mb-1 text-xs font-medium text-[var(--console-muted)]">
+                    {t(group.title)}
+                  </h3>
                   {group.items.map((item) => (
-                    <div key={item.keys}>
-                      <p className="console-mono text-xs text-[var(--console-text)]">{item.keys}</p>
-                      <p className="mt-1 text-[13px] leading-6 text-[var(--console-text-secondary)]">
-                        {t(item.description)}
-                      </p>
+                    <div
+                      key={item.description}
+                      className="flex items-center justify-between gap-4 border-b border-[var(--console-border)] py-2.5 text-[13px] text-[var(--console-text-secondary)] last:border-b-0"
+                    >
+                      <span>{t(item.description)}</span>
+                      <span className="flex shrink-0 items-center gap-1 text-[11px] text-[var(--console-muted)]">
+                        {item.keys.map((key, index) => (
+                          <Fragment key={key}>
+                            {index > 0 ? "/" : null}
+                            <Kbd>{key}</Kbd>
+                          </Fragment>
+                        ))}
+                      </span>
                     </div>
                   ))}
-                </div>
-              </div>
-            ))}
+                </section>
+              ))}
+            </div>
           </div>
         </Dialog.Popup>
       </Dialog.Portal>

@@ -32,7 +32,9 @@ import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 import { SearchControls, type SearchControlsHandle } from "./SearchControls";
-import { Funnel } from "../ui/icons";
+import { BUTTON_PRIMARY_CLASS } from "../ui/dialog-styles";
+import { EmptyState } from "../ui/empty-state";
+import { Funnel, RefreshCw, XCircle } from "../ui/icons";
 
 const DetailLanding = lazy(() =>
   import("../DetailLanding").then((module) => ({ default: module.DetailLanding })),
@@ -241,19 +243,18 @@ function LoadError({ load }: { load: LoadModel }) {
   useLocale();
 
   return (
-    <div
+    <EmptyState
       role="alert"
-      className="mx-auto max-w-4xl rounded-sm border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6 text-sm text-[var(--console-error)]"
+      tone="error"
+      icon={<XCircle className="size-4" />}
+      title={load.error}
+      className="mx-auto max-w-4xl"
     >
-      <p>{load.error}</p>
-      <button
-        type="button"
-        onClick={load.retry}
-        className="console-mono mt-4 rounded-sm border border-[var(--console-error-border)] px-3 py-1.5 text-xs motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-      >
+      <button type="button" onClick={load.retry} className={`${BUTTON_PRIMARY_CLASS} mt-1.5`}>
+        <RefreshCw aria-hidden="true" className="size-3.5" />
         {t("Retry")}
       </button>
-    </div>
+    </EmptyState>
   );
 }
 

@@ -86,54 +86,10 @@
   --color-chart-9: var(--chart-9);
   --color-chart-10: var(--chart-10);
 
-  @keyframes shortcut-overlay-in {
-    from {
-      opacity: 0;
-    }
-
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes shortcut-overlay-out {
-    from {
-      opacity: 1;
-    }
-
-    to {
-      opacity: 0;
-    }
-  }
-
   /* Content is centered via Tailwind's -translate-x/y-1/2, which compiles to
      the CSS `translate` property. Animate the standalone `scale` property here
      (not `transform`) so the centering translate and the animation compose
      instead of double-shifting the panel. */
-  @keyframes shortcut-content-in {
-    from {
-      opacity: 0;
-      scale: 0.96;
-    }
-
-    to {
-      opacity: 1;
-      scale: 1;
-    }
-  }
-
-  @keyframes shortcut-content-out {
-    from {
-      opacity: 1;
-      scale: 1;
-    }
-
-    to {
-      opacity: 0;
-      scale: 0.96;
-    }
-  }
-
   @keyframes scan-progress-indeterminate {
     from {
       transform: translateX(-100%);
@@ -511,22 +467,6 @@
     will-change: transform;
   }
 
-  .shortcut-overlay[data-open] {
-    animation: shortcut-overlay-in 200ms var(--ease-out);
-  }
-
-  .shortcut-overlay[data-closed] {
-    animation: shortcut-overlay-out 150ms var(--ease-out);
-  }
-
-  .shortcut-content[data-open] {
-    animation: shortcut-content-in 200ms var(--ease-out);
-  }
-
-  .shortcut-content[data-closed] {
-    animation: shortcut-content-out 150ms var(--ease-out);
-  }
-
   .motion-backdrop {
     opacity: 1;
     transition: opacity 200ms var(--ease-out);
@@ -829,14 +769,6 @@
       color var(--dur-fast) var(--ease-out),
       background-color var(--dur-fast) var(--ease-out),
       border-color var(--dur-fast) var(--ease-out);
-  }
-
-  .shortcut-content[data-open] {
-    animation-name: shortcut-overlay-in;
-  }
-
-  .shortcut-content[data-closed] {
-    animation-name: shortcut-overlay-out;
   }
 
   .t-tt {

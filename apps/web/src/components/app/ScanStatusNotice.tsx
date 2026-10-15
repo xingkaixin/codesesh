@@ -40,7 +40,7 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
         {show ? (
           <Popover.Root>
             <Popover.Trigger
-              className={`console-mono mt-2 block w-fit max-w-full rounded-sm border px-2 py-1 text-left text-[11px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${label || sourceIssue ? "border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] text-[var(--console-warning)]" : "border-border bg-muted text-muted-foreground hover:text-foreground"}`}
+              className={`mt-2 block w-fit max-w-full rounded-[10px] px-2.5 py-1.5 text-left text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${sourceIssue ? "bg-[var(--console-warning-bg)] text-[var(--console-warning)] shadow-[inset_0_0_0_1px_var(--console-warning-border)]" : "bg-[var(--console-surface-muted)] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)] hover:text-[var(--console-text)]"}`}
             >
               <span>{triggerLabel}</span>
               <span className="ml-2 underline underline-offset-2">{t("View status")}</span>
@@ -51,10 +51,10 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
                   aria-valuenow={Math.min(processed, total)}
                   aria-valuemin={0}
                   aria-valuemax={total}
-                  className="mt-1 h-1.5 w-full overflow-hidden rounded-sm bg-[var(--console-warning-border)]"
+                  className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--console-border)]"
                 >
                   <div
-                    className="h-full bg-[var(--console-warning)]"
+                    className="h-full rounded-full bg-[var(--brand)]"
                     style={{ width: `${Math.min(100, (processed / total) * 100)}%` }}
                   />
                 </div>

@@ -12,6 +12,9 @@ import { getSessionDisplayTitle } from "../../lib/session-title";
 import { AgentIcon } from "../AgentIcon";
 import { SmartTagChips } from "../SmartTagChips";
 import { cn } from "../../lib/utils";
+import { BUTTON_OUTLINE_CLASS, BUTTON_PRIMARY_CLASS } from "../ui/dialog-styles";
+import { EmptyState } from "../ui/empty-state";
+import { RefreshCw, Search, XCircle } from "../ui/icons";
 import { Kbd } from "../ui/kbd";
 import { Panel } from "../ui/panel";
 import { SearchFilterBar } from "./SearchFilterBar";
@@ -250,43 +253,40 @@ export function SearchResultsPanel({
     return (
       <div className="flex flex-col gap-3">
         {filterBar}
-        <div
-          className="rounded-lg border border-[var(--console-error-border)] bg-[var(--console-error-bg)] p-6"
+        <EmptyState
           aria-live="polite"
+          tone="error"
+          icon={<XCircle className="size-4" />}
+          title={t("Search Failed")}
         >
-          <h2 className="console-display text-[15px] font-semibold text-[var(--console-error)]">
-            {t("Search Failed")}
-          </h2>
-          <p className="console-mono mt-2 break-words text-xs text-[var(--console-error)]">
+          <p className="break-words">
             {state.error}
             {t(". Check the server connection, then try again.")}
           </p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="console-mono motion-hover motion-press mt-4 rounded-sm border border-[var(--console-error-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--console-error)] hover:bg-[var(--console-error-bg)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
-          >
+          <button type="button" onClick={onRetry} className={`${BUTTON_PRIMARY_CLASS} mt-1.5`}>
+            <RefreshCw aria-hidden="true" className="size-3.5" />
             {t("Retry Search")}
           </button>
-        </div>
+        </EmptyState>
       </div>
     );
   }
 
   if (results.length === 0) {
+    const hasFilters = Object.values(filters).some(Boolean);
     return (
       <div className="flex flex-col gap-3">
         {filterBar}
-        <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 shadow-[var(--shadow-raised)]">
-          <h2 className="console-display text-[15px] font-semibold text-[var(--console-text)]">
-            {query ? t("No matches") : t("No recent sessions")}
-          </h2>
+        <EmptyState
+          icon={<Search className="size-4" />}
+          title={query ? t("No matches") : t("No recent sessions")}
+        >
           {query ? (
-            <p className="console-mono mt-2 text-xs text-[var(--console-muted)]">
+            <p className="console-mono">
               {t("Query:")} {query}
             </p>
           ) : null}
-          <p className="mt-2 text-xs leading-5 text-[var(--console-muted)]">
+          <p className="leading-5">
             {t(
               "Try another query, adjust filters, or change the time range above.",
               [],
@@ -294,7 +294,16 @@ export function SearchResultsPanel({
               SEARCH_MESSAGES,
             )}
           </p>
-        </div>
+          {hasFilters ? (
+            <button
+              type="button"
+              onClick={() => onChangeFilters({})}
+              className={`${BUTTON_OUTLINE_CLASS} mt-1.5`}
+            >
+              {t("Clear")}
+            </button>
+          ) : null}
+        </EmptyState>
       </div>
     );
   }
