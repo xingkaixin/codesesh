@@ -77,6 +77,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                 })
             }
         }),
+        release_idle: None,
     };
     let database = temporary.path().join("cache.db");
     let runtime = Runtime::start(database.clone(), vec![source], 2)
@@ -144,6 +145,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                 })
             }
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(database, vec![source], 1).await.unwrap();
     until(|| runtime.status().completed_agents.len() == 1).await;
@@ -180,6 +182,7 @@ async fn cancelled_scan_is_rejected_before_publication() {
             }));
             Ok(result)
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
         .await
@@ -216,6 +219,7 @@ async fn failed_transaction_never_publishes_and_retries_from_last_good_state() {
             }));
             Ok(value)
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(database.clone(), vec![source], 1)
         .await
@@ -264,6 +268,7 @@ async fn backfill_resumes_a_durable_checkpoint_after_restart() {
             value.complete = false;
             Ok(value)
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(database.clone(), vec![source], 1)
         .await
@@ -278,6 +283,7 @@ async fn backfill_resumes_a_durable_checkpoint_after_restart() {
             assert_eq!(request.checkpoint, Some(serde_json::json!({"next":1})));
             batch(&second)
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(database, vec![source], 1).await.unwrap();
     until(|| runtime.status().completed_agents.len() == 1).await;
@@ -308,6 +314,7 @@ async fn removed_root_keeps_last_good_data_and_is_watched_after_recreation() {
         name: "codex".into(),
         roots: vec![root.clone()],
         scan: Arc::new(move |_| batch(&source_path)),
+        release_idle: None,
     };
     let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
         .await
@@ -373,6 +380,7 @@ async fn query_heads_and_facts_share_a_transaction_while_writer_commits() {
         name: "codex".into(),
         roots: vec![],
         scan: Arc::new(move |_| batch(&path)),
+        release_idle: None,
     };
     let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 2)
         .await
@@ -507,6 +515,7 @@ async fn sqlite_wal_commits_are_observed_while_writer_stays_open() {
             batch.sessions[0].detail.head.title = title;
             Ok(batch)
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
         .await
@@ -567,6 +576,7 @@ async fn prefetched_batch_is_discarded_when_publication_is_locked() {
                 }));
                 Ok(result)
             }),
+            release_idle: None,
         }],
         2,
     )
@@ -617,6 +627,7 @@ async fn backfill_reports_durable_progress_and_clears_it_on_completion() {
                 pricing: None,
             })
         }),
+        release_idle: None,
     };
     let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
         .await
@@ -709,5 +720,28 @@ async fn collection_status_distinguishes_absent_empty_and_disappeared_sources() 
     fs::remove_file(file).unwrap();
     runtime.refresh("codex").unwrap();
     until(|| runtime.status().sources["codex"].presence == SourcePresence::Missing).await;
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn idle_sources_release_parser_state_without_a_new_change() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("rollout-fixture.jsonl");
+    write_source(&path, "idle");
+    let releases = Arc::new(AtomicUsize::new(0));
+    let released = releases.clone();
+    let source = AgentSource {
+        name: "codex".into(),
+        roots: vec![],
+        scan: Arc::new(move |_| batch(&path)),
+        release_idle: Some(Arc::new(move || {
+            released.fetch_add(1, Ordering::AcqRel);
+        })),
+    };
+    let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
+        .await
+        .unwrap();
+    until(|| runtime.status().completed_agents.len() == 1).await;
+    until(|| releases.load(Ordering::Acquire) == 1).await;
     runtime.shutdown().await.unwrap();
 }

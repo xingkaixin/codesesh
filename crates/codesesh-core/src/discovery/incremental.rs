@@ -151,7 +151,8 @@ impl AgentScanner {
         };
         roots.sort();
         roots.dedup();
-        let scanner = Mutex::new(self);
+        let scanner = Arc::new(Mutex::new(self));
+        let idle = scanner.clone();
         runtime::AgentSource {
             name,
             roots,
@@ -167,7 +168,16 @@ impl AgentScanner {
                 request.cancellation.check()?;
                 Ok(batch)
             }),
+            release_idle: Some(Arc::new(move || {
+                if let Ok(mut scanner) = idle.lock() {
+                    scanner.release_idle();
+                }
+            })),
         }
+    }
+    fn release_idle(&mut self) {
+        self.codex.release_idle();
+        self.claude.release_idle();
     }
     pub fn refresh(&mut self, paths: Option<&[PathBuf]>) -> Result<runtime::ScanBatch> {
         self.refresh_with_checkpoint(paths, None)
@@ -177,8 +187,7 @@ impl AgentScanner {
         paths: Option<&[PathBuf]>,
         checkpoint: Option<&serde_json::Value>,
     ) -> Result<runtime::ScanBatch> {
-        self.codex.release_idle();
-        self.claude.release_idle();
+        self.release_idle();
         let checkpoint = checkpoint.filter(|value| {
             value["sourceNodeId"]
                 .as_str()

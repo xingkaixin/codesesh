@@ -18,7 +18,7 @@ pub mod droid;
 pub mod dsh;
 pub mod gemini_cli;
 pub mod grok;
-mod jsonl;
+pub(crate) mod jsonl;
 pub mod kimi;
 pub mod kimi_code;
 mod message_text;
