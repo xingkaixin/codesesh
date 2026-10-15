@@ -60,6 +60,26 @@ describe("CS-147: session detail cache is bounded", () => {
     expect(cached.sort()).toEqual(["s8", "s9"]);
   });
 
+  it("bounds details whose refetch failed but still hold a transcript", async () => {
+    const active = makeClient();
+
+    for (let index = 0; index < 10; index += 1) {
+      const sessionId = `s${index}`;
+      await openDetail(active, sessionId);
+      await active
+        .fetchQuery({
+          queryKey: queryKeys.sessionDetail("codex", sessionId),
+          queryFn: async () => {
+            throw new Error("refresh failed");
+          },
+        })
+        .catch(() => undefined);
+    }
+    pruneSessionDetailCache(active);
+
+    expect(cachedDetailIds(active)).toHaveLength(RETAINED_INACTIVE_SESSION_DETAILS);
+  });
+
   it("never evicts a detail something is still watching", async () => {
     const active = makeClient();
     await openDetail(active, "watched");

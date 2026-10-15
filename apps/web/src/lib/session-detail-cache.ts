@@ -25,7 +25,8 @@ export function pruneSessionDetailCache(client: QueryClient): void {
     .filter(
       ({ query }) =>
         query.queryKey[0] === SESSION_DETAIL_PREFIX &&
-        query.state.status === "success" &&
+        // A failed refetch keeps the previous transcript in data with status "error".
+        query.state.data !== undefined &&
         query.getObserversCount() === 0,
     )
     // Newest first. Two details fetched in the same millisecond tie on
