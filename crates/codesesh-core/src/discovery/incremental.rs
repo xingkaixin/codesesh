@@ -177,6 +177,8 @@ impl AgentScanner {
         paths: Option<&[PathBuf]>,
         checkpoint: Option<&serde_json::Value>,
     ) -> Result<runtime::ScanBatch> {
+        self.codex.release_idle();
+        self.claude.release_idle();
         let checkpoint = checkpoint.filter(|value| {
             value["sourceNodeId"]
                 .as_str()

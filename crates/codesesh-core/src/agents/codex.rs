@@ -731,6 +731,14 @@ impl Checkpoints {
         }
         Ok(current.finish(titles))
     }
+
+    /// A rollout that stops being written raises no further change, so scans release it here.
+    pub fn release_idle(&mut self) {
+        self.parsers.retain(|(_, checkpoint)| {
+            std::fs::metadata(&checkpoint.physical)
+                .is_ok_and(|metadata| super::jsonl::recently_written(&metadata))
+        });
+    }
 }
 
 #[derive(Clone)]
@@ -1550,6 +1558,31 @@ mod incremental_tests {
             checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
             parse(&path, &HashMap::new(), &pricing).unwrap()
         );
+        assert!(checkpoints.parsers.is_empty());
+    }
+
+    #[test]
+    fn rollouts_that_go_idle_release_parser_state() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root
+            .path()
+            .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000010.jsonl");
+        std::fs::write(&path, concat!(
+            "{\"type\":\"session_meta\",\"timestamp\":1000,\"payload\":{\"cwd\":\"/work\"}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":2000,\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n"
+        )).unwrap();
+        let pricing = Pricing::bundled();
+        let mut checkpoints = Checkpoints::default();
+        checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap();
+        checkpoints.release_idle();
+        assert_eq!(checkpoints.parsers.len(), 1);
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+            .unwrap();
+        checkpoints.release_idle();
         assert!(checkpoints.parsers.is_empty());
     }
 
