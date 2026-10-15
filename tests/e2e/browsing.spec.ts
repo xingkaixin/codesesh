@@ -51,10 +51,9 @@ test("browses the dashboard and project tree with a keyboard", async ({ page }) 
   const dashboard = page.getByTestId("dashboard");
   await expect(dashboard).toBeVisible();
   await expect(dashboard.getByTestId("overview-agent-row").first()).toBeVisible();
-  // The bars are painted on a canvas, so the table is what carries the data.
-  const activityChart = page.getByRole("region", { name: "Daily usage" });
+  const activityChart = page.getByRole("region", { name: "Daily tokens" });
   await expect(activityChart).toBeVisible();
-  await expect(activityChart.getByRole("table", { name: "Daily usage data" })).toBeAttached();
+  await expect(activityChart.getByRole("table", { name: "Daily tokens data" })).toBeAttached();
 
   await page
     .locator("aside")

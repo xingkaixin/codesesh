@@ -52,7 +52,7 @@ export function OverviewFilterBar({
               onChange={(event) =>
                 onAgentChange(event.target.value === ALL_AGENTS ? undefined : event.target.value)
               }
-              className="console-mono h-8 max-w-full w-40 appearance-none rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] pr-8 pl-3 text-xs text-[var(--console-text)] hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+              className="h-8 w-40 max-w-full appearance-none rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] pr-8 pl-3 text-xs text-[var(--console-text)] hover:border-[var(--console-border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
             >
               <option value={ALL_AGENTS}>{t("All agents")}</option>
               {agentCatalog.active.map((entry) => (
@@ -69,12 +69,12 @@ export function OverviewFilterBar({
         ) : null}
 
         {scopeCounts ? (
-          <span className="console-mono text-[11px] text-[var(--console-muted)]">
+          <span className="text-xs text-[var(--console-muted)]">
             {t("{0} projects · {1} agents in scope", [scopeCounts.projects, scopeCounts.agents])}
           </span>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-0.5">
           {OVERVIEW_RANGE_PRESETS.map((preset) => {
             const selected = preset.value === rangePreset;
             return (
@@ -87,10 +87,10 @@ export function OverviewFilterBar({
                   else onRangeChange(preset.value);
                 }}
                 className={cn(
-                  "console-mono motion-hover rounded-full border px-[13px] py-[5px] text-[11px] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+                  "motion-hover rounded-md px-3 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
                   selected
-                    ? "border-[var(--brand)] bg-[var(--brand)] text-[var(--brand-fg)]"
-                    : "border-[var(--console-border)] bg-[var(--console-surface)] text-[var(--console-muted)]",
+                    ? "bg-[var(--console-surface)] text-[var(--console-text)] shadow-[var(--shadow-raised)]"
+                    : "text-[var(--console-muted)] hover:text-[var(--console-text)]",
                 )}
               >
                 {t(preset.label)}
