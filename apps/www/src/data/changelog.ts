@@ -103,6 +103,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.0",
+        date: "2026-10-15",
+        title: "A clearer view of usage, projects, and session history",
+        summary:
+          "CodeSesh 1.4.0 refreshes local AI coding history browsing with a token-focused Dashboard, wide-screen search previews, and more consistent project and session pages.",
+        direction:
+          "Make usage and recorded activity easier to inspect, with consistent navigation and clear distinctions between recorded data and estimated value.",
+        highlights: [
+          {
+            title: "Understand your usage at a glance",
+            description:
+              "Compare tokens, API value, and sessions with the previous period. Inspect daily token composition, model and Agent shares, and active hours, with estimates labeled clearly.",
+          },
+          {
+            title: "Find and browse the right session",
+            description:
+              "Preview search results on wide screens as you move through them with the keyboard. Browse project sessions by day, see child sessions in context, and open tools in place during replay.",
+          },
+          {
+            title: "Learn and navigate with less friction",
+            description:
+              "Search, projects, bookmarks, and preferences share one sidebar. The redesigned product site adds interactive previews, clearer guides, copyable commands, and a browsable release timeline.",
+          },
+        ],
+      },
+      {
         version: "1.3.4",
         date: "2026-10-13",
         title: "More Agents in one history, with clearer usage and costs",
@@ -862,6 +888,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.0",
+        date: "2026-10-15",
+        title: "更清楚地查看用量、项目与会话历史",
+        summary:
+          "CodeSesh 1.4.0 更新本地 AI 编码历史的浏览体验，提供以 token 用量为核心的 Dashboard、宽屏搜索预览，以及风格统一的项目和会话页面。",
+        direction:
+          "通过一致的导航和明确的数据标注，让用量与历史活动更容易检查，并区分已记录的数据和估算价值。",
+        highlights: [
+          {
+            title: "集中理解用量变化",
+            description:
+              "对比当前与上一周期的 token、API 价值和会话数，查看每日 token 构成、模型与 Agent 占比和活跃时段；估算值会明确标注。",
+          },
+          {
+            title: "更方便地查找和回看会话",
+            description:
+              "宽屏下可随键盘选择预览搜索结果。项目会话按日期排列，子会话保留层级关系，回放中的工具卡片可原地展开。",
+          },
+          {
+            title: "统一导航，改进上手指引",
+            description:
+              "搜索、项目、书签和偏好设置集中在侧边栏。新版产品站提供交互式预览、更清晰的指南、可复制命令和版本时间线。",
+          },
+        ],
+      },
+      {
         version: "1.3.4",
         date: "2026-10-13",
         title: "汇集更多 Agent 历史，更准确地查看用量与费用",
@@ -1600,6 +1652,32 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.0",
+        date: "2026-10-15",
+        title: "使用量、プロジェクト、会話履歴を見やすく",
+        summary:
+          "CodeSesh 1.4.0 はローカルの AI コーディング履歴の閲覧画面を刷新しました。トークン使用量を中心とした Dashboard、ワイド画面での検索プレビュー、統一されたプロジェクト・会話画面を提供します。",
+        direction:
+          "一貫したナビゲーションと明確な表示で、使用量と記録された活動を確認しやすくし、記録データと推定値を区別します。",
+        highlights: [
+          {
+            title: "使用量の変化をまとめて確認",
+            description:
+              "トークン、API 価値、会話数を前の期間と比較できます。日別のトークン構成、モデル・Agent 別の割合、活動時間帯を確認でき、推定値は明示されます。",
+          },
+          {
+            title: "必要な会話を探して振り返る",
+            description:
+              "ワイド画面ではキーボードで選択した検索結果をプレビューできます。プロジェクトの会話は日付別に並び、子会話の階層を確認でき、再生中のツールカードはその場で展開できます。",
+          },
+          {
+            title: "操作と導入手順をわかりやすく",
+            description:
+              "検索、プロジェクト、ブックマーク、設定をサイドバーに集約しました。製品サイトには操作できるプレビュー、読みやすいガイド、コピー可能なコマンド、リリースのタイムラインを追加しました。",
+          },
+        ],
+      },
       {
         version: "1.3.4",
         date: "2026-10-13",

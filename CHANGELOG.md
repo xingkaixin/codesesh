@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0] - 2026-10-15
+
+This release refreshes the Web UI and product site, with a token-focused Dashboard, search previews, and clearer project and session layouts. (#805, #807, #808)
+
+### Features
+
+- Rebuild the Dashboard around total tokens, API value, and sessions, with period comparisons, token composition, daily usage, model and Agent shares, and active hours. Estimated API value is labeled explicitly. (#805)
+- Add a search preview on wide screens that follows keyboard selection, and a project table sortable by latest activity, sessions, or cost. Sorting applies to the loaded project page. (#805)
+- Move search, recent projects, bookmarks, source status, and preferences into the sidebar. Organize project sessions by day and show sub-sessions as indented rows. (#807)
+- Refresh session replay with a single message rail, expandable tool cards, a right-side inspector, and clearer session statistics and resume actions. Message and tool counts indicate when only part of a session is loaded. (#805, #807)
+
+### Design
+
+- Apply the Forest design with CodeSesh's orange brand across the app, including typography, light and dark surfaces, controls, dialogs, and empty states. (#805, #807)
+- Rebuild the product site with interactive product previews, easier guide navigation, copyable terminal blocks, and a release timeline. Update multi-machine setup instructions to follow the Hub UI. (#808)
+- Remove unused product-site assets and refresh the website and GitHub sharing images. (#810, f3882e9a)
+
 ## [1.3.4] - 2026-10-13
 
 This release brings local history from 19 Agents into CodeSesh, fills gaps in session replay and token usage, and improves cost estimates for model versions, cache writes, and request tiers. (#775–#797)
