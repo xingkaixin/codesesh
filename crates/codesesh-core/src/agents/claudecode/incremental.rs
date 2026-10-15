@@ -110,6 +110,14 @@ impl Checkpoints {
         }
         current.finish(path, child, project, index, pricing)
     }
+
+    /// A transcript that stops being written raises no further change, so scans release it here.
+    pub fn release_idle(&mut self) {
+        self.0.retain(|(path, _)| {
+            fs::metadata(path)
+                .is_ok_and(|metadata| crate::agents::jsonl::recently_written(&metadata))
+        });
+    }
 }
 
 pub fn scan_changed(
