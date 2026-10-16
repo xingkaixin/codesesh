@@ -88,6 +88,16 @@ fn user_parts(value: &Value) -> Vec<MessagePart> {
     if let Some(value) = s(&value["text"]).filter(|s| !s.is_empty()) {
         parts.push(text(value, None));
     }
+    for item in value["inlineItems"].as_array().into_iter().flatten() {
+        let Some(id) = s(&item["sessionId"]).filter(|_| item["type"] == "session") else {
+            continue;
+        };
+        let label = match s(&item["title"]).filter(|s| !s.is_empty()) {
+            Some(title) => format!("Session: {title} ({id})"),
+            None => format!("Session: {id}"),
+        };
+        parts.push(text(label, None));
+    }
     for file in value["files"].as_array().into_iter().flatten() {
         let path = s(&file["path"]);
         let name = s(&file["name"]);
@@ -295,9 +305,13 @@ fn scan_connection(
         }
     }
     for row in read(
-        "SELECT u.message_id,u.text FROM deepchat_user_messages u JOIN deepchat_messages m ON m.id=u.message_id",
+        "SELECT u.message_id,u.text,m.content FROM deepchat_user_messages u JOIN deepchat_messages m ON m.id=u.message_id",
     )? {
-        parts.insert(s(&row["message_id"]).unwrap_or_default(), user_parts(&row));
+        let content = parse(&row["content"]);
+        parts.insert(
+            s(&row["message_id"]).unwrap_or_default(),
+            user_parts(&json!({"text":row["text"],"inlineItems":content["inlineItems"]})),
+        );
     }
     for row in read(
         "SELECT f.message_id,f.path,f.name FROM deepchat_user_message_files f JOIN deepchat_messages m ON m.id=f.message_id ORDER BY f.message_id,f.ordinal",
