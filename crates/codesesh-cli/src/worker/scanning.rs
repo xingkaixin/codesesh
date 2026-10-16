@@ -7,11 +7,17 @@ use codesesh_core::{
 use std::{
     collections::BTreeMap,
     path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
-use tokio::task::JoinHandle;
+use tokio::{sync::watch, task::JoinHandle};
 
 type ScanResult = (AgentScanner, Result<ScanBatch>);
+
+const RESCAN_INTERVAL: Duration = Duration::from_secs(5);
 
 pub(super) struct Scanning {
     sources: Vec<AgentSource>,
@@ -20,9 +26,19 @@ pub(super) struct Scanning {
     pending: Option<(usize, u64, JoinHandle<ScanResult>)>,
     generation: u64,
     cursor: usize,
-    next_scan: Instant,
+    schedules: Vec<Schedule>,
+    changed: Arc<[AtomicBool]>,
+    /// Dropping the sender stops the watcher; `None` means every source is polled.
+    watching: Option<watch::Sender<bool>>,
     errors: BTreeMap<String, String>,
     source_statuses: BTreeMap<String, codesesh_core::discovery::AgentCollectionStatus>,
+}
+
+#[derive(Clone, Copy)]
+struct Schedule {
+    next_scan: Instant,
+    unfinished: bool,
+    failed: bool,
 }
 
 impl Scanning {
@@ -32,18 +48,45 @@ impl Scanning {
             .cloned()
             .map(|source| Some(AgentScanner::for_worker(source, path.clone())))
             .collect();
+        let changed: Arc<[AtomicBool]> = sources.iter().map(|_| AtomicBool::new(true)).collect();
+        let (stop, shutdown) = watch::channel(false);
+        let marked = changed.clone();
+        let watching = match codesesh_core::runtime::watch_paths(
+            sources.iter().map(AgentSource::watch_roots).collect(),
+            Arc::new(move |index, _| marked[index].store(true, Ordering::Release)),
+            shutdown,
+        ) {
+            Ok(_) => Some(stop),
+            Err(error) => {
+                eprintln!("Worker cannot watch agent sources; polling instead: {error:#}");
+                super::log_warn(
+                    "worker.watch.failed",
+                    serde_json::json!({"error":format!("{error:#}")}),
+                );
+                None
+            }
+        };
         Self {
             source_statuses: sources
                 .iter()
                 .map(|source| (source.agent.clone(), Default::default()))
                 .collect(),
+            schedules: vec![
+                Schedule {
+                    next_scan: Instant::now(),
+                    unfinished: false,
+                    failed: false,
+                };
+                sources.len()
+            ],
             sources,
             path,
             scanners,
             pending: None,
             generation: 0,
             cursor: 0,
-            next_scan: Instant::now(),
+            changed,
+            watching,
             errors: BTreeMap::new(),
         }
     }
@@ -60,7 +103,20 @@ impl Scanning {
             .map(|source| Some(AgentScanner::for_worker(source, self.path.clone())))
             .collect();
         self.cursor = 0;
-        self.next_scan = Instant::now();
+        for (schedule, changed) in self.schedules.iter_mut().zip(self.changed.iter()) {
+            schedule.next_scan = Instant::now();
+            schedule.unfinished = false;
+            changed.store(true, Ordering::Release);
+        }
+    }
+
+    fn due(&self, index: usize, now: Instant) -> bool {
+        let schedule = &self.schedules[index];
+        schedule.unfinished
+            || now >= schedule.next_scan
+                && (self.watching.is_none()
+                    || schedule.failed
+                    || self.changed[index].load(Ordering::Acquire))
     }
 
     pub(super) fn status(
@@ -111,11 +167,13 @@ impl Scanning {
             let (mut scanner, result) = task.await?;
             if generation == self.generation {
                 let agent = &self.sources[index].agent;
+                let complete = result.as_ref().is_ok_and(|batch| batch.complete);
                 if paused {
                     self.scanners[index] = Some(AgentScanner::for_worker(
                         self.sources[index].clone(),
                         self.path.clone(),
                     ));
+                    self.changed[index].store(true, Ordering::Release);
                 } else {
                     let result = result.and_then(|mut batch| {
                         store.save_batch(agent, &mut batch)?;
@@ -154,33 +212,29 @@ impl Scanning {
                     }
                     self.scanners[index] = Some(scanner);
                 }
-                self.cursor = (index + 1) % self.sources.len();
-                if self.cursor == 0 {
-                    if !paused && self.errors.is_empty() {
-                        store.record_scan_success()?;
-                    }
-                    let agents = self
-                        .sources
-                        .iter()
-                        .map(|source| source.agent.clone())
-                        .collect::<Vec<_>>();
-                    let delay = if self.errors.is_empty() && !store.collection_complete(&agents)? {
-                        Duration::ZERO
-                    } else {
-                        Duration::from_secs(5)
-                    };
-                    self.next_scan = Instant::now() + delay;
+                let failed = self.errors.contains_key(agent);
+                self.schedules[index] = Schedule {
+                    next_scan: Instant::now() + RESCAN_INTERVAL,
+                    unfinished: !paused && !failed && !complete,
+                    failed,
+                };
+                if !paused && self.errors.is_empty() {
+                    store.record_scan_success()?;
                 }
+                self.cursor = (index + 1) % self.sources.len();
             }
         }
-        if paused
-            || self.pending.is_some()
-            || self.sources.is_empty()
-            || Instant::now() < self.next_scan
-        {
+        if paused || self.pending.is_some() || self.sources.is_empty() {
             return Ok(());
         }
-        let index = self.cursor;
+        let now = Instant::now();
+        let Some(index) = (0..self.sources.len())
+            .map(|offset| (self.cursor + offset) % self.sources.len())
+            .find(|index| self.due(*index, now))
+        else {
+            return Ok(());
+        };
+        self.changed[index].store(false, Ordering::Release);
         let checkpoint = store.checkpoint(&self.sources[index].agent)?;
         let mut scanner = self.scanners[index].take().unwrap();
         self.pending = Some((
@@ -203,11 +257,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("worker.db");
         let store = WorkerStore::open(&path).unwrap();
+        // Keep worker.db writes outside the watched agent directory.
+        let agents = dir.path().join("agents");
+        std::fs::create_dir(&agents).unwrap();
         let sources = ["codex", "claudecode"]
             .map(|agent| AgentSource {
                 agent: agent.into(),
-                data_root: dir.path().into(),
-                scan_path: dir.path().join(agent),
+                data_root: agents.clone(),
+                scan_path: agents.join(agent),
             })
             .to_vec();
         (dir, Scanning::new(sources, path), store)
@@ -293,19 +350,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unfinished_history_continues_until_all_agents_finish_then_waits() {
+    async fn unfinished_history_continues_then_idle_sources_wait_for_changes() {
         let (_dir, mut scanning, mut store) = fixture();
         let mut incomplete = batch();
         incomplete.complete = false;
-        store.save_batch("codex", &mut incomplete).unwrap();
-        let scanner = scanning.scanners[1].take().unwrap();
-        scanning.pending = Some((1, 0, tokio::spawn(async move { (scanner, Ok(batch())) })));
-        finish(&scanning).await;
-        scanning.tick(&mut store, false).await.unwrap();
-        assert_eq!(scanning.pending.as_ref().map(|pending| pending.0), Some(0));
+        let scanner = scanning.scanners[0].take().unwrap();
+        scanning.pending = Some((0, 0, tokio::spawn(async move { (scanner, Ok(incomplete)) })));
         finish(&scanning).await;
         scanning.tick(&mut store, false).await.unwrap();
         assert_eq!(scanning.pending.as_ref().map(|pending| pending.0), Some(1));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.pending.as_ref().map(|pending| pending.0), Some(0));
         finish(&scanning).await;
         scanning.tick(&mut store, false).await.unwrap();
         assert!(
@@ -314,8 +370,12 @@ mod tests {
                 .unwrap()
         );
         assert!(scanning.pending.is_none());
+        scanning.schedules[1].next_scan = Instant::now();
         scanning.tick(&mut store, false).await.unwrap();
         assert!(scanning.pending.is_none());
+        scanning.changed[1].store(true, Ordering::Release);
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.pending.as_ref().map(|pending| pending.0), Some(1));
     }
 
     #[tokio::test]

@@ -20,6 +20,43 @@ use std::{
     },
 };
 
+impl AgentSource {
+    pub fn watch_roots(&self) -> Vec<PathBuf> {
+        let root = &self.scan_path;
+        let mut roots = match self.agent.as_str() {
+            "antigravity-cli" => vec![
+                root.clone(),
+                self.data_root.join("conversation_summaries.db"),
+            ],
+            "cursor" => vec![
+                root.join("globalStorage/state.vscdb"),
+                root.join("workspaceStorage"),
+            ],
+            "droid" => vec![root.clone(), self.data_root.join("settings.json")],
+            "deepchat" => vec![root.join("app_db/agent.db")],
+            "cherrystudio" => vec![root.join("Data/cherrystudio.sqlite")],
+            "minimax-code" => vec![root.join("v2/sqlite/runtime-state.sqlite")],
+            "zcode" => vec![root.join("cli/db/db.sqlite")],
+            "dsh" => vec![root.join("sessions"), root.join("attachments/v1")],
+            "codex" => vec![
+                root.clone(),
+                self.data_root.join("archived_sessions"),
+                self.data_root.join("session_index.jsonl"),
+            ],
+            "kimi-code" => vec![root.clone(), self.data_root.join("session_index.jsonl")],
+            "kimi" => vec![
+                root.clone(),
+                self.data_root.join("kimi.json"),
+                self.data_root.join("config.toml"),
+            ],
+            _ => vec![root.clone()],
+        };
+        roots.sort();
+        roots.dedup();
+        roots
+    }
+}
+
 pub struct AgentScanner {
     source: AgentSource,
     source_available: Option<bool>,
@@ -117,40 +154,7 @@ impl AgentScanner {
     }
     pub fn into_runtime_source(self) -> runtime::AgentSource {
         let name = self.source.agent.clone();
-        let root = &self.source.scan_path;
-        let mut roots = match self.source.agent.as_str() {
-            "antigravity-cli" => vec![
-                root.clone(),
-                self.source.data_root.join("conversation_summaries.db"),
-            ],
-            "cursor" => vec![
-                root.join("globalStorage/state.vscdb"),
-                root.join("workspaceStorage"),
-            ],
-            "droid" => vec![root.clone(), self.source.data_root.join("settings.json")],
-            "deepchat" => vec![root.join("app_db/agent.db")],
-            "cherrystudio" => vec![root.join("Data/cherrystudio.sqlite")],
-            "minimax-code" => vec![root.join("v2/sqlite/runtime-state.sqlite")],
-            "zcode" => vec![root.join("cli/db/db.sqlite")],
-            "dsh" => vec![root.join("sessions"), root.join("attachments/v1")],
-            "codex" => vec![
-                root.clone(),
-                self.source.data_root.join("archived_sessions"),
-                self.source.data_root.join("session_index.jsonl"),
-            ],
-            "kimi-code" => vec![
-                root.clone(),
-                self.source.data_root.join("session_index.jsonl"),
-            ],
-            "kimi" => vec![
-                root.clone(),
-                self.source.data_root.join("kimi.json"),
-                self.source.data_root.join("config.toml"),
-            ],
-            _ => vec![root.clone()],
-        };
-        roots.sort();
-        roots.dedup();
+        let roots = self.source.watch_roots();
         let scanner = Arc::new(Mutex::new(self));
         let idle = scanner.clone();
         runtime::AgentSource {
