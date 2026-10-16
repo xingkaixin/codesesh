@@ -68,3 +68,47 @@ fn structured_blocks_override_stale_json_and_usage_is_counted_once() {
         .unwrap();
     assert!(fingerprints(root.path()).unwrap().is_empty());
 }
+#[test]
+fn session_references_follow_text_without_duplicating_inline_files() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("app_db");
+    std::fs::create_dir(&dir).unwrap();
+    let db = Connection::open(dir.join("agent.db")).unwrap();
+    db.execute_batch(include_str!("fixture.sql")).unwrap();
+    db.execute_batch(r#"
+      INSERT INTO new_sessions (id,agent_id,title,project_dir) VALUES ('s','deepchat','Session','/work');
+      INSERT INTO deepchat_messages (id,session_id,order_seq,role,content,metadata,created_at,updated_at) VALUES
+        ('u','s',1,'user','{"text":"Compare","files":[],"links":[],"inlineItems":[{"sessionId":"a","title":"First","projectDir":"/work","tapeIncarnationId":"t","type":"session","offset":0},{"type":"file","offset":0,"fileName":"x.png","filePath":"/work/x.png","mimeType":"image/png"},{"sessionId":"b","title":"","type":"session","offset":0}]}','{}',1000,1000),
+        ('legacy','s',2,'user','{"text":"Again","inlineItems":[{"sessionId":"c","title":"Third","type":"session","offset":0}]}','{}',2000,2000);
+      INSERT INTO deepchat_user_messages VALUES ('u','Compare');
+      INSERT INTO deepchat_user_message_files VALUES ('u',0,'/work/x.png','x.png');
+    "#).unwrap();
+    drop(db);
+    let parsed = scan(root.path(), &Pricing::bundled()).unwrap();
+    let texts: Vec<Vec<&str>> = parsed[0]
+        .detail
+        .messages
+        .iter()
+        .map(|m| {
+            m.parts
+                .iter()
+                .filter_map(|p| match p {
+                    MessagePart::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            vec![
+                "Compare",
+                "Session: First (a)",
+                "Session: b",
+                "Attachment: /work/x.png"
+            ],
+            vec!["Again", "Session: Third (c)"],
+        ]
+    );
+}
