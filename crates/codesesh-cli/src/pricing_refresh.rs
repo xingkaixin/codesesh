@@ -37,8 +37,8 @@ async fn refresh_once(pricing: &PricingController, runtime: &Runtime, url: &str)
     pricing.refresh_from(url, Duration::from_secs(10)).await?;
     let publish = pricing.clone();
     tokio::task::spawn_blocking(move || publish.publish_pending()).await??;
-    runtime.reprice_all(pricing.snapshot()?).await?;
     if pricing.generation() != previous {
+        runtime.reprice_all(pricing.snapshot()?).await?;
         runtime.refresh_all();
     }
     Ok(())
