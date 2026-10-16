@@ -5,20 +5,31 @@ use crate::{
     pricing::{CostInput, Pricing},
 };
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const STALE_SESSIONS: &str = "FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?";
+/// Every stored cost matches this generation: a full pass checked older rows, and later writes
+/// are priced at the current generation.
+const REPRICED_GENERATION: &str = "repriced_generation";
 
 pub(crate) fn needs_reprice(connection: &Connection, generation: u64) -> Result<bool> {
-    let mut query = connection.prepare(&format!("SELECT EXISTS(SELECT 1 {STALE_SESSIONS})"))?;
-    for agent in crate::agents::catalog(0) {
-        if query.query_row(params![agent.name, generation as i64], |row| row.get(0))? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    let repriced: Option<String> = connection
+        .query_row(
+            "SELECT value FROM cache_meta WHERE key=?",
+            [REPRICED_GENERATION],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(repriced != Some(generation.to_string()))
+}
+
+pub(crate) fn mark_repriced(connection: &Connection, generation: u64) -> Result<()> {
+    connection.execute(
+        "INSERT INTO cache_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        params![REPRICED_GENERATION, generation.to_string()],
+    )?;
+    Ok(())
 }
 
 #[derive(Deserialize, Serialize)]
@@ -226,9 +237,7 @@ impl Cache {
     pub fn reprice(&mut self, agent: &str, pricing: &Pricing) -> Result<Vec<SessionReference>> {
         let transaction = self.connection.transaction()?;
         let entries = {
-            let mut query = transaction.prepare(&format!(
-                "SELECT source_node_id,session_id {STALE_SESSIONS}"
-            ))?;
+            let mut query = transaction.prepare("SELECT source_node_id,session_id FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?")?;
             query
                 .query_map(params![agent, pricing.generation() as i64], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -377,12 +386,10 @@ mod tests {
             .unwrap();
         controller.publish_pending().unwrap();
         let pricing = controller.snapshot().unwrap().pricing;
-        assert!(needs_reprice(cache.connection(), pricing.generation()).unwrap());
         assert_eq!(
             cache.reprice("codex", &pricing).unwrap(),
             std::slice::from_ref(&reference)
         );
-        assert!(!needs_reprice(cache.connection(), pricing.generation()).unwrap());
         let head = cache.head(&reference).unwrap().unwrap();
         assert_eq!(head.stats.total_cost, 11.75);
         let after = super::super::detail_with_cursor(

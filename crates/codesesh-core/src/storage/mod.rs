@@ -10,7 +10,7 @@ mod memory;
 mod message_reuse;
 mod read;
 mod reprice;
-pub(crate) use reprice::{needs_reprice, reprice_session};
+pub(crate) use reprice::{mark_repriced, needs_reprice, reprice_session};
 mod schema;
 pub(crate) use schema::{COMPACT_MIN_FREE_PAGES, sparse_pages};
 mod search_text;

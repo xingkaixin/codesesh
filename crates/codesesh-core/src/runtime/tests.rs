@@ -376,6 +376,10 @@ async fn repricing_current_sessions_does_not_wait_for_the_writer() {
     let runtime = Runtime::start(temporary.path().join("cache.db"), vec![], 1)
         .await
         .unwrap();
+    let pricing = crate::pricing::PricingController::load(temporary.path())
+        .snapshot()
+        .unwrap();
+    runtime.reprice_all(pricing.clone()).await.unwrap();
     let release = Arc::new(AtomicBool::new(false));
     let started = Arc::new(AtomicBool::new(false));
     let writer = runtime.clone();
@@ -393,9 +397,6 @@ async fn repricing_current_sessions_does_not_wait_for_the_writer() {
             .await
     });
     until(|| started.load(Ordering::Acquire)).await;
-    let pricing = crate::pricing::PricingController::load(temporary.path())
-        .snapshot()
-        .unwrap();
     tokio::time::timeout(Duration::from_secs(5), runtime.reprice_all(pricing))
         .await
         .unwrap()

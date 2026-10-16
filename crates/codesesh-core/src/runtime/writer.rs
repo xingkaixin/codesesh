@@ -74,7 +74,8 @@ pub(super) fn run(
                     for agent in crate::agents::catalog(0) {
                         references.extend(cache.reprice(&agent.name, &pricing.pricing)?);
                     }
-                    publish_changes(&cache, &snapshots, &events, &references)
+                    publish_changes(&cache, &snapshots, &events, &references)?;
+                    crate::storage::mark_repriced(cache.connection(), pricing.generation())
                 });
                 let _ = response.send(result);
             }
@@ -128,7 +129,9 @@ pub(super) fn run(
                     if let Some(ticket) = &pricing
                         && priced_generations.get(&agent) != Some(&ticket.generation())
                     {
-                        repriced = cache.reprice(&agent, &ticket.pricing)?;
+                        if crate::storage::needs_reprice(cache.connection(), ticket.generation())? {
+                            repriced = cache.reprice(&agent, &ticket.pricing)?;
+                        }
                         priced_generations.insert(agent.clone(), ticket.generation());
                     }
                     let write_elapsed = write_started.elapsed();
