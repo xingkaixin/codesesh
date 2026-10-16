@@ -147,9 +147,13 @@ fn dispatch(
     event: &notify::Event,
     on_change: &(impl Fn(usize, Option<Vec<PathBuf>>) + ?Sized),
 ) {
+    // Dropped events (inotify overflow, FSEvents MustScanSubDirs) arrive as a rescan flag.
+    let rescan = event.need_rescan();
     for (index, roots) in sources.iter().enumerate() {
         let paths = source_paths(roots, &event.paths);
-        if !paths.is_empty() {
+        if rescan && (event.paths.is_empty() || !paths.is_empty()) {
+            on_change(index, None);
+        } else if !paths.is_empty() {
             on_change(index, Some(paths));
         }
     }
@@ -385,10 +389,35 @@ fn refresh_recent(
     ]
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn dropped_events_request_full_scans() {
+        let root = tempfile::tempdir().unwrap();
+        let sources = vec![
+            vec![root.path().join("first")],
+            vec![root.path().join("second")],
+        ];
+        let calls = std::sync::Mutex::new(Vec::new());
+        let record = |index, paths: Option<Vec<PathBuf>>| {
+            calls.lock().unwrap().push((index, paths.is_none()));
+        };
+        let changed = root.path().join("second/session.jsonl");
+        let take = |event: &notify::Event| {
+            dispatch(&sources, event, &record);
+            std::mem::take(&mut *calls.lock().unwrap())
+        };
+        let modified = notify::Event::new(EventKind::Any).add_path(changed.clone());
+        assert_eq!(take(&modified), [(1, false)]);
+        let dropped = modified.set_flag(notify::event::Flag::Rescan);
+        assert_eq!(take(&dropped), [(1, true)]);
+        let overflow = notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan);
+        assert_eq!(take(&overflow), [(0, true), (1, true)]);
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn recent_polls_restat_new_and_recent_files_only() {
         let root = tempfile::tempdir().unwrap();
