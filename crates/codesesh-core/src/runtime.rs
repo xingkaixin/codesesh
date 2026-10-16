@@ -21,6 +21,7 @@ use std::{
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 
 pub use status::{AgentStatus, ScanStatus};
+pub use watcher::{WatchCallback, watch_paths};
 
 pub type Scanner = dyn Fn(ScanRequest) -> Result<ScanBatch> + Send + Sync;
 

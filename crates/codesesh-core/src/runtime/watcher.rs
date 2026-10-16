@@ -11,157 +11,177 @@ use std::{
 };
 use tokio::sync::watch;
 
+pub type WatchCallback = dyn Fn(usize, Option<Vec<PathBuf>>) + Send + Sync;
+
 impl Runtime {
     pub(super) fn watch_sources(&self) -> Result<(Duration, Duration)> {
-        let started = Instant::now();
         let weak = Arc::downgrade(&self.inner);
-        let (reconcile, mut changes) = watch::channel(0_u64);
-        let reset_watches = Arc::new(AtomicBool::new(false));
-        let reset_requested = reset_watches.clone();
-        #[cfg(target_os = "macos")]
-        let created = Arc::new(std::sync::Mutex::new(Vec::<PathBuf>::new()));
-        #[cfg(target_os = "macos")]
-        let created_by_events = created.clone();
-        let handler = move |event: notify::Result<notify::Event>| {
-            let Some(inner) = weak.upgrade() else {
-                return;
-            };
-            if inner.stopped.load(Ordering::Acquire) {
-                return;
-            }
-            match event {
-                Ok(event) if !matches!(event.kind, EventKind::Access(_)) => {
-                    #[cfg(target_os = "macos")]
-                    if matches!(event.kind, EventKind::Create(_))
-                        && let Ok(mut created) = created_by_events.lock()
-                    {
-                        created.extend(event.paths.iter().cloned());
-                    }
-                    if matches!(
-                        event.kind,
-                        EventKind::Remove(
-                            notify::event::RemoveKind::Folder | notify::event::RemoveKind::Any
-                        ) | EventKind::Modify(notify::event::ModifyKind::Name(_))
-                    ) {
-                        reset_requested.store(true, Ordering::Release);
-                    }
-                    if !matches!(
-                        event.kind,
-                        EventKind::Modify(notify::event::ModifyKind::Data(_))
-                    ) {
-                        reconcile.send_modify(|revision| *revision = revision.wrapping_add(1));
-                    }
-                    for control in &inner.controls {
-                        let paths: Vec<_> = event
-                            .paths
-                            .iter()
-                            .map(|path| normalize_watch_path(path))
-                            .filter_map(|path| {
-                                if path
-                                    .file_name()
-                                    .is_some_and(|name| name.to_string_lossy().ends_with("-shm"))
-                                {
-                                    return None;
-                                }
-                                control.roots.iter().find_map(|root| {
-                                    let canonical = normalize_watch_path(root);
-                                    if ["-wal", "-journal"].iter().any(|suffix| {
-                                        path.as_os_str()
-                                            == format!("{}{suffix}", canonical.to_string_lossy())
-                                                .as_str()
-                                    }) {
-                                        Some(path.clone())
-                                    } else if let Ok(suffix) = path.strip_prefix(&canonical) {
-                                        Some(root.join(suffix))
-                                    } else if canonical.starts_with(&path) {
-                                        Some(root.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                            })
-                            .collect();
-                        if !paths.is_empty() {
-                            Self::invalidate(control, Some(paths), false);
-                        }
-                    }
+        watch_paths(
+            self.inner
+                .controls
+                .iter()
+                .map(|control| control.roots.clone())
+                .collect(),
+            Arc::new(move |index, paths| {
+                if let Some(inner) = weak.upgrade()
+                    && !inner.stopped.load(Ordering::Acquire)
+                {
+                    Self::invalidate(&inner.controls[index], paths, false);
                 }
-                Err(_) => {
-                    reconcile.send_modify(|revision| *revision = revision.wrapping_add(1));
-                    for control in &inner.controls {
-                        Self::invalidate(control, None, false);
-                    }
-                }
-                _ => (),
-            }
-        };
-        let mut watcher = notify::recommended_watcher(handler.clone())?;
-        let roots: Vec<_> = self
-            .inner
-            .controls
-            .iter()
-            .flat_map(|control| control.roots.clone())
-            .collect();
-        let mut watched = std::collections::BTreeMap::new();
-        reconcile_watches(&mut watcher, &roots, &mut watched)?;
-        let registration = started.elapsed();
-        let started = Instant::now();
-        #[cfg(target_os = "macos")]
-        let mut observed = metadata_snapshot(&watched);
-        #[cfg(target_os = "macos")]
-        let mut ticks = 0_u32;
-        let snapshot = started.elapsed();
-        let mut polling = tokio::time::interval_at(
-            tokio::time::Instant::now() + std::time::Duration::from_secs(2),
-            std::time::Duration::from_secs(2),
-        );
-        polling.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut shutdown = self.inner.shutdown.subscribe();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break; },
-                    _ = polling.tick(), if cfg!(target_os = "macos") => {
-                        #[cfg(target_os = "macos")]
-                        {
-                            let paths = watched.clone();
-                            let mut known = std::mem::take(&mut observed);
-                            let created = created.lock().map(|mut created| std::mem::take(&mut *created)).unwrap_or_default();
-                            ticks = ticks.wrapping_add(1);
-                            let full = ticks.is_multiple_of(FULL_POLL_TICKS) || known.is_empty();
-                            if let Ok((known, events)) = tokio::task::spawn_blocking(move || {
-                                let events = if full {
-                                    let current = metadata_snapshot(&paths);
-                                    let events = snapshot_changes(&known, &current);
-                                    known = current;
-                                    events
-                                } else {
-                                    refresh_recent(&mut known, created)
-                                };
-                                (known, events)
-                            }).await {
-                                for (kind, paths) in events {
-                                    if !paths.is_empty() {
-                                        handler(Ok(notify::Event { kind, paths, attrs: Default::default() }));
-                                    }
-                                }
-                                observed = known;
-                            }
-                        }
-                    },
-                    result = changes.changed() => {
-                        if result.is_err() { break; }
-                        if reset_watches.swap(false, Ordering::AcqRel) {
-                            for path in watched.keys() { let _ = watcher.unwatch(path); }
-                            watched.clear();
-                        }
-                        let _ = reconcile_watches(&mut watcher, &roots, &mut watched);
-                    }
-                }
-            }
-        });
-        Ok((registration, snapshot))
+            }),
+            self.inner.shutdown.subscribe(),
+        )
     }
+}
+
+/// Reports changes under each source's roots as `(source index, paths)`; `None` asks for a full scan.
+pub fn watch_paths(
+    sources: Vec<Vec<PathBuf>>,
+    on_change: Arc<WatchCallback>,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(Duration, Duration)> {
+    let started = Instant::now();
+    let roots: Vec<_> = sources.iter().flatten().cloned().collect();
+    let (reconcile, mut changes) = watch::channel(0_u64);
+    let reset_watches = Arc::new(AtomicBool::new(false));
+    let reset_requested = reset_watches.clone();
+    #[cfg(target_os = "macos")]
+    let created = Arc::new(std::sync::Mutex::new(Vec::<PathBuf>::new()));
+    #[cfg(target_os = "macos")]
+    let created_by_events = created.clone();
+    let handler = move |event: notify::Result<notify::Event>| match event {
+        Ok(event) if !matches!(event.kind, EventKind::Access(_)) => {
+            #[cfg(target_os = "macos")]
+            if matches!(event.kind, EventKind::Create(_))
+                && let Ok(mut created) = created_by_events.lock()
+            {
+                created.extend(event.paths.iter().cloned());
+            }
+            if matches!(
+                event.kind,
+                EventKind::Remove(
+                    notify::event::RemoveKind::Folder | notify::event::RemoveKind::Any
+                ) | EventKind::Modify(notify::event::ModifyKind::Name(_))
+            ) {
+                reset_requested.store(true, Ordering::Release);
+            }
+            if !matches!(
+                event.kind,
+                EventKind::Modify(notify::event::ModifyKind::Data(_))
+            ) {
+                reconcile.send_modify(|revision| *revision = revision.wrapping_add(1));
+            }
+            dispatch(&sources, &event, on_change.as_ref());
+        }
+        Err(_) => {
+            reconcile.send_modify(|revision| *revision = revision.wrapping_add(1));
+            for index in 0..sources.len() {
+                on_change(index, None);
+            }
+        }
+        _ => (),
+    };
+    let mut watcher = notify::recommended_watcher(handler.clone())?;
+    let mut watched = std::collections::BTreeMap::new();
+    reconcile_watches(&mut watcher, &roots, &mut watched)?;
+    let registration = started.elapsed();
+    let started = Instant::now();
+    #[cfg(target_os = "macos")]
+    let mut observed = metadata_snapshot(&watched);
+    #[cfg(target_os = "macos")]
+    let mut ticks = 0_u32;
+    let snapshot = started.elapsed();
+    let mut polling = tokio::time::interval_at(
+        tokio::time::Instant::now() + std::time::Duration::from_secs(2),
+        std::time::Duration::from_secs(2),
+    );
+    polling.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break; },
+                _ = polling.tick(), if cfg!(target_os = "macos") => {
+                    #[cfg(target_os = "macos")]
+                    {
+                        let paths = watched.clone();
+                        let mut known = std::mem::take(&mut observed);
+                        let created = created.lock().map(|mut created| std::mem::take(&mut *created)).unwrap_or_default();
+                        ticks = ticks.wrapping_add(1);
+                        let full = ticks.is_multiple_of(FULL_POLL_TICKS) || known.is_empty();
+                        if let Ok((known, events)) = tokio::task::spawn_blocking(move || {
+                            let events = if full {
+                                let current = metadata_snapshot(&paths);
+                                let events = snapshot_changes(&known, &current);
+                                known = current;
+                                events
+                            } else {
+                                refresh_recent(&mut known, created)
+                            };
+                            (known, events)
+                        }).await {
+                            for (kind, paths) in events {
+                                if !paths.is_empty() {
+                                    handler(Ok(notify::Event { kind, paths, attrs: Default::default() }));
+                                }
+                            }
+                            observed = known;
+                        }
+                    }
+                },
+                result = changes.changed() => {
+                    if result.is_err() { break; }
+                    if reset_watches.swap(false, Ordering::AcqRel) {
+                        for path in watched.keys() { let _ = watcher.unwatch(path); }
+                        watched.clear();
+                    }
+                    let _ = reconcile_watches(&mut watcher, &roots, &mut watched);
+                }
+            }
+        }
+    });
+    Ok((registration, snapshot))
+}
+
+fn dispatch(
+    sources: &[Vec<PathBuf>],
+    event: &notify::Event,
+    on_change: &(impl Fn(usize, Option<Vec<PathBuf>>) + ?Sized),
+) {
+    for (index, roots) in sources.iter().enumerate() {
+        let paths = source_paths(roots, &event.paths);
+        if !paths.is_empty() {
+            on_change(index, Some(paths));
+        }
+    }
+}
+
+fn source_paths(roots: &[PathBuf], paths: &[PathBuf]) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .map(|path| normalize_watch_path(path))
+        .filter_map(|path| {
+            if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with("-shm"))
+            {
+                return None;
+            }
+            roots.iter().find_map(|root| {
+                let canonical = normalize_watch_path(root);
+                if ["-wal", "-journal"].iter().any(|suffix| {
+                    path.as_os_str() == format!("{}{suffix}", canonical.to_string_lossy()).as_str()
+                }) {
+                    Some(path.clone())
+                } else if let Ok(suffix) = path.strip_prefix(&canonical) {
+                    Some(root.join(suffix))
+                } else if canonical.starts_with(&path) {
+                    Some(root.clone())
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
 }
 
 fn existing_watch_root(path: &Path) -> Result<PathBuf> {
