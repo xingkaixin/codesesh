@@ -79,6 +79,12 @@ impl CostBasis {
     }
 }
 
+#[derive(Deserialize)]
+struct StoredPricing {
+    #[serde(rename = "rustPricing")]
+    state: PricingState,
+}
+
 #[derive(Deserialize, Serialize)]
 struct PricingState {
     version: u32,
@@ -251,8 +257,7 @@ impl Cache {
                 params![node, agent, id],
                 |row| row.get(0),
             )?;
-            let mut metadata: serde_json::Value = serde_json::from_str(&raw)?;
-            let mut state: PricingState = serde_json::from_value(metadata["rustPricing"].clone())?;
+            let mut state = serde_json::from_str::<StoredPricing>(&raw)?.state;
             let mut updated = state.head.reprice(pricing);
             for (index, basis) in &mut state.messages {
                 if basis.reprice(pricing) {
@@ -260,11 +265,12 @@ impl Cache {
                     updated = true;
                 }
             }
-            state.generation = Some(pricing.generation());
+            // Unchanged costs keep their older generation; the repriced generation marker covers them.
             if !updated {
-                transaction.execute("UPDATE sessions SET meta_json=json_set(meta_json,'$.rustPricing',json(?)) WHERE source_node_id=? AND agent_name=? AND session_id=?", params![serde_json::to_string(&state)?,node,agent,id])?;
                 continue;
             }
+            state.generation = Some(pricing.generation());
+            let mut metadata: serde_json::Value = serde_json::from_str(&raw)?;
             metadata["rustPricing"] = serde_json::to_value(&state)?;
             metadata["rustPricingRevision"] =
                 (metadata["rustPricingRevision"].as_u64().unwrap_or(0) + 1).into();
@@ -447,6 +453,25 @@ mod tests {
                 )
                 .unwrap()
         );
+        controller
+            .stage_remote(&json!({"openai":{"models":{
+                "reprice-model":{"cost":{"input":2,"output":2}},
+                "new-price-model":{"cost":{"input":4,"output":2}},
+                "unrelated-model":{"cost":{"input":1,"output":1}}
+            }}}))
+            .unwrap();
+        controller.publish_pending().unwrap();
+        cache.connection().execute_batch("CREATE TRIGGER reject_unchanged_rewrite BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'unchanged session rewritten'); END").unwrap();
+        assert!(
+            cache
+                .reprice("codex", &controller.snapshot().unwrap().pricing)
+                .unwrap()
+                .is_empty()
+        );
+        cache
+            .connection()
+            .execute_batch("DROP TRIGGER reject_unchanged_rewrite")
+            .unwrap();
         drop(cache);
         let mut cache = Cache::open(Some(&path)).unwrap();
         controller
