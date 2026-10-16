@@ -5,9 +5,21 @@ use crate::{
     pricing::{CostInput, Pricing},
 };
 use anyhow::Result;
-use rusqlite::params;
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+const STALE_SESSIONS: &str = "FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?";
+
+pub(crate) fn needs_reprice(connection: &Connection, generation: u64) -> Result<bool> {
+    let mut query = connection.prepare(&format!("SELECT EXISTS(SELECT 1 {STALE_SESSIONS})"))?;
+    for agent in crate::agents::catalog(0) {
+        if query.query_row(params![agent.name, generation as i64], |row| row.get(0))? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 #[derive(Deserialize, Serialize)]
 struct CostBasis {
@@ -214,7 +226,9 @@ impl Cache {
     pub fn reprice(&mut self, agent: &str, pricing: &Pricing) -> Result<Vec<SessionReference>> {
         let transaction = self.connection.transaction()?;
         let entries = {
-            let mut query = transaction.prepare("SELECT source_node_id,session_id FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?")?;
+            let mut query = transaction.prepare(&format!(
+                "SELECT source_node_id,session_id {STALE_SESSIONS}"
+            ))?;
             query
                 .query_map(params![agent, pricing.generation() as i64], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -363,10 +377,12 @@ mod tests {
             .unwrap();
         controller.publish_pending().unwrap();
         let pricing = controller.snapshot().unwrap().pricing;
+        assert!(needs_reprice(cache.connection(), pricing.generation()).unwrap());
         assert_eq!(
             cache.reprice("codex", &pricing).unwrap(),
             std::slice::from_ref(&reference)
         );
+        assert!(!needs_reprice(cache.connection(), pricing.generation()).unwrap());
         let head = cache.head(&reference).unwrap().unwrap();
         assert_eq!(head.stats.total_cost, 11.75);
         let after = super::super::detail_with_cursor(
