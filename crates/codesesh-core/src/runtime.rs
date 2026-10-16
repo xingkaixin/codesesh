@@ -304,6 +304,15 @@ impl Runtime {
     }
 
     pub async fn reprice_all(&self, pricing: crate::pricing::PricingSnapshot) -> Result<()> {
+        let generation = pricing.generation();
+        // A failed check falls through to the writer, which runs the same query itself.
+        if !self
+            .read(move |connection| crate::storage::needs_reprice(connection, generation))
+            .await
+            .unwrap_or(true)
+        {
+            return Ok(());
+        }
         let (response, result) = oneshot::channel();
         self.inner
             .writer

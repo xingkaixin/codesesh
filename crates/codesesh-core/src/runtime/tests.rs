@@ -371,6 +371,41 @@ async fn database_read_queue_is_bounded() {
 }
 
 #[tokio::test]
+async fn repricing_current_sessions_does_not_wait_for_the_writer() {
+    let temporary = tempfile::tempdir().unwrap();
+    let runtime = Runtime::start(temporary.path().join("cache.db"), vec![], 1)
+        .await
+        .unwrap();
+    let release = Arc::new(AtomicBool::new(false));
+    let started = Arc::new(AtomicBool::new(false));
+    let writer = runtime.clone();
+    let ready = started.clone();
+    let unblock = release.clone();
+    let busy = tokio::spawn(async move {
+        writer
+            .hub_control(move |_| {
+                ready.store(true, Ordering::Release);
+                while !unblock.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Ok(())
+            })
+            .await
+    });
+    until(|| started.load(Ordering::Acquire)).await;
+    let pricing = crate::pricing::PricingController::load(temporary.path())
+        .snapshot()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), runtime.reprice_all(pricing))
+        .await
+        .unwrap()
+        .unwrap();
+    release.store(true, Ordering::Release);
+    busy.await.unwrap().unwrap();
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn query_heads_and_facts_share_a_transaction_while_writer_commits() {
     let temporary = tempfile::tempdir().unwrap();
     let source_path = temporary.path().join("rollout-fixture.jsonl");
