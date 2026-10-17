@@ -258,6 +258,26 @@ fn mixed_chinese_queries_preserve_boolean_precedence_and_filters() {
 }
 
 #[test]
+fn chinese_limits_apply_after_literal_confirmation() {
+    let db = chinese_database();
+    db.execute("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES('local','codex','split','Split','/chinese','path','/chinese','chinese',10,500,500,1,0,0,0)", []).unwrap();
+    db.execute("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','split',0,'m','user',10,'[]','数据，库')", []).unwrap();
+    index(&db);
+    let results = execute(
+        &db,
+        "数据库",
+        &SearchOptions {
+            from: Some(250.0),
+            limit: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].reference.source_node_id, "worker-a");
+}
+
+#[test]
 fn filters_include_descendant_cost_tools_files_and_scope() {
     let db = database();
     let result = execute(

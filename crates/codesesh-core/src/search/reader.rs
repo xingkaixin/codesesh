@@ -72,27 +72,23 @@ pub(super) fn search_prepared(
 ) -> Result<Vec<SearchResult>> {
     let mut filters = sql::build(options);
     let query = query.trim();
-    let (statement, any_message) = if query.is_empty() {
-        (
-            format!(
-                "SELECT {HEAD_COLUMNS} FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
-                filters.where_sql()
-            ),
-            String::new(),
-        )
+    let limit = options.limit.unwrap_or(50);
+    let (rows, any_message) = if query.is_empty() {
+        filters.params.push((limit as i64).into());
+        let mut statement = connection.prepare(&format!(
+            "SELECT {HEAD_COLUMNS} FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
+            filters.where_sql()
+        ))?;
+        let rows = statement
+            .query_map(params_from_iter(filters.params), head)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        (rows, String::new())
     } else {
-        match cjk::statement(connection, query, &mut filters)? {
-            Some(statement) => (statement.sql, statement.any_message),
+        match cjk::statement(connection, query, filters)? {
+            Some(statement) => (statement.rows(connection, limit)?, statement.any_message),
             None => return Ok(Vec::new()),
         }
     };
-    filters
-        .params
-        .push((options.limit.unwrap_or(50) as i64).into());
-    let mut statement = connection.prepare(&statement)?;
-    let rows = statement
-        .query_map(params_from_iter(filters.params), head)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
     let terms = snippet::Terms::parse(query);
     let mut message_matches = message_matches(connection, &rows, &any_message, &terms)?;
     let mut result = Vec::with_capacity(rows.len());
