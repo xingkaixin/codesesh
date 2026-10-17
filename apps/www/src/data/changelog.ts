@@ -103,6 +103,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.1",
+        date: "2026-10-17",
+        title: "Faster Chinese search and less work while idle",
+        summary:
+          "CodeSesh 1.4.1 makes Chinese session search faster on large local AI coding histories, reduces background scanning and retained memory, and keeps live updates from piling up during slow requests.",
+        direction:
+          "Keep the cost of collecting and browsing history proportional to actual changes, while preserving search accuracy and recorded context.",
+        highlights: [
+          {
+            title: "Find Chinese history with fewer reads",
+            description:
+              "Chinese searches confirm matching text only for the sessions needed to fill the results, preserving exact matches and ordering while avoiding unnecessary reads across large histories.",
+          },
+          {
+            title: "Do less work in the background",
+            description:
+              "Workers scan sources after changes instead of polling every Agent. Pricing refreshes skip work already completed and avoid rewriting unchanged costs, reducing unnecessary work during Hub sync.",
+          },
+          {
+            title: "Retain less data after activity stops",
+            description:
+              "Idle parser state, expired page snapshots, and outdated statistics caches are released. Slow live updates are merged, and failed detail refreshes no longer let inactive session caches keep growing.",
+          },
+          {
+            title: "Keep DeepChat references in replay",
+            description:
+              "Messages that reference another DeepChat session now include its saved title and session ID as text, so replay preserves that context alongside the original message.",
+          },
+        ],
+      },
+      {
         version: "1.4.0",
         date: "2026-10-15",
         title: "A clearer view of usage, projects, and session history",
@@ -888,6 +919,36 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.1",
+        date: "2026-10-17",
+        title: "中文搜索更快，空闲时开销更少",
+        summary:
+          "CodeSesh 1.4.1 加快大体量本地 AI 编码历史中的中文会话搜索，减少后台扫描与内存保留，并避免慢速请求期间实时更新不断积压。",
+        direction: "让历史采集与浏览的开销随实际变化增长，同时保留搜索准确性和记录中的上下文。",
+        highlights: [
+          {
+            title: "减少中文搜索的无关读取",
+            description:
+              "中文搜索只为填满结果数量所需的会话确认原文，保留精确匹配与排序，避免在大量历史中读取所有命中消息。",
+          },
+          {
+            title: "减少后台重复工作",
+            description:
+              "Worker 在来源变化后扫描对应 Agent，取代对全部 Agent 的反复轮询。定价刷新跳过已完成的工作，不重写费用未变化的会话，减少 Hub 同步期间的无关开销。",
+          },
+          {
+            title: "活动结束后释放更多缓存",
+            description:
+              "清理闲置解析状态、过期分页快照与旧统计缓存。慢速实时更新会合并处理，详情刷新失败也不再让未打开会话的缓存持续增长。",
+          },
+          {
+            title: "回放中保留 DeepChat 会话引用",
+            description:
+              "引用其他 DeepChat 会话的消息会显示引用时保存的标题与会话 ID 文本，让回放保留原始消息中的关联上下文。",
+          },
+        ],
+      },
+      {
         version: "1.4.0",
         date: "2026-10-15",
         title: "更清楚地查看用量、项目与会话历史",
@@ -1652,6 +1713,37 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.1",
+        date: "2026-10-17",
+        title: "中国語検索を高速化し、待機中の負荷を削減",
+        summary:
+          "CodeSesh 1.4.1 は、大量のローカル AI コーディング履歴での中国語検索を高速化し、バックグラウンドのスキャンとメモリ保持を削減します。応答が遅い場合も、リアルタイム更新が積み重ならないようにしました。",
+        direction:
+          "検索の正確さと記録された文脈を保ちながら、履歴の収集と閲覧にかかる処理を実際の変更に見合う量に抑えます。",
+        highlights: [
+          {
+            title: "中国語検索で読むデータを削減",
+            description:
+              "結果の件数を満たすために必要なセッションだけ原文を確認します。完全一致と表示順を保ち、大量の履歴でヒットした全メッセージを読む処理を避けます。",
+          },
+          {
+            title: "バックグラウンドの重複処理を削減",
+            description:
+              "Worker は全 Agent を繰り返し確認する代わりに、変更されたソースをスキャンします。料金の再計算は完了済みの処理を省き、費用が変わらないセッションを書き直さず、Hub 同期中の余分な処理を減らします。",
+          },
+          {
+            title: "操作後に残るキャッシュを削減",
+            description:
+              "使われなくなった解析状態、期限切れのページ情報、古い統計キャッシュを解放します。遅いリアルタイム更新はまとめて処理し、詳細の再取得に失敗しても、開いていないセッションのキャッシュが増え続けるのを防ぎます。",
+          },
+          {
+            title: "DeepChat のセッション参照を保持",
+            description:
+              "別の DeepChat セッションを参照するメッセージには、参照時のタイトルとセッション ID をテキストで表示し、リプレイでも元の文脈を確認できます。",
+          },
+        ],
+      },
       {
         version: "1.4.0",
         date: "2026-10-15",

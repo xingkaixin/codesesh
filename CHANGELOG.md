@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.4.1] - 2026-10-17
+
+This patch reduces idle memory use, repeated Worker scans, and pricing-refresh overhead. It also speeds up Chinese session search and preserves DeepChat session references. (#812–#825)
+
+### Performance
+
+- Confirm literal Chinese search terms only for the sessions needed to fill the result limit, avoiding reads of every matching message while preserving exact substring matching and result order. (#825)
+- Scan Worker sources after file changes instead of polling every Agent every five seconds. Unfinished history continues paging, failed scans retry, and a watcher startup failure falls back to polling. Handle filesystem rescan notifications so reported dropped events trigger a full scan. The last successful scan time stays unchanged while sources are idle. (#823)
+- Skip repricing when the current pricing generation has already been applied, and leave sessions untouched when a new table does not change their costs. Routine refreshes with current prices no longer queue behind the SQLite writer. (#821, #822)
+- Release idle Codex and Claude Code parser checkpoints, including in standalone mode without another file change. Expire server pagination snapshots during inactivity and discard Dashboard and project cache results from older data revisions. (#812, #814, #815, #817)
+
+### Bug Fixes
+
+- Merge live events received during a slow update into one follow-up, preventing repeated session-detail requests from accumulating. Bound inactive session-detail caches even when a refetch fails and retains the previous transcript. (#813, #818)
+- Include DeepChat session references stored in user messages as text, with the saved title and session ID, without duplicating file attachments. (#824)
+
+### Build
+
+- Update frontend, Rust, development, and GitHub Actions dependencies, and prevent product-site tests from navigating to external GitHub pages. (#799–#804, #819, #820)
+
 ## [1.4.0] - 2026-10-15
 
 This release refreshes the Web UI and product site, with a token-focused Dashboard, search previews, and clearer project and session layouts. (#805, #807, #808)
