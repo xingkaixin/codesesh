@@ -2,7 +2,32 @@ use anyhow::Result;
 use codesesh_core::storage::Cache;
 use std::path::{Path, PathBuf};
 
-pub fn choose(path: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
+pub struct TemporaryDirectory(PathBuf);
+
+impl TemporaryDirectory {
+    pub fn new(prefix: &str) -> Self {
+        Self(std::env::temp_dir().join(format!("{prefix}-{}", uuid::Uuid::new_v4())))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        match std::fs::remove_dir_all(&self.0) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => eprintln!(
+                "Unable to remove temporary cache {}: {error}",
+                self.0.display()
+            ),
+        }
+    }
+}
+
+pub fn choose(path: &Path) -> Result<(PathBuf, Option<TemporaryDirectory>)> {
     match open(path) {
         Ok(_) => Ok((path.to_owned(), None)),
         Err(error) => {
@@ -10,9 +35,8 @@ pub fn choose(path: &Path) -> Result<(PathBuf, Option<PathBuf>)> {
                 "Cache unavailable at {}: {error:#}; using a temporary cache.",
                 path.display()
             );
-            let directory =
-                std::env::temp_dir().join(format!("codesesh-fallback-{}", uuid::Uuid::new_v4()));
-            let fallback = directory.join("codesesh.db");
+            let directory = TemporaryDirectory::new("codesesh-fallback");
+            let fallback = directory.path().join("codesesh.db");
             open(&fallback)?;
             Ok((fallback, Some(directory)))
         }
@@ -114,6 +138,7 @@ mod tests {
         let (chosen, cleanup) = super::choose(&path).unwrap();
         assert_ne!(chosen, path);
         assert_eq!(std::fs::read(path).unwrap(), b"not-a-SQLite");
-        std::fs::remove_dir_all(cleanup.unwrap()).unwrap();
+        drop(cleanup.unwrap());
+        assert!(!chosen.exists());
     }
 }

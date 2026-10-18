@@ -161,11 +161,11 @@ async fn run() -> Result<()> {
         }
         eprintln!("Cache cleared.");
     }
-    let temporary = (!args.cache || args.no_cache)
-        .then(|| std::env::temp_dir().join(format!("codesesh-{}", uuid::Uuid::new_v4())));
+    let temporary =
+        (!args.cache || args.no_cache).then(|| cache_path::TemporaryDirectory::new("codesesh"));
     let cache_path = temporary
         .as_ref()
-        .map(|dir| dir.join("codesesh.db"))
+        .map(|dir| dir.path().join("codesesh.db"))
         .unwrap_or(persistent);
     let database_started = std::time::Instant::now();
     let (cache_path, fallback_cleanup) = tokio::task::spawn_blocking(move || {
@@ -181,7 +181,7 @@ async fn run() -> Result<()> {
         "perf.startup.database",
         &serde_json::json!({"duration_ms": database_started.elapsed().as_secs_f64() * 1000.0}),
     );
-    let temporary = fallback_cleanup.or(temporary);
+    let _temporary = fallback_cleanup.or(temporary);
     let local_source = if scan_local {
         let home = environment.home.clone();
         let path = cache_path.clone();
@@ -237,9 +237,6 @@ async fn run() -> Result<()> {
             (result, report, scan_started.elapsed())
         })
         .await?;
-        if let Some(path) = temporary {
-            std::fs::remove_dir_all(path)?;
-        }
         if let Some(report) = report {
             report.print("scanSessions", scan_duration);
         }
@@ -485,9 +482,6 @@ async fn run() -> Result<()> {
     };
     pricing_task.abort();
     runtime.shutdown().await?;
-    if let Some(path) = temporary {
-        std::fs::remove_dir_all(path)?;
-    }
     logger.info("cli.shutdown", &serde_json::json!({"phase":"server"}));
     result?;
     Ok(())

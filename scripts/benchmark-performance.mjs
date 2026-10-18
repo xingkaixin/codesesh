@@ -27,6 +27,8 @@ const repoRoot = resolve(__dirname, "..");
 const cliPath = nativeBinary;
 const PROFILE_SCENARIOS = ["typing", "sidebar", "live"];
 const PROFILE_TYPING_TEXT = "performance-baseline";
+// A cold start's full-history temporary database can take seconds to shut down and remove.
+const CLI_STOP_TIMEOUT_MS = 30_000;
 
 function parseArgs(argv) {
   const options = {
@@ -295,28 +297,14 @@ async function waitForServer(url, cli, timeoutMs) {
   throw new Error(`Timed out waiting for ${url}.${message}`);
 }
 
-function sleepSync(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
+async function stopCli(child) {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
 
-function isRunning(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function stopCli(child) {
-  if (!child.pid || child.exitCode !== null) return;
-
+  const exited = new Promise((resolvePromise) => child.once("exit", resolvePromise));
   child.kill("SIGTERM");
-  sleepSync(300);
-
-  if (isRunning(child.pid)) {
-    child.kill("SIGKILL");
-  }
+  const forceKill = setTimeout(() => child.kill("SIGKILL"), CLI_STOP_TIMEOUT_MS);
+  await exited;
+  clearTimeout(forceKill);
 }
 
 function spawnCli(port, days, coldStart) {
@@ -869,7 +857,7 @@ async function runIteration(iteration, options) {
     await browser.close();
     browser = null;
     console.log(`#${iteration} browser closed`);
-    stopCli(cli.child);
+    await stopCli(cli.child);
     console.log(`#${iteration} CLI stopped`);
 
     return {
@@ -894,7 +882,7 @@ async function runIteration(iteration, options) {
       await browser.close();
     }
     if (cli) {
-      stopCli(cli.child);
+      await stopCli(cli.child);
     }
   }
 }
