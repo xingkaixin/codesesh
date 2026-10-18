@@ -61,6 +61,8 @@ export default defineConfig({
       url: `http://127.0.0.1:${port}`,
       reuseExistingServer: false,
       timeout: 300_000,
+      // The default SIGKILL skips the CLI's removal of its `--cache false` temporary database.
+      gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
       env: {
         HOME: e2eHome,
         USERPROFILE: e2eHome,
