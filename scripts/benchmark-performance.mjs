@@ -745,7 +745,7 @@ async function waitForSessionDetailVisible(page, target, timeoutMs) {
 
 async function runIteration(iteration, options) {
   const port = options.port || (await findFreePort());
-  const url = `http://localhost:${port}`;
+  const url = `http://127.0.0.1:${port}`;
   const fixture = options.fixtureSessions > 0 ? createFixtureData(options.fixtureSessions) : null;
   let cli = null;
   let browser = null;
