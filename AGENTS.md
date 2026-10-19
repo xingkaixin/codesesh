@@ -38,12 +38,14 @@ cargo test --workspace --locked
 ## 扩展新 Agent
 
 1. 在 `crates/codesesh-core/src/agents/` 新增 Rust 适配器，并接入：
-   - `agents/mod.rs`：`pub mod` 声明和 `scan_agent` 分发。
-   - `discovery.rs`：`has_sources` 来源可用性判定。
-   - `discovery/backfill.rs`：`inventory` 来源选择，伴随索引文件加入 `context_names`。
+   - `agents/mod.rs`：`pub mod` 声明和 `scan_agent` 分发；文件来源在 `session_root` /
+     `is_session_file` 声明会话文件，数据库来源在 `database_path` 声明 SQLite 路径。
+     来源可用性、回填选择、数据库戳记和 `discovery/json_scan.rs` 的 JSON 扫描都读取这些函数，
+     不另设分支。
+   - `discovery/backfill.rs`：伴随索引文件加入 `inventory` 的 `context_names`。
    - `discovery/incremental.rs`：`watch_roots` 监听路径和 `read` 增量刷新。
-   - 数据库来源另外对照 `deepchat` 在 `backfill.rs`（`database_stamp`、`session_fingerprints`）、
-     `incremental.rs` 和 `crates/codesesh-cli/src/json_scan.rs` 中的分支逐一接入。
+   - 数据库来源另外对照 `deepchat` 在 `backfill.rs`（`inventory`、`session_fingerprints`）和
+     `incremental.rs` 中的分支逐一接入。
 2. 在 `crates/codesesh-core/src/discovery/paths.rs` 声明数据根目录、环境变量覆盖和扫描路径。
 3. 在 `crates/codesesh-core/src/agents/catalog.json` 声明公开元数据和展示能力，然后运行
    `pnpm generate:rust-contract`；浏览器端目录由生成结果导出，不维护第二份值。
