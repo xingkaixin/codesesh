@@ -1,11 +1,14 @@
-use super::{State, decorate, error, params::Params};
+use super::{State, decorate, decorate_wire, error, params::Params};
 use axum::{
     Json,
     extract::{RawQuery, State as AxumState},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use codesesh_core::search::{self, FileActivityOptions, SearchOptions, SearchResult};
+use codesesh_core::{
+    public_contract::SearchResultParent,
+    search::{self, FileActivityOptions, SearchOptions, SearchResult},
+};
 use serde_json::json;
 use std::{collections::HashSet, sync::Arc};
 
@@ -84,22 +87,57 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
     };
     let aliases = state.aliases().await;
     let query_scope = state.scope(params.optional("sourceNodeId"));
-    let result=state.runtime.read_snapshot(move |conn,heads| {
-        let snapshot=super::scoped_heads(heads,&query_scope);
-        let ranked=search::execute_with_snapshot(conn,&query,&options,&snapshot)?;
-        let needle=search::parse_query(&query).text.trim().to_lowercase();
-        let candidates=if needle.is_empty() {Vec::new()} else {snapshot.iter().filter(|s|aliases.get(&s.reference).is_some_and(|a|a.to_lowercase().contains(&needle))).map(|s|SearchResult {reference:s.reference.clone(),session:s.clone(),snippet:format!("Alias · {}",s.directory),snippet_highlights:vec![],match_type:"title".into(),message_index:None}).collect()};
-        let mut alias_results=search::filter_candidates(conn,candidates,&query,&options,&snapshot)?;
-        alias_results.sort_by(|a,b|b.session.time_updated.total_cmp(&a.session.time_updated));
-        let mut merged=merge(ranked,alias_results,limit);let mut values=Vec::with_capacity(merged.len());
-        for result in &mut merged {
-            decorate(&mut result.session,&aliases);result.session=result.session.public();
-            let mut value=serde_json::to_value(&*result)?;
-            if let Some(parent_ref)=&result.session.parent_reference && let Some(parent)=snapshot.iter().find(|s|s.reference==*parent_ref) {value["parent"]=json!({"reference":parent_ref,"title":aliases.get(parent_ref).unwrap_or(&parent.title)});}
-            values.push(value);
-        }
-        Ok(values)
-    }).await;
+    let result = state
+        .runtime
+        .read_snapshot(move |conn, heads| {
+            let snapshot = super::scoped_heads(heads, &query_scope);
+            let ranked = search::execute_with_snapshot(conn, &query, &options, &snapshot)?;
+            let needle = search::parse_query(&query).text.trim().to_lowercase();
+            let candidates = if needle.is_empty() {
+                Vec::new()
+            } else {
+                snapshot
+                    .iter()
+                    .filter(|s| {
+                        aliases
+                            .get(&s.reference)
+                            .is_some_and(|a| a.to_lowercase().contains(&needle))
+                    })
+                    .map(|s| SearchResult {
+                        reference: s.reference.clone(),
+                        session: s.clone(),
+                        snippet: format!("Alias · {}", s.directory),
+                        snippet_highlights: vec![],
+                        match_type: "title".into(),
+                        message_index: None,
+                    })
+                    .collect()
+            };
+            let mut alias_results =
+                search::filter_candidates(conn, candidates, &query, &options, &snapshot)?;
+            alias_results.sort_by(|a, b| b.session.time_updated.total_cmp(&a.session.time_updated));
+            let merged = merge(ranked, alias_results, limit);
+            let mut values = Vec::with_capacity(merged.len());
+            for mut result in merged {
+                decorate(&mut result.session, &aliases);
+                let parent = result
+                    .session
+                    .parent_reference
+                    .as_ref()
+                    .and_then(|parent_ref| {
+                        snapshot
+                            .iter()
+                            .find(|s| s.reference == *parent_ref)
+                            .map(|parent| SearchResultParent {
+                                reference: parent_ref.clone(),
+                                title: aliases.get(parent_ref).unwrap_or(&parent.title).clone(),
+                            })
+                    });
+                values.push(super::wire::search_result(result, parent)?);
+            }
+            Ok(values)
+        })
+        .await;
     match result {
         Ok(results) => Json(json!({"results":results})).into_response(),
         Err(_) => error(
@@ -154,8 +192,7 @@ pub async fn file_activity(
                 .map(codesesh_core::projects::create_project_scope_matcher);
             let mut activity = search::list_file_activity(conn, &options)?;
             for a in &mut activity {
-                decorate(&mut a.session, &aliases);
-                a.session = a.session.public();
+                decorate_wire(&mut a.session, &aliases);
             }
             Ok(activity)
         })

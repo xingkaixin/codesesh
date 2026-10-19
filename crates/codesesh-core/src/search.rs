@@ -3,17 +3,17 @@ pub(crate) use cjk::index_text;
 mod file_activity;
 mod parser;
 mod reader;
-pub use file_activity::{FileActivityOptions, FileActivityResult, list_file_activity};
+pub use file_activity::{FileActivityOptions, list_file_activity};
 use reader::{search_files, search_prepared};
 mod snippet;
 mod sql;
 
 use crate::contract::{SessionHead, SessionReference};
 pub use crate::projects::ProjectScopeMatcher as ProjectScope;
+pub use crate::public_contract::SearchHighlightRange as HighlightRange;
 use anyhow::Result;
 pub use parser::{ParsedQuery, parse_query, split_tokens, to_fts_query};
 use rusqlite::{Connection, params_from_iter, types::Value};
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Default)]
@@ -45,21 +45,13 @@ pub struct SearchOptions {
     pub limit: Option<usize>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct HighlightRange {
-    pub start: usize,
-    pub end: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct SearchResult {
     pub reference: SessionReference,
     pub session: SessionHead,
     pub snippet: String,
     pub snippet_highlights: Vec<HighlightRange>,
     pub match_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub message_index: Option<usize>,
 }
 

@@ -1,45 +1,13 @@
 use crate::{
     contract::{SessionHead, SessionReference},
+    public_contract::{
+        AvailableBookmarkReason, AvailableBookmarkView, BookmarkView, UnavailableBookmarkReason,
+        UnavailableBookmarkView, head,
+    },
     state::{BookmarkRecord, normalize_reference, reference_key},
 };
 use anyhow::{Result, bail};
-use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use ts_rs::TS;
-
-#[derive(Clone, Debug, Serialize, TS)]
-#[serde(tag = "availability", rename_all = "kebab-case")]
-pub enum BookmarkView {
-    Available {
-        #[serde(flatten)]
-        bookmark: BookmarkRecord,
-        session: Box<SessionHead>,
-    },
-    SessionUnavailable {
-        #[serde(flatten)]
-        bookmark: BookmarkRecord,
-    },
-    AgentUnavailable {
-        #[serde(flatten)]
-        bookmark: BookmarkRecord,
-    },
-}
-
-impl BookmarkView {
-    pub fn bookmark(&self) -> &BookmarkRecord {
-        match self {
-            Self::Available { bookmark, .. }
-            | Self::SessionUnavailable { bookmark }
-            | Self::AgentUnavailable { bookmark } => bookmark,
-        }
-    }
-    fn time(&self) -> f64 {
-        match self {
-            Self::Available { session, .. } => session.time_updated,
-            _ => self.bookmark().bookmarked_at,
-        }
-    }
-}
 
 pub fn materialize_bookmarks(
     bookmarks: &[BookmarkRecord],
@@ -72,34 +40,39 @@ pub fn materialize_bookmarks(
             bookmarked_at: b.bookmarked_at,
         };
         let key = reference_key(&bookmark.reference);
-        if let Some(session) = live.get(&key).or_else(|| cached.get(&key)) {
+        let bookmarked_at = bookmark.bookmarked_at;
+        let (time, view) = if let Some(session) = live.get(&key).or_else(|| cached.get(&key)) {
             validate(&bookmark.reference, session)?;
-            views.push(BookmarkView::Available {
+            let view = AvailableBookmarkView {
+                availability: AvailableBookmarkReason::Available,
                 bookmark,
-                session: Box::new(session.clone().public()),
-            });
-        } else if known_agents.contains(&bookmark.reference.agent_name) {
-            views.push(BookmarkView::SessionUnavailable { bookmark });
+                session: head(session.clone())?,
+            };
+            (
+                session.time_updated,
+                BookmarkView::Available(Box::new(view)),
+            )
         } else {
-            views.push(BookmarkView::AgentUnavailable { bookmark });
-        }
+            let availability = if known_agents.contains(&bookmark.reference.agent_name) {
+                UnavailableBookmarkReason::SessionUnavailable
+            } else {
+                UnavailableBookmarkReason::AgentUnavailable
+            };
+            let view = UnavailableBookmarkView {
+                availability,
+                bookmark,
+                display_title: None,
+            };
+            (bookmarked_at, BookmarkView::Unavailable(view))
+        };
+        views.push((time, bookmarked_at, key, view));
     }
     views.sort_by(|a, b| {
-        b.time()
-            .total_cmp(&a.time())
-            .then_with(|| {
-                b.bookmark()
-                    .bookmarked_at
-                    .total_cmp(&a.bookmark().bookmarked_at)
-            })
-            .then_with(|| {
-                crate::locale::compare(
-                    &reference_key(&a.bookmark().reference),
-                    &reference_key(&b.bookmark().reference),
-                )
-            })
+        b.0.total_cmp(&a.0)
+            .then_with(|| b.1.total_cmp(&a.1))
+            .then_with(|| crate::locale::compare(&a.2, &b.2))
     });
-    Ok(views)
+    Ok(views.into_iter().map(|(.., view)| view).collect())
 }
 
 fn validate(reference: &SessionReference, session: &SessionHead) -> Result<()> {

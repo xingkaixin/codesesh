@@ -1,5 +1,6 @@
 mod database;
 use crate::contract::SessionReference;
+pub use crate::public_contract::BookmarkRecord;
 use anyhow::{Result, bail};
 pub use database::state_directory;
 use rusqlite::{Connection, TransactionBehavior, params};
@@ -7,13 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 use ts_rs::TS;
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct BookmarkRecord {
-    pub reference: SessionReference,
-    pub bookmarked_at: f64,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]

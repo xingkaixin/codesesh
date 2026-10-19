@@ -21,6 +21,7 @@ use axum::{
 };
 use codesesh_core::{
     contract::{SessionHead, SessionReference},
+    public_contract::WireSessionHead,
     query::SnapshotPaginator,
     runtime::Runtime,
     state::StateStore,
@@ -228,6 +229,11 @@ fn retry(message: &str) -> Response {
     response
 }
 fn decorate(head: &mut SessionHead, aliases: &HashMap<SessionReference, String>) {
+    if let Some(alias) = aliases.get(&head.reference) {
+        head.display_title = Some(alias.clone());
+    }
+}
+fn decorate_wire(head: &mut WireSessionHead, aliases: &HashMap<SessionReference, String>) {
     if let Some(alias) = aliases.get(&head.reference) {
         head.display_title = Some(alias.clone());
     }

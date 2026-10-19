@@ -2,9 +2,26 @@ pub use codesesh_core::public_contract::{activity, head, referenced};
 use codesesh_core::{
     contract as core,
     public_contract::{self as wire, closed},
+    search::SearchResult,
 };
 
 type Result<T> = std::result::Result<T, serde::de::value::Error>;
+pub fn search_result(
+    value: SearchResult,
+    parent: Option<wire::SearchResultParent>,
+) -> Result<wire::SearchResult> {
+    Ok(wire::SearchResult {
+        session: wire::PublicReferencedSessionHead {
+            reference: value.reference,
+            session: head(value.session)?,
+        },
+        snippet: value.snippet,
+        snippet_highlights: value.snippet_highlights,
+        match_type: closed(value.match_type)?,
+        message_index: value.message_index,
+        parent,
+    })
+}
 pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail> {
     Ok(wire::WireSessionDetail {
         model_usage: value.head.model_usage.take(),

@@ -1,8 +1,10 @@
 use super::{ProjectScope, QueryScope, SearchOptions, prepare, reader, sql};
-use crate::contract::{SessionFileActivity, SessionHead};
+use crate::{
+    contract::SessionFileActivity,
+    public_contract::{FileActivityResult, activity, head},
+};
 use anyhow::Result;
 use rusqlite::{Connection, params_from_iter};
-use serde::Serialize;
 
 #[derive(Clone, Debug, Default)]
 pub struct FileActivityOptions {
@@ -18,13 +20,6 @@ pub struct FileActivityOptions {
     pub from: Option<f64>,
     pub to: Option<f64>,
     pub limit: Option<usize>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct FileActivityResult {
-    #[serde(flatten)]
-    pub activity: SessionFileActivity,
-    pub session: SessionHead,
 }
 
 pub fn list_file_activity(
@@ -90,18 +85,22 @@ pub fn list_file_activity(
         .query_map(params_from_iter(filters.params), |row| {
             let mut session = reader::head(row)?;
             session.project_identity.key = row.get("file_project_identity_key")?;
-            Ok(FileActivityResult {
-                activity: SessionFileActivity {
-                    reference: session.reference.clone(),
-                    project_identity_key: row.get("file_project_identity_key")?,
-                    path: row.get("path")?,
-                    kind: row.get("kind")?,
-                    count: row.get::<_, i64>("count")? as usize,
-                    latest_time: row.get("latest_time")?,
-                },
-                session,
-            })
+            let file = SessionFileActivity {
+                reference: session.reference.clone(),
+                project_identity_key: row.get("file_project_identity_key")?,
+                path: row.get("path")?,
+                kind: row.get("kind")?,
+                count: row.get::<_, i64>("count")? as usize,
+                latest_time: row.get("latest_time")?,
+            };
+            Ok((file, session))
         })?
-        .map(|row| row.map_err(Into::into))
+        .map(|row| {
+            let (file, session) = row?;
+            Ok(FileActivityResult {
+                activity: activity(file)?,
+                session: head(session)?,
+            })
+        })
         .collect()
 }

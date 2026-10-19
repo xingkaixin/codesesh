@@ -92,7 +92,7 @@ pub struct WireSessionFileActivity {
     pub project_identity_key: String,
     pub path: String,
     pub kind: FileActivityKind,
-    pub count: f64,
+    pub count: usize,
     #[serde(rename = "latestTime")]
     pub latest_time: f64,
 }
@@ -657,8 +657,8 @@ pub struct SearchResultParent {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct SearchHighlightRange {
-    pub start: f64,
-    pub end: f64,
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
@@ -676,7 +676,7 @@ pub struct SearchResult {
         skip_serializing_if = "Option::is_none"
     )]
     #[ts(optional)]
-    pub message_index: Option<f64>,
+    pub message_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent: Option<SearchResultParent>,
@@ -705,17 +705,17 @@ pub enum AvailableBookmarkReason {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct AvailableBookmarkView {
+    pub availability: AvailableBookmarkReason,
     #[serde(flatten)]
     pub bookmark: BookmarkRecord,
-    pub availability: AvailableBookmarkReason,
     pub session: WireSessionHead,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct UnavailableBookmarkView {
+    pub availability: UnavailableBookmarkReason,
     #[serde(flatten)]
     pub bookmark: BookmarkRecord,
-    pub availability: UnavailableBookmarkReason,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub display_title: Option<String>,
@@ -959,7 +959,7 @@ pub fn activity(
         project_identity_key: value.project_identity_key,
         path: value.path,
         kind: closed(value.kind)?,
-        count: value.count as f64,
+        count: value.count,
         latest_time: value.latest_time,
     })
 }
