@@ -1,7 +1,6 @@
 mod assets;
 mod cache_path;
 mod http;
-mod json_scan;
 mod logging;
 mod migration;
 mod node_identity;
@@ -226,13 +225,17 @@ async fn run() -> Result<()> {
         let (result, report, scan_duration) = tokio::task::spawn_blocking(move || {
             let scan_started = std::time::Instant::now();
             let mut report = args.trace.then(trace::Report::default);
-            let result = json_scan::run_for_source(
+            let result = discovery::json_scan::run(
                 &sources,
                 &scan_options,
                 &pricing,
                 &cache_path,
-                report.as_mut(),
                 &local_source,
+                |name, duration| {
+                    if let Some(report) = &mut report {
+                        report.record(name, duration);
+                    }
+                },
             );
             (result, report, scan_started.elapsed())
         })

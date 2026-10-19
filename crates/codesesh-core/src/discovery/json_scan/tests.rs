@@ -1,6 +1,15 @@
 use super::*;
 use std::{fs, path::PathBuf};
 
+fn run_local(
+    sources: &[AgentSource],
+    options: &ScanOptions,
+    pricing: &Pricing,
+    path: &Path,
+) -> Result<SessionIndex> {
+    run(sources, options, pricing, path, "local", |_, _| {})
+}
+
 fn fixture() -> (tempfile::TempDir, AgentSource, PathBuf) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("codex");
@@ -38,25 +47,11 @@ fn warm_json_does_not_rewrite_messages_and_detects_add_modify_delete() {
     let (_temp, source, path) = fixture();
     let options = ScanOptions::default();
     let pricing = Pricing::bundled();
-    let first = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let first = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     let cache = Cache::open(Some(&path)).unwrap();
     cache.connection().execute_batch("CREATE TRIGGER reject_json_write BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'warm JSON rewrote messages'); END").unwrap();
     drop(cache);
-    let warm = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let warm = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(
         serde_json::to_value(warm).unwrap(),
         serde_json::to_value(&first).unwrap()
@@ -69,14 +64,7 @@ fn warm_json_does_not_rewrite_messages_and_detects_add_modify_delete() {
     drop(cache);
     write(&source.data_root, "first", "changed body");
     write(&source.data_root, "second", "new body");
-    let changed = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let changed = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(changed.sessions.len(), 2);
     assert!(
         changed
@@ -85,27 +73,14 @@ fn warm_json_does_not_rewrite_messages_and_detects_add_modify_delete() {
             .any(|head| head.title == "changed body")
     );
     fs::remove_file(source.scan_path.join("rollout-first.jsonl")).unwrap();
-    let deleted = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let deleted = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(deleted.sessions.len(), 1);
     fs::remove_file(source.scan_path.join("rollout-second.jsonl")).unwrap();
     assert!(
-        run(
-            std::slice::from_ref(&source),
-            &options,
-            &pricing,
-            &path,
-            None
-        )
-        .unwrap()
-        .sessions
-        .is_empty()
+        run_local(std::slice::from_ref(&source), &options, &pricing, &path,)
+            .unwrap()
+            .sessions
+            .is_empty()
     );
 }
 #[test]
@@ -117,24 +92,17 @@ fn filtered_json_keeps_full_cache_and_failures_preserve_last_good_data() {
         ..Default::default()
     };
     assert!(
-        run(
-            std::slice::from_ref(&source),
-            &options,
-            &pricing,
-            &path,
-            None
-        )
-        .unwrap()
-        .sessions
-        .is_empty()
+        run_local(std::slice::from_ref(&source), &options, &pricing, &path,)
+            .unwrap()
+            .sessions
+            .is_empty()
     );
     assert_eq!(
-        run(
+        run_local(
             std::slice::from_ref(&source),
             &ScanOptions::default(),
             &pricing,
             &path,
-            None,
         )
         .unwrap()
         .sessions
@@ -142,12 +110,11 @@ fn filtered_json_keeps_full_cache_and_failures_preserve_last_good_data() {
         1
     );
     fs::write(source.scan_path.join("rollout-first.jsonl"), "not json").unwrap();
-    let failed = run(
+    let failed = run_local(
         std::slice::from_ref(&source),
         &ScanOptions::default(),
         &pricing,
         &path,
-        None,
     );
     if failed.is_err() {
         assert_eq!(
@@ -168,25 +135,11 @@ fn external_publication_invalidates_the_index_but_pricing_does_not() {
     let (temp, source, path) = fixture();
     let options = ScanOptions::default();
     let pricing = Pricing::bundled();
-    run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     let cache = Cache::open(Some(&path)).unwrap();
     cache.connection().execute_batch("UPDATE sessions SET title='external publication'; UPDATE cache_meta SET value=CAST(value AS INTEGER)+1 WHERE key='analytics_revision'").unwrap();
     drop(cache);
-    let refreshed = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let refreshed = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(refreshed.sessions[0].title, "first body");
     let directory = temp.path().join(".codesesh");
     fs::create_dir_all(&directory).unwrap();
@@ -196,14 +149,7 @@ fn external_publication_invalidates_the_index_but_pricing_does_not() {
     let cache = Cache::open(Some(&path)).unwrap();
     cache.connection().execute_batch("CREATE TRIGGER reject_json_write BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'pricing reindex detected'); END").unwrap();
     drop(cache);
-    let repriced = run(
-        std::slice::from_ref(&source),
-        &options,
-        &changed,
-        &path,
-        None,
-    )
-    .unwrap();
+    let repriced = run_local(std::slice::from_ref(&source), &options, &changed, &path).unwrap();
     assert_eq!(repriced.sessions[0].title, "first body");
 }
 
@@ -223,38 +169,23 @@ fn price_changes_update_json_costs_without_invalidating_content_fingerprints() {
         writeln!(file, "{value}").unwrap();
     }
     let options = ScanOptions::default();
-    let first = run(
+    let first = run_local(
         std::slice::from_ref(&source),
         &options,
         &Pricing::bundled(),
         &path,
-        None,
     )
     .unwrap();
     assert_eq!(first.sessions[0].stats.total_cost, 0.0);
     let cache = Cache::open(Some(&path)).unwrap();
     cache.connection().execute_batch("CREATE TRIGGER reject_json_reparse BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'price update reparsed history'); END").unwrap();
-    let controller = codesesh_core::pricing::PricingController::load(temp.path());
+    let controller = crate::pricing::PricingController::load(temp.path());
     controller.stage_remote(&serde_json::json!({"openai":{"models":{"json-cost-model":{"cost":{"input":12,"output":8}}}}})).unwrap();
     controller.publish_pending().unwrap();
     let pricing = controller.snapshot().unwrap().pricing;
-    let result = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let result = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(result.sessions[0].stats.total_cost, 12.0);
-    let stable = run(
-        std::slice::from_ref(&source),
-        &options,
-        &pricing,
-        &path,
-        None,
-    )
-    .unwrap();
+    let stable = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(stable.sessions[0].stats.total_cost, 12.0);
 }
 #[test]
@@ -281,12 +212,11 @@ fn sources_written_during_a_scan_are_output_and_scanned_again() {
         });
         let scans: Vec<_> = (0..5)
             .map(|_| {
-                run(
+                run_local(
                     std::slice::from_ref(&source),
                     &ScanOptions::default(),
                     &pricing,
                     &path,
-                    None,
                 )
                 .map(|_| ())
                 .map_err(|error| error.to_string())
@@ -296,12 +226,11 @@ fn sources_written_during_a_scan_are_output_and_scanned_again() {
         assert!(scans.iter().all(Result::is_ok), "{scans:?}");
         writer.join().unwrap()
     });
-    let settled = run(
+    let settled = run_local(
         std::slice::from_ref(&source),
         &ScanOptions::default(),
         &pricing,
         &path,
-        None,
     )
     .unwrap();
     assert_eq!(settled.sessions[0].stats.message_count, 1 + appended);
