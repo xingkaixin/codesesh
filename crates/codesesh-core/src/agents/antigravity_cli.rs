@@ -1,4 +1,4 @@
-use super::{codex::ParsedSession, deepchat::common};
+use super::{ParsedSession, deepchat::common};
 use crate::{contract::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use prost::Message as _;

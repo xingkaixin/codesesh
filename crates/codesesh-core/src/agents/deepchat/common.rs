@@ -1,4 +1,4 @@
-use crate::{agents::codex::ParsedSession, contract::*, projects::path_identity};
+use crate::{agents::ParsedSession, contract::*, projects::path_identity};
 use anyhow::Result;
 use rusqlite::{Connection, types::ValueRef};
 use serde_json::{Map, Value, json};

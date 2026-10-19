@@ -1,5 +1,5 @@
 pub(crate) mod helpers;
-use super::codex::ParsedSession;
+use super::ParsedSession;
 use crate::{contract::*, pricing::Pricing};
 use helpers::*;
 use serde_json::Value;

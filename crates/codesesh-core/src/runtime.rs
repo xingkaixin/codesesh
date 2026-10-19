@@ -3,7 +3,7 @@ mod watcher;
 mod writer;
 
 use crate::{
-    agents::codex::ParsedSession,
+    agents::ParsedSession,
     contract::{SessionHead, SessionReference},
 };
 use anyhow::{Context, Result, bail};

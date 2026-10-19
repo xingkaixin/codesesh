@@ -1,4 +1,4 @@
-use crate::{agents::codex::ParsedSession, pricing::Pricing};
+use crate::{agents::ParsedSession, pricing::Pricing};
 use std::path::Path;
 
 pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {

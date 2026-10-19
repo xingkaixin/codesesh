@@ -1,4 +1,4 @@
-use super::codex::ParsedSession;
+use super::ParsedSession;
 use crate::{
     contract::{
         CostSource, Message, MessagePart, Role, SessionDetail, SessionHead, SessionReference,

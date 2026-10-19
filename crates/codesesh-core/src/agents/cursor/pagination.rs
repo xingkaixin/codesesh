@@ -1,5 +1,5 @@
 use super::{CursorSync, composer_id};
-use crate::{agents::codex::ParsedSession, pricing::Pricing};
+use crate::{agents::ParsedSession, pricing::Pricing};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;

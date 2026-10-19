@@ -83,7 +83,7 @@ async fn guard_lasts_until_body_completion_even_after_serialization_finishes() {
 #[tokio::test]
 async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
     use codesesh_core::{
-        agents::codex::{self, ParsedSession},
+        agents::{ParsedSession, codex},
         pricing::Pricing,
         storage::Cache,
     };

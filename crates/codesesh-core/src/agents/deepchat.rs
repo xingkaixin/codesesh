@@ -1,5 +1,5 @@
 pub(super) mod common;
-use super::codex::ParsedSession;
+use super::ParsedSession;
 use crate::{contract::*, pricing::Pricing};
 use anyhow::Result;
 use common::*;

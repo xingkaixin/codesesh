@@ -1,4 +1,4 @@
-use super::codex::ParsedSession;
+use super::ParsedSession;
 use crate::{contract::*, pricing::Pricing, projects::path_identity};
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags, types::ValueRef};

@@ -28,8 +28,28 @@ pub mod opencode;
 pub mod pi;
 pub mod zcode;
 
-use crate::{contract::AgentInfo, pricing::Pricing};
-pub use codex::ParsedSession;
+use crate::{
+    contract::{AgentInfo, SessionDetail, SessionHead},
+    pricing::Pricing,
+};
+
+#[derive(Clone, Debug)]
+pub struct ParsedSession {
+    pub head: SessionHead,
+    pub source: std::path::PathBuf,
+    pub detail: SessionDetail,
+}
+
+impl ParsedSession {
+    pub fn set_source_node(&mut self, node: &str) {
+        self.head.set_source_node(node);
+        self.detail.head = self.head.clone();
+        for activity in &mut self.detail.file_activity {
+            activity.reference = self.head.reference.clone();
+            activity.project_identity_key = self.head.project_identity.key.clone();
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SessionRecord {
