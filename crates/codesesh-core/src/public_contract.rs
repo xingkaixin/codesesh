@@ -1,8 +1,8 @@
 use crate::contract::{
     CostSource, FileActivityKind, MessageTokens, PlanApprovalStatus, ProjectIdentityKind, Role,
-    SessionReference, SessionStats, SmartTag, ToolPartStatus,
+    SessionFileActivity, SessionHead, SessionReference, SessionStats, SmartTag, ToolPartStatus,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::IntoDeserializer};
 use std::collections::BTreeMap;
 use ts_rs::TS;
 
@@ -909,6 +909,59 @@ pub struct DashboardData {
     #[serde(rename = "recentFileActivities")]
     pub recent_file_activities: Vec<FileActivityResult>,
     pub window: DashboardWindow,
+}
+
+pub fn closed<T: serde::de::DeserializeOwned>(value: String) -> Result<T, serde::de::value::Error> {
+    T::deserialize(value.into_deserializer())
+}
+
+pub fn head(value: SessionHead) -> Result<WireSessionHead, serde::de::value::Error> {
+    Ok(WireSessionHead {
+        version: value.version.map(Some),
+        summary_files: value.summary_files,
+        reference: value.reference,
+        title: value.title,
+        display_title: value.display_title,
+        directory: value.directory,
+        parent_reference: value.parent_reference,
+        project_identity: Some(WireProjectIdentity {
+            kind: closed(value.project_identity.kind)?,
+            key: value.project_identity.key,
+            display_name: value.project_identity.display_name,
+        }),
+        time_created: value.time_created,
+        time_updated: Some(value.time_updated),
+        stats: value.stats,
+        smart_tags: Some(
+            value
+                .smart_tags
+                .into_iter()
+                .map(closed)
+                .collect::<Result<_, _>>()?,
+        ),
+    })
+}
+
+pub fn referenced(
+    value: SessionHead,
+) -> Result<PublicReferencedSessionHead, serde::de::value::Error> {
+    Ok(PublicReferencedSessionHead {
+        reference: value.reference.clone(),
+        session: head(value)?,
+    })
+}
+
+pub fn activity(
+    value: SessionFileActivity,
+) -> Result<WireSessionFileActivity, serde::de::value::Error> {
+    Ok(WireSessionFileActivity {
+        reference: value.reference,
+        project_identity_key: value.project_identity_key,
+        path: value.path,
+        kind: closed(value.kind)?,
+        count: value.count as f64,
+        latest_time: value.latest_time,
+    })
 }
 
 fn present_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
