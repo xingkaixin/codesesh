@@ -1,9 +1,11 @@
-import type { BookmarkRecord, BookmarkView, SessionHead } from "./api";
 import {
   assertSessionIdentity,
   getSessionReferenceKey,
   normalizeSessionReference,
   type SessionReference,
+  type BookmarkRecord,
+  type BookmarkView,
+  type SessionHead,
 } from "@codesesh/contract";
 
 const LEGACY_BOOKMARK_STORAGE_KEY = "codesesh:bookmarks:v1";

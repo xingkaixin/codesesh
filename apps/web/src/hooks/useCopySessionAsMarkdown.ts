@@ -1,7 +1,8 @@
 import { t } from "../i18n/translate";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { fetchSessionData, logClientEvent, type SessionHead } from "../lib/api";
+import type { SessionHead } from "@codesesh/contract";
+import { fetchSessionData, logClientEvent } from "../lib/api";
 import { writeToClipboard } from "../lib/clipboard";
 import { queryKeys } from "../lib/query-keys";
 import { pruneSessionDetailCache } from "../lib/session-detail-cache";

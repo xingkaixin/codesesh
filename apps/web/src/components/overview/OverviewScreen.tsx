@@ -17,7 +17,8 @@ import { t } from "../../i18n/translate";
 import { useState, type ReactNode } from "react";
 
 import type { AgentCatalog } from "../../lib/agents";
-import type { AppConfig, DashboardFilters } from "../../lib/api";
+import type { AppConfig } from "@codesesh/contract";
+import type { DashboardFilters } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import { useDashboard } from "../../hooks/useDashboard";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";

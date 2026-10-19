@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useMatches, useNavigate } from "react-router-dom";
-import type { SessionHead } from "./lib/api";
+import type { SessionHead } from "@codesesh/contract";
 import { logClientEvent } from "./lib/api";
 import { getSessionRoutePath } from "./lib/session-indexes";
 import { SessionAliasDialog } from "./components/SessionAliasDialog";

@@ -1,11 +1,15 @@
-import { getSessionReferenceKey } from "@codesesh/contract";
+import {
+  getSessionReferenceKey,
+  type AgentInfo,
+  type SearchResult,
+  type SourceNode,
+} from "@codesesh/contract";
 import { useNodes } from "../../hooks/useNodes";
 import { SourceBadge, sourceName } from "../nodes/SourceBadge";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
-import type { AgentInfo, SearchResult, SourceNode } from "../../lib/api";
 import { formatCompact, formatInt, formatRelativeTime, formatUsd } from "../../lib/format";
 import { SEARCH_RESULT_LIMIT, searchResultPath } from "../../lib/search";
 import { getSessionDisplayTitle } from "../../lib/session-title";

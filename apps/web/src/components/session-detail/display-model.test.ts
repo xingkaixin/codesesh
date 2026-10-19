@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setLanguagePreference } from "../../i18n/language";
-import type { Message, SessionFileActivity } from "../../lib/api";
+import type { Message, SessionFileActivity } from "@codesesh/contract";
 import { buildSessionDetailDisplayModel } from "./display-model";
 
 const messages: Message[] = [

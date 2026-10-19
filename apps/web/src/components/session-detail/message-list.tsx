@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AgentInfo, SessionHead } from "../../lib/api";
+import type { AgentInfo, SessionHead } from "@codesesh/contract";
 import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
 import { MessageItem } from "./message-rendering";

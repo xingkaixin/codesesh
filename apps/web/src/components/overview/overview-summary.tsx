@@ -6,7 +6,7 @@ import { t } from "../../i18n/translate";
  * the first number is made of.
  */
 import { useId, type ReactNode } from "react";
-import type { DashboardDailyBucket, DashboardTotals } from "../../lib/api";
+import type { DashboardDailyBucket, DashboardTotals } from "@codesesh/contract";
 import { smoothPath, type ChartPoint } from "../../lib/chart-scale";
 import {
   formatCompact,

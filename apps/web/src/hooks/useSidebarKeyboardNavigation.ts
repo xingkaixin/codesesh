@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
-import type { SessionHead } from "../lib/api";
+import type { SessionHead } from "@codesesh/contract";
 import { isEditableTarget } from "../lib/keyboard";
 import {
   getSessionReferenceKey,

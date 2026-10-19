@@ -1,4 +1,4 @@
-import type { Message } from "../../lib/api";
+import type { Message } from "@codesesh/contract";
 
 export const CODEX_TURN_ABORTED_TEXT = `<turn_aborted>
 The user interrupted the previous turn on purpose. Any running unified exec processes were terminated. If any tools/commands were aborted, they may have partially executed; verify current state before retrying.

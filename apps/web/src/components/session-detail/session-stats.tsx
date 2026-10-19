@@ -1,6 +1,6 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import type { SessionDetail } from "../../lib/api";
+import type { SessionDetail } from "@codesesh/contract";
 import { formatCompact, formatInt, formatShare, formatUsd } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import type { SessionDetailToc } from "./toc";

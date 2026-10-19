@@ -1,8 +1,12 @@
 import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
-import { createSessionIdentity } from "@codesesh/contract";
+import {
+  createSessionIdentity,
+  type AgentInfo,
+  type ApiProjectGroup,
+  type SessionHead,
+} from "@codesesh/contract";
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentInfo, ApiProjectGroup, SessionHead } from "../lib/api";
 import { buildSessionIndexes, getSessionReferenceKey } from "../lib/session-indexes";
 import type { ViewState } from "../lib/view-state";
 import { useSidebarModel } from "./useSidebarModel";

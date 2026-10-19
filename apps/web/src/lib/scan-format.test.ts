@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatScanStatusLabel } from "./scan-format";
-import type { ScanStatusEvent } from "./api";
+import type { ScanStatusEvent } from "@codesesh/contract";
 
 function scanStatus(overrides: Partial<ScanStatusEvent>): ScanStatusEvent {
   return {

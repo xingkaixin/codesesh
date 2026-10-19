@@ -11,7 +11,7 @@ import type {
   DashboardTotals,
   ModelCostEntry,
   ModelDistributionEntry,
-} from "../../lib/api";
+} from "@codesesh/contract";
 import { formatCompact, formatInt, formatShare, formatUsd } from "../../lib/format";
 import { modelColor } from "../../lib/model-breakdown";
 import { cn } from "../../lib/utils";

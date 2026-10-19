@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../../lib/api";
+import type { AgentInfo, ApiProjectGroup, SessionDetail } from "@codesesh/contract";
 import { createAgentCatalog } from "../../lib/agents";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import { createQueryWrapper } from "../../test/query-wrapper";

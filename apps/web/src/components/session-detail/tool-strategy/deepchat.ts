@@ -1,4 +1,4 @@
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize";
 import { normalizeToolName } from "../tool-normalize";
 import { buildCodeExecutionStrategy } from "./code-execution";

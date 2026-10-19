@@ -3,10 +3,13 @@ import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { formatSessionReference } from "@codesesh/contract";
+import {
+  formatSessionReference,
+  type SessionDetail as SessionDetailData,
+  type SessionHead,
+} from "@codesesh/contract";
 import { useLocation } from "react-router-dom";
 import { findAgent, type AgentCatalog } from "../lib/agents";
-import type { SessionDetail as SessionDetailData, SessionHead } from "../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
 import {
   isRenderProfilerEnabled,

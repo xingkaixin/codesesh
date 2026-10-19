@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppConfig } from "../lib/api";
+import type { AppConfig } from "@codesesh/contract";
 import * as api from "../lib/api";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useAppConfig } from "./useAppConfig";

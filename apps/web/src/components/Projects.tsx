@@ -2,7 +2,12 @@ import { useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { Link, useNavigate } from "react-router-dom";
-import type { ApiProjectAgentStat, ApiProjectGroup, ApiProjectPage, AppConfig } from "../lib/api";
+import type {
+  ApiProjectAgentStat,
+  ApiProjectGroup,
+  ApiProjectPage,
+  AppConfig,
+} from "@codesesh/contract";
 import { useProjectPagination } from "../hooks/useProjects";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import { formatCompact, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";

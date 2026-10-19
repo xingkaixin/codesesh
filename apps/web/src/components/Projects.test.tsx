@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ApiProjectGroup } from "../lib/api";
+import type { ApiProjectGroup } from "@codesesh/contract";
 import { createAgentCatalog } from "../lib/agents";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { ProjectsOverview } from "./Projects";

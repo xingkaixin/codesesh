@@ -1,5 +1,5 @@
 import { t } from "../../i18n/translate";
-import type { PlanPart } from "../../lib/api";
+import type { PlanPart } from "@codesesh/contract";
 
 export type CodexPlanApprovalStatus = "success" | "fail";
 

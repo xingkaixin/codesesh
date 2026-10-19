@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionDetail } from "../lib/api";
+import type { SessionDetail } from "@codesesh/contract";
 import { createReceiptPayload } from "./receipt-data";
 
 function session(): SessionDetail {

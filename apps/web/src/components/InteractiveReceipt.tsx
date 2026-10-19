@@ -1,7 +1,7 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { SessionDetail } from "../lib/api";
+import type { SessionDetail } from "@codesesh/contract";
 import { createReceiptPayload, receiptHeight } from "./receipt-data";
 import {
   createInteractiveReceiptSimulation,

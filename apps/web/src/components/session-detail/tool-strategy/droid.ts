@@ -3,7 +3,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import type { TaskListItem } from "../../tool-output/types";
 import { buildStructuredDiffFromTexts } from "../diff";
 import { getDisplayPath, getFilePathFromInput } from "../path-extract";

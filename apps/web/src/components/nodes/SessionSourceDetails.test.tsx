@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import type { SourceNode } from "../../lib/api";
+import type { SourceNode } from "@codesesh/contract";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { SessionSourceDetails } from "./SessionSourceDetails";
 

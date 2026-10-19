@@ -1,7 +1,7 @@
 import { t } from "../i18n/translate";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ApiProjectGroup, ApiProjectPage, AppConfig } from "../lib/api";
+import type { ApiProjectGroup, ApiProjectPage, AppConfig } from "@codesesh/contract";
 import { ApiRequestError, fetchProject, fetchProjects } from "../lib/api";
 import { getProjectIdentityKey, type ProjectRouteIdentity } from "../lib/projects";
 import { queryKeys } from "../lib/query-keys";

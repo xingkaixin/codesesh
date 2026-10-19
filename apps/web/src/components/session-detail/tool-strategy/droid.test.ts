@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import { getToolDisplayStrategy, normalizeToolState } from "./index";
 
 function display(name: string, input: unknown, status: "completed" | "error" = "completed") {

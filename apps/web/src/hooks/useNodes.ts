@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { SourceNode } from "../lib/api";
+import type { SourceNode } from "@codesesh/contract";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConfig, fetchNodes } from "../lib/api";
 

@@ -1,7 +1,12 @@
 /**
  * Shared types for the app-shell subcomponents (search panel, sidebar, filters).
  */
-import type { FileActivityKind, ProjectIdentityKind, SearchResult, SmartTag } from "../../lib/api";
+import type {
+  FileActivityKind,
+  ProjectIdentityKind,
+  SearchResult,
+  SmartTag,
+} from "@codesesh/contract";
 
 export type BrowseBy = "agents" | "projects";
 

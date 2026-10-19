@@ -7,7 +7,7 @@ import { t } from "../../i18n/translate";
  * in ./utils and are re-exported here for convenience.
  */
 import type { LoaderCircle } from "../ui/icons";
-import type { Message, ToolPart } from "../../lib/api";
+import type { Message, ToolPart } from "@codesesh/contract";
 import type { ToolOutputContent } from "../tool-output/types";
 import type { ToolDetailItem } from "./codex-tool";
 import { inlineImageSource, resolveLocalMediaSource } from "../../lib/local-media-policy";

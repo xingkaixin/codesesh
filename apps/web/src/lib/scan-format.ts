@@ -3,7 +3,7 @@ import { t } from "../i18n/translate";
  * Scan-status and time-window formatting helpers.
  * Pure display logic consumed by the app shell and sidebar.
  */
-import type { AppConfig, ScanStatusEvent } from "./api";
+import type { AppConfig, ScanStatusEvent } from "@codesesh/contract";
 
 function formatPartialCompletion(
   completion: Pick<

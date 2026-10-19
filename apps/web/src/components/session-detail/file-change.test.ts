@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ToolPart } from "../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import {
   buildFileChangeSummary,
   buildFileChangeSummaryFromActivity,

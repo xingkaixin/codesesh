@@ -1,5 +1,14 @@
 import { t } from "../i18n/translate";
-import { applySessionWindowChanges, formatSessionReference } from "@codesesh/contract";
+import {
+  applySessionWindowChanges,
+  formatSessionReference,
+  type AgentInfo,
+  type AppConfig,
+  type ApiProjectGroup,
+  type ApiProjectPage,
+  type SessionHead,
+  type SessionsUpdatedEvent,
+} from "@codesesh/contract";
 import {
   hashKey,
   keepPreviousData,
@@ -10,17 +19,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import {
-  type AgentInfo,
-  type AppConfig,
-  type ApiProjectGroup,
-  type ApiProjectPage,
-  type SessionHead,
-  type SessionsUpdatedEvent,
-  fetchAgents,
-  fetchProjects,
-  fetchSessions,
-} from "../lib/api";
+import { fetchAgents, fetchProjects, fetchSessions } from "../lib/api";
 import { createAgentCatalog } from "../lib/agents";
 import { DASHBOARD_STALE_TIME_MS, dashboardQueryOptions } from "../lib/dashboard-query";
 import { queryKeys } from "../lib/query-keys";

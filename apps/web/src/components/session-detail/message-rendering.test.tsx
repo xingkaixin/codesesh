@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
+import type { Message, PlanPart, ReasoningPart, ToolPart } from "@codesesh/contract";
 import { MarkdownContent } from "../MarkdownContent";
 import type { MessageBlock } from "./blocks";
 

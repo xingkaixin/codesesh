@@ -1,6 +1,6 @@
 import { t } from "../i18n/translate";
 import type { ReactNode } from "react";
-import type { AgentInfo, ApiProjectGroup, SessionDetail } from "../lib/api";
+import type { AgentInfo, ApiProjectGroup, SessionDetail } from "@codesesh/contract";
 import { formatInt, formatRelativeTime } from "../lib/format";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";

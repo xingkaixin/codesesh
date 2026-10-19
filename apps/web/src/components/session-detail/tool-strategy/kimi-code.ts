@@ -5,7 +5,7 @@
  * agent adapter and transcript format remain independent. Normalize from the
  * raw tool name so persisted display titles cannot hide the tool semantics.
  */
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize";
 import { buildZCodeToolStrategy } from "./zcode";
 

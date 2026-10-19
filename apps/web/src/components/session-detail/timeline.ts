@@ -1,5 +1,5 @@
 import { t } from "../../i18n/translate";
-import type { MessagePart, ToolPart } from "../../lib/api";
+import type { MessagePart, ToolPart } from "@codesesh/contract";
 import { classifyToolOperation } from "./file-change";
 import { normalizeToolLabel } from "./tool-normalize";
 import type { FilteredSessionMessage } from "./display-model-types";

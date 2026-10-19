@@ -1,7 +1,8 @@
 import { t } from "../i18n/translate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { ApiRequestError, fetchSessionData, logClientEvent, type SessionDetail } from "../lib/api";
+import type { SessionDetail } from "@codesesh/contract";
+import { ApiRequestError, fetchSessionData, logClientEvent } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import type { ViewState } from "../lib/view-state";
 

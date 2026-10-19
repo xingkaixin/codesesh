@@ -1,7 +1,6 @@
-import { AGENT_CATALOG, type HostInfo } from "@codesesh/contract";
+import { AGENT_CATALOG, type HostInfo, type SourceNode } from "@codesesh/contract";
 import { t } from "../../i18n/translate";
 import { isNodeOnline } from "../../hooks/useNodes";
-import type { SourceNode } from "../../lib/api";
 
 export function nodeStatus(node: SourceNode, now: number) {
   if (node.revoked) return t("Access revoked");

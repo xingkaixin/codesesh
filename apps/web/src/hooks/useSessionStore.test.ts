@@ -3,19 +3,19 @@ import {
   SAMPLE_SESSION_HEAD,
   SAMPLE_SESSIONS_UPDATED_EVENT,
 } from "@codesesh/contract/test-fixtures";
-import { createSessionIdentity } from "@codesesh/contract";
+import {
+  createSessionIdentity,
+  type AgentInfo,
+  type AppConfig,
+  type DashboardData,
+  type ApiProjectGroup,
+  type ApiProjectPage,
+  type SessionHead,
+  type BookmarkView,
+} from "@codesesh/contract";
 import { defaultScheduler, notifyManager, useQuery } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  AgentInfo,
-  AppConfig,
-  DashboardData,
-  ApiProjectGroup,
-  ApiProjectPage,
-  SessionHead,
-  BookmarkView,
-} from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";

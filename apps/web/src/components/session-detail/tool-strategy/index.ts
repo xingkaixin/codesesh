@@ -11,7 +11,7 @@
  *
  * Pure logic — no React. Consumed by SessionDetail's ToolItem / MessageItem.
  */
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize";
 import { buildClaudeToolStrategy } from "./claudecode";
 import { buildOpencodeToolStrategy } from "./opencode";

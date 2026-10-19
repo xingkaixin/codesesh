@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { AgentInfo, ApiProjectGroup, SessionDetail, SessionHead } from "../lib/api";
+import type { AgentInfo, ApiProjectGroup, SessionDetail, SessionHead } from "@codesesh/contract";
 import {
   getProjectGroupIdentity,
   getProjectIdentityKey,

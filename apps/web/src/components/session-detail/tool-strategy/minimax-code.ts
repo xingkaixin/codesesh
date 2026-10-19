@@ -1,5 +1,5 @@
 import { t } from "../../../i18n/translate";
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import type { QuestionListItem, TaskListItem } from "../../tool-output/types";
 import { Bot, CircleHelp, ListTodo } from "../../ui/icons";
 import { buildStructuredDiffFromTexts } from "../diff";

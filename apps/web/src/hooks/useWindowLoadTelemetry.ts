@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { type AppConfig, logClientEvent } from "../lib/api";
+import type { AppConfig } from "@codesesh/contract";
+import { logClientEvent } from "../lib/api";
 
 interface WindowLoadTelemetry {
   window: AppConfig["window"] | null;

@@ -1,5 +1,5 @@
-export * from "./api-contract";
 export { ApiRequestError } from "./api-client";
+export type { DashboardFilters, SearchRequestOptions } from "./api-client";
 
 import { createApiClient } from "./api-client";
 import { createClientTelemetry } from "./client-telemetry";

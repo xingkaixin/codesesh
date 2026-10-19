@@ -6,8 +6,12 @@ import {
   SAMPLE_SESSIONS_UPDATED_EVENT,
   SAMPLE_SESSION_HEAD,
 } from "@codesesh/contract/test-fixtures";
-import { createSessionIdentity } from "@codesesh/contract";
-import type { ApiProjectGroup, DashboardData, SessionsUpdatedEvent } from "./lib/api";
+import {
+  createSessionIdentity,
+  type ApiProjectGroup,
+  type DashboardData,
+  type SessionsUpdatedEvent,
+} from "@codesesh/contract";
 import App from "./App";
 import { appRouteChildren } from "./lib/app-routes";
 import { createQueryClient } from "./lib/query-client";

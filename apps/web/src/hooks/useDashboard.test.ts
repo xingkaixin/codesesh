@@ -1,6 +1,7 @@
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppConfig, DashboardData, DashboardFilters } from "../lib/api";
+import type { AppConfig, DashboardData } from "@codesesh/contract";
+import type { DashboardFilters } from "../lib/api";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";

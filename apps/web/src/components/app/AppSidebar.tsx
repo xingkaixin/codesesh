@@ -3,7 +3,7 @@ import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { lazy, Suspense, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { sourceName } from "../nodes/SourceBadge";
-import type { BookmarkView, ApiProjectGroup, SessionHead, SourceNode } from "../../lib/api";
+import type { BookmarkView, ApiProjectGroup, SessionHead, SourceNode } from "@codesesh/contract";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { useSidebarKeyboardNavigation } from "../../hooks/useSidebarKeyboardNavigation";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
