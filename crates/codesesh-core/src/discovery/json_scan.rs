@@ -1,17 +1,17 @@
-use anyhow::{Result, bail};
-use codesesh_core::{
+use super::{AgentSource, ScanOptions};
+use crate::{
     agents,
     contract::{SessionHead, SessionIndex},
-    discovery::{self, AgentSource, ScanOptions},
     pricing::Pricing,
     projects::{compute_identity_projection, create_project_scope_matcher, matches_project_scope},
     query::filter_activity_window,
     storage::Cache,
 };
+use anyhow::{Result, bail};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 fn signature(source: &AgentSource) -> Result<String> {
@@ -20,7 +20,7 @@ fn signature(source: &AgentSource) -> Result<String> {
         env!("CARGO_PKG_VERSION"),
         &source.scan_path,
         &source.data_root,
-        discovery::source_inventory_signature(source)?,
+        super::source_inventory_signature(source)?,
     ))?)
 }
 fn project_identities_current(heads: &[SessionHead]) -> bool {
@@ -59,24 +59,15 @@ fn output(mut heads: Vec<SessionHead>, options: &ScanOptions) -> SessionIndex {
         sessions: heads,
     }
 }
-#[cfg(test)]
+/// Scans `sources` into the cache at `path` and returns the filtered index, reusing cached
+/// sessions of sources whose inventory is unchanged. `record` receives per-agent timings.
 pub fn run(
     sources: &[AgentSource],
     options: &ScanOptions,
     pricing: &Pricing,
     path: &Path,
-    trace: Option<&mut crate::trace::Report>,
-) -> Result<SessionIndex> {
-    run_for_source(sources, options, pricing, path, trace, "local")
-}
-
-pub fn run_for_source(
-    sources: &[AgentSource],
-    options: &ScanOptions,
-    pricing: &Pricing,
-    path: &Path,
-    mut trace: Option<&mut crate::trace::Report>,
     node: &str,
+    mut record: impl FnMut(String, Duration),
 ) -> Result<SessionIndex> {
     let mut cache = Cache::open(Some(path))?;
     for source in sources {
@@ -110,22 +101,18 @@ pub fn run_for_source(
                 {
                     heads.extend(old.iter().cloned());
                     fingerprints.push((source.agent.clone(), before));
-                    if let Some(report) = trace.as_deref_mut() {
-                        report.record(
-                            format!("agent:{}:cache", source.agent),
-                            agent_started.elapsed(),
-                        );
-                    }
+                    record(
+                        format!("agent:{}:cache", source.agent),
+                        agent_started.elapsed(),
+                    );
                     return Ok(());
                 }
                 let scan_started = Instant::now();
-                let scanned = discovery::scan_source(source, pricing);
-                if let Some(report) = trace.as_deref_mut() {
-                    report.record(
-                        format!("agent:{}:scan", source.agent),
-                        scan_started.elapsed(),
-                    );
-                }
+                let scanned = super::scan_source(source, pricing);
+                record(
+                    format!("agent:{}:scan", source.agent),
+                    scan_started.elapsed(),
+                );
                 let mut scanned = scanned?;
                 for session in &mut scanned.sessions {
                     session.set_source_node(node);

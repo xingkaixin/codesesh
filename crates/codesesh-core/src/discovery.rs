@@ -1,6 +1,7 @@
 mod backfill;
 mod incremental;
 pub use incremental::AgentScanner;
+pub mod json_scan;
 pub mod paths;
 use crate::{
     agents::{self, ParsedSession},
@@ -240,7 +241,7 @@ pub fn calendar_window_start(days: Option<u32>, timestamp: f64) -> Option<f64> {
         .map(|date| date.timestamp_millis() as f64)
 }
 
-pub fn source_inventory_signature(source: &AgentSource) -> Result<String> {
+fn source_inventory_signature(source: &AgentSource) -> Result<String> {
     let items = backfill::inventory(source)?;
     Ok(backfill::Backfill::new(items, None, None, 0, None, false).signature)
 }

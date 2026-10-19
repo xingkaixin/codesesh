@@ -133,7 +133,7 @@ pub fn scan_agent(
 }
 
 /// The SQLite file of a database-backed source; `None` for file-backed sources.
-pub fn database_path(agent: &str, scan_path: &Path) -> Option<PathBuf> {
+pub(crate) fn database_path(agent: &str, scan_path: &Path) -> Option<PathBuf> {
     match agent {
         "cursor" => Some(scan_path.join("globalStorage/state.vscdb")),
         "opencode" => Some(scan_path.to_owned()),
