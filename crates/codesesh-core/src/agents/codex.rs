@@ -1,8 +1,7 @@
-use super::{codex_rollout as rollout, codex_usage::Usage};
+use super::{ParsedSession, codex_rollout as rollout, codex_usage::Usage, jsonl::timestamp};
 use crate::pricing::Pricing;
 use crate::{contract::*, projects::path_identity};
 use anyhow::Result;
-use chrono::DateTime;
 use regex::Regex;
 use serde_json::Value;
 use std::{
@@ -13,24 +12,6 @@ use std::{
     sync::LazyLock,
 };
 use walkdir::WalkDir;
-
-#[derive(Clone, Debug)]
-pub struct ParsedSession {
-    pub head: SessionHead,
-    pub source: PathBuf,
-    pub detail: SessionDetail,
-}
-
-impl ParsedSession {
-    pub fn set_source_node(&mut self, node: &str) {
-        self.head.set_source_node(node);
-        self.detail.head = self.head.clone();
-        for activity in &mut self.detail.file_activity {
-            activity.reference = self.head.reference.clone();
-            activity.project_identity_key = self.head.project_identity.key.clone();
-        }
-    }
-}
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let mut titles = HashMap::new();
@@ -445,25 +426,6 @@ fn child_summary(
         }
     }
     Ok((usage.stats(0), final_output.or(latest)))
-}
-
-pub fn timestamp(record: &Value) -> f64 {
-    if let Some(value) = record["timestamp"].as_f64() {
-        return value;
-    }
-    let Some(value) = record["timestamp"].as_str() else {
-        return 0.0;
-    };
-    let mut value = value.trim().replacen(' ', "T", 1);
-    static SUFFIX: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?i)(?:Z|[+-]\d{2}:?\d{2})$").unwrap());
-    if !SUFFIX.is_match(&value) {
-        value.push('Z');
-    }
-    DateTime::parse_from_rfc3339(&value)
-        .or_else(|_| DateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f%z"))
-        .map(|date| date.timestamp_millis() as f64)
-        .unwrap_or(0.0)
 }
 
 fn internal(value: &Value) -> bool {

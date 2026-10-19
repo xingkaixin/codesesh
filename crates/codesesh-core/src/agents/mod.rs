@@ -28,8 +28,28 @@ pub mod opencode;
 pub mod pi;
 pub mod zcode;
 
-use crate::{contract::AgentInfo, pricing::Pricing};
-pub use codex::ParsedSession;
+use crate::{
+    contract::{AgentInfo, SessionDetail, SessionHead},
+    pricing::Pricing,
+};
+
+#[derive(Clone, Debug)]
+pub struct ParsedSession {
+    pub head: SessionHead,
+    pub source: std::path::PathBuf,
+    pub detail: SessionDetail,
+}
+
+impl ParsedSession {
+    pub fn set_source_node(&mut self, node: &str) {
+        self.head.set_source_node(node);
+        self.detail.head = self.head.clone();
+        for activity in &mut self.detail.file_activity {
+            activity.reference = self.head.reference.clone();
+            activity.project_identity_key = self.head.project_identity.key.clone();
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SessionRecord {
@@ -57,7 +77,10 @@ pub struct ScanDelta {
     pub removed: Vec<crate::contract::SessionReference>,
     pub complete: bool,
 }
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 pub fn catalog(count: usize) -> Vec<AgentInfo> {
     catalog_counts(&HashMap::from([("codex".into(), count)]))
@@ -107,6 +130,67 @@ pub fn scan_agent(
         "cherrystudio" => cherrystudio::scan(scan_path, pricing),
         _ => anyhow::bail!("Unknown agent: {agent}"),
     }
+}
+
+/// The SQLite file of a database-backed source; `None` for file-backed sources.
+pub fn database_path(agent: &str, scan_path: &Path) -> Option<PathBuf> {
+    match agent {
+        "cursor" => Some(scan_path.join("globalStorage/state.vscdb")),
+        "opencode" => Some(scan_path.to_owned()),
+        "zcode" => Some(scan_path.join("cli/db/db.sqlite")),
+        "deepchat" => Some(scan_path.join("app_db/agent.db")),
+        "cherrystudio" => Some(scan_path.join("Data/cherrystudio.sqlite")),
+        "minimax-code" => Some(scan_path.join("v2/sqlite/runtime-state.sqlite")),
+        _ => None,
+    }
+}
+
+/// The directory a file-backed source walks for session files.
+pub(crate) fn session_root(agent: &str, scan_path: &Path) -> PathBuf {
+    if agent == "dsh" {
+        scan_path.join("sessions")
+    } else {
+        scan_path.to_owned()
+    }
+}
+
+/// Whether a file found while walking `root` is a session source the adapter reads.
+pub(crate) fn is_session_file(
+    agent: &str,
+    root: &Path,
+    entry: &walkdir::DirEntry,
+) -> std::io::Result<bool> {
+    let name = entry.file_name().to_string_lossy();
+    let path = entry.path();
+    Ok(match agent {
+        "claudecode" | "qoder" | "qoder-cn" => {
+            name.ends_with(".jsonl")
+                && (entry.depth() == 2 || claudecode::subagents_dir(path).is_some())
+        }
+        "pi" | "omp" => name.ends_with(".jsonl"),
+        "antigravity-cli" => name.ends_with(".db"),
+        "gemini-cli" => gemini_cli::is_source(root, path),
+        "grok" => name == "summary.json",
+        "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
+        "dsh" => entry.depth() == 3 && dsh::generation(&name).is_some(),
+        // A session directory holding both files is one session, listed by its state.json.
+        "kimi" => {
+            entry.depth() == 3
+                && (name == "state.json"
+                    || name == "metadata.json"
+                        && !path.with_file_name("state.json").try_exists()?)
+        }
+        "kimi-code" => {
+            entry.depth() == 3
+                && name == "state.json"
+                && path
+                    .parent()
+                    .unwrap()
+                    .join("agents/main/wire.jsonl")
+                    .try_exists()?
+        }
+        _ => false,
+    })
 }
 
 // The only place smart tags are derived; parsers leave them empty for this pass to fill.

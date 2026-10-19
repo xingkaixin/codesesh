@@ -1,5 +1,5 @@
 use super::{composer_id, parse_composer, string, workspace_paths};
-use crate::{agents::codex::ParsedSession, contract::SessionReference, pricing::Pricing};
+use crate::{agents::ParsedSession, contract::SessionReference, pricing::Pricing};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;

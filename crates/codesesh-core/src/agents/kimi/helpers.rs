@@ -451,7 +451,7 @@ pub fn affected_directories(
 }
 
 #[cfg(test)]
-pub fn assert_node_golden(session: &super::super::codex::ParsedSession, expected: &str) {
+pub fn assert_node_golden(session: &crate::agents::ParsedSession, expected: &str) {
     fn numbers(value: &mut Value) {
         match value {
             Value::Number(number)

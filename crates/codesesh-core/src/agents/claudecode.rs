@@ -1,7 +1,7 @@
 pub(super) mod common;
 mod incremental;
 mod transcript;
-use super::codex::{ParsedSession, timestamp};
+use super::{ParsedSession, jsonl::timestamp};
 use crate::{
     contract::*,
     pricing::{Pricing, priced_model},

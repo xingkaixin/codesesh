@@ -236,7 +236,7 @@ fn sqlite_facts_and_active_hours_respect_effective_time_and_automation() {
     assistant["id"] = json!("assistant");
     assistant["role"] = json!("assistant");
     let detail=serde_json::from_value(json!({"reference":session.reference,"title":session.title,"directory":session.directory,"project_identity":session.project_identity,"time_created":time,"time_updated":time,"stats":session.stats,"smart_tags":[],"messages":[message,automated,assistant],"detail_freshness":"fresh","file_activity":[]})).unwrap();
-    let mut parsed = vec![crate::agents::codex::ParsedSession {
+    let mut parsed = vec![crate::agents::ParsedSession {
         head: session.clone(),
         source: "/fixture/not-required".into(),
         detail,
@@ -315,7 +315,7 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
             detail["messages"] = json!(messages);
             detail["detail_freshness"] = json!("fresh");
             detail["file_activity"] = json!([]);
-            crate::agents::codex::ParsedSession {
+            crate::agents::ParsedSession {
                 head,
                 source: "/fixture/not-required".into(),
                 detail: serde_json::from_value(detail).unwrap(),
@@ -522,7 +522,7 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
     detail["file_activity"] = json!([]);
     let mut cache = crate::storage::Cache::open(None).unwrap();
     cache
-        .publish(&mut [crate::agents::codex::ParsedSession {
+        .publish(&mut [crate::agents::ParsedSession {
             head: session.clone(),
             source: "/fixture/not-required".into(),
             detail: serde_json::from_value(detail).unwrap(),

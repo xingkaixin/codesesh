@@ -1,6 +1,6 @@
 use super::super::{composer_id, pagination, parse_composer, string, workspace_paths};
 use super::{CursorSync, child_owners, fingerprint};
-use crate::{agents::codex::ParsedSession, pricing::Pricing};
+use crate::{agents::ParsedSession, pricing::Pricing};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::Value;

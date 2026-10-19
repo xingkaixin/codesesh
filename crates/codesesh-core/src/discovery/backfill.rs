@@ -142,14 +142,8 @@ fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
 }
 /// File state of a database-backed source; `None` for file-backed sources.
 pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
-    let database = match source.agent.as_str() {
-        "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
-        "opencode" => source.scan_path.clone(),
-        "zcode" => source.scan_path.join("cli/db/db.sqlite"),
-        "deepchat" => source.scan_path.join("app_db/agent.db"),
-        "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
-        "minimax-code" => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
-        _ => return Ok(None),
+    let Some(database) = crate::agents::database_path(&source.agent, &source.scan_path) else {
+        return Ok(None);
     };
     let mut database_stamp = String::new();
     for suffix in ["", "-wal", "-journal"] {
@@ -181,11 +175,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     if source.agent == "codex" {
         return codex_inventory(source);
     }
-    let root = if source.agent == "dsh" {
-        source.scan_path.join("sessions")
-    } else {
-        source.scan_path.clone()
-    };
+    let root = crate::agents::session_root(&source.agent, &source.scan_path);
     let keys = match source.agent.as_str() {
         "cursor" => Some(
             crate::agents::cursor::enumerate_session_keys(&source.scan_path)?
@@ -287,41 +277,9 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     };
     let mut index_stamps = std::collections::HashMap::new();
     for entry in &entries {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy();
-        let selected = match source.agent.as_str() {
-            "claudecode" | "qoder" | "qoder-cn" => {
-                name.ends_with(".jsonl")
-                    && (entry.depth() == 2
-                        || crate::agents::claudecode::subagents_dir(entry.path()).is_some())
-            }
-            "pi" | "omp" => name.ends_with(".jsonl"),
-            "antigravity-cli" => name.ends_with(".db"),
-            "gemini-cli" => crate::agents::gemini_cli::is_source(&root, entry.path()),
-            "grok" => name == "summary.json",
-            "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
-            "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),
-            "kimi" => {
-                entry.depth() == 3
-                    && (name == "state.json"
-                        || name == "metadata.json"
-                            && !entry.path().with_file_name("state.json").exists())
-            }
-            "kimi-code" => {
-                entry.depth() == 3
-                    && name == "state.json"
-                    && entry
-                        .path()
-                        .parent()
-                        .unwrap()
-                        .join("agents/main/wire.jsonl")
-                        .exists()
-            }
-            _ => false,
-        };
-        if !selected {
+        if !entry.file_type().is_file()
+            || !crate::agents::is_session_file(&source.agent, &root, entry)?
+        {
             continue;
         }
         let metadata = std::fs::metadata(entry.path())?;

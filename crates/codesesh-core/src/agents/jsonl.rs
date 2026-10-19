@@ -1,4 +1,10 @@
-use std::io::{self, BufRead, BufReader, Read};
+use chrono::DateTime;
+use regex::Regex;
+use serde_json::Value;
+use std::{
+    io::{self, BufRead, BufReader, Read},
+    sync::LazyLock,
+};
 
 pub(super) struct JsonLines<R> {
     reader: BufReader<R>,
@@ -45,4 +51,23 @@ pub(super) fn recently_written(metadata: &std::fs::Metadata) -> bool {
         // An unknown or future mtime gives no evidence that the file is idle.
         _ => true,
     }
+}
+
+pub(super) fn timestamp(record: &Value) -> f64 {
+    if let Some(value) = record["timestamp"].as_f64() {
+        return value;
+    }
+    let Some(value) = record["timestamp"].as_str() else {
+        return 0.0;
+    };
+    let mut value = value.trim().replacen(' ', "T", 1);
+    static SUFFIX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)(?:Z|[+-]\d{2}:?\d{2})$").unwrap());
+    if !SUFFIX.is_match(&value) {
+        value.push('Z');
+    }
+    DateTime::parse_from_rfc3339(&value)
+        .or_else(|_| DateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f%z"))
+        .map(|date| date.timestamp_millis() as f64)
+        .unwrap_or(0.0)
 }

@@ -627,10 +627,7 @@ impl AgentScanner {
         &mut self,
         paths: Option<&[PathBuf]>,
     ) -> Result<(ScanDelta, Option<serde_json::Value>, bool)> {
-        if matches!(
-            self.source.agent.as_str(),
-            "cursor" | "opencode" | "zcode" | "deepchat" | "cherrystudio" | "minimax-code"
-        ) {
+        if agents::database_path(&self.source.agent, &self.source.scan_path).is_some() {
             self.source_available = Some(has_sources(&self.source)?);
             return Ok((self.read(paths)?, None, true));
         }

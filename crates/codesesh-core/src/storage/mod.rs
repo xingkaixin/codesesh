@@ -16,7 +16,7 @@ pub(crate) use schema::{COMPACT_MIN_FREE_PAGES, sparse_pages};
 mod search_text;
 mod snapshot;
 use crate::{
-    agents::codex::ParsedSession,
+    agents::ParsedSession,
     contract::{CostSource, Role, SessionDetail, SessionHead, SessionReference},
 };
 use anyhow::Result;
