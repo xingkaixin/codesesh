@@ -52,7 +52,26 @@
           {
             "allow": ["session-tree", "session-message-timeline", "session-timeline-item"]
           }
-        ]
+        ],
+        "unicorn/filename-case": ["error", { "case": "kebabCase" }]
+      }
+    },
+    {
+      "files": ["apps/web/src/App*.tsx", "apps/web/src/components/**/*.tsx"],
+      "rules": {
+        "unicorn/filename-case": ["error", { "case": "pascalCase" }]
+      }
+    },
+    {
+      "files": ["apps/web/src/components/ui/**"],
+      "rules": {
+        "unicorn/filename-case": ["error", { "case": "kebabCase" }]
+      }
+    },
+    {
+      "files": ["apps/web/src/**/use-*.{ts,tsx}", "apps/web/src/**/use[A-Z]*.{ts,tsx}"],
+      "rules": {
+        "unicorn/filename-case": ["error", { "case": "camelCase" }]
       }
     }
   ],
