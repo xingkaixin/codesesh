@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachFluidHover } from "../../../shared/fluid-hover";
+import { attachFluidHover } from "./fluid-hover";
 
 let dispose: (() => void) | undefined;
 
