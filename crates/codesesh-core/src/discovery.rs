@@ -185,44 +185,14 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
     if let Some(database) = agents::database_path(&source.agent, &source.scan_path) {
         return Ok(exists(&database)?);
     }
-    let root = if source.agent == "dsh" {
-        source.scan_path.join("sessions")
-    } else {
-        source.scan_path.clone()
-    };
+    let root = agents::session_root(&source.agent, &source.scan_path);
     if !exists(&root)? {
         return Ok(false);
     }
     for entry in walkdir::WalkDir::new(&root).follow_links(false) {
         let entry =
             entry.with_context(|| format!("checking source availability at {}", root.display()))?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy();
-        let present = match source.agent.as_str() {
-            "claudecode" | "qoder" | "qoder-cn" => entry.depth() == 2 && name.ends_with(".jsonl"),
-            "pi" | "omp" => name.ends_with(".jsonl"),
-            "antigravity-cli" => name.ends_with(".db"),
-            "gemini-cli" => agents::gemini_cli::is_source(&root, entry.path()),
-            "grok" => name == "summary.json",
-            "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
-            "kimi" => entry.depth() == 3 && matches!(name.as_ref(), "metadata.json" | "state.json"),
-            "kimi-code" => {
-                entry.depth() == 3
-                    && name == "state.json"
-                    && exists(
-                        &entry
-                            .path()
-                            .parent()
-                            .unwrap()
-                            .join("agents/main/wire.jsonl"),
-                    )?
-            }
-            "dsh" => entry.depth() == 3 && crate::agents::dsh::generation(&name).is_some(),
-            _ => false,
-        };
-        if present {
+        if entry.file_type().is_file() && agents::is_session_file(&source.agent, &root, &entry)? {
             return Ok(true);
         }
     }

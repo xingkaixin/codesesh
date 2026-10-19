@@ -145,6 +145,54 @@ pub fn database_path(agent: &str, scan_path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// The directory a file-backed source walks for session files.
+pub(crate) fn session_root(agent: &str, scan_path: &Path) -> PathBuf {
+    if agent == "dsh" {
+        scan_path.join("sessions")
+    } else {
+        scan_path.to_owned()
+    }
+}
+
+/// Whether a file found while walking `root` is a session source the adapter reads.
+pub(crate) fn is_session_file(
+    agent: &str,
+    root: &Path,
+    entry: &walkdir::DirEntry,
+) -> std::io::Result<bool> {
+    let name = entry.file_name().to_string_lossy();
+    let path = entry.path();
+    Ok(match agent {
+        "claudecode" | "qoder" | "qoder-cn" => {
+            name.ends_with(".jsonl")
+                && (entry.depth() == 2 || claudecode::subagents_dir(path).is_some())
+        }
+        "pi" | "omp" => name.ends_with(".jsonl"),
+        "antigravity-cli" => name.ends_with(".db"),
+        "gemini-cli" => gemini_cli::is_source(root, path),
+        "grok" => name == "summary.json",
+        "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
+        "dsh" => entry.depth() == 3 && dsh::generation(&name).is_some(),
+        // A session directory holding both files is one session, listed by its state.json.
+        "kimi" => {
+            entry.depth() == 3
+                && (name == "state.json"
+                    || name == "metadata.json"
+                        && !path.with_file_name("state.json").try_exists()?)
+        }
+        "kimi-code" => {
+            entry.depth() == 3
+                && name == "state.json"
+                && path
+                    .parent()
+                    .unwrap()
+                    .join("agents/main/wire.jsonl")
+                    .try_exists()?
+        }
+        _ => false,
+    })
+}
+
 // The only place smart tags are derived; parsers leave them empty for this pass to fill.
 pub fn complete_projections(session: &mut ParsedSession) {
     let source_updated_at = session.head.time_updated;
