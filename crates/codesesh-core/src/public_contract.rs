@@ -740,6 +740,10 @@ pub struct ModelCostEntry {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardAgentStat {
+    pub sessions: usize,
+    pub messages: usize,
+    pub tokens: f64,
+    pub cost: f64,
     pub name: String,
     #[serde(rename = "displayName")]
     pub display_name: String,
@@ -748,17 +752,13 @@ pub struct DashboardAgentStat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub icon_colored: Option<bool>,
-    pub sessions: f64,
-    pub messages: f64,
-    pub tokens: f64,
-    pub cost: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardDailyBucket {
     pub date: String,
-    pub sessions: f64,
-    pub messages: f64,
+    pub sessions: usize,
+    pub messages: usize,
     pub cost: f64,
     pub input: f64,
     pub output: f64,
@@ -770,48 +770,48 @@ pub struct DashboardDailyBucket {
 pub struct ModelDistributionEntry {
     pub model: String,
     pub tokens: f64,
-    pub sessions: f64,
+    pub sessions: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardProjectStat {
+    pub sessions: usize,
+    pub messages: usize,
+    pub tokens: f64,
+    pub cost: f64,
     #[serde(rename = "identityKind")]
     pub identity_kind: ProjectIdentityKind,
     #[serde(rename = "identityKey")]
     pub identity_key: String,
     #[serde(rename = "displayName")]
     pub display_name: String,
-    pub sessions: f64,
-    pub messages: f64,
-    pub tokens: f64,
-    pub cost: f64,
+    pub agents: Vec<String>,
+    pub sparkline: Vec<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cost_source: Option<CostSource>,
-    pub agents: Vec<String>,
-    pub sparkline: Vec<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardProjectRollup {
-    pub projects: f64,
-    pub sessions: f64,
+    pub projects: usize,
+    pub sessions: usize,
     pub tokens: f64,
     pub cost: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardPreviousTotals {
-    pub sessions: f64,
-    pub messages: f64,
+    pub sessions: usize,
+    pub messages: usize,
     pub tokens: f64,
     pub cost: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardTotals {
-    pub sessions: f64,
-    pub messages: f64,
+    pub sessions: usize,
+    pub messages: usize,
     pub tokens: f64,
     pub cost: f64,
     #[serde(rename = "costRecorded")]
@@ -842,8 +842,8 @@ pub struct DashboardTotals {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ScopeCounts {
-    pub projects: f64,
-    pub agents: f64,
+    pub projects: usize,
+    pub agents: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
@@ -871,18 +871,19 @@ pub struct DashboardAggregate {
 pub struct DashboardActiveHours {
     #[serde(rename = "timeZone")]
     pub time_zone: String,
-    pub counts: Vec<f64>,
+    pub counts: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardWindow {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub from: Option<f64>,
     pub to: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub days: Option<f64>,
+    #[ts(type = "number")]
+    pub days: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub from: Option<f64>,
     #[serde(rename = "compareFrom")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

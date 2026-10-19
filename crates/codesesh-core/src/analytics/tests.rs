@@ -69,7 +69,7 @@ fn dashboard_includes_descendants_but_counts_only_entries() {
     ];
     let names = vec!["codex".into()];
     let scope = DashboardScope::default();
-    let result = build_dashboard(
+    let result = dashboard(
         &sessions,
         &DashboardOptions {
             by_agent_names: &names,
@@ -130,7 +130,7 @@ fn reconciled_messages_attribute_cost_to_message_time() {
     let names = vec!["codex".into()];
     let scope = DashboardScope::default();
     let facts = CostFactsIndex::from(facts);
-    let result = build_dashboard(
+    let result = dashboard(
         &[session],
         &DashboardOptions {
             by_agent_names: &names,
@@ -162,7 +162,7 @@ fn matches_node_reference_for_ranking_windows_and_cost_reconciliation() {
         let facts = options.get("costFacts").map(|v| {
             CostFactsIndex::from(serde_json::from_value::<DashboardCostFacts>(v.clone()).unwrap())
         });
-        let actual = build_dashboard(
+        let actual = dashboard(
             &sessions,
             &DashboardOptions {
                 by_agent_names: &names,
@@ -196,6 +196,10 @@ fn matches_node_reference_for_ranking_windows_and_cost_reconciliation() {
             &format!("summary {index}"),
         );
     }
+}
+
+fn dashboard(sessions: &[SessionHead], options: &DashboardOptions<'_>) -> Value {
+    serde_json::to_value(build_dashboard(sessions, options).unwrap()).unwrap()
 }
 
 fn assert_json_equivalent(actual: &Value, expected: &Value, path: &str) {
@@ -263,16 +267,8 @@ fn sqlite_facts_and_active_hours_respect_effective_time_and_automation() {
         "America/New_York".parse().unwrap(),
     )
     .unwrap();
-    assert_eq!(hours["counts"][1], 1);
-    assert_eq!(
-        hours["counts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap())
-            .sum::<u64>(),
-        1
-    );
+    assert_eq!(hours.counts[1], 1);
+    assert_eq!(hours.counts.iter().sum::<usize>(), 1);
 }
 
 #[test]
@@ -374,8 +370,8 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
         cost_facts: Some(&all),
         time_zone: &"UTC".parse().unwrap(),
     };
-    let expected = build_dashboard(&sessions, &options);
-    let actual = build_dashboard(
+    let expected = dashboard(&sessions, &options);
+    let actual = dashboard(
         &sessions,
         &DashboardOptions {
             cost_facts: Some(&scoped),
@@ -393,15 +389,7 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
         "UTC".parse().unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        hours["counts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap())
-            .sum::<u64>(),
-        2
-    );
+    assert_eq!(hours.counts.iter().sum::<usize>(), 2);
     let empty = load_scoped_cost_facts(cache.connection(), &[], &scope, None, None, true).unwrap();
     assert!(empty.sessions.is_empty());
     assert!(empty.messages.is_empty());
@@ -442,15 +430,7 @@ fn active_hours_work_does_not_grow_with_unrelated_message_history() {
             "UTC".parse().unwrap(),
         )
         .unwrap();
-        assert_eq!(
-            hours["counts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_u64().unwrap())
-                .sum::<u64>(),
-            1
-        );
+        assert_eq!(hours.counts.iter().sum::<usize>(), 1);
         steps.load(Ordering::Relaxed)
     };
     let baseline = measure();
@@ -475,15 +455,7 @@ fn active_hours_work_does_not_grow_with_unrelated_message_history() {
         "UTC".parse().unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        all_time["counts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap())
-            .sum::<u64>(),
-        5001
-    );
+    assert_eq!(all_time.counts.iter().sum::<usize>(), 5001);
 }
 
 #[test]
@@ -608,8 +580,8 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
             time_zone: &utc,
         };
         assert_eq!(
-            build_dashboard(&sessions, &options(&bucketed)),
-            build_dashboard(&sessions, &options(&per_message))
+            dashboard(&sessions, &options(&bucketed)),
+            dashboard(&sessions, &options(&per_message))
         );
         assert_eq!(
             attach_project_metrics(&projects, &sessions, from, Some(to), Some(&bucketed)),
@@ -620,7 +592,7 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
 
 #[test]
 fn empty_project_rollup_serializes_positive_zero() {
-    let result = build_dashboard(
+    let result = dashboard(
         &[],
         &DashboardOptions {
             by_agent_names: &[],

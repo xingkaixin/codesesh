@@ -1,4 +1,4 @@
-use super::{State, decorate_value, error, params::Params};
+use super::{State, decorate_wire, error, params::Params};
 use axum::{
     Extension, Json,
     extract::{RawQuery, State as AxumState},
@@ -54,14 +54,22 @@ const ANALYTICS_REVISION_QUERY: &str = concat!(
     "WHERE key='analytics_revision'), '0') AS INTEGER)"
 );
 
-#[derive(Default)]
-pub struct CatalogCache {
+pub struct CatalogCache<T = Value> {
     revision: i64,
-    entries: VecDeque<(Value, Value)>,
+    entries: VecDeque<(Value, T)>,
 }
 
-impl CatalogCache {
-    fn get(&mut self, revision: i64, key: &Value) -> Option<Value> {
+impl<T> Default for CatalogCache<T> {
+    fn default() -> Self {
+        Self {
+            revision: 0,
+            entries: VecDeque::new(),
+        }
+    }
+}
+
+impl<T: Clone> CatalogCache<T> {
+    fn get(&mut self, revision: i64, key: &Value) -> Option<T> {
         if revision != self.revision {
             return None;
         }
@@ -75,7 +83,7 @@ impl CatalogCache {
         Some(result)
     }
 
-    fn insert(&mut self, revision: i64, key: Value, value: Value) {
+    fn insert(&mut self, revision: i64, key: Value, value: T) {
         // A read that began before the latest commit must not evict newer results.
         if revision < self.revision {
             return;
@@ -92,12 +100,12 @@ impl CatalogCache {
     }
 }
 
-fn cached_catalog(
-    cache: &std::sync::Mutex<CatalogCache>,
+fn cached_catalog<T: Clone>(
+    cache: &std::sync::Mutex<CatalogCache<T>>,
     revision: i64,
     key: Value,
-    build: impl FnOnce() -> anyhow::Result<Value>,
-) -> anyhow::Result<Value> {
+    build: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     let cached = cache
         .lock()
         .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?
@@ -351,7 +359,7 @@ pub async fn dashboard(
     };
     let names = state.options.enabled_agents.clone();
     let query_scope = state.scope(query.optional("sourceNodeId"));
-    let cache = state.catalog_cache.clone();
+    let cache = state.dashboard_cache.clone();
     // Open-ended windows are reused until the next calendar day in the request time zone.
     let cache_to = base_to.unwrap_or_else(|| zone.start_of_day(to));
     let key = json!([
@@ -425,15 +433,13 @@ pub async fn dashboard(
         .await;
     match result {
         Ok((mut value, timings)) => {
-            value["window"]["to"] = json!(to);
+            value.window.to = to;
             let aliases = state.aliases().await;
-            for key in ["recentSessions", "recentFileActivities"] {
-                if let Some(rows) = value[key].as_array_mut() {
-                    for row in rows {
-                        public_session(&mut row["session"]);
-                        decorate_value(&mut row["session"], &aliases);
-                    }
-                }
+            for row in &mut value.aggregate.recent_sessions {
+                decorate_wire(&mut row.session, &aliases);
+            }
+            for row in &mut value.recent_file_activities {
+                decorate_wire(&mut row.session, &aliases);
             }
             log_query(context, "/api/dashboard", started, timings);
             Json(value).into_response()
@@ -442,19 +448,6 @@ pub async fn dashboard(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to load dashboard",
         ),
-    }
-}
-pub fn public_session(value: &mut Value) {
-    if let Some(object) = value.as_object_mut() {
-        for key in [
-            "model_usage",
-            "project_identity_resolver_revision",
-            "project_identity_input_signature",
-            "smart_tags_source_updated_at",
-            "smart_tags_classifier_revision",
-        ] {
-            object.remove(key);
-        }
     }
 }
 fn count_days(zone: &analytics::DashboardTimeZone, from: f64, to: f64) -> i64 {

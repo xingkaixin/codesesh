@@ -3,14 +3,14 @@ import type { CostSource } from "./CostSource";
 import type { ProjectIdentityKind } from "./ProjectIdentityKind";
 
 export type DashboardProjectStat = {
-  identityKind: ProjectIdentityKind;
-  identityKey: string;
-  displayName: string;
   sessions: number;
   messages: number;
   tokens: number;
   cost: number;
-  cost_source?: CostSource;
+  identityKind: ProjectIdentityKind;
+  identityKey: string;
+  displayName: string;
   agents: Array<string>;
   sparkline: Array<number>;
+  cost_source?: CostSource;
 };
