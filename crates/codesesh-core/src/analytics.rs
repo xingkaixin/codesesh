@@ -13,7 +13,12 @@ pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_respons
 pub use time_zone::DashboardTimeZone;
 
 use crate::{
-    contract::SessionHead,
+    contract::{CostSource, SessionHead},
+    public_contract::{
+        DashboardAgentStat, DashboardAggregate, DashboardDailyBucket, DashboardPreviousTotals,
+        DashboardProjectRollup, DashboardProjectStat, DashboardTotals, ModelCostEntry,
+        ModelDistributionEntry, ScopeCounts, closed, referenced,
+    },
     query::{SessionTree, in_window},
 };
 use chrono::{Days, NaiveDate};
@@ -318,92 +323,156 @@ fn accumulate(
     acc
 }
 
-pub fn build_dashboard(sessions: &[SessionHead], options: &DashboardOptions<'_>) -> Value {
+pub fn build_dashboard(
+    sessions: &[SessionHead],
+    options: &DashboardOptions<'_>,
+) -> anyhow::Result<DashboardAggregate> {
     let tree = SessionTree::new(sessions);
     let mut acc = accumulate(&tree, options, options.from, options.to, true);
-    let mut totals = acc.metrics.value();
-    totals["costRecorded"] = json!(acc.recorded);
-    totals["costEstimated"] = json!(acc.estimated);
-    totals["cacheReadTokens"] = json!(acc.cache_read);
-    if acc.metrics.cost > 0.0 {
-        totals["cost_source"] = json!(if acc.estimated > 0.0 {
-            "estimated"
+    let latest = acc.recent.first().map(|&i| tree.sessions[i]);
+    let source = |estimated| {
+        if estimated {
+            CostSource::Estimated
         } else {
-            "recorded"
-        });
-    }
-    if let Some(&latest) = acc.recent.first() {
-        let s = tree.sessions[latest];
-        if s.time_updated != 0.0 {
-            totals["latestActivity"] = json!(s.time_updated);
+            CostSource::Recorded
         }
-        totals["latestActivityProject"] = json!(s.project_identity.display_name);
-        totals["latestActivityAgent"] = json!(s.reference.agent_name.to_lowercase());
-    }
-    if let Some((from, to)) = options.compare {
-        totals["previous"] = accumulate(&tree, options, Some(from), to, false)
-            .metrics
-            .value();
-    }
+    };
+    let totals = DashboardTotals {
+        sessions: acc.metrics.sessions,
+        messages: acc.metrics.messages,
+        tokens: acc.metrics.tokens,
+        cost: acc.metrics.cost,
+        cost_recorded: acc.recorded,
+        cost_estimated: acc.estimated,
+        cache_read_tokens: acc.cache_read,
+        cost_source: (acc.metrics.cost > 0.0).then(|| source(acc.estimated > 0.0)),
+        latest_activity: latest.map(|s| s.time_updated).filter(|&time| time != 0.0),
+        latest_activity_project: latest.map(|s| s.project_identity.display_name.clone()),
+        latest_activity_agent: latest.map(|s| s.reference.agent_name.to_lowercase()),
+        previous: options.compare.map(|(from, to)| {
+            let m = accumulate(&tree, options, Some(from), to, false).metrics;
+            DashboardPreviousTotals {
+                sessions: m.sessions,
+                messages: m.messages,
+                tokens: m.tokens,
+                cost: m.cost,
+            }
+        }),
+    };
     acc.agents
         .retain(|(_, m)| m.sessions > 0 || m.messages > 0 || m.tokens > 0.0 || m.cost > 0.0);
     acc.agents
         .sort_by(|(_, a), (_, b)| b.sessions.cmp(&a.sessions).then(b.cost.total_cmp(&a.cost)));
-    let agents: Vec<_> = acc
+    let per_agent = acc
         .agents
         .iter()
         .map(|(name, m)| {
-            let mut v = m.value();
             let info = options.agent_info.and_then(|map| map.get(name));
-            v["name"] = json!(name);
-            v["displayName"] = info
-                .and_then(|i| i.get("displayName"))
-                .cloned()
-                .unwrap_or(json!(name));
-            v["icon"] = info
-                .and_then(|i| i.get("icon"))
-                .cloned()
-                .unwrap_or(json!(""));
-            if let Some(icon) = info.and_then(|i| i.get("iconColored")) {
-                v["iconColored"] = icon.clone();
+            let field = |key| info.and_then(|i| i.get(key));
+            DashboardAgentStat {
+                sessions: m.sessions,
+                messages: m.messages,
+                tokens: m.tokens,
+                cost: m.cost,
+                name: name.clone(),
+                display_name: field("displayName")
+                    .and_then(Value::as_str)
+                    .unwrap_or(name)
+                    .to_owned(),
+                icon: field("icon")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                icon_colored: field("iconColored").and_then(Value::as_bool),
             }
-            v
         })
         .collect();
-    let daily:Vec<_>=acc.daily.iter().map(|(date,b)|json!({"date":date.format("%Y-%m-%d").to_string(),"sessions":b.sessions,"messages":b.messages,"cost":b.cost,"input":b.input,"output":b.output,"cache_read":b.cache_read,"cache_create":b.cache_create})).collect();
+    let daily_activity = acc
+        .daily
+        .iter()
+        .map(|(date, b)| DashboardDailyBucket {
+            date: date.format("%Y-%m-%d").to_string(),
+            sessions: b.sessions,
+            messages: b.messages,
+            cost: b.cost,
+            input: b.input,
+            output: b.output,
+            cache_read: b.cache_read,
+            cache_create: b.cache_create,
+        })
+        .collect();
     acc.models.sort_by(|a, b| b.1.total_cmp(&a.1));
-    let models:Vec<_>=acc.models.iter().map(|(model,tokens,sessions)|json!({"model":model,"tokens":tokens,"sessions":sessions.len()})).collect();
+    let model_distribution = acc
+        .models
+        .iter()
+        .map(|(model, tokens, sessions)| ModelDistributionEntry {
+            model: model.clone(),
+            tokens: *tokens,
+            sessions: sessions.len(),
+        })
+        .collect();
     acc.model_costs.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    let model_cost=options.cost_facts.map(|_|acc.model_costs.iter().take(20).map(|m|json!({"model":m.model,"cost":m.cost,"costRecorded":m.cost_recorded,"costEstimated":m.cost-m.cost_recorded})).collect::<Vec<_>>());
+    let model_cost = options.cost_facts.map(|_| {
+        acc.model_costs
+            .iter()
+            .take(20)
+            .map(|m| ModelCostEntry {
+                model: m.model.clone(),
+                cost: m.cost,
+                cost_recorded: m.cost_recorded,
+                cost_estimated: m.cost - m.cost_recorded,
+            })
+            .collect()
+    });
     acc.projects
         .sort_by(|a, b| b.metrics.cost.total_cmp(&a.metrics.cost));
-    let projects: Vec<_> = acc
+    let per_project = acc
         .projects
         .iter_mut()
         .take(12)
         .map(|p| {
             p.agents.sort_by(|a, b| b.1.cmp(&a.1));
-            let mut v = p.metrics.value();
-            v["identityKind"] = json!(p.kind);
-            v["identityKey"] = json!(p.key);
-            v["displayName"] = json!(p.name);
-            v["agents"] = json!(p.agents.iter().map(|(name, _)| name).collect::<Vec<_>>());
-            v["sparkline"] = json!(p.sparkline);
-            if p.metrics.cost > 0.0 {
-                v["cost_source"] = json!(if p.estimated { "estimated" } else { "recorded" });
-            }
-            v
+            Ok(DashboardProjectStat {
+                sessions: p.metrics.sessions,
+                messages: p.metrics.messages,
+                tokens: p.metrics.tokens,
+                cost: p.metrics.cost,
+                identity_kind: closed(p.kind.clone())?,
+                identity_key: p.key.clone(),
+                display_name: p.name.clone(),
+                agents: p.agents.iter().map(|(name, _)| name.clone()).collect(),
+                sparkline: p.sparkline.clone(),
+                cost_source: (p.metrics.cost > 0.0).then(|| source(p.estimated)),
+            })
         })
-        .collect();
+        .collect::<Result<_, serde::de::value::Error>>()?;
     let remainder = &acc.projects[acc.projects.len().min(12)..];
     // Float Sum uses negative zero for an empty iterator; the wire contract uses positive zero.
-    let rollup = json!({"projects":remainder.len(),"sessions":remainder.iter().map(|p|p.metrics.sessions).sum::<usize>(),"tokens":remainder.iter().fold(0.0, |sum,p|sum+p.metrics.tokens),"cost":remainder.iter().fold(0.0, |sum,p|sum+p.metrics.cost)});
-    let recent: Vec<_> = acc
+    let project_rollup = DashboardProjectRollup {
+        projects: remainder.len(),
+        sessions: remainder.iter().map(|p| p.metrics.sessions).sum(),
+        tokens: remainder.iter().fold(0.0, |sum, p| sum + p.metrics.tokens),
+        cost: remainder.iter().fold(0.0, |sum, p| sum + p.metrics.cost),
+    };
+    let recent_sessions = acc
         .recent
         .iter()
-        .map(|&i| json!({"reference":tree.sessions[i].reference,"session":tree.sessions[i]}))
-        .collect();
-    json!({"totals":totals,"scopeCounts":{"projects":acc.project_keys.len(),"agents":acc.agent_keys.len()},"perAgent":agents,"dailyActivity":daily,"modelDistribution":models,"modelCost":model_cost,"perProject":projects,"projectRollup":rollup,"recentSessions":recent})
+        .map(|&i| referenced(tree.sessions[i].clone()))
+        .collect::<Result<_, _>>()?;
+    Ok(DashboardAggregate {
+        totals,
+        scope_counts: ScopeCounts {
+            projects: acc.project_keys.len(),
+            agents: acc.agent_keys.len(),
+        },
+        per_agent,
+        daily_activity,
+        model_distribution,
+        model_cost,
+        per_project,
+        project_rollup,
+        recent_sessions,
+    })
 }
 
 #[cfg(test)]

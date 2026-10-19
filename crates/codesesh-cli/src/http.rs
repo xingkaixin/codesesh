@@ -21,6 +21,7 @@ use axum::{
 };
 use codesesh_core::{
     contract::{SessionHead, SessionReference},
+    public_contract::{DashboardData, WireSessionHead},
     query::SnapshotPaginator,
     runtime::Runtime,
     state::StateStore,
@@ -61,6 +62,7 @@ pub struct State {
     node_uploads: Mutex<HashMap<String, Arc<Semaphore>>>,
     details: Arc<Semaphore>,
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
+    dashboard_cache: Arc<Mutex<catalog::CatalogCache<DashboardData>>>,
     query_scope: codesesh_core::search::QueryScope,
 }
 
@@ -98,6 +100,7 @@ impl State {
             node_uploads: Mutex::new(HashMap::new()),
             details: Arc::new(Semaphore::new(2)),
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
+            dashboard_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
         }
     }
     fn snapshot(&self) -> Arc<Vec<SessionHead>> {
@@ -232,11 +235,9 @@ fn decorate(head: &mut SessionHead, aliases: &HashMap<SessionReference, String>)
         head.display_title = Some(alias.clone());
     }
 }
-fn decorate_value(value: &mut Value, aliases: &HashMap<SessionReference, String>) {
-    if let Ok(reference) = serde_json::from_value::<SessionReference>(value["reference"].clone())
-        && let Some(alias) = aliases.get(&reference)
-    {
-        value["display_title"] = json!(alias);
+fn decorate_wire(head: &mut WireSessionHead, aliases: &HashMap<SessionReference, String>) {
+    if let Some(alias) = aliases.get(&head.reference) {
+        head.display_title = Some(alias.clone());
     }
 }
 

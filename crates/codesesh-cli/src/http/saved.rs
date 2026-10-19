@@ -1,4 +1,4 @@
-use super::{State, decorate_value, error};
+use super::{State, decorate_wire, error};
 use axum::{
     Json,
     body::Bytes,
@@ -9,6 +9,7 @@ use axum::{
 use codesesh_core::{
     bookmarks::materialize_bookmarks,
     contract::SessionReference,
+    public_contract::BookmarkView,
     state::{
         BookmarkRecord, StateStore, normalize_session_alias, parse_bookmark_import,
         parse_bookmark_reference,
@@ -60,7 +61,7 @@ async fn materialize(state: &State, records: Vec<BookmarkRecord>) -> anyhow::Res
         .into_iter()
         .map(|a| a.name)
         .collect();
-    let views = state
+    let mut views = state
         .runtime
         .read(move |conn| {
             materialize_bookmarks(&records, &HashMap::new(), &known, |refs| {
@@ -77,12 +78,12 @@ async fn materialize(state: &State, records: Vec<BookmarkRecord>) -> anyhow::Res
         })
         .await?;
     let aliases = state.aliases().await;
-    let mut views = serde_json::to_value(views)?;
-    for view in views.as_array_mut().unwrap() {
-        if view["availability"] == "available" {
-            decorate_value(&mut view["session"], &aliases);
-        } else {
-            decorate_value(view, &aliases);
+    for view in &mut views {
+        match view {
+            BookmarkView::Available(view) => decorate_wire(&mut view.session, &aliases),
+            BookmarkView::Unavailable(view) => {
+                view.display_title = aliases.get(&view.bookmark.reference).cloned();
+            }
         }
     }
     Ok(json!({"bookmarks":views,"storageAvailable":true}))

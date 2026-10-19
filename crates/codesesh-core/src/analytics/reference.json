@@ -892,9 +892,6 @@
               "cost_source": "recorded",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -924,9 +921,6 @@
               "total_cost": 1.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -958,9 +952,6 @@
               "cost_source": "recorded",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -990,9 +981,6 @@
               "total_cost": 3.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -1024,9 +1012,6 @@
               "cost_source": "recorded",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -1056,9 +1041,6 @@
               "total_cost": 5.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -1090,9 +1072,6 @@
               "cost_source": "recorded",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -1122,9 +1101,6 @@
               "total_cost": 7.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -1156,9 +1132,6 @@
               "cost_source": "recorded",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -1188,9 +1161,6 @@
               "total_cost": 9.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -2490,9 +2460,6 @@
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -2522,9 +2489,6 @@
               "total_cost": 3.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -2556,9 +2520,6 @@
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -2588,9 +2549,6 @@
               "total_cost": 7.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -2622,9 +2580,6 @@
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -2655,9 +2610,6 @@
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
             },
-            "model_usage": {
-              "model": 14
-            },
             "smart_tags": []
           }
         },
@@ -2687,9 +2639,6 @@
               "total_cost": 13.5,
               "cost_source": "estimated",
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }
@@ -3770,9 +3719,6 @@
               "total_output_tokens": 6,
               "total_cost": 1,
               "total_cache_read_tokens": 2
-            },
-            "model_usage": {
-              "model": 14
             },
             "smart_tags": []
           }

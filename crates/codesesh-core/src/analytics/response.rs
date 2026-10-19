@@ -3,10 +3,10 @@ use super::{
 };
 use crate::{
     contract::SessionHead,
+    public_contract::{DashboardData, DashboardWindow},
     search::{FileActivityOptions, QueryScope, list_file_activity},
 };
 use rusqlite::Connection;
-use serde_json::{Value, json};
 use std::time::Instant;
 
 #[derive(Default, serde::Serialize)]
@@ -26,7 +26,7 @@ pub fn dashboard_response(
     connection: &Connection,
     sessions: &[SessionHead],
     options: &DashboardResponseOptions<'_>,
-) -> anyhow::Result<(Value, DashboardTimings)> {
+) -> anyhow::Result<(DashboardData, DashboardTimings)> {
     let mut timings = DashboardTimings::default();
     let aggregate = &options.aggregate;
     let loaded_facts;
@@ -44,16 +44,16 @@ pub fn dashboard_response(
         &loaded_facts
     };
     let phase = Instant::now();
-    let mut result = build_dashboard(
+    let dashboard = build_dashboard(
         sessions,
         &DashboardOptions {
             cost_facts: Some(facts),
             ..*aggregate
         },
-    );
+    )?;
     timings.aggregate_ms = phase.elapsed().as_secs_f64() * 1000.0;
     let phase = Instant::now();
-    result["activeHours"] = active_hours(
+    let hours = active_hours(
         connection,
         sessions,
         aggregate.scope,
@@ -63,7 +63,7 @@ pub fn dashboard_response(
     )?;
     timings.active_hours_ms = phase.elapsed().as_secs_f64() * 1000.0;
     let phase = Instant::now();
-    result["recentFileActivities"] = serde_json::to_value(list_file_activity(
+    let recent_file_activities = list_file_activity(
         connection,
         &FileActivityOptions {
             agent: aggregate.scope.agent.clone(),
@@ -75,16 +75,22 @@ pub fn dashboard_response(
             query_scope: options.query_scope.clone(),
             ..FileActivityOptions::default()
         },
-    )?)?;
+    )?;
     timings.file_activity_ms = phase.elapsed().as_secs_f64() * 1000.0;
-    let mut window = json!({"to":aggregate.to,"days":options.days});
-    if let Some(from) = aggregate.from {
-        window["from"] = json!(from);
-    }
-    if let Some((from, to)) = aggregate.compare {
-        window["compareFrom"] = json!(from);
-        window["compareTo"] = json!(to);
-    }
-    result["window"] = window;
-    Ok((result, timings))
+    let window = DashboardWindow {
+        to: aggregate.to,
+        days: Some(options.days),
+        from: aggregate.from,
+        compare_from: aggregate.compare.map(|(from, _)| from),
+        compare_to: aggregate.compare.map(|(_, to)| to),
+    };
+    Ok((
+        DashboardData {
+            aggregate: dashboard,
+            active_hours: Some(hours),
+            recent_file_activities,
+            window,
+        },
+        timings,
+    ))
 }

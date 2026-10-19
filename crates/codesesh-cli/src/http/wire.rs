@@ -1,50 +1,25 @@
-use codesesh_core::{contract as core, public_contract as wire};
-use serde::de::IntoDeserializer;
+pub use codesesh_core::public_contract::{activity, head, referenced};
+use codesesh_core::{
+    contract as core,
+    public_contract::{self as wire, closed},
+    search::SearchResult,
+};
 
 type Result<T> = std::result::Result<T, serde::de::value::Error>;
-fn closed<T: serde::de::DeserializeOwned>(value: String) -> Result<T> {
-    T::deserialize(value.into_deserializer())
-}
-pub fn head(value: core::SessionHead) -> Result<wire::WireSessionHead> {
-    Ok(wire::WireSessionHead {
-        version: value.version.map(Some),
-        summary_files: value.summary_files,
-        reference: value.reference,
-        title: value.title,
-        display_title: value.display_title,
-        directory: value.directory,
-        parent_reference: value.parent_reference,
-        project_identity: Some(wire::WireProjectIdentity {
-            kind: closed(value.project_identity.kind)?,
-            key: value.project_identity.key,
-            display_name: value.project_identity.display_name,
-        }),
-        time_created: value.time_created,
-        time_updated: Some(value.time_updated),
-        stats: value.stats,
-        smart_tags: Some(
-            value
-                .smart_tags
-                .into_iter()
-                .map(closed)
-                .collect::<Result<_>>()?,
-        ),
-    })
-}
-pub fn referenced(value: core::SessionHead) -> Result<wire::PublicReferencedSessionHead> {
-    Ok(wire::PublicReferencedSessionHead {
-        reference: value.reference.clone(),
-        session: head(value)?,
-    })
-}
-pub fn activity(value: core::SessionFileActivity) -> Result<wire::WireSessionFileActivity> {
-    Ok(wire::WireSessionFileActivity {
-        reference: value.reference,
-        project_identity_key: value.project_identity_key,
-        path: value.path,
-        kind: closed(value.kind)?,
-        count: value.count as f64,
-        latest_time: value.latest_time,
+pub fn search_result(
+    value: SearchResult,
+    parent: Option<wire::SearchResultParent>,
+) -> Result<wire::SearchResult> {
+    Ok(wire::SearchResult {
+        session: wire::PublicReferencedSessionHead {
+            reference: value.reference,
+            session: head(value.session)?,
+        },
+        snippet: value.snippet,
+        snippet_highlights: value.snippet_highlights,
+        match_type: closed(value.match_type)?,
+        message_index: value.message_index,
+        parent,
     })
 }
 pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail> {

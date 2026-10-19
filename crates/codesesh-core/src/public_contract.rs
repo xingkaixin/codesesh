@@ -1,8 +1,8 @@
 use crate::contract::{
     CostSource, FileActivityKind, MessageTokens, PlanApprovalStatus, ProjectIdentityKind, Role,
-    SessionReference, SessionStats, SmartTag, ToolPartStatus,
+    SessionFileActivity, SessionHead, SessionReference, SessionStats, SmartTag, ToolPartStatus,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::IntoDeserializer};
 use std::collections::BTreeMap;
 use ts_rs::TS;
 
@@ -92,7 +92,7 @@ pub struct WireSessionFileActivity {
     pub project_identity_key: String,
     pub path: String,
     pub kind: FileActivityKind,
-    pub count: f64,
+    pub count: usize,
     #[serde(rename = "latestTime")]
     pub latest_time: f64,
 }
@@ -657,8 +657,8 @@ pub struct SearchResultParent {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct SearchHighlightRange {
-    pub start: f64,
-    pub end: f64,
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
@@ -676,7 +676,7 @@ pub struct SearchResult {
         skip_serializing_if = "Option::is_none"
     )]
     #[ts(optional)]
-    pub message_index: Option<f64>,
+    pub message_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub parent: Option<SearchResultParent>,
@@ -705,17 +705,17 @@ pub enum AvailableBookmarkReason {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct AvailableBookmarkView {
+    pub availability: AvailableBookmarkReason,
     #[serde(flatten)]
     pub bookmark: BookmarkRecord,
-    pub availability: AvailableBookmarkReason,
     pub session: WireSessionHead,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct UnavailableBookmarkView {
+    pub availability: UnavailableBookmarkReason,
     #[serde(flatten)]
     pub bookmark: BookmarkRecord,
-    pub availability: UnavailableBookmarkReason,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub display_title: Option<String>,
@@ -740,6 +740,10 @@ pub struct ModelCostEntry {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardAgentStat {
+    pub sessions: usize,
+    pub messages: usize,
+    pub tokens: f64,
+    pub cost: f64,
     pub name: String,
     #[serde(rename = "displayName")]
     pub display_name: String,
@@ -748,17 +752,13 @@ pub struct DashboardAgentStat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub icon_colored: Option<bool>,
-    pub sessions: f64,
-    pub messages: f64,
-    pub tokens: f64,
-    pub cost: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardDailyBucket {
     pub date: String,
-    pub sessions: f64,
-    pub messages: f64,
+    pub sessions: usize,
+    pub messages: usize,
     pub cost: f64,
     pub input: f64,
     pub output: f64,
@@ -770,48 +770,48 @@ pub struct DashboardDailyBucket {
 pub struct ModelDistributionEntry {
     pub model: String,
     pub tokens: f64,
-    pub sessions: f64,
+    pub sessions: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardProjectStat {
+    pub sessions: usize,
+    pub messages: usize,
+    pub tokens: f64,
+    pub cost: f64,
     #[serde(rename = "identityKind")]
     pub identity_kind: ProjectIdentityKind,
     #[serde(rename = "identityKey")]
     pub identity_key: String,
     #[serde(rename = "displayName")]
     pub display_name: String,
-    pub sessions: f64,
-    pub messages: f64,
-    pub tokens: f64,
-    pub cost: f64,
+    pub agents: Vec<String>,
+    pub sparkline: Vec<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub cost_source: Option<CostSource>,
-    pub agents: Vec<String>,
-    pub sparkline: Vec<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardProjectRollup {
-    pub projects: f64,
-    pub sessions: f64,
+    pub projects: usize,
+    pub sessions: usize,
     pub tokens: f64,
     pub cost: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardPreviousTotals {
-    pub sessions: f64,
-    pub messages: f64,
+    pub sessions: usize,
+    pub messages: usize,
     pub tokens: f64,
     pub cost: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardTotals {
-    pub sessions: f64,
-    pub messages: f64,
+    pub sessions: usize,
+    pub messages: usize,
     pub tokens: f64,
     pub cost: f64,
     #[serde(rename = "costRecorded")]
@@ -842,8 +842,8 @@ pub struct DashboardTotals {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ScopeCounts {
-    pub projects: f64,
-    pub agents: f64,
+    pub projects: usize,
+    pub agents: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
@@ -871,18 +871,19 @@ pub struct DashboardAggregate {
 pub struct DashboardActiveHours {
     #[serde(rename = "timeZone")]
     pub time_zone: String,
-    pub counts: Vec<f64>,
+    pub counts: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct DashboardWindow {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub from: Option<f64>,
     pub to: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub days: Option<f64>,
+    #[ts(type = "number")]
+    pub days: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub from: Option<f64>,
     #[serde(rename = "compareFrom")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -909,6 +910,59 @@ pub struct DashboardData {
     #[serde(rename = "recentFileActivities")]
     pub recent_file_activities: Vec<FileActivityResult>,
     pub window: DashboardWindow,
+}
+
+pub fn closed<T: serde::de::DeserializeOwned>(value: String) -> Result<T, serde::de::value::Error> {
+    T::deserialize(value.into_deserializer())
+}
+
+pub fn head(value: SessionHead) -> Result<WireSessionHead, serde::de::value::Error> {
+    Ok(WireSessionHead {
+        version: value.version.map(Some),
+        summary_files: value.summary_files,
+        reference: value.reference,
+        title: value.title,
+        display_title: value.display_title,
+        directory: value.directory,
+        parent_reference: value.parent_reference,
+        project_identity: Some(WireProjectIdentity {
+            kind: closed(value.project_identity.kind)?,
+            key: value.project_identity.key,
+            display_name: value.project_identity.display_name,
+        }),
+        time_created: value.time_created,
+        time_updated: Some(value.time_updated),
+        stats: value.stats,
+        smart_tags: Some(
+            value
+                .smart_tags
+                .into_iter()
+                .map(closed)
+                .collect::<Result<_, _>>()?,
+        ),
+    })
+}
+
+pub fn referenced(
+    value: SessionHead,
+) -> Result<PublicReferencedSessionHead, serde::de::value::Error> {
+    Ok(PublicReferencedSessionHead {
+        reference: value.reference.clone(),
+        session: head(value)?,
+    })
+}
+
+pub fn activity(
+    value: SessionFileActivity,
+) -> Result<WireSessionFileActivity, serde::de::value::Error> {
+    Ok(WireSessionFileActivity {
+        reference: value.reference,
+        project_identity_key: value.project_identity_key,
+        path: value.path,
+        kind: closed(value.kind)?,
+        count: value.count,
+        latest_time: value.latest_time,
+    })
 }
 
 fn present_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
