@@ -182,16 +182,7 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
     if source.agent == "codex" {
         return Ok(!agents::codex_rollout::paths(&source.data_root)?.is_empty());
     }
-    let database = match source.agent.as_str() {
-        "cursor" => Some(source.scan_path.join("globalStorage/state.vscdb")),
-        "opencode" => Some(source.scan_path.clone()),
-        "zcode" => Some(source.scan_path.join("cli/db/db.sqlite")),
-        "deepchat" => Some(source.scan_path.join("app_db/agent.db")),
-        "cherrystudio" => Some(source.scan_path.join("Data/cherrystudio.sqlite")),
-        "minimax-code" => Some(source.scan_path.join("v2/sqlite/runtime-state.sqlite")),
-        _ => None,
-    };
-    if let Some(database) = database {
+    if let Some(database) = agents::database_path(&source.agent, &source.scan_path) {
         return Ok(exists(&database)?);
     }
     let root = if source.agent == "dsh" {

@@ -39,14 +39,8 @@ fn project_identities_current(heads: &[SessionHead]) -> bool {
     })
 }
 fn source_present(source: &AgentSource) -> Result<bool> {
-    let path = match source.agent.as_str() {
-        "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
-        "zcode" => source.scan_path.join("cli/db/db.sqlite"),
-        "deepchat" => source.scan_path.join("app_db/agent.db"),
-        "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
-        "minimax-code" => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
-        _ => source.scan_path.clone(),
-    };
+    let path = agents::database_path(&source.agent, &source.scan_path)
+        .unwrap_or_else(|| source.scan_path.clone());
     Ok(path.try_exists()?)
 }
 fn output(mut heads: Vec<SessionHead>, options: &ScanOptions) -> SessionIndex {
@@ -141,10 +135,7 @@ pub fn run_for_source(
                     .iter()
                     .map(|session| session.head.reference.clone())
                     .collect();
-                if !matches!(
-                    source.agent.as_str(),
-                    "cursor" | "opencode" | "zcode" | "deepchat" | "cherrystudio" | "minimax-code"
-                ) {
+                if agents::database_path(&source.agent, &source.scan_path).is_none() {
                     for head in old
                         .iter()
                         .filter(|head| !references.contains(&head.reference))

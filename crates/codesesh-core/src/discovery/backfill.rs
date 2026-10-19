@@ -142,14 +142,8 @@ fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
 }
 /// File state of a database-backed source; `None` for file-backed sources.
 pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
-    let database = match source.agent.as_str() {
-        "cursor" => source.scan_path.join("globalStorage/state.vscdb"),
-        "opencode" => source.scan_path.clone(),
-        "zcode" => source.scan_path.join("cli/db/db.sqlite"),
-        "deepchat" => source.scan_path.join("app_db/agent.db"),
-        "cherrystudio" => source.scan_path.join("Data/cherrystudio.sqlite"),
-        "minimax-code" => source.scan_path.join("v2/sqlite/runtime-state.sqlite"),
-        _ => return Ok(None),
+    let Some(database) = crate::agents::database_path(&source.agent, &source.scan_path) else {
+        return Ok(None);
     };
     let mut database_stamp = String::new();
     for suffix in ["", "-wal", "-journal"] {

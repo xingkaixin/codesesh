@@ -77,7 +77,10 @@ pub struct ScanDelta {
     pub removed: Vec<crate::contract::SessionReference>,
     pub complete: bool,
 }
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 pub fn catalog(count: usize) -> Vec<AgentInfo> {
     catalog_counts(&HashMap::from([("codex".into(), count)]))
@@ -126,6 +129,19 @@ pub fn scan_agent(
         "deepchat" => deepchat::scan(scan_path, pricing),
         "cherrystudio" => cherrystudio::scan(scan_path, pricing),
         _ => anyhow::bail!("Unknown agent: {agent}"),
+    }
+}
+
+/// The SQLite file of a database-backed source; `None` for file-backed sources.
+pub fn database_path(agent: &str, scan_path: &Path) -> Option<PathBuf> {
+    match agent {
+        "cursor" => Some(scan_path.join("globalStorage/state.vscdb")),
+        "opencode" => Some(scan_path.to_owned()),
+        "zcode" => Some(scan_path.join("cli/db/db.sqlite")),
+        "deepchat" => Some(scan_path.join("app_db/agent.db")),
+        "cherrystudio" => Some(scan_path.join("Data/cherrystudio.sqlite")),
+        "minimax-code" => Some(scan_path.join("v2/sqlite/runtime-state.sqlite")),
+        _ => None,
     }
 }
 
