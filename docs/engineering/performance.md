@@ -17,7 +17,7 @@ Rust 后端的性能需要实际测量。语言、静态链接或单一可执行
 | 扫描并发、取消与发布 | `crates/codesesh-core/src/runtime/tests.rs` |
 | 首屏 JS gzip 预算 | `apps/web/tests/initial-bundle.test.ts` |
 | 详情缓存条目上界 | `apps/web/src/lib/session-detail-cache.test.ts` |
-| 虚拟列表测量和提交 | `apps/web/src/components/session-detail/message-list.test.tsx` |
+| 虚拟列表测量和提交 | `apps/web/src/components/session-detail/MessageList.test.tsx` |
 
 确定性测试不使用单点毫秒阈值，避免将机器负载当成代码回归。
 

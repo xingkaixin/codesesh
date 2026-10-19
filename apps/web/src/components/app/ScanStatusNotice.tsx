@@ -1,6 +1,6 @@
 import { Popover } from "@base-ui/react/popover";
 import { t } from "../../i18n/translate";
-import { CollectionSources } from "../collection-status";
+import { CollectionSources } from "../CollectionStatus";
 import { X } from "../ui/icons";
 import { useLocale } from "../../hooks/useLocale";
 import { useState } from "react";

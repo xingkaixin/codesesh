@@ -22,13 +22,13 @@ import type { DashboardFilters } from "../../lib/api";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import { useDashboard } from "../../hooks/useDashboard";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
-import { OverviewActiveHours } from "./overview-active-hours";
-import { OverviewAgentBreakdown, OverviewModelBreakdown } from "./overview-breakdown";
-import { OverviewDailyTokens } from "./overview-daily-tokens";
-import { OverviewFilterBar } from "./overview-filter-bar";
-import { OverviewProjectKpis } from "./overview-project-kpis";
-import { OverviewSkeleton } from "./overview-skeleton";
-import { OverviewSummary } from "./overview-summary";
+import { OverviewActiveHours } from "./OverviewActiveHours";
+import { OverviewAgentBreakdown, OverviewModelBreakdown } from "./OverviewBreakdown";
+import { OverviewDailyTokens } from "./OverviewDailyTokens";
+import { OverviewFilterBar } from "./OverviewFilterBar";
+import { OverviewProjectKpis } from "./OverviewProjectKpis";
+import { OverviewSkeleton } from "./OverviewSkeleton";
+import { OverviewSummary } from "./OverviewSummary";
 
 export function OverviewScreen({
   project,

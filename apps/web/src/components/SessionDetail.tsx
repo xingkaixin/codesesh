@@ -17,28 +17,28 @@ import {
   RenderProfiler,
 } from "./RenderProfiler";
 import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
-import { SessionFilterAside } from "./session-detail/filter-panel";
-import { SessionFilterChips } from "./session-detail/filter-chips";
+import { SessionFilterAside } from "./session-detail/FilterPanel";
+import { SessionFilterChips } from "./session-detail/FilterChips";
 import {
   deriveHiddenCount,
   deriveHiddenTools,
   deriveSelectedFilters,
 } from "./session-detail/filter-state";
-import { HiddenToolsFooter } from "./session-detail/hidden-tools-footer";
-import { useSessionFilters } from "./session-detail/use-session-filters";
+import { HiddenToolsFooter } from "./session-detail/HiddenToolsFooter";
+import { useSessionFilters } from "./session-detail/useSessionFilters";
 import {
   MessageList,
   type MessageListHandle,
   VIRTUALIZED_MESSAGE_THRESHOLD,
-} from "./session-detail/message-list";
+} from "./session-detail/MessageList";
 import {
   DeferredInteractiveReceipt,
   SessionDetailAuxControls,
   SessionDetailAuxOverlay,
-} from "./session-detail/session-detail-aux";
-import { SessionMessageTimeline } from "./session-detail/session-message-timeline";
-import { MessagePagingControls } from "./session-detail/message-paging-controls";
-import { SessionStats } from "./session-detail/session-stats";
+} from "./session-detail/SessionDetailAux";
+import { SessionMessageTimeline } from "./session-detail/SessionMessageTimeline";
+import { MessagePagingControls } from "./session-detail/MessagePagingControls";
+import { SessionStats } from "./session-detail/SessionStats";
 import {
   findScrollParent,
   isWindowScrollParent,
@@ -48,7 +48,7 @@ import {
 import {
   createTimelineAnchorRegistry,
   type TimelineAnchorRegistry,
-} from "./session-detail/timeline-anchor-registry";
+} from "./session-detail/TimelineAnchorRegistry";
 
 // ---------------------------------------------------------------------------
 // Types

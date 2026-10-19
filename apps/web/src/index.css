@@ -567,7 +567,7 @@
 
   /* Grid-rows 0fr -> 1fr trick: animates to the content's intrinsic height
      without measuring it in JS. Requires the row content to stay mounted
-     for the duration of the transition (see Collapsible.tsx). */
+     for the duration of the transition (see collapsible.tsx). */
   .motion-collapsible {
     display: grid;
     grid-template-rows: 0fr;

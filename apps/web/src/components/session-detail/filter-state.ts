@@ -1,6 +1,6 @@
 /**
  * Pure reducers and derivations behind the reader's two-level content filter.
- * No React: the hook in `use-session-filters.ts` only binds these to state.
+ * No React: the hook in `useSessionFilters.ts` only binds these to state.
  *
  * Only explicit exclusions are stored. New content kinds and tools remain
  * visible when a live session grows; selection is derived from its current toc.

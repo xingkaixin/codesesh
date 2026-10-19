@@ -7,7 +7,7 @@ import { t } from "../../i18n/translate";
 import { X } from "../ui/icons";
 import { deriveActiveChips, type SessionFilterState } from "./filter-state";
 import { TOC_CONTENT_FILTER_IDS, type SessionDetailToc, type TocContentFilterId } from "./toc";
-import type { SessionFilterActions } from "./use-session-filters";
+import type { SessionFilterActions } from "./useSessionFilters";
 
 const CONTENT_SHORT_LABEL: Record<TocContentFilterId, string> = {
   user: "You",

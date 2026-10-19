@@ -63,7 +63,7 @@ const RECEIPT_GRAIN_ALPHA = 0.035;
 
 /** A canvas cannot resolve `var()`, so every colour the receipt paints is read from the
  *  theme tokens once per repaint and passed down explicitly. Mirrors the palette bridge in
- *  `session-detail/session-message-timeline.tsx`. */
+ *  `session-detail/SessionMessageTimeline.tsx`. */
 interface ReceiptPalette {
   paperTop: string;
   paperBottom: string;

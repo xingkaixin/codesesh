@@ -4,21 +4,21 @@ import { memo, useCallback, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "../ui/icons";
 import type { SessionAnchorScrollBehavior } from "./scroll-behavior";
 import type { SessionTimelineEntry, SessionTimelineEntryKind } from "./timeline";
-import type { TimelineAnchorRegistry } from "./timeline-anchor-registry";
+import type { TimelineAnchorRegistry } from "./TimelineAnchorRegistry";
 import {
   getTrackLayout,
   getVirtualizedSegmentStyle,
   TIMELINE_SEGMENT_MIN_WIDTH,
 } from "./session-message-timeline-layout";
-import { SessionMessageTimelineMinimap } from "./session-message-timeline-minimap";
+import { SessionMessageTimelineMinimap } from "./SessionMessageTimelineMinimap";
 import {
   SessionMessageTimelineTooltip,
   type TimelineTooltip,
   useSessionMessageTimelineTooltip,
-} from "./session-message-timeline-tooltip";
-import { useActiveTimelineIndex } from "./use-active-timeline-index";
-import { useSessionMessageTimelineNavigation } from "./use-session-message-timeline-navigation";
-import { useSessionMessageTimelineViewport } from "./use-session-message-timeline-viewport";
+} from "./SessionMessageTimelineTooltip";
+import { useActiveTimelineIndex } from "./useActiveTimelineIndex";
+import { useSessionMessageTimelineNavigation } from "./useSessionMessageTimelineNavigation";
+import { useSessionMessageTimelineViewport } from "./useSessionMessageTimelineViewport";
 
 export { VIRTUALIZED_TIMELINE_THRESHOLD } from "./session-message-timeline-layout";
 

@@ -11,7 +11,7 @@ import {
   findTimelineEdgeIndex,
   type SessionTimelineEntry,
 } from "./timeline";
-import type { TimelineAnchorRegistry } from "./timeline-anchor-registry";
+import type { TimelineAnchorRegistry } from "./TimelineAnchorRegistry";
 
 interface ActiveTimelineIndexOptions {
   rootRef: RefObject<HTMLDivElement | null>;

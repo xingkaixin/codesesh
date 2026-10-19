@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildSessionTree } from "@codesesh/contract";
 import { createAgentCatalog } from "../../lib/agents";
 import type { TimelineRow } from "../../lib/session-timeline";
-import { TimelineSessionRow } from "./timeline-session-row";
+import { TimelineSessionRow } from "./TimelineSessionRow";
 
 const AGENT_CATALOG = createAgentCatalog([
   {

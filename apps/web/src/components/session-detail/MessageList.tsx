@@ -11,9 +11,9 @@ import {
 import type { AgentInfo, SessionHead } from "@codesesh/contract";
 import { formatTokens } from "../../lib/format";
 import type { FilteredSessionMessage } from "./toc";
-import { MessageItem } from "./message-rendering";
+import { MessageItem } from "./MessageRendering";
 import { HeightIndex } from "./height-index";
-import { useTranscriptScroll } from "./use-transcript-scroll";
+import { useTranscriptScroll } from "./useTranscriptScroll";
 import {
   findScrollParent,
   getElementTop,
@@ -26,7 +26,7 @@ import {
 import {
   TimelineAnchorRegistryProvider,
   type TimelineAnchorRegistry,
-} from "./timeline-anchor-registry";
+} from "./TimelineAnchorRegistry";
 
 const MESSAGE_LIST_GAP_PX = 32;
 export const VIRTUALIZED_MESSAGE_THRESHOLD = 80;

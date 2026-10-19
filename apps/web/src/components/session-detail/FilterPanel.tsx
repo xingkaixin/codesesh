@@ -8,7 +8,7 @@ import type * as React from "react";
 
 import { ChevronDown, ChevronRight } from "../ui/icons";
 import { TriStateCheckbox, type CheckState } from "../ui/tri-state-checkbox";
-import { FileChangeTracker } from "./file-change-tracker";
+import { FileChangeTracker } from "./FileChangeTracker";
 import type { FileChangeSummary } from "./file-change";
 import {
   countSelectedTools,
@@ -19,7 +19,7 @@ import {
 } from "./filter-state";
 import type { SessionAnchorScrollHandler } from "./scroll-behavior";
 import { TOC_CONTENT_FILTER_IDS, type SessionDetailToc, type TocContentFilterId } from "./toc";
-import type { SessionFilterActions } from "./use-session-filters";
+import type { SessionFilterActions } from "./useSessionFilters";
 
 const CONTENT_LABEL: Record<TocContentFilterId, string> = {
   user: "Your messages",

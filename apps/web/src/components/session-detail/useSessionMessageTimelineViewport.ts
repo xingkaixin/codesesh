@@ -5,7 +5,7 @@ import {
   scrollTimelineIndexIntoView,
   VIRTUALIZED_TIMELINE_THRESHOLD,
 } from "./session-message-timeline-layout";
-import type { MinimapWindow } from "./session-message-timeline-minimap";
+import type { MinimapWindow } from "./SessionMessageTimelineMinimap";
 
 const TIMELINE_SCROLL_EDGE_TOLERANCE = 1;
 

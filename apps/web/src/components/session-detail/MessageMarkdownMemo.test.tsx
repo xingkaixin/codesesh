@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarkdownContent } from "../MarkdownContent";
-import { MessageList, VIRTUALIZED_MESSAGE_THRESHOLD } from "./message-list";
-import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
+import { MessageList, VIRTUALIZED_MESSAGE_THRESHOLD } from "./MessageList";
+import { createTimelineAnchorRegistry } from "./TimelineAnchorRegistry";
 import type { FilteredSessionMessage } from "./toc";
 
 const anchorRegistry = createTimelineAnchorRegistry();

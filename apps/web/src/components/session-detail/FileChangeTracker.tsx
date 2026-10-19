@@ -11,7 +11,7 @@ import {
   NotebookPen,
   XCircle,
 } from "../ui/icons";
-import { Collapsible } from "../ui/Collapsible";
+import { Collapsible } from "../ui/collapsible";
 import type { FileChangeKind, FileChangeSummary, FileChangeSummaryItem } from "./file-change";
 import { formatTrackedPath } from "./path-extract";
 import {
