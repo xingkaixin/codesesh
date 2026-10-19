@@ -223,7 +223,7 @@ pub async fn run(
         if matches!(choice, crate::options::History::Import) {
             let mut store = collector.store;
             collector.store = tokio::task::spawn_blocking(move || -> Result<WorkerStore> {
-                let cache = crate::cache_path::open(&archive)?;
+                let cache = crate::cache_open::open(&archive)?;
                 for head in cache.snapshot()? {
                     if head.reference.source_node_id
                         != codesesh_core::contract::LOCAL_SOURCE_NODE_ID

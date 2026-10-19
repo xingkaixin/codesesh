@@ -22,7 +22,7 @@
 
 - Core：discovery（含 JSON 扫描）、migration、runtime、state、storage schema / memory、pricing manager、
   worker store，以及 Antigravity CLI、Cursor、DSH、Kimi 的文件系统适配器测试和项目路径 / Git worktree 测试。
-- CLI：缓存路径、日志、价格刷新、原生服务和 Worker 连接。
+- CLI：缓存打开、日志、价格刷新、原生服务和 Worker 连接。
 - 独立进程：data_migration、hub_worker 和 worker_scheduling（包括上传中的信号退出）。
 
 SQLite 的完整查询、聚合与同步协议矩阵由 Linux 完整套件验证；其他目标保留 schema、
