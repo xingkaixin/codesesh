@@ -33,13 +33,3 @@ pub fn matches_project_scope(session: &SessionHead, scope: &ProjectScopeMatcher)
         || path.starts_with(&format!("{}/", scope.path.trim_end_matches('/')))
         || scope.path.starts_with(&format!("{path}/"))
 }
-pub fn filter_sessions_by_project_scope<'a>(
-    sessions: &'a [SessionHead],
-    query_path: &str,
-) -> Vec<&'a SessionHead> {
-    let scope = create_project_scope_matcher(query_path);
-    sessions
-        .iter()
-        .filter(|session| matches_project_scope(session, &scope))
-        .collect()
-}

@@ -99,9 +99,6 @@ struct CacheEntry {
 }
 static CACHE: Mutex<VecDeque<CacheEntry>> = Mutex::new(VecDeque::new());
 
-pub fn clear_identity_cache() {
-    CACHE.lock().unwrap_or_else(|e| e.into_inner()).clear();
-}
 pub fn normalize_project_directory(directory: &str) -> String {
     path::normalize(directory)
 }
@@ -110,15 +107,6 @@ pub fn get_project_identity_key(identity: &ProjectIdentity) -> String {
 }
 pub fn matches_project_identity(identity: &ProjectIdentity, expected: &ProjectIdentity) -> bool {
     identity.kind == expected.kind && identity.key == expected.key
-}
-pub fn is_project_identity_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "git_remote" | "git_common_dir" | "manifest_path" | "synthetic" | "path" | "loose"
-    )
-}
-pub fn get_project_agent_key(key: &str, agent: &str) -> String {
-    format!("{key}\0{}", agent.to_lowercase())
 }
 
 pub fn normalize_git_remote(input: &str) -> Option<String> {

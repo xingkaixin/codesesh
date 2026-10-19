@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { attachFluidHover } from "../../../shared/fluid-hover";
+import { attachFluidHover } from "../lib/fluid-hover";
 
 export function useFluidHover<T extends HTMLElement>() {
   return useCallback((element: T | null) => {

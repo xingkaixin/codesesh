@@ -38,6 +38,5 @@
     "clean": {
       "cache": false
     }
-  },
-  "globalDependencies": ["apps/shared/**"]
+  }
 }

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use super::{Pricing, round_cost};
-use crate::contract::{CostSource, Message, MessageTokens, SessionStats};
+use crate::contract::{CostSource, Message};
 
 pub const PRICING_CAPTURE_EPOCH: &str = "pricing-capture-v1";
 
@@ -73,32 +73,12 @@ impl Pricing {
         }
         (round_cost(total), source)
     }
-
-    pub fn apply_session_cost(&self, stats: &mut SessionStats, model: Option<&str>) {
-        if stats.total_cost > 0.0 {
-            stats.cost_source.get_or_insert(CostSource::Recorded);
-            return;
-        }
-        let tokens = MessageTokens {
-            input: Some(stats.total_input_tokens),
-            output: Some(stats.total_output_tokens),
-            reasoning: None,
-            cache_read: stats.total_cache_read_tokens,
-            cache_create: stats.total_cache_create_tokens,
-            cache_create_1h: None,
-        };
-        if let Some(cost) =
-            self.estimate_aggregate_tracked(model, &tokens, 0.0, &mut stats.cost_inputs)
-        {
-            stats.total_cost = cost;
-            stats.cost_source = Some(CostSource::Estimated);
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::MessageTokens;
     use serde_json::json;
 
     #[test]

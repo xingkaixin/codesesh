@@ -148,10 +148,6 @@ impl Cache {
         })
     }
 
-    pub fn open_preview(path: &Path) -> Result<Self> {
-        Self::open(Some(path))
-    }
-
     pub fn detail(&self, head: SessionHead) -> Result<Option<SessionDetail>> {
         read::detail(&self.connection, head)
     }
@@ -458,15 +454,6 @@ impl Cache {
 
     pub fn remove(&mut self, references: &[SessionReference]) -> Result<()> {
         self.apply(&mut [], references)
-    }
-
-    pub fn mark_initialized(&mut self, agent: &str) -> Result<()> {
-        let now = chrono::Utc::now().timestamp_millis();
-        let transaction = self.connection.transaction()?;
-        transaction.execute("INSERT INTO agent_cache VALUES(?,?) ON CONFLICT(agent_name) DO UPDATE SET timestamp=excluded.timestamp",params![agent,now])?;
-        transaction.execute("INSERT INTO cache_initialization VALUES(?,?,'session-cache-v2',?) ON CONFLICT(agent_name) DO UPDATE SET index_version=excluded.index_version,last_sync_at=excluded.last_sync_at",params![agent,now,now])?;
-        transaction.commit()?;
-        Ok(())
     }
 
     pub fn rebuild_search_indexes(&mut self) -> Result<()> {
