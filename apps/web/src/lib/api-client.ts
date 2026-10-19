@@ -9,6 +9,7 @@ import type {
   BookmarkRecord,
   BookmarkView,
   DashboardData,
+  FileActivityKind,
   ProjectIdentityKind,
   ProjectIdentityRef,
   ScanStatusEvent,
@@ -17,16 +18,51 @@ import type {
   SessionHead,
   SessionListPage,
   SessionReference,
+  SmartTag,
 } from "@codesesh/contract";
-import type {
-  DashboardFilters,
-  FetchOptions,
-  ProjectPageOptions,
-  SearchRequestOptions,
-  SessionDetailFetchOptions,
-  SessionFetchProgress,
-} from "./api-contract";
 import type { RemoteAccess } from "./remote-access";
+
+export interface SearchRequestOptions {
+  sourceNodeId?: string;
+  agent?: string;
+  projectKind?: ProjectIdentityKind;
+  projectKey?: string;
+  tag?: SmartTag;
+  tool?: string;
+  fileKind?: FileActivityKind;
+  costMin?: number;
+  costMax?: number;
+  from?: number;
+  to?: number;
+}
+
+export interface FetchOptions {
+  signal?: AbortSignal;
+}
+
+export interface SessionDetailFetchOptions extends FetchOptions {
+  sourceNodeId?: string;
+  messageCursor?: string;
+  messageLimit?: number;
+  operationId?: string;
+}
+
+export interface ProjectPageOptions extends FetchOptions {
+  cursor?: string;
+  project?: ProjectIdentityRef;
+  sourceNodeId?: string;
+}
+
+export interface SessionFetchProgress {
+  onFirstPage?: (sessions: SessionHead[]) => void;
+}
+
+export interface DashboardFilters {
+  sourceNodeId?: string;
+  timeZone?: string;
+  project?: { kind: ProjectIdentityKind; key: string };
+  agent?: string;
+}
 
 const SESSION_PAGE_SIZE = 250;
 const SESSION_STALE_RETRY_LIMIT = 2;
