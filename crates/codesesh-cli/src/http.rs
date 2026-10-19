@@ -22,8 +22,8 @@ use axum::{
 use codesesh_core::{
     contract::{SessionHead, SessionReference},
     public_contract::{DashboardData, WireSessionHead},
-    query::SnapshotPaginator,
     runtime::Runtime,
+    session_list::SnapshotPaginator,
     state::StateStore,
 };
 use serde_json::{Value, json};

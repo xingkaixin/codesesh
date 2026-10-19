@@ -4,7 +4,7 @@ use crate::{
     contract::{SessionHead, SessionIndex},
     pricing::Pricing,
     projects::{compute_identity_projection, create_project_scope_matcher, matches_project_scope},
-    query::filter_activity_window,
+    session_list::filter_activity_window,
     storage::Cache,
 };
 use anyhow::{Result, bail};

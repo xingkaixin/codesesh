@@ -1,7 +1,7 @@
 use super::{CostFactsIndex, DashboardScope, SessionModelCostFact};
 use crate::{
     contract::CostSource,
-    query::{SessionTree, in_window},
+    session_list::{SessionTree, in_window},
 };
 use std::collections::BTreeMap;
 

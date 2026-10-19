@@ -1,7 +1,7 @@
 use super::{CostFactsIndex, DashboardScope, Metrics, attribution, project_key};
 use crate::{
     contract::{CostSource, SessionHead},
-    query::{SessionTree, in_window},
+    session_list::{SessionTree, in_window},
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;

@@ -12,7 +12,7 @@ pub mod bookmarks;
 pub mod state;
 
 pub mod analytics;
-pub mod query;
+pub mod session_list;
 
 pub mod search;
 
