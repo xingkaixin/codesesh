@@ -19,7 +19,7 @@ vi.mock("./tool-strategy", async (importOriginal) => {
   };
 });
 
-import { MessageItem } from "./message-rendering";
+import { MessageItem } from "./MessageRendering";
 
 afterEach(() => {
   cleanup();

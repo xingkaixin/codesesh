@@ -7,7 +7,7 @@ import { formatRelativeTime } from "../../lib/format";
 import { Plug, Pencil } from "../ui/icons";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";
 import { NodeActions, type NodeAction } from "./NodeActions";
-import { CollectionSources } from "../collection-status";
+import { CollectionSources } from "../CollectionStatus";
 import { NodeTasks } from "./NodeTasks";
 import {
   agentDisplayName,

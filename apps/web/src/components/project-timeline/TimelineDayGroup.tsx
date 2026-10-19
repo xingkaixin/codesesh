@@ -11,7 +11,7 @@ import {
   type SubSessionMode,
   type TimelinePageDay,
 } from "../../lib/session-timeline";
-import { TimelineSessionRow } from "./timeline-session-row";
+import { TimelineSessionRow } from "./TimelineSessionRow";
 
 export function TimelineDayGroup({
   day,

@@ -17,8 +17,8 @@ import {
 } from "../../lib/session-timeline";
 import { ChevronLeft, ChevronRight } from "../ui/icons";
 import { Panel } from "../ui/panel";
-import { SubSessionModeSwitch } from "./sub-session-mode-switch";
-import { TimelineDayGroup } from "./timeline-day-group";
+import { SubSessionModeSwitch } from "./SubSessionModeSwitch";
+import { TimelineDayGroup } from "./TimelineDayGroup";
 
 const COLUMNS = [
   { label: "Time", className: "w-14 pl-[18px]" },

@@ -28,14 +28,14 @@ import { AgentIcon } from "../AgentIcon";
 import { MarkdownContent } from "../MarkdownContent";
 import { ProgressiveText } from "../ProgressiveContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
-import { Collapsible } from "../ui/Collapsible";
+import { Collapsible } from "../ui/collapsible";
 import { Link } from "react-router-dom";
 import type { MessageBlock } from "./blocks";
 import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
-import { useTimelineAnchorRef } from "./timeline-anchor-registry";
+import { useTimelineAnchorRef } from "./TimelineAnchorRegistry";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 import {
   type ToolStatus,

@@ -10,10 +10,10 @@ import { DrawerDialog } from "../DrawerDialog";
 import type { SessionDetailToc } from "./toc";
 import type { SessionFilterState } from "./filter-state";
 import type { FileChangeSummary } from "./file-change";
-import { FileChangeTracker, getFileTrackerItemCount } from "./file-change-tracker";
+import { FileChangeTracker, getFileTrackerItemCount } from "./FileChangeTracker";
 import type { SessionAnchorScrollHandler } from "./scroll-behavior";
-import { SessionFilterPanel, type SessionFilterPanelProps } from "./filter-panel";
-import { countActiveFilterChips } from "./filter-chips";
+import { SessionFilterPanel, type SessionFilterPanelProps } from "./FilterPanel";
+import { countActiveFilterChips } from "./FilterChips";
 
 // The receipt is only reachable from its drawer, so it downloads on open.
 const InteractiveReceipt = lazy(() =>

@@ -2,13 +2,13 @@ import { Profiler } from "react";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FilteredSessionMessage } from "./toc";
-import { MessageList, type MessageListHandle, VIRTUALIZED_MESSAGE_THRESHOLD } from "./message-list";
-import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
+import { MessageList, type MessageListHandle, VIRTUALIZED_MESSAGE_THRESHOLD } from "./MessageList";
+import { createTimelineAnchorRegistry } from "./TimelineAnchorRegistry";
 
 const anchorRegistry = createTimelineAnchorRegistry();
 
 // oxlint-disable-next-line anti-slop/no-module-mocking -- Render observable row indices to test virtualized ranges without transcript renderer dependencies.
-vi.mock("./message-rendering", () => ({
+vi.mock("./MessageRendering", () => ({
   MessageItem: ({ messageIndex }: { messageIndex: number }) => (
     <div data-message-index={messageIndex}>Message {messageIndex}</div>
   ),

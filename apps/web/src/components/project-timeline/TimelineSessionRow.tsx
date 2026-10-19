@@ -15,7 +15,7 @@ import { AgentIcon } from "../AgentIcon";
 import { SmartTagChips } from "../SmartTagChips";
 import { ChevronDown, ChevronRight, GitBranch } from "../ui/icons";
 import { TIMELINE_CELL_CLASS, TIMELINE_TIME_CLASS } from "./timeline-cells";
-import { TimelineChildPanel } from "./timeline-child-panel";
+import { TimelineChildPanel } from "./TimelineChildPanel";
 
 export function TimelineSessionRow({
   row,

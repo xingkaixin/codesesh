@@ -4,7 +4,7 @@ import {
   createTimelineAnchorRegistry,
   TimelineAnchorRegistryProvider,
   useTimelineAnchorRef,
-} from "./timeline-anchor-registry";
+} from "./TimelineAnchorRegistry";
 
 afterEach(cleanup);
 

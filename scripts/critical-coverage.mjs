@@ -31,9 +31,9 @@ export const CRITICAL_COVERAGE_SCOPES = [
     owners: [
       { path: "apps/web/src/components/overview/OverviewScreen.tsx", kind: "file" },
       { path: "apps/web/src/components/app/SearchResultsPanel.tsx", kind: "file" },
-      { path: "apps/web/src/components/session-detail/message-list.tsx", kind: "file" },
+      { path: "apps/web/src/components/session-detail/MessageList.tsx", kind: "file" },
       {
-        path: "apps/web/src/components/session-detail/session-message-timeline.tsx",
+        path: "apps/web/src/components/session-detail/SessionMessageTimeline.tsx",
         kind: "file",
       },
     ],

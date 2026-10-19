@@ -1,10 +1,10 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SessionMessageTimeline, VIRTUALIZED_TIMELINE_THRESHOLD } from "./session-message-timeline";
+import { SessionMessageTimeline, VIRTUALIZED_TIMELINE_THRESHOLD } from "./SessionMessageTimeline";
 import type { SessionTimelineEntry } from "./timeline";
-import { createTimelineAnchorRegistry } from "./timeline-anchor-registry";
+import { createTimelineAnchorRegistry } from "./TimelineAnchorRegistry";
 
-// Mirrors the ResizeObserverMock pattern used in message-list.test.tsx: a controllable
+// Mirrors the ResizeObserverMock pattern used in MessageList.test.tsx: a controllable
 // stand-in so tests can drive which anchors are "visible" without a real layout engine.
 class IntersectionObserverMock {
   static instances: IntersectionObserverMock[] = [];

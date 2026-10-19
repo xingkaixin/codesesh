@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { useTranscriptScroll } from "./use-transcript-scroll";
+import { useTranscriptScroll } from "./useTranscriptScroll";
 
 function Transcript({ revision, followTail = true }: { revision: number; followTail?: boolean }) {
   const ref = useTranscriptScroll(revision, followTail);

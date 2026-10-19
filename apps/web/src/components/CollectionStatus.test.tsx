@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { CollectionSources } from "./collection-status";
+import { CollectionSources } from "./CollectionStatus";
 
 afterEach(cleanup);
 

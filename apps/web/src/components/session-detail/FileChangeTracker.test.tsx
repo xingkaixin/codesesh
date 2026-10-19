@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FileChangeSummary } from "./file-change";
-import { FileChangeTracker } from "./file-change-tracker";
+import { FileChangeTracker } from "./FileChangeTracker";
 
 const summary: FileChangeSummary = {
   read: [

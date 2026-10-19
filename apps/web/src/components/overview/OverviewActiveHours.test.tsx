@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { setLanguagePreference } from "../../i18n/language";
-import { OverviewActiveHours } from "./overview-active-hours";
+import { OverviewActiveHours } from "./OverviewActiveHours";
 
 const counts = Array<number>(84).fill(0);
 counts[0] = 4;
