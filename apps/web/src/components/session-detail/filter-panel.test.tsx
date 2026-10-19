@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Message } from "../../lib/api";
+import type { Message } from "@codesesh/contract";
 import { buildSessionDetailDisplayModel } from "./display-model";
 import { SessionFilterPanel } from "./filter-panel";
 import { deriveSelectedFilters } from "./filter-state";

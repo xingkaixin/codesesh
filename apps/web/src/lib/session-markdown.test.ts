@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message, SessionDetail } from "./api";
+import type { Message, SessionDetail } from "@codesesh/contract";
 import { formatSessionAsMarkdown } from "./session-markdown";
 
 function session(messages: Message[], overrides: Partial<SessionDetail> = {}): SessionDetail {

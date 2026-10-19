@@ -6,7 +6,7 @@ import { t } from "../../i18n/translate";
  * they can be left out to read the fresh tokens at a useful scale.
  */
 import { useMemo, useState } from "react";
-import type { DashboardDailyBucket } from "../../lib/api";
+import type { DashboardDailyBucket } from "@codesesh/contract";
 import { niceMax, smoothPath, type ChartPoint } from "../../lib/chart-scale";
 import { formatCompact, formatInt, formatMonthDay, formatUsd } from "../../lib/format";
 import { TOKEN_KINDS, bucketTokens } from "../../lib/token-usage";

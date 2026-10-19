@@ -7,8 +7,9 @@ import {
   classifyFileTool,
   extractFileToolOperations,
   type FileActivityKind,
+  type SessionFileActivity,
+  type ToolPart,
 } from "@codesesh/contract";
-import type { Message, SessionFileActivity, ToolPart } from "../../lib/api";
 import type { MessageDisplayModel } from "./display-model-types";
 import { normalizeToolLabel } from "./tool-normalize";
 
@@ -178,6 +179,3 @@ export function buildFileChangeSummaryFromActivity(
 
   return fromActivity;
 }
-
-// Keep Message import meaningful for downstream typing consumers.
-export type { Message };

@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchProjects, type ApiProjectGroup, type ApiProjectPage } from "../lib/api";
+import type { ApiProjectGroup, ApiProjectPage } from "@codesesh/contract";
+import { fetchProjects } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useProjectLookup, useProjectPagination } from "./useProjects";

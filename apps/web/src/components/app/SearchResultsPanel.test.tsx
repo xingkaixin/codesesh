@@ -2,7 +2,7 @@ import { createQueryWrapper } from "../../test/query-wrapper";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import type { SearchResult, SessionHead } from "../../lib/api";
+import type { SearchResult, SessionHead } from "@codesesh/contract";
 import { SearchResultsPanel } from "./SearchResultsPanel";
 import { setLanguagePreference } from "../../i18n/language";
 

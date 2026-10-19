@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import { createElement, createRef, Profiler, useImperativeHandle, type ReactNode } from "react";
-import type { ScanStatusEvent } from "../lib/api";
+import type { ScanStatusEvent } from "@codesesh/contract";
 import * as api from "../lib/api";
 import { ScanStatusProvider, useScanStatus, useScanStatusPublisher } from "./useScanStatus";
 

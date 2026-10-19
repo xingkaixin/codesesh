@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { SearchResult } from "../lib/api";
+import type { SearchResult } from "@codesesh/contract";
 import { buildSessionIndexes, type SessionIndexes } from "../lib/session-indexes";
 import * as api from "../lib/api";
 import { createQueryWrapper } from "../test/query-wrapper";

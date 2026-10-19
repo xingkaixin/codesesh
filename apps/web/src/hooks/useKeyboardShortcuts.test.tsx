@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, renderHook } from "@testing-library/react";
 import type { NavigateFunction } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SearchResult, SessionHead } from "../lib/api";
+import type { SearchResult, SessionHead } from "@codesesh/contract";
 import type { ViewState } from "../lib/view-state";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 

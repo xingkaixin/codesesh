@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message, MessagePart } from "../../lib/api";
+import type { Message, MessagePart } from "@codesesh/contract";
 import { buildSessionDetailDisplayModel } from "./display-model";
 import { buildSessionDetailToc, filterSessionMessages } from "./toc";
 

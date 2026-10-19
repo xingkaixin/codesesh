@@ -1,6 +1,6 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import type { DashboardTotals } from "../../lib/api";
+import type { DashboardTotals } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../../lib/agents";
 import {
   formatCompact,

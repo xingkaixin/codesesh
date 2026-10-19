@@ -1,6 +1,6 @@
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AppConfig } from "../lib/api";
+import type { AppConfig } from "@codesesh/contract";
 import * as api from "../lib/api";
 import { useWindowLoadTelemetry } from "./useWindowLoadTelemetry";
 

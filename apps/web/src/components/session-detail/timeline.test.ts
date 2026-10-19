@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message, ToolPart } from "../../lib/api";
+import type { Message, ToolPart } from "@codesesh/contract";
 import type { FilteredSessionMessage } from "./toc";
 import {
   buildBlockTimelineAnchorId,

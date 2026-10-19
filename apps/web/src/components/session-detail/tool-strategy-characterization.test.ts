@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PlanPart, ToolPart } from "../../lib/api";
+import type { PlanPart, ToolPart } from "@codesesh/contract";
 import { buildCodexPlanDisplay } from "./codex-plan";
 import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 

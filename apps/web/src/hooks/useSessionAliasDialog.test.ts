@@ -1,7 +1,7 @@
 import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BookmarkView } from "../lib/api";
+import type { BookmarkView } from "@codesesh/contract";
 import { createQueryWrapper } from "../test/query-wrapper";
 import { useSessionAliasDialog } from "./useSessionAliasDialog";
 

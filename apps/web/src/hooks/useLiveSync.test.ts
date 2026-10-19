@@ -1,7 +1,7 @@
 import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/contract/test-fixtures";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionsUpdatedEvent } from "../lib/api";
+import type { SessionsUpdatedEvent } from "@codesesh/contract";
 import * as api from "../lib/api";
 import { useLiveSync } from "./useLiveSync";
 

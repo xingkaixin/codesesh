@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { AGENT_CATALOG } from "@codesesh/contract";
+import { AGENT_CATALOG, type SourceNode } from "@codesesh/contract";
 import { t } from "./pairing-messages";
-import { createPairingToken, requestRescan, updateNode, type SourceNode } from "../../lib/api";
+import { createPairingToken, requestRescan, updateNode } from "../../lib/api";
 import { NodePairing } from "./NodePairing";
 import { NativeSelect } from "../ui/native-select";
 import { NodeDialog, nodeButton, nodePrimary } from "./NodeDialog";

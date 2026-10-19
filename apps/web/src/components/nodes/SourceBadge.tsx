@@ -1,4 +1,4 @@
-import type { SourceNode } from "../../lib/api";
+import type { SourceNode } from "@codesesh/contract";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 

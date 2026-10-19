@@ -1,7 +1,7 @@
 import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/contract/test-fixtures";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionsUpdatedEvent } from "./api";
+import type { SessionsUpdatedEvent } from "@codesesh/contract";
 import { queryKeys } from "./query-keys";
 import {
   invalidateLiveSessionDerivedQueries,

@@ -1,5 +1,5 @@
 import { APP_ROUTE_IDS } from "./app-routes";
-import type { ProjectIdentityKind } from "./api";
+import type { ProjectIdentityKind } from "@codesesh/contract";
 import { isProjectIdentityKind } from "./projects";
 
 export type ViewState =

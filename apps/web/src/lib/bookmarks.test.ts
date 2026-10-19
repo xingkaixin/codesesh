@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionHead } from "./api";
+import type { SessionHead } from "@codesesh/contract";
 import {
   clearLegacyBookmarks,
   getSessionBookmarkKey,

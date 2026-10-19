@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BookmarkRecord, BookmarkView, SessionHead } from "../lib/api";
+import type { BookmarkRecord, BookmarkView, SessionHead } from "@codesesh/contract";
 import * as api from "../lib/api";
 import * as bookmarkUtils from "../lib/bookmarks";
 import { createQueryWrapper } from "../test/query-wrapper";

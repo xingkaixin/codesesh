@@ -1,4 +1,4 @@
-import type { AgentInfo } from "./api";
+import type { AgentInfo } from "@codesesh/contract";
 
 export interface AgentCatalog {
   active: AgentInfo[];

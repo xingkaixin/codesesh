@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import type { SessionAliasTarget } from "../components/SessionAliasDialog";
-import type { BookmarkView, SessionHead } from "../lib/api";
+import type { BookmarkView, SessionHead } from "@codesesh/contract";
 import { getSessionAgentKey } from "../lib/session-indexes";
 import { useSessionAliasMutations } from "./useSessionAliasMutations";
 

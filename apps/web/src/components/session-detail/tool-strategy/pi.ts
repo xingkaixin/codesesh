@@ -5,7 +5,7 @@ import { t } from "../../../i18n/translate";
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import type { ToolDetailItem } from "../codex-tool";
 import { buildPiEditDiffBlocks } from "../diff";
 import {

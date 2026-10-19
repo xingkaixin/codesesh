@@ -1,6 +1,6 @@
 import { t } from "../i18n/translate";
 import { useLocale } from "../hooks/useLocale";
-import type { SmartTag } from "../lib/api";
+import type { SmartTag } from "@codesesh/contract";
 import { cn } from "../lib/utils";
 
 const CHIP_CLASS =

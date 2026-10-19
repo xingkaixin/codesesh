@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionDetail } from "../lib/api";
+import type { SessionDetail } from "@codesesh/contract";
 import { stubAnimationFrames } from "../test/canvas-stub";
 import { InteractiveReceipt } from "./InteractiveReceipt";
 

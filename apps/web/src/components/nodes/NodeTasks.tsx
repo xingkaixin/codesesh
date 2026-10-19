@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import type { NodeTask } from "@codesesh/contract";
-import { cancelRescan, fetchRescanHistory, type SourceNode } from "../../lib/api";
+import type { NodeTask, SourceNode } from "@codesesh/contract";
+import { cancelRescan, fetchRescanHistory } from "../../lib/api";
 import { isNodeOnline } from "../../hooks/useNodes";
 import { t } from "../../i18n/translate";
 import { nodeButton } from "./NodeDialog";

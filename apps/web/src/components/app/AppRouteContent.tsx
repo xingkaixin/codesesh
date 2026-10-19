@@ -22,7 +22,7 @@ import type {
   ApiProjectPage,
   SessionDetail,
   SessionHead,
-} from "../../lib/api";
+} from "@codesesh/contract";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";

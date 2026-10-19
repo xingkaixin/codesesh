@@ -1,7 +1,7 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { Menu } from "@base-ui/react/menu";
-import { buildSessionTree, type SessionTreeNode } from "@codesesh/contract";
+import { buildSessionTree, type SessionTreeNode, type SessionHead } from "@codesesh/contract";
 import type { FileTreeSortEntry } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import {
@@ -14,7 +14,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
 } from "react";
-import type { SessionHead } from "../lib/api";
 import { getProjectIdentityKey } from "../lib/projects";
 import { getSessionReferenceKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";

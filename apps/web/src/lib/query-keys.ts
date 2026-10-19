@@ -1,4 +1,5 @@
-import type { AppConfig, DashboardFilters, ProjectIdentityRef, SearchRequestOptions } from "./api";
+import type { AppConfig, ProjectIdentityRef } from "@codesesh/contract";
+import type { DashboardFilters, SearchRequestOptions } from "./api";
 
 type TimeWindow = AppConfig["window"];
 

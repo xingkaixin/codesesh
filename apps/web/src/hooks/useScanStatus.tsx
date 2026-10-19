@@ -6,7 +6,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { type ScanStatusEvent, fetchScanStatus } from "../lib/api";
+import type { ScanStatusEvent } from "@codesesh/contract";
+import { fetchScanStatus } from "../lib/api";
 
 class ScanStatusStore {
   private status: ScanStatusEvent | null;

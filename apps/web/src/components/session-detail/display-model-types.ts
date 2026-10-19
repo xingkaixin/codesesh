@@ -1,4 +1,4 @@
-import type { Message } from "../../lib/api";
+import type { Message } from "@codesesh/contract";
 import type { MessageBlock } from "./blocks";
 
 export interface MessageDisplayModel {

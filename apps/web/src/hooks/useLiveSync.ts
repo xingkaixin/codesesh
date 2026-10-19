@@ -1,11 +1,11 @@
 import { t } from "../i18n/translate";
-import { mergeSessionsUpdatedEvents } from "@codesesh/contract";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
+  mergeSessionsUpdatedEvents,
   type ScanStatusEvent,
   type SessionsUpdatedEvent,
-  subscribeSessionUpdates,
-} from "../lib/api";
+} from "@codesesh/contract";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { subscribeSessionUpdates } from "../lib/api";
 import type { LiveSessionApplyResult } from "./useSessionStore";
 
 interface LiveSyncDeps {

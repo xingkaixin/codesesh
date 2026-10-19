@@ -2,8 +2,8 @@ import {
   getProjectIdentityKey,
   isProjectIdentityKind,
   type ProjectIdentityRef,
+  type ApiProjectGroup,
 } from "@codesesh/contract";
-import type { ApiProjectGroup } from "./api";
 
 // Identity semantics come from the contract; this module only turns them into
 // URLs and back. A route key is percent-encoded, an identity key is not.

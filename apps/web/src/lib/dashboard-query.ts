@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
-import { type AppConfig, type DashboardFilters, fetchDashboard } from "./api";
+import type { AppConfig } from "@codesesh/contract";
+import { type DashboardFilters, fetchDashboard } from "./api";
 import { queryKeys } from "./query-keys";
 
 export const DASHBOARD_STALE_TIME_MS = 2_000;

@@ -3,7 +3,7 @@
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import { buildKimiEditDiffBlocks, extractEditDiff } from "../diff";
 import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {

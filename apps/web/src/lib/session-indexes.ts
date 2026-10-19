@@ -1,4 +1,3 @@
-import type { AgentInfo, ProjectIdentityKind, SessionHead } from "./api";
 import {
   agentRoutePath,
   createSessionIndex,
@@ -8,6 +7,9 @@ import {
   getSessionRoutePath,
   getSessionRouteKey,
   sessionRoutePath,
+  type AgentInfo,
+  type ProjectIdentityKind,
+  type SessionHead,
 } from "@codesesh/contract";
 import { getProjectIdentityKey } from "./projects";
 

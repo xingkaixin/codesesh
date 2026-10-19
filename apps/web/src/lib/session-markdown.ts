@@ -1,4 +1,4 @@
-import type { ImagePart, Message, MessagePart, SessionDetail, ToolPart } from "./api";
+import type { ImagePart, Message, MessagePart, SessionDetail, ToolPart } from "@codesesh/contract";
 import { getSessionDisplayTitle } from "./session-title";
 
 const messageRoleLabels = {

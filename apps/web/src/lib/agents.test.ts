@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentInfo } from "./api";
+import type { AgentInfo } from "@codesesh/contract";
 import { createAgentCatalog, findAgent } from "./agents";
 
 const agents: AgentInfo[] = [

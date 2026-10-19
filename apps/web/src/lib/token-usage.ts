@@ -1,4 +1,4 @@
-import type { DashboardDailyBucket } from "./api";
+import type { DashboardDailyBucket } from "@codesesh/contract";
 
 export type TokenKind = "input" | "output" | "cache_create" | "cache_read";
 

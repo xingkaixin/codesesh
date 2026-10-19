@@ -1,5 +1,4 @@
-import type { SessionDetail } from "../lib/api";
-import { getSessionAgentKey } from "@codesesh/contract";
+import { getSessionAgentKey, type SessionDetail } from "@codesesh/contract";
 import { t } from "../i18n/translate";
 import { getSessionDisplayTitle } from "../lib/session-title";
 

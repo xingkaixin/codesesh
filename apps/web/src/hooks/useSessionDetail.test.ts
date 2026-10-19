@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { SessionDetail } from "../lib/api";
+import type { SessionDetail } from "@codesesh/contract";
 import type { ViewState } from "../lib/view-state";
 import * as api from "../lib/api";
 import { queryKeys } from "../lib/query-keys";

@@ -1,4 +1,4 @@
-import type { MessagePart, PlanPart, ReasoningPart, TextPart, ToolPart } from "../../lib/api";
+import type { MessagePart, PlanPart, ReasoningPart, TextPart, ToolPart } from "@codesesh/contract";
 
 export type MessageBlockType = "reasoning" | "text" | "tool" | "plan";
 

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentCatalog } from "../../lib/agents";
-import type { AgentInfo, AppConfig, DashboardData } from "../../lib/api";
+import type { AgentInfo, AppConfig, DashboardData } from "@codesesh/contract";
 import * as api from "../../lib/api";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { OverviewScreen } from "./OverviewScreen";

@@ -1,9 +1,8 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { formatSessionReference } from "@codesesh/contract";
+import { formatSessionReference, type SessionDetail } from "@codesesh/contract";
 import { FileText, Funnel } from "../ui/icons";
-import type { SessionDetail } from "../../lib/api";
 import type { SessionMessagePaging } from "../../hooks/useSessionDetail";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { RenderProfiler } from "../RenderProfiler";

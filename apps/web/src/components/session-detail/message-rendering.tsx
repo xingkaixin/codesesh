@@ -13,8 +13,14 @@ import {
   UserRound,
   XCircle,
 } from "../ui/icons";
-import type { AgentInfo, Message, PlanPart, ReasoningPart, ToolPart } from "../../lib/api";
-import type { SessionHead } from "../../lib/api";
+import type {
+  AgentInfo,
+  Message,
+  PlanPart,
+  ReasoningPart,
+  ToolPart,
+  SessionHead,
+} from "@codesesh/contract";
 import { formatMessageDate, formatMessageTime } from "../../lib/format";
 import { getSessionRoutePath } from "../../lib/session-indexes";
 import { buildHighlightPattern } from "../../lib/search-highlight";

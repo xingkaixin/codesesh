@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAgentCatalog } from "../lib/agents";
-import type { SessionDetail as Detail } from "../lib/api";
+import type { SessionDetail as Detail } from "@codesesh/contract";
 import { SessionDetail } from "./SessionDetail";
 import { VIRTUALIZED_MESSAGE_THRESHOLD } from "./session-detail/message-list";
 

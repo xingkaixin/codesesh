@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionHead } from "../lib/api";
+import type { SessionHead } from "@codesesh/contract";
 import { getSessionReferenceKey } from "../lib/session-indexes";
 import {
   buildSessionTreeModel,

@@ -5,7 +5,7 @@ import { t } from "../../../i18n/translate";
  *
  * Pure logic — no React. Consumed by the per-agent builders in this folder.
  */
-import type { ToolPart } from "../../../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import { detectLanguageByFilePath } from "../../tool-output/language";
 import type { ToolOutputContent } from "../../tool-output/types";
 import type { ToolDetailItem } from "../codex-tool";

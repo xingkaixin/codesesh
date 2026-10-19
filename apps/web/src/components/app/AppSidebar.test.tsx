@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/contract/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import type { AgentInfo, ApiProjectGroup, BookmarkView, ScanStatusEvent } from "../../lib/api";
+import type { AgentInfo, ApiProjectGroup, BookmarkView, ScanStatusEvent } from "@codesesh/contract";
 import { createAgentCatalog } from "../../lib/agents";
 import { ScanStatusProvider } from "../../hooks/useScanStatus";
 import { buildSidebarSessionLookup } from "../../lib/session-indexes";

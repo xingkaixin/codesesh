@@ -3,7 +3,7 @@ import {
   normalizeToolState,
 } from "../components/session-detail/tool-normalize";
 import { getToolDisplayStrategy } from "../components/session-detail/tool-strategy";
-import type { ToolPart } from "../lib/api";
+import type { ToolPart } from "@codesesh/contract";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";

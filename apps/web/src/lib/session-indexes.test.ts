@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentInfo, SessionHead } from "./api";
+import type { AgentInfo, SessionHead } from "@codesesh/contract";
 import {
   buildSessionIndexes,
   buildSidebarSessionLookup,

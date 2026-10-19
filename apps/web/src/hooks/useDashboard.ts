@@ -1,7 +1,8 @@
 import { t } from "../i18n/translate";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { type AppConfig, type DashboardData, type DashboardFilters } from "../lib/api";
+import type { AppConfig, DashboardData } from "@codesesh/contract";
+import type { DashboardFilters } from "../lib/api";
 import { dashboardQueryOptions } from "../lib/dashboard-query";
 
 export type { DashboardFilters };

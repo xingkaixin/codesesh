@@ -1,4 +1,4 @@
-import { getSessionReferenceKey } from "@codesesh/contract";
+import { getSessionReferenceKey, type AppConfig, type SearchResult } from "@codesesh/contract";
 import { t } from "../i18n/translate";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -10,13 +10,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import {
-  type AppConfig,
-  type SearchRequestOptions,
-  type SearchResult,
-  fetchSearchResults,
-  logClientEvent,
-} from "../lib/api";
+import { type SearchRequestOptions, fetchSearchResults, logClientEvent } from "../lib/api";
 import type { SessionIndexes } from "../lib/session-indexes";
 import type { SearchFilterState, SearchLoadState } from "../components/app/types";
 import {

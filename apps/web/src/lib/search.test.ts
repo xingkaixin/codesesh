@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSessionIdentity } from "@codesesh/contract";
-import type { SearchResult, SessionHead } from "./api";
+import { createSessionIdentity, type SearchResult, type SessionHead } from "@codesesh/contract";
 import type { SearchProjectOption } from "../components/app/types";
 import { buildSessionIndexes, getSessionAgentKey, type SessionIndexes } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";

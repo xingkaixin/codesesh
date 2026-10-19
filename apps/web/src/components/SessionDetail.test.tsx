@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type * as Api from "../lib/api";
+import type { SessionDetail as SessionDetailData } from "@codesesh/contract";
 import { createAgentCatalog } from "../lib/agents";
 
 const displayModelMocks = vi.hoisted(() => ({
@@ -42,7 +42,7 @@ describe("SessionDetail content filtering", () => {
         resolveListIndex: vi.fn(),
       })),
     });
-    const session: Api.SessionDetail = {
+    const session: SessionDetailData = {
       reference: { agentName: "codex", sessionId: "s1" },
       title: "Session",
       directory: "/repo",

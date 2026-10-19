@@ -7,9 +7,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
+import type { BookmarkView, SessionHead } from "@codesesh/contract";
 import {
-  type BookmarkView,
-  type SessionHead,
   deleteBookmark,
   fetchBookmarks,
   importBookmarks,

@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent } from "react";
 import type { NavigateFunction } from "react-router-dom";
-import type { SearchResult } from "../lib/api";
+import type { SearchResult } from "@codesesh/contract";
 import { agentRoutePath } from "../lib/session-indexes";
 import { searchResultPath } from "../lib/search";
 import { isEditableTarget } from "../lib/keyboard";

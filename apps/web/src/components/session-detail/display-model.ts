@@ -1,4 +1,4 @@
-import type { Message, SessionFileActivity } from "../../lib/api";
+import type { Message, SessionFileActivity } from "@codesesh/contract";
 import { buildMessageBlocks, type MessageBlock } from "./blocks";
 import {
   buildFileChangeSummary,
