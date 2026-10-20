@@ -1,4 +1,7 @@
-use super::{CursorSync, composer_id};
+#[cfg(test)]
+use super::CursorSync;
+use super::composer_id;
+#[cfg(test)]
 use crate::{agents::ParsedSession, pricing::Pricing};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
@@ -65,6 +68,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
     Ok(keys)
 }
 
+#[cfg(test)]
 pub fn scan_selected(
     root: &Path,
     pricing: &Pricing,

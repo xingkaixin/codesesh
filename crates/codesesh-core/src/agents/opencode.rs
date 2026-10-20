@@ -11,12 +11,15 @@ use std::{
 mod content;
 mod incremental;
 mod paging;
-pub use incremental::{DatabaseSnapshot, refresh, refresh_database, root_fingerprints};
+#[cfg(test)]
+pub use incremental::refresh;
+pub use incremental::{DatabaseSnapshot, refresh_database, root_fingerprints};
 pub use paging::scan_selected_snapshot as refresh_selected_database;
-pub use paging::{enumerate_session_keys, scan_selected_database, scan_selected_snapshot};
+pub use paging::{enumerate_session_keys, scan_selected_snapshot};
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     scan_database(&root.join("opencode.db"), "opencode", true, pricing)
 }

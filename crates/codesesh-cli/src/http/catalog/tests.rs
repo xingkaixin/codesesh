@@ -1,6 +1,6 @@
 use super::*;
 use codesesh_core::{
-    agents::{ParsedSession, codex},
+    agents::{ParsedSession, parse_codex},
     pricing::Pricing,
     runtime::Runtime,
     state::StateStore,
@@ -56,7 +56,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
         "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Original\"}]}}\n"
     )).unwrap();
-    let data = codex::parse(&source, &Default::default(), &Pricing::bundled())
+    let data = parse_codex(&source, &Default::default(), &Pricing::bundled())
         .unwrap()
         .unwrap();
     let reference = data.head.reference.clone();
@@ -190,7 +190,7 @@ async fn dashboard_days_follow_the_request_time_zone() {
         "{\"timestamp\":\"2026-09-01T23:30:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
         "{\"timestamp\":\"2026-09-01T23:30:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Morning\"}]}}\n"
     )).unwrap();
-    let data = codex::parse(&source, &Default::default(), &Pricing::bundled())
+    let data = parse_codex(&source, &Default::default(), &Pricing::bundled())
         .unwrap()
         .unwrap();
     let path = dir.path().join("cache.db");

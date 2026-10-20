@@ -8,7 +8,9 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use common::*;
-pub use incremental::{Checkpoints, scan_changed, scan_changed_as};
+#[cfg(test)]
+pub use incremental::scan_changed;
+pub use incremental::{Checkpoints, scan_changed_as};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -71,6 +73,7 @@ fn child(path: &Path) -> Option<Child> {
     })
 }
 
+#[cfg(test)]
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     scan_as(root, "claudecode", pricing)
 }

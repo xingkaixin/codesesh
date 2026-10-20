@@ -6,25 +6,27 @@ pub(crate) fn parser_version(agent: &str) -> &'static str {
     }
 }
 
-pub mod antigravity_cli;
-pub mod cherrystudio;
-pub mod claudecode;
-pub mod codex;
-pub mod cursor;
-pub mod deepchat;
-pub mod droid;
-pub mod dsh;
-pub mod gemini_cli;
-pub mod grok;
+pub(crate) mod antigravity_cli;
+pub(crate) mod cherrystudio;
+pub(crate) mod claudecode;
+pub(crate) mod codex;
+pub(crate) mod cursor;
+pub(crate) mod deepchat;
+pub(crate) mod droid;
+pub(crate) mod dsh;
+pub(crate) mod gemini_cli;
+pub(crate) mod grok;
 pub(crate) mod jsonl;
-pub mod kimi;
-pub mod kimi_code;
+pub(crate) mod kimi;
+pub(crate) mod kimi_code;
 mod message_text;
-pub mod minimax_code;
-pub mod omp;
-pub mod opencode;
-pub mod pi;
-pub mod zcode;
+pub(crate) mod minimax_code;
+pub(crate) mod omp;
+pub(crate) mod opencode;
+pub(crate) mod pi;
+pub(crate) mod zcode;
+
+pub use codex::parse as parse_codex;
 
 use crate::{
     model::{AgentInfo, SessionDetail, SessionHead},
@@ -39,7 +41,7 @@ pub struct ParsedSession {
 }
 
 impl ParsedSession {
-    pub fn set_source_node(&mut self, node: &str) {
+    pub(crate) fn set_source_node(&mut self, node: &str) {
         self.head.set_source_node(node);
         self.detail.head = self.head.clone();
         for activity in &mut self.detail.file_activity {
@@ -50,7 +52,7 @@ impl ParsedSession {
 }
 
 #[derive(Clone, Debug)]
-pub struct SessionRecord {
+pub(crate) struct SessionRecord {
     pub head: crate::model::SessionHead,
     pub source: std::path::PathBuf,
     pub attachments: dsh::AttachmentReferences,
@@ -70,7 +72,7 @@ impl From<&ParsedSession> for SessionRecord {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ScanDelta {
+pub(crate) struct ScanDelta {
     pub upserts: Vec<ParsedSession>,
     pub removed: Vec<crate::model::SessionReference>,
     pub complete: bool,
@@ -84,7 +86,7 @@ pub fn catalog(count: usize) -> Vec<AgentInfo> {
     catalog_counts(&HashMap::from([("codex".into(), count)]))
 }
 
-pub fn catalog_counts(counts: &HashMap<String, usize>) -> Vec<AgentInfo> {
+pub(crate) fn catalog_counts(counts: &HashMap<String, usize>) -> Vec<AgentInfo> {
     let entries: Vec<serde_json::Value> = serde_json::from_str(include_str!("agents/catalog.json"))
         .expect("valid bundled agent catalog");
     entries
@@ -102,7 +104,7 @@ pub fn catalog_counts(counts: &HashMap<String, usize>) -> Vec<AgentInfo> {
         .collect()
 }
 
-pub fn scan_agent(
+pub(crate) fn scan_agent(
     agent: &str,
     scan_path: &Path,
     data_root: &Path,
@@ -192,7 +194,7 @@ pub(crate) fn is_session_file(
 }
 
 // The only place smart tags are derived; parsers leave them empty for this pass to fill.
-pub fn complete_projections(session: &mut ParsedSession) {
+pub(crate) fn complete_projections(session: &mut ParsedSession) {
     let source_updated_at = session.head.time_updated;
     let smart_tags = smart_tags::classify(&session.detail.messages);
     for head in [&mut session.head, &mut session.detail.head] {
