@@ -36,6 +36,9 @@ ts-rs = { version = "12.0", features = ["serde-json-impl", "no-serde-warnings"] 
 uuid = { version = "1.23", features = ["v4"] }
 walkdir = "2.5"
 
+[workspace.lints.clippy]
+mod_module_files = "warn"
+
 [profile.release]
 lto = "thin"
 strip = true
