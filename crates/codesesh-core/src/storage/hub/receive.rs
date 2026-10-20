@@ -49,7 +49,7 @@ impl Cache {
         Ok(Some(CapturedSession::from_parsed(session)))
     }
 
-    pub fn receive_upload(
+    pub(crate) fn receive_upload(
         &mut self,
         node: &str,
         upload: &Upload,

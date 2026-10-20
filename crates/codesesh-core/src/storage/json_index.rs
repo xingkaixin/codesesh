@@ -52,11 +52,12 @@ impl Publication<'_> {
     }
 }
 impl Cache {
-    pub fn json_baseline(&mut self) -> Result<JsonBaseline> {
+    #[cfg(test)]
+    pub(crate) fn json_baseline(&mut self) -> Result<JsonBaseline> {
         self.source_json_baseline(crate::model::LOCAL_SOURCE_NODE_ID)
     }
 
-    pub fn source_json_baseline(&mut self, node: &str) -> Result<JsonBaseline> {
+    pub(crate) fn source_json_baseline(&mut self, node: &str) -> Result<JsonBaseline> {
         let transaction = self.connection.transaction()?;
         let revision = revision(&transaction)?;
         let mut query = transaction
@@ -111,7 +112,7 @@ impl Cache {
             source_paths,
         })
     }
-    pub fn apply_json_index(
+    pub(crate) fn apply_json_index(
         &mut self,
         sessions: &mut [ParsedSession],
         removed: &[SessionReference],

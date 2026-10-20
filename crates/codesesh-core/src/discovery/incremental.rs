@@ -89,7 +89,7 @@ pub struct AgentScanner {
     database_inventory: Option<(String, Vec<Item>)>,
 }
 impl AgentScanner {
-    pub fn new(source: AgentSource, cache_path: PathBuf, pricing: Arc<Pricing>) -> Self {
+    pub(crate) fn new(source: AgentSource, cache_path: PathBuf, pricing: Arc<Pricing>) -> Self {
         Self {
             source,
             source_available: None,
@@ -180,7 +180,8 @@ impl AgentScanner {
         self.codex.release_idle();
         self.claude.release_idle();
     }
-    pub fn refresh(&mut self, paths: Option<&[PathBuf]>) -> Result<runtime::ScanBatch> {
+    #[cfg(test)]
+    pub(crate) fn refresh(&mut self, paths: Option<&[PathBuf]>) -> Result<runtime::ScanBatch> {
         self.refresh_with_checkpoint(paths, None)
     }
     pub fn refresh_with_checkpoint(

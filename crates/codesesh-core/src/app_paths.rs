@@ -13,7 +13,7 @@ pub fn logs(home: &Path) -> PathBuf {
         .unwrap_or_else(|| root(home).join("logs"))
 }
 
-pub fn legacy_state(
+pub(crate) fn legacy_state(
     home: &Path,
     platform: &str,
     env: impl Fn(&str) -> Option<OsString>,

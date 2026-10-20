@@ -1,15 +1,17 @@
 use std::cell::RefCell;
 
-use super::{Pricing, round_cost};
+use super::Pricing;
+#[cfg(test)]
+use super::round_cost;
 use crate::model::{CostSource, Message};
-
-pub const PRICING_CAPTURE_EPOCH: &str = "pricing-capture-v1";
 
 thread_local! {
     static MISSES: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
 }
 
+#[cfg(test)]
 struct Capture;
+#[cfg(test)]
 impl Drop for Capture {
     fn drop(&mut self) {
         MISSES.with(|misses| {
@@ -18,6 +20,7 @@ impl Drop for Capture {
     }
 }
 
+#[cfg(test)]
 pub fn capture_misses<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
     MISSES.with(|misses| misses.borrow_mut().push(Vec::new()));
     let guard = Capture;
@@ -56,7 +59,11 @@ impl Pricing {
         }
     }
 
-    pub fn apply_message_costs(&self, messages: &mut [Message]) -> (f64, Option<CostSource>) {
+    #[cfg(test)]
+    pub(crate) fn apply_message_costs(
+        &self,
+        messages: &mut [Message],
+    ) -> (f64, Option<CostSource>) {
         let mut total = 0.0;
         let mut source = None;
         for message in messages {

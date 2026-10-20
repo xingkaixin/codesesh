@@ -2,22 +2,22 @@ mod backfill;
 mod incremental;
 pub use incremental::AgentScanner;
 pub mod json_scan;
-pub mod paths;
+pub(crate) mod paths;
 use crate::{
     agents::{self, ParsedSession},
-    model::AgentInfo,
     pricing::Pricing,
+};
+#[cfg(test)]
+use crate::{
     projects::{create_project_scope_matcher, matches_project_scope},
     session_list::filter_activity_window,
 };
 use anyhow::{Context, Result};
+#[cfg(test)]
 use chrono::{Days, Local, TimeZone};
 pub use paths::{AgentSource, PathEnvironment};
 use serde::Serialize;
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::{collections::HashSet, path::Path};
 
 #[derive(Clone, Debug, Default, serde::Deserialize, Serialize, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
@@ -63,23 +63,23 @@ pub struct ScanOptions {
     pub days: Option<u32>,
     pub now: Option<f64>,
 }
+#[cfg(test)]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScanFailure {
+pub(crate) struct ScanFailure {
     pub agent_name: String,
     pub source_path: String,
     pub stage: String,
     pub message: String,
 }
+#[cfg(test)]
 #[derive(Debug)]
-pub struct ScanResult {
+pub(crate) struct ScanResult {
     pub sessions: Vec<ParsedSession>,
-    pub agents: Vec<AgentInfo>,
-    pub available_agents: Vec<String>,
     pub failures: Vec<ScanFailure>,
 }
 #[derive(Debug)]
-pub struct AgentScan {
+pub(crate) struct AgentScan {
     pub available: bool,
     pub sessions: Vec<ParsedSession>,
 }
@@ -93,33 +93,18 @@ pub fn selected_sources(environment: &PathEnvironment, names: &[String]) -> Vec<
         .collect()
 }
 
-pub fn scan(options: &ScanOptions, pricing: &Pricing) -> Result<ScanResult> {
-    let environment = PathEnvironment::current()?;
-    Ok(scan_sources(
-        &selected_sources(&environment, &options.agents),
-        options,
-        pricing,
-    ))
-}
-
-pub fn scan_sources(
+#[cfg(test)]
+pub(crate) fn scan_sources(
     sources: &[AgentSource],
     options: &ScanOptions,
     pricing: &Pricing,
 ) -> ScanResult {
     let mut sessions = Vec::new();
-    let mut available_agents = Vec::new();
     let mut failures = Vec::new();
     for source in sources {
         match scan_source(source, pricing) {
-            Ok(result) => {
-                if result.available {
-                    available_agents.push(source.agent.clone());
-                }
-                sessions.extend(result.sessions);
-            }
+            Ok(result) => sessions.extend(result.sessions),
             Err(error) => {
-                available_agents.push(source.agent.clone());
                 failures.push(ScanFailure {
                     agent_name: source.agent.clone(),
                     source_path: source.scan_path.to_string_lossy().into_owned(),
@@ -130,21 +115,10 @@ pub fn scan_sources(
         }
     }
     filter_sessions(&mut sessions, options);
-    let mut counts = HashMap::<String, usize>::new();
-    for session in &sessions {
-        *counts
-            .entry(session.head.reference.agent_name.clone())
-            .or_default() += 1;
-    }
-    ScanResult {
-        sessions,
-        agents: agents::catalog_counts(&counts),
-        available_agents,
-        failures,
-    }
+    ScanResult { sessions, failures }
 }
 
-pub fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
+pub(crate) fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
     if !(exists(&source.scan_path)?
         || source.agent == "codex" && exists(&source.data_root.join("archived_sessions"))?)
     {
@@ -200,7 +174,8 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
     Ok(false)
 }
 
-pub fn filter_sessions(sessions: &mut Vec<ParsedSession>, options: &ScanOptions) {
+#[cfg(test)]
+pub(crate) fn filter_sessions(sessions: &mut Vec<ParsedSession>, options: &ScanOptions) {
     if let Some(cwd) = options.cwd.as_deref().filter(|cwd| !cwd.is_empty()) {
         let scope = create_project_scope_matcher(cwd);
         sessions.retain(|session| matches_project_scope(&session.head, &scope));
@@ -228,7 +203,8 @@ pub fn filter_sessions(sessions: &mut Vec<ParsedSession>, options: &ScanOptions)
     sessions.retain(|session| selected.contains(&session.head.reference));
 }
 
-pub fn calendar_window_start(days: Option<u32>, timestamp: f64) -> Option<f64> {
+#[cfg(test)]
+pub(crate) fn calendar_window_start(days: Option<u32>, timestamp: f64) -> Option<f64> {
     let days = days.filter(|days| *days > 0)?;
     let date = Local
         .timestamp_millis_opt(timestamp as i64)

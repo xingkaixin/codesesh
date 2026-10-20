@@ -69,7 +69,7 @@ impl DashboardTimeZone {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn slot(&self, time: DateTime<Utc>) -> usize {
+    pub(crate) fn slot(&self, time: DateTime<Utc>) -> usize {
         match self.zone {
             Zone::Named(zone) => {
                 let time = time.with_timezone(&zone);

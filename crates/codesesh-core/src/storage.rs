@@ -1,10 +1,9 @@
 pub(crate) mod body;
 mod cursor;
-mod hub;
-mod json_index;
-pub use json_index::JsonBaseline;
 mod facts;
+mod hub;
 mod json;
+mod json_index;
 mod legacy_parts;
 mod memory;
 mod message_reuse;
@@ -23,7 +22,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
-pub const CACHE_SCHEMA_VERSION: i64 = 38;
+pub(crate) const CACHE_SCHEMA_VERSION: i64 = 38;
 
 pub struct StorageProgress {
     pub phase: String,
@@ -31,10 +30,10 @@ pub struct StorageProgress {
     pub total: Option<u64>,
 }
 
-pub use read::{
-    detail as detail_from_connection, detail_with_cursor, visit_detail_message_page,
-    visit_detail_messages,
-};
+pub(crate) use read::detail as detail_from_connection;
+pub use read::visit_detail_message_page;
+#[cfg(test)]
+pub(crate) use read::{detail_with_cursor, visit_detail_messages};
 pub use snapshot::load as snapshot_from_connection;
 pub fn head_from_connection(
     connection: &Connection,
@@ -69,7 +68,7 @@ impl Cache {
         Ok(heads)
     }
 
-    pub fn refresh_snapshot(
+    pub(crate) fn refresh_snapshot(
         &self,
         previous: &[SessionHead],
         changed: &[SessionReference],
@@ -117,18 +116,23 @@ impl Cache {
         Ok(heads)
     }
 
-    pub fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
+    #[cfg(test)]
+    pub(crate) fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
         self.source_agent_snapshot(crate::model::LOCAL_SOURCE_NODE_ID, agent)
     }
 
-    pub fn source_agent_snapshot(&self, node: &str, agent: &str) -> Result<Vec<SessionHead>> {
+    pub(crate) fn source_agent_snapshot(
+        &self,
+        node: &str,
+        agent: &str,
+    ) -> Result<Vec<SessionHead>> {
         let mut query = self.connection.prepare(&format!("SELECT {} FROM sessions WHERE publication_id IS NULL AND source_node_id=? AND agent_name=? ORDER BY activity_time DESC,session_id", snapshot::HEAD_COLUMNS))?;
         Ok(query
             .query_map([node, agent], snapshot::head)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    pub fn head(&self, reference: &SessionReference) -> Result<Option<SessionHead>> {
+    pub(crate) fn head(&self, reference: &SessionReference) -> Result<Option<SessionHead>> {
         Ok(self.connection.query_row(&format!("SELECT {} FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=? AND publication_id IS NULL", snapshot::HEAD_COLUMNS),params![reference.source_node_id,reference.agent_name,reference.session_id],snapshot::head).optional()?)
     }
 
@@ -186,7 +190,7 @@ impl Cache {
         self.apply(sessions, &[])
     }
 
-    pub fn apply(
+    pub(crate) fn apply(
         &mut self,
         sessions: &mut [ParsedSession],
         removed: &[SessionReference],
@@ -194,7 +198,7 @@ impl Cache {
         self.apply_with_recovery(sessions, removed, None, None)
     }
 
-    pub fn apply_checkpoint(
+    pub(crate) fn apply_checkpoint(
         &mut self,
         sessions: &mut [ParsedSession],
         removed: &[SessionReference],
@@ -452,11 +456,12 @@ impl Cache {
         Ok(cursors)
     }
 
-    pub fn remove(&mut self, references: &[SessionReference]) -> Result<()> {
+    #[cfg(test)]
+    pub(crate) fn remove(&mut self, references: &[SessionReference]) -> Result<()> {
         self.apply(&mut [], references)
     }
 
-    pub fn rebuild_search_indexes(&mut self) -> Result<()> {
+    pub(crate) fn rebuild_search_indexes(&mut self) -> Result<()> {
         self.reclaim_connection.set(true);
         let transaction = self.connection.transaction()?;
         transaction.execute("INSERT INTO session_file_activity_path_fts(session_file_activity_path_fts) VALUES('rebuild')",[])?;
@@ -465,7 +470,8 @@ impl Cache {
         search_text::ensure_index(&self.connection, &mut |_| Ok(()))
     }
 
-    pub fn messages(&self, reference: &SessionReference) -> Result<i64> {
+    #[cfg(test)]
+    pub(crate) fn messages(&self, reference: &SessionReference) -> Result<i64> {
         Ok(self.connection.query_row(
             "SELECT count(*) FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=?",
             params![reference.source_node_id,reference.agent_name,reference.session_id],
@@ -474,7 +480,7 @@ impl Cache {
     }
 }
 
-pub fn role_name(role: &Role) -> &'static str {
+pub(crate) fn role_name(role: &Role) -> &'static str {
     match role {
         Role::User => "user",
         Role::Assistant => "assistant",

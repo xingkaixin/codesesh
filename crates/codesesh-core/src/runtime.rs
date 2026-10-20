@@ -20,10 +20,10 @@ use std::{
 };
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 
-pub use status::{AgentStatus, ScanStatus};
-pub use watcher::{WatchCallback, watch_paths};
+pub(crate) use status::ScanStatus;
+pub use watcher::watch_paths;
 
-pub type Scanner = dyn Fn(ScanRequest) -> Result<ScanBatch> + Send + Sync;
+pub(crate) type Scanner = dyn Fn(ScanRequest) -> Result<ScanBatch> + Send + Sync;
 
 pub struct AgentSource {
     pub name: String,
@@ -46,12 +46,12 @@ pub struct Cancellation {
 }
 
 impl Cancellation {
-    pub fn is_cancelled(&self) -> bool {
+    pub(crate) fn is_cancelled(&self) -> bool {
         self.stopped.load(Ordering::Acquire)
             || self.generation.load(Ordering::Acquire) != self.expected
     }
 
-    pub fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         if self.is_cancelled() {
             bail!("scan generation cancelled");
         }
@@ -132,6 +132,7 @@ struct Inner {
 }
 
 struct Control {
+    #[cfg(test)]
     name: String,
     roots: Vec<PathBuf>,
     generation: Arc<AtomicU64>,
@@ -202,6 +203,7 @@ impl Runtime {
             .map(|source| {
                 let (pending, _) = watch::channel(Pending::default());
                 Control {
+                    #[cfg(test)]
                     name: source.name.clone(),
                     roots: source.roots.clone(),
                     generation: Arc::new(AtomicU64::new(0)),
@@ -267,9 +269,6 @@ impl Runtime {
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.inner.events.subscribe()
     }
-    pub fn snapshots(&self) -> watch::Receiver<Arc<Vec<SessionHead>>> {
-        self.inner.snapshots.clone()
-    }
     pub fn statuses(&self) -> watch::Receiver<Arc<ScanStatus>> {
         self.inner.statuses.clone()
     }
@@ -280,7 +279,8 @@ impl Runtime {
         }
     }
 
-    pub fn refresh(&self, agent: &str) -> Result<()> {
+    #[cfg(test)]
+    pub(crate) fn refresh(&self, agent: &str) -> Result<()> {
         let Some(control) = self
             .inner
             .controls

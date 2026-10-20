@@ -3,7 +3,7 @@ mod path;
 mod scope;
 
 pub use groups::{ProjectGroup, build_project_groups};
-pub use path::fallback_display_name;
+pub(crate) use path::fallback_display_name;
 pub use scope::*;
 
 use crate::model::ProjectIdentity;
@@ -18,8 +18,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const PROJECT_IDENTITY_RESOLVER_REVISION: &str = "project-identity-v2";
-pub const IDENTITY_CACHE_MAX_ENTRIES: usize = 512;
+pub(crate) const PROJECT_IDENTITY_RESOLVER_REVISION: &str = "project-identity-v2";
+pub(crate) const IDENTITY_CACHE_MAX_ENTRIES: usize = 512;
 const MANIFESTS: [&str; 7] = [
     "package.json",
     "Cargo.toml",
@@ -32,20 +32,20 @@ const MANIFESTS: [&str; 7] = [
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectIdentityProjection {
+pub(crate) struct ProjectIdentityProjection {
     pub identity: ProjectIdentity,
     pub resolver_revision: String,
     pub input_signature: String,
 }
 
-pub trait IdentityFs {
+pub(crate) trait IdentityFs {
     fn exists(&self, path: &str) -> bool;
     fn read_text(&self, path: &str) -> Option<String>;
     fn git(&self, args: &[&str], cwd: &str) -> Option<String>;
 }
 
 #[derive(Default)]
-pub struct RealFs {
+pub(crate) struct RealFs {
     timed_out: Cell<bool>,
 }
 impl IdentityFs for RealFs {
@@ -99,17 +99,20 @@ struct CacheEntry {
 }
 static CACHE: Mutex<VecDeque<CacheEntry>> = Mutex::new(VecDeque::new());
 
-pub fn normalize_project_directory(directory: &str) -> String {
+pub(crate) fn normalize_project_directory(directory: &str) -> String {
     path::normalize(directory)
 }
-pub fn get_project_identity_key(identity: &ProjectIdentity) -> String {
+pub(crate) fn get_project_identity_key(identity: &ProjectIdentity) -> String {
     format!("{}:{}", identity.kind, identity.key)
 }
-pub fn matches_project_identity(identity: &ProjectIdentity, expected: &ProjectIdentity) -> bool {
+pub(crate) fn matches_project_identity(
+    identity: &ProjectIdentity,
+    expected: &ProjectIdentity,
+) -> bool {
     identity.kind == expected.kind && identity.key == expected.key
 }
 
-pub fn normalize_git_remote(input: &str) -> Option<String> {
+pub(crate) fn normalize_git_remote(input: &str) -> Option<String> {
     static SCHEME: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?i)^[a-z][a-z\d+.-]*://").unwrap());
     static SSH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[^@]+@([^:]+):(.+)$").unwrap());
@@ -144,7 +147,7 @@ fn identity(kind: &str, key: &str, display_name: String) -> ProjectIdentity {
         display_name,
     }
 }
-pub fn path_identity(directory: &str) -> (ProjectIdentity, String) {
+pub(crate) fn path_identity(directory: &str) -> (ProjectIdentity, String) {
     let result = projection(
         identity("path", directory, fallback_display_name(directory)),
         PROJECT_IDENTITY_RESOLVER_REVISION,
@@ -153,10 +156,10 @@ pub fn path_identity(directory: &str) -> (ProjectIdentity, String) {
     (result.identity, result.input_signature)
 }
 
-pub fn compute_identity(directory: &str) -> ProjectIdentity {
+pub(crate) fn compute_identity(directory: &str) -> ProjectIdentity {
     compute_identity_projection(directory).identity
 }
-pub fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection {
+pub(crate) fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection {
     let key = path::normalize(directory);
     let mut previous = None;
     {
@@ -197,7 +200,7 @@ pub fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection
     result
 }
 
-pub fn resolve_identity_projection(
+pub(crate) fn resolve_identity_projection(
     directory: &str,
     fs: &impl IdentityFs,
     home: &str,

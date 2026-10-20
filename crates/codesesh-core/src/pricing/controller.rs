@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-use super::{MODELS_DEV_URL, Pricing, PricingManager, manager::fetch_remote};
+use super::{Pricing, PricingManager, manager::fetch_remote};
 
 #[derive(Clone, Debug)]
 pub struct PricingController {
@@ -59,7 +59,8 @@ impl PricingController {
         self.inner.generation.load(Ordering::Acquire)
     }
 
-    pub fn has_pending(&self) -> Result<bool> {
+    #[cfg(test)]
+    pub(crate) fn has_pending(&self) -> Result<bool> {
         Ok(self
             .inner
             .manager
@@ -75,11 +76,6 @@ impl PricingController {
             .write()
             .map_err(|_| anyhow!("pricing lock poisoned"))?
             .stage_remote(data))
-    }
-
-    pub async fn refresh(&self) -> Result<bool> {
-        self.refresh_from(MODELS_DEV_URL, Duration::from_secs(10))
-            .await
     }
 
     pub async fn refresh_from(&self, url: &str, timeout: Duration) -> Result<bool> {
@@ -123,18 +119,20 @@ impl PricingSnapshot {
         self.pricing.generation()
     }
 
-    pub fn is_current(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_current(&self) -> bool {
         self.controller.generation() == self.generation()
     }
 
-    pub fn check(&self) -> Result<()> {
+    #[cfg(test)]
+    pub(crate) fn check(&self) -> Result<()> {
         if !self.is_current() {
             bail!("pricing generation cancelled");
         }
         Ok(())
     }
 
-    pub fn with_current<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
+    pub(crate) fn with_current<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
         // Hold the read lock through SQLite commit and snapshot publication, not just the check.
         let manager = self
             .controller

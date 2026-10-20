@@ -4,7 +4,7 @@ use crate::model::SessionReference;
 pub use crate::wire::BookmarkRecord;
 use anyhow::{Result, bail};
 pub use bookmarks::materialize_bookmarks;
-pub use database::state_directory;
+pub(crate) use database::state_directory;
 use rusqlite::{Connection, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,7 +25,7 @@ pub struct StateStore {
     memory: bool,
 }
 
-pub fn normalize_reference(reference: &SessionReference) -> SessionReference {
+pub(crate) fn normalize_reference(reference: &SessionReference) -> SessionReference {
     SessionReference {
         source_node_id: reference.source_node_id.clone(),
         agent_name: js_trim(&reference.agent_name).to_lowercase(),
@@ -33,7 +33,7 @@ pub fn normalize_reference(reference: &SessionReference) -> SessionReference {
     }
 }
 
-pub fn reference_key(reference: &SessionReference) -> String {
+pub(crate) fn reference_key(reference: &SessionReference) -> String {
     let r = normalize_reference(reference);
     if r.source_node_id == crate::model::LOCAL_SOURCE_NODE_ID {
         format!("{}/{}", r.agent_name, r.session_id)
@@ -42,7 +42,7 @@ pub fn reference_key(reference: &SessionReference) -> String {
     }
 }
 
-pub fn js_trim(value: &str) -> &str {
+pub(crate) fn js_trim(value: &str) -> &str {
     value.trim_matches(|c: char| matches!(c, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'))
 }
 
@@ -93,7 +93,7 @@ pub fn parse_bookmark_import(value: &Value, now: i64) -> Option<BookmarkRecord> 
 }
 
 impl StateStore {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub(crate) fn open(path: &Path) -> Result<Self> {
         Ok(Self {
             db: database::open(Some(path))?,
             memory: false,

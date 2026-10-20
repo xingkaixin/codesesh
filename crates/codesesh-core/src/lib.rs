@@ -23,7 +23,7 @@ pub mod runtime;
 
 pub mod sync;
 
-pub mod time;
+pub(crate) mod time;
 
 pub mod wire;
 
