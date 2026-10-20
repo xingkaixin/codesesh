@@ -1,7 +1,7 @@
 pub mod agents;
 pub mod app_paths;
 pub mod contract;
-pub mod migration;
+pub mod data_migration;
 pub mod projects;
 
 pub mod storage;
@@ -12,7 +12,7 @@ pub mod bookmarks;
 pub mod state;
 
 pub mod analytics;
-pub mod query;
+pub mod session_list;
 
 pub mod search;
 

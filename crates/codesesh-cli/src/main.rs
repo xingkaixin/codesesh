@@ -1,5 +1,5 @@
 mod assets;
-mod cache_path;
+mod cache_open;
 mod http;
 mod logging;
 mod migration;
@@ -244,7 +244,7 @@ async fn prepare_cache(
     home: &Path,
     hub_enabled: bool,
     logger: &AppLogger,
-) -> Result<(PathBuf, Option<cache_path::TemporaryDirectory>)> {
+) -> Result<(PathBuf, Option<cache_open::TemporaryDirectory>)> {
     let persistent = codesesh_core::app_paths::root(home).join("codesesh.db");
     if args.clear_cache {
         for suffix in ["", "-wal", "-shm"] {
@@ -258,7 +258,7 @@ async fn prepare_cache(
         eprintln!("Cache cleared.");
     }
     let temporary =
-        (!args.cache || args.no_cache).then(|| cache_path::TemporaryDirectory::new("codesesh"));
+        (!args.cache || args.no_cache).then(|| cache_open::TemporaryDirectory::new("codesesh"));
     let cache_path = temporary
         .as_ref()
         .map(|dir| dir.path().join("codesesh.db"))
@@ -266,10 +266,10 @@ async fn prepare_cache(
     let database_started = Instant::now();
     let (cache_path, fallback_cleanup) = tokio::task::spawn_blocking(move || {
         if hub_enabled {
-            cache_path::open(&cache_path)?;
+            cache_open::open(&cache_path)?;
             Ok((cache_path, None))
         } else {
-            cache_path::choose(&cache_path)
+            cache_open::choose(&cache_path)
         }
     })
     .await??;

@@ -7,7 +7,7 @@ use axum::{
 };
 use codesesh_core::{
     analytics, projects,
-    query::{self, PaginationError},
+    session_list::{self, PaginationError},
 };
 use serde_json::{Value, json};
 use std::{
@@ -146,7 +146,7 @@ pub async fn agents(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
         Ok(v) => v,
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
-    let selected = query::filter_activity_window(&state.snapshot(), from, to);
+    let selected = session_list::filter_activity_window(&state.snapshot(), from, to);
     let mut counts = HashMap::new();
     for s in selected.into_iter().filter(|session| {
         query

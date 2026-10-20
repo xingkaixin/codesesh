@@ -54,11 +54,10 @@ impl Params {
             .collect()
     }
     pub fn limit(&self, default: usize, max: usize) -> Result<usize, String> {
-        codesesh_core::query::parse_limit(self.get("limit"), default, max).map_err(str::to_owned)
+        parse_limit(self.get("limit"), default, max).map_err(str::to_owned)
     }
     pub fn project(&self) -> Result<Option<(&str, &str)>, String> {
-        codesesh_core::query::parse_project_filter(self.get("projectKind"), self.get("projectKey"))
-            .map_err(str::to_owned)
+        parse_project_filter(self.get("projectKind"), self.get("projectKey")).map_err(str::to_owned)
     }
     pub fn window(&self, options: &Options) -> Result<(Option<f64>, Option<f64>), String> {
         let parse = |key, fallback| match self.optional(key) {
@@ -73,6 +72,40 @@ impl Params {
             return Err("from must not be after to".into());
         }
         Ok((from, to))
+    }
+}
+
+fn parse_limit(value: Option<&str>, default: usize, maximum: usize) -> Result<usize, &'static str> {
+    let Some(value) = value else {
+        return Ok(default);
+    };
+    let value = value.trim();
+    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("limit must be a positive integer");
+    }
+    let digits = value.trim_start_matches('0');
+    if digits.is_empty() {
+        return Err("limit must be a positive integer");
+    }
+    Ok(digits.parse::<usize>().unwrap_or(maximum).min(maximum))
+}
+
+fn parse_project_filter<'a>(
+    kind: Option<&'a str>,
+    key: Option<&'a str>,
+) -> Result<Option<(&'a str, &'a str)>, &'static str> {
+    let kind = kind.map(str::trim).filter(|s| !s.is_empty());
+    let key = key.map(str::trim).filter(|s| !s.is_empty());
+    match (kind, key) {
+        (None, None) => Ok(None),
+        (
+            Some(
+                kind @ ("git_remote" | "git_common_dir" | "manifest_path" | "synthetic" | "path"
+                | "loose"),
+            ),
+            Some(key),
+        ) => Ok(Some((kind, key))),
+        _ => Err("projectKind and projectKey must form a valid project identity"),
     }
 }
 

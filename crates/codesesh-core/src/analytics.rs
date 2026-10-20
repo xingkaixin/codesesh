@@ -19,7 +19,7 @@ use crate::{
         DashboardProjectRollup, DashboardProjectStat, DashboardTotals, ModelCostEntry,
         ModelDistributionEntry, ScopeCounts, closed, referenced,
     },
-    query::{SessionTree, in_window},
+    session_list::{SessionTree, in_window},
 };
 use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};

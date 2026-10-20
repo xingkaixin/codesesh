@@ -3,7 +3,7 @@ use super::{
 };
 use crate::{
     contract::{CostSource, SessionHead, SessionReference},
-    query::SessionTree,
+    session_list::SessionTree,
 };
 use rusqlite::{Connection, Row, types::Value};
 use std::collections::HashMap;

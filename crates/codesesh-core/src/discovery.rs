@@ -8,7 +8,7 @@ use crate::{
     contract::AgentInfo,
     pricing::Pricing,
     projects::{create_project_scope_matcher, matches_project_scope},
-    query::filter_activity_window,
+    session_list::filter_activity_window,
 };
 use anyhow::{Context, Result};
 use chrono::{Days, Local, TimeZone};

@@ -162,7 +162,7 @@ fn inclusive_costs(
     if options.cost_min.is_none() && options.cost_max.is_none() {
         return HashMap::new();
     }
-    let tree = crate::query::SessionTree::new(snapshot);
+    let tree = crate::session_list::SessionTree::new(snapshot);
     let mut costs: Vec<f64> = tree.sessions.iter().map(|s| s.stats.total_cost).collect();
     let mut order = Vec::with_capacity(tree.sessions.len());
     let mut pending = tree.entries.clone();

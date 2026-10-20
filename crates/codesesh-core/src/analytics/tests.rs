@@ -49,7 +49,7 @@ fn descendants_follow_parent_window_and_cycle_becomes_orphans() {
         head("a", Some("b"), 100),
         head("b", Some("a"), 300),
     ];
-    let filtered = crate::query::filter_activity_window(&sessions, Some(150.0), Some(250.0));
+    let filtered = crate::session_list::filter_activity_window(&sessions, Some(150.0), Some(250.0));
     assert_eq!(
         filtered
             .iter()
@@ -276,10 +276,11 @@ fn fractional_activity_stays_outside_the_inclusive_boundary() {
     let mut session = head("fractional", None, 1000);
     session.time_updated = 1000.25;
     assert!(
-        crate::query::filter_activity_window(&[session.clone()], None, Some(1000.0)).is_empty()
+        crate::session_list::filter_activity_window(&[session.clone()], None, Some(1000.0))
+            .is_empty()
     );
     assert_eq!(
-        crate::query::filter_activity_window(&[session], Some(1000.25), Some(1000.25)).len(),
+        crate::session_list::filter_activity_window(&[session], Some(1000.25), Some(1000.25)).len(),
         1
     );
 }

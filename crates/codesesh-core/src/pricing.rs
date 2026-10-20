@@ -25,7 +25,8 @@ use std::{
 
 static ALIASES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     let aliases: HashMap<String, String> =
-        serde_json::from_str(include_str!("data/aliases.json")).expect("bundled pricing aliases");
+        serde_json::from_str(include_str!("pricing/data/aliases.json"))
+            .expect("bundled pricing aliases");
     aliases
         .into_iter()
         .map(|(key, value)| (normalize(&key), normalize(&value)))

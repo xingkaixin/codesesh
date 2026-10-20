@@ -1,5 +1,5 @@
 use anyhow::{Result, ensure};
-use codesesh_core::migration::{Options, Progress};
+use codesesh_core::data_migration::{Options, Progress};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::{
     io::{self, IsTerminal, Write},
@@ -34,7 +34,7 @@ pub async fn run(args: &crate::options::Args, home: &Path) -> Result<Vec<String>
         let bar = ProgressBar::with_draw_target(None, if animate { ProgressDrawTarget::stderr_with_hz(10) } else { ProgressDrawTarget::hidden() });
         bar.enable_steady_tick(Duration::from_millis(100));
         let mut previous = None;
-        let result = codesesh_core::migration::run(options, |paths| {
+        let result = codesesh_core::data_migration::run(options, |paths| {
             bar.suspend(|| -> Result<()> {
                 eprintln!("CodeSesh needs to migrate these files:");
                 for path in paths { eprintln!("  {}", path.display()); }

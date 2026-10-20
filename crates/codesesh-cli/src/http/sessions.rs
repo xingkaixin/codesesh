@@ -7,7 +7,7 @@ use axum::{
 use codesesh_core::public_contract::WireSessionListPage;
 use codesesh_core::{
     projects,
-    query::{PaginationError, SessionFilter, filter_sessions},
+    session_list::{PaginationError, SessionFilter, filter_sessions},
 };
 use std::sync::Arc;
 
