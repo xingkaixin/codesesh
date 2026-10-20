@@ -1,20 +1,14 @@
+mod control;
 mod native;
 
+pub use control::{finished, paired, report, shutdown_requested, stopping};
+
 use anyhow::{Context, Result, ensure};
-use axum::{
-    Json, Router,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    routing::{get, post},
-};
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
-use subtle::ConstantTimeEq;
-use tokio::sync::watch;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -27,6 +21,12 @@ impl ServiceRole {
         match self {
             Self::Hub => "hub",
             Self::Worker => "worker",
+        }
+    }
+    fn lock_name(self) -> &'static str {
+        match self {
+            Self::Hub => "hub.lock",
+            Self::Worker => "collector.lock",
         }
     }
 }
@@ -60,16 +60,6 @@ struct Report {
     updated_at: i64,
     stopping: bool,
 }
-#[derive(Clone)]
-struct Control {
-    descriptor: Descriptor,
-    report: Arc<Mutex<Report>>,
-    last_path: PathBuf,
-    pairing_path: PathBuf,
-    stop: watch::Sender<bool>,
-}
-static CONTROL: OnceLock<Control> = OnceLock::new();
-
 fn root(home: &Path) -> PathBuf {
     codesesh_core::app_paths::root(home).join("services")
 }
@@ -186,184 +176,109 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
         !args.watch || action == Action::Status,
         "--watch is only supported with status"
     );
-    if action == Action::Status {
-        display_logs(home, role);
-        if args.watch && request(home, role, false).await.is_ok() {
-            watch_status(home, role, None).await?;
-        } else {
-            match request(home, role, false).await {
-                Ok(report) => display(role, &report),
-                Err(_) => {
-                    let enabled = path(home, role, "enabled").exists();
-                    if enabled {
-                        println!("{}: not responding", role.name());
-                        println!("{}", native::status(home, role).await?);
-                    } else {
-                        println!("{}: stopped", role.name());
-                        println!("Start with: codesesh {} start", role.name());
-                    }
-                    if let Ok(bytes) = std::fs::read(path(home, role, "last.json"))
-                        && let Ok(last) = serde_json::from_slice::<Report>(&bytes)
-                        && last.phase == "failed"
-                    {
-                        println!("Last exit: {} — {}", last.phase, last.detail);
-                    }
-                }
+    match action {
+        Action::Status => show_status(home, role, args.watch).await?,
+        Action::Open => open_console(home, role).await?,
+        Action::Start | Action::Stop | Action::Restart => {
+            start_or_stop(args, home, role, action).await?
+        }
+    }
+    Ok(true)
+}
+
+async fn show_status(home: &Path, role: ServiceRole, watch: bool) -> Result<()> {
+    display_logs(home, role);
+    if watch && request(home, role, false).await.is_ok() {
+        return watch_status(home, role, None).await;
+    }
+    match request(home, role, false).await {
+        Ok(report) => display(role, &report),
+        Err(_) => {
+            let enabled = path(home, role, "enabled").exists();
+            if enabled {
+                println!("{}: not responding", role.name());
+                println!("{}", native::status(home, role).await?);
+            } else {
+                println!("{}: stopped", role.name());
+                println!("Start with: codesesh {} start", role.name());
+            }
+            if let Ok(bytes) = std::fs::read(path(home, role, "last.json"))
+                && let Ok(last) = serde_json::from_slice::<Report>(&bytes)
+                && last.phase == "failed"
+            {
+                println!("Last exit: {} — {}", last.phase, last.detail);
             }
         }
-        return Ok(true);
     }
-    if action == Action::Open {
-        ensure!(role == ServiceRole::Hub, "Only Hub has a Web console");
-        let report = request(home, role, false)
-            .await
-            .context("Hub is not running")?;
-        crate::open_browser(
-            report
-                .url
-                .as_deref()
-                .context("Hub is still initializing; use hub status --watch")?,
-        )
-        .await?;
-        return Ok(true);
-    }
+    Ok(())
+}
+
+async fn open_console(home: &Path, role: ServiceRole) -> Result<()> {
+    ensure!(role == ServiceRole::Hub, "Only Hub has a Web console");
+    let report = request(home, role, false)
+        .await
+        .context("Hub is not running")?;
+    crate::open_browser(
+        report
+            .url
+            .as_deref()
+            .context("Hub is still initializing; use hub status --watch")?,
+    )
+    .await
+}
+
+async fn start_or_stop(
+    args: &crate::options::Args,
+    home: &Path,
+    role: ServiceRole,
+    action: Action,
+) -> Result<()> {
     let _action_lock = crate::node_identity::lock(home, &format!("service-{}.lock", role.name()))?;
     if matches!(action, Action::Stop | Action::Restart) {
-        if request(home, role, true).await.is_ok() {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-            while request(home, role, false).await.is_ok() {
-                ensure!(
-                    tokio::time::Instant::now() < deadline,
-                    "Stop requested; the current operation is still finishing. Check status before restarting. No process was forcibly killed."
-                );
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        }
-        native::stop(home, role).await?;
-        let _stopped = crate::node_identity::lock(
-            home,
-            if role == ServiceRole::Hub {
-                "hub.lock"
-            } else {
-                "collector.lock"
-            },
-        )
-        .context("Service process is still running; stop was not confirmed")?;
-        match std::fs::remove_file(path(home, role, "enabled")) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
+        stop_service(home, role).await?;
         if action == Action::Stop {
             println!("{}: stopped", role.name());
-            return Ok(true);
+            return Ok(());
         }
     } else if let Ok(report) = request(home, role, false).await {
         display(role, &report);
         println!("Already started. Use restart to restart the saved configuration.");
-        return Ok(true);
+        return Ok(());
     }
-    let _mode = crate::node_identity::mode_lock(home, true)?;
-    let role_lock = crate::node_identity::lock(
-        home,
-        if role == ServiceRole::Hub {
-            "hub.lock"
-        } else {
-            "collector.lock"
-        },
-    )?;
+    start_service(args, home, role, action).await
+}
 
-    let default_hub_start = {
-        use clap::Parser;
-        let mut defaults = crate::options::Args::parse_from(["codesesh", "hub", "start"]);
-        defaults.no_open = args.no_open;
-        serde_json::to_value(&defaults)? == serde_json::to_value(args)?
-    };
-    let saved = if (default_hub_start && path(home, role, "json").exists())
-        || action == Action::Restart
-        || matches!(
-            &args.command,
-            Some(crate::options::Role::Worker { hub: None, .. })
-        ) {
-        if role == ServiceRole::Worker && !path(home, role, "json").exists() {
-            None
-        } else {
-            Some(load(home, role)?)
-        }
-    } else {
-        None
-    };
-    let mut configured = saved
-        .as_ref()
-        .map(|config| config.args.clone())
-        .unwrap_or_else(|| args.clone());
-    let mut pairing = None;
-    match configured
-        .command
-        .as_mut()
-        .context("Missing service role")?
-    {
-        crate::options::Role::Hub {
-            action,
-            recover_data,
-            ..
-        } => {
-            *action = None;
+async fn stop_service(home: &Path, role: ServiceRole) -> Result<()> {
+    if request(home, role, true).await.is_ok() {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        while request(home, role, false).await.is_ok() {
             ensure!(
-                !*recover_data,
-                "Run hub --recover-data in the foreground once before starting the service"
+                tokio::time::Instant::now() < deadline,
+                "Stop requested; the current operation is still finishing. Check status before restarting. No process was forcibly killed."
             );
-        }
-        crate::options::Role::Worker {
-            action,
-            hub,
-            pair_token,
-            pair_token_stdin,
-            ..
-        } => {
-            *action = None;
-            if hub.is_none() {
-                let worker_path = codesesh_core::app_paths::root(home).join("worker.db");
-                let binding = if worker_path.exists() {
-                    codesesh_core::sync::WorkerStore::open(&worker_path)?.binding()?
-                } else {
-                    None
-                };
-                let (origin, _) = binding.context("Worker has not been paired yet. Start with: codesesh worker start --hub <Hub URL> --pair-token-stdin")?;
-                eprintln!("Using existing Worker pairing: {origin}");
-                *hub = Some(origin);
-            }
-            pairing = pair_token
-                .take()
-                .or_else(|| std::env::var("CODESESH_PAIRING_TOKEN").ok());
-            if *pair_token_stdin {
-                eprintln!("Pairing token:");
-                let mut token = String::new();
-                use std::io::{BufRead, Read};
-                std::io::stdin().lock().take(512).read_line(&mut token)?;
-                pairing = Some(token.trim().to_owned());
-                *pair_token_stdin = false;
-            }
-            if let Some(token) = &pairing {
-                ensure!(token.len() == 64, "Invalid pairing token length");
-            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
     }
-    configured.watch = false;
-    configured.service_run = None;
-    configured.no_open = true;
-    configured.plan()?;
-    let config = Configuration {
-        version: 1,
-        args: configured,
-        directory: saved
-            .as_ref()
-            .map(|config| config.directory.clone())
-            .unwrap_or(std::env::current_dir()?),
-        environment: saved
-            .map(|config| config.environment)
-            .unwrap_or_else(native::environment),
-    };
+    native::stop(home, role).await?;
+    let _stopped = crate::node_identity::lock(home, role.lock_name())
+        .context("Service process is still running; stop was not confirmed")?;
+    match std::fs::remove_file(path(home, role, "enabled")) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+async fn start_service(
+    args: &crate::options::Args,
+    home: &Path,
+    role: ServiceRole,
+    action: Action,
+) -> Result<()> {
+    let _mode = crate::node_identity::mode_lock(home, true)?;
+    let role_lock = crate::node_identity::lock(home, role.lock_name())?;
+    let (config, pairing) = configure(args, home, role, action)?;
     write_private(
         &path(home, role, "json"),
         &serde_json::to_vec_pretty(&config)?,
@@ -393,8 +308,122 @@ pub async fn dispatch(args: &crate::options::Args, home: &Path) -> Result<bool> 
     write_private(&path(home, role, "enabled"), b"enabled")?;
     println!("{}: starting in the background.", role.name());
     display_logs(home, role);
-    watch_status(home, role, Some(Duration::from_secs(10))).await?;
-    Ok(true)
+    watch_status(home, role, Some(Duration::from_secs(10))).await
+}
+
+fn configure(
+    args: &crate::options::Args,
+    home: &Path,
+    role: ServiceRole,
+    action: Action,
+) -> Result<(Configuration, Option<String>)> {
+    let saved = saved_configuration(args, home, role, action)?;
+    let mut configured = saved
+        .as_ref()
+        .map(|config| config.args.clone())
+        .unwrap_or_else(|| args.clone());
+    let pairing = match configured
+        .command
+        .as_mut()
+        .context("Missing service role")?
+    {
+        crate::options::Role::Hub {
+            action,
+            recover_data,
+            ..
+        } => {
+            *action = None;
+            ensure!(
+                !*recover_data,
+                "Run hub --recover-data in the foreground once before starting the service"
+            );
+            None
+        }
+        crate::options::Role::Worker {
+            action,
+            hub,
+            pair_token,
+            pair_token_stdin,
+            ..
+        } => {
+            *action = None;
+            worker_pairing(home, hub, pair_token, pair_token_stdin)?
+        }
+    };
+    configured.watch = false;
+    configured.service_run = None;
+    configured.no_open = true;
+    configured.plan()?;
+    let config = Configuration {
+        version: 1,
+        args: configured,
+        directory: saved
+            .as_ref()
+            .map(|config| config.directory.clone())
+            .unwrap_or(std::env::current_dir()?),
+        environment: saved
+            .map(|config| config.environment)
+            .unwrap_or_else(native::environment),
+    };
+    Ok((config, pairing))
+}
+
+fn saved_configuration(
+    args: &crate::options::Args,
+    home: &Path,
+    role: ServiceRole,
+    action: Action,
+) -> Result<Option<Configuration>> {
+    let default_hub_start = {
+        use clap::Parser;
+        let mut defaults = crate::options::Args::parse_from(["codesesh", "hub", "start"]);
+        defaults.no_open = args.no_open;
+        serde_json::to_value(&defaults)? == serde_json::to_value(args)?
+    };
+    let reuse = (default_hub_start && path(home, role, "json").exists())
+        || action == Action::Restart
+        || matches!(
+            &args.command,
+            Some(crate::options::Role::Worker { hub: None, .. })
+        );
+    if !reuse || (role == ServiceRole::Worker && !path(home, role, "json").exists()) {
+        return Ok(None);
+    }
+    load(home, role).map(Some)
+}
+
+fn worker_pairing(
+    home: &Path,
+    hub: &mut Option<String>,
+    pair_token: &mut Option<String>,
+    pair_token_stdin: &mut bool,
+) -> Result<Option<String>> {
+    if hub.is_none() {
+        let worker_path = codesesh_core::app_paths::root(home).join("worker.db");
+        let binding = if worker_path.exists() {
+            codesesh_core::sync::WorkerStore::open(&worker_path)?.binding()?
+        } else {
+            None
+        };
+        let (origin, _) = binding.context("Worker has not been paired yet. Start with: codesesh worker start --hub <Hub URL> --pair-token-stdin")?;
+        eprintln!("Using existing Worker pairing: {origin}");
+        *hub = Some(origin);
+    }
+    let mut pairing = pair_token
+        .take()
+        .or_else(|| std::env::var("CODESESH_PAIRING_TOKEN").ok());
+    if *pair_token_stdin {
+        eprintln!("Pairing token:");
+        let mut token = String::new();
+        use std::io::{BufRead, Read};
+        std::io::stdin().lock().take(512).read_line(&mut token)?;
+        pairing = Some(token.trim().to_owned());
+        *pair_token_stdin = false;
+    }
+    if let Some(token) = &pairing {
+        ensure!(token.len() == 64, "Invalid pairing token length");
+    }
+    Ok(pairing)
 }
 
 async fn watch_status(home: &Path, role: ServiceRole, limit: Option<Duration>) -> Result<()> {
@@ -491,44 +520,7 @@ async fn watch_status(home: &Path, role: ServiceRole, limit: Option<Duration>) -
 
 pub async fn boot(role: ServiceRole, home: &Path) -> Result<crate::options::Args> {
     let config = load(home, role)?;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let descriptor = Descriptor {
-        endpoint: format!("http://{}", listener.local_addr()?),
-        token: uuid::Uuid::new_v4().to_string(),
-    };
-    let (stop, _) = watch::channel(false);
-    let control = Control {
-        descriptor: descriptor.clone(),
-        last_path: path(home, role, "last.json"),
-        pairing_path: path(home, role, "pairing"),
-        report: Arc::new(Mutex::new(Report {
-            pid: std::process::id(),
-            phase: "starting".into(),
-            detail: "Checking mode locks and legacy directory migration".into(),
-            progress: None,
-            url: None,
-            updated_at: chrono::Utc::now().timestamp_millis(),
-            stopping: false,
-        })),
-        stop,
-    };
-    CONTROL
-        .set(control.clone())
-        .map_err(|_| anyhow::anyhow!("Service control already initialized"))?;
-    write_private(
-        &path(home, role, "runtime.json"),
-        &serde_json::to_vec(&descriptor)?,
-    )?;
-    tokio::spawn(async move {
-        let _ = axum::serve(
-            listener,
-            Router::new()
-                .route("/status", get(control_status))
-                .route("/stop", post(control_stop))
-                .with_state(control),
-        )
-        .await;
-    });
+    control::start(home, role).await?;
     let mut args = config.args;
     if let Some(crate::options::Role::Worker { pair_token, .. }) = &mut args.command {
         let secret = path(home, role, "pairing");
@@ -537,78 +529,6 @@ pub async fn boot(role: ServiceRole, home: &Path) -> Result<crate::options::Args
         }
     }
     Ok(args)
-}
-fn authorized(control: &Control, headers: &HeaderMap) -> bool {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    bool::from(token.as_bytes().ct_eq(control.descriptor.token.as_bytes()))
-}
-async fn control_status(
-    State(control): State<Control>,
-    headers: HeaderMap,
-) -> Result<Json<Report>, StatusCode> {
-    if !authorized(&control, &headers) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-    let mut report = control
-        .report
-        .lock()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .clone();
-    report.stopping = *control.stop.borrow();
-    Ok(Json(report))
-}
-async fn control_stop(
-    State(control): State<Control>,
-    headers: HeaderMap,
-) -> Result<Json<Report>, StatusCode> {
-    if !authorized(&control, &headers) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-    control.stop.send_replace(true);
-    control_status(State(control), headers).await
-}
-pub fn stopping() -> bool {
-    CONTROL.get().is_some_and(|control| *control.stop.borrow())
-}
-pub async fn shutdown_requested() {
-    if let Some(control) = CONTROL.get() {
-        let mut stop = control.stop.subscribe();
-        if !*stop.borrow() {
-            let _ = stop.changed().await;
-        }
-    } else {
-        std::future::pending::<()>().await;
-    }
-}
-pub fn report(phase: &str, detail: &str, progress: Option<(u64, u64)>, url: Option<&str>) {
-    if let Some(control) = CONTROL.get()
-        && let Ok(mut report) = control.report.lock()
-    {
-        report.phase = phase.into();
-        report.detail = detail.into();
-        report.progress = progress;
-        report.updated_at = chrono::Utc::now().timestamp_millis();
-        if let Some(url) = url {
-            report.url = Some(url.into());
-        }
-    }
-}
-pub fn finished(error: Option<&anyhow::Error>) {
-    if let Some(error) = error {
-        report("failed", &format!("{error:#}"), None, None);
-    } else {
-        report("stopped", "Service exited normally", None, None);
-    }
-    if let Some(control) = CONTROL.get()
-        && let Ok(report) = control.report.lock()
-        && let Ok(bytes) = serde_json::to_vec(&*report)
-    {
-        let _ = write_private(&control.last_path, &bytes);
-    }
 }
 
 pub fn prepare_process() -> Result<()> {
@@ -631,12 +551,6 @@ pub fn prepare_process() -> Result<()> {
         }
     }
     Ok(())
-}
-
-pub fn paired() {
-    if let Some(control) = CONTROL.get() {
-        let _ = std::fs::remove_file(&control.pairing_path);
-    }
 }
 
 pub fn take_open_request(home: &Path) -> bool {
