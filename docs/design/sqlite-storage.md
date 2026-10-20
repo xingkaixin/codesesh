@@ -112,7 +112,7 @@ sqlite3 ~/.codesesh/codesesh.db 'VACUUM'
 
 书签和别名由 `crates/codesesh-core/src/state/` 保存到独立状态库，使用 schema 3。
 状态目录支持 `CODESESH_STATE_DIR` 覆盖；默认位于 `~/.codesesh/state.db`（Windows 为 `%USERPROFILE%\.codesesh\state.db`）。清空会话缓存不应清除
-用户状态。书签物化逻辑在 `crates/codesesh-core/src/bookmarks.rs`。
+用户状态。书签物化逻辑在 `crates/codesesh-core/src/state/bookmarks.rs`。
 
 ## 验证
 

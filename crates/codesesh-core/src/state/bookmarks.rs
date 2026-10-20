@@ -1,6 +1,6 @@
+use super::{BookmarkRecord, normalize_reference, reference_key};
 use crate::{
     model::{SessionHead, SessionReference},
-    state::{BookmarkRecord, normalize_reference, reference_key},
     wire::{
         AvailableBookmarkReason, AvailableBookmarkView, BookmarkView, UnavailableBookmarkReason,
         UnavailableBookmarkView, head,

@@ -1,7 +1,9 @@
+mod bookmarks;
 mod database;
 use crate::model::SessionReference;
 pub use crate::wire::BookmarkRecord;
 use anyhow::{Result, bail};
+pub use bookmarks::materialize_bookmarks;
 pub use database::state_directory;
 use rusqlite::{Connection, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};

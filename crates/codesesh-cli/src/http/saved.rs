@@ -7,11 +7,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use codesesh_core::{
-    bookmarks::materialize_bookmarks,
     model::SessionReference,
     state::{
-        BookmarkRecord, StateStore, normalize_session_alias, parse_bookmark_import,
-        parse_bookmark_reference,
+        BookmarkRecord, StateStore, materialize_bookmarks, normalize_session_alias,
+        parse_bookmark_import, parse_bookmark_reference,
     },
     wire::BookmarkView,
 };
