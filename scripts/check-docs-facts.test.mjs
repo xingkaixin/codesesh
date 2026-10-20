@@ -42,7 +42,7 @@ function fixtureRepo(packageManager = "pnpm@11.20.0", nodeEngine = ">=22.0.0") {
     "- 文件型：Claude Code\n- 单 SQLite 数据库型：Cursor",
   );
   const files = {
-    "crates/codesesh-core/src/storage/mod.rs": "pub const CACHE_SCHEMA_VERSION: i64 = 21;\n",
+    "crates/codesesh-core/src/storage.rs": "pub const CACHE_SCHEMA_VERSION: i64 = 21;\n",
     "crates/codesesh-core/src/agents/catalog.json": JSON.stringify(coreFacts.agents),
     "package.json": JSON.stringify({ packageManager, engines: { node: nodeEngine } }),
     ".github/workflows/ci.yml": "steps:\n  - name: Lint\n    run: pnpm lint\n  - run: pnpm test\n",

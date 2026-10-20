@@ -38,7 +38,7 @@ cargo test --workspace --locked
 ## 扩展新 Agent
 
 1. 在 `crates/codesesh-core/src/agents/` 新增 Rust 适配器，并接入：
-   - `agents/mod.rs`：`pub mod` 声明和 `scan_agent` 分发；文件来源在 `session_root` /
+   - `agents.rs`：`pub mod` 声明和 `scan_agent` 分发；文件来源在 `session_root` /
      `is_session_file` 声明会话文件，数据库来源在 `database_path` 声明 SQLite 路径。
      来源可用性、回填选择、数据库戳记和 `discovery/json_scan.rs` 的 JSON 扫描都读取这些函数，
      不另设分支。

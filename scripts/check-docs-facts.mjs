@@ -257,7 +257,7 @@ export function findDocumentationFactMismatches(repoRoot, coreFacts) {
 }
 
 export function loadRepositoryFacts(repoRoot) {
-  const schema = readFileSync(join(repoRoot, "crates/codesesh-core/src/storage/mod.rs"), "utf8");
+  const schema = readFileSync(join(repoRoot, "crates/codesesh-core/src/storage.rs"), "utf8");
   const versions = [...schema.matchAll(/^pub const CACHE_SCHEMA_VERSION: i64 = (\d+);$/gm)];
   if (versions.length !== 1) {
     throw new Error("Expected exactly one Rust CACHE_SCHEMA_VERSION constant");

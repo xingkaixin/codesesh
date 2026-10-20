@@ -87,8 +87,8 @@ pub fn catalog(count: usize) -> Vec<AgentInfo> {
 }
 
 pub fn catalog_counts(counts: &HashMap<String, usize>) -> Vec<AgentInfo> {
-    let entries: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("catalog.json")).expect("valid bundled agent catalog");
+    let entries: Vec<serde_json::Value> = serde_json::from_str(include_str!("agents/catalog.json"))
+        .expect("valid bundled agent catalog");
     entries
         .into_iter()
         .map(|entry| {
