@@ -10,7 +10,7 @@
  * the unit tests next to the code they protect; this file covers the cases where
  * only the slope is meaningful.
  *
- * Usage: node scripts/perf-scale.mjs [--json]
+ * Usage: node scripts/bench/perf-scale.mjs [--json]
  */
 import { performance } from "node:perf_hooks";
 

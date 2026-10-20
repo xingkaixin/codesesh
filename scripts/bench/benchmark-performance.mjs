@@ -11,7 +11,7 @@
  * PR-time performance assurance lives in two other places:
  *   - deterministic gates in the unit tests (query counts, bundle bytes, cache
  *     cardinality), next to the code they protect
- *   - growth-rate checks in scripts/perf-scale.mjs
+ *   - growth-rate checks in scripts/bench/perf-scale.mjs
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -20,10 +20,10 @@ import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { nativeBinary } from "./lib/native-command.mjs";
+import { nativeBinary } from "../lib/native-command.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, "..");
+const repoRoot = resolve(__dirname, "../..");
 const cliPath = nativeBinary;
 const PROFILE_SCENARIOS = ["typing", "sidebar", "live"];
 const PROFILE_TYPING_TEXT = "performance-baseline";
