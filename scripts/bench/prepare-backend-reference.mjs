@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const reference = join(root, "tests", "reference");
 const destination = join(root, "artifacts", "backend-reference", "registry");
 const manifest = JSON.parse(readFileSync(join(reference, "manifest.json"), "utf8"));

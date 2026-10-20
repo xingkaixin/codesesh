@@ -7,13 +7,13 @@
  * anything.
  */
 import { performance } from "node:perf_hooks";
-import { applySessionChanges, createSessionIndex } from "../packages/contract/dist/index.mjs";
+import { applySessionChanges, createSessionIndex } from "../../packages/contract/dist/index.mjs";
 
 /**
  * The canonical path must not cost more than redundantly re-sorting on top of
  * it. The two are close — a re-sort of already-sorted data is nearly linear —
  * so the budget allows for run-to-run noise rather than claiming a large win.
- * Complexity is covered by scripts/perf-scale.mjs, not by this ratio.
+ * Complexity is covered by scripts/bench/perf-scale.mjs, not by this ratio.
  */
 const MAX_CANONICAL_RATIO = 1.05;
 

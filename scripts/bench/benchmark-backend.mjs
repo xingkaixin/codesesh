@@ -11,7 +11,7 @@ import {
   runCli,
   startServer,
   stop,
-} from "../tests/backend-contract/harness.mjs";
+} from "../../tests/backend-contract/harness.mjs";
 
 const command = backendCommand();
 const output = resolve(process.argv[2] ?? "artifacts/backend-benchmark.json");
@@ -58,7 +58,10 @@ for (const scenario of ["version", "cold-json", "warm-json", "web-ready-with-sca
   }
 }
 
-const evaluatorFiles = ["scripts/benchmark-backend.mjs", "tests/backend-contract/harness.mjs"];
+const evaluatorFiles = [
+  "scripts/bench/benchmark-backend.mjs",
+  "tests/backend-contract/harness.mjs",
+];
 const report = {
   generatedAt: new Date().toISOString(),
   command,
