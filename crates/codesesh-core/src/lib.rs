@@ -8,7 +8,6 @@ pub mod storage;
 
 pub mod pricing;
 
-pub mod bookmarks;
 pub mod state;
 
 pub mod analytics;
