@@ -1,5 +1,5 @@
 use super::{number, optional_string, string};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::sync::LazyLock;

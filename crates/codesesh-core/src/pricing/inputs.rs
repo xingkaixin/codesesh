@@ -1,5 +1,5 @@
 use super::Pricing;
-use crate::contract::MessageTokens;
+use crate::model::MessageTokens;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -64,9 +64,9 @@ pub struct CostInput {
 impl Pricing {
     pub fn message_cost_breakdown(
         &self,
-        message: &crate::contract::Message,
+        message: &crate::model::Message,
     ) -> Option<TokenCostBreakdown> {
-        if message.cost_source != Some(crate::contract::CostSource::Estimated) {
+        if message.cost_source != Some(crate::model::CostSource::Estimated) {
             return None;
         }
         let tokens = message.tokens.as_ref()?;
@@ -244,7 +244,7 @@ pub(crate) fn assert_cached_repricing(
 #[cfg(test)]
 mod receipt_tests {
     use super::*;
-    use crate::contract::{CostSource, Message};
+    use crate::model::{CostSource, Message};
     #[test]
     fn receipt_split_uses_prices_without_checkpoint_and_rejects_mismatched_totals() {
         let pricing = Pricing::bundled();

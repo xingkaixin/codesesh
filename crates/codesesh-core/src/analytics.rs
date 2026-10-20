@@ -13,13 +13,13 @@ pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_respons
 pub use time_zone::DashboardTimeZone;
 
 use crate::{
-    contract::{CostSource, SessionHead},
-    public_contract::{
+    model::{CostSource, SessionHead},
+    session_list::{SessionTree, in_window},
+    wire::{
         DashboardAgentStat, DashboardAggregate, DashboardDailyBucket, DashboardPreviousTotals,
         DashboardProjectRollup, DashboardProjectStat, DashboardTotals, ModelCostEntry,
         ModelDistributionEntry, ScopeCounts, closed, referenced,
     },
-    session_list::{SessionTree, in_window},
 };
 use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -286,7 +286,7 @@ fn accumulate(
             continue;
         }
         let session = tree.sessions[contribution.entry];
-        let estimated = contribution.source == crate::contract::CostSource::Estimated;
+        let estimated = contribution.source == crate::model::CostSource::Estimated;
         acc.metrics.cost += cost;
         if estimated {
             acc.estimated += cost;

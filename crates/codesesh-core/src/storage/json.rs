@@ -11,8 +11,8 @@ fn stringify_value(value: &Value) -> serde_json::Result<String> {
     Ok(output)
 }
 pub fn message_parts(
-    head: &crate::contract::SessionHead,
-    parts: &[crate::contract::MessagePart],
+    head: &crate::model::SessionHead,
+    parts: &[crate::model::MessagePart],
 ) -> serde_json::Result<String> {
     // Node cursors hash JSON text, including each adapter's property insertion order.
     let agent = head.reference.agent_name.as_str();
@@ -54,7 +54,7 @@ pub fn message_parts(
     Ok(output)
 }
 
-pub fn tokens(agent: &str, tokens: &crate::contract::MessageTokens) -> serde_json::Result<String> {
+pub fn tokens(agent: &str, tokens: &crate::model::MessageTokens) -> serde_json::Result<String> {
     let value = serde_json::to_value(tokens)?;
     if agent != "cherrystudio" {
         return stringify_value(&value);

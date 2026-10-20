@@ -145,7 +145,7 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
     let (_dir, mut store, mut scanner) = setup();
     let mut batch = scanner.refresh(None).unwrap();
     let session: &mut ParsedSession = &mut batch.sessions[0];
-    session.detail.messages[0].parts = vec![crate::contract::MessagePart::Text {
+    session.detail.messages[0].parts = vec![crate::model::MessagePart::Text {
         text: "中文\n\"😀".repeat(CHUNK_BYTES / 3),
         time_created: None,
     }];
@@ -160,7 +160,7 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
     session.detail.messages[0].cost_inputs = session.head.stats.cost_inputs.clone();
     session.detail.message_cursor = Some("cursor".into());
     session.detail.message_update = Some("append".into());
-    session.detail.file_activity = vec![crate::contract::SessionFileActivity {
+    session.detail.file_activity = vec![crate::model::SessionFileActivity {
         reference: session.head.reference.clone(),
         project_identity_key: session.head.project_identity.key.clone(),
         path: "src/中文.rs".into(),

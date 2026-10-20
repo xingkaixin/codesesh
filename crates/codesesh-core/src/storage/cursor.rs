@@ -1,5 +1,5 @@
 use super::role_name;
-use crate::contract::{Message, SessionReference};
+use crate::model::{Message, SessionReference};
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
@@ -17,7 +17,7 @@ fn field(hash: &mut Sha256, value: Option<&str>) {
 pub fn initial(reference: &SessionReference) -> String {
     let mut hash = Sha256::new();
     hash.update("codesesh-session-messages\0");
-    if reference.source_node_id != crate::contract::LOCAL_SOURCE_NODE_ID {
+    if reference.source_node_id != crate::model::LOCAL_SOURCE_NODE_ID {
         field(&mut hash, Some(&reference.source_node_id));
     }
     for value in ["2", &reference.agent_name, &reference.session_id] {
@@ -36,7 +36,7 @@ pub fn advance(
     let cost_source = message
         .cost_source
         .as_ref()
-        .map(crate::contract::CostSource::as_str);
+        .map(crate::model::CostSource::as_str);
     let cost = message
         .cost
         .map(|value| ryu_js::Buffer::new().format(value).to_owned());

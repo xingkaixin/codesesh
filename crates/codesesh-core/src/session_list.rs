@@ -1,4 +1,4 @@
-use crate::contract::{SessionHead, SessionReference};
+use crate::model::{SessionHead, SessionReference};
 use std::collections::{HashMap, HashSet};
 
 mod pagination;

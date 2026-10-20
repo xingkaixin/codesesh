@@ -1,5 +1,5 @@
 use super::*;
-use crate::contract::MessagePart;
+use crate::model::MessagePart;
 use std::collections::HashMap;
 
 pub(super) fn source(root: &Path, id: &str) -> ParsedSession {

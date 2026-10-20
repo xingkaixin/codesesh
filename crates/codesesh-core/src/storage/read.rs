@@ -1,5 +1,5 @@
 use super::cursor;
-use crate::contract::*;
+use crate::model::*;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

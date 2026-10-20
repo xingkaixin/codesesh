@@ -1,7 +1,7 @@
 use super::text::{clean_value, js_string};
 use super::{clean, internal, model, number, string};
 use crate::{
-    contract::{CostSource, Message, MessagePart, MessageTokens, Role, SessionStats, ToolState},
+    model::{CostSource, Message, MessagePart, MessageTokens, Role, SessionStats, ToolState},
     pricing::Pricing,
 };
 use anyhow::Result;

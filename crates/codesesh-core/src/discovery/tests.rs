@@ -768,8 +768,8 @@ fn target_session_is_parsed_in_first_page_even_outside_startup_window() {
         std::sync::Arc::new(Pricing::bundled()),
     )
     .with_startup_window(Some(1_700_000_000_000.0), None)
-    .with_target_session(Some(crate::contract::SessionReference {
-        source_node_id: crate::contract::local_source_node_id(),
+    .with_target_session(Some(crate::model::SessionReference {
+        source_node_id: crate::model::local_source_node_id(),
         agent_name: "pi".into(),
         session_id: "history-0064".into(),
     }));
@@ -913,7 +913,7 @@ fn qoder_cn_reads_claude_layout_from_its_override_and_reports_deleted_subagents(
     assert_eq!(parent.head.stats.total_output_tokens, 25.0);
     let message = &parent.detail.messages[1];
     assert_eq!(message.agent.as_deref(), Some("qoder-cn"));
-    let crate::contract::MessagePart::Tool { state, .. } = &message.parts[0] else {
+    let crate::model::MessagePart::Tool { state, .. } = &message.parts[0] else {
         panic!()
     };
     assert_eq!(state.status, "completed");
@@ -1027,7 +1027,7 @@ fn omp_reads_xdg_sessions_with_nested_subagents_and_reports_deleted_advisors() {
     assert_eq!(parent.head.stats.total_output_tokens, 55.0);
     let message = &parent.detail.messages[1];
     assert_eq!(message.agent.as_deref(), Some("omp"));
-    let crate::contract::MessagePart::Tool { state, .. } = &message.parts[0] else {
+    let crate::model::MessagePart::Tool { state, .. } = &message.parts[0] else {
         panic!()
     };
     assert_eq!(state.status, "completed");

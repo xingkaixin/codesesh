@@ -1,4 +1,4 @@
-use crate::contract::SessionReference;
+use crate::model::SessionReference;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;

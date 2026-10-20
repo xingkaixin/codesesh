@@ -1,12 +1,12 @@
 use super::*;
-use crate::contract::{ProjectIdentity, SessionReference, SessionStats};
+use crate::model::{ProjectIdentity, SessionReference, SessionStats};
 
 fn head(id: &str, parent: Option<&str>, time: i64) -> SessionHead {
     SessionHead {
         version: None,
         summary_files: None,
         reference: SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "codex".into(),
             session_id: id.into(),
         },
@@ -14,7 +14,7 @@ fn head(id: &str, parent: Option<&str>, time: i64) -> SessionHead {
         directory: "/project".into(),
         display_title: None,
         parent_reference: parent.map(|id| SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "codex".into(),
             session_id: id.into(),
         }),
@@ -547,8 +547,8 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
                     cache_create_tokens: 0.0,
                     cost: *cost,
                     cost_source: match *source {
-                        "recorded" => Some(crate::contract::CostSource::Recorded),
-                        "estimated" => Some(crate::contract::CostSource::Estimated),
+                        "recorded" => Some(crate::model::CostSource::Recorded),
+                        "estimated" => Some(crate::model::CostSource::Estimated),
                         _ => None,
                     },
                 },

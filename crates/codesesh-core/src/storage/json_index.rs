@@ -1,7 +1,7 @@
 use super::{Cache, snapshot};
 use crate::{
     agents::ParsedSession,
-    contract::{SessionHead, SessionReference},
+    model::{SessionHead, SessionReference},
 };
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -53,7 +53,7 @@ impl Publication<'_> {
 }
 impl Cache {
     pub fn json_baseline(&mut self) -> Result<JsonBaseline> {
-        self.source_json_baseline(crate::contract::LOCAL_SOURCE_NODE_ID)
+        self.source_json_baseline(crate::model::LOCAL_SOURCE_NODE_ID)
     }
 
     pub fn source_json_baseline(&mut self, node: &str) -> Result<JsonBaseline> {

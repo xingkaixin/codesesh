@@ -2,7 +2,7 @@ use super::{
     DashboardScope, DashboardTimeZone,
     read::{encode_references, reference_condition},
 };
-use crate::{contract::SessionHead, public_contract::DashboardActiveHours};
+use crate::{model::SessionHead, wire::DashboardActiveHours};
 use chrono::DateTime;
 use rusqlite::Connection;
 

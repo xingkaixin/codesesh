@@ -41,8 +41,8 @@ pub(super) struct SessionDigests {
 }
 
 pub(super) fn session_digests(
-    messages: &[crate::contract::Message],
-    file_activity: &[crate::contract::SessionFileActivity],
+    messages: &[crate::model::Message],
+    file_activity: &[crate::model::SessionFileActivity],
     cost_inputs: &std::collections::BTreeMap<usize, &[crate::pricing::CostInput]>,
 ) -> Result<SessionDigests> {
     let mut content = Sha256::new();

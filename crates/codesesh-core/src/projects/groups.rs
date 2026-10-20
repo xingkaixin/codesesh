@@ -1,5 +1,5 @@
 use super::get_project_identity_key;
-use crate::contract::{SessionHead, SessionReference};
+use crate::model::{SessionHead, SessionReference};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 

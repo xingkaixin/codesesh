@@ -1,7 +1,7 @@
 pub mod agents;
 pub mod app_paths;
-pub mod contract;
 pub mod data_migration;
+pub mod model;
 pub mod projects;
 
 pub mod storage;
@@ -26,6 +26,6 @@ pub mod sync;
 
 pub mod time;
 
-pub mod public_contract;
+pub mod wire;
 
 mod hash;

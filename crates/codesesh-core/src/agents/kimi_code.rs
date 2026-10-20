@@ -1,5 +1,5 @@
 use super::{ParsedSession, kimi::helpers::*};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

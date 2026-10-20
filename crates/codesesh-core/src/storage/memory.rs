@@ -109,7 +109,7 @@ mod tests {
         let mut session = super::super::tests::source(root.path(), "large");
         let reference = session.head.reference.clone();
         for remove in [false, true] {
-            session.detail.messages[0].parts = vec![crate::contract::MessagePart::Text {
+            session.detail.messages[0].parts = vec![crate::model::MessagePart::Text {
                 text: "x ".repeat(LARGE_INDEX_DOCUMENT_BYTES as usize / 2 + 1),
                 time_created: None,
             }];

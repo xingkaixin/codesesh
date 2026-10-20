@@ -1,5 +1,5 @@
 use super::{ParsedSession, ScanDelta, SessionRecord};
-use crate::{contract::SessionReference, pricing::Pricing};
+use crate::{model::SessionReference, pricing::Pricing};
 use anyhow::Result;
 use serde_json::Value;
 use std::{
@@ -32,7 +32,7 @@ pub(super) fn parent(path: &Path) -> Option<SessionReference> {
         {
             let id = record["id"].as_str()?.trim();
             return (!id.is_empty()).then(|| SessionReference {
-                source_node_id: crate::contract::local_source_node_id(),
+                source_node_id: crate::model::local_source_node_id(),
                 agent_name: "omp".into(),
                 session_id: id.into(),
             });

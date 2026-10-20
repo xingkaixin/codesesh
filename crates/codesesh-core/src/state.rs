@@ -1,6 +1,6 @@
 mod database;
-use crate::contract::SessionReference;
-pub use crate::public_contract::BookmarkRecord;
+use crate::model::SessionReference;
+pub use crate::wire::BookmarkRecord;
 use anyhow::{Result, bail};
 pub use database::state_directory;
 use rusqlite::{Connection, TransactionBehavior, params};
@@ -33,7 +33,7 @@ pub fn normalize_reference(reference: &SessionReference) -> SessionReference {
 
 pub fn reference_key(reference: &SessionReference) -> String {
     let r = normalize_reference(reference);
-    if r.source_node_id == crate::contract::LOCAL_SOURCE_NODE_ID {
+    if r.source_node_id == crate::model::LOCAL_SOURCE_NODE_ID {
         format!("{}/{}", r.agent_name, r.session_id)
     } else {
         format!("@{}/{}/{}", r.source_node_id, r.agent_name, r.session_id)
@@ -58,7 +58,7 @@ pub fn parse_bookmark_reference(value: &Value) -> Option<SessionReference> {
         }
         Some(normalize_reference(&SessionReference {
             source_node_id: match node {
-                Value::Null => crate::contract::local_source_node_id(),
+                Value::Null => crate::model::local_source_node_id(),
                 Value::String(node) if !node.is_empty() => node.clone(),
                 _ => return None,
             },

@@ -1,5 +1,5 @@
 use super::{Cancellation, Event, ScanBatch, ScanStatus};
-use crate::{contract::SessionHead, storage::Cache};
+use crate::{model::SessionHead, storage::Cache};
 use anyhow::Result;
 use std::{
     path::PathBuf,
@@ -298,7 +298,7 @@ fn publish_changes(
     cache: &Cache,
     snapshots: &watch::Sender<Arc<Vec<SessionHead>>>,
     events: &broadcast::Sender<Event>,
-    references: &[crate::contract::SessionReference],
+    references: &[crate::model::SessionReference],
 ) -> Result<()> {
     if references.is_empty() {
         return Ok(());

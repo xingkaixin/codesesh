@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use super::{Pricing, round_cost};
-use crate::contract::{CostSource, Message};
+use crate::model::{CostSource, Message};
 
 pub const PRICING_CAPTURE_EPOCH: &str = "pricing-capture-v1";
 
@@ -78,7 +78,7 @@ impl Pricing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::MessageTokens;
+    use crate::model::MessageTokens;
     use serde_json::json;
 
     #[test]

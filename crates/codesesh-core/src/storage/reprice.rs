@@ -1,7 +1,7 @@
 use super::{Cache, facts, snapshot};
 use crate::{
     agents::ParsedSession,
-    contract::{CostSource, SessionReference},
+    model::{CostSource, SessionReference},
     pricing::{CostInput, Pricing},
 };
 use anyhow::Result;
@@ -223,7 +223,7 @@ pub(super) fn restore_inputs(session: &mut ParsedSession, value: &serde_json::Va
 }
 
 pub(super) fn reprice_head(
-    head: &mut crate::contract::SessionHead,
+    head: &mut crate::model::SessionHead,
     pricing: &Pricing,
     value: &mut serde_json::Value,
 ) -> Result<()> {
@@ -313,7 +313,7 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{contract::MessageTokens, pricing::PricingController};
+    use crate::{model::MessageTokens, pricing::PricingController};
     use serde_json::json;
 
     #[test]

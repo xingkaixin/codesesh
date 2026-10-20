@@ -1,5 +1,5 @@
 use super::{ParsedSession, claudecode::common::*};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
 use std::{
@@ -526,7 +526,7 @@ fn parse(path: &Path, root: &Path, pricing: &Pricing) -> Result<Option<ParsedSes
         .unwrap_or_else(|| "Untitled Session".into());
     let mut detail = detail(
         SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "gemini-cli".into(),
             session_id: session_id.to_owned(),
         },
@@ -540,7 +540,7 @@ fn parse(path: &Path, root: &Path, pricing: &Pricing) -> Result<Option<ParsedSes
     detail.head.stats.total_output_tokens += reasoning_tokens;
     if meta.get("kind").is_some_and(|kind| kind == "subagent") && relative.len() == 4 {
         detail.head.parent_reference = Some(SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "gemini-cli".into(),
             session_id: relative[2].as_os_str().to_string_lossy().into_owned(),
         });

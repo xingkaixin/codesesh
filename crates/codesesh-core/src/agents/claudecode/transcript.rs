@@ -1,7 +1,7 @@
 use super::{common::*, internal, output_parts, user_parts};
 use crate::agents::jsonl::timestamp;
 use crate::{
-    contract::*,
+    model::*,
     pricing::{Pricing, priced_model},
 };
 use serde_json::{Value, json};

@@ -1,6 +1,6 @@
 use crate::{
     agents::ParsedSession,
-    contract::{Message, SessionDetail, SessionFileActivity, SessionHead},
+    model::{Message, SessionDetail, SessionFileActivity, SessionHead},
     pricing::CostInput,
 };
 use anyhow::{Result, ensure};

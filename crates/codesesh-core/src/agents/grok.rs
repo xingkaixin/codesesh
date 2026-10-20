@@ -1,5 +1,5 @@
 use super::ParsedSession;
-use crate::{contract::*, pricing::Pricing, projects::path_identity};
+use crate::{model::*, pricing::Pricing, projects::path_identity};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -171,7 +171,7 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
     let parent = string(&summary["parent_session_id"])
         .filter(|p| p != &id)
         .map(|session_id| SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "grok".into(),
             session_id,
         });
@@ -179,7 +179,7 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
         version: None,
         summary_files: None,
         reference: SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "grok".into(),
             session_id: id,
         },

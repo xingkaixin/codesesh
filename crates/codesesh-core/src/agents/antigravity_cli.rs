@@ -1,5 +1,5 @@
 use super::{ParsedSession, deepchat::common};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use prost::Message as _;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};

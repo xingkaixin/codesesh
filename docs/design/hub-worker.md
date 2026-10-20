@@ -87,7 +87,7 @@ CodeSesh 当前在本机发现、解析和保存 AI 编码 Agent 会话，并通
 
 | 当前事实 | 代码位置 | 对设计的影响 |
 | --- | --- | --- |
-| `SessionReference` 只有 Agent 和会话 ID | `crates/codesesh-core/src/contract.rs` | 跨节点身份必须扩展，并更新全部消费者 |
+| `SessionReference` 只有 Agent 和会话 ID | `crates/codesesh-core/src/model.rs` | 跨节点身份必须扩展，并更新全部消费者 |
 | 会话及大量关联表按 Agent、会话 ID 关联 | `crates/codesesh-core/src/storage/schema.sql` | 需要完整迁移关联键、索引、FTS 与派生事实 |
 | 收藏和自定义标题是独立状态库中的映射 | `crates/codesesh-core/src/state/database.rs` | 要和会话身份协调迁移，不能留成旧键 |
 | 扫描批次交给单 SQLite writer | `crates/codesesh-core/src/runtime.rs`、`runtime/writer.rs` | 适合将本地采集和远程接收汇入同一存储入口 |

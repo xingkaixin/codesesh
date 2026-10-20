@@ -11,7 +11,7 @@
 
 ## 单一来源
 
-`crates/codesesh-core/src/contract.rs` 定义共用基础类型和内部解析模型；`crates/codesesh-core/src/public_contract.rs` 定义公开服务 DTO。后者复用基础 SessionReference、SessionStats、MessageTokens、Role、CostSource 及闭合枚举。只有公开可选性或字段集合与内部解析模型不同的会话/消息 DTO 使用独立 wire 类型。
+`crates/codesesh-core/src/model.rs` 定义共用基础类型和内部解析模型；`crates/codesesh-core/src/wire.rs` 定义公开服务 DTO。后者复用基础 SessionReference、SessionStats、MessageTokens、Role、CostSource 及闭合枚举。只有公开可选性或字段集合与内部解析模型不同的会话/消息 DTO 使用独立 wire 类型。
 
 本包中的服务 DTO 均为 generated 类型的重导出或组合，已移除重复手写字段：
 
@@ -35,7 +35,7 @@ pnpm exec oxfmt --write packages/contract/src/generated
 pnpm --filter @codesesh/contract build
 pnpm --filter @codesesh/contract test
 pnpm --filter @codesesh/contract lint
-cargo test --locked -p codesesh-core public_contract::tests
+cargo test --locked -p codesesh-core wire::tests
 ```
 
 不要手改 generated。CI 需要对生成目录运行差异检查。package build 不隐式运行 Cargo。
@@ -44,4 +44,4 @@ Rust serde 测试验证省略字段与显式 null 的区别、工具未知 JSON 
 
 ## P7 接入点
 
-Web 依赖和导入、默认入口、根质量任务清单、Vitest 项目/覆盖率列表、版本同步、生成脚本和文档事实检查需要统一切换。HTTP 服务应使用 public_contract DTO 完成边界序列化或验证，避免动态 JSON 绕过契约；仅生成前端类型不能替代后端端点差分测试。
+Web 依赖和导入、默认入口、根质量任务清单、Vitest 项目/覆盖率列表、版本同步、生成脚本和文档事实检查需要统一切换。HTTP 服务应使用 core `wire` 模块的 DTO 完成边界序列化或验证，避免动态 JSON 绕过契约；仅生成前端类型不能替代后端端点差分测试。

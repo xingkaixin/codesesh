@@ -1,4 +1,4 @@
-use crate::contract::{
+use crate::model::{
     CostSource, FileActivityKind, MessageTokens, PlanApprovalStatus, ProjectIdentityKind, Role,
     SessionFileActivity, SessionHead, SessionReference, SessionStats, SmartTag, ToolPartStatus,
 };
@@ -23,7 +23,7 @@ pub struct WireSessionHead {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[ts(type = "unknown")]
-    #[serde(deserialize_with = "crate::contract::present_value")]
+    #[serde(deserialize_with = "crate::model::present_value")]
     pub summary_files: Option<serde_json::Value>,
     pub reference: SessionReference,
     pub title: String,
@@ -113,22 +113,22 @@ pub struct WireToolState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[ts(type = "unknown")]
-    #[serde(deserialize_with = "crate::contract::present_value")]
+    #[serde(deserialize_with = "crate::model::present_value")]
     pub input: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[ts(type = "unknown")]
-    #[serde(deserialize_with = "crate::contract::present_value")]
+    #[serde(deserialize_with = "crate::model::present_value")]
     pub output: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[ts(type = "unknown")]
-    #[serde(deserialize_with = "crate::contract::present_value")]
+    #[serde(deserialize_with = "crate::model::present_value")]
     pub error: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     #[ts(type = "unknown")]
-    #[serde(deserialize_with = "crate::contract::present_value")]
+    #[serde(deserialize_with = "crate::model::present_value")]
     pub metadata: Option<serde_json::Value>,
 }
 

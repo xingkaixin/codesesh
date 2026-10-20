@@ -1,5 +1,5 @@
 use crate::{
-    contract::{CostSource, Message, MessageTokens, Role, SessionStats},
+    model::{CostSource, Message, MessageTokens, Role, SessionStats},
     pricing::Pricing,
 };
 use serde_json::Value;

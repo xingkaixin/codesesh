@@ -1,5 +1,5 @@
 use super::{ParsedSession, claudecode::common::*, jsonl::timestamp};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::{
@@ -269,7 +269,7 @@ fn parse(
     let parent = first(&["callingSessionId", "parent"])
         .filter(|parent| *parent != id)
         .map(|parent| SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "droid".into(),
             session_id: parent.into(),
         });
@@ -277,7 +277,7 @@ fn parse(
     let updated = messages.last().unwrap().time_created.max(created);
     let mut detail = detail(
         SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "droid".into(),
             session_id: id,
         },

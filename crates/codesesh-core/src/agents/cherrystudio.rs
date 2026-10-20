@@ -1,5 +1,5 @@
 use super::{ParsedSession, deepchat::common::*};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use anyhow::{Result, bail};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;

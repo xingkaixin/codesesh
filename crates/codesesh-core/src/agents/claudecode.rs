@@ -3,7 +3,7 @@ mod incremental;
 mod transcript;
 use super::{ParsedSession, jsonl::timestamp};
 use crate::{
-    contract::*,
+    model::*,
     pricing::{Pricing, priced_model},
 };
 use anyhow::{Context, Result};
@@ -486,7 +486,7 @@ impl Parser {
         finish_messages(&mut messages);
         let mut detail = detail(
             SessionReference {
-                source_node_id: crate::contract::local_source_node_id(),
+                source_node_id: crate::model::local_source_node_id(),
                 agent_name: self.agent.clone(),
                 session_id: id,
             },
@@ -501,7 +501,7 @@ impl Parser {
             child
                 .and_then(|c| c.parent.as_ref())
                 .map(|id| SessionReference {
-                    source_node_id: crate::contract::local_source_node_id(),
+                    source_node_id: crate::model::local_source_node_id(),
                     agent_name: self.agent.clone(),
                     session_id: id.clone(),
                 });

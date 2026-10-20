@@ -1,6 +1,6 @@
 pub(crate) mod helpers;
 use super::ParsedSession;
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use helpers::*;
 use serde_json::Value;
 use std::{

@@ -199,7 +199,7 @@ fn write_cache(path: &Path, prices: &HashMap<String, Price>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::{
-        contract::MessageTokens,
+        model::MessageTokens,
         pricing::{CostInput, capture_misses},
     };
     use serde_json::json;

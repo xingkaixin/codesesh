@@ -42,7 +42,7 @@ impl Checkpoints {
         index: &Value,
         children: &HashMap<String, String>,
         pricing: &Pricing,
-    ) -> Result<Option<(crate::contract::SessionHead, crate::contract::SessionDetail)>> {
+    ) -> Result<Option<(crate::model::SessionHead, crate::model::SessionDetail)>> {
         let previous = self
             .0
             .iter()

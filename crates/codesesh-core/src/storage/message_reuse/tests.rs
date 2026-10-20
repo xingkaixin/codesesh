@@ -1,5 +1,5 @@
 use crate::{
-    contract::{Message, MessagePart},
+    model::{Message, MessagePart},
     storage::{Cache, detail_with_cursor, tests::source},
 };
 use serde_json::json;

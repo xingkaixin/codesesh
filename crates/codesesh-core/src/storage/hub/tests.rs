@@ -197,7 +197,7 @@ fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
         .pair_worker(&token, "Laptop", "1.1.1", &stream)
         .unwrap();
     let mut session = super::super::tests::source(dir.path(), "chunked");
-    session.detail.messages[0].parts = vec![crate::contract::MessagePart::Text {
+    session.detail.messages[0].parts = vec![crate::model::MessagePart::Text {
         text: "中文 🔎".repeat(40_000),
         time_created: None,
     }];

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use crate::contract::{Message, MessagePart, ToolState};
+use crate::model::{Message, MessagePart, ToolState};
 
 type Position = (usize, usize);
 

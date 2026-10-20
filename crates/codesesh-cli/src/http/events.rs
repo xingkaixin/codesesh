@@ -75,8 +75,8 @@ pub async fn events(AxumState(state): AxumState<Arc<State>>) -> Response {
                         let (Ok(heads),Ok(related))=(heads.into_iter().collect::<Result<Vec<_>,_>>(),related) else {
                             queue.lock().unwrap().fail();notify.notify_one();break;
                         };
-                        let payload=serde_json::to_value(codesesh_core::public_contract::SessionsUpdatedEvent {
-                            r#type:codesesh_core::public_contract::SessionsUpdatedEventType::SessionsUpdated,
+                        let payload=serde_json::to_value(codesesh_core::wire::SessionsUpdatedEvent {
+                            r#type:codesesh_core::wire::SessionsUpdatedEventType::SessionsUpdated,
                             changed_agents,new_session_refs:new,total_sessions:snapshot.len() as f64,
                             timestamp:chrono::Utc::now().timestamp_millis() as f64,
                             changed_session_heads:heads,projection_related_session_heads:Some(related),
