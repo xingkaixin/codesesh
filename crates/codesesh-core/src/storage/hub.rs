@@ -5,7 +5,7 @@ mod tasks;
 
 use super::Cache;
 use crate::{
-    contract::{SessionHead, SessionReference},
+    model::{SessionHead, SessionReference},
     pricing::Pricing,
     sync::{
         CapturedSession, Node, Operation, PAYLOAD_VERSION, PairingGrant, Receipt, Upload,

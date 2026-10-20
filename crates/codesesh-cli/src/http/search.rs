@@ -6,8 +6,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use codesesh_core::{
-    public_contract::SearchResultParent,
     search::{self, FileActivityOptions, SearchOptions, SearchResult},
+    wire::SearchResultParent,
 };
 use serde_json::json;
 use std::{collections::HashSet, sync::Arc};

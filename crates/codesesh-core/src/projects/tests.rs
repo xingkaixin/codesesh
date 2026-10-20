@@ -159,7 +159,7 @@ fn real_git_worktree_shares_common_directory() {
     );
 }
 
-fn session(id: &str, parent: Option<&str>, time: i64) -> crate::contract::SessionHead {
+fn session(id: &str, parent: Option<&str>, time: i64) -> crate::model::SessionHead {
     let mut value = serde_json::json!({
         "reference": {"agentName":"codex","sessionId":id},
         "title":id,"directory":"/repo","project_identity":{"kind":"path","key":"/repo","displayName":"repo"},

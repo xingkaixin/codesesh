@@ -2,7 +2,7 @@ use super::*;
 
 fn namespace(head: &mut SessionHead, node: &str) -> Result<()> {
     ensure!(
-        head.reference.source_node_id == crate::contract::LOCAL_SOURCE_NODE_ID,
+        head.reference.source_node_id == crate::model::LOCAL_SOURCE_NODE_ID,
         "Worker must submit its own local session identity"
     );
     ensure!(
@@ -14,12 +14,12 @@ fn namespace(head: &mut SessionHead, node: &str) -> Result<()> {
     head.reference.source_node_id = node.into();
     if let Some(parent) = &mut head.parent_reference {
         ensure!(
-            parent.source_node_id == crate::contract::LOCAL_SOURCE_NODE_ID,
+            parent.source_node_id == crate::model::LOCAL_SOURCE_NODE_ID,
             "Parent belongs to a different source"
         );
         parent.source_node_id = node.into();
     }
-    if node != crate::contract::LOCAL_SOURCE_NODE_ID {
+    if node != crate::model::LOCAL_SOURCE_NODE_ID {
         head.project_identity.key = format!("@{node}/{}", head.project_identity.key);
     }
     head.display_title = None;

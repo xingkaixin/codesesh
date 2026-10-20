@@ -16,7 +16,7 @@ pub use manager::{CACHE_TTL_MS, MODELS_DEV_URL, PricingManager};
 pub use registry::{Price, parse_models_dev};
 pub use tier::priced_model;
 
-use crate::contract::MessageTokens;
+use crate::model::MessageTokens;
 use std::{
     collections::HashMap,
     path::Path,

@@ -1,10 +1,10 @@
 use crate::{
-    contract::{SessionHead, SessionReference},
-    public_contract::{
+    model::{SessionHead, SessionReference},
+    state::{BookmarkRecord, normalize_reference, reference_key},
+    wire::{
         AvailableBookmarkReason, AvailableBookmarkView, BookmarkView, UnavailableBookmarkReason,
         UnavailableBookmarkView, head,
     },
-    state::{BookmarkRecord, normalize_reference, reference_key},
 };
 use anyhow::{Result, bail};
 use std::collections::{HashMap, HashSet};
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn resolves_missing_bookmarks_once_and_preserves_availability() {
         let reference = |id: &str, agent: &str| SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: agent.into(),
             session_id: id.into(),
         };

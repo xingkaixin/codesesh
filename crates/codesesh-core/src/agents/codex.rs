@@ -1,6 +1,6 @@
 use super::{ParsedSession, codex_rollout as rollout, codex_usage::Usage, jsonl::timestamp};
 use crate::pricing::Pricing;
-use crate::{contract::*, projects::path_identity};
+use crate::{model::*, projects::path_identity};
 use anyhow::Result;
 use regex::Regex;
 use serde_json::Value;
@@ -1255,7 +1255,7 @@ impl Parser {
             version: None,
             summary_files: None,
             reference: SessionReference {
-                source_node_id: crate::contract::local_source_node_id(),
+                source_node_id: crate::model::local_source_node_id(),
                 agent_name: "codex".into(),
                 session_id: id,
             },
@@ -1263,7 +1263,7 @@ impl Parser {
             directory,
             display_title: None,
             parent_reference: parent.map(|id| SessionReference {
-                source_node_id: crate::contract::local_source_node_id(),
+                source_node_id: crate::model::local_source_node_id(),
                 agent_name: "codex".into(),
                 session_id: id,
             }),

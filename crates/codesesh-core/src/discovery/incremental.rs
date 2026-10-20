@@ -66,16 +66,16 @@ pub struct AgentScanner {
     pricing: Arc<Pricing>,
     controller: Option<PricingController>,
     previous: Vec<SessionRecord>,
-    durable_references: HashSet<crate::contract::SessionReference>,
+    durable_references: HashSet<crate::model::SessionReference>,
     initialized: bool,
     history_complete: bool,
     backfill: Option<Backfill>,
     startup_from: Option<f64>,
     startup_to: Option<f64>,
-    target: Option<crate::contract::SessionReference>,
+    target: Option<crate::model::SessionReference>,
     baseline: HashMap<
-        crate::contract::SessionReference,
-        (Option<crate::contract::SessionReference>, Option<PathBuf>),
+        crate::model::SessionReference,
+        (Option<crate::model::SessionReference>, Option<PathBuf>),
     >,
     rejected: Arc<AtomicBool>,
     cursor: agents::cursor::CursorSync,
@@ -95,7 +95,7 @@ impl AgentScanner {
             source_available: None,
             cache_path,
             worker: false,
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             pricing,
             controller: None,
             previous: Vec::new(),
@@ -145,10 +145,7 @@ impl AgentScanner {
         self.startup_to = to;
         self
     }
-    pub fn with_target_session(
-        mut self,
-        target: Option<crate::contract::SessionReference>,
-    ) -> Self {
+    pub fn with_target_session(mut self, target: Option<crate::model::SessionReference>) -> Self {
         self.target = target.filter(|target| target.agent_name == self.source.agent);
         self
     }
@@ -195,7 +192,7 @@ impl AgentScanner {
         let checkpoint = checkpoint.filter(|value| {
             value["sourceNodeId"]
                 .as_str()
-                .unwrap_or(crate::contract::LOCAL_SOURCE_NODE_ID)
+                .unwrap_or(crate::model::LOCAL_SOURCE_NODE_ID)
                 == self.source_node_id
         });
         let ticket = self
@@ -482,11 +479,7 @@ impl AgentScanner {
         self.database_inventory = Some((stamp, items.clone()));
         Ok(items)
     }
-    fn matches_scope(
-        &self,
-        reference: &crate::contract::SessionReference,
-        scope: &ItemScope,
-    ) -> bool {
+    fn matches_scope(&self, reference: &crate::model::SessionReference, scope: &ItemScope) -> bool {
         if !scope.paths.is_empty() {
             return self
                 .baseline
@@ -668,7 +661,7 @@ impl AgentScanner {
         &mut self,
         selected: &[Item],
         limit_changes: bool,
-    ) -> Result<(ScanDelta, HashSet<crate::contract::SessionReference>, usize)> {
+    ) -> Result<(ScanDelta, HashSet<crate::model::SessionReference>, usize)> {
         let mut reused = HashSet::new();
         let mut changed = Vec::new();
         let mut bytes = 0_u64;
@@ -869,7 +862,7 @@ impl AgentScanner {
             } else {
                 Default::default()
             };
-            head.set_source_node(crate::contract::LOCAL_SOURCE_NODE_ID);
+            head.set_source_node(crate::model::LOCAL_SOURCE_NODE_ID);
             self.durable_references.insert(head.reference.clone());
             if pricing_changed && !has_cost_inputs {
                 self.file_fingerprints.remove(&head.reference.session_id);
@@ -899,7 +892,7 @@ impl AgentScanner {
         if let Some(state) = state
             && state["sourceNodeId"]
                 .as_str()
-                .unwrap_or(crate::contract::LOCAL_SOURCE_NODE_ID)
+                .unwrap_or(crate::model::LOCAL_SOURCE_NODE_ID)
                 == self.source_node_id
             && state["version"] == 1
             && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))

@@ -1,5 +1,5 @@
 use super::ParsedSession;
-use crate::{contract::*, pricing::Pricing, projects::path_identity};
+use crate::{model::*, pricing::Pricing, projects::path_identity};
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags, types::ValueRef};
 use serde_json::{Map, Value};
@@ -158,7 +158,7 @@ fn data(row: &Value) -> Result<Value> {
 }
 fn reference(agent: &str, id: String) -> SessionReference {
     SessionReference {
-        source_node_id: crate::contract::local_source_node_id(),
+        source_node_id: crate::model::local_source_node_id(),
         agent_name: agent.into(),
         session_id: id,
     }

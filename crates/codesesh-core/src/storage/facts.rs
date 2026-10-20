@@ -1,4 +1,4 @@
-use crate::contract::{Message, MessagePart, SessionHead, SessionReference};
+use crate::model::{Message, MessagePart, SessionHead, SessionReference};
 use anyhow::Result;
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value, json};
@@ -129,7 +129,7 @@ pub fn tool_metadata(message: &Message) -> Result<Option<String>> {
             let projection = MessagePart::Tool {
                 tool: tool.clone(),
                 call_id: call_id.clone(),
-                state: Box::new(crate::contract::ToolState {
+                state: Box::new(crate::model::ToolState {
                     status: state.status.clone(),
                     input: None,
                     output: None,

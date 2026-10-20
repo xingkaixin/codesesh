@@ -1,5 +1,5 @@
 use super::{ParsedSession, claudecode::common::*, jsonl::timestamp};
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::{
@@ -527,7 +527,7 @@ pub(super) fn parse_as(
         .unwrap_or_else(|| "Untitled Session".into());
     let mut detail = detail(
         SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: agent.into(),
             session_id: id,
         },

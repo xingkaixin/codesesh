@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::Response,
 };
-use codesesh_core::public_contract::WireSessionListPage;
+use codesesh_core::wire::WireSessionListPage;
 use codesesh_core::{
     projects,
     session_list::{PaginationError, SessionFilter, filter_sessions},
@@ -79,7 +79,7 @@ fn paginated_sessions(
     state: &State,
     query: &Params,
     limit: usize,
-    items: Vec<codesesh_core::contract::SessionHead>,
+    items: Vec<codesesh_core::model::SessionHead>,
 ) -> Response {
     let Ok(mut pages) = state.session_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load sessions");
@@ -149,7 +149,7 @@ pub async fn detail(
 }
 
 fn session_page(
-    items: Vec<codesesh_core::contract::SessionHead>,
+    items: Vec<codesesh_core::model::SessionHead>,
     next_cursor: Option<String>,
 ) -> Response {
     match items

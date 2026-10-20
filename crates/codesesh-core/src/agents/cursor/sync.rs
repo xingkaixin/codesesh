@@ -1,5 +1,5 @@
 use super::{composer_id, parse_composer, string, workspace_paths};
-use crate::{agents::ParsedSession, contract::SessionReference, pricing::Pricing};
+use crate::{agents::ParsedSession, model::SessionReference, pricing::Pricing};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
@@ -190,7 +190,7 @@ fn references(ids: impl Iterator<Item = String>) -> Vec<SessionReference> {
     ids.sort();
     ids.into_iter()
         .map(|session_id| SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: "cursor".into(),
             session_id,
         })

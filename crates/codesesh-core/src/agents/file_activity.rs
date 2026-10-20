@@ -1,4 +1,4 @@
-use crate::contract::{Message, MessagePart, SessionFileActivity, SessionHead};
+use crate::model::{Message, MessagePart, SessionFileActivity, SessionHead};
 use regex::Regex;
 use serde_json::Value;
 use std::{

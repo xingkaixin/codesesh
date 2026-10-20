@@ -109,7 +109,7 @@ async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
         .map(|index| {
             let mut message = message.clone();
             message.id = format!("m{index}");
-            message.parts = vec![codesesh_core::contract::MessagePart::Text {
+            message.parts = vec![codesesh_core::model::MessagePart::Text {
                 text: "中文😀".repeat(512),
                 time_created: Some(message.time_created),
             }];
@@ -230,8 +230,8 @@ async fn missing_detail_returns_retry_before_streaming_and_releases_permit() {
         .await
         .unwrap();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
-    let reference = codesesh_core::contract::SessionReference {
-        source_node_id: codesesh_core::contract::local_source_node_id(),
+    let reference = codesesh_core::model::SessionReference {
+        source_node_id: codesesh_core::model::local_source_node_id(),
         agent_name: "codex".into(),
         session_id: "missing".into(),
     };

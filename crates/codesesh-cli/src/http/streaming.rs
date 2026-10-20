@@ -40,10 +40,10 @@ where
 pub async fn detail(
     runtime: codesesh_core::runtime::Runtime,
     pricing: codesesh_core::pricing::Pricing,
-    reference: codesesh_core::contract::SessionReference,
+    reference: codesesh_core::model::SessionReference,
     cursor: Option<String>,
     message_limit: Option<usize>,
-    aliases: std::collections::HashMap<codesesh_core::contract::SessionReference, String>,
+    aliases: std::collections::HashMap<codesesh_core::model::SessionReference, String>,
     guard: tokio::sync::OwnedSemaphorePermit,
 ) -> Response {
     let (sender, mut receiver) = mpsc::channel(BUFFERED_CHUNKS);

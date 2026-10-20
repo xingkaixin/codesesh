@@ -29,7 +29,7 @@ pub mod pi;
 pub mod zcode;
 
 use crate::{
-    contract::{AgentInfo, SessionDetail, SessionHead},
+    model::{AgentInfo, SessionDetail, SessionHead},
     pricing::Pricing,
 };
 
@@ -53,7 +53,7 @@ impl ParsedSession {
 
 #[derive(Clone, Debug)]
 pub struct SessionRecord {
-    pub head: crate::contract::SessionHead,
+    pub head: crate::model::SessionHead,
     pub source: std::path::PathBuf,
     pub attachments: dsh::AttachmentReferences,
 }
@@ -74,7 +74,7 @@ impl From<&ParsedSession> for SessionRecord {
 #[derive(Clone, Debug, Default)]
 pub struct ScanDelta {
     pub upserts: Vec<ParsedSession>,
-    pub removed: Vec<crate::contract::SessionReference>,
+    pub removed: Vec<crate::model::SessionReference>,
     pub complete: bool,
 }
 use std::{

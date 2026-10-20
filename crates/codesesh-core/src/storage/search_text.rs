@@ -1,5 +1,5 @@
 use super::StorageProgress;
-use crate::contract::{Message, MessagePart, SessionReference};
+use crate::model::{Message, MessagePart, SessionReference};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -319,7 +319,7 @@ fn meta(db: &Connection, key: &str) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::ToolState;
+    use crate::model::ToolState;
     use serde_json::json;
 
     fn tool(output: Value) -> String {

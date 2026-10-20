@@ -1,4 +1,4 @@
-use crate::{contract::SessionHead, pricing::CostInput};
+use crate::{model::SessionHead, pricing::CostInput};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;

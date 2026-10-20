@@ -20,11 +20,11 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use codesesh_core::{
-    contract::{SessionHead, SessionReference},
-    public_contract::{DashboardData, WireSessionHead},
+    model::{SessionHead, SessionReference},
     runtime::Runtime,
     session_list::SnapshotPaginator,
     state::StateStore,
+    wire::{DashboardData, WireSessionHead},
 };
 use serde_json::{Value, json};
 use std::{

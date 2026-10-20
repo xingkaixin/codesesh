@@ -1,4 +1,4 @@
-use crate::contract::*;
+use crate::model::*;
 use anyhow::Result;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};

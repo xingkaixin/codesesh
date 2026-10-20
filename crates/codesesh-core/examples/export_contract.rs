@@ -1,5 +1,5 @@
-use codesesh_core::contract::*;
-use codesesh_core::public_contract as wire;
+use codesesh_core::model::*;
+use codesesh_core::wire;
 use ts_rs::{Config, TS};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

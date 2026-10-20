@@ -1,7 +1,7 @@
 use super::{ProjectScope, QueryScope, SearchOptions, prepare, reader, sql};
 use crate::{
-    contract::SessionFileActivity,
-    public_contract::{FileActivityResult, activity, head},
+    model::SessionFileActivity,
+    wire::{FileActivityResult, activity, head},
 };
 use anyhow::Result;
 use rusqlite::{Connection, params_from_iter};

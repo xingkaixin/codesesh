@@ -6,7 +6,7 @@ pub use groups::{ProjectGroup, build_project_groups};
 pub use path::fallback_display_name;
 pub use scope::*;
 
-use crate::contract::ProjectIdentity;
+use crate::model::ProjectIdentity;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

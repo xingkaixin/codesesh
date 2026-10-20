@@ -1,6 +1,6 @@
 pub(super) mod common;
 use super::ParsedSession;
-use crate::{contract::*, pricing::Pricing};
+use crate::{model::*, pricing::Pricing};
 use anyhow::Result;
 use common::*;
 use rusqlite::{Connection, OpenFlags};

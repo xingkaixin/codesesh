@@ -1,7 +1,7 @@
 use super::*;
 fn reference(id: &str) -> SessionReference {
     SessionReference {
-        source_node_id: crate::contract::local_source_node_id(),
+        source_node_id: crate::model::local_source_node_id(),
         agent_name: " CoDeX ".into(),
         session_id: id.into(),
     }

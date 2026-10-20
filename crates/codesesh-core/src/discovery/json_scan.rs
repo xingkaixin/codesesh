@@ -1,7 +1,7 @@
 use super::{AgentSource, ScanOptions};
 use crate::{
     agents,
-    contract::{SessionHead, SessionIndex},
+    model::{SessionHead, SessionIndex},
     pricing::Pricing,
     projects::{compute_identity_projection, create_project_scope_matcher, matches_project_scope},
     session_list::filter_activity_window,

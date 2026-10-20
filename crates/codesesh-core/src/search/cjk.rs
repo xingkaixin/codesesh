@@ -1,5 +1,5 @@
 use super::{snippet, split_tokens, sql::Filters, to_fts_query};
-use crate::contract::{SessionHead, SessionReference};
+use crate::model::{SessionHead, SessionReference};
 use anyhow::Result;
 use regex::{Regex, RegexBuilder};
 use rusqlite::{

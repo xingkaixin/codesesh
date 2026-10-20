@@ -1,5 +1,5 @@
 use super::*;
-use crate::contract::{CostSource, ProjectIdentity, SessionStats};
+use crate::model::{CostSource, ProjectIdentity, SessionStats};
 use rusqlite::{OptionalExtension, Row, params};
 
 // Search sorts many rows; `s.*` would carry `meta_json` (pricing state) into the sorter.

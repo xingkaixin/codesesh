@@ -8,12 +8,12 @@ use axum::{
 };
 use codesesh_core::{
     bookmarks::materialize_bookmarks,
-    contract::SessionReference,
-    public_contract::BookmarkView,
+    model::SessionReference,
     state::{
         BookmarkRecord, StateStore, normalize_session_alias, parse_bookmark_import,
         parse_bookmark_reference,
     },
+    wire::BookmarkView,
 };
 use serde_json::{Value, json};
 use std::{

@@ -167,7 +167,7 @@ pub async fn run(
             if let Ok(identity) = std::fs::read_to_string(root.join("hub-identity")) {
                 ensure!(
                     identity.trim() != grant.hub_id
-                        || grant.node_id == codesesh_core::contract::LOCAL_SOURCE_NODE_ID,
+                        || grant.node_id == codesesh_core::model::LOCAL_SOURCE_NODE_ID,
                     "This machine's Hub did not confirm the local source. Restart Hub with this version before pairing again; no history was uploaded."
                 );
             }
@@ -180,7 +180,7 @@ pub async fn run(
         }
     };
     crate::service::paired();
-    if grant.node_id == codesesh_core::contract::LOCAL_SOURCE_NODE_ID {
+    if grant.node_id == codesesh_core::model::LOCAL_SOURCE_NODE_ID {
         let root = codesesh_core::app_paths::root(&environment.home);
         let identity = std::fs::read_to_string(root.join("hub-identity"))
             .context("Local Worker requires this Hub's installation identity")?;
@@ -225,9 +225,7 @@ pub async fn run(
             collector.store = tokio::task::spawn_blocking(move || -> Result<WorkerStore> {
                 let cache = crate::cache_open::open(&archive)?;
                 for head in cache.snapshot()? {
-                    if head.reference.source_node_id
-                        != codesesh_core::contract::LOCAL_SOURCE_NODE_ID
-                    {
+                    if head.reference.source_node_id != codesesh_core::model::LOCAL_SOURCE_NODE_ID {
                         continue;
                     }
                     if let Some(captured) = cache.capture_session(&head.reference)? {

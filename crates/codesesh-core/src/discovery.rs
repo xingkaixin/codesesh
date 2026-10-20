@@ -5,7 +5,7 @@ pub mod json_scan;
 pub mod paths;
 use crate::{
     agents::{self, ParsedSession},
-    contract::AgentInfo,
+    model::AgentInfo,
     pricing::Pricing,
     projects::{create_project_scope_matcher, matches_project_scope},
     session_list::filter_activity_window,

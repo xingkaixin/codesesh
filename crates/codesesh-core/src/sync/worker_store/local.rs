@@ -7,7 +7,7 @@ impl WorkerStore {
         grant: &super::super::PairingGrant,
     ) -> Result<Option<usize>> {
         ensure!(
-            grant.node_id == crate::contract::LOCAL_SOURCE_NODE_ID,
+            grant.node_id == crate::model::LOCAL_SOURCE_NODE_ID,
             "Only the authenticated local Worker can adopt Hub history"
         );
         let snapshot = cache.connection().unchecked_transaction()?;
@@ -36,7 +36,7 @@ impl WorkerStore {
         let mut count = 0;
         for agent in crate::agents::catalog(0) {
             for head in
-                cache.source_agent_snapshot(crate::contract::LOCAL_SOURCE_NODE_ID, &agent.name)?
+                cache.source_agent_snapshot(crate::model::LOCAL_SOURCE_NODE_ID, &agent.name)?
             {
                 let source: Option<String> = snapshot.query_row("SELECT source_path FROM sessions WHERE source_node_id='local' AND agent_name=? AND session_id=?", params![agent.name,head.reference.session_id], |r| r.get(0))?;
                 let Some(source) = source else {

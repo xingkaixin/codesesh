@@ -1,8 +1,8 @@
-pub use codesesh_core::public_contract::{activity, head, referenced};
+pub use codesesh_core::wire::{activity, head, referenced};
 use codesesh_core::{
-    contract as core,
-    public_contract::{self as wire, closed},
+    model as core,
     search::SearchResult,
+    wire::{self, closed},
 };
 
 type Result<T> = std::result::Result<T, serde::de::value::Error>;

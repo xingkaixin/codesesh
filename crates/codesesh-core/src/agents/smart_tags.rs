@@ -1,4 +1,4 @@
-use crate::contract::{Message, MessagePart, Role};
+use crate::model::{Message, MessagePart, Role};
 use regex::{Regex, RegexSet};
 use serde_json::Value;
 use std::sync::LazyLock;

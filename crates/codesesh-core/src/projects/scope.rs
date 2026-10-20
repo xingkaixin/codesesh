@@ -1,5 +1,5 @@
 use super::{compute_identity, matches_project_identity, normalize_project_directory};
-use crate::contract::{ProjectIdentity, SessionHead};
+use crate::model::{ProjectIdentity, SessionHead};
 
 #[derive(Clone, Debug)]
 pub struct ProjectScopeMatcher {

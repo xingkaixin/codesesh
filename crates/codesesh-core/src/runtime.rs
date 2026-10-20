@@ -4,7 +4,7 @@ mod writer;
 
 use crate::{
     agents::ParsedSession,
-    contract::{SessionHead, SessionReference},
+    model::{SessionHead, SessionReference},
 };
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags};

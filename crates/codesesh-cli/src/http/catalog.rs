@@ -123,14 +123,14 @@ fn cached_catalog<T: Clone>(
 
 pub async fn config(
     AxumState(state): AxumState<Arc<State>>,
-) -> Json<codesesh_core::public_contract::AppConfig> {
-    Json(codesesh_core::public_contract::AppConfig {
+) -> Json<codesesh_core::wire::AppConfig> {
+    Json(codesesh_core::wire::AppConfig {
         hub_enabled: state.hub_enabled.then_some(true),
         public_hub_url: state
             .hub_enabled
             .then(|| state.options.public_origin.clone())
             .flatten(),
-        window: codesesh_core::public_contract::SessionWindow {
+        window: codesesh_core::wire::SessionWindow {
             from: state.options.default_from,
             to: state.options.default_to,
             days: state.options.default_days.map(f64::from),

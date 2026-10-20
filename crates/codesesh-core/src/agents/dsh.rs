@@ -2,7 +2,7 @@ mod log;
 mod project;
 
 use super::claudecode::common::InvalidSession;
-use crate::{agents::ParsedSession, contract::*, pricing::Pricing, projects::path_identity};
+use crate::{agents::ParsedSession, model::*, pricing::Pricing, projects::path_identity};
 use anyhow::Result;
 use std::{
     collections::HashSet,
@@ -234,7 +234,7 @@ fn scan_selected(
             version: None,
             summary_files: None,
             reference: SessionReference {
-                source_node_id: crate::contract::local_source_node_id(),
+                source_node_id: crate::model::local_source_node_id(),
                 agent_name: "dsh".into(),
                 session_id: id,
             },
@@ -245,7 +245,7 @@ fn scan_selected(
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(|id| SessionReference {
-                    source_node_id: crate::contract::local_source_node_id(),
+                    source_node_id: crate::model::local_source_node_id(),
                     agent_name: "dsh".into(),
                     session_id: id.into(),
                 }),

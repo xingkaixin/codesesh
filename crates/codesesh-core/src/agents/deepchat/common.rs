@@ -1,4 +1,4 @@
-use crate::{agents::ParsedSession, contract::*, projects::path_identity};
+use crate::{agents::ParsedSession, model::*, projects::path_identity};
 use anyhow::Result;
 use rusqlite::{Connection, types::ValueRef};
 use serde_json::{Map, Value, json};
@@ -109,7 +109,7 @@ pub fn finish(
         version: None,
         summary_files: None,
         reference: SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: agent.into(),
             session_id: id,
         },
@@ -117,7 +117,7 @@ pub fn finish(
         directory,
         display_title: None,
         parent_reference: parent.map(|session_id| SessionReference {
-            source_node_id: crate::contract::local_source_node_id(),
+            source_node_id: crate::model::local_source_node_id(),
             agent_name: agent.into(),
             session_id,
         }),

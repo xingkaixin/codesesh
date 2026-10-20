@@ -2,7 +2,7 @@ use super::{
     DashboardCostFacts, DashboardScope, MessageCostFact, SessionCostSummary, SessionModelCostFact,
 };
 use crate::{
-    contract::{CostSource, SessionHead, SessionReference},
+    model::{CostSource, SessionHead, SessionReference},
     session_list::SessionTree,
 };
 use rusqlite::{Connection, Row, types::Value};

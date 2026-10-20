@@ -1,4 +1,4 @@
-use crate::{contract::*, projects::path_identity};
+use crate::{model::*, projects::path_identity};
 use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 

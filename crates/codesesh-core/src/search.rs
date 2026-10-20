@@ -8,9 +8,9 @@ use reader::{search_files, search_prepared};
 mod snippet;
 mod sql;
 
-use crate::contract::{SessionHead, SessionReference};
+use crate::model::{SessionHead, SessionReference};
 pub use crate::projects::ProjectScopeMatcher as ProjectScope;
-pub use crate::public_contract::SearchHighlightRange as HighlightRange;
+pub use crate::wire::SearchHighlightRange as HighlightRange;
 use anyhow::Result;
 pub use parser::{ParsedQuery, parse_query, split_tokens, to_fts_query};
 use rusqlite::{Connection, params_from_iter, types::Value};

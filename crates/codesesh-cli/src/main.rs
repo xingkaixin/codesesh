@@ -121,7 +121,7 @@ async fn run() -> Result<()> {
     let local_source = if scan_local {
         resume_local_source(&environment.home, &cache_path, &pricing).await?
     } else {
-        codesesh_core::contract::local_source_node_id()
+        codesesh_core::model::local_source_node_id()
     };
     if service::stopping() {
         return Ok(());
@@ -300,7 +300,7 @@ async fn resume_local_source(
                 return Ok(node);
             }
         }
-        Ok(codesesh_core::contract::local_source_node_id())
+        Ok(codesesh_core::model::local_source_node_id())
     })
     .await?
 }
@@ -393,8 +393,8 @@ fn runtime_sources(
                     .with_source_node(local_source)
                     .with_startup_window(plan.from, plan.to)
                     .with_target_session(plan.session.as_ref().map(|(agent, id)| {
-                        codesesh_core::contract::SessionReference {
-                            source_node_id: codesesh_core::contract::local_source_node_id(),
+                        codesesh_core::model::SessionReference {
+                            source_node_id: codesesh_core::model::local_source_node_id(),
                             agent_name: agent.clone(),
                             session_id: id.clone(),
                         }

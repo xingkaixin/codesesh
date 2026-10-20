@@ -1,4 +1,4 @@
-use crate::contract::{CostSource, SessionReference};
+use crate::model::{CostSource, SessionReference};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 

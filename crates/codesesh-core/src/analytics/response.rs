@@ -2,9 +2,9 @@ use super::{
     CostFactsIndex, DashboardOptions, active_hours, build_dashboard, load_scoped_cost_facts,
 };
 use crate::{
-    contract::SessionHead,
-    public_contract::{DashboardData, DashboardWindow},
+    model::SessionHead,
     search::{FileActivityOptions, QueryScope, list_file_activity},
+    wire::{DashboardData, DashboardWindow},
 };
 use rusqlite::Connection;
 use std::time::Instant;

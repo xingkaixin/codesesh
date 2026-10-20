@@ -204,7 +204,7 @@ impl Cache {
         let replacement: Option<(String, String)> = tx.query_row("SELECT n.id,n.name FROM hub_replacements r JOIN hub_nodes n ON n.id=r.node_id WHERE r.token_hash=?", [digest(token.as_bytes())], |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
         if let Some((node, _)) = &replacement {
             ensure!(
-                (node == crate::contract::LOCAL_SOURCE_NODE_ID) == local,
+                (node == crate::model::LOCAL_SOURCE_NODE_ID) == local,
                 "Replacing the local source requires this Hub's installation proof; remote replacements require a separate Worker data directory"
             );
         }
@@ -222,7 +222,7 @@ impl Cache {
         let node_id = if let Some((node, _)) = &replacement {
             node.clone()
         } else if local {
-            crate::contract::LOCAL_SOURCE_NODE_ID.to_owned()
+            crate::model::LOCAL_SOURCE_NODE_ID.to_owned()
         } else {
             uuid::Uuid::new_v4().to_string()
         };

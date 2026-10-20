@@ -1,4 +1,4 @@
-use crate::contract::MessagePart;
+use crate::model::MessagePart;
 use serde_json::{Map, Value};
 
 fn text(value: &Value) -> Option<&str> {

@@ -3,15 +3,15 @@ use chrono::{DateTime, Local, NaiveDate, TimeZone};
 
 #[derive(serde::Deserialize)]
 pub struct SessionPath {
-    #[serde(default = "codesesh_core::contract::local_source_node_id")]
+    #[serde(default = "codesesh_core::model::local_source_node_id")]
     source: String,
     agent: String,
     id: String,
 }
 
 impl SessionPath {
-    pub fn reference(self) -> codesesh_core::contract::SessionReference {
-        codesesh_core::contract::SessionReference {
+    pub fn reference(self) -> codesesh_core::model::SessionReference {
+        codesesh_core::model::SessionReference {
             source_node_id: self.source,
             agent_name: self.agent,
             session_id: self.id,

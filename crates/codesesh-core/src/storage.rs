@@ -17,7 +17,7 @@ mod search_text;
 mod snapshot;
 use crate::{
     agents::ParsedSession,
-    contract::{CostSource, Role, SessionDetail, SessionHead, SessionReference},
+    model::{CostSource, Role, SessionDetail, SessionHead, SessionReference},
 };
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -118,7 +118,7 @@ impl Cache {
     }
 
     pub fn agent_snapshot(&self, agent: &str) -> Result<Vec<SessionHead>> {
-        self.source_agent_snapshot(crate::contract::LOCAL_SOURCE_NODE_ID, agent)
+        self.source_agent_snapshot(crate::model::LOCAL_SOURCE_NODE_ID, agent)
     }
 
     pub fn source_agent_snapshot(&self, node: &str, agent: &str) -> Result<Vec<SessionHead>> {
@@ -280,7 +280,7 @@ impl Cache {
                     .is_none_or(|parent| parent.source_node_id == reference.source_node_id),
                 "Parent session must belong to the same source node"
             );
-            let file_meta = if reference.source_node_id == crate::contract::LOCAL_SOURCE_NODE_ID {
+            let file_meta = if reference.source_node_id == crate::model::LOCAL_SOURCE_NODE_ID {
                 std::fs::metadata(&session.source).ok()
             } else {
                 None
