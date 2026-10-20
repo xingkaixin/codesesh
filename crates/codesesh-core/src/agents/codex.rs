@@ -1,4 +1,10 @@
-use super::{ParsedSession, codex_rollout as rollout, codex_usage::Usage, jsonl::timestamp};
+mod exec;
+mod patch;
+pub(crate) mod rollout;
+mod tool_events;
+mod usage;
+
+use super::{ParsedSession, jsonl::timestamp};
 use crate::pricing::Pricing;
 use crate::{model::*, projects::path_identity};
 use anyhow::Result;
@@ -11,6 +17,7 @@ use std::{
     path::{Path, PathBuf},
     sync::LazyLock,
 };
+use usage::Usage;
 use walkdir::WalkDir;
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
@@ -722,7 +729,7 @@ struct Parser {
     pending_plan: Option<MessagePart>,
     latest_text: Option<usize>,
     tools: HashMap<String, (usize, usize)>,
-    tool_events: super::codex_tool_events::ToolEvents,
+    tool_events: tool_events::ToolEvents,
     has_record: bool,
     next_index: usize,
 }
@@ -905,7 +912,7 @@ impl Parser {
                 }
                 let full_text = content(payload, role == "assistant");
                 let full_text = if role == "user" {
-                    super::codex_tool_events::record_question_reply(&full_text, messages, tools)
+                    tool_events::record_question_reply(&full_text, messages, tools)
                         .unwrap_or(full_text)
                 } else {
                     full_text
@@ -1031,7 +1038,7 @@ impl Parser {
                 let call_id = payload["call_id"].as_str().unwrap_or("").trim().to_owned();
                 let input = if payload["type"] == "custom_tool_call" {
                     if name == "apply_patch" {
-                        super::codex_patch::parse(&payload["input"])
+                        patch::parse(&payload["input"])
                     } else {
                         payload["input"].clone()
                     }
@@ -1042,11 +1049,11 @@ impl Parser {
                         .unwrap_or_else(|| payload["arguments"].clone())
                 };
                 let decoded = if name == "exec" && payload["type"] == "custom_tool_call" {
-                    super::codex_exec::decode(&payload["input"])
+                    exec::decode(&payload["input"])
                 } else {
                     Vec::new()
                 };
-                let output_target = super::codex_exec::output_target(&decoded);
+                let output_target = exec::output_target(&decoded);
                 let calls = if decoded.is_empty() {
                     vec![(
                         name.to_owned(),
@@ -1063,11 +1070,9 @@ impl Parser {
                         .into_iter()
                         .enumerate()
                         .map(|(index, call)| {
-                            let (name, namespace) = super::codex_exec::split_tool_name(&call.name);
+                            let (name, namespace) = exec::split_tool_name(&call.name);
                             let input = if name == "apply_patch" {
-                                super::codex_patch::parse(&Value::String(
-                                    super::codex_exec::patch_text(&call.args).into(),
-                                ))
+                                patch::parse(&Value::String(exec::patch_text(&call.args).into()))
                             } else {
                                 call.args
                             };
@@ -1180,7 +1185,7 @@ impl Parser {
                         && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
                         && state.status == "running"
                     {
-                        let (output, status) = super::codex_exec::output(&payload["output"], time);
+                        let (output, status) = exec::output(&payload["output"], time);
                         let output = clean_value(output);
                         state.error = (status == "error").then(|| output.clone());
                         state.output = Some(output);

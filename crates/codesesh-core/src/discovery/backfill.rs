@@ -374,7 +374,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
 }
 
 fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
-    use crate::agents::codex_rollout;
+    use crate::agents::codex::rollout;
     use std::io::BufRead;
     let mut titles = std::collections::HashMap::new();
     if let Ok(file) = std::fs::File::open(source.data_root.join("session_index.jsonl")) {
@@ -388,7 +388,7 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
         }
     }
     let mut items = Vec::new();
-    for (path, physical) in codex_rollout::files(&source.data_root)? {
+    for (path, physical) in rollout::files(&source.data_root)? {
         let metadata = match std::fs::metadata(&physical) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
