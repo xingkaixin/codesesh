@@ -240,7 +240,11 @@ pub(super) fn reprice_head(
 }
 
 impl Cache {
-    pub fn reprice(&mut self, agent: &str, pricing: &Pricing) -> Result<Vec<SessionReference>> {
+    pub(crate) fn reprice(
+        &mut self,
+        agent: &str,
+        pricing: &Pricing,
+    ) -> Result<Vec<SessionReference>> {
         let transaction = self.connection.transaction()?;
         let entries = {
             let mut query = transaction.prepare("SELECT source_node_id,session_id FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?")?;

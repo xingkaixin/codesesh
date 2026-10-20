@@ -19,6 +19,7 @@ fn reference(row: &Row<'_>) -> rusqlite::Result<SessionReference> {
     })
 }
 
+#[cfg(test)]
 pub fn load_cost_facts(
     connection: &Connection,
     from: Option<f64>,

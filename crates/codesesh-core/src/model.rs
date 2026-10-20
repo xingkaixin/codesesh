@@ -111,7 +111,7 @@ pub enum CostSource {
 }
 
 impl CostSource {
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::Recorded => "recorded",
             Self::Estimated => "estimated",
@@ -171,7 +171,7 @@ pub struct SessionHead {
 }
 
 impl SessionHead {
-    pub fn set_source_node(&mut self, node: &str) {
+    pub(crate) fn set_source_node(&mut self, node: &str) {
         let previous = &self.reference.source_node_id;
         if previous == node {
             return;

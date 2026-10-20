@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
 pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {
     let sessions = if root.join("sessions").is_dir() {
         root.join("sessions")
@@ -38,6 +39,7 @@ pub fn scan_paths_with_data_root(
     }
 }
 
+#[cfg(test)]
 pub fn scan_paths(
     root: &Path,
     pricing: &Pricing,

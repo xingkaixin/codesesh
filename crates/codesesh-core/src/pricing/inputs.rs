@@ -76,7 +76,7 @@ impl Pricing {
         ((message.cost? - breakdown.total()).abs() <= 1e-8).then_some(breakdown)
     }
 
-    pub fn estimate_tracked(
+    pub(crate) fn estimate_tracked(
         &self,
         model: Option<&str>,
         tokens: &MessageTokens,
@@ -88,7 +88,7 @@ impl Pricing {
 
     /// Estimates tokens summed over several requests, such as session totals. The input is
     /// marked `aggregate`, so long-context tiers do not apply now or when it is repriced.
-    pub fn estimate_aggregate_tracked(
+    pub(crate) fn estimate_aggregate_tracked(
         &self,
         model: Option<&str>,
         tokens: &MessageTokens,

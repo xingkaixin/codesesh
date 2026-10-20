@@ -5,16 +5,21 @@ mod inputs;
 mod manager;
 #[cfg(test)]
 pub(crate) use inputs::assert_cached_repricing;
-pub use inputs::{CostInput, TokenCostBreakdown};
+pub(crate) use inputs::{CostInput, TokenCostBreakdown};
 mod registry;
 mod tier;
 
-pub use controller::{PricingController, PricingSnapshot};
-pub use cost::{PRICING_CAPTURE_EPOCH, capture_misses};
+pub use controller::PricingController;
+pub(crate) use controller::PricingSnapshot;
+#[cfg(test)]
+pub(crate) use cost::capture_misses;
 pub(crate) use dependencies::{PriceDependencies, capture_dependencies};
-pub use manager::{CACHE_TTL_MS, MODELS_DEV_URL, PricingManager};
-pub use registry::{Price, parse_models_dev};
-pub use tier::priced_model;
+pub use manager::MODELS_DEV_URL;
+pub(crate) use manager::PricingManager;
+pub(crate) use registry::Price;
+#[cfg(test)]
+pub(crate) use registry::parse_models_dev;
+pub(crate) use tier::priced_model;
 
 use crate::model::MessageTokens;
 use std::{
@@ -71,7 +76,7 @@ fn drops_version(kept: &str, dropped: &str) -> bool {
 }
 
 impl Pricing {
-    pub fn capture_only() -> Self {
+    pub(crate) fn capture_only() -> Self {
         Self::from_prices(HashMap::new())
     }
 
@@ -99,11 +104,13 @@ impl Pricing {
         self.generation
     }
 
-    pub fn registry(&self) -> &HashMap<String, Price> {
+    #[cfg(test)]
+    pub(crate) fn registry(&self) -> &HashMap<String, Price> {
         &self.prices
     }
 
-    pub fn became_available(&self, unpriced_models: &[String]) -> bool {
+    #[cfg(test)]
+    pub(crate) fn became_available(&self, unpriced_models: &[String]) -> bool {
         unpriced_models
             .iter()
             .any(|model| self.resolve(model).is_some())
@@ -161,7 +168,8 @@ impl Pricing {
         None
     }
 
-    pub fn estimate(
+    #[cfg(test)]
+    pub(crate) fn estimate(
         &self,
         model: Option<&str>,
         tokens: &MessageTokens,

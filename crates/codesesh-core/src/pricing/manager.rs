@@ -6,7 +6,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context, Result, bail};
+#[cfg(test)]
+use anyhow::bail;
+use anyhow::{Context, Result};
 use serde_json::Value;
 
 use super::{
@@ -33,15 +35,17 @@ impl PricingManager {
         }
     }
 
-    pub fn current(&self) -> Pricing {
+    pub(crate) fn current(&self) -> Pricing {
         self.published.clone()
     }
 
-    pub fn has_pending(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn has_pending(&self) -> bool {
         self.pending.is_some()
     }
 
-    pub fn synchronize(&mut self, expected: u64) -> Result<()> {
+    #[cfg(test)]
+    pub(crate) fn synchronize(&mut self, expected: u64) -> Result<()> {
         if expected == 0 || expected > 9_007_199_254_740_991 {
             bail!("Invalid pricing generation: {expected}");
         }
@@ -63,12 +67,8 @@ impl PricingManager {
         );
     }
 
-    pub async fn refresh(&mut self) -> Result<bool> {
-        self.refresh_from(MODELS_DEV_URL, Duration::from_secs(10))
-            .await
-    }
-
-    pub async fn refresh_from(&mut self, url: &str, timeout: Duration) -> Result<bool> {
+    #[cfg(test)]
+    pub(crate) async fn refresh_from(&mut self, url: &str, timeout: Duration) -> Result<bool> {
         if !self.needs_refresh() {
             return Ok(false);
         }
@@ -80,7 +80,7 @@ impl PricingManager {
         self.pending.is_none() && read_cache(&self.path, true).is_none()
     }
 
-    pub fn stage_remote(&mut self, data: &Value) -> bool {
+    pub(crate) fn stage_remote(&mut self, data: &Value) -> bool {
         if self.pending.is_some() {
             return false;
         }
@@ -94,7 +94,7 @@ impl PricingManager {
         true
     }
 
-    pub fn publish_pending(&mut self) -> Result<bool> {
+    pub(crate) fn publish_pending(&mut self) -> Result<bool> {
         let Some(pending) = &self.pending else {
             return Ok(false);
         };

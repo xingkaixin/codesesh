@@ -83,7 +83,7 @@ async fn guard_lasts_until_body_completion_even_after_serialization_finishes() {
 #[tokio::test]
 async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
     use codesesh_core::{
-        agents::{ParsedSession, codex},
+        agents::{ParsedSession, parse_codex},
         pricing::Pricing,
         storage::Cache,
     };
@@ -93,7 +93,7 @@ async fn sqlite_detail_stream_preserves_alias_cursor_and_large_transcript() {
         "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
         "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Fixture 中文 🔎\"}]}}\n"
     )).unwrap();
-    let mut data = codex::parse(&source, &Default::default(), &Pricing::bundled())
+    let mut data = parse_codex(&source, &Default::default(), &Pricing::bundled())
         .unwrap()
         .unwrap();
     let mut message = data.messages[0].clone();

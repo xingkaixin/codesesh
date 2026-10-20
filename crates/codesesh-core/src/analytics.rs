@@ -1,6 +1,6 @@
 mod active_hours;
 mod attribution;
-pub use active_hours::active_hours;
+pub(crate) use active_hours::active_hours;
 mod facts;
 mod projects;
 mod read;
@@ -8,7 +8,9 @@ mod response;
 mod time_zone;
 pub use facts::*;
 pub use projects::{attach_project_metrics, summarize_projects};
-pub use read::{load_cost_facts, load_scoped_cost_facts};
+#[cfg(test)]
+pub(crate) use read::load_cost_facts;
+pub use read::load_scoped_cost_facts;
 pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_response};
 pub use time_zone::DashboardTimeZone;
 
@@ -34,7 +36,7 @@ pub struct DashboardScope {
     pub project_key: Option<String>,
 }
 impl DashboardScope {
-    pub fn matches(&self, session: &SessionHead) -> bool {
+    pub(crate) fn matches(&self, session: &SessionHead) -> bool {
         self.agent
             .as_ref()
             .is_none_or(|a| *a == session.reference.agent_name.to_lowercase())
@@ -323,7 +325,7 @@ fn accumulate(
     acc
 }
 
-pub fn build_dashboard(
+pub(crate) fn build_dashboard(
     sessions: &[SessionHead],
     options: &DashboardOptions<'_>,
 ) -> anyhow::Result<DashboardAggregate> {

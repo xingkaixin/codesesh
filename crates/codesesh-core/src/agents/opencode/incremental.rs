@@ -6,6 +6,7 @@ pub struct DatabaseSnapshot {
     pub sessions: Vec<ParsedSession>,
     pub upserts: Vec<ParsedSession>,
     pub removed: Vec<SessionReference>,
+    #[cfg(test)]
     pub decoded: Vec<SessionReference>,
     pub(super) fingerprints: HashMap<String, String>,
     pub(super) base_details: HashMap<String, SessionDetail>,
@@ -28,6 +29,7 @@ impl DatabaseSnapshot {
     }
 }
 
+#[cfg(test)]
 pub fn refresh(
     root: &Path,
     pricing: &Pricing,
@@ -247,12 +249,14 @@ pub(super) fn refresh_scoped(
                 .map(|s| s.head.reference.clone())
         })
         .collect();
+    #[cfg(test)]
     let decoded = changed.into_iter().map(|id| reference(agent, id)).collect();
     db.execute_batch("COMMIT")?;
     Ok(DatabaseSnapshot {
         sessions,
         upserts,
         removed,
+        #[cfg(test)]
         decoded,
         fingerprints,
         base_details,

@@ -9,10 +9,11 @@ mod snippet;
 mod sql;
 
 use crate::model::{SessionHead, SessionReference};
-pub use crate::projects::ProjectScopeMatcher as ProjectScope;
-pub use crate::wire::SearchHighlightRange as HighlightRange;
+pub(crate) use crate::projects::ProjectScopeMatcher as ProjectScope;
+pub(crate) use crate::wire::SearchHighlightRange as HighlightRange;
 use anyhow::Result;
-pub use parser::{ParsedQuery, parse_query, split_tokens, to_fts_query};
+pub use parser::parse_query;
+pub(crate) use parser::{ParsedQuery, split_tokens, to_fts_query};
 use rusqlite::{Connection, params_from_iter, types::Value};
 use std::collections::{HashMap, HashSet};
 
@@ -79,7 +80,7 @@ fn prepare(
     Ok((parsed, options))
 }
 
-pub fn execute(
+pub(crate) fn execute(
     connection: &Connection,
     query: &str,
     options: &SearchOptions,
@@ -182,7 +183,11 @@ fn inclusive_costs(
         .collect()
 }
 
-pub fn matches_head(session: &SessionHead, options: &SearchOptions, inclusive_cost: f64) -> bool {
+pub(crate) fn matches_head(
+    session: &SessionHead,
+    options: &SearchOptions,
+    inclusive_cost: f64,
+) -> bool {
     if options
         .agent
         .as_ref()
@@ -308,7 +313,8 @@ pub fn filter_candidates(
         .collect())
 }
 
-pub fn search_sessions(
+#[cfg(test)]
+pub(crate) fn search_sessions(
     connection: &Connection,
     query: &str,
     options: &SearchOptions,
@@ -317,7 +323,7 @@ pub fn search_sessions(
     search_prepared(connection, &parsed.text, &options)
 }
 
-pub fn filter_indexed_references(
+pub(crate) fn filter_indexed_references(
     connection: &Connection,
     references: &[SessionReference],
     options: &SearchOptions,

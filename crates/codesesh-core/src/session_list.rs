@@ -2,13 +2,13 @@ use crate::model::{SessionHead, SessionReference};
 use std::collections::{HashMap, HashSet};
 
 mod pagination;
-pub use pagination::{Page, PaginationError, SnapshotPaginator};
+pub use pagination::{PaginationError, SnapshotPaginator};
 
-pub fn in_window(time: f64, from: Option<f64>, to: Option<f64>) -> bool {
+pub(crate) fn in_window(time: f64, from: Option<f64>, to: Option<f64>) -> bool {
     from.is_none_or(|value| time >= value) && to.is_none_or(|value| time <= value)
 }
 
-pub struct SessionTree<'a> {
+pub(crate) struct SessionTree<'a> {
     pub sessions: Vec<&'a SessionHead>,
     pub children: Vec<Vec<usize>>,
     pub entries: Vec<usize>,

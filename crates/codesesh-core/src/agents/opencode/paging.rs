@@ -48,15 +48,6 @@ pub fn enumerate_session_keys(
     db.execute_batch("COMMIT")?;
     Ok(result)
 }
-pub fn scan_selected_database(
-    path: &Path,
-    agent: &str,
-    supports_v2: bool,
-    pricing: &Pricing,
-    selected: &HashSet<String>,
-) -> Result<Vec<ParsedSession>> {
-    Ok(scan_selected_snapshot(path, agent, supports_v2, pricing, selected, None)?.sessions)
-}
 pub fn scan_selected_snapshot(
     path: &Path,
     agent: &str,

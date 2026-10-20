@@ -129,7 +129,7 @@ async fn hub_queries_archived_agents_without_local_installations() {
     let home = tempfile::tempdir().unwrap();
     source(home.path(), "archived", "Archived session");
     let file = home.path().join(".codex/sessions/rollout-archived.jsonl");
-    let detail = codesesh_core::agents::codex::parse(
+    let detail = codesesh_core::agents::parse_codex(
         &file,
         &Default::default(),
         &codesesh_core::pricing::Pricing::bundled(),
@@ -219,7 +219,7 @@ async fn worker_recovers_when_a_persisted_recovery_epoch_is_stale() {
         .path()
         .join(".codex/sessions/rollout-queued.jsonl");
     let detail =
-        codesesh_core::agents::codex::parse(&file, &Default::default(), &Pricing::bundled())
+        codesesh_core::agents::parse_codex(&file, &Default::default(), &Pricing::bundled())
             .unwrap()
             .unwrap();
     store
@@ -494,7 +494,7 @@ async fn worker_imports_archived_history_without_deleting_standalone_data() {
     let file = worker_home
         .path()
         .join(".codex/sessions/rollout-archived.jsonl");
-    let detail = codesesh_core::agents::codex::parse(
+    let detail = codesesh_core::agents::parse_codex(
         &file,
         &Default::default(),
         &codesesh_core::pricing::Pricing::bundled(),

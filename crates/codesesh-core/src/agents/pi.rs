@@ -202,6 +202,7 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
     parts
 }
 
+#[cfg(test)]
 pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
     parse_as(path, "pi", pricing)
 }

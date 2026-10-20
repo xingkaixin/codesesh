@@ -120,6 +120,7 @@ impl Checkpoints {
     }
 }
 
+#[cfg(test)]
 pub fn scan_changed(
     root: &Path,
     pricing: &Pricing,

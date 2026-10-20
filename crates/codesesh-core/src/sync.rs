@@ -3,17 +3,18 @@ mod hub_types;
 mod protocol;
 pub(crate) mod worker_store;
 
-pub use capture::CapturedSession;
-pub use protocol::{
-    MessageState, Operation, PAYLOAD_VERSION, PROTOCOL_VERSION, PayloadError, SnapshotBase,
-    check_compatibility,
-};
-pub use worker_store::{PendingUpload, QueueStatus, WorkerStore};
+pub(crate) use capture::CapturedSession;
+pub(crate) use protocol::{MessageState, Operation, PayloadError, SnapshotBase};
+pub use protocol::{PAYLOAD_VERSION, PROTOCOL_VERSION, check_compatibility};
+pub(crate) use worker_store::QueueStatus;
+pub use worker_store::WorkerStore;
 
 pub use hub_types::{
-    CollectionStatus, HostInfo, HubHello, HubNodes, LocalNode, Node, NodeAgentActivity, NodeHealth,
-    NodeTask, PairingGrant, Receipt, Recovery, RescanHistory, RescanProgress, RescanRequest,
-    RescanScanProgress, Upload, WorkerHello,
+    CollectionStatus, HostInfo, HubHello, HubNodes, LocalNode, Node, NodeAgentActivity,
+    PairingGrant, Receipt, Recovery, RescanHistory, Upload, WorkerHello,
+};
+pub(crate) use hub_types::{
+    NodeHealth, NodeTask, RescanProgress, RescanRequest, RescanScanProgress,
 };
 
 fn local_worker_mac(

@@ -18,9 +18,11 @@ mod messages;
 use messages::{append_subagents, detail_stats, messages, model_usage};
 
 mod pagination;
-pub use pagination::{SessionKey, enumerate_session_keys, scan_selected};
+pub use pagination::enumerate_session_keys;
+#[cfg(test)]
+pub use pagination::scan_selected;
 mod sync;
-pub use sync::{CursorDelta, CursorSync};
+pub use sync::CursorSync;
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     Ok(CursorSync::default().refresh(root, pricing)?.upserts)
@@ -115,6 +117,7 @@ fn composer_id(composer: &Value) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+#[cfg(test)]
 pub fn resolve_session_id(root: &Path, request_id: &str) -> Result<Option<String>> {
     let db = Connection::open_with_flags(
         root.join("globalStorage/state.vscdb"),

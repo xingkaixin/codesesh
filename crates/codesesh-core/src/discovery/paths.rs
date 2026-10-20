@@ -46,7 +46,7 @@ impl PathEnvironment {
             PathBuf::from(value)
         })
     }
-    pub fn read_env_path(&self, name: &str) -> Option<PathBuf> {
+    pub(crate) fn read_env_path(&self, name: &str) -> Option<PathBuf> {
         let path = self.expand_home(self.variables.get(name)?)?;
         Some(if path.is_absolute() {
             path
@@ -59,7 +59,8 @@ impl PathEnvironment {
         self.read_env_path(name)
             .unwrap_or_else(|| self.home.join(fallback))
     }
-    pub fn data_home(&self) -> PathBuf {
+    #[cfg(test)]
+    pub(crate) fn data_home(&self) -> PathBuf {
         self.read_env_path("XDG_DATA_HOME").unwrap_or_else(|| {
             if self.platform == "win32" {
                 self.read_env_path("LOCALAPPDATA")
@@ -90,7 +91,7 @@ impl PathEnvironment {
         self.expand_home(settings["sessionDir"].as_str()?)
             .filter(|path| path.is_absolute())
     }
-    pub fn data_root(&self, agent: &str) -> Option<PathBuf> {
+    pub(crate) fn data_root(&self, agent: &str) -> Option<PathBuf> {
         Some(match agent {
             "claudecode" => self.home_path("CLAUDE_CONFIG_DIR", ".claude"),
             "qoder" => self.home_path("QODER_CONFIG_DIR", ".qoder"),
@@ -154,7 +155,7 @@ impl PathEnvironment {
             _ => return None,
         })
     }
-    pub fn source(&self, agent: &str) -> Option<AgentSource> {
+    pub(crate) fn source(&self, agent: &str) -> Option<AgentSource> {
         let data_root = self.data_root(agent)?;
         let fallback = self.cwd.join("data").join(agent);
         let primary = match agent {
