@@ -10,8 +10,6 @@ pub mod antigravity_cli;
 pub mod cherrystudio;
 pub mod claudecode;
 pub mod codex;
-mod codex_exec;
-mod codex_tool_events;
 pub mod cursor;
 pub mod deepchat;
 pub mod droid;
@@ -210,10 +208,6 @@ pub fn complete_projections(session: &mut ParsedSession) {
         file_activity::summarize(&session.detail.head, &session.detail.messages);
 }
 
-mod codex_usage;
-
 mod smart_tags;
 
-mod codex_patch;
-pub(crate) mod codex_rollout;
 mod file_activity;

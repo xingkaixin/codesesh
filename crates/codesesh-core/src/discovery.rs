@@ -181,7 +181,7 @@ fn exists(path: &Path) -> std::io::Result<bool> {
 }
 fn has_sources(source: &AgentSource) -> Result<bool> {
     if source.agent == "codex" {
-        return Ok(!agents::codex_rollout::paths(&source.data_root)?.is_empty());
+        return Ok(!agents::codex::rollout::paths(&source.data_root)?.is_empty());
     }
     if let Some(database) = agents::database_path(&source.agent, &source.scan_path) {
         return Ok(exists(&database)?);
