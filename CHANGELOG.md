@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.4.2] - 2026-10-21
+
+This patch stops trusting eight eMudhra intermediate certificates whose private keys were disclosed, and removes the temporary databases left behind by `--no-cache` runs. The remaining changes reorganize internal modules without changing behavior. (#827–#851)
+
+### Security
+
+- Update the bundled TLS trust data (`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10) to distrust eight eMudhra intermediate CAs whose private keys were disclosed. Pricing refreshes from `models.dev` and Worker-to-Hub sync over `https://` now reject certificates issued by them. Earlier binaries remain affected until upgraded. (#851)
+
+### Bug Fixes
+
+- Remove the temporary database directory created by `--no-cache`, and the fallback cache directory, on every exit path that unwinds: startup errors such as an occupied port, cancelled startup, failed shutdown, and panics. A failed removal now prints a warning instead of failing the command, so `--json` still prints its result. A process killed with SIGKILL can still leave the directory behind. (#827)
+
+### Refactor
+
+- Serialize HTTP responses directly through the Rust wire types that generate the TypeScript contract. Response fields and values are unchanged. Session objects in search, bookmark, and Dashboard responses now use the same key order as `/api/sessions`, and session-detail file-activity counts are emitted as integers. (#840)
+- Organize core and CLI modules by role: enforce named module files, rename modules to `storage::hub`, `model`, and `wire`, move the JSON scan, bookmark materialization, and Codex adapter to their owners, split CLI startup and service dispatch into named phases, and limit `codesesh-core` visibility to what the CLI uses. (#832, #835, #837, #838, #843–#847, #849)
+- Import Web contract types only from `@codesesh/contract`, enforce one file naming convention in `apps/web/src`, and remove dead files and uncalled functions. (#830, #831, #833)
+
+### Build
+
+- Match the performance benchmark's expected startup URL to the CLI host so iterations no longer time out, let benchmark and e2e runs stop the CLI with SIGTERM so it can clean up, and group benchmark scripts under `scripts/bench`. (#827, #828, #842)
+
+### Tests
+
+- Split the largest Rust test files by topic. (#848)
+
+### Documentation
+
+- Trim `AGENTS.md` to agent-facing rules and point new-Agent instructions at the shared source rules. (#829, #841)
+
 ## [1.4.1] - 2026-10-17
 
 This patch reduces idle memory use, repeated Worker scans, and pricing-refresh overhead. It also speeds up Chinese session search and preserves DeepChat session references. (#812–#825)
