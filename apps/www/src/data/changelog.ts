@@ -103,6 +103,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.2",
+        date: "2026-10-21",
+        title: "Safer connections and no leftover temporary databases",
+        summary:
+          "CodeSesh 1.4.2 stops trusting compromised eMudhra certificates during pricing refreshes and multi-machine sync, and removes the temporary database that codesesh --no-cache creates when the run ends.",
+        direction:
+          "Protect the connections and local files that carry your AI coding history, and leave nothing behind that a run no longer needs.",
+        highlights: [
+          {
+            title: "Reject compromised certificates",
+            description:
+              "Pricing refreshes and Worker-to-Hub sync over HTTPS no longer accept certificates from eight eMudhra intermediate CAs whose private keys were disclosed. Earlier versions remain affected until you upgrade.",
+          },
+          {
+            title: "Clean up after --no-cache runs",
+            description:
+              "Runs with --no-cache delete their temporary database when they exit, including after startup errors or a cancelled start, so repeated runs no longer accumulate large files in the temporary directory.",
+          },
+        ],
+      },
+      {
         version: "1.4.1",
         date: "2026-10-17",
         title: "Faster Chinese search and less work while idle",
@@ -919,6 +940,26 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.2",
+        date: "2026-10-21",
+        title: "连接更安全，不再遗留临时数据库",
+        summary:
+          "CodeSesh 1.4.2 在刷新定价和多机同步时不再信任已泄露的 eMudhra 证书，并在 codesesh --no-cache 运行结束时删除它创建的临时数据库。",
+        direction: "保护承载 AI 编码历史的网络连接与本地文件，运行结束后不留下不再需要的数据。",
+        highlights: [
+          {
+            title: "拒绝已泄露的证书",
+            description:
+              "定价刷新和通过 HTTPS 进行的 Worker 到 Hub 同步，不再接受私钥已公开的 8 个 eMudhra 中间 CA 签发的证书。旧版本在升级前仍受影响。",
+          },
+          {
+            title: "--no-cache 运行后自动清理",
+            description:
+              "使用 --no-cache 运行时，退出后会删除临时数据库，启动出错或被取消时也会清理，反复运行不再在临时目录中积累大文件。",
+          },
+        ],
+      },
+      {
         version: "1.4.1",
         date: "2026-10-17",
         title: "中文搜索更快，空闲时开销更少",
@@ -1713,6 +1754,27 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.2",
+        date: "2026-10-21",
+        title: "より安全な接続と、一時データベースの確実な削除",
+        summary:
+          "CodeSesh 1.4.2 は、料金情報の更新と複数マシン間の同期で、漏えいした eMudhra 証明書を信頼しないようにしました。codesesh --no-cache で作成した一時データベースも、実行の終了時に削除します。",
+        direction:
+          "AI コーディング履歴を運ぶ通信とローカルファイルを守り、実行後に不要なデータを残さないようにします。",
+        highlights: [
+          {
+            title: "漏えいした証明書を拒否",
+            description:
+              "料金情報の更新と HTTPS 経由の Worker から Hub への同期で、秘密鍵が公開された 8 つの eMudhra 中間 CA が発行した証明書を受け付けません。以前のバージョンは、アップグレードするまで影響を受けます。",
+          },
+          {
+            title: "--no-cache 実行後に自動で削除",
+            description:
+              "--no-cache で実行すると、終了時に一時データベースを削除します。起動エラーや起動の中断でも削除するため、繰り返し実行しても一時ディレクトリに大きなファイルがたまりません。",
+          },
+        ],
+      },
       {
         version: "1.4.1",
         date: "2026-10-17",
