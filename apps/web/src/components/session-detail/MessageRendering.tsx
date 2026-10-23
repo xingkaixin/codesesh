@@ -248,7 +248,7 @@ export const MessageItem = memo(function MessageItem({
             })
           )}
 
-          {!isUser && (msg.tokens || msg.cost) && (
+          {!isUser && (msg.tokens || msg.cost) ? (
             <div className="flex flex-wrap gap-1.5">
               {msg.tokens?.input ? (
                 <span className="console-mono inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-medium">
@@ -272,7 +272,7 @@ export const MessageItem = memo(function MessageItem({
                 </span>
               ) : null}
             </div>
-          )}
+          ) : null}
         </div>
       </article>
     </div>

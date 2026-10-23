@@ -184,9 +184,14 @@ test("loads a final reply after a large tool output without opening the receipt"
       })
       .toBe(true);
     await page.goto("/claudecode/e2e-large-output");
-    await page.getByTestId("session-message-paging-footer").scrollIntoViewIfNeeded();
-    await expect(page.getByText(finalReply, { exact: true })).toBeVisible();
-    await expect(page.getByTestId("session-message-paging-footer")).toHaveCount(0);
+    const footer = page.getByTestId("session-message-paging-footer");
+    // A short first page can put the footer inside the auto-load margin, so the
+    // next page may already be loading before the footer is ever scrolled to.
+    await expect(async () => {
+      if ((await footer.count()) > 0) await footer.scrollIntoViewIfNeeded({ timeout: 1000 });
+      await expect(page.getByText(finalReply, { exact: true })).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    await expect(footer).toHaveCount(0);
   } finally {
     await rm(fixture, { force: true });
   }
