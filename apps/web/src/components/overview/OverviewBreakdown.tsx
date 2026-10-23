@@ -119,7 +119,6 @@ function BreakdownCard({
   rows,
   centerValue,
   centerLabel,
-  footnote,
   rowTestId,
   emptyText,
 }: {
@@ -129,7 +128,6 @@ function BreakdownCard({
   rows: readonly BreakdownRow[];
   centerValue: string;
   centerLabel: string;
-  footnote?: string;
   rowTestId?: string;
   emptyText: string;
 }) {
@@ -239,11 +237,6 @@ function BreakdownCard({
           </table>
         </div>
       )}
-      {footnote ? (
-        <p className="border-t border-[var(--console-border)] bg-[var(--console-bg)] px-[18px] py-2.5 text-[11px] text-[var(--console-muted)]">
-          {footnote}
-        </p>
-      ) : null}
     </Panel>
   );
 }
@@ -295,11 +288,6 @@ export function OverviewModelBreakdown({
       rows={rows}
       centerValue={formatCompact(totals.tokens)}
       centerLabel={t("Tokens")}
-      footnote={
-        rows.length > 0
-          ? t("A session can use several models, so session counts do not add up.")
-          : undefined
-      }
       emptyText={t("No model data")}
     />
   );

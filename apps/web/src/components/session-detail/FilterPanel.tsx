@@ -2,7 +2,7 @@ import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 /**
  * The reader's content-filter aside: four content kinds, a collapsible tool
- * group with a name filter and quick actions, and a live 当前视图 summary.
+ * group with a name filter and quick actions, and a summary shown while filters hide content.
  */
 import type * as React from "react";
 
@@ -89,9 +89,8 @@ export function SessionFilterPanel({
 
         {toc.tools.length > 0 ? <ToolGroup toc={toc} state={state} actions={actions} /> : null}
 
-        <div className="mt-auto rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-2.5">
-          <span className="console-eyebrow">{t("Current view")}</span>
-          <p className="mt-1 text-[11px] leading-relaxed text-[var(--console-text-secondary)]">
+        {visibleUnitCount < toc.totalUnitCount ? (
+          <p className="mt-auto rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-2.5 text-[11px] leading-relaxed text-[var(--console-text-secondary)]">
             {t("Showing")}{" "}
             <b className="console-mono text-[var(--console-text)]">{visibleUnitCount}</b> /{" "}
             <span className="console-mono">{toc.totalUnitCount}</span>
@@ -99,7 +98,7 @@ export function SessionFilterPanel({
               ? t(" · hiding {0}", [hiddenTools.map((tool) => tool.label).join(", ")])
               : null}
           </p>
-        </div>
+        ) : null}
       </div>
     </section>
   );
@@ -135,10 +134,12 @@ function ToolGroup({
           onClick={actions.toggleToolsExpanded}
           className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
         >
-          <span className="text-[13px] text-[var(--console-text)]">{t("Tools")}</span>
-          <span className="console-mono ml-auto text-[10.5px] text-[var(--console-muted)]">
-            {countSelectedTools(toc, state)} / {toc.tools.length} {t("selected")}
-          </span>
+          <span className="mr-auto text-[13px] text-[var(--console-text)]">{t("Tools")}</span>
+          {parentState === "partial" ? (
+            <span className="console-mono text-[10.5px] text-[var(--console-muted)]">
+              {countSelectedTools(toc, state)} / {toc.tools.length}
+            </span>
+          ) : null}
           <Caret className="size-3.5 shrink-0 text-[var(--console-muted)]" />
         </button>
       </div>
@@ -173,14 +174,8 @@ function ToolGroup({
             </div>
           ))}
           <div className="flex flex-wrap gap-1.5 pt-0.5">
-            <QuickAction onClick={() => actions.setAllTools(true)}>
-              {t("Select all (")}
-              {visibleTools.length})
-            </QuickAction>
-            <QuickAction onClick={() => actions.setAllTools(false)}>
-              {t("Clear all (")}
-              {visibleTools.length})
-            </QuickAction>
+            <QuickAction onClick={() => actions.setAllTools(true)}>{t("Select all")}</QuickAction>
+            <QuickAction onClick={() => actions.setAllTools(false)}>{t("Clear all")}</QuickAction>
             <QuickAction onClick={actions.selectWriteToolsOnly}>{t("Writes only")}</QuickAction>
           </div>
         </div>

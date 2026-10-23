@@ -9,7 +9,6 @@ import { t } from "../../i18n/translate";
  */
 import type { ReactNode } from "react";
 import type { AgentCatalog } from "../../lib/agents";
-import { formatIsoDate } from "../../lib/scan-format";
 import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
 import { NativeSelect } from "../ui/native-select";
 
@@ -45,7 +44,6 @@ export function OverviewFilterBar({
 
   const bounded = window && window.days !== 0 && window.from != null && window.to != null;
   const details = [
-    bounded ? `${formatIsoDate(window.from!)} – ${formatIsoDate(window.to!)}` : null,
     scopeCounts ? t("{0} agents", [scopeCounts.agents]) : null,
     scopeCounts ? t("{0} projects", [scopeCounts.projects]) : null,
     bounded && window.days ? t("Compared with the previous {0} days", [window.days]) : null,
@@ -54,7 +52,6 @@ export function OverviewFilterBar({
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="console-eyebrow">{t("Range")}</span>
         <h2 className="console-display text-2xl leading-tight font-light text-[var(--console-text)] sm:text-[28px]">
           {t(PRESET_TITLE[rangePreset ?? "all"])}
         </h2>

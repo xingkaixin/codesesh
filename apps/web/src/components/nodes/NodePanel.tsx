@@ -65,7 +65,6 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
     <NodeDialog
       wide
       title={t("Source nodes")}
-      description={t("Connect your machines. Keep your sessions together.")}
       onClose={onClose}
       busy={pairing}
       headerAction={

@@ -31,12 +31,10 @@ const PAGER_BUTTON_CLASS =
 function SummaryMetric({
   label,
   value,
-  detail,
   className,
 }: {
   label: string;
   value: string;
-  detail?: string;
   className?: string;
 }) {
   return (
@@ -50,7 +48,6 @@ function SummaryMetric({
       <span className="console-mono text-[26px] leading-tight font-light text-[var(--console-text)]">
         {value}
       </span>
-      {detail ? <span className="text-[11px] text-[var(--console-muted)]">{detail}</span> : null}
     </div>
   );
 }
@@ -155,32 +152,21 @@ export function ProjectsOverview({
           onRetry={retry}
         />
       ) : null}
-      <Panel className="grid grid-cols-2 overflow-hidden md:grid-cols-4">
-        <SummaryMetric label={t("Projects")} value={formatNumber(page.summary.projects)} />
-        <SummaryMetric
-          label={t("Sessions")}
-          value={formatNumber(page.summary.sessions)}
-          className="border-l"
-        />
+      <Panel className="grid grid-cols-3 overflow-hidden">
+        <SummaryMetric label={t("Sessions")} value={formatNumber(page.summary.sessions)} />
         <SummaryMetric
           label={t("Tokens")}
           value={formatCompact(page.summary.tokens)}
-          className="border-t md:border-t-0 md:border-l"
+          className="border-l"
         />
         <SummaryMetric
           label={t("Total Cost")}
           value={formatMoney(page.summary.cost)}
-          detail={
-            page.summary.latestActivity
-              ? t("Latest {0}", [formatRelativeTime(page.summary.latestActivity)])
-              : undefined
-          }
-          className="border-t border-l md:border-t-0"
+          className="border-l"
         />
       </Panel>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <span className="text-xs text-[var(--console-muted)]">{t("Sort")}</span>
         <SegmentedControl
           size="sm"
           ariaLabel={t("Sort projects")}
@@ -308,9 +294,6 @@ function ProjectHero({
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="console-eyebrow">
-          {t("Project")} · {project.identityKind}
-        </span>
         <h1 className="console-display min-w-0 text-2xl leading-tight font-light break-words text-[var(--console-text)] sm:text-[28px]">
           {project.displayName}
         </h1>

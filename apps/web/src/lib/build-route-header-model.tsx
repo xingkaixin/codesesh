@@ -93,11 +93,7 @@ export function buildRouteHeaderModel(input: RouteHeaderInput): RouteHeaderModel
         title: t("Agent Not Found"),
         count: null,
         breadcrumbs: [dashboard, { label: viewState.attemptedKey }],
-        hero: {
-          eyebrow: t("Agent"),
-          title: t("Agent Not Found"),
-          subtitle: t("Requested /{0}", [viewState.attemptedKey]),
-        },
+        hero: null,
       };
     default:
       return {
@@ -138,16 +134,7 @@ function sessionHeader(input: RouteHeaderInput, dashboard: BreadcrumbItem): Rout
   if (input.sessionError) {
     const title =
       input.sessionError === "missing" ? t("Session Not Found") : t("Session Load Failed");
-    return {
-      title,
-      count: null,
-      breadcrumbs,
-      hero: {
-        eyebrow,
-        title,
-        subtitle: t("Requested /{0}/{1}", [viewState.activeAgentKey, viewState.activeSessionId]),
-      },
-    };
+    return { title, count: null, breadcrumbs, hero: null };
   }
   if (!session) return { title: sessionLabel, count: null, breadcrumbs, hero: null };
 

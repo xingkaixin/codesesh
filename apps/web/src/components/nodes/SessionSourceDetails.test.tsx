@@ -30,7 +30,6 @@ it("identifies an offline source and where to run its resume command", () => {
     wrapper: Wrapper,
   });
 
-  expect(screen.getByText("Source: Office Mac").getAttribute("title")).toBe(node.id);
   expect(screen.getByText(/Offline\. Saved history remains available/)).toBeTruthy();
   expect(screen.getByText(/Source last synced:/).textContent).toContain(
     new Date(node.lastConfirmedAt!).toLocaleString("en-US"),
@@ -43,16 +42,14 @@ it("identifies an offline source and where to run its resume command", () => {
   );
 });
 
-it("keeps unknown source identity visible and names the CodeSesh host for local commands", () => {
+it("names the source machine for remote commands and the CodeSesh host for local ones", () => {
   const { Wrapper } = createQueryWrapper();
   const view = render(<SessionSourceDetails sourceNodeId="unknown-worker" {...resume} />, {
     wrapper: Wrapper,
   });
-  expect(screen.getByText("Source: unknown-worker")).toBeTruthy();
   expect(screen.getByText("Node status unavailable")).toBeTruthy();
   expect(screen.getByText(/Run this command on unknown-worker/)).toBeTruthy();
   view.rerender(<SessionSourceDetails sourceNodeId="local" {...resume} />);
-  expect(screen.getByText("Source: Local source")).toBeTruthy();
   expect(screen.getByText(/Run this command on the machine running CodeSesh/)).toBeTruthy();
   expect(screen.queryByText("Node status unavailable")).toBeNull();
   view.rerender(<SessionSourceDetails sourceNodeId="local" {...resume} canResume={false} />);

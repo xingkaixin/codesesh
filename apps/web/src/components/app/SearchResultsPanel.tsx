@@ -25,11 +25,6 @@ import { SearchFilterBar } from "./SearchFilterBar";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
 
 const SEARCH_MESSAGES = {
-  "Searches collected session titles, messages, tool output and file paths. Shows up to {0} sessions.":
-    [
-      "搜索已采集会话的标题、消息、工具输出和文件路径，最多展示 {0} 个会话。",
-      "収集済みセッションのタイトル、メッセージ、ツール出力、ファイルパスを検索します。最大 {0} セッションを表示します。",
-    ],
   "Showing the first {0} sessions. Narrow your query or filters to find a specific session.": [
     "已展示前 {0} 个会话。请细化关键词或筛选条件，查找目标会话。",
     "先頭の {0} セッションを表示しています。特定のセッションを探すには検索語やフィルターを絞り込んでください。",
@@ -204,27 +199,15 @@ export function SearchResultsPanel({
 
   const results = state.status === "loaded" ? state.results : [];
   const agentByKey = new Map(agents.map((agent) => [agent.name.toLowerCase(), agent]));
-  const filterBar = (
-    <>
-      <p className="text-xs text-[var(--console-muted)]">
-        {t(
-          "Searches collected session titles, messages, tool output and file paths. Shows up to {0} sessions.",
-          [SEARCH_RESULT_LIMIT],
-          locale,
-          SEARCH_MESSAGES,
-        )}
-      </p>
-      {filtersOpen ? (
-        <SearchFilterBar
-          id={filtersId}
-          agents={agents}
-          projects={projects}
-          filters={filters}
-          onChangeFilters={onChangeFilters}
-        />
-      ) : null}
-    </>
-  );
+  const filterBar = filtersOpen ? (
+    <SearchFilterBar
+      id={filtersId}
+      agents={agents}
+      projects={projects}
+      filters={filters}
+      onChangeFilters={onChangeFilters}
+    />
+  ) : null;
 
   if (state.status === "loading") {
     return (

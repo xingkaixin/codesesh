@@ -40,12 +40,7 @@ export function ShortcutHelpDialog({ open, onClose }: { open: boolean; onClose: 
         <Dialog.Backdrop className="motion-backdrop fixed inset-0 z-50 bg-[var(--scrim)]" />
         <Dialog.Popup className={`${DIALOG_POPUP_CLASS} max-w-[720px]`}>
           <div className={DIALOG_HEADER_CLASS}>
-            <div>
-              <p className="console-eyebrow">{t("Keyboard Shortcuts")}</p>
-              <Dialog.Title className={`${DIALOG_TITLE_CLASS} mt-1`}>
-                {t("Navigate without leaving the keyboard")}
-              </Dialog.Title>
-            </div>
+            <Dialog.Title className={DIALOG_TITLE_CLASS}>{t("Keyboard Shortcuts")}</Dialog.Title>
             <Dialog.Close aria-label={t("Close")} className={BUTTON_GHOST_CLASS}>
               <Kbd>Esc</Kbd>
               {t("Close")}

@@ -20,7 +20,7 @@ export type { MessageDisplayModel } from "./display-model-types";
 
 export interface SessionDetailSelection {
   messages: FilteredSessionMessage[];
-  /** Σ(selected `toc.counts`) — the numerator of the reader's Current view card. */
+  /** Σ(selected `toc.counts`) — the numerator of the reader's filter summary. */
   visibleUnitCount: number;
   timelineEntries: SessionTimelineEntry[];
   resolveListIndex(messageIndex: number): number | undefined;

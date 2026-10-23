@@ -63,7 +63,9 @@ describe("active hours chart", () => {
     const legend = screen.getByLabelText("Size reference (messages)");
     expect(legend.textContent).toBe("LessMore");
     expect(Array.from(legend.querySelectorAll("span"), dotSize)).toEqual([6, 12, 18]);
-    expect(screen.getByText(`Peak: ${peak.toLocaleString("en-US")}`)).toBeTruthy();
+    expect(screen.getByText("Most active").parentElement!.textContent).toContain(
+      `${peak.toLocaleString("en-US")} user messages`,
+    );
   });
 
   it("distinguishes an empty range from unavailable data", () => {

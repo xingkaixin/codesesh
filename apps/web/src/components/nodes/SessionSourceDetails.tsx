@@ -1,7 +1,7 @@
 import { useNodes, useNodeClock } from "../../hooks/useNodes";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import { SourceBadge, sourceName } from "./SourceBadge";
+import { sourceName } from "./SourceBadge";
 import { nodeStatus } from "./node-status";
 
 const MESSAGES = {
@@ -32,49 +32,49 @@ export function SessionSourceDetails({
   const remote = sourceNodeId !== "local";
   const node = nodes.data?.nodes.find((item) => item.id === sourceNodeId);
 
+  if (!remote) {
+    // The hero eyebrow already names the local source; the hint only describes the resume button.
+    return canResume ? (
+      <p id={resumeDescriptionId} className="sr-only">
+        {t(
+          "Run this command on the machine running CodeSesh, in a POSIX-compatible shell.",
+          [],
+          locale,
+          MESSAGES,
+        )}
+      </p>
+    ) : null;
+  }
+
   return (
     <div className="mt-2 space-y-1 text-xs leading-5 text-[var(--console-muted)]">
-      <div className="flex flex-wrap items-center gap-2">
-        <SourceBadge sourceNodeId={sourceNodeId} nodes={nodes.data?.nodes} />
-      </div>
       {canResume && (
         <p id={resumeDescriptionId} className="break-words">
-          {remote
-            ? t(
-                "Run this command on {0}, in a POSIX-compatible shell.",
-                [sourceName(sourceNodeId, nodes.data?.nodes)],
-                locale,
-                MESSAGES,
-              )
-            : t(
-                "Run this command on the machine running CodeSesh, in a POSIX-compatible shell.",
-                [],
-                locale,
-                MESSAGES,
-              )}
+          {t(
+            "Run this command on {0}, in a POSIX-compatible shell.",
+            [sourceName(sourceNodeId, nodes.data?.nodes)],
+            locale,
+            MESSAGES,
+          )}
         </p>
       )}
-      {remote && (
-        <>
-          <p>{t("Paths belong to the source machine. Files are not transferred.")}</p>
-          <p>
-            {nodes.isError || !node ? t("Node status unavailable") : nodeStatus(node, now)}
-            {node && (
-              <>
-                {" · "}
-                {node.lastConfirmedAt != null
-                  ? t(
-                      "Source last synced: {0}",
-                      [new Date(node.lastConfirmedAt).toLocaleString(locale)],
-                      locale,
-                      MESSAGES,
-                    )
-                  : t("No source sync confirmed yet", [], locale, MESSAGES)}
-              </>
-            )}
-          </p>
-        </>
-      )}
+      <p>{t("Paths belong to the source machine. Files are not transferred.")}</p>
+      <p>
+        {nodes.isError || !node ? t("Node status unavailable") : nodeStatus(node, now)}
+        {node && (
+          <>
+            {" · "}
+            {node.lastConfirmedAt != null
+              ? t(
+                  "Source last synced: {0}",
+                  [new Date(node.lastConfirmedAt).toLocaleString(locale)],
+                  locale,
+                  MESSAGES,
+                )
+              : t("No source sync confirmed yet", [], locale, MESSAGES)}
+          </>
+        )}
+      </p>
     </div>
   );
 }
