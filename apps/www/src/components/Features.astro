@@ -43,16 +43,10 @@ const minimap =
   <div class="shell">
     <div class="sec-head" data-reveal>
       <div>
-        <p class="eyebrow">
-          <span class="n">02</span>
-          <span class="ln"></span>
-          {copy[locale].header.capabilities}
-        </p>
         <h2 id="capabilities-heading" class="h2">
           <HeadingText value={t.title} />
         </h2>
       </div>
-      <p class="lead">{t.body}</p>
     </div>
     <div class="fgrid">
       {t.groups.map((group, index) => (
@@ -193,7 +187,6 @@ const minimap =
                 <span class="fnum">0{index + 1}</span>
                 <h3 class="ftitle">{group.title}</h3>
               </div>
-              <p class="fdesc">{group.description}</p>
             </div>
             <ul class="flist">
               {group.items.map((item) => (
@@ -273,11 +266,6 @@ const minimap =
     font-size: 26px;
     font-weight: 500;
     letter-spacing: -0.01em;
-  }
-  .fdesc {
-    margin: 4px 0 0;
-    color: var(--text-2);
-    font-size: 14px;
   }
   .flist {
     display: grid;

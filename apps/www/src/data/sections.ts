@@ -16,7 +16,6 @@ interface SectionCopy {
     finalReply: string;
   };
   local: {
-    label: string;
     boundary: string;
     chain: [string, string][];
     cloud: string;
@@ -24,7 +23,6 @@ interface SectionCopy {
     worker: string;
   };
   hub: {
-    label: string;
     title: [string, string];
     body: string;
     points: [string, string][];
@@ -35,9 +33,6 @@ interface SectionCopy {
     hubRole: string;
     hubFoot: string;
     guide: string;
-  };
-  install: {
-    label: string;
   };
 }
 
@@ -62,7 +57,6 @@ export const sections = {
         "Refresh is now single-flight. Concurrent requests share one promise, and the auth tests pass.",
     },
     local: {
-      label: "Data boundary",
       boundary: "Your machine",
       chain: [
         ["Agent logs", "~/.claude · ~/.codex · …"],
@@ -76,7 +70,6 @@ export const sections = {
         "Optional Workers send sessions to a Hub you host yourself. Attachments and source files are never transferred.",
     },
     hub: {
-      label: "Multi-machine",
       title: ["Many machines.", "One history."],
       body: "Run a Hub where you browse, and pair a Worker on each computer you code on. Workers collect locally and upload to your self-hosted Hub. The Hub handles search, cost estimates, and the Web UI.",
       points: [
@@ -101,9 +94,6 @@ export const sections = {
       hubFoot: "Search, stats, and cost across machines",
       guide: "Collect history from multiple computers",
     },
-    install: {
-      label: "Install",
-    },
   },
   zh: {
     heroResults: "3 个会话 · 2 个项目",
@@ -122,7 +112,6 @@ export const sections = {
       finalReply: "刷新改为 single-flight，并发请求共享同一个 Promise，auth 测试全部通过。",
     },
     local: {
-      label: "数据边界",
       boundary: "你的电脑",
       chain: [
         ["Agent 日志", "~/.claude · ~/.codex · …"],
@@ -135,7 +124,6 @@ export const sections = {
       worker: "可选的 Worker 会把会话发送到你自托管的 Hub，不传输附件或源文件。",
     },
     hub: {
-      label: "多机同步",
       title: ["多台电脑，", "一份历史。"],
       body: "在你浏览的地方运行 Hub，在每台写代码的电脑上配对一个 Worker。Worker 在本机采集并上传到你自托管的 Hub，Hub 负责搜索、成本估算和 Web UI。",
       points: [
@@ -153,9 +141,6 @@ export const sections = {
       hubRole: "只提供查询和 Web UI，本身不采集。",
       hubFoot: "跨机器搜索、统计与成本",
       guide: "用 Hub 和 Worker 汇总多台电脑的历史",
-    },
-    install: {
-      label: "安装",
     },
   },
   ja: {
@@ -178,7 +163,6 @@ export const sections = {
         "リフレッシュを single-flight にしました。同時リクエストは同じ Promise を共有し、auth テストは通過しています。",
     },
     local: {
-      label: "データの境界",
       boundary: "あなたのPC",
       chain: [
         ["エージェントのログ", "~/.claude · ~/.codex · …"],
@@ -192,7 +176,6 @@ export const sections = {
         "任意の Worker は、セルフホストの Hub にセッションを送信します。添付ファイルや元のファイルは転送しません。",
     },
     hub: {
-      label: "マルチマシン",
       title: ["複数のマシンを、", "ひとつの履歴に。"],
       body: "閲覧する場所で Hub を動かし、コードを書く各マシンで Worker をペアリング。Worker がローカルで収集してセルフホストの Hub に送信し、Hub が検索、コスト推定、Web UI を担います。",
       points: [
@@ -216,9 +199,6 @@ export const sections = {
       hubRole: "閲覧専用の Web UI。Hub 自体は収集しません。",
       hubFoot: "マシンをまたいだ検索・統計・コスト",
       guide: "複数のパソコンの履歴をまとめる",
-    },
-    install: {
-      label: "インストール",
     },
   },
 } satisfies Record<Locale, SectionCopy>;

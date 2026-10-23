@@ -24,7 +24,6 @@ export type IconName =
 export interface ProductScene {
   title: string;
   description: string;
-  hint: string;
 }
 
 export interface FeatureItem {
@@ -35,7 +34,6 @@ export interface FeatureItem {
 
 export interface FeatureGroup {
   title: string;
-  description: string;
   items: FeatureItem[];
 }
 
@@ -69,10 +67,8 @@ interface LandingCopy {
     eyebrow: string;
     title: HeadingCopy;
     body: string;
-    privacy: string;
     command: string;
     endpoint: string;
-    agentsLabel: string;
     copied: string;
     copyFailed: string;
     copyCommand: string;
@@ -92,15 +88,10 @@ interface LandingCopy {
   scenes: ProductScene[];
   features: {
     title: HeadingCopy;
-    body: string;
     groups: FeatureGroup[];
-  };
-  agents: {
-    body: string;
   };
   faq: {
     title: HeadingCopy;
-    body: string;
     items: FAQItem[];
   };
   cta: {
@@ -196,10 +187,8 @@ export const copy = {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
       title: ["搜索和回放", "你的\u00a0AI 编码历史。"],
       body: `在本机统一搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用与文件变更。`,
-      privacy: "会话内容与索引留在本机，无需账号、云同步或会话遥测。",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
-      agentsLabel: "读取会话",
       copied: "已复制",
       copyFailed: "复制失败，请手动复制命令",
       copyCommand: "复制",
@@ -221,28 +210,23 @@ export const copy = {
         title: "打开就知道这周花在哪儿了",
         description:
           "会话、消息、Token、成本与最近活跃都来自同一个本地索引。切换时间窗口，概览同步重算。",
-        hint: "切换时间范围，观察整块面板同步重算",
       },
       {
         title: "会话回到它该在的项目里",
         description:
           "按仓库和项目身份归组，子 Agent 会话保留在父会话下，消息、Token 与成本按层级汇总。",
-        hint: "展开带有 sub 标记的会话，查看子 Agent 记录",
       },
       {
         title: "一次任务的完整路径逐条还原",
         description:
           "消息、工具调用和文件变更按发生顺序呈现，类型过滤与文件追踪帮助你快速定位关键上下文。",
-        hint: "展开工具调用查看输出，也可以从右侧隐藏消息类型",
       },
     ],
     features: {
       title: ["发现、组织、找回、复盘。", "四步之后，历史才真正能用。"],
-      body: "CodeSesh 围绕真实的 AI 编码协作循环组织能力。",
       groups: [
         {
           title: "发现",
-          description: "把不同 Agent 留下的本地会话统一纳入索引。",
           items: [
             {
               icon: "play",
@@ -263,7 +247,6 @@ export const copy = {
         },
         {
           title: "组织",
-          description: "让会话回到项目、任务和工程语境里。",
           items: [
             {
               icon: "list-tree",
@@ -284,7 +267,6 @@ export const copy = {
         },
         {
           title: "找回",
-          description: "把过去的判断、路径和上下文带回当前任务。",
           items: [
             {
               icon: "search",
@@ -305,7 +287,6 @@ export const copy = {
         },
         {
           title: "复盘",
-          description: "还原一次任务从问题到结果的完整过程。",
           items: [
             {
               icon: "terminal",
@@ -326,12 +307,8 @@ export const copy = {
         },
       ],
     },
-    agents: {
-      body: "每种 Agent 通过 core 适配器接入同一个会话、项目、搜索和文件活动索引。",
-    },
     faq: {
       title: "常见问题",
-      body: "关于 CodeSesh 的定位、安装方式、数据边界和大型历史。",
       items: [
         {
           question: "CodeSesh 是什么？",
@@ -399,11 +376,8 @@ export const copy = {
       eyebrow: `Local / Zero config / ${agentCount} agents`,
       title: ["Search and replay", "your AI coding history."],
       body: `Search and replay local history from Claude Code, Codex, Cursor, and ${agentCount - 3} other agents. Browse messages, tool calls, and file changes by project.`,
-      privacy:
-        "Session content and indexes stay local. No account, cloud sync, or session telemetry.",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
-      agentsLabel: "Reads sessions from",
       copied: "Copied",
       copyFailed: "Copy failed. Copy the command manually.",
       copyCommand: "Copy",
@@ -425,28 +399,23 @@ export const copy = {
         title: "Open it and see where the week went",
         description:
           "Sessions, messages, tokens, cost, and recent activity come from one local index. Change the time window and the overview recomputes.",
-        hint: "Switch the time range and watch the whole panel recompute",
       },
       {
         title: "Sessions go back where they belong",
         description:
           "Group history by repository and project, keep subagent sessions under their parent, and aggregate messages, tokens, and cost by hierarchy.",
-        hint: "Expand a session marked sub to inspect its child agent work",
       },
       {
         title: "Replay the complete path of a task",
         description:
           "Read messages, tool calls, and file changes in sequence, then use type filters and file tracking to find the context that matters.",
-        hint: "Expand tool calls for output, or hide message types from the side panel",
       },
     ],
     features: {
       title: ["Discover, organize, recover, replay.", "History becomes useful after all four."],
-      body: "CodeSesh follows the real loop of AI-assisted engineering work.",
       groups: [
         {
           title: "Discover",
-          description: "Bring local sessions from different agents into one index.",
           items: [
             {
               icon: "play",
@@ -467,7 +436,6 @@ export const copy = {
         },
         {
           title: "Organize",
-          description: "Put sessions back into project, task, and engineering context.",
           items: [
             {
               icon: "list-tree",
@@ -489,7 +457,6 @@ export const copy = {
         },
         {
           title: "Recover",
-          description: "Bring old decisions, paths, and context back into the current task.",
           items: [
             {
               icon: "search",
@@ -511,7 +478,6 @@ export const copy = {
         },
         {
           title: "Replay",
-          description: "Reconstruct the full path from problem to result.",
           items: [
             {
               icon: "terminal",
@@ -533,12 +499,8 @@ export const copy = {
         },
       ],
     },
-    agents: {
-      body: "Each agent connects through a core adapter and contributes to one index of sessions, projects, search, and file activity.",
-    },
     faq: {
       title: "Frequently asked questions",
-      body: "Answers about CodeSesh, installation, data boundaries, and large histories.",
       items: [
         {
           question: "What is CodeSesh?",
@@ -605,11 +567,8 @@ export const copy = {
       eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
       title: ["AIコーディングの履歴を、", "検索して読み返す。"],
       body: `Claude Code、Codex、Cursorなど${agentCount}種類のツールの履歴をローカルで検索・再生。メッセージ、ツール呼び出し、ファイル変更をプロジェクト別に確認できます。`,
-      privacy:
-        "セッション内容とインデックスはローカルに保持されます。アカウント、クラウド同期、セッションのテレメトリは不要です。",
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
-      agentsLabel: "セッションの読み取り元",
       copied: "コピーしました",
       copyFailed: "コピーできませんでした。コマンドを手動でコピーしてください。",
       copyCommand: "コピー",
@@ -631,19 +590,16 @@ export const copy = {
         title: "今週、何に時間を使ったかがひと目でわかる",
         description:
           "セッション、メッセージ、トークン、コスト、最近のアクティビティを1つのローカルインデックスから表示。期間を変えると、概要全体が再集計されます。",
-        hint: "期間を切り替えて、パネル全体が再集計される様子を確認",
       },
       {
         title: "セッションを、本来のプロジェクトへ",
         description:
           "リポジトリとプロジェクト単位で履歴をまとめ、サブエージェントのセッションを親セッションの下に保持。メッセージ、トークン、コストを階層ごとに集計します。",
-        hint: "subラベルの付いたセッションを展開し、子エージェントの作業を確認",
       },
       {
         title: "タスクの全工程を時系列で再現",
         description:
           "メッセージ、ツール呼び出し、ファイル変更を発生順に表示。種別フィルターとファイル追跡で、必要なコンテキストをすばやく見つけられます。",
-        hint: "ツール呼び出しの出力を展開し、右側でメッセージ種別を切り替え",
       },
     ],
     features: {
@@ -651,11 +607,9 @@ export const copy = {
         "取り込む、整理する、見つける、振り返る。",
         "4つがそろって、履歴は使える資産になる。",
       ],
-      body: "CodeSeshは、AIと進める実際の開発サイクルに沿って機能を構成しています。",
       groups: [
         {
           title: "取り込む",
-          description: "異なるエージェントのローカルセッションを1つのインデックスに集約します。",
           items: [
             {
               icon: "play",
@@ -678,7 +632,6 @@ export const copy = {
         },
         {
           title: "整理する",
-          description: "セッションをプロジェクト、タスク、開発コンテキストに結び付けます。",
           items: [
             {
               icon: "list-tree",
@@ -702,7 +655,6 @@ export const copy = {
         },
         {
           title: "見つける",
-          description: "過去の判断、手順、コンテキストを現在のタスクに呼び戻します。",
           items: [
             {
               icon: "search",
@@ -726,7 +678,6 @@ export const copy = {
         },
         {
           title: "振り返る",
-          description: "問題の発見から結果に至るまで、タスクの全工程を再現します。",
           items: [
             {
               icon: "terminal",
@@ -749,12 +700,8 @@ export const copy = {
         },
       ],
     },
-    agents: {
-      body: "各エージェントはコアアダプターを通じて接続され、セッション、プロジェクト、検索、ファイルアクティビティを1つのインデックスに集約します。",
-    },
     faq: {
       title: "よくある質問",
-      body: "CodeSeshの用途、インストール方法、データの取り扱い、大規模な履歴について説明します。",
       items: [
         {
           question: "CodeSeshとは何ですか？",

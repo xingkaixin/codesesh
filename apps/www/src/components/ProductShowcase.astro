@@ -55,8 +55,6 @@ const ranges = [
   {
     id: "7d",
     days: 7,
-    from: "2026-10-09",
-    to: "2026-10-15",
     short: "10-09 → 10-15",
     agents: 3,
     projects: 6,
@@ -80,8 +78,6 @@ const ranges = [
   {
     id: "30d",
     days: 30,
-    from: "2026-09-16",
-    to: "2026-10-15",
     short: "09-16 → 10-15",
     agents: 4,
     projects: 9,
@@ -107,8 +103,6 @@ const ranges = [
   {
     id: "all",
     days: 0,
-    from: "2025-11-02",
-    to: "2026-10-15",
     short: "2025-11 → 2026-10",
     agents: 5,
     projects: 14,
@@ -167,7 +161,6 @@ const views = ranges.map((range, index) => {
   const vmax = Math.max(...range.values);
   const cmax = Math.max(...cost);
   const span = [
-    `${range.from} – ${range.to}`,
     fill(m.agentsProjects, { agents: range.agents, projects: range.projects }),
     ...(range.days ? [fill(m.compare, { days: range.days })] : []),
   ].join(" · ");
@@ -350,16 +343,10 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
   <div class="shell">
     <div class="sec-head" data-reveal>
       <div>
-        <p class="eyebrow">
-          <span class="n">01</span>
-          <span class="ln"></span>
-          {copy[locale].header.tour}
-        </p>
         <h2 id="tour-heading" class="h2">
           <HeadingText value={splitTitle(t.tourTitle)} />
         </h2>
       </div>
-      <p class="lead">{t.tourBody}</p>
     </div>
 
     <div class="tour">
@@ -393,10 +380,6 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
               {scenes[index]!.title}
               <span class="tab-more">
                 <span class="tab-d">{scenes[index]!.description}</span>
-                <span class="tab-h">
-                  <Icon name="cursor" class="size-3.5" />
-                  {scenes[index]!.hint}
-                </span>
               </span>
             </span>
             <span class="tab-pg" aria-hidden="true"></span>
@@ -452,7 +435,6 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
                 hidden={view.id !== "7d"}
               >
                 <div>
-                  <div class="ov-eb">{m.rangeEyebrow}</div>
                   <div class="ov-title">{view.title}</div>
                   <div class="ov-span">{view.span}</div>
                 </div>
@@ -597,7 +579,6 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
             <div class="pj">
               <div class="pj-head">
                 <div>
-                  <div class="ov-eb">{m.project}</div>
                   <div class="ov-title">web-app</div>
                   <div class="ov-span">github.com/acme/web-app</div>
                 </div>
@@ -1167,21 +1148,6 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
     line-height: 1.7;
     letter-spacing: 0;
   }
-  .tab-h {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-top: 14px;
-    color: var(--brand-ink);
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1.5;
-    letter-spacing: 0;
-  }
-  .tab-h :global(svg) {
-    flex: none;
-    margin-top: 1px;
-  }
   .tab-pg {
     position: absolute;
     bottom: 0;
@@ -1284,7 +1250,6 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
     letter-spacing: 0.04em;
   }
   .ov-title {
-    margin-top: 4px;
     font-size: 28px;
     font-weight: 300;
     line-height: 1.25;

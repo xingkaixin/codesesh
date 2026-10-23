@@ -15,14 +15,9 @@ const items: FAQItem[] = t.items;
 <section id="faq" class="sec" aria-labelledby="faq-heading">
   <div class="shell faq">
     <div class="faq-intro" data-reveal>
-      <p class="eyebrow">
-        <span class="n">07</span>
-        <span class="ln"></span>FAQ
-      </p>
       <h2 id="faq-heading" class="h2">
         <HeadingText value={t.title} />
       </h2>
-      <p class="lead">{t.body}</p>
     </div>
     <div data-reveal>
       {items.map((item, index) => (

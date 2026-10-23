@@ -1,10 +1,9 @@
 ---
 import { experience } from "../data/experience";
-import { agents, copy, type Locale } from "../data/landing";
+import { agents, type Locale } from "../data/landing";
 import { showcase, splitTitle } from "../data/showcase";
 import AgentIcon from "./AgentIcon.astro";
 import HeadingText from "./HeadingText.astro";
-import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -18,11 +17,6 @@ const a = showcase[locale].agents;
 <section id="agents" class="sec" aria-labelledby="agents-heading">
   <div class="shell agw">
     <div data-reveal>
-      <p class="eyebrow">
-        <span class="n">05</span>
-        <span class="ln"></span>
-        {copy[locale].header.agents}
-      </p>
       <h2 id="agents-heading" class="h2">
         <HeadingText value={splitTitle(t.agentsTitle)} />
       </h2>
@@ -30,7 +24,6 @@ const a = showcase[locale].agents;
         <b>{agents.length}</b>
         <span>{t.agentsCount}</span>
       </p>
-      <p class="lead agents-body">{copy[locale].agents.body}</p>
     </div>
     <div data-reveal>
       <ul class="keys" aria-label={t.agentsList}>
@@ -42,10 +35,6 @@ const a = showcase[locale].agents;
           </li>
         ))}
       </ul>
-      <p class="ag-foot">
-        <Icon name="info" class="size-3.5" />
-        {a.note}
-      </p>
     </div>
   </div>
 </section>
@@ -73,9 +62,6 @@ const a = showcase[locale].agents;
     color: var(--text-2);
     font-size: 14px;
     font-weight: 500;
-  }
-  .agents-body {
-    margin-top: 28px;
   }
   .keys {
     display: flex;
@@ -112,18 +98,6 @@ const a = showcase[locale].agents;
     background: var(--warn-soft);
     color: var(--warn-ink);
     font: 600 9.5px/1 var(--sans);
-  }
-  .ag-foot {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin: 22px 0 0;
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .ag-foot :global(svg) {
-    flex: none;
-    margin-top: 2px;
   }
   @media (max-width: 1023px) {
     .agw {
