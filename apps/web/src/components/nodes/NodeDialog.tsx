@@ -24,7 +24,7 @@ export function NodeDialog({
   headerAction,
 }: {
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
   onClose: () => void;
   busy?: boolean;
@@ -51,9 +51,11 @@ export function NodeDialog({
           <div className={`flex items-start justify-between gap-4 ${wide ? "flex-wrap" : ""}`}>
             <div className={wide ? "min-w-0" : "min-w-0 flex-1"}>
               <Dialog.Title className={DIALOG_TITLE_CLASS}>{title}</Dialog.Title>
-              <Dialog.Description className={DIALOG_DESCRIPTION_CLASS}>
-                {description}
-              </Dialog.Description>
+              {description ? (
+                <Dialog.Description className={DIALOG_DESCRIPTION_CLASS}>
+                  {description}
+                </Dialog.Description>
+              ) : null}
             </div>
             <div className="ml-auto flex items-center gap-2">
               {headerAction}

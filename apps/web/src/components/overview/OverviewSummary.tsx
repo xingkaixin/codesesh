@@ -192,7 +192,12 @@ export function OverviewSummary({
           label={t("API value")}
           badge={
             totals.costEstimated > 0 ? (
-              <span className="rounded-full bg-[var(--console-warning-bg)] px-2 text-[11px] font-medium text-[var(--console-warning)]">
+              <span
+                title={t(
+                  "API value prices this usage at public model rates where an agent records no cost. It is not a bill.",
+                )}
+                className="rounded-full bg-[var(--console-warning-bg)] px-2 text-[11px] font-medium text-[var(--console-warning)]"
+              >
                 {t("Estimated")}
               </span>
             ) : null
@@ -267,13 +272,6 @@ export function OverviewSummary({
             </div>
           ))}
         </dl>
-        {totals.costEstimated > 0 ? (
-          <p className="mt-3 text-[11px] text-[var(--console-muted)]">
-            {t(
-              "API value prices this usage at public model rates where an agent records no cost. It is not a bill.",
-            )}
-          </p>
-        ) : null}
       </div>
     </Panel>
   );

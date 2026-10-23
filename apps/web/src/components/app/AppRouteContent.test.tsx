@@ -455,7 +455,6 @@ describe("AppRouteContent", () => {
         { timeout: LAZY_SURFACE_TIMEOUT_MS },
       ),
     ).toBeTruthy();
-    expect(screen.getByText("ghost-agent")).toBeTruthy();
     expect(screen.getByText("/ghost-agent")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Claude Code/ }).getAttribute("href")).toBe(
       "/claudecode",

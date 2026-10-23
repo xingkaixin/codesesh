@@ -1,7 +1,6 @@
 ---
 import { experience } from "../data/experience";
 import { copy, type Locale } from "../data/landing";
-import { sections } from "../data/sections";
 import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 import InstallOptions from "./InstallOptions.astro";
@@ -12,18 +11,12 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = experience[locale];
-const s = sections[locale].install;
 ---
 
 <section id="install" class="cta-sec" aria-labelledby="cta-heading">
   <div class="shell">
     <div class="cta">
       <div>
-        <p class="eyebrow">
-          <span class="n">08</span>
-          <span class="ln"></span>
-          {s.label}
-        </p>
         <h2 id="cta-heading" class="h2">
           <HeadingText value={t.installTitle} secondClass="" />
         </h2>

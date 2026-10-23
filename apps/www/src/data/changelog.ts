@@ -27,7 +27,6 @@ interface ChangelogCopy {
   latest: {
     label: string;
     title: string;
-    body: string;
     link: string;
   };
   release: {
@@ -76,7 +75,6 @@ export const changelogCopy = {
     latest: {
       label: "Latest update",
       title: "Follow the product, not the commit log.",
-      body: "See the improvements that change how CodeSesh feels to use, plus the principles guiding what we build next.",
       link: "Read the product changelog",
     },
     release: {
@@ -913,7 +911,6 @@ export const changelogCopy = {
     latest: {
       label: "最新更新",
       title: "关注产品变化，而不是提交记录。",
-      body: "了解真正影响使用体验的改进，也了解我们据此继续建设 CodeSesh 的原则。",
       link: "阅读产品更新日志",
     },
     release: {
@@ -1728,7 +1725,6 @@ export const changelogCopy = {
     latest: {
       label: "最新アップデート",
       title: "コミットではなく、製品の変化を追う。",
-      body: "日々の使い心地を変える改善と、次の CodeSesh を形作るための原則を紹介します。",
       link: "製品更新履歴を読む",
     },
     release: {

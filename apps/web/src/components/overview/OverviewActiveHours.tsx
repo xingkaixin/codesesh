@@ -206,19 +206,16 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
               {peak === 0 ? (
                 <span>{t("No user messages in this range.")}</span>
               ) : (
-                <>
-                  <span
-                    className="flex items-center gap-1.5"
-                    aria-label={t("Size reference (messages)")}
-                  >
-                    {t("Less")}
-                    {[1, 4, 9].map((count) => (
-                      <Dot key={count} count={count} peak={9} />
-                    ))}
-                    {t("More")}
-                  </span>
-                  <span className="console-mono">{t("Peak: {0}", [formatInt(peak)])}</span>
-                </>
+                <span
+                  className="flex items-center gap-1.5"
+                  aria-label={t("Size reference (messages)")}
+                >
+                  {t("Less")}
+                  {[1, 4, 9].map((count) => (
+                    <Dot key={count} count={count} peak={9} />
+                  ))}
+                  {t("More")}
+                </span>
               )}
             </div>
           </div>

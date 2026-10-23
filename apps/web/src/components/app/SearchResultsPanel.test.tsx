@@ -236,10 +236,9 @@ it("links message matches to their source position", () => {
   ).toBe("/nodes/remote/codex/s1#message-42");
 });
 
-it("explains the indexed scope and empty-result recovery", () => {
+it("explains empty-result recovery", () => {
   setLanguagePreference("zh-CN");
   renderPanel({ status: "loaded", results: [] });
-  expect(screen.getByText(/最多展示 50 个会话/)).toBeTruthy();
   expect(screen.getByText(/更改上方的时间范围/)).toBeTruthy();
 });
 

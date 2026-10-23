@@ -58,7 +58,7 @@ describe("ProjectsOverview project-count budget", () => {
     );
 
     expect(screen.getAllByRole("rowheader")).toHaveLength(250);
-    expect(screen.getAllByText("200,000")).toHaveLength(2);
+    expect(screen.getAllByText("200,000")).toHaveLength(1);
   });
 
   it("replaces one bounded project page with the next", async () => {

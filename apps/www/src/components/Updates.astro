@@ -2,7 +2,7 @@
 import { changelogCopy, changelogRoutes } from "../data/changelog";
 import { guideCopy, guideRoutes, guides } from "../data/guides";
 import type { Locale } from "../data/landing";
-import { showcase, splitTitle } from "../data/showcase";
+import { splitTitle } from "../data/showcase";
 import HeadingText from "./HeadingText.astro";
 import Icon from "./Icon.astro";
 
@@ -20,16 +20,10 @@ const release = t.releases[0]!;
   <div class="shell">
     <div class="sec-head" data-reveal>
       <div>
-        <p class="eyebrow">
-          <span class="n">06</span>
-          <span class="ln"></span>
-          {showcase[locale].updates.label}
-        </p>
         <h2 id="updates-heading" class="h2">
           <HeadingText value={splitTitle(t.latest.title)} />
         </h2>
       </div>
-      <p class="lead">{t.latest.body}</p>
     </div>
     <div class="res">
       <article class="upd" data-reveal aria-labelledby="latest-release">

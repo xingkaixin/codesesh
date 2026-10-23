@@ -389,11 +389,6 @@ export function AppSidebar({
               </li>
             ) : null}
           </ul>
-          {projects.length > 0 ? (
-            <p className="px-3 pt-0.5 text-[10px] text-[var(--console-muted)]">
-              {t("Most recent first")}
-            </p>
-          ) : null}
         </section>
 
         <section aria-labelledby="sidebar-bookmarks">

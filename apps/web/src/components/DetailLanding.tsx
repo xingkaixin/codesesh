@@ -66,18 +66,14 @@ function DiagnosticItem({ label, value }: { label: string; value: string }) {
 }
 
 function MissingStateHero({
-  code,
   title,
   description,
-  aside,
   iconSrc,
   iconColored,
   iconAlt,
 }: {
-  code: string;
   title: string;
   description: string;
-  aside: string;
   iconSrc?: string;
   iconColored?: boolean;
   iconAlt?: string;
@@ -86,7 +82,6 @@ function MissingStateHero({
 
   return (
     <Panel className="flex flex-col gap-3 px-6 py-7 md:px-8">
-      <span className="console-eyebrow">{code}</span>
       <div className="flex items-center gap-3">
         {iconSrc ? (
           <AgentIcon
@@ -100,9 +95,6 @@ function MissingStateHero({
       </div>
       <p className="max-w-[42rem] text-[13px] leading-[1.6] text-[var(--console-muted)]">
         {description}
-      </p>
-      <p className="rounded-[10px] bg-[var(--console-surface-muted)] px-3 py-2.5 text-xs leading-[1.6] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)]">
-        {aside}
       </p>
     </Panel>
   );
@@ -244,21 +236,13 @@ export const DetailLanding = memo(function DetailLanding({
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
-          code={t("404 / AGENT")}
           title={t("This agent isn't on the roster.")}
           description={t(
             "The path you requested is valid in shape, but there is no matching agent in the current registry. It may not be connected yet, or its name may not match what the system recognizes.",
           )}
-          aside={t("Choose one of the available agents to continue.")}
         />
 
-        <div className="grid gap-3 md:grid-cols-3">
-          <DiagnosticItem label={t("Requested Agent")} value={attemptedAgentKey || "unknown"} />
-          <DiagnosticItem label={t("Requested Path")} value={requestedPath} />
-          {attemptedSessionId ? (
-            <DiagnosticItem label={t("Requested Session")} value={attemptedSessionId} />
-          ) : null}
-        </div>
+        <DiagnosticItem label={t("Requested Path")} value={requestedPath} />
 
         <AgentsPanel agentItems={agentItems} />
       </div>
@@ -274,14 +258,10 @@ export const DetailLanding = memo(function DetailLanding({
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
-          code={t("404 / SESSION")}
           title={t("This session isn't in the index.")}
           description={t(
             "{0} is available, but the session you're looking for does not exist in the current index. The session ID may be incorrect, or the record may never have been part of this dataset.",
             [displayName],
-          )}
-          aside={t(
-            "We checked the current path, but nothing matched. The session list on the left is still available.",
           )}
           iconSrc={agentIcon}
           iconColored={agent?.iconColored}
@@ -321,12 +301,10 @@ export const DetailLanding = memo(function DetailLanding({
     return (
       <div className="mx-auto max-w-4xl space-y-4">
         <MissingStateHero
-          code={t("LOAD / SESSION")}
           title={t("We couldn't load this session.")}
           description={t(
             "The session request failed before we could determine whether the record exists. It may still be available once the connection or server recovers.",
           )}
-          aside={t("Retry this request without leaving the current session path.")}
         />
 
         <div className="flex flex-wrap items-end justify-between gap-3 rounded-md border border-[var(--console-border)] bg-[var(--console-surface-muted)] p-3">

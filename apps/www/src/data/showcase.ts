@@ -36,7 +36,6 @@ const zh = {
     indexed: "已索引 1,284 个会话 · 监听增量变化",
   },
   tour: {
-    rangeEyebrow: "统计范围",
     rangeTitles: ["最近 7 天", "最近 30 天", "全部时间"],
     agentsProjects: "{agents} 个智能体 · {projects} 个项目",
     compare: "与前 {days} 天对比",
@@ -50,7 +49,6 @@ const zh = {
     tokenTypes: ["输入", "输出", "缓存写入", "缓存读取"],
     daily: "每日 Token",
     months: ["11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月"],
-    project: "项目 · GIT_REMOTE",
     allAgents: "全部智能体",
     projectStats: [
       ["会话", "+ 3 个子会话"],
@@ -105,10 +103,6 @@ const zh = {
   },
   agents: {
     partial: "部分支持",
-    note: "支持等级按适配器实际解析到的会话、用量与工具调用标注。",
-  },
-  updates: {
-    label: "更新与指南",
   },
 };
 
@@ -153,7 +147,6 @@ export const showcase = {
       indexed: "Indexed 1,284 sessions · watching for changes",
     },
     tour: {
-      rangeEyebrow: "Range",
       rangeTitles: ["Last 7 days", "Last 30 days", "All time"],
       agentsProjects: "{agents} agents · {projects} projects",
       compare: "vs previous {days} days",
@@ -167,7 +160,6 @@ export const showcase = {
       tokenTypes: ["Input", "Output", "Cache write", "Cache read"],
       daily: "Daily tokens",
       months: ["Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"],
-      project: "Project · GIT_REMOTE",
       allAgents: "All agents",
       projectStats: [
         ["Sessions", "+ 3 subagent sessions"],
@@ -222,10 +214,6 @@ export const showcase = {
     },
     agents: {
       partial: "Partial",
-      note: "Support levels reflect what each adapter actually parses from sessions, usage, and tool calls.",
-    },
-    updates: {
-      label: "Updates & guides",
     },
   },
   ja: {
@@ -265,7 +253,6 @@ export const showcase = {
       indexed: "1,284 セッションを索引化 · 変更を監視中",
     },
     tour: {
-      rangeEyebrow: "集計期間",
       rangeTitles: ["直近 7 日", "直近 30 日", "全期間"],
       agentsProjects: "{agents} エージェント · {projects} プロジェクト",
       compare: "前の {days} 日と比較",
@@ -292,7 +279,6 @@ export const showcase = {
         "9月",
         "10月",
       ],
-      project: "プロジェクト · GIT_REMOTE",
       allAgents: "すべてのエージェント",
       projectStats: [
         ["セッション", "+ サブ 3 件"],
@@ -347,10 +333,6 @@ export const showcase = {
     },
     agents: {
       partial: "一部対応",
-      note: "対応レベルは、各アダプターが実際に解析できるセッション、使用量、ツール呼び出しに基づいています。",
-    },
-    updates: {
-      label: "アップデートとガイド",
     },
   },
 } satisfies Record<Locale, ShowcaseCopy>;

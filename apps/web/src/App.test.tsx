@@ -495,6 +495,5 @@ it("offers a remote resume command with its source machine clearly identified", 
   expect(button.getAttribute("aria-label")).toContain(
     "cd '/office/worktree' && claude --resume 'session-1'",
   );
-  expect(screen.getByText("Source: office")).toBeTruthy();
   expect(screen.getByText("Run this command on office, in a POSIX-compatible shell.")).toBeTruthy();
 });

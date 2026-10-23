@@ -58,7 +58,7 @@ describe("SessionFilterPanel", () => {
     expect(checkbox("Your messages").getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("Agent replies")).toBeTruthy();
     expect(toolCheckboxNames()).toEqual(["Bash", "Edit", "Grep", "Read", "Write"]);
-    expect(screen.getByText("5 / 5 selected")).toBeTruthy();
+    expect(screen.queryByText("5 / 5")).toBeNull();
     expect(screen.getByText("20")).toBeTruthy();
   });
 
@@ -71,7 +71,7 @@ describe("SessionFilterPanel", () => {
     fireEvent.click(checkbox("Bash"));
 
     expect(parent.getAttribute("aria-checked")).toBe("mixed");
-    expect(screen.getByText("3 / 5 selected")).toBeTruthy();
+    expect(screen.getByText("3 / 5")).toBeTruthy();
 
     fireEvent.click(parent);
     expect(parent.getAttribute("aria-checked")).toBe("true");
@@ -90,7 +90,7 @@ describe("SessionFilterPanel", () => {
     expect(toolCheckboxNames()).toEqual(["Grep", "Read"]);
     expect(checkbox("Grep").getAttribute("aria-checked")).toBe("false");
     expect(checkbox("Read").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByText("4 / 5 selected")).toBeTruthy();
+    expect(screen.getByText("4 / 5")).toBeTruthy();
   });
 
   it("scopes the quick actions to the queried subset", () => {
@@ -99,9 +99,9 @@ describe("SessionFilterPanel", () => {
       target: { value: "re" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear all (2)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
 
-    expect(screen.getByText("3 / 5 selected")).toBeTruthy();
+    expect(screen.getByText("3 / 5")).toBeTruthy();
     expect(checkbox("Grep").getAttribute("aria-checked")).toBe("false");
     expect(checkbox("Read").getAttribute("aria-checked")).toBe("false");
   });

@@ -81,8 +81,9 @@ test("opens a session detail from the project timeline", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "Core browsing smoke session" }),
   ).toBeVisible();
   await expect(page.getByText("Dashboard path is ready")).toBeVisible();
-  await expect(page.getByText("Source: Local source")).toBeVisible();
-  await expect(page.getByText(/Run this command on the machine running CodeSesh/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Copy resume command/ }),
+  ).toHaveAccessibleDescription(/Run this command on the machine running CodeSesh/);
 });
 
 test("searches indexed messages and opens a result", async ({ page }) => {
@@ -109,7 +110,6 @@ test("searches indexed messages and opens a result", async ({ page }) => {
     .filter({ hasText: "Core browsing smoke session" })
     .first();
   await expect(searchResult).toContainText("needle");
-  await expect(page.getByText(/Shows up to 50 sessions/)).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth))

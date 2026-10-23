@@ -8,7 +8,6 @@ import { t } from "../../i18n/translate";
 import { useCallback, useMemo, useState } from "react";
 import type { SessionHead, SessionReference } from "@codesesh/contract";
 import type { AgentCatalog } from "../../lib/agents";
-import { formatCompact } from "../../lib/format";
 import {
   buildProjectTimeline,
   getProjectTimelinePage,
@@ -68,16 +67,7 @@ export function ProjectTimeline({
   return (
     <Panel aria-label={t("{0} timeline", [projectName])} className="min-w-0 overflow-hidden">
       <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-b border-[var(--console-border)] px-[18px] py-2.5">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h3 className="text-sm font-semibold text-[var(--console-text)]">{t("Timeline")}</h3>
-          <span className="console-mono text-[11px] text-[var(--console-muted)]">
-            {t("{0} sessions · {1} sub-sessions · {2} tokens", [
-              timeline.mainCount,
-              timeline.subCount,
-              formatCompact(timeline.totalTokens),
-            ])}
-          </span>
-        </div>
+        <h3 className="text-sm font-semibold text-[var(--console-text)]">{t("Timeline")}</h3>
         <SubSessionModeSwitch mode={mode} onChange={setMode} />
       </div>
 

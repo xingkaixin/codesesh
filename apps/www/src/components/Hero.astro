@@ -56,13 +56,7 @@ const results = [
         <HeadingText value={t.title} secondClass="l2" />
       </h1>
       <div class="hero-sub">
-        <div>
-          <p class="lead">{t.body}</p>
-          <p class="privacy">
-            <Icon name="shield-check" />
-            {t.privacy}
-          </p>
-        </div>
+        <p class="lead">{t.body}</p>
         <div class="cta-col">
           <InstallCommand locale={locale} method="npm" placement="hero" />
           <div class="btn-row">
@@ -263,7 +257,6 @@ const results = [
     </div>
 
     <div class="strip">
-      <span class="strip-l">{t.agentsLabel}</span>
       <div class="mq" aria-hidden="true">
         <div class="mq-track agents__track">
           {[...agents, ...agents].map((agent) => (
@@ -358,18 +351,6 @@ const results = [
   }
   .hero-sub .lead {
     font-size: 17px;
-  }
-  .privacy {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 18px;
-    color: var(--muted);
-    font-size: 13px;
-  }
-  .privacy :global(svg) {
-    flex: none;
-    color: var(--pos-ink);
   }
   .cta-col {
     display: flex;
@@ -835,13 +816,6 @@ const results = [
     align-items: center;
     gap: 28px;
     margin-top: 120px;
-  }
-  .strip-l {
-    color: var(--muted);
-    font: 500 11px/1 var(--mono);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    white-space: nowrap;
   }
   .mq {
     flex: 1;

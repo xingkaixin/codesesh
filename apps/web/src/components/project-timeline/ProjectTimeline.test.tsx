@@ -122,10 +122,9 @@ describe("ProjectTimeline", () => {
     expect(screen.getByRole("button", { name: /large-child-40\b/ })).not.toBeNull();
   });
 
-  it("summarises main and sub sessions in the header", () => {
+  it("labels the timeline region with the project name", () => {
     renderTimeline([PARENT, CHILD, SOLO]);
 
-    expect(screen.getByText("2 sessions · 1 sub-sessions · 450 tokens")).not.toBeNull();
     expect(screen.getByRole("region", { name: "workspace-a timeline" })).not.toBeNull();
   });
 

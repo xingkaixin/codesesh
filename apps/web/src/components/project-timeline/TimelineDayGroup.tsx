@@ -39,11 +39,8 @@ export function TimelineDayGroup({
             colSpan={5}
             className="border-b border-[var(--console-border)] bg-[var(--console-bg)] px-[18px] py-[7px] text-left text-xs font-normal text-[var(--console-muted)]"
           >
-            {t("{0} · {1} main sessions · {2} sub-sessions", [
-              day.label,
-              day.mainCount,
-              day.subCount,
-            ])}
+            {t("{0} · {1} main sessions", [day.label, day.mainCount])}
+            {day.subCount > 0 ? t(" · {0} sub-sessions", [day.subCount]) : null}
           </th>
         </tr>
       </tbody>

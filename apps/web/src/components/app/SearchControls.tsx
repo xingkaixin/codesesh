@@ -51,7 +51,7 @@ export const SearchControls = forwardRef<
             autoFocus={autoFocus}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Search sessions…")}
+            placeholder={t("Search titles, messages, tool output, and file paths")}
             className="w-full min-w-0 bg-transparent text-sm text-[var(--console-text)] outline-none placeholder:text-[var(--console-muted)]"
           />
           <button
