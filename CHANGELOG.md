@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.3] - 2026-10-25
+
+This patch keeps Pi and oh-my-pi collection running when the Pi sessions directory contains subagent transcripts, and removes labels and descriptions that repeat what the Web UI and product site already show. (#858, #859)
+
+### Bug Fixes
+
+- Skip new files without a Pi session header during incremental Pi and oh-my-pi scans, such as the `subagent-artifacts/*_delegate_transcript.jsonl` files written by the pi-subagents extension. Previously one such file failed every incremental refresh and backfill page with `missing Pi session header`. A recorded session that becomes invalid still reports an error and is not treated as deleted. (#859)
+- Stop rendering a stray `0` under messages with zero cost and no token usage, and fix mismatched brackets in the tool filter quick actions. (#858)
+
+### Design
+
+- Remove secondary labels and descriptions that repeat the layout in the Overview, project, session, search, content filter, error, and dialog views, and on the product site. The tool count appears only when tools are partially selected, the filter summary only when filters hide content, and the search limit note only when the 50-result limit is reached. (#858)
+
 ## [1.4.2] - 2026-10-21
 
 This patch stops trusting eight eMudhra intermediate certificates whose private keys were disclosed, and removes the temporary databases left behind by `--no-cache` runs. The remaining changes reorganize internal modules without changing behavior. (#827–#851)
