@@ -112,11 +112,12 @@ fn cold_invalid_transcript_does_not_block_first_backfill_page() {
     assert_eq!(first.sessions.len(), 32);
     assert!(!first.complete);
     commit_page(&mut cache, &mut first);
-    assert!(
-        scanner
-            .refresh_with_checkpoint(None, first.checkpoint.as_ref())
-            .is_err()
-    );
+    let mut second = scanner
+        .refresh_with_checkpoint(None, first.checkpoint.as_ref())
+        .unwrap();
+    assert!(second.sessions.is_empty());
+    assert!(second.complete);
+    commit_page(&mut cache, &mut second);
     assert_eq!(cache.snapshot().unwrap().len(), 32);
 }
 

@@ -91,7 +91,10 @@ pub(super) fn scan_changed_as(
         let parsed = match std::fs::metadata(&source) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => return Err(error.into()),
-            Ok(_) => parse_as(&source, agent, pricing)?,
+            Ok(_) => match parse_as(&source, agent, pricing) {
+                Err(error) if error.is::<InvalidSession>() && old.is_empty() => None,
+                result => result?,
+            },
         };
         for old in old {
             if parsed
@@ -579,10 +582,19 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir(root.path().join("unrelated.jsonl")).unwrap();
+        let artifact = root
+            .path()
+            .join("subagent-artifacts/run_delegate_transcript.jsonl");
+        std::fs::create_dir(artifact.parent().unwrap()).unwrap();
+        std::fs::write(
+            &artifact,
+            json!({"version":1,"recordType":"message","role":"user","text":"Delegate"}).to_string(),
+        )
+        .unwrap();
         let changed = scan_changed(
             root.path(),
             &pricing,
-            std::slice::from_ref(&path),
+            &[path.clone(), artifact],
             &previous
                 .iter()
                 .map(crate::agents::SessionRecord::from)
