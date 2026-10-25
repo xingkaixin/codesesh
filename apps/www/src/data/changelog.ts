@@ -101,6 +101,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.3",
+        date: "2026-10-25",
+        title: "Pi history keeps syncing, with a quieter interface",
+        summary:
+          "CodeSesh 1.4.3 keeps collecting Pi and oh-my-pi sessions when the pi-subagents extension writes delegate transcripts, and removes labels and descriptions that repeated what the page already shows.",
+        direction:
+          "Keep AI coding history collection working as Agents add new files of their own, and let the layout explain the page so your sessions get the attention.",
+        highlights: [
+          {
+            title: "Pi collection no longer stalls on subagent files",
+            description:
+              "Delegate transcripts from the pi-subagents extension no longer make every refresh fail, so new Pi and oh-my-pi sessions keep appearing as you work.",
+          },
+          {
+            title: "Less repeated text",
+            description:
+              "The Overview, project, session, and search pages drop captions that restated titles or the page bar. Counts and limits appear only when they tell you something, and messages with no cost no longer show a stray 0.",
+          },
+        ],
+      },
+      {
         version: "1.4.2",
         date: "2026-10-21",
         title: "Safer connections and no leftover temporary databases",
@@ -937,6 +958,27 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.3",
+        date: "2026-10-25",
+        title: "Pi 历史持续同步，界面更简洁",
+        summary:
+          "CodeSesh 1.4.3 在 pi-subagents 扩展写入委派转录文件时仍能继续采集 Pi 与 oh-my-pi 会话，并删除了与页面内容重复的标签和说明。",
+        direction:
+          "Agent 新增自己的文件时，本地 AI 编码历史的采集不应中断；让布局说明页面，把注意力留给会话本身。",
+        highlights: [
+          {
+            title: "Pi 采集不再被子代理文件阻塞",
+            description:
+              "pi-subagents 扩展生成的委派转录文件不再让每次刷新失败，新的 Pi 与 oh-my-pi 会话会随工作持续出现。",
+          },
+          {
+            title: "减少重复文字",
+            description:
+              "概览、项目、会话和搜索页面删除了重复标题或顶栏的说明。数量和上限只在有意义时显示，没有费用的消息也不再多出一个 0。",
+          },
+        ],
+      },
+      {
         version: "1.4.2",
         date: "2026-10-21",
         title: "连接更安全，不再遗留临时数据库",
@@ -1750,6 +1792,27 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.3",
+        date: "2026-10-25",
+        title: "Pi の履歴を継続して同期、すっきりした画面に",
+        summary:
+          "CodeSesh 1.4.3 は、pi-subagents 拡張が委任トランスクリプトを書き込んでも Pi と oh-my-pi のセッションを収集し続けます。ページの内容と重複するラベルや説明も削除しました。",
+        direction:
+          "エージェントが独自のファイルを追加しても AI コーディング履歴の収集を止めず、レイアウトでページを説明してセッションそのものに集中できるようにします。",
+        highlights: [
+          {
+            title: "サブエージェントのファイルで Pi の収集が止まらない",
+            description:
+              "pi-subagents 拡張の委任トランスクリプトがあっても更新が毎回失敗することはなくなり、新しい Pi と oh-my-pi のセッションが作業に合わせて表示され続けます。",
+          },
+          {
+            title: "重複する文字を削減",
+            description:
+              "概要、プロジェクト、セッション、検索の各ページで、タイトルやページバーを繰り返す説明を削除しました。件数や上限は意味があるときだけ表示し、コストのないメッセージに余分な 0 も表示されません。",
+          },
+        ],
+      },
       {
         version: "1.4.2",
         date: "2026-10-21",
