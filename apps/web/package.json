@@ -46,7 +46,7 @@
     "@types/react-dom": "^19.3.0",
     "@typescript/native": "catalog:",
     "@vitejs/plugin-react": "^6.1.2",
-    "happy-dom": "^21.0.3",
+    "happy-dom": "^21.0.4",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
