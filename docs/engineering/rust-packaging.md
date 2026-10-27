@@ -1,6 +1,6 @@
 # Rust 原生制品验证
 
-项目默认构建和启动入口已切换到 Rust CLI；此目录负责原生打包与安装验收，不发布任何 npm 包。版本从根 Cargo workspace 读取；当前 1.0.12 只用于隔离安装验证。平台包名暂按迁移计划的 `@codesesh/cli-*` 使用，正式发布前仍须核实 scope 权限。
+项目的构建和启动入口是 Rust CLI。本文说明原生打包与安装验收。版本从根 Cargo workspace 读取；平台包名为 `@codesesh/cli-*`，目标清单见 `crates/codesesh-cli/npm/targets.json`。
 
 ## 构建与打包
 
@@ -46,7 +46,7 @@ macOS arm64/x64 与 Windows x64 目标不变。
 
 `node scripts/rust/smoke.mjs` 在带空格和中文的临时目录使用离线 npm install，显式禁用安装脚本并排除开发依赖。它校验安装后二进制哈希、直接执行、launcher 与 npm exec 的版本、帮助输出、错误退出码、平台包缺失错误，然后清理临时目录。
 
-`--contracts` 是 P6 完整验收的必要参数。它另外使用直接二进制和安装后的 npm launcher，分别运行已有后端进程契约，包括扫描、HTTP、持久化、SSE 更新和退出；还会读取内嵌首页、SPA 路由、JS/CSS 资源。结果写入 smoke-report.json，记录版本、Node/npm、二进制 hash 和验收时间。安装目录脱离仓库；最低 glibc 验收在上述 Ubuntu 22.04 runner 执行，完整浏览器流程另有门禁。纯安装 smoke 通过不能代替这些检查。
+`--contracts` 是完整验收的必要参数。它另外使用直接二进制和安装后的 npm launcher，分别运行已有后端进程契约，包括扫描、HTTP、持久化、SSE 更新和退出；还会读取内嵌首页、SPA 路由、JS/CSS 资源。结果写入 smoke-report.json，记录版本、Node/npm、二进制 hash 和验收时间。安装目录脱离仓库；最低 glibc 验收在上述 Ubuntu 22.04 runner 执行，完整浏览器流程另有门禁。纯安装 smoke 通过不能代替这些检查。
 
 ```sh
 node --test scripts/rust/packaging.test.mjs
@@ -54,8 +54,6 @@ node --test scripts/rust/packaging.test.mjs
 
 架构检查负例防止文本、截断文件、错误 CPU 或 OS 被误标成对应平台制品。
 
-## 当前验收证据与剩余工作
+## 根脚本与发布
 
-macOS arm64 已在 Node 24.21.0 / npm 8.3.1 上实际完成打包与完整安装 smoke，npm 安装脚本关闭；原生压缩包、平台包、安装后二进制 hash 一致。原生二进制与 npm launcher 各通过 3 个后端进程契约，并读取共 16 个内嵌 Web 资源，覆盖首页与 SPA 路由。具体二进制 hash 和时间以该目标 smoke-report.json 为准；后续代码变化需要重新打包验收。另三个平台尚未在此本地环境运行；Linux 声明的最低支持版本为 glibc 2.35，验收结果以 Ubuntu 22.04 runner 报告为准。
-
-根 package:artifact 与 package:smoke 已使用原生打包和安装验证，主包采用本文的 launcher 与精确版本 optionalDependencies。默认 build 先构建 Web，再构建内嵌资源的 release 二进制；源码启动使用 scripts/run-native.mjs。CI 按四个原生目标构建并验收，实际结果以对应运行报告为准。正式发布属于 P8，仍未授权；`scripts/rust/publish.mjs` 仅由正式发布工作流调用；它先核对注册表中同版本制品的实际摘要，再按平台包、主包顺序发布。本轮仅验证模拟注册表与进程调用，不执行真实发布。
+根 package:artifact 与 package:smoke 使用原生打包和安装验证，主包采用本文的 launcher 与精确版本 optionalDependencies。默认 build 先构建 Web，再构建内嵌资源的 release 二进制；源码启动使用 scripts/run-native.mjs。CI 按四个原生目标构建并验收，实际结果以对应运行报告为准。`scripts/rust/publish.mjs` 仅由 Release 工作流调用；它先核对注册表中同版本制品的实际摘要，再按平台包、主包顺序发布。发布授权和步骤见[发布指南](./release-guide.md)。

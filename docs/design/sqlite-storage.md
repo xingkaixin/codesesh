@@ -34,7 +34,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `session_file_activity_path_fts` | 文件路径 trigram 检索 |
 | `project_groups_v` | 按项目身份聚合会话 |
 
-`(agent_name, session_id)` 是持久化会话身份。消息和文件活动通过复合外键关联会话，删除
+`(source_node_id, agent_name, session_id)` 是持久化会话身份。消息和文件活动通过复合外键关联会话，删除
 会话时级联清理。标题和文件路径 FTS 由内容表触发器维护。`message_fts` 不保存原文，由 writer
 在写入或删除消息时同步维护，只索引新增或变化的消息；汉字逐字切分，使中文子串可以按短语
 查询。搜索在会话层面组合各个词的 FTS 命中；含汉字的词还要按结果顺序逐个会话核对原文子串，
@@ -97,12 +97,11 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
    `session_usage_bucket`。
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
-具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。与固定 Node 参考
-制品的正向迁移与 Rust 重启检查是独立验收。schema 36 不支持再由 schema 35 的旧版本
-打开；用户状态使用 schema 4。
+具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。schema 36 不支持
+再由 schema 35 的旧版本打开；用户状态使用 schema 4。
 
-旧表删除后的空间进入 SQLite freelist，后续写入可以复用。启动不自动压缩整个缓存。
-需要手动压缩时，应先停止 CodeSesh，再运行：
+旧表删除后的空间进入 SQLite freelist，后续写入可以复用；空闲页达到第 7 步的阈值时，
+打开数据库会自动压缩。需要立即压缩时，应先停止 CodeSesh，再运行：
 
 ```bash
 sqlite3 ~/.codesesh/codesesh.db 'VACUUM'
@@ -110,7 +109,7 @@ sqlite3 ~/.codesesh/codesesh.db 'VACUUM'
 
 ## 用户状态
 
-书签和别名由 `crates/codesesh-core/src/state/` 保存到独立状态库，使用 schema 3。
+书签和别名由 `crates/codesesh-core/src/state/` 保存到独立状态库，使用 schema 4。
 状态目录支持 `CODESESH_STATE_DIR` 覆盖；默认位于 `~/.codesesh/state.db`（Windows 为 `%USERPROFILE%\.codesesh\state.db`）。清空会话缓存不应清除
 用户状态。书签物化逻辑在 `crates/codesesh-core/src/state/bookmarks.rs`。
 

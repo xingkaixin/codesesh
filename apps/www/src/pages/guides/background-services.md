@@ -29,7 +29,7 @@ A Worker previously paired in the foreground can reuse its saved Hub address and
 
 ## Wait for readiness
 
-`start` waits approximately ten seconds. A long initialization continues in the background. Follow its status without stopping the service:
+`start` waits up to about ten seconds. A long initialization continues in the background. Follow its status without stopping the service:
 
 ```sh
 codesesh hub status --watch

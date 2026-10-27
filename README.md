@@ -376,8 +376,7 @@ pnpm deploy:www
 
 Rust backend tests run through Cargo. `test:coverage` measures the TypeScript contract and Web
 code covered by Vitest; it does not measure Rust coverage. Playwright exercises the browser against
-the native server. Backend process contracts and the fixed Node reference provide separate
-compatibility checks.
+the native server. Backend process contracts provide a separate compatibility check.
 
 The landing page deploys to the `codesesh` Worker at `codesesh.xingkaixin.me`.
 Use the globally installed `cf` CLI managed by mise, already authenticated with
@@ -467,8 +466,7 @@ use `pnpm test:rust:platform`; npm installation is verified on Node 22.0.0 and N
 See [the test policy](docs/engineering/testing.md) for the platform selection. Legacy Node differential suites
 have been retired. The pinned Node package remains available only for manual performance benchmarks.
 
-Version 1.1.0 prepares the native Rust backend for release. Version and changelog updates do not
-publish packages. The Release workflow only runs for `v*` tags; publication requires separate
+Version and changelog updates do not publish packages. The Release workflow only runs for `v*` tags; publication requires separate
 authorization and completion of the [release checklist](docs/engineering/release-guide.md).
 
 ### Dev workflow
