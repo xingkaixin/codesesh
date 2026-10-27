@@ -7,6 +7,8 @@
 
 > **一个地方，看遍你所有的 AI 编程会话。**
 
+[官网](https://codesesh.xingkaixin.me/zh/) · [查找 Claude Code 和 Codex 历史](https://codesesh.xingkaixin.me/zh/guides/session-history/) · [安装指南](https://codesesh.xingkaixin.me/zh/guides/getting-started/)
+
 你在用多个 AI 编程 Agent，会话散落在文件系统各处。**CodeSesh** 找到它们，并放进同一个 Web UI。
 
 ---
@@ -99,7 +101,7 @@ Cherry Studio 支持 2.x 的 `Data/cherrystudio.sqlite`，包含 Agent 会话（
 `agents.db`、独立子 Agent 会话树及恢复会话命令暂不支持。会话统一归属 Cherry Studio，
 不跨 Agent 去重。
 
-更多 Agent 持续接入中。参见[扩展清单](#扩展新-agent)。
+接入新 Agent 见[扩展清单](#扩展新-agent)。
 
 ---
 
@@ -130,7 +132,7 @@ CI 与 release 验收固定使用 Ubuntu 22.04；首版不支持更旧 glibc、m
 npx codesesh
 ```
 
-浏览器会自动打开 `http://localhost:4521`，你的所有会话已就绪。如果默认端口被占用，CodeSesh 会自动尝试下一个可用端口。
+浏览器会自动打开 `http://localhost:4521`。如果默认端口被占用，CodeSesh 会自动尝试下一个可用端口。
 
 ### 原生安装（无需 Node.js）
 
@@ -183,7 +185,7 @@ pnpm serve
 ```
 
 本地服务运行 Rust 可执行文件和内嵌 Web UI。release 编译前需要先构建 Web；
-`pnpm build` 负责仓库构建流程。
+`pnpm build` 按这个顺序执行两步。
 
 ---
 
@@ -206,7 +208,7 @@ npx codesesh --no-open
 ### 按时间筛选
 
 ```bash
-# 只显示最近 3 天内有活动的会话
+# 只显示最近 3 个本地自然日内有活动的会话
 npx codesesh --days 3
 
 # 显示全部会话（不限时间）
@@ -257,9 +259,9 @@ npx codesesh --json
 npx codesesh -j
 ```
 
-输出是索引而非归档：包含 `agents` 摘要与 `sessions` 数组（id、slug、标题、目录、项目身份、
-时间戳、token/成本统计与智能标签），**不包含**消息、工具调用、推理过程与文件活动，因此
-不能作为历史记录的备份。会话内容仍保存在各 Agent 自己的数据目录中。
+输出是索引，包含 `agents` 摘要与 `sessions` 数组。每个会话条目只有元数据（reference、标题、
+目录、项目身份、时间戳、token/成本统计与智能标签），**不包含**消息、工具调用、推理过程与文件
+活动，因此不能作为历史记录的备份。会话内容仍保存在各 Agent 自己的数据目录中。
 
 ### CLI 参数一览
 
@@ -267,8 +269,13 @@ npx codesesh -j
 |------|------|--------|------|
 | `--port` | `-p` | `4521` | HTTP 服务器起始端口；被占用时自动尝试下一个可用端口 |
 | `--host` | — | `127.0.0.1` | HTTP 服务器绑定地址；默认仅限本机，显式设置为 `0.0.0.0` 等地址可开放网络访问 |
-| `--remote-access` | — | `false` | 为非回环 `--host` 启用 token 保护；持有启动 URL 的任何人都能读取会话数据 |
-| `--days` | `-d` | `7` | 只包含最近 N 天内有活动的会话（`0` = 全部） |
+| `--auth` | — | `false` | 本机访问也要求 API 访问 token |
+| `--remote-access` | — | `false` | 允许网络或反向代理访问；始终要求 API 访问 token |
+| `--tls-cert` | — | — | TLS 证书路径；远程访问改用 HTTPS |
+| `--tls-key` | — | — | 与 `--tls-cert` 对应的私钥路径 |
+| `--trust-proxy` | — | `false` | 由 CodeSesh 前面的反向代理终止 TLS |
+| `--public-url` | — | — | 与 `--trust-proxy` 配合使用的公开 HTTPS origin，用于启动链接和同源检查 |
+| `--days` | `-d` | `7` | 只包含最近 N 个本地自然日内有活动的会话（`0` = 全部） |
 | `--cwd` | — | — | 筛选指定项目目录（`.` = 当前目录） |
 | `--agent` | `-a` | 全部 | 筛选指定 Agent，逗号分隔 |
 | `--from` | — | — | 指定日期之后有活动的会话 `YYYY-MM-DD`（覆盖 `--days`） |
@@ -282,11 +289,34 @@ npx codesesh -j
 | `-v` | — | — | 打印版本号 |
 | `-h` / `--help` | — | — | 显示帮助信息 |
 
-非回环地址必须同时启用 `--remote-access`，否则 CodeSesh 会拒绝启动。每次进程启动都会
-生成新的访问 token，并将其包含在输出 URL 中。请将该 URL 视为密码，不要公开或保存到
-共享的 shell 历史记录中。
+本机访问默认不要求 API token。用 `--auth` 为回环监听启用 token 认证。不启用时，同一台机器上的
+其他用户和进程可以访问已索引的会话和写入 API。Host 与跨域请求检查始终开启。
 
-模型估算价格来自 [models.dev](https://models.dev/api.json)，缓存在 `~/.codesesh/models-dev-pricing.json`，有效期为 24 小时。启动时不等待网络：使用本地缓存（过期也可用），没有可用缓存时使用内置价格。服务启动后，后台任务在缓存缺失或过期时下载新价格，最多等待 10 秒，并每 6 小时检查一次。`--json` 使用本地价格，不刷新。网络失败时保留当前价格。新价格发布后，会重新计算已有估算，包括此前缺少模型定价的会话。
+`--remote-access` 始终启用 token 认证，包括后端在反向代理后监听回环地址的情况。绑定非回环
+地址必须使用 `--remote-access`。信任代理时还要求回环 `--host` 和 HTTPS `--public-url`。启用
+认证后，每个服务进程都会生成新的 token，并放进启动 URL。请把这个 URL 当作密码，不要分享或
+保存。Worker 配对和上传凭证不受影响。
+
+token 只认证请求方，不加密传输。没有 TLS 时，token 和完整会话内容以明文经过网络，URL 中的
+token 还可能出现在反向代理的访问日志里。二选一：
+
+```bash
+# 由 CodeSesh 终止 TLS
+npx codesesh --host 0.0.0.0 --remote-access --tls-cert ./cert.pem --tls-key ./key.pem
+
+# 由反向代理终止 TLS；CodeSesh 保持绑定回环地址
+npx codesesh --host 127.0.0.1 --remote-access --trust-proxy \
+  --public-url https://codesesh.example.com
+```
+
+`--trust-proxy` 要求每个 API 请求都带 `X-Forwarded-Proto: https`，否则拒绝请求。这个请求头
+只能校验代理的转发配置，无法证明是哪个客户端发出的。因此 CodeSesh 强制后端绑定回环地址，
+网络客户端无法直接访问 HTTP 监听。打印和自动打开的启动 URL 使用 `--public-url`。
+
+只用 `--remote-access`、不配置任一 TLS 方式时，CodeSesh 仍会在非回环地址启动，并提示传输
+未加密。
+
+模型估算价格来自 [models.dev](https://models.dev/api.json)，缓存在 `~/.codesesh/models-dev-pricing.json`，有效期为 24 小时。启动时不等待网络，使用本地缓存（过期也可用），没有可用缓存时使用内置价格。服务启动后，后台任务在缓存缺失或过期时下载新价格，最多等待 10 秒，并每 6 小时检查一次。`--json` 使用本地价格，不刷新。网络失败时保留当前价格。新价格发布后，会重新计算已有估算，包括此前缺少模型定价的会话。
 
 ---
 
@@ -300,7 +330,7 @@ CodeSesh 启动后，你将看到：
 4. **会话树侧边栏** —— 按 Agent 或项目身份浏览会话，将嵌套子 Agent 会话保留在父会话下，并按 Agent 或智能标签筛选
 5. **时间范围控制** —— 通过滚动时间预设、全部历史或自定义日期范围筛选整个 Web UI
 6. **会话列表** —— 按最新时间排序浏览会话，每张卡片显示标题、工作目录、消息数和总成本
-7. **会话别名、智能标签与收藏** —— 在本地重命名会话、快速识别会话意图，并固定需要反复查看的内容
+7. **会话别名、智能标签与收藏** —— 在本地重命名会话、通过智能标签识别会话意图，并固定需要反复查看的内容
 8. **会话详情** —— 点击任意会话查看完整回放，包括 receipt 摘要、用户消息、Assistant 回复、工具调用、推理步骤、模型标签、文件活动和 Agent 恢复命令复制
 9. **快捷键** —— 通过快捷键面板查看导航、全局搜索、聚焦搜索和分组跳转操作
 10. **实时同步** —— 服务运行期间，本地新增或更新的会话会自动反映到界面
@@ -337,8 +367,8 @@ pnpm deploy:www
 ```
 
 Rust 后端通过 Cargo 测试。`test:coverage` 统计 Vitest 覆盖的 TypeScript 契约和 Web 代码，
-不代表 Rust 覆盖率。Playwright 使用原生服务器验证浏览器流程；后端进程契约和固定 Node
-参考制品提供独立的兼容性检查。
+不代表 Rust 覆盖率。Playwright 使用原生服务器验证浏览器流程；后端进程契约提供独立的
+兼容性检查。
 
 落地页部署到 `codesesh` Worker，正式域名为 `codesesh.xingkaixin.me`。
 使用 mise 全局安装且已登录的 `cf`，不要将 `cf` 或 Wrangler 加入项目依赖。
@@ -422,7 +452,7 @@ macOS 与 Windows 使用 `pnpm test:rust:platform`；每个目标的 npm 安装�
 和 Node 24 验证。平台选择依据见[测试策略](docs/engineering/testing.md)。旧 Node 差分套件已移除，
 锁定参考包仅保留给手动性能对照。
 
-v1.1.0 将 Rust 原生后端纳入版本发布准备。更新版本号与发布记录不会发布包。
+更新版本号与发布记录不会发布包。
 Release workflow 仅由 `v*` tag 触发；正式发布需单独授权并完成[发布清单](docs/engineering/release-guide.md)。
 
 ### 开发流程
@@ -461,6 +491,9 @@ apps/web/                            React application
 apps/www/                            Astro product site
 scripts/rust/                        Native build, packaging, and benchmarks
 ```
+
+`docs/architecture.md` 说明一次扫描如何经过这些模块；`docs/design/sqlite-storage.md` 说明缓存和
+搜索索引；`docs/engineering/performance.md` 说明性能由哪些检查保证，以及新增检查放在哪里。
 
 ### 扩展新 Agent
 

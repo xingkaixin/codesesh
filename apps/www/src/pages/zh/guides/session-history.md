@@ -8,7 +8,7 @@ Claude Code 的本地对话记录通常保存在 `~/.claude/projects/`。Codex �
 
 ## 1. Claude Code 和 Codex 历史记录的保存位置
 
-CodeSesh 默认读取以下位置。`~` 代表当前用户的主目录：
+`~` 代表当前用户的主目录。CodeSesh 默认读取以下位置：
 
 - **Claude Code：** `~/.claude/projects/` 下的 JSONL 会话记录。如果设置了 `CLAUDE_CONFIG_DIR`，则读取该配置根目录下的 `projects/`。
 - **Codex：** `~/.codex/sessions/` 下的 `rollout-*.jsonl`，包括按日期嵌套的子目录。如果设置了 `CODEX_HOME`，则读取该根目录下的 `sessions/`。
@@ -63,7 +63,7 @@ npx codesesh --days 0 --agent claudecode,codex
 - **先检查时间范围。** 使用 `--days 0` 重新启动，并清除界面中限制过严的筛选。如果 `--from`、`--to`、`--cwd` 或 `--agent` 排除了目标会话，也需要移除这些参数。
 - **确认源文件仍存在。** 检查对应的本地目录及当前用户的读取权限。Codex 会话还需确认是否已被移到 `archived_sessions/`。
 - **检查自定义根目录。** 确认启动 CodeSesh 的终端能读取 `CLAUDE_CONFIG_DIR` 或 `CODEX_HOME`，尤其是编码工具从另一种 Shell 或应用启动时。
-- **等待索引完成。** 首次历史回填和搜索索引在后台进行。会话列表已经显示，不代表所有旧消息都能立即被搜索到。
+- **等待索引完成。** 首次历史回填和搜索索引在后台进行。会话列表已经显示，不代表所有旧消息都能立即搜到。
 - **反馈可复现的解析问题。** 如果受支持的记录确实存在但仍未出现，可以[提交问题](https://github.com/xingkaixin/codesesh/issues)，附上 CodeSesh 版本、Agent 和相关错误。分享前移除私人提示词、路径和凭据。
 
 ## 5. 了解本地索引的边界

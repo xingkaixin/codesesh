@@ -22,19 +22,19 @@ codesesh --cwd . --days 0
 
 You can also open a project in the interface. In a Hub setup, use the source selector to distinguish one computer from the combined archive. Keep the same dates and filters when comparing results.
 
-The default startup period is seven local calendar days. Worker collection and Hub viewing are separate: changing the Hub window does not instruct Workers to discard older source history.
+The default startup period is seven local calendar days. Worker collection and Hub viewing are separate. Changing the Hub window does not instruct Workers to discard older source history.
 
 ## Read token categories
 
-Input and output tokens represent different parts of model usage. Supported records may also include reasoning, cache-read, and cache-creation tokens. Availability and accounting depend on what the source agent records and how its adapter interprets those fields.
+Besides input and output tokens, supported records may include reasoning, cache-read, and cache-creation tokens. Availability and accounting depend on what the source agent records and how its adapter interprets those fields.
 
-Do not manually add every displayed category to a provider's number without checking its definition. Some providers include cached or reasoning usage within other reported totals. The model distribution and project summaries help locate where indexed activity came from; open a session to inspect the underlying context.
+Before you add up every displayed category and compare the sum with a provider's number, check how each figure is defined. Some providers include cached or reasoning usage within other reported totals. The model distribution and project summaries help locate where indexed activity came from; open a session to inspect the underlying context.
 
 ## Distinguish recorded and estimated costs
 
-The cost breakdown distinguishes amounts from agent records and estimates calculated from model unit prices. A recorded cost comes from the source data. An estimate depends on recognized model names, available token counts, and the pricing data used by CodeSesh.
+The cost breakdown shows amounts taken from agent records separately from estimates calculated from model unit prices. A recorded cost comes from the source data. An estimate depends on recognized model names, available token counts, and the pricing data used by CodeSesh.
 
-An unfamiliar model, incomplete usage record, or missing price can leave the cost incomplete. Zero displayed cost alone does not establish that the work was free. Different model labels or pricing data can also explain changes in an estimate.
+An unrecognized model, incomplete usage record, or missing price can leave the cost incomplete. A displayed cost of zero does not by itself prove that the work was free. Different model labels or pricing data can also explain changes in an estimate.
 
 ## Investigate a surprising total
 

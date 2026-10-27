@@ -1,6 +1,6 @@
 # CodeSesh
 
-CodeSesh turns local AI coding history into searchable, replayable engineering memory.
+CodeSesh makes local AI coding history searchable and replayable.
 
 It discovers sessions from supported local AI coding agents, then organizes them by project in one local index.
 
@@ -12,17 +12,17 @@ npx codesesh
 
 CodeSesh scans supported local session stores and opens a Web UI at `http://localhost:4521`. If that port is busy, it tries the next available port. The npm launcher requires Node.js 22 or later. The standalone Rust executable does not require Node.
 
-## Product Tour
+## Product tour
 
 ### Overview
 
 Review session, message, token, cost, agent, and recent activity data from one local index. Change the time window to recompute the overview.
 
-### Project Tree
+### Project tree
 
 Group history by repository or project identity, keep subagent sessions under their parent, and aggregate message, token, and cost data by hierarchy.
 
-### Session Replay
+### Session replay
 
 Read messages, tool calls, and file changes in sequence. Filter by message type and use file tracking to recover the context behind a task.
 
@@ -31,7 +31,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 ### Discover
 
 - Zero configuration: scan supported local agent sessions with one command.
-- Unified timeline: browse 19 AI coding agents in one interface.
+- Unified timeline: browse sessions from 19 AI coding agents in one interface.
 - Live refresh: incrementally index changed sessions while the local server runs.
 
 ### Organize
@@ -52,7 +52,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Cost and token visibility: compare token totals, cache tokens, recorded cost, and model-based estimates.
 - Local SQLite index: restore, search, migrate, and back up one local database.
 
-## Supported Agents
+## Supported agents
 
 <!-- repo-fact:agents:start -->
 - Claude Code
@@ -76,7 +76,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - Gemini CLI
 <!-- repo-fact:agents:end -->
 
-## Data Boundary
+## Data boundary
 
 By default, CodeSesh does not upload AI coding session data. Session content, file paths, token statistics, recorded costs, and the SQLite index stay on the user's computer. A Worker uploads sessions only after the user explicitly pairs it with their own self-hosted Hub. The product requires no account, cloud sync, or session telemetry.
 
@@ -86,7 +86,7 @@ CodeSesh may fetch public model pricing metadata to estimate costs. That request
 
 ### What is CodeSesh?
 
-CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It turns local records from 19 supported agents into a project-aware engineering memory layer.
+CodeSesh is a local developer tool for discovering, aggregating, searching, and replaying AI coding session history. It indexes local records from 19 supported agents and groups them by project.
 
 ### Does CodeSesh upload local AI session data?
 

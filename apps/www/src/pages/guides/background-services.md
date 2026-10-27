@@ -29,7 +29,7 @@ A Worker previously paired in the foreground can reuse its saved Hub address and
 
 ## Wait for readiness
 
-`start` waits approximately ten seconds. A long initialization continues in the background. Follow its status without stopping the service:
+`start` waits up to about ten seconds. A long initialization continues in the background. Follow its status without stopping the service:
 
 ```sh
 codesesh hub status --watch
@@ -87,4 +87,4 @@ For a native installation, replace the executable using the installer or release
 
 A quiet service log does not mean application logging is disabled. Check both locations. Do not share files from `services/*.json`; they may contain credentials. Check logs for private information before attaching them to an issue.
 
-macOS uses a user launchd task, Linux uses a systemd user unit, and Windows uses Task Scheduler for the logged-in user. These commands do not enable boot or login autostart. macOS and Windows require the applicable logged-in user session; Linux requires a working systemd user environment. Running after logout is outside this service setup's guarantees.
+macOS uses a user launchd task, Linux uses a systemd user unit, and Windows uses Task Scheduler for the logged-in user. These commands do not enable boot or login autostart. macOS and Windows require the applicable logged-in user session; Linux requires a working systemd user environment. This setup does not guarantee that services keep running after logout.

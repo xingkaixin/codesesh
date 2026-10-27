@@ -45,8 +45,8 @@ Clap 参数与 PathEnvironment
 ## 监听与取消
 
 notify 监听已存在的数据根目录；根目录尚未创建时监听最近的现有祖先。目录创建、替换、
-移动或删除后重新协调监听范围。路径会先规范化，SQLite `-shm` 变化被忽略，数据库及 WAL
-变化继续触发核对。重复路径归并为一个后续刷新请求。
+移动或删除后重新协调监听范围。路径会先规范化；watcher 忽略 SQLite `-shm` 变化，数据库及
+WAL 变化继续触发核对。重复路径归并为一个后续刷新请求。
 
 普通文件事件安排下一轮刷新，不持续中断正在处理的批次，避免高频追加使扫描无法完成。
 显式刷新、定价代际切换和退出会使旧扫描失效。writer 在提交前检查取消状态；定价票据在
@@ -125,10 +125,10 @@ CI 不再执行旧 Node 差分测试。性能测量方法见
 ## Codex archives and compressed rollouts
 
 Codex discovery includes `sessions/` and `archived_sessions/` beneath `CODEX_HOME`.
-Both `rollout-*.jsonl` and `rollout-*.jsonl.zst` are read; Zstandard data is decoded
-as a stream without rewriting the source store. The plain JSONL path is the logical
-source key for both representations. When both exist, plain JSONL takes precedence.
-Compression and materialization change the source fingerprint and trigger a refresh,
-while session references and message IDs remain unchanged. Archived rollouts retain
-the same session reference when moved between directories. Corrupt compressed data
-fails the scan instead of publishing a partial replacement.
+The Codex adapter reads both `rollout-*.jsonl` and `rollout-*.jsonl.zst` and decodes
+Zstandard data as a stream without rewriting the source store. The plain JSONL path is
+the logical source key for both representations. When both exist, plain JSONL takes
+precedence. Compression and materialization change the source fingerprint and trigger a
+refresh, while session references and message IDs remain unchanged. Archived rollouts
+retain the same session reference when moved between directories. Corrupt compressed
+data fails the scan instead of publishing a partial replacement.

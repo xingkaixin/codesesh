@@ -1,4 +1,4 @@
-# Release Guide
+# Release guide
 
 本指南描述 Rust 原生 CLI、npm launcher 和 Web 资源的版本整理、构建与验收。
 代码迁移、生成候选制品和正式发布是不同动作；完成构建或安装 smoke 不代表已经发布。
