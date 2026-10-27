@@ -4,11 +4,11 @@ locale: en
 slug: session-history
 ---
 
-Claude Code stores local conversation transcripts under `~/.claude/projects/`. Codex stores active session records under `~/.codex/sessions/` and archived records under `~/.codex/archived_sessions/`. These are JSONL files: each line is a JSON record. `~` means your user home directory. Custom configuration roots can change these locations.
+Claude Code stores local conversation transcripts under `~/.claude/projects/`. Codex stores active session records under `~/.codex/sessions/` and archived records under `~/.codex/archived_sessions/`. These are JSONL files, with one JSON record per line. `~` means your user home directory. Custom configuration roots can change these locations.
 
 ## 1. Where Claude Code and Codex store history
 
-CodeSesh reads these locations by default. `~` means your user home directory:
+`~` means your user home directory. CodeSesh reads these locations by default:
 
 - **Claude Code:** JSONL session records under `~/.claude/projects/`. If you set `CLAUDE_CONFIG_DIR`, CodeSesh reads the `projects/` directory under that configuration root.
 - **Codex:** `rollout-*.jsonl` records under `~/.codex/sessions/`, including nested date directories. If you set `CODEX_HOME`, CodeSesh reads `sessions/` under that root.
@@ -62,7 +62,7 @@ Replay means reading the recorded conversation and tool activity. It does not re
 
 - **Check the time range first.** Restart with `--days 0` and clear restrictive filters in the UI. Remove `--from`, `--to`, `--cwd`, or `--agent` options if they exclude the session.
 - **Check the source files.** Confirm the records still exist under the relevant local directory and that the current user can read them. For Codex, check whether the session was moved to `archived_sessions/`.
-- **Check custom roots.** Make sure `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is present in the terminal launching CodeSesh, especially if the coding tool was launched from a different shell or app.
+- **Check custom roots.** Make sure `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is present in the terminal launching CodeSesh, especially if you launched the coding tool from a different shell or app.
 - **Allow indexing to finish.** The initial backfill and search index run in the background. A session list appearing does not mean all older message content is already searchable.
 - **Report a reproducible parsing problem.** If supported records exist but still do not appear, [open an issue](https://github.com/xingkaixin/codesesh/issues) with the CodeSesh version, agent, and relevant error. Remove private prompts, paths, and credentials from anything you share.
 

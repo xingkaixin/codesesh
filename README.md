@@ -21,24 +21,24 @@ CodeSesh does three jobs:
 
 ### Find
 
-- **Structured search** — Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings match, and message results open at the first hit
-- **Projects** — Group sessions by repository identity across agents, with subagent sessions nested under their parent
-- **File activity** — Jump to files that were read, edited, created, deleted, or moved, and find the sessions that touched them
-- **Bookmarks and aliases** — Keep important sessions on the dashboard and give them names that carry through search and activity views
-- **Time ranges** — Switch between rolling presets, all history, or a custom range without restarting
+- **Structured search.** Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings match, and message results open at the first hit
+- **Projects.** Group sessions by repository identity across agents, with subagent sessions nested under their parent
+- **File activity.** Jump to files that were read, edited, created, deleted, or moved, and find the sessions that touched them
+- **Bookmarks and aliases.** Keep important sessions on the dashboard and give them names that carry through search and activity views
+- **Time ranges.** Switch between rolling presets, all history, or a custom range without restarting
 
 ### See
 
-- **Dashboard** — Daily activity, agent distribution, model token shares, smart tags, and latest activity for the selected range
-- **Tokens and cost** — Token totals, cache tokens, recorded costs, and model-based estimates, always labeled as recorded or estimated
-- **Smart tags** — Sessions labeled as bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, or exploration
-- **Session receipts** — Usage by model and token category, exportable as a PNG
+- **Dashboard.** Daily activity, agent distribution, model token shares, smart tags, and latest activity for the selected range
+- **Tokens and cost.** Token totals, cache tokens, recorded costs, and model-based estimates, always labeled as recorded or estimated
+- **Smart tags.** Sessions labeled as bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, or exploration
+- **Session receipts.** Usage by model and token category, exportable as a PNG
 
 ### Reuse
 
-- **Full replay** — Messages, tool calls, and reasoning, paged or complete, with your reading position kept
-- **Copy as Markdown** — Take a whole conversation into a new prompt, issue, or note
-- **Resume commands** — Copy worktree-aware resume commands for supported agents, with the source machine shown
+- **Full replay.** Messages, tool calls, and reasoning, paged or complete, with your reading position kept
+- **Copy as Markdown.** Take a whole conversation into a new prompt, issue, or note
+- **Resume commands.** Copy worktree-aware resume commands for supported agents, with the source machine shown
 
 **Under the hood:** zero configuration, local by default (no account or telemetry), live refresh, an SQLite cache with resumable history indexing, keyboard navigation, light and dark themes, and an English, Simplified Chinese, and Japanese UI.
 
@@ -48,7 +48,7 @@ CodeSesh does three jobs:
 
 Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh worker` on each machine you want to collect from. The source-node panel guides pairing, shows collection health, and manages rescans and Worker replacement. User-level background service commands are available on macOS, Linux, and Windows. See the [Hub/Worker guide](docs/guides/hub-worker.md) for setup, migration, and recovery.
 
-## Supported Agents
+## Supported agents
 
 <!-- repo-fact:agents:start -->
 
@@ -102,11 +102,11 @@ are preserved; zero USD costs and other currencies use USD model estimates when 
 available. Legacy 1.x `agents.db`, independent subagent session trees, and resume commands
 are not supported. Sessions are attributed to Cherry Studio without cross-agent deduplication.
 
-More agents coming soon. See the [extension checklist](#extending).
+To add an agent, see the [extension checklist](#extending).
 
 ---
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
@@ -127,14 +127,14 @@ Native targets are macOS arm64/x64, Linux x64 GNU with **glibc 2.35 or later**, 
 Linux CI and release validation use Ubuntu 22.04. Older glibc, musl, and Linux arm64 are not supported
 by this release.
 
-### Install & Run
+### Install & run
 
 ```bash
 # Run the published CLI
 npx codesesh
 ```
 
-Your browser will open at `http://localhost:4521` with all your sessions ready to browse. If that default port is busy, CodeSesh automatically tries the next available port.
+Your browser will open at `http://localhost:4521`. If that default port is busy, CodeSesh automatically tries the next available port.
 
 ### Native installation (no Node.js required)
 
@@ -175,7 +175,7 @@ if you have installed through multiple channels. The shell installer does not ed
 or overwrite symlinks. Uninstall with `brew uninstall codesesh`, `scoop uninstall codesesh`, or remove
 `codesesh` from the shell installer's directory. User configuration and indexes are retained.
 
-### Build from Source
+### Build from source
 
 ```bash
 git clone https://github.com/xingkaixin/codesesh.git
@@ -187,13 +187,13 @@ pnpm serve
 ```
 
 The local server runs the Rust executable with its embedded Web UI. Build the Web assets before
-compiling a release executable; `pnpm build` coordinates the repository build.
+compiling a release executable; `pnpm build` runs both steps in that order.
 
 ---
 
 ## Usage
 
-### Basic Usage
+### Basic usage
 
 ```bash
 # Start the web UI (default port 4521)
@@ -207,7 +207,7 @@ npx codesesh -p 8080
 npx codesesh --no-open
 ```
 
-### Filter by Time
+### Filter by time
 
 ```bash
 # Only show sessions active in the last 3 local calendar days
@@ -223,7 +223,7 @@ npx codesesh --from 2025-01-01
 npx codesesh --from 2025-01-01 --to 2025-03-31
 ```
 
-### Filter by Directory
+### Filter by directory
 
 ```bash
 # Only show sessions from the current project
@@ -233,7 +233,7 @@ npx codesesh --cwd .
 npx codesesh --cwd /Users/you/projects/my-app
 ```
 
-### Filter by Agent
+### Filter by agent
 
 ```bash
 # Only show Claude Code sessions
@@ -246,14 +246,14 @@ npx codesesh --agent cursor
 npx codesesh --agent claudecode,cursor
 ```
 
-### Open a Specific Session
+### Open a specific session
 
 ```bash
 # Jump directly to a session by agent and ID
 npx codesesh --session claudecode://3b0e4ead-eba9-43e7-9fac-b30647e189f8
 ```
 
-### JSON Output (for scripting)
+### JSON output (for scripting)
 
 ```bash
 # Print the session index as JSON instead of starting the server
@@ -261,13 +261,13 @@ npx codesesh --json
 npx codesesh -j
 ```
 
-The output is an index, not an archive: an `agents` summary and a `sessions` array of session
-metadata — reference, title, directory, project identity,
-timestamps, token/cost stats and smart tags. It does **not** include messages, tool calls,
-reasoning or file activity, so it is not a backup of your history. Session content stays in each
+The output is an index with an `agents` summary and a `sessions` array. Each session entry holds
+metadata only: reference, title, directory, project identity, timestamps, token/cost stats and
+smart tags. It does **not** include messages, tool calls, reasoning or file activity, so it is not
+a backup of your history. Session content stays in each
 agent's own data directory.
 
-### CLI Options Reference
+### CLI options reference
 
 | Flag | Alias | Default | Description |
 |------|-------|---------|-------------|
@@ -303,7 +303,7 @@ also requires a loopback `--host` and an HTTPS `--public-url`. When authenticati
 server process generates a fresh token and includes it in the startup URL. Treat that URL as a
 password: do not share or persist it. Worker pairing and upload credentials are unchanged.
 
-A token proves who is asking; it does not hide the answer. Without TLS the token and the full
+A token authenticates the requester but does not encrypt traffic. Without TLS the token and the full
 session content travel the network in the clear, and the token in the URL can end up in reverse
 proxy access logs. Pick one of:
 
@@ -324,24 +324,24 @@ listener directly. The printed and automatically opened startup URL uses `--publ
 Using `--remote-access` without either TLS option still starts on a non-loopback address and prints
 a warning that the transport is unencrypted.
 
-Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.codesesh/models-dev-pricing.json` for 24 hours. Startup does not wait for the network: it uses cached prices, even expired ones, or bundled prices when no usable cache exists. Once the server is running, a background task downloads new prices when the cache is missing or expired, with a 10-second timeout, and checks again every 6 hours. `--json` runs use local prices and do not refresh them. Network failures keep the current prices. After new prices are published, existing estimates are recalculated, including sessions that previously had no model price.
+Model estimates use [models.dev](https://models.dev/api.json), cached in `~/.codesesh/models-dev-pricing.json` for 24 hours. Startup does not wait for the network. It uses cached prices, even expired ones, or bundled prices when no usable cache exists. Once the server is running, a background task downloads new prices when the cache is missing or expired, with a 10-second timeout, and checks again every 6 hours. `--json` runs use local prices and do not refresh them. Network failures keep the current prices. After new prices are published, existing estimates are recalculated, including sessions that previously had no model price.
 
 ---
 
-## Web UI Walkthrough
+## Web UI walkthrough
 
 Once CodeSesh is running, here's what you'll find:
 
-1. **Dashboard** — Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, model token shares for the selected date range, token trends, smart tags, bookmarks, and recent sessions.
-2. **Structured Global Search** — Query titles, messages, tool output, and file paths, then narrow results by agent, project, tag, tool, file activity, or cost.
-3. **Projects** — Browse project-level totals, recent activity, agent mix, scoped dashboards, and sessions for a single repository or project identity.
-4. **Session Tree Sidebar** — Browse sessions grouped by agent or project identity, with nested subagent sessions kept under their parents, and filter by agent or smart tag.
-5. **Time Range Control** — Filter the entire Web UI with rolling presets, all history, or a custom date range.
-6. **Session List** — Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost at a glance.
-7. **Session Aliases, Smart Tags & Bookmarks** — Rename sessions locally, spot their intent quickly, and pin the ones you want to revisit.
-8. **Session Detail** — Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and agent resume command copy.
-9. **Keyboard Shortcuts** — Use the shortcuts panel to navigate sessions, open global search, focus search, and move between grouped content faster.
-10. **Live Updates** — New or changed local sessions are reflected automatically while the server is running.
+1. **Dashboard.** Start from a summary view with total sessions, total messages, total tokens, latest activity, daily activity, agent distribution, model token shares for the selected date range, token trends, smart tags, bookmarks, and recent sessions.
+2. **Structured global search.** Query titles, messages, tool output, and file paths, then narrow results by agent, project, tag, tool, file activity, or cost.
+3. **Projects.** Browse project-level totals, recent activity, agent mix, scoped dashboards, and sessions for a single repository or project identity.
+4. **Session tree sidebar.** Browse sessions grouped by agent or project identity, with nested subagent sessions kept under their parents, and filter by agent or smart tag.
+5. **Time range control.** Filter the entire Web UI with rolling presets, all history, or a custom date range.
+6. **Session list.** Browse your sessions sorted by most recent. Each card shows the session title, working directory, message count, and total cost.
+7. **Session aliases, smart tags & bookmarks.** Rename sessions locally, see their intent from smart tags, and pin the ones you want to revisit.
+8. **Session detail.** Click any session to open a full replay with a receipt-style summary, user messages, assistant responses, tool invocations, reasoning steps, model labels, tracked file activity, and agent resume command copy.
+9. **Keyboard shortcuts.** Use the shortcuts panel to navigate sessions, open global search, focus search, and move between grouped content.
+10. **Live updates.** New or changed local sessions appear in the Web UI automatically while the server is running.
 
 ---
 
@@ -401,11 +401,11 @@ The Pages migration is complete. The retired Pages project can be removed.
 Only the production custom domain serves the site; `workers.dev` and version
 preview URLs are explicitly disabled in the generated deployment configuration.
 
-### Reproduce Required CI Checks
+### Reproduce required CI checks
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs
 Rust and frontend checks, browser contracts, and native artifact validation. The following commands
-list the workflow’s declared checks. Run them in their job order; rebuild Web after `pnpm clean`.
+list the workflow's declared checks. Run them in their job order; rebuild Web after `pnpm clean`.
 The packaging line containing `${{ matrix.* }}` is a CI template: locally use `pnpm package:artifact`.
 `verify-set` needs artifacts collected from all four runners:
 
@@ -448,7 +448,7 @@ A local run covers the host platform. Native packaging targets macOS arm64/x64, 
 and Windows x64; each target still needs its own runner and installed-package checks. See
 [the packaging guide](docs/engineering/rust-packaging.md).
 
-### Performance Benchmark
+### Performance benchmark
 
 ```bash
 # Warm-cache benchmark against an automatically selected representative session
@@ -471,7 +471,7 @@ Version 1.1.0 prepares the native Rust backend for release. Version and changelo
 publish packages. The Release workflow only runs for `v*` tags; publication requires separate
 authorization and completion of the [release checklist](docs/engineering/release-guide.md).
 
-### Dev Workflow
+### Dev workflow
 
 Build and start the native app:
 
@@ -488,7 +488,7 @@ existing build. To pass arguments directly after a build:
 
 The separate Astro site supports `pnpm dev:www`.
 
-### Project Structure
+### Project structure
 
 ```text
 crates/codesesh-core/src/agents/       Agent adapters and source parsing

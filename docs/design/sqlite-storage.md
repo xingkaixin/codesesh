@@ -36,7 +36,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 
 `(agent_name, session_id)` 是持久化会话身份。消息和文件活动通过复合外键关联会话，删除
 会话时级联清理。标题和文件路径 FTS 由内容表触发器维护。`message_fts` 不保存原文，由 writer
-在写入或删除消息时同步维护：只索引新增或变化的消息，汉字逐字切分，使中文子串可以按短语
+在写入或删除消息时同步维护，只索引新增或变化的消息；汉字逐字切分，使中文子串可以按短语
 查询。搜索在会话层面组合各个词的 FTS 命中；含汉字的词还要按结果顺序逐个会话核对原文子串，
 凑够条数即停，避免读取全部命中消息的正文。片段从命中消息的 `content_text` 生成。
 
@@ -46,8 +46,8 @@ schema 35 将展示版本和文件摘要保存在 `head_meta_json`，快照不�
 `meta_json`。展示元数据与会话在同一事务发布；定价元数据由定价路径校验。
 
 schema 37 将 `messages.parts_json` 存为 zstd 压缩的 BLOB，压缩后不更小的短内容仍存为文本，
-读取时两种编码都接受。`content_text` 保持文本：中文搜索需要逐条校验候选消息原文，压缩它会
-拖慢搜索。编码入口在 `crates/codesesh-core/src/storage/body.rs`。
+读取时两种编码都接受。`content_text` 保持文本，因为中文搜索需要逐条校验候选消息原文，压缩
+它会拖慢搜索。编码入口在 `crates/codesesh-core/src/storage/body.rs`。
 
 schema 38 新增 `session_usage_bucket`。`storage::facts::write` 重写会话成本事实时，按会话、
 15 分钟时间桶、模型和费用来源重建该会话的桶行；Dashboard 和项目统计按请求窗口读取桶，

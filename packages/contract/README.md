@@ -11,7 +11,7 @@
 
 ## 单一来源
 
-`crates/codesesh-core/src/model.rs` 定义共用基础类型和内部解析模型；`crates/codesesh-core/src/wire.rs` 定义公开服务 DTO。后者复用基础 SessionReference、SessionStats、MessageTokens、Role、CostSource 及闭合枚举。只有公开可选性或字段集合与内部解析模型不同的会话/消息 DTO 使用独立 wire 类型。
+`crates/codesesh-core/src/model.rs` 定义共用基础类型和内部解析模型；`crates/codesesh-core/src/wire.rs` 定义公开服务 DTO。后者复用基础 SessionReference、SessionStats、MessageTokens、Role、CostSource 及闭合枚举。会话/消息 DTO 只在公开可选性或字段集合与内部解析模型不同时，才使用独立 wire 类型。
 
 本包中的服务 DTO 均为 generated 类型的重导出或组合，已移除重复手写字段：
 
@@ -40,7 +40,7 @@ cargo test --locked -p codesesh-core wire::tests
 
 不要手改 generated。CI 需要对生成目录运行差异检查。package build 不隐式运行 Cargo。
 
-Rust serde 测试验证省略字段与显式 null 的区别、工具未知 JSON 值、图片必需内容、闭合枚举拒绝非法值，以及公开会话不输出内部缓存 provenance。迁移时另对旧包所有公开 interface/type 进行双向 TypeScript 可赋值检查。
+Rust serde 测试验证省略字段与显式 null 的区别、工具未知 JSON 值、图片必需内容、闭合枚举拒绝非法值，以及公开会话不输出内部缓存 provenance。迁移时另检查旧包所有公开 interface/type 的双向 TypeScript 可赋值性。
 
 ## P7 接入点
 

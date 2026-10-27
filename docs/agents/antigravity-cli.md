@@ -57,8 +57,8 @@ changes invalidate source fingerprints; the existing paged scanner handles updat
 deletions, restart reuse and publication. Each conversation is an independent source.
 
 `prost` owns Protobuf validation and unknown-field skipping. The small local message
-structs declare only fields confirmed locally or by the cited readers (cache
-creation and provider message ids have not appeared locally); no generated upstream
-schema is claimed.
+structs declare only fields confirmed locally or by the cited readers. Cache creation
+and provider message ids have not appeared locally. No generated upstream schema is
+claimed.
 This avoids implementing a second wire decoder and adds no external runtime or build
 service. A generic event/evidence database is outside this integration's scope.

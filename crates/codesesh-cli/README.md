@@ -8,15 +8,15 @@
 
 [Website](https://codesesh.xingkaixin.me/) · [Find Claude Code and Codex history](https://codesesh.xingkaixin.me/guides/session-history/) · [Installation guide](https://codesesh.xingkaixin.me/guides/getting-started/)
 
-CodeSesh scans your local machine, finds sessions from supported AI coding agents, and surfaces them in a unified Web UI.
+CodeSesh scans your local machine, finds sessions from supported AI coding agents, and shows them in one Web UI.
 
-## Quick Start
+## Quick start
 
 ```bash
 npx codesesh
 ```
 
-Your browser will open at `http://localhost:4521` with all your sessions ready to browse. If that default port is busy, CodeSesh automatically tries the next available port.
+Your browser will open at `http://localhost:4521`. If that default port is busy, CodeSesh automatically tries the next available port.
 
 ## Features
 
@@ -24,24 +24,24 @@ CodeSesh does three jobs:
 
 ### Find
 
-- **Structured search** — Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings match, and message results open at the first hit
-- **Projects** — Group sessions by repository identity across agents, with subagent sessions nested under their parent
-- **File activity** — Jump to files that were read, edited, created, deleted, or moved, and find the sessions that touched them
-- **Bookmarks and aliases** — Keep important sessions on the dashboard and give them names that carry through search and activity views
-- **Time ranges** — Switch between rolling presets, all history, or a custom range without restarting
+- **Structured search.** Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings match, and message results open at the first hit
+- **Projects.** Group sessions by repository identity across agents, with subagent sessions nested under their parent
+- **File activity.** Jump to files that were read, edited, created, deleted, or moved, and find the sessions that touched them
+- **Bookmarks and aliases.** Keep important sessions on the dashboard and give them names that carry through search and activity views
+- **Time ranges.** Switch between rolling presets, all history, or a custom range without restarting
 
 ### See
 
-- **Dashboard** — Daily activity, agent distribution, model token shares, smart tags, and latest activity for the selected range
-- **Tokens and cost** — Token totals, cache tokens, recorded costs, and model-based estimates, always labeled as recorded or estimated
-- **Smart tags** — Sessions labeled as bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, or exploration
-- **Session receipts** — Usage by model and token category, exportable as a PNG
+- **Dashboard.** Daily activity, agent distribution, model token shares, smart tags, and latest activity for the selected range
+- **Tokens and cost.** Token totals, cache tokens, recorded costs, and model-based estimates, always labeled as recorded or estimated
+- **Smart tags.** Sessions labeled as bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, or exploration
+- **Session receipts.** Usage by model and token category, exportable as a PNG
 
 ### Reuse
 
-- **Full replay** — Messages, tool calls, and reasoning, paged or complete, with your reading position kept
-- **Copy as Markdown** — Take a whole conversation into a new prompt, issue, or note
-- **Resume commands** — Copy worktree-aware resume commands for supported agents, with the source machine shown
+- **Full replay.** Messages, tool calls, and reasoning, paged or complete, with your reading position kept
+- **Copy as Markdown.** Take a whole conversation into a new prompt, issue, or note
+- **Resume commands.** Copy worktree-aware resume commands for supported agents, with the source machine shown
 
 **Under the hood:** zero configuration, local by default (no account or telemetry), live refresh, an SQLite cache with resumable history indexing, keyboard navigation, light and dark themes, and an English, Simplified Chinese, and Japanese UI.
 
@@ -49,7 +49,7 @@ CodeSesh does three jobs:
 
 Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh worker` on each machine you want to collect from. The source-node panel guides pairing, shows collection health, and manages rescans and Worker replacement. User-level background service commands are available on macOS, Linux, and Windows. See the [Hub/Worker guide](https://github.com/xingkaixin/codesesh/blob/main/docs/guides/hub-worker.md) for setup, migration, and recovery.
 
-## Supported Agents
+## Supported agents
 
 <!-- repo-fact:agents:start -->
 
@@ -131,7 +131,7 @@ npx codesesh --json
 npx codesesh --trace
 ```
 
-## CLI Options
+## CLI options
 
 | Flag        | Alias | Default | Description                                                 |
 | ----------- | ----- | ------- | ----------------------------------------------------------- |

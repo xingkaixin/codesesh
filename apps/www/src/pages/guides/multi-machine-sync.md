@@ -39,7 +39,7 @@ codesesh worker start --hub "http://127.0.0.1:4521" --pair-token-stdin
 
 Repeat pairing for every other machine. Each should have its own Worker state and pairing. To restrict collection, include `--agent claudecode,codex` in the initial Worker configuration. By default, Workers collect all discoverable history for enabled agents; the Hub's time range controls what you view.
 
-When a Worker connects to a different Hub and discovers an older standalone database, it may require `--history import` or `--history ignore`. Import includes that archived history; ignore skips the old archive but still collects available source logs. Choose deliberately before retrying the full pairing command with that flag. A same-directory local Worker paired to its own Hub can reuse the existing local history without this choice.
+When a Worker connects to a different Hub and discovers an older standalone database, it may require `--history import` or `--history ignore`. Import includes that archived history; ignore skips the old archive but still collects available source logs. Decide which one you want, then retry the full pairing command with that flag. A same-directory local Worker paired to its own Hub can reuse the existing local history without this choice.
 
 ## Check synchronization
 

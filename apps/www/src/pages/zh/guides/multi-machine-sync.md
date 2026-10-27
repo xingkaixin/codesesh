@@ -15,7 +15,7 @@ codesesh hub start --host 0.0.0.0 --remote-access --port 4521
 codesesh hub status
 ```
 
-如果已有使用其他配置的 Hub，先停止再带这组参数启动。按[局域网访问指南](/zh/guides/lan-access/)打开带 token 的控制台链接并检查防火墙。公网连接应使用 HTTPS，证书需要被 Worker 信任。
+如果已有使用其他配置的 Hub，先停止再带这组参数启动。按[局域网访问指南](/zh/guides/lan-access/)打开带 token 的控制台链接并检查防火墙。公网连接应使用 HTTPS 和 Worker 信任的证书。
 
 ## 配对第一台 Worker
 

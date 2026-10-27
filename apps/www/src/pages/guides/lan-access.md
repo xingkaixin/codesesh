@@ -30,7 +30,7 @@ Copy the complete `Console` URL from `hub status`. It contains `access_token`. R
 - On the Hub computer, use `127.0.0.1`.
 - On another device, use the Hub computer's LAN IP, for example `192.168.1.20`.
 
-Find the IP in the Hub computer's network settings. Do not use `127.0.0.1` on the other device: that address refers to the other device itself. Keep the port and token unchanged.
+Find the IP in the Hub computer's network settings. Do not use `127.0.0.1` on the other device, because that address refers to the other device itself. Keep the port and token unchanged.
 
 Remote access requires token authentication even when you visit through loopback. Each Hub process generates a new token, so get a fresh link after a restart. The browser console token is separate from the pairing token used by Workers.
 
@@ -41,7 +41,7 @@ Remote access requires token authentication even when you visit through loopback
 3. Allow inbound TCP port 4521 in the Hub computer's firewall. Guest Wi-Fi or client isolation may block communication between devices.
 4. If the page opens but requests report that a token is required, obtain the current `Console` link again.
 
-Starting with just `codesesh hub start` later reuses saved settings. To change the address or port again, stop the service and run `start` with the full desired arguments. `restart` reuses the saved configuration.
+Later, running `codesesh hub start` without arguments reuses the saved settings. To change the address or port again, stop the service and run `start` with the full desired arguments. `restart` reuses the saved configuration.
 
 ## Choose HTTP or HTTPS
 
@@ -52,4 +52,4 @@ codesesh hub start --host 0.0.0.0 --remote-access --port 4521 \
   --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
 ```
 
-Stop the existing Hub before using this replacement configuration. The certificate must be trusted by clients and valid for the address they use. For an HTTPS reverse proxy, the backend must stay on a loopback address; see the [remote-access configuration](https://github.com/xingkaixin/codesesh/blob/main/README.md). An access token authenticates a request but does not encrypt HTTP traffic.
+Stop the existing Hub before using this replacement configuration. Clients must trust the certificate, and it must be valid for the address they use. For an HTTPS reverse proxy, the backend must stay on a loopback address; see the [remote-access configuration](https://github.com/xingkaixin/codesesh/blob/main/README.md). An access token authenticates a request but does not encrypt HTTP traffic.
