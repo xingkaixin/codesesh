@@ -403,23 +403,25 @@ fn active_hours_work_does_not_grow_with_unrelated_message_history() {
         atomic::{AtomicUsize, Ordering},
     };
 
-    let cache = crate::storage::Cache::open(None).unwrap();
-    let db = cache.connection();
-    db.execute_batch("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost)
+    let mut cache = crate::storage::Cache::open(None).unwrap();
+    cache.connection().execute_batch("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost)
         VALUES('local','codex','parent','Parent','/project','path','/project','project',100,200,1,0,0,0);
         INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
         VALUES('local','codex','parent',0,'current','user',200,'[]','Current user message');").unwrap();
     let sessions = cache.snapshot().unwrap();
     let steps = Arc::new(AtomicUsize::new(0));
     let counter = steps.clone();
-    db.progress_handler(
-        1,
-        Some(move || {
-            counter.fetch_add(1, Ordering::Relaxed);
-            false
-        }),
-    )
-    .unwrap();
+    cache
+        .connection_mut()
+        .progress_handler(
+            1,
+            Some(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+                false
+            }),
+        )
+        .unwrap();
+    let db = cache.connection();
     let measure = || {
         steps.store(0, Ordering::Relaxed);
         let hours = active_hours(
@@ -446,9 +448,12 @@ fn active_hours_work_does_not_grow_with_unrelated_message_history() {
         with_history < baseline * 2,
         "query work grew from {baseline} to {with_history} steps"
     );
-    db.progress_handler(0, None::<fn() -> bool>).unwrap();
+    cache
+        .connection_mut()
+        .progress_handler(0, None::<fn() -> bool>)
+        .unwrap();
     let all_time = active_hours(
-        db,
+        cache.connection(),
         &sessions,
         &DashboardScope::default(),
         None,
