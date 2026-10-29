@@ -45,7 +45,7 @@ fn rows(db: &Connection, query: &str) -> Result<Vec<Value>> {
 }
 fn bound_rows(db: &Connection, query: &str, params: impl rusqlite::Params) -> Result<Vec<Value>> {
     let mut stmt = db.prepare(query)?;
-    let names: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+    let names: Vec<String> = stmt.column_names().map(str::to_owned).collect();
     Ok(stmt
         .query_map(params, |row| {
             let mut object = Map::new();

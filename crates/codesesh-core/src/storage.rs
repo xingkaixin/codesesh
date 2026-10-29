@@ -59,6 +59,11 @@ impl Cache {
         &self.connection
     }
 
+    #[cfg(test)]
+    pub(crate) fn connection_mut(&mut self) -> &mut Connection {
+        &mut self.connection
+    }
+
     pub fn snapshot(&self) -> Result<Vec<SessionHead>> {
         let transaction = self.connection.unchecked_transaction()?;
         let heads = snapshot::load(&transaction)?;

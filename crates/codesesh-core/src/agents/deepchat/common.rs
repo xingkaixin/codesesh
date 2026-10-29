@@ -6,11 +6,7 @@ use std::path::Path;
 
 pub fn rows(db: &Connection, sql: &str) -> Result<Vec<Value>> {
     let mut statement = db.prepare(sql)?;
-    let names: Vec<String> = statement
-        .column_names()
-        .iter()
-        .map(|s| (*s).into())
-        .collect();
+    let names: Vec<String> = statement.column_names().map(str::to_owned).collect();
     let result = statement
         .query_map([], |row| {
             let mut object = Map::new();
