@@ -17,8 +17,6 @@
     "deploy:cf": "pnpm build:cf && cf deploy --prebuilt"
   },
   "dependencies": {
-    "@fontsource-variable/montserrat": "catalog:",
-    "@fontsource/ibm-plex-mono": "catalog:",
     "astro": "^7.4.2"
   },
   "devDependencies": {

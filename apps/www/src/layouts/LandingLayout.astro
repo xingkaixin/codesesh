@@ -1,9 +1,6 @@
 ---
-import "@fontsource-variable/montserrat";
-import "@fontsource/ibm-plex-mono/300.css";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
-import "@fontsource/ibm-plex-mono/600.css";
+import "../fonts/fonts.css";
+import { fontPreloads } from "../fonts/preload";
 import {
   copy,
   localeConfig,
@@ -291,6 +288,17 @@ const jsonLd = {
       </style>
     </noscript>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <Fragment>
+      {fontPreloads.map((href) => (
+        <link
+          rel="preload"
+          href={href}
+          as="font"
+          type="font/woff2"
+          crossorigin
+        />
+      ))}
+    </Fragment>
     <meta name="description" content={pageDescription} />
     <meta name="author" content="XingKaiXin" />
     <meta
