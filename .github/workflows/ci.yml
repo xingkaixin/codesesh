@@ -13,16 +13,63 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A group shared by main pushes would replace a pending run, leaving that commit unverified.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  RUST_BACKTRACE: 1
+
 jobs:
+  # Filters here instead of paths-ignore: a skipped workflow never reports its required checks,
+  # and docs-only changes still have to pass the Docs job.
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        # The compare API truncates at 300 files, so a list that long proves nothing.
+        run: |
+          files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files[].filename') || files=
+          if [ -z "$files" ] || [ "$(wc -l <<<"$files")" -ge 300 ] ||
+            grep -qvE '^(docs/.*|[^/]+\.md|LICENSE)$' <<<"$files"; then
+            echo code=true >>"$GITHUB_OUTPUT"
+          else
+            echo code=false >>"$GITHUB_OUTPUT"
+          fi
+
+  docs:
+    name: Docs and versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: node scripts/release-preflight.mjs
+      - run: node scripts/check-docs-paths.mjs
+      - run: node scripts/check-docs-facts.mjs
+
   installer:
     name: Installer (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         os: [ubuntu-22.04, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -31,16 +78,14 @@ jobs:
       - run: sh -n apps/www/public/install.sh
       - run: node --test scripts/rust/install.test.mjs
 
-  ci:
+  web:
     name: Web and contract
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Preserve repository line endings
-        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -53,9 +98,6 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm typecheck:e2e
-      - run: node scripts/release-preflight.mjs
-      - run: node scripts/check-docs-paths.mjs
-      - run: node scripts/check-docs-facts.mjs
       - name: Smoke test clean and rebuild
         run: |
           node -e "require('node:fs').writeFileSync('packages/contract/dist/clean-sentinel.txt','x')"
@@ -64,9 +106,14 @@ jobs:
           pnpm build:web
       - run: pnpm test:coverage
       - run: pnpm --filter @codesesh/web test:bundle
+      - run: node --test scripts/rust/publish.test.mjs
+      - name: Check algorithmic growth rates
+        run: pnpm perf:check
 
   web-assets:
     name: Web assets
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -77,16 +124,18 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:web
+      - run: pnpm --filter @codesesh/web... build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-assets
-          path: apps/web/dist
+          path: |
+            apps/web/dist
+            packages/contract/dist
           if-no-files-found: error
           retention-days: 1
 
-  rust:
-    name: Rust (${{ matrix.target }})
+  rust-checks:
+    name: Rust checks (${{ matrix.target }})
     needs: web-assets
     strategy:
       fail-fast: false
@@ -94,7 +143,52 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            executable: codesesh
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: runner.os == 'Linux'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: ${{ runner.os == 'Linux' && 'pnpm' || '' }}
+      - run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-assets
+      - run: pnpm install --frozen-lockfile
+        if: runner.os == 'Linux'
+      - run: cargo fmt --all --check
+        if: runner.os == 'Linux'
+      - name: Verify generated contracts have no drift
+        if: runner.os == 'Linux'
+        run: |
+          pnpm generate:rust-contract
+          git diff --exit-code -- packages/contract/src/generated
+      # macOS arm64 runs the same OS checks; the code has no CPU architecture branches.
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+        if: runner.os == 'Linux'
+      # Only Linux installs Node dependencies; pnpm 12 installs them before running a script.
+      - name: Verify platform-dependent Rust behavior
+        if: runner.os != 'Linux'
+        run: npm run test:rust:platform
+
+  native:
+    name: Native (${{ matrix.target }})
+    needs: web-assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
           - os: macos-latest
             target: aarch64-apple-darwin
             executable: codesesh
@@ -105,83 +199,31 @@ jobs:
             target: x86_64-pc-windows-msvc
             executable: codesesh.exe
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      RUST_BACKTRACE: 1
-    steps:
+    timeout-minutes: 30
+    steps: &native-steps
       - name: Verify minimum supported Linux glibc
         if: runner.os == 'Linux'
         run: |
           getconf GNU_LIBC_VERSION
           test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
       - name: Preserve identical npm package inputs
+        if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        if: runner.os == 'Linux'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: ${{ runner.os == 'Linux' && 'pnpm' || '' }}
       - run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
-      - name: Cache Rust dependencies and build outputs
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-v2-${{ matrix.target }}-1.90.0-${{ hashFiles('Cargo.lock') }}
-          restore-keys: rust-v2-${{ matrix.target }}-1.90.0-
-      - run: pnpm install --frozen-lockfile
-        if: runner.os == 'Linux'
-      - name: Verify generated contracts have no drift
-        if: runner.os == 'Linux'
-        run: |
-          pnpm generate:rust-contract
-          git diff --exit-code -- packages/contract/src/generated
-      - name: Build contract and Web assets before Rust embedding
-        if: runner.os == 'Linux'
-        run: pnpm build:web
-      - name: Download Web assets before Rust embedding
-        if: runner.os != 'Linux'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: web-assets
-          path: apps/web/dist
-      - run: cargo fmt --all --check
-        if: runner.os == 'Linux'
-      # macOS arm64 runs the same OS checks; the code has no CPU architecture branches.
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-        if: matrix.target != 'x86_64-apple-darwin'
-      - run: cargo test --workspace --locked
-        if: runner.os == 'Linux'
-      # Only Linux installs Node dependencies; pnpm 12 installs them before running a script.
-      - name: Verify platform-dependent Rust behavior
-        if: runner.os != 'Linux' && matrix.target != 'x86_64-apple-darwin'
-        run: npm run test:rust:platform
       - run: npm run build:rust
       - run: node --test scripts/rust/packaging.test.mjs
-      - run: node --test scripts/rust/publish.test.mjs
-        if: runner.os == 'Linux'
-      - name: Verify native process and CLI contracts
-        run: |
-          npm run test:backend
-          node --test tests/backend-contract/lifecycle.test.mjs
-      - name: Check algorithmic growth rates
-        if: runner.os == 'Linux'
-        run: pnpm perf:check
-      - name: Install Playwright Chromium
-        if: runner.os == 'Linux'
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Verify Rust-backed browser flows
-        if: runner.os == 'Linux'
-        run: pnpm test:e2e
+      - name: Verify native process lifecycle
+        run: node --test tests/backend-contract/lifecycle.test.mjs
       - name: Package and verify native install
         run: |
           node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
@@ -197,29 +239,71 @@ jobs:
             artifacts/rust-packaging/${{ matrix.target }}/smoke-report.json
           if-no-files-found: error
           retention-days: 7
+
+  # A separate job so browser flows can start without waiting for the slower native targets.
+  native-linux:
+    name: Native (${{ matrix.target }})
+    needs: web-assets
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            executable: codesesh
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps: *native-steps
+
+  e2e:
+    name: Browser flows (shard ${{ matrix.shard }}/2)
+    needs: native-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-assets
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-x86_64-unknown-linux-gnu
+          path: artifacts/native
+      - name: Restore release binary
+        run: |
+          mkdir -p target/release
+          tar -xzf artifacts/native/codesesh-*.tar.gz -C target/release
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Verify Rust-backed browser flows
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
       - name: Upload Playwright failure artifacts
-        if: failure() && runner.os == 'Linux'
+        if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-failure-artifacts
+          name: playwright-failure-artifacts-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
           if-no-files-found: ignore
           retention-days: 7
 
+  # Node 24 installs run in the native jobs; this covers the minimum version on a clean runner.
   package-smoke:
-    name: Native npm install (${{ matrix.target }}, Node ${{ matrix.node-version }})
-    needs: rust
+    name: Native npm install (${{ matrix.target }}, Node 22.0.0)
+    needs: [native, native-linux]
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["22.0.0", 24]
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-apple-darwin
-          - x86_64-apple-darwin
-          - x86_64-pc-windows-msvc
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -235,7 +319,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22.0.0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: native-${{ matrix.target }}
@@ -244,8 +328,9 @@ jobs:
 
   rust-release-set:
     name: Verify native release set
-    needs: [rust, package-smoke]
+    needs: [native, native-linux]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -268,3 +353,26 @@ jobs:
           path: artifacts/rust-packaging/release-set.json
           if-no-files-found: error
           retention-days: 7
+
+  # The one check to mark as required: it also passes when docs-only changes skip the jobs above.
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs:
+      - changes
+      - docs
+      - installer
+      - web
+      - web-assets
+      - rust-checks
+      - native
+      - native-linux
+      - e2e
+      - package-smoke
+      - rust-release-set
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: test "$FAILED" = false
+        env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

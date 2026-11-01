@@ -405,12 +405,15 @@ preview URLs are explicitly disabled in the generated deployment configuration.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs
 Rust and frontend checks, browser contracts, and native artifact validation. The following commands
 list the workflow's declared checks. Run them in their job order; rebuild Web after `pnpm clean`.
-The packaging line containing `${{ matrix.* }}` is a CI template: locally use `pnpm package:artifact`.
+Lines containing `${{ matrix.* }}` are CI templates: locally use `pnpm package:artifact` and `pnpm test:e2e`.
 `verify-set` needs artifacts collected from all four runners:
 
 <!-- repo-fact:ci-commands:start -->
 
 ```bash
+node scripts/release-preflight.mjs
+node scripts/check-docs-paths.mjs
+node scripts/check-docs-facts.mjs
 pnpm install --frozen-lockfile
 node scripts/check-quality-task-coverage.mjs
 pnpm build:web
@@ -418,12 +421,11 @@ pnpm lint
 pnpm format:check
 pnpm typecheck
 pnpm typecheck:e2e
-node scripts/release-preflight.mjs
-node scripts/check-docs-paths.mjs
-node scripts/check-docs-facts.mjs
 pnpm clean
 pnpm test:coverage
 pnpm --filter @codesesh/web test:bundle
+pnpm perf:check
+pnpm --filter @codesesh/web... build
 pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -432,12 +434,10 @@ pnpm test:rust:platform
 pnpm build:rust
 node --test scripts/rust/packaging.test.mjs
 node --test scripts/rust/publish.test.mjs
-pnpm test:backend
-pnpm perf:check
-pnpm exec playwright install --with-deps chromium
-pnpm test:e2e
 node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
 node scripts/rust/smoke.mjs --contracts
+pnpm exec playwright install --with-deps --only-shell chromium
+pnpm exec playwright test --shard=${{ matrix.shard }}/2
 node scripts/rust/verify-set.mjs
 ```
 

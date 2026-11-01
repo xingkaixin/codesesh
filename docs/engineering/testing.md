@@ -15,8 +15,12 @@
 | Rust 平台测试子集 | macOS arm64、Windows x64 | 文件元数据、监听、权限、锁、原子替换、SQLite 和子进程有平台差异；Linux 完整套件已包含这些测试，macOS x64 与 arm64 是同一 OS，不重复执行 |
 | CLI/HTTP/SSE 进程契约、退出与故障恢复 | 四个原生目标 | 验证真实二进制的进程、网络和持久化行为 |
 | 打包与安装 smoke | 四个原生目标 | 二进制格式、tar 权限、路径和 launcher 有平台差异 |
-| npm 安装 | 每个目标的 Node 22.0.0 / 24 | 验证最低支持版本与当前构建版本 |
+| npm 安装 | 每个目标的 Node 22.0.0 / 24 | Node 24 在构建该目标的 job 内验证当前构建版本；Node 22.0.0 在干净 runner 上验证最低支持版本 |
 | 浏览器 E2E、bundle 预算、算法增长率 | Linux | 应用行为和算法无需重复占用原生平台矩阵 |
+
+只改 `docs/`、根目录 `*.md` 或 `LICENSE` 时，CI 只运行 `Docs and versions`，其余 job 跳过。
+过滤写在 job 上，不用 `paths-ignore`：工作流被跳过时必需检查不会上报，PR 会一直等待。
+`CI OK` 汇总所有 job 的结果，跳过也算通过，必需检查只配置这一项。
 
 `pnpm test:rust:platform` 使用 libtest 的多个过滤条件，执行以下现有测试：
 
