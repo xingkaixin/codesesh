@@ -393,12 +393,15 @@ Pages 迁移已完成，旧 Pages 项目可以删除。站点仅通过正式自�
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 是事实源，包含 Rust、前端、浏览器和
 原生制品检查。下列命令列出工作流门禁，按对应 job 顺序运行；`pnpm clean` 后需重新构建 Web。
-含 `${{ matrix.* }}` 的打包行是 CI 模板，本地使用 `pnpm package:artifact`；
+含 `${{ matrix.* }}` 的行是 CI 模板，本地使用 `pnpm package:artifact` 和 `pnpm test:e2e`；
 `verify-set` 需要先汇总四个 runner 的制品：
 
 <!-- repo-fact:ci-commands:start -->
 
 ```bash
+node scripts/release-preflight.mjs
+node scripts/check-docs-paths.mjs
+node scripts/check-docs-facts.mjs
 pnpm install --frozen-lockfile
 node scripts/check-quality-task-coverage.mjs
 pnpm build:web
@@ -406,12 +409,11 @@ pnpm lint
 pnpm format:check
 pnpm typecheck
 pnpm typecheck:e2e
-node scripts/release-preflight.mjs
-node scripts/check-docs-paths.mjs
-node scripts/check-docs-facts.mjs
 pnpm clean
 pnpm test:coverage
 pnpm --filter @codesesh/web test:bundle
+pnpm perf:check
+pnpm --filter @codesesh/web... build
 pnpm generate:rust-contract
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -420,12 +422,10 @@ pnpm test:rust:platform
 pnpm build:rust
 node --test scripts/rust/packaging.test.mjs
 node --test scripts/rust/publish.test.mjs
-pnpm test:backend
-pnpm perf:check
-pnpm exec playwright install --with-deps chromium
-pnpm test:e2e
 node scripts/rust/pack.mjs ${{ matrix.target }} target/release/${{ matrix.executable }}
 node scripts/rust/smoke.mjs --contracts
+pnpm exec playwright install --with-deps --only-shell chromium
+pnpm exec playwright test --shard=${{ matrix.shard }}/2
 node scripts/rust/verify-set.mjs
 ```
 
