@@ -28,6 +28,30 @@ env:
   RUSTUP_TOOLCHAIN: 1.90.0
 
 jobs:
+  # Filters here instead of paths-ignore: a skipped workflow never reports its required checks,
+  # and docs-only changes still have to pass the Docs job.
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        # The compare API truncates at 300 files, so a list that long proves nothing.
+        run: |
+          files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" --jq '.files[].filename') || files=
+          if [ -z "$files" ] || [ "$(wc -l <<<"$files")" -ge 300 ] ||
+            grep -qvE '^(docs/.*|[^/]+\.md|LICENSE)$' <<<"$files"; then
+            echo code=true >>"$GITHUB_OUTPUT"
+          else
+            echo code=false >>"$GITHUB_OUTPUT"
+          fi
+
   docs:
     name: Docs and versions
     runs-on: ubuntu-latest
@@ -43,6 +67,8 @@ jobs:
 
   installer:
     name: Installer (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         os: [ubuntu-22.04, macos-latest]
@@ -58,6 +84,8 @@ jobs:
 
   web:
     name: Web and contract
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -88,6 +116,8 @@ jobs:
 
   web-assets:
     name: Web assets
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -138,6 +168,8 @@ jobs:
 
   rust-platform:
     name: Rust checks (${{ matrix.target }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -334,3 +366,27 @@ jobs:
           path: artifacts/rust-packaging/release-set.json
           if-no-files-found: error
           retention-days: 7
+
+  # The one check to mark as required: it also passes when docs-only changes skip the jobs above.
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs:
+      - changes
+      - docs
+      - installer
+      - web
+      - web-assets
+      - rust-linux
+      - rust-platform
+      - native
+      - native-linux
+      - e2e
+      - package-smoke
+      - rust-release-set
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: test "$FAILED" = false
+        env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
