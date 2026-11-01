@@ -41,3 +41,4 @@
 - 代码路径会由 `node scripts/check-docs-paths.mjs` 检查；可从源码推导的事实用 repo-fact 标记，由
   `node scripts/check-docs-facts.mjs` 检查。
 - 新增文档时放入上表对应目录，并在本页登记。
+
