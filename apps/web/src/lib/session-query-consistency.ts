@@ -62,6 +62,17 @@ export async function invalidateSessionDerivedQueries(queryClient: QueryClient):
   ]);
 }
 
+/** Covers what a store reload leaves stale, so both can run at once without refetching twice. */
+export async function invalidateQueriesOutsideReload(queryClient: QueryClient): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.agentCatalogs, refetchType: "none" }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks }),
+  ]);
+}
+
 export async function invalidateLiveSessionDerivedQueries(
   queryClient: QueryClient,
   event: SessionsUpdatedEvent,
