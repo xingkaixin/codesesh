@@ -193,6 +193,11 @@ describe("useSessionDetail", () => {
     );
 
     expect(api.fetchSessionData).toHaveBeenCalledTimes(2);
+    const triggers = vi
+      .mocked(api.logClientEvent)
+      .mock.calls.filter(([event]) => event === "session.open.done")
+      .map(([, data]) => data?.trigger);
+    expect(triggers).toEqual(["route", "refresh"]);
   });
 
   it("requests and merges only messages appended by a live update", async () => {
