@@ -26,7 +26,7 @@ import { queryKeys } from "../lib/query-keys";
 import {
   invalidateLiveSessionCollections,
   invalidateLiveSessionDerivedQueries,
-  invalidateSessionDerivedQueries,
+  invalidateQueriesOutsideReload,
   PendingSessionProjectionLoads,
 } from "../lib/session-query-consistency";
 
@@ -372,8 +372,7 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
 
   const resyncLiveState = useCallback(async (): Promise<void> => {
     if (!window) return;
-    await reload();
-    await invalidateSessionDerivedQueries(queryClient);
+    await Promise.all([reload(), invalidateQueriesOutsideReload(queryClient)]);
   }, [queryClient, reload, window]);
 
   const retryLoad = useCallback(async (): Promise<void> => {
