@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.4.4] - 2026-11-03
+
+This patch makes the Web UI catch up faster after the live event stream reconnects, keeps session refreshes out of session-open logs, and trims the product site's font downloads. CI on `main` no longer cancels pending runs, and dependencies are updated. (#853–#871)
+
+### Performance
+
+- After the live event stream reconnects, reload sessions and refresh the remaining cached queries in parallel, and stop fetching the active Agent catalog and Dashboard twice. In local measurements the median time until the synchronizing notice clears dropped by 14–33%. (#870)
+- Serve product-site fonts subset to the characters the pages render, with a preloaded core file per font and an extended file loaded only when needed. Font bytes per page drop by about 44%. (#867)
+
+### Bug Fixes
+
+- Log session-detail refetches caused by live updates with `trigger: "refresh"` instead of `"route"`, so session-open counts and open latency no longer include incremental refreshes. (#871)
+
+### Build
+
+- Give each `main` commit its own CI concurrency group so pushes no longer cancel pending runs, skip code jobs for docs-only changes, add a single `CI OK` check, and cache Rust builds with `Swatinem/rust-cache`. Release builds are unchanged. (#868)
+- Update `rusqlite` to 0.41 and other Rust, frontend, and development dependencies. (#853, #854, #856, #857, #861, #863–#866)
+
+### Documentation
+
+- Remove AI writing patterns from the project docs and fix stale facts in the storage, Hub/Worker, packaging, contract, and README docs. `README_CN.md` now lists the TLS and public URL options. (#862)
+
 ## [1.4.3] - 2026-10-25
 
 This patch keeps Pi and oh-my-pi collection running when the Pi sessions directory contains subagent transcripts, and removes labels and descriptions that repeat what the Web UI and product site already show. (#858, #859)
@@ -959,7 +981,6 @@ This release hardens the scan, cache and sync pipelines against partial or faile
 - #276 fix(cache): version session detail projections @xingkaixin
 - #275 fix(sync): reject non-durable checkpoints @xingkaixin
 - #274 fix(core): keep session head stats local @xingkaixin
-
 
 ## [1.0.0] - 2026-08-07
 
