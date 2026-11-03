@@ -65,6 +65,8 @@ export function useSessionDetail(viewState: ViewState) {
       const operationId = createOperationId();
       const requestKey = `${route.agent}/${route.sessionId}`;
       const startedAt = performance.now();
+      const previous = queryClient.getQueryData<SessionDetail>(queryKey);
+      const trigger = previous ? "refresh" : "route";
       let didLogCancellation = false;
       const logCancellation = () => {
         if (didLogCancellation) return;
@@ -79,13 +81,12 @@ export function useSessionDetail(viewState: ViewState) {
       logClientEvent("session.open.start", {
         operation_id: operationId,
         request_key: requestKey,
-        trigger: "route",
+        trigger,
         agent: route.agent,
         session: route.sessionId,
       });
 
       try {
-        const previous = queryClient.getQueryData<SessionDetail>(queryKey);
         const response = await fetchSessionData(route.agent, route.sessionId, {
           signal,
           ...(route.sourceNodeId ? { sourceNodeId: route.sourceNodeId } : {}),
@@ -98,7 +99,7 @@ export function useSessionDetail(viewState: ViewState) {
         logClientEvent("session.open.done", {
           operation_id: operationId,
           request_key: requestKey,
-          trigger: "route",
+          trigger,
           agent: route.agent,
           session: route.sessionId,
           duration_ms: Math.round(performance.now() - startedAt),
@@ -113,7 +114,7 @@ export function useSessionDetail(viewState: ViewState) {
         logClientEvent("session.open.error", {
           operation_id: operationId,
           request_key: requestKey,
-          trigger: "route",
+          trigger,
           agent: route.agent,
           session: route.sessionId,
           duration_ms: Math.round(performance.now() - startedAt),
