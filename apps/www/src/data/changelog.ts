@@ -101,6 +101,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.4",
+        date: "2026-11-03",
+        title: "Faster catch-up after reconnecting",
+        summary:
+          "CodeSesh 1.4.4 brings the Web UI back in sync sooner after the live connection drops, keeps session refreshes out of session-open logs, and makes the product site download less font data.",
+        direction:
+          "Keep browsing local AI coding history responsive while sessions change in the background, and keep the logs used to measure that responsiveness accurate.",
+        highlights: [
+          {
+            title: "Quicker sync after a reconnect",
+            description:
+              "When the live connection comes back, CodeSesh refreshes sessions and the rest of the page at the same time and skips duplicate requests, so the synchronizing notice clears sooner.",
+          },
+          {
+            title: "Accurate session-open logs",
+            description:
+              "Updates to an open session are logged as refreshes, so open counts and open times reflect only the sessions you actually open.",
+          },
+          {
+            title: "Lighter product pages",
+            description:
+              "The product site loads only the font characters its pages use, cutting font data per page by about 44%.",
+          },
+        ],
+      },
+      {
         version: "1.4.3",
         date: "2026-10-25",
         title: "Pi history keeps syncing, with a quieter interface",
@@ -958,6 +984,30 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.4",
+        date: "2026-11-03",
+        title: "重连后更快恢复同步",
+        summary:
+          "CodeSesh 1.4.4 在实时连接中断后更快让 Web UI 恢复同步，会话刷新不再记作会话打开，产品站下载的字体数据也更少。",
+        direction:
+          "在会话于后台持续变化时，保持浏览本地 AI 编码历史的流畅，并让衡量流畅度的日志保持准确。",
+        highlights: [
+          {
+            title: "重连后更快同步",
+            description:
+              "实时连接恢复时，CodeSesh 同时刷新会话和页面其余数据，并跳过重复请求，“正在同步”提示更快消失。",
+          },
+          {
+            title: "会话打开日志更准确",
+            description: "已打开会话的更新记为刷新，打开次数和打开耗时只反映你真正打开的会话。",
+          },
+          {
+            title: "产品站更轻",
+            description: "产品站只加载页面实际使用的字体字符，每个页面的字体数据减少约 44%。",
+          },
+        ],
+      },
+      {
         version: "1.4.3",
         date: "2026-10-25",
         title: "Pi 历史持续同步，界面更简洁",
@@ -1792,6 +1842,32 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.4",
+        date: "2026-11-03",
+        title: "再接続後の同期がより速く",
+        summary:
+          "CodeSesh 1.4.4 は、ライブ接続が切れた後に Web UI がより早く同期を取り戻します。セッションの更新はセッションを開いた記録に含まれなくなり、製品サイトのフォントのダウンロード量も減りました。",
+        direction:
+          "バックグラウンドでセッションが変わり続けても、ローカルの AI コーディング履歴を快適に閲覧でき、その快適さを測るログも正確に保ちます。",
+        highlights: [
+          {
+            title: "再接続後の同期を短縮",
+            description:
+              "ライブ接続が戻ると、CodeSesh はセッションとページの他のデータを同時に更新し、重複したリクエストを省くため、同期中の表示が早く消えます。",
+          },
+          {
+            title: "正確なセッションを開いた記録",
+            description:
+              "開いているセッションへの更新はリフレッシュとして記録され、開いた回数と所要時間は実際に開いたセッションだけを反映します。",
+          },
+          {
+            title: "軽くなった製品サイト",
+            description:
+              "製品サイトはページで使う文字だけのフォントを読み込み、ページあたりのフォントデータを約 44% 削減しました。",
+          },
+        ],
+      },
       {
         version: "1.4.3",
         date: "2026-10-25",
