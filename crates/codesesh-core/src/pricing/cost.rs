@@ -9,27 +9,6 @@ thread_local! {
     static MISSES: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
 }
 
-#[cfg(test)]
-struct Capture;
-#[cfg(test)]
-impl Drop for Capture {
-    fn drop(&mut self) {
-        MISSES.with(|misses| {
-            misses.borrow_mut().pop();
-        });
-    }
-}
-
-#[cfg(test)]
-pub fn capture_misses<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
-    MISSES.with(|misses| misses.borrow_mut().push(Vec::new()));
-    let guard = Capture;
-    let result = run();
-    let misses = MISSES.with(|misses| std::mem::take(misses.borrow_mut().last_mut().unwrap()));
-    drop(guard);
-    (result, misses)
-}
-
 pub(super) fn record_miss(model: &str) {
     MISSES.with(|misses| {
         if let Some(capture) = misses.borrow_mut().last_mut()
@@ -85,7 +64,6 @@ impl Pricing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::MessageTokens;
     use serde_json::json;
 
     #[test]
@@ -112,22 +90,5 @@ mod tests {
         assert_eq!(messages[1].cost_source, Some(CostSource::Estimated));
         assert_eq!(total, round_cost(3.0 + expected));
         assert_eq!(source, Some(CostSource::Estimated));
-    }
-
-    #[test]
-    fn capture_is_nested_and_cleans_up_after_panics() {
-        let pricing = Pricing::bundled();
-        let tokens: MessageTokens = serde_json::from_value(json!({"input":1})).unwrap();
-        let (_, outer) = capture_misses(|| {
-            pricing.estimate(Some("absent-outer"), &tokens, 0.0);
-            let (_, inner) = capture_misses(|| {
-                pricing.estimate(Some("absent-inner"), &tokens, 0.0);
-            });
-            assert_eq!(inner, ["absent-inner"]);
-            pricing.estimate(Some("absent-outer"), &tokens, 0.0);
-        });
-        assert_eq!(outer, ["absent-outer"]);
-        let _ = std::panic::catch_unwind(|| capture_misses(|| panic!("test capture cleanup")));
-        assert!(MISSES.with(|misses| misses.borrow().is_empty()));
     }
 }

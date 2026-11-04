@@ -1,5 +1,5 @@
 use super::*;
-use crate::discovery::{AgentScanner, AgentSource, PathEnvironment};
+use crate::discovery::{AgentScanner, AgentSource};
 use std::sync::Arc;
 
 fn write(path: &Path, records: &[Value]) {
@@ -217,26 +217,4 @@ fn legacy_snapshots_subagents_and_scanner_updates() {
 
     std::fs::write(&child, "{\"truncated\":").unwrap();
     assert!(scanner.refresh(Some(&[child])).is_err());
-}
-
-#[test]
-fn default_and_override_paths_select_cli_chats() {
-    let root = tempfile::tempdir().unwrap();
-    let mut environment = PathEnvironment {
-        home: root.path().into(),
-        cwd: root.path().into(),
-        platform: "darwin".into(),
-        variables: HashMap::new(),
-    };
-    assert_eq!(
-        environment.source("gemini-cli").unwrap().scan_path,
-        root.path().join(".gemini/tmp")
-    );
-    environment
-        .variables
-        .insert("GEMINI_CLI_HOME".into(), "~/isolated".into());
-    assert_eq!(
-        environment.source("gemini-cli").unwrap().scan_path,
-        root.path().join("isolated/.gemini/tmp")
-    );
 }

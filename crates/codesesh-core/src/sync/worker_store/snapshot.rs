@@ -6,35 +6,9 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{self, Write};
 
-#[cfg(test)]
-pub(super) fn serialized_digest(value: &impl Serialize) -> Result<String> {
-    let mut writer = DigestWriter(Sha256::new());
-    {
-        let mut buffered = io::BufWriter::new(&mut writer);
-        serde_json::to_writer(&mut buffered, value)?;
-        buffered.flush()?;
-    }
-    Ok(crate::hash::hex(&writer.0.finalize()))
-}
-
-#[cfg(test)]
-struct DigestWriter(Sha256);
-
-#[cfg(test)]
-impl Write for DigestWriter {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 /// Content hash of a session plus a prefix chain over its messages.
 pub(super) struct SessionDigests {
-    /// Same bytes as `serialized_digest(&(messages, file_activity, cost_inputs))`, so queued
+    /// Same bytes as the SHA-256 of the JSON `(messages, file_activity, cost_inputs)` tuple, so queued
     /// state from earlier releases still compares equal.
     pub content: String,
     pub chain: Vec<[u8; 16]>,

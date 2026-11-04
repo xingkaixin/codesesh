@@ -19,8 +19,6 @@ use messages::{append_subagents, detail_stats, messages, model_usage};
 
 mod pagination;
 pub use pagination::enumerate_session_keys;
-#[cfg(test)]
-pub use pagination::scan_selected;
 mod sync;
 pub use sync::CursorSync;
 
@@ -117,27 +115,6 @@ fn composer_id(composer: &Value) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
-#[cfg(test)]
-pub fn resolve_session_id(root: &Path, request_id: &str) -> Result<Option<String>> {
-    let db = Connection::open_with_flags(
-        root.join("globalStorage/state.vscdb"),
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?;
-    let mut query = db.prepare(
-        "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND value LIKE ?",
-    )?;
-    let mut rows = query.query([format!("%\"requestId\":\"{request_id}\"%")])?;
-    while let Some(row) = rows.next()? {
-        let key: String = row.get(0)?;
-        let raw: String = row.get(1)?;
-        if let Ok(bubble) = serde_json::from_str::<Value>(&raw)
-            && string(&bubble, "requestId") == Some(request_id)
-        {
-            return Ok(key.split(':').nth(1).map(str::to_owned));
-        }
-    }
-    Ok(None)
-}
 fn session_title(composer: &Value, messages: &[Message]) -> String {
     let message_title = messages
         .iter()

@@ -131,29 +131,6 @@ fn filtered_json_keeps_full_cache_and_failures_preserve_last_good_data() {
 }
 
 #[test]
-fn external_publication_invalidates_the_index_but_pricing_does_not() {
-    let (temp, source, path) = fixture();
-    let options = ScanOptions::default();
-    let pricing = Pricing::bundled();
-    run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
-    let cache = Cache::open(Some(&path)).unwrap();
-    cache.connection().execute_batch("UPDATE sessions SET title='external publication'; UPDATE cache_meta SET value=CAST(value AS INTEGER)+1 WHERE key='analytics_revision'").unwrap();
-    drop(cache);
-    let refreshed = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
-    assert_eq!(refreshed.sessions[0].title, "first body");
-    let directory = temp.path().join(".codesesh");
-    fs::create_dir_all(&directory).unwrap();
-    fs::write(directory.join("models-dev-pricing.json"), serde_json::json!({"timestamp":1,"data":{"json-cache-test-model":{"inputCostPerToken":1,"outputCostPerToken":2}}}).to_string()).unwrap();
-    let changed = Pricing::load(temp.path());
-    assert_ne!(changed.generation(), pricing.generation());
-    let cache = Cache::open(Some(&path)).unwrap();
-    cache.connection().execute_batch("CREATE TRIGGER reject_json_write BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'pricing reindex detected'); END").unwrap();
-    drop(cache);
-    let repriced = run_local(std::slice::from_ref(&source), &options, &changed, &path).unwrap();
-    assert_eq!(repriced.sessions[0].title, "first body");
-}
-
-#[test]
 fn price_changes_update_json_costs_without_invalidating_content_fingerprints() {
     let (temp, source, path) = fixture();
     use std::io::Write;

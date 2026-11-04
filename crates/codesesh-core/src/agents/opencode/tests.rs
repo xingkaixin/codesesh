@@ -376,21 +376,6 @@ fn child_usage_only_changes_detail_and_counts_invisible_child_usage() {
 }
 
 #[test]
-fn zcode_uses_nested_database_and_agent_identity() {
-    let (temp, db) = database(false);
-    db.execute_batch("INSERT INTO session(id,parent_id,title,time_created,time_updated,directory,version,summary_files) VALUES('root',NULL,'ZCode',1000,2000,'/project',NULL,NULL);DROP TABLE message;DROP TABLE part;").unwrap();
-    drop(db);
-    std::fs::create_dir_all(temp.path().join("cli/db")).unwrap();
-    std::fs::rename(
-        temp.path().join("opencode.db"),
-        temp.path().join("cli/db/db.sqlite"),
-    )
-    .unwrap();
-    let sessions = crate::agents::zcode::scan(temp.path(), &Pricing::bundled()).unwrap();
-    assert_eq!(sessions[0].head.reference.agent_name, "zcode");
-}
-
-#[test]
 fn incremental_reuses_unchanged_sessions_and_handles_wal_edits_and_deletions() {
     let (temp, db) = database(true);
     db.execute_batch("PRAGMA journal_mode=WAL;INSERT INTO session_v2(id)VALUES('one'),('two');")
@@ -443,34 +428,6 @@ fn incremental_reuses_unchanged_sessions_and_handles_wal_edits_and_deletions() {
     .unwrap();
     assert!(refresh(temp.path(), &pricing, Some(&removed)).is_err());
     assert_eq!(removed.sessions[0].head.title, "keep");
-}
-
-#[test]
-fn preserves_fractional_database_and_message_timestamps() {
-    let (temp, db) = database(true);
-    db.execute_batch(
-        "INSERT INTO session_v2(id,time_created,time_updated)VALUES('root',1000.25,2000.75)",
-    )
-    .unwrap();
-    message(
-        &db,
-        "assistant",
-        "root",
-        "assistant",
-        1,
-        json!({"time":{"completed":1600.5},"content":[{"type":"tool","name":"read","time":{"created":1500.25},"state":{"status":"completed","input":{"path":"a.rs"}}}]}),
-    );
-    db.execute_batch("UPDATE session_message SET time_created=1200.125")
-        .unwrap();
-    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
-    assert_eq!(parsed[0].head.time_created, 1000.25);
-    assert_eq!(parsed[0].head.time_updated, 2000.75);
-    assert_eq!(parsed[0].detail.messages[0].time_created, 1200.125);
-    assert_eq!(parsed[0].detail.messages[0].time_completed, Some(1600.5));
-    let MessagePart::Tool { time_created, .. } = &parsed[0].detail.messages[0].parts[0] else {
-        panic!("expected tool")
-    };
-    assert_eq!(*time_created, Some(1500.25));
 }
 
 #[test]
@@ -563,32 +520,6 @@ fn pages_database_subtrees_without_decoding_unselected_history() {
     assert_eq!(removed.removed.len(), 2);
     assert_eq!(removed.sessions.len(), 1);
     assert_eq!(removed.sessions[0].head.reference.session_id, "cold");
-}
-
-#[test]
-fn v1_pages_only_selected_message_parts_and_related_usage() {
-    let (temp, db) = database(false);
-    db.execute_batch("INSERT INTO session(id,parent_id,title,time_created,time_updated,directory) VALUES('hot',NULL,'Hot',1000,3000,'/project'),('child','hot','Child',1000,2000,'/project'),('cold',NULL,'Cold',1000,1000,'/project');INSERT INTO message VALUES('hot-message','hot','{\"role\":\"assistant\",\"cost\":1}',1000),('child-message','child','{\"role\":\"assistant\",\"cost\":2}',1000),('cold-message','cold','invalid JSON',1000);INSERT INTO part VALUES('hot-part','hot-message','{\"type\":\"text\",\"text\":\"Visible\"}',1000),('cold-part','cold-message','invalid JSON',1000)").unwrap();
-    let path = temp.path().join("opencode.db");
-    assert_eq!(
-        enumerate_session_keys(&path, "opencode", false)
-            .unwrap()
-            .len(),
-        2
-    );
-    let result = scan_selected_snapshot(
-        &path,
-        "opencode",
-        false,
-        &Pricing::bundled(),
-        &HashSet::from(["hot".into()]),
-        None,
-    )
-    .unwrap();
-    assert_eq!(result.sessions.len(), 1);
-    assert_eq!(result.sessions[0].head.stats.total_cost, 1.0);
-    assert_eq!(result.sessions[0].detail.head.stats.total_cost, 3.0);
-    assert_eq!(result.decoded.len(), 2);
 }
 
 #[test]

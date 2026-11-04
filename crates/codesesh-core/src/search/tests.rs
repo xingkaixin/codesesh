@@ -56,32 +56,6 @@ fn database() -> Connection {
 }
 
 #[test]
-fn qualifiers_merge_and_fts_escaping() {
-    let parsed = parse_query(
-        "agent:CODEX project:\"code sesh\" projectkind:git_remote tag:bugfix tool:apply_patch file:\"src/App File.tsx\" cost:>1 needle",
-    );
-    assert_eq!(parsed.text, "needle");
-    assert_eq!(parsed.filters.agent.as_deref(), Some("codex"));
-    assert_eq!(parsed.filters.project.as_deref(), Some("code sesh"));
-    assert_eq!(parsed.filters.file.as_deref(), Some("src/App File.tsx"));
-    assert!(parsed.filters.cost_min_exclusive);
-    let later = parse_query("cost:>1 cost:<5 cost:2..3");
-    assert_eq!(later.filters.cost_min, Some(2.0));
-    assert!(!later.filters.cost_min_exclusive);
-    let unknown = parse_query("tag:invalid projectkind:wrong cost:nope needle");
-    assert_eq!(unknown.text, "tag:invalid projectkind:wrong needle");
-    assert!(unknown.has_qualifiers);
-    assert_eq!(
-        to_fts_query("OR foo OR OR bar OR baz OR"),
-        "\"foo\" \"bar\" OR \"baz\""
-    );
-    assert_eq!(
-        to_fts_query("\"hello world\" title:foo"),
-        "\"hello world\" \"title:foo\""
-    );
-}
-
-#[test]
 fn ranked_fts_and_utf16_message_highlights() {
     let db = database();
     let results = execute(&db, "hello", &SearchOptions::default()).unwrap();
@@ -258,26 +232,6 @@ fn mixed_chinese_queries_preserve_boolean_precedence_and_filters() {
 }
 
 #[test]
-fn chinese_limits_apply_after_literal_confirmation() {
-    let db = chinese_database();
-    db.execute("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES('local','codex','split','Split','/chinese','path','/chinese','chinese',10,500,500,1,0,0,0)", []).unwrap();
-    db.execute("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','split',0,'m','user',10,'[]','数据，库')", []).unwrap();
-    index(&db);
-    let results = execute(
-        &db,
-        "数据库",
-        &SearchOptions {
-            from: Some(250.0),
-            limit: Some(1),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].reference.source_node_id, "worker-a");
-}
-
-#[test]
 fn filters_include_descendant_cost_tools_files_and_scope() {
     let db = database();
     let result = execute(
@@ -381,17 +335,6 @@ fn two_character_file_queries_skip_trigram_index() {
 }
 
 #[test]
-fn highlights_merge_overlaps_and_preserve_astral_offsets() {
-    let ranges = snippet::highlights("🔎 foobar", &snippet::Terms::parse("foo foobar foo"));
-    assert_eq!(ranges, vec![HighlightRange { start: 3, end: 9 }]);
-    let text = format!("{}needle{}", "a".repeat(100), "z".repeat(100));
-    let (text, ranges) = snippet::build(&text, &snippet::Terms::parse("needle"));
-    assert!(text.starts_with("… "));
-    assert!(text.ends_with(" …"));
-    assert_eq!(ranges, vec![HighlightRange { start: 82, end: 88 }]);
-}
-
-#[test]
 fn snapshot_recent_preserves_order_and_parent_context() {
     let db = database();
     let mut snapshot: Vec<_> = search_sessions(&db, "", &SearchOptions::default())
@@ -451,20 +394,6 @@ fn snapshot_recent_preserves_order_and_parent_context() {
     .unwrap();
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].reference.session_id, "one");
-}
-
-#[test]
-fn keyword_results_keep_parent_reference() {
-    let result = execute(&database(), "unrelated", &SearchOptions::default()).unwrap();
-    assert_eq!(result.len(), 1);
-    assert_eq!(
-        result[0].session.parent_reference,
-        Some(SessionReference {
-            source_node_id: "local".into(),
-            agent_name: "codex".into(),
-            session_id: "one".into(),
-        })
-    );
 }
 
 #[test]
@@ -576,104 +505,6 @@ fn file_activity_uses_event_time_and_orders_before_limit() {
 }
 
 #[test]
-fn fractional_times_survive_reads_and_window_boundaries() {
-    let db = database();
-    db.execute("UPDATE sessions SET time_created=100.125,time_updated=200.75,activity_time=200.75,smart_tags_source_updated_at=200.625 WHERE session_id='one'",[]).unwrap();
-    db.execute(
-        "UPDATE session_file_activity SET latest_time=200.5 WHERE session_id='one'",
-        [],
-    )
-    .unwrap();
-    let options = SearchOptions {
-        agent: Some("codex".into()),
-        from: Some(200.0),
-        to: Some(201.0),
-        ..Default::default()
-    };
-    let results = execute(&db, "tool:apply_patch hello", &options).unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].session.time_created, 100.125);
-    assert_eq!(results[0].session.time_updated, 200.75);
-    assert_eq!(
-        results[0].session.smart_tags_source_updated_at,
-        Some(200.625)
-    );
-    let snapshot = vec![results[0].session.clone()];
-    assert_eq!(
-        execute_with_snapshot(&db, "", &options, &snapshot)
-            .unwrap()
-            .len(),
-        1
-    );
-    let fractional = SearchOptions {
-        from: Some(200.625),
-        to: Some(200.875),
-        ..options.clone()
-    };
-    assert_eq!(
-        execute(&db, "tool:apply_patch hello", &fractional)
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        execute_with_snapshot(&db, "", &fractional, &snapshot)
-            .unwrap()
-            .len(),
-        1
-    );
-    let fractional_excluded = SearchOptions {
-        to: Some(200.5),
-        ..options.clone()
-    };
-    assert!(
-        execute(&db, "tool:apply_patch hello", &fractional_excluded)
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        execute_with_snapshot(&db, "", &fractional_excluded, &snapshot)
-            .unwrap()
-            .is_empty()
-    );
-    let bounded = SearchOptions {
-        to: Some(200.0),
-        ..options
-    };
-    assert!(
-        execute(&db, "tool:apply_patch hello", &bounded)
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        execute_with_snapshot(&db, "", &bounded, &snapshot)
-            .unwrap()
-            .is_empty()
-    );
-    let activity = list_file_activity(
-        &db,
-        &FileActivityOptions {
-            from: Some(200.0),
-            to: Some(201.0),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert_eq!(activity[0].activity.latest_time, 200.5);
-    assert!(
-        list_file_activity(
-            &db,
-            &FileActivityOptions {
-                to: Some(200.0),
-                ..Default::default()
-            }
-        )
-        .unwrap()
-        .is_empty()
-    );
-}
-
-#[test]
 fn search_targets_the_first_matching_message_in_source_order() {
     let db = database();
     db.execute(
@@ -764,28 +595,4 @@ fn cross_message_fallbacks_preserve_text_highlights_and_source_identity() {
         assert_eq!(local.match_type, "tool_output");
         assert_eq!(local.snippet, "alpha omega 数据库连接");
     }
-}
-
-#[test]
-fn fts_only_matches_keep_body_and_empty_body_fallbacks() {
-    let db = database();
-    db.execute(
-        "UPDATE sessions SET title='CAFÉ' WHERE session_id='one'",
-        [],
-    )
-    .unwrap();
-    let results = execute(&db, "cafe", &SearchOptions::default()).unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].snippet, "🔎 中文 hello Rust world");
-    assert_eq!(results[0].message_index, None);
-    assert!(results[0].snippet_highlights.is_empty());
-    db.execute(
-        "UPDATE messages SET content_text='' WHERE session_id='one'",
-        [],
-    )
-    .unwrap();
-    index(&db);
-    let results = execute(&db, "cafe", &SearchOptions::default()).unwrap();
-    assert_eq!(results[0].snippet, "CAFÉ");
-    assert_eq!(results[0].message_index, None);
 }

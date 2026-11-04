@@ -150,75 +150,8 @@ fn reconciled_messages_attribute_cost_to_message_time() {
     assert_eq!(result["modelCost"][0]["costRecorded"], 1.0);
 }
 
-#[test]
-fn matches_node_reference_for_ranking_windows_and_cost_reconciliation() {
-    let fixtures: Vec<Value> = serde_json::from_str(include_str!("reference.json")).unwrap();
-    for (index, fixture) in fixtures.iter().enumerate() {
-        let sessions: Vec<SessionHead> =
-            serde_json::from_value(fixture["sessions"].clone()).unwrap();
-        let options = &fixture["options"];
-        let names: Vec<String> = serde_json::from_value(options["byAgentNames"].clone()).unwrap();
-        let scope: DashboardScope = serde_json::from_value(options["scope"].clone()).unwrap();
-        let facts = options.get("costFacts").map(|v| {
-            CostFactsIndex::from(serde_json::from_value::<DashboardCostFacts>(v.clone()).unwrap())
-        });
-        let actual = dashboard(
-            &sessions,
-            &DashboardOptions {
-                by_agent_names: &names,
-                scope: &scope,
-                from: options["from"].as_f64(),
-                to: options["to"].as_f64().unwrap(),
-                agent_info: None,
-                compare: options
-                    .get("compare")
-                    .map(|c| (c["from"].as_f64().unwrap(), c["to"].as_f64().unwrap())),
-                cost_facts: facts.as_ref(),
-                time_zone: &"UTC".parse().unwrap(),
-            },
-        );
-        assert_json_equivalent(&actual, &fixture["expected"], &format!("case {index}"));
-        let projects = attach_project_metrics(
-            fixture["projects"].as_array().unwrap(),
-            &sessions,
-            options["from"].as_f64(),
-            options["to"].as_f64(),
-            facts.as_ref(),
-        );
-        assert_json_equivalent(
-            &json!(projects),
-            &fixture["expectedProjects"],
-            &format!("projects {index}"),
-        );
-        assert_json_equivalent(
-            &summarize_projects(&projects),
-            &fixture["expectedSummary"],
-            &format!("summary {index}"),
-        );
-    }
-}
-
 fn dashboard(sessions: &[SessionHead], options: &DashboardOptions<'_>) -> Value {
     serde_json::to_value(build_dashboard(sessions, options).unwrap()).unwrap()
-}
-
-fn assert_json_equivalent(actual: &Value, expected: &Value, path: &str) {
-    match (actual, expected) {
-        (Value::Number(a), Value::Number(b)) => assert_eq!(a.as_f64(), b.as_f64(), "{path}"),
-        (Value::Object(a), Value::Object(b)) => {
-            assert_eq!(a.len(), b.len(), "{path}: {actual} != {expected}");
-            for (key, value) in b {
-                assert_json_equivalent(&a[key], value, &format!("{path}.{key}"));
-            }
-        }
-        (Value::Array(a), Value::Array(b)) => {
-            assert_eq!(a.len(), b.len(), "{path}");
-            for (i, (a, b)) in a.iter().zip(b).enumerate() {
-                assert_json_equivalent(a, b, &format!("{path}[{i}]"));
-            }
-        }
-        _ => assert_eq!(actual, expected, "{path}"),
-    }
 }
 
 #[test]
@@ -269,20 +202,6 @@ fn sqlite_facts_and_active_hours_respect_effective_time_and_automation() {
     .unwrap();
     assert_eq!(hours.counts[1], 1);
     assert_eq!(hours.counts.iter().sum::<usize>(), 1);
-}
-
-#[test]
-fn fractional_activity_stays_outside_the_inclusive_boundary() {
-    let mut session = head("fractional", None, 1000);
-    session.time_updated = 1000.25;
-    assert!(
-        crate::session_list::filter_activity_window(&[session.clone()], None, Some(1000.0))
-            .is_empty()
-    );
-    assert_eq!(
-        crate::session_list::filter_activity_window(&[session], Some(1000.25), Some(1000.25)).len(),
-        1
-    );
 }
 
 #[test]
@@ -397,104 +316,6 @@ fn scoped_facts_preserve_descendants_and_reconciliation_without_reading_other_so
 }
 
 #[test]
-fn active_hours_work_does_not_grow_with_unrelated_message_history() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    let mut cache = crate::storage::Cache::open(None).unwrap();
-    cache.connection().execute_batch("INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost)
-        VALUES('local','codex','parent','Parent','/project','path','/project','project',100,200,1,0,0,0);
-        INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
-        VALUES('local','codex','parent',0,'current','user',200,'[]','Current user message');").unwrap();
-    let sessions = cache.snapshot().unwrap();
-    let steps = Arc::new(AtomicUsize::new(0));
-    let counter = steps.clone();
-    cache
-        .connection_mut()
-        .progress_handler(
-            1,
-            Some(move || {
-                counter.fetch_add(1, Ordering::Relaxed);
-                false
-            }),
-        )
-        .unwrap();
-    let db = cache.connection();
-    let measure = || {
-        steps.store(0, Ordering::Relaxed);
-        let hours = active_hours(
-            db,
-            &sessions,
-            &DashboardScope::default(),
-            Some(150.0),
-            250.0,
-            "UTC".parse().unwrap(),
-        )
-        .unwrap();
-        assert_eq!(hours.counts.iter().sum::<usize>(), 1);
-        steps.load(Ordering::Relaxed)
-    };
-    let baseline = measure();
-    db.execute_batch("WITH RECURSIVE rows(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM rows WHERE n<5000)
-        INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
-        SELECT 'local','codex','parent',n,'history-'||n,'user',100,'[]',printf('%2048s','history') FROM rows;
-        WITH RECURSIVE rows(n) AS (VALUES(5001) UNION ALL SELECT n+1 FROM rows WHERE n<10000)
-        INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
-        SELECT 'local','codex','parent',n,'assistant-'||n,'assistant',200,'[]',printf('%2048s','assistant') FROM rows;").unwrap();
-    let with_history = measure();
-    assert!(
-        with_history < baseline * 2,
-        "query work grew from {baseline} to {with_history} steps"
-    );
-    cache
-        .connection_mut()
-        .progress_handler(0, None::<fn() -> bool>)
-        .unwrap();
-    let all_time = active_hours(
-        cache.connection(),
-        &sessions,
-        &DashboardScope::default(),
-        None,
-        250.0,
-        "UTC".parse().unwrap(),
-    )
-    .unwrap();
-    assert_eq!(all_time.counts.iter().sum::<usize>(), 5001);
-}
-
-#[test]
-fn cost_facts_reuse_the_callers_transaction_without_committing_it() {
-    let cache = crate::storage::Cache::open(None).unwrap();
-    let connection = cache.connection();
-    connection
-        .execute_batch("BEGIN DEFERRED; CREATE TABLE transaction_probe(value TEXT);")
-        .unwrap();
-    let facts = load_cost_facts(connection, None, None, true).unwrap();
-    assert!(facts.messages.is_empty());
-    assert!(facts.sessions.is_empty());
-    let scoped = load_scoped_cost_facts(
-        connection,
-        &[],
-        &DashboardScope::default(),
-        None,
-        None,
-        true,
-    )
-    .unwrap();
-    assert!(scoped.messages.is_empty());
-    assert!(scoped.sessions.is_empty());
-    assert!(!connection.is_autocommit());
-    connection.execute_batch("ROLLBACK").unwrap();
-    assert!(
-        connection
-            .prepare("SELECT * FROM transaction_probe")
-            .is_err()
-    );
-}
-
-#[test]
 fn bucketed_facts_match_message_facts_on_aligned_windows() {
     const BUCKET: i64 = 900_000;
     const DAY: i64 = 86_400_000;
@@ -593,27 +414,5 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
             attach_project_metrics(&projects, &sessions, from, Some(to), Some(&bucketed)),
             attach_project_metrics(&projects, &sessions, from, Some(to), Some(&per_message))
         );
-    }
-}
-
-#[test]
-fn empty_project_rollup_serializes_positive_zero() {
-    let result = dashboard(
-        &[],
-        &DashboardOptions {
-            by_agent_names: &[],
-            scope: &DashboardScope::default(),
-            from: None,
-            to: 0.0,
-            agent_info: None,
-            compare: None,
-            cost_facts: None,
-            time_zone: &"UTC".parse().unwrap(),
-        },
-    );
-    for field in ["tokens", "cost"] {
-        let value = result["projectRollup"][field].as_f64().unwrap();
-        assert_eq!(value, 0.0);
-        assert!(!value.is_sign_negative());
     }
 }

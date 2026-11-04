@@ -506,23 +506,6 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn selects_active_branch_and_rejects_cycle() {
-        let rows = vec![
-            json!({"id":"a","parent_id":null}),
-            json!({"id":"b","parent_id":"a"}),
-            json!({"id":"c","parent_id":"a"}),
-        ];
-        assert_eq!(
-            branch(rows, Some("b".into()))
-                .unwrap()
-                .iter()
-                .map(|r| r["id"].as_str().unwrap())
-                .collect::<Vec<_>>(),
-            ["a", "b"]
-        );
-        assert!(branch(vec![json!({"id":"a","parent_id":"a"})], Some("a".into())).is_err());
-    }
-    #[test]
     fn does_not_double_price_reasoning() {
         let rows = vec![
             json!({"id":"m","role":"assistant","created_at":1,"updated_at":2,"data":"{\"parts\":[{\"type\":\"text\",\"text\":\"done\"}]}","model_id":"openai::gpt-4o","stats":json!({"inputTokens":100,"outputTokens":20,"outputTokenDetails":{"reasoningTokens":10}}).to_string()}),

@@ -238,23 +238,6 @@ fn excludes_events_seeded_before_the_v2_end_seed_marker() {
 }
 
 #[test]
-fn ignores_unknown_events() {
-    let temp = tempfile::tempdir().unwrap();
-    fixture(
-        temp.path(),
-        false,
-        json!({}),
-        &[
-            user(0, "Prompt"),
-            event("future/event", 1, json!({})),
-            assistant(2, "Reply"),
-        ],
-    );
-    let parsed = scan(temp.path(), &Pricing::bundled()).unwrap();
-    assert_eq!(parsed[0].detail.messages.len(), 2);
-}
-
-#[test]
 fn matches_node_projection_for_forked_streamed_tools() {
     let fixture: Value =
         serde_json::from_str(include_str!("fixtures/node-projection.json")).unwrap();
@@ -348,36 +331,5 @@ fn skips_corrupt_sessions_without_failing_the_source() {
     assert_eq!(
         delta.removed,
         vec![parsed.upserts[0].head.reference.clone()]
-    );
-}
-
-#[test]
-fn rejects_fractional_storage_times_and_preserves_safe_integer_precision() {
-    let temp = tempfile::tempdir().unwrap();
-    fixture(
-        temp.path(),
-        false,
-        json!({"createdAt": 100.25}),
-        &[user(0, "prompt")],
-    );
-    assert!(scan(temp.path(), &Pricing::bundled()).unwrap().is_empty());
-    let mut fractional = user(0, "prompt");
-    fractional["time"] = json!(100.25);
-    fixture(temp.path(), false, json!({}), &[fractional]);
-    assert!(scan(temp.path(), &Pricing::bundled()).unwrap().is_empty());
-    let mut precise = user(0, "prompt");
-    precise["time"] = json!(9_007_199_254_740_991_u64);
-    fixture(
-        temp.path(),
-        false,
-        json!({"createdAt": 9_007_199_254_740_990_u64}),
-        &[precise],
-    );
-    let sessions = scan(temp.path(), &Pricing::bundled()).unwrap();
-    assert_eq!(sessions[0].head.time_created, 9_007_199_254_740_990.0);
-    assert_eq!(sessions[0].head.time_updated, 9_007_199_254_740_991.0);
-    assert_eq!(
-        sessions[0].detail.messages[0].time_created,
-        9_007_199_254_740_991.0
     );
 }

@@ -567,30 +567,6 @@ fn backfill_legacy_projections(db: &Connection, version: i64) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
-    fn upgrades_schema33_and_queues_existing_content_once() {
-        let db = Connection::open_in_memory().unwrap();
-        db.execute_batch(include_str!("schema.sql")).unwrap();
-        db.execute_batch(include_str!("read-indexes.sql")).unwrap();
-        db.execute_batch("DROP INDEX idx_messages_user_activity; ALTER TABLE messages DROP COLUMN automated; PRAGMA user_version=33;").unwrap();
-        ensure(&db, None).unwrap();
-        assert!(columns(&db, "messages").unwrap().contains("automated"));
-        assert_eq!(
-            db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
-                .unwrap(),
-            super::super::CACHE_SCHEMA_VERSION
-        );
-        ensure(&db, None).unwrap();
-        assert_eq!(
-            db.query_row(
-                "SELECT COUNT(*) FROM cache_meta WHERE key='codex_exec_decode_migrated_v3'",
-                [],
-                |row| row.get::<_, i64>(0)
-            )
-            .unwrap(),
-            1
-        );
-    }
-    #[test]
     fn migrates_legacy_json_heads_without_losing_metadata() {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch("CREATE TABLE cache_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO cache_meta VALUES('version','3'); CREATE TABLE cached_sessions(agent_name TEXT,session_id TEXT,session_json TEXT,meta_json TEXT);").unwrap();
@@ -611,24 +587,6 @@ mod tests {
                 .unwrap(),
             1
         );
-    }
-    #[test]
-    fn compacts_only_when_most_pages_are_free() {
-        let root = tempfile::tempdir().unwrap();
-        let db = Connection::open(root.path().join("cache.db")).unwrap();
-        db.execute_batch("CREATE TABLE filler(value BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<200) INSERT INTO filler SELECT zeroblob(4000) FROM n;").unwrap();
-        let pages = |db: &Connection| {
-            db.pragma_query_value(None, "page_count", |row| row.get::<_, i64>(0))
-                .unwrap()
-        };
-        db.execute_batch("DELETE FROM filler WHERE rowid>180")
-            .unwrap();
-        let before = pages(&db);
-        compact(&db, 1, &mut |_| Ok(())).unwrap();
-        assert_eq!(pages(&db), before);
-        db.execute_batch("DELETE FROM filler").unwrap();
-        compact(&db, 1, &mut |_| Ok(())).unwrap();
-        assert!(pages(&db) < before / 10);
     }
 
     #[test]

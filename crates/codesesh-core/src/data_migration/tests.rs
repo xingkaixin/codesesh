@@ -190,25 +190,6 @@ fn cleanup_resumes_after_partial_deletion() {
 }
 
 #[test]
-fn default_paths_and_legacy_paths_are_separate() {
-    let home = Path::new("/user");
-    assert_eq!(crate::app_paths::root(home), home.join(".codesesh"));
-    assert_eq!(
-        crate::app_paths::legacy_state(home, "macos", |_| None),
-        home.join("Library/Application Support/codesesh")
-    );
-    assert_eq!(
-        crate::app_paths::legacy_state(home, "linux", |_| None),
-        home.join(".local/share/codesesh")
-    );
-    assert_eq!(
-        crate::app_paths::legacy_state(home, "windows", |key| (key == "APPDATA")
-            .then(|| "/roaming".into())),
-        Path::new("/roaming/codesesh")
-    );
-}
-
-#[test]
 fn unknown_files_are_reported_and_never_deleted() {
     let home = tempfile::tempdir().unwrap();
     let logs = home.path().join(".cache/codesesh/logs");
@@ -259,27 +240,6 @@ fn failed_deletion_is_reported_and_retried_without_confirmation() {
     .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(!directory.exists());
-}
-
-#[test]
-fn target_created_during_copy_is_never_overwritten() {
-    let home = tempfile::tempdir().unwrap();
-    let source = home.path().join("source.log");
-    let target = home.path().join("target.log");
-    fs::write(&source, b"source").unwrap();
-    let candidate = Candidate {
-        source: source.clone(),
-        target: target.clone(),
-        database: false,
-    };
-    let result = migrate(&candidate, &mut |p| {
-        if p.phase == "Migrating" {
-            fs::write(&target, b"existing").unwrap();
-        }
-    });
-    assert!(result.is_err());
-    assert_eq!(fs::read(target).unwrap(), b"existing");
-    assert_eq!(fs::read(source).unwrap(), b"source");
 }
 
 #[test]

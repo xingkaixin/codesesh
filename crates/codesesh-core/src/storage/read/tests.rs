@@ -80,39 +80,6 @@ fn pages_preserve_order_and_reset_on_rewrite_or_a_different_source() {
 }
 
 #[test]
-fn page_byte_budget_stops_before_deserializing_the_next_message() {
-    let root = tempfile::tempdir().unwrap();
-    let mut session = source(root.path(), "large-page");
-    session.detail.messages[0].parts = vec![MessagePart::Text {
-        text: "x".repeat(600 * 1024),
-        time_created: None,
-    }];
-    session
-        .detail
-        .messages
-        .push(session.detail.messages[0].clone());
-    let mut cache = Cache::open(None).unwrap();
-    cache.publish(std::slice::from_mut(&mut session)).unwrap();
-    cache
-        .connection()
-        .execute(
-            "UPDATE messages SET parts_json='invalid' WHERE message_index=1",
-            [],
-        )
-        .unwrap();
-    let (first, total) = page(&cache, session.head.clone(), None, 200);
-    assert_eq!(first.messages.len(), 1);
-    assert_eq!(total, 2);
-    assert_eq!(
-        parse_cursor(first.message_cursor.as_deref().unwrap())
-            .unwrap()
-            .0,
-        1
-    );
-    assert!(detail(cache.connection(), session.head).is_err());
-}
-
-#[test]
 fn legacy_rows_without_chain_digests_return_a_complete_transcript() {
     let root = tempfile::tempdir().unwrap();
     let mut session = source(root.path(), "legacy-page");

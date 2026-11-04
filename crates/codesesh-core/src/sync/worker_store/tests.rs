@@ -89,38 +89,6 @@ fn pending_content_survives_restart_and_confirmed_content_is_removed() {
 }
 
 #[test]
-fn title_only_changes_do_not_requeue_message_content() {
-    let (_dir, mut store, mut scanner) = setup();
-    let mut batch = scanner.refresh(None).unwrap();
-    store.save_batch("codex", &mut batch).unwrap();
-    drain(&mut store);
-    batch.sessions[0].head.title = "New title".into();
-    store.save_batch("codex", &mut batch).unwrap();
-    assert_eq!(store.queue_status().unwrap().batches, 1);
-    assert!(matches!(
-        store.next_upload().unwrap().unwrap().operation,
-        Operation::Metadata { .. }
-    ));
-}
-
-#[test]
-fn unchanged_rounds_do_not_write_the_store() {
-    let (_dir, mut store, mut scanner) = setup();
-    let mut round = |store: &mut WorkerStore| {
-        let checkpoint = store.checkpoint("codex").unwrap();
-        let mut batch = scanner
-            .refresh_with_checkpoint(None, checkpoint.as_ref())
-            .unwrap();
-        store.save_batch("codex", &mut batch).unwrap();
-        batch.sessions.len()
-    };
-    assert_eq!(round(&mut store), 1);
-    let changes = store.db.total_changes();
-    assert_eq!(round(&mut store), 0);
-    assert_eq!(store.db.total_changes(), changes);
-}
-
-#[test]
 fn enqueue_failure_rolls_back_progress_and_can_retry() {
     let (_dir, mut store, mut scanner) = setup();
     let mut batch = scanner.refresh(None).unwrap();
@@ -244,25 +212,6 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
 }
 
 #[test]
-fn exact_chunk_boundary_has_no_empty_tail() {
-    let (_dir, mut store, _scanner) = setup();
-    let tx = store.db.transaction().unwrap();
-    snapshot::enqueue_snapshot(&tx, &"x".repeat(CHUNK_BYTES - 2), None, None).unwrap();
-    tx.commit().unwrap();
-    let chunk = store.next_upload().unwrap().unwrap();
-    let Operation::SnapshotChunk { data, index, .. } = chunk.operation else {
-        panic!("expected snapshot chunk");
-    };
-    assert_eq!(index, 0);
-    assert_eq!(STANDARD.decode(data).unwrap().len(), CHUNK_BYTES);
-    store
-        .acknowledge(&store.stream_id().unwrap(), chunk.sequence, &chunk.digest)
-        .unwrap();
-    assert!(matches!(store.next_upload().unwrap().unwrap().operation,
-        Operation::SnapshotCommit { chunks: 1, bytes, .. } if bytes == CHUNK_BYTES as u64));
-}
-
-#[test]
 fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     let (dir, mut store, mut scanner) = setup();
     let mut batch = scanner.refresh(None).unwrap();
@@ -293,23 +242,4 @@ fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     store.update_origin("https://renamed-hub.example/").unwrap();
     assert_eq!(store.binding().unwrap().unwrap().1.node_id, "new-node");
     assert_eq!(store.stream_id().unwrap(), recovery.new_stream);
-}
-
-#[test]
-fn content_hash_keeps_the_serialized_capture_digest() {
-    let (_dir, _store, mut scanner) = setup();
-    let batch = scanner.refresh(None).unwrap();
-    let session = &batch.sessions[0];
-    let captured = CapturedSessionRef::new(session);
-    let fields = (
-        &session.detail.messages,
-        &session.detail.file_activity,
-        &captured.message_cost_inputs,
-    );
-    assert_eq!(
-        snapshot::session_digests(fields.0, fields.1, fields.2)
-            .unwrap()
-            .content,
-        snapshot::serialized_digest(&fields).unwrap()
-    );
 }

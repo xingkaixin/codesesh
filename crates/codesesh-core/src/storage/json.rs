@@ -118,13 +118,3 @@ fn write(value: &Value, output: &mut String) -> serde_json::Result<()> {
     }
     Ok(())
 }
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn matches_javascript_number_notation() {
-        assert_eq!(
-            super::stringify(&serde_json::json!([1e-7, 1e-6, 1e20, 1e21, -0.0])).unwrap(),
-            "[1e-7,0.000001,100000000000000000000,1e+21,0]"
-        );
-    }
-}

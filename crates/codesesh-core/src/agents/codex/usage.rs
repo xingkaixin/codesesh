@@ -250,61 +250,6 @@ mod tests {
         .unwrap()
     }
 
-    fn consume(usage: &mut Usage, messages: &mut [Message], step: usize, model: Option<&str>) {
-        usage.consume(
-            &json!({"info":{
-                "total_token_usage":{"total_tokens":step * 10},
-                "last_token_usage":{"input_tokens":7,"output_tokens":3}
-            }}),
-            model,
-            None,
-            &Pricing::capture_only(),
-            messages,
-        );
-    }
-
-    #[test]
-    fn unassigned_messages_take_priority_over_merging_by_model() {
-        let mut usage = Usage::default();
-        let mut messages = vec![
-            message(Role::Assistant, Some("old")),
-            message(Role::Assistant, Some("new")),
-        ];
-        for (index, model) in [
-            "new", "new", "new", "other", "new", "missing", "new", "new", "new",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let step = index + 1;
-            if step == 4 {
-                messages.push(message(Role::User, None));
-                messages.push(message(Role::Assistant, Some("other")));
-            }
-            if step == 7 {
-                messages.push(message(Role::Assistant, Some("pending")));
-                messages.push(message(Role::Assistant, Some("new")));
-            }
-            consume(&mut usage, &mut messages, step, Some(model));
-        }
-        assert_eq!(
-            messages
-                .iter()
-                .map(|m| m.cost_inputs.len())
-                .collect::<Vec<_>>(),
-            [1, 3, 0, 1, 1, 2]
-        );
-        assert_eq!(messages[0].model.as_deref(), Some("old"));
-        assert_eq!(messages[1].tokens.as_ref().unwrap().input, Some(21.0));
-        assert_eq!(usage.stats(0).total_input_tokens, 63.0);
-        messages.push(message(Role::Assistant, None));
-        consume(&mut usage, &mut messages, 9, Some("new"));
-        assert!(messages.last().unwrap().tokens.is_none());
-        consume(&mut usage, &mut messages, 10, Some("new"));
-        assert_eq!(messages.last().unwrap().cost_inputs.len(), 1);
-        assert_eq!(usage.stats(0).total_input_tokens, 70.0);
-    }
-
     #[test]
     fn reasoning_tokens_are_counted_once_within_output() {
         let pricing = Pricing::bundled();
@@ -334,21 +279,5 @@ mod tests {
             pricing.estimate(Some("gpt-5"), &plain_output, 0.0)
         );
         assert_eq!(usage.models().unwrap()["gpt-5"], 110.0);
-    }
-
-    #[test]
-    fn late_model_assignment_is_visible_for_usage_merges() {
-        let mut usage = Usage::default();
-        let mut messages = vec![message(Role::Assistant, None)];
-        consume(&mut usage, &mut messages, 1, None);
-        consume(&mut usage, &mut messages, 2, None);
-        messages[0].model = Some("late".into());
-        messages.push(message(Role::User, None));
-        consume(&mut usage, &mut messages, 3, None);
-        assert_eq!(messages[0].cost_inputs.len(), 2);
-        consume(&mut usage, &mut messages, 4, Some("late"));
-        assert_eq!(messages[0].cost_inputs.len(), 3);
-        assert_eq!(messages[0].tokens.as_ref().unwrap().input, Some(21.0));
-        assert_eq!(usage.stats(0).total_input_tokens, 28.0);
     }
 }

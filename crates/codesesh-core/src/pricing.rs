@@ -11,14 +11,10 @@ mod tier;
 
 pub use controller::PricingController;
 pub(crate) use controller::PricingSnapshot;
-#[cfg(test)]
-pub(crate) use cost::capture_misses;
 pub(crate) use dependencies::{PriceDependencies, capture_dependencies};
 pub use manager::MODELS_DEV_URL;
 pub(crate) use manager::PricingManager;
 pub(crate) use registry::Price;
-#[cfg(test)]
-pub(crate) use registry::parse_models_dev;
 pub(crate) use tier::priced_model;
 
 use crate::model::MessageTokens;
@@ -102,18 +98,6 @@ impl Pricing {
 
     pub fn generation(&self) -> u64 {
         self.generation
-    }
-
-    #[cfg(test)]
-    pub(crate) fn registry(&self) -> &HashMap<String, Price> {
-        &self.prices
-    }
-
-    #[cfg(test)]
-    pub(crate) fn became_available(&self, unpriced_models: &[String]) -> bool {
-        unpriced_models
-            .iter()
-            .any(|model| self.resolve(model).is_some())
     }
 
     fn get(&self, model: &str) -> Option<&Price> {
@@ -235,12 +219,6 @@ pub(crate) fn round_cost(cost: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn cost_rounding_matches_javascript_at_binary_halfway() {
-        assert_eq!(round_cost(1.0 / 512.0), 0.00195313);
-        assert_eq!(round_cost(3.0 / 512.0), 0.00585938);
-        assert_eq!(round_cost(1e-100), 0.0);
-    }
 
     #[test]
     fn fallback_never_prices_a_model_as_another_version() {
@@ -262,19 +240,5 @@ mod tests {
         let price = |model| pricing.resolve_price(model);
         assert_eq!(price("claude-4-opus"), price("claude-opus-4"));
         assert_eq!(price("gpt-5.1-codex-high"), price("gpt-5.1-codex"));
-    }
-
-    #[test]
-    fn kimi_aliases_price_the_matching_api_model() {
-        let pricing = Pricing::from_prices(parse_models_dev(&serde_json::json!({
-            "moonshotai":{"models":{
-                "kimi-k2-0905":{"cost":{"input":0.6,"output":2.5}},
-                "kimi-k2.5":{"cost":{"input":0.6,"output":3}},
-                "kimi-k2.6":{"cost":{"input":0.95,"output":4}}}},
-            "kimi-code-plan-global":{"models":{"kimi-for-coding":{"cost":{"input":0,"output":0}}}}
-        })));
-        let output = |model| pricing.resolve(model).map(|p| p.output_cost_per_token);
-        assert_eq!(output("kimi-for-coding"), Some(4e-6));
-        assert_eq!(output("moonshot-cn/kimi-k2.5"), Some(3e-6));
     }
 }

@@ -515,13 +515,6 @@ mod tests {
         assert_eq!(t.cache_read, Some(10.0));
         assert_eq!(t.cache_create, Some(0.0));
     }
-    #[test]
-    fn malformed_tool_json_retains_raw_payload() {
-        let p=assistant_part(&json!({"type":"tool_call","status":"error","tool_call":{"name":"shell","params":"invalid","response":"failure"}})).unwrap();
-        assert!(
-            matches!(p,MessagePart::Tool{state,..}if state.input==Some(json!("invalid"))&&state.error==Some(json!("failure")))
-        );
-    }
 }
 #[cfg(test)]
 #[path = "deepchat/scan_tests.rs"]

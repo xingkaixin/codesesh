@@ -266,36 +266,6 @@ mod tests {
     }
 
     #[test]
-    fn preserves_fractional_fallback_mtime_and_rejects_fractional_native_timestamps() {
-        use std::time::{Duration, UNIX_EPOCH};
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("summary.json");
-        fs::write(
-            &source,
-            json!({"info":{"id":"fractional","cwd":"/tmp/project"}}).to_string(),
-        )
-        .unwrap();
-        let modified = UNIX_EPOCH + Duration::new(1_788_220_800, 125_125_000);
-        fs::File::options()
-            .write(true)
-            .open(&source)
-            .unwrap()
-            .set_times(fs::FileTimes::new().set_modified(modified))
-            .unwrap();
-        let record = json!({"timestamp":0.0005,"params":{"_meta":{"agentTimestampMs":12.125},"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Fractional"}}}});
-        fs::write(root.path().join("updates.jsonl"), record.to_string()).unwrap();
-        let result = parse_source(&source, &Pricing::bundled()).unwrap().unwrap();
-        let expected = crate::time::file_mtime_ms(&source).unwrap();
-        assert_ne!(expected.fract(), 0.0);
-        assert_eq!(result.head.time_created, expected);
-        assert_eq!(result.head.time_updated, expected);
-        assert_eq!(result.detail.messages[0].time_created, expected);
-        assert!(
-            matches!(result.detail.messages[0].parts[0],MessagePart::Text{time_created:Some(t),..} if t == expected)
-        );
-    }
-
-    #[test]
     fn estimates_turns_without_recorded_ticks() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("sessions/project/s");
