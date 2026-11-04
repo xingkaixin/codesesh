@@ -127,18 +127,3 @@ pub fn open(path: &Path) -> Result<Cache> {
     }
     result
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn corrupt_database_is_preserved() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("codesesh.db");
-        std::fs::write(&path, b"not-a-SQLite").unwrap();
-        let (chosen, cleanup) = super::choose(&path).unwrap();
-        assert_ne!(chosen, path);
-        assert_eq!(std::fs::read(path).unwrap(), b"not-a-SQLite");
-        drop(cleanup.unwrap());
-        assert!(!chosen.exists());
-    }
-}

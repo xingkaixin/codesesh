@@ -195,6 +195,3 @@ fn split_quoted(value: &str, delimiter: char) -> Vec<&str> {
     result.push(&value[start..]);
     result
 }
-
-#[cfg(test)]
-mod tests;

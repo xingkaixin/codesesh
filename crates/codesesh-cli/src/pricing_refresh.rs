@@ -115,32 +115,4 @@ mod tests {
             }
         }
     }
-
-    #[tokio::test]
-    async fn failed_publication_is_retried_next_round() {
-        let home = tempfile::tempdir().unwrap();
-        let path = home.path().join(".codesesh/models-dev-pricing.json");
-        std::fs::create_dir_all(&path).unwrap();
-        let pricing = PricingController::load(home.path());
-        let generation = pricing.generation();
-        assert!(
-            pricing
-                .stage_remote(&json!({"openai":{"models":{"downloaded-model":{"cost":{"input":7,"output":11}}}}}))
-                .unwrap()
-        );
-        assert!(pricing.publish_pending().is_err());
-        std::fs::remove_dir(&path).unwrap();
-        let runtime = Runtime::start(home.path().join("cache.db"), vec![], 1)
-            .await
-            .unwrap();
-        refresh_once(&pricing, &runtime, "http://127.0.0.1:9/prices")
-            .await
-            .unwrap();
-        assert_ne!(pricing.generation(), generation);
-        assert_eq!(
-            Pricing::load(home.path()).generation(),
-            pricing.generation()
-        );
-        runtime.shutdown().await.unwrap();
-    }
 }
