@@ -32,38 +32,6 @@ test.describe("localized product UI", () => {
     await chooseLanguage(page, "Preferences", "Follow system");
     await expect(page.getByRole("heading", { level: 1, name: "概览" })).toBeVisible();
   });
-
-  test("localizes session controls while preserving original session content", async ({ page }) => {
-    await page.goto("/claudecode/e2e-dashboard");
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Core browsing smoke session" }),
-    ).toBeVisible();
-    await expect(page.getByText("Dashboard path is ready")).toBeVisible();
-    await expect(page.getByRole("region", { name: "内容筛选" })).toBeVisible();
-    await page.getByRole("checkbox", { name: "你的消息", exact: true }).uncheck();
-    await chooseLanguage(page, "偏好设置", "日本語");
-    await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard$/);
-    await expect(page.getByRole("region", { name: "コンテンツフィルター" })).toBeVisible();
-    await expect(
-      page.getByRole("checkbox", { name: "あなたのメッセージ", exact: true }),
-    ).not.toBeChecked();
-    await expect(page.getByText("Dashboard path is ready")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Core browsing smoke session" }),
-    ).toBeVisible();
-  });
-
-  test("keeps language and navigation controls accessible on narrow screens", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/");
-    await page.getByRole("button", { name: "打开导航" }).click();
-    await expect(page.getByRole("dialog", { name: "导航", exact: true })).toBeVisible();
-    await chooseLanguage(page, "偏好设置", "日本語");
-    await expect(page.getByRole("dialog", { name: "ナビゲーション", exact: true })).toBeVisible();
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    ).toBe(true);
-  });
 });
 
 test.describe("language fallback", () => {

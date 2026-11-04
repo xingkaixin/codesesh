@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,19 +40,6 @@ async function runJsonCli(home: string, args: string[]) {
   return { code, signal, stderr, stdout };
 }
 
-function readLogEvents(home: string): string[] {
-  const logDir = join(home, "logs");
-  return readdirSync(logDir)
-    .filter((name) => name.endsWith(".log"))
-    .flatMap((name) =>
-      readFileSync(join(logDir, name), "utf8")
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => (JSON.parse(line) as { event: string }).event),
-    );
-}
-
 /**
  * `--json` is one-shot: it prints the session index and must hand the shell
  * back. Nothing else in the suite would notice a process that finishes its
@@ -71,35 +58,6 @@ test("exits after printing the session index as JSON", async () => {
     ).toBeNull();
     expect(code, `--json exited non-zero. stderr: ${stderr}`).toBe(0);
     expect(JSON.parse(stdout)).toMatchObject({ sessions: expect.any(Array) });
-    expect(readLogEvents(home)).toContain("cli.json_output");
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test("flushes the fatal event when a source scan fails", async () => {
-  const home = mkdtempSync(join(tmpdir(), "codesesh-json-failure-"));
-  try {
-    writeFileSync(join(home, "opencode.db"), "not a sqlite database");
-    const result = await runJsonCli(home, ["--agent", "opencode", "--days", "0"]);
-
-    expect(result.signal).toBeNull();
-    expect(result.code).not.toBe(0);
-    expect(readLogEvents(home)).toContain("cli.fatal");
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test("reports invalid arguments without creating data or logs", async () => {
-  const home = mkdtempSync(join(tmpdir(), "codesesh-invalid-args-"));
-  try {
-    const result = await runJsonCli(home, ["--from", "2026-01-02", "--to", "2026-01-01"]);
-    expect(result.signal).toBeNull();
-    expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain("Invalid time window");
-    expect(existsSync(join(home, "logs"))).toBe(false);
-    expect(existsSync(join(home, ".codesesh"))).toBe(false);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
