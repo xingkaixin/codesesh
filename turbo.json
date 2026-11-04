@@ -26,10 +26,6 @@
       "cache": true,
       "dependsOn": ["^build"]
     },
-    "test:bundle": {
-      "cache": true,
-      "dependsOn": ["build"]
-    },
     "typecheck": {
       "cache": true,
       "dependsOn": ["^build"],

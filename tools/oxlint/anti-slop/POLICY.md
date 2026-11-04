@@ -67,13 +67,9 @@ nearby `SAFETY:` comment. An exception must describe the boundary, required
 methods, invalid test input, or runtime invariant; “legacy” alone is not enough.
 `reportUnusedDisableDirectives: "error"` rejects stale suppressions.
 
-`pnpm exec vitest run scripts/anti-slop.test.mjs` exercises the vendored plugin
-through the installed Oxlint CLI. It checks accepted and rejected contracts,
-local exception boundaries, stale suppressions, JSDoc/overload attachment, and
-fix/format stability. These tests also run in the existing coverage CI job.
-The normal workspace lint commands load the same root plugin configuration.
+The normal workspace lint commands load the root plugin configuration.
 
 Keep `@oxlint/plugins` aligned with the installed Oxlint version. On upgrade,
 compare against the source revision in `UPSTREAM.md`, preserve the decisions
-above, rerun rule tests, and reassess diagnostics without adding a baseline.
+above, and reassess diagnostics without adding a baseline.
 These AST rules are guardrails, not proof of complete type or complexity safety.

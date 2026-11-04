@@ -21,7 +21,6 @@ cargo test --workspace --locked
 - 前端：`pnpm lint`、`pnpm format:check`、`pnpm typecheck` 和相关 Vitest 测试。
 - 改 CLI、HTTP、SSE 或持久化：`pnpm test:backend`。
 - 改界面流程：`pnpm test:e2e`。
-- 改前端依赖或入口：`pnpm --filter @codesesh/web test:bundle`。
 - 改文档：`node scripts/check-docs-paths.mjs` 和 `node scripts/check-docs-facts.mjs`。
 - 改版本号：`node scripts/release-preflight.mjs`。
 - 重命名或新增平台相关模块时，同步 `package.json` 中 `test:rust:platform` 的过滤条件。
