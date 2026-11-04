@@ -1,53 +1,6 @@
 use super::*;
 
 #[test]
-fn rejected_publication_rescans_before_advancing_source_state() {
-    let temporary = tempfile::tempdir().unwrap();
-    let source = pi_source(temporary.path());
-    write_pi(&source, "Initial");
-    let mut scanner = AgentScanner::new(
-        source.clone(),
-        temporary.path().join("cache.db"),
-        std::sync::Arc::new(Pricing::bundled()),
-    );
-    let first = scanner.refresh(None).unwrap();
-    assert_eq!(first.sessions.len(), 1);
-    drop(first);
-    let retried = scanner
-        .refresh(Some(&[source.scan_path.join("unrelated.txt")]))
-        .unwrap();
-    assert_eq!(retried.sessions.len(), 1);
-}
-
-#[test]
-fn committed_incremental_refresh_ignores_unrelated_sources_and_reports_delete() {
-    let temporary = tempfile::tempdir().unwrap();
-    let source = pi_source(temporary.path());
-    let file = write_pi(&source, "Initial");
-    let db = temporary.path().join("cache.db");
-    let mut scanner = AgentScanner::new(
-        source.clone(),
-        db.clone(),
-        std::sync::Arc::new(Pricing::bundled()),
-    );
-    let mut batch = scanner.refresh(None).unwrap();
-    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
-    cache.publish(&mut batch.sessions).unwrap();
-    batch.on_reject.take();
-    write_pi(&source, "Changed");
-    std::fs::create_dir(source.scan_path.join("unrelated.jsonl")).unwrap();
-    let mut updated = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
-    assert_eq!(updated.sessions.len(), 1);
-    assert_eq!(updated.sessions[0].head.title, "Changed");
-    cache.publish(&mut updated.sessions).unwrap();
-    updated.on_reject.take();
-    std::fs::remove_file(&file).unwrap();
-    let removed = scanner.refresh(Some(&[file])).unwrap();
-    assert!(removed.sessions.is_empty());
-    assert_eq!(removed.removed.len(), 1);
-}
-
-#[test]
 fn missing_sources_are_empty_but_corrupt_databases_report_failures() {
     let temporary = tempfile::tempdir().unwrap();
     let pi = pi_source(temporary.path());

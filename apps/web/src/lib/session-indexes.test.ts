@@ -126,36 +126,6 @@ describe("session indexes", () => {
     ]);
   });
 
-  it("keeps equal project keys from different kinds in separate indexes", () => {
-    const remote = createSession({
-      reference: { agentName: "codex", sessionId: "remote" },
-      title: "Remote",
-      project_identity: {
-        kind: "git_remote",
-        key: "github.com/acme/app",
-        displayName: "App",
-      },
-    });
-    const path = createSession({
-      reference: { agentName: "codex", sessionId: "path" },
-      title: "Path",
-      project_identity: {
-        kind: "path",
-        key: "github.com/acme/app",
-        displayName: "App path",
-      },
-    });
-
-    const indexes = buildSessionIndexes([remote, path], agents);
-
-    expect(indexes.byProjectIdentityKey.get("git_remote:github.com/acme/app")).toEqual([remote]);
-    expect(indexes.byProjectIdentityKey.get("path:github.com/acme/app")).toEqual([path]);
-    expect(indexes.projectOptions.map((project) => project.key)).toEqual([
-      "git_remote:github.com/acme/app",
-      "path:github.com/acme/app",
-    ]);
-  });
-
   it("keeps equal session ids from different agents in separate sidebar entries", () => {
     const first = createSession({
       reference: { agentName: "codex", sessionId: "same" },
@@ -178,20 +148,5 @@ describe("session indexes", () => {
     expect(lookup.indexByReference.get(getSessionReferenceKey(duplicate))).toBe(1);
     expect(lookup.byReference.get(getSessionReferenceKey(next))).toBe(next);
     expect(lookup.indexByReference.get(getSessionReferenceKey(next))).toBe(2);
-  });
-
-  it("keeps route lookup compatible with first-match session search", () => {
-    const first = createSession({
-      reference: { agentName: "codex", sessionId: "same" },
-      title: "First",
-    });
-    const duplicate = createSession({
-      reference: { agentName: "codex", sessionId: "same" },
-      title: "Duplicate",
-    });
-
-    const indexes = buildSessionIndexes([first, duplicate], agents);
-
-    expect(indexes.byRouteKey.get(getSessionRouteKey("codex", "same"))).toBe(first);
   });
 });

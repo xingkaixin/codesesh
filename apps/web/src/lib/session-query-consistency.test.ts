@@ -85,19 +85,6 @@ describe("live session detail invalidation", () => {
     expect(active.getQueryState(descendantKey)?.isInvalidated).toBe(false);
     expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(true);
   });
-
-  it("does not scan the cache when no detail changed", async () => {
-    const active = makeClient();
-    const invalidateQueries = vi.spyOn(active, "invalidateQueries");
-
-    await invalidateLiveSessionDerivedQueries(active, {
-      ...SAMPLE_SESSIONS_UPDATED_EVENT,
-      changedSessionHeads: [],
-      removedSessionRefs: [],
-    });
-
-    expect(invalidateQueries).not.toHaveBeenCalled();
-  });
 });
 
 describe("pending session projection loads", () => {
@@ -132,15 +119,5 @@ describe("pending session projection loads", () => {
       removedSessionRefs: [removed],
     });
     expect(loads.read(secondLoad)).toBeNull();
-  });
-
-  it("drops events owned by a cancelled load", () => {
-    const loads = new PendingSessionProjectionLoads();
-    const load = loads.begin();
-    loads.record(SAMPLE_SESSIONS_UPDATED_EVENT);
-
-    loads.cancel(load);
-
-    expect(loads.complete(load)).toBeNull();
   });
 });

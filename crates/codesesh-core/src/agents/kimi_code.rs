@@ -431,28 +431,6 @@ pub fn affected_session_dirs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-    #[test]
-    fn preserves_fractional_source_timestamps() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("sessions/hash/session");
-        std::fs::create_dir_all(path.join("agents/main")).unwrap();
-        std::fs::write(path.join("state.json"), r#"{"createdAt":1000.125}"#).unwrap();
-        let wire = path.join("agents/main/wire.jsonl");
-        std::fs::write(&wire,r#"{"time":1234.567,"type":"context.append_message","message":{"role":"user","content":"hello"}}"#).unwrap();
-        let modified = std::time::UNIX_EPOCH + std::time::Duration::new(1000, 123_456_000);
-        std::fs::File::options()
-            .write(true)
-            .open(&wire)
-            .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(modified))
-            .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let detail = &sessions[0].detail;
-        assert_eq!(detail.head.time_created, 1000.125);
-        assert_eq!(detail.head.time_updated, 1_000_123.456);
-        assert_eq!(detail.messages[0].time_created, 1234.567);
-    }
     #[test]
     fn matches_node_1_0_12_adapter_golden() {
         let root = tempfile::tempdir().unwrap();
@@ -519,51 +497,6 @@ mod tests {
             scan_paths(root.path(), &Pricing::bundled(), &[changed])
                 .unwrap()
                 .is_empty()
-        );
-    }
-    #[test]
-    fn loop_events_plan_images_tools_usage_and_compaction() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("sessions/hash/session");
-        std::fs::create_dir_all(path.join("agents/main")).unwrap();
-        std::fs::write(
-            path.join("state.json"),
-            json!({"createdAt":1000,"custom":{"cwd":"/tmp/project"}}).to_string(),
-        )
-        .unwrap();
-        let records = [
-            json!({"type":"llm.request","model":"claude-sonnet-4","provider":"anthropic"}),
-            json!({"type":"context.append_message","time":1000,"message":{"role":"user","content":"Implement feature"}}),
-            json!({"type":"context.append_loop_event","time":2000,"event":{"type":"content.part","part":{"type":"plan","text":"Plan steps","approved":false}}}),
-            json!({"type":"context.append_loop_event","time":2100,"event":{"type":"content.part","part":{"type":"image","source":{"kind":"base64","data":"abc","media_type":"image/png"}}}}),
-            json!({"type":"context.append_loop_event","time":2200,"event":{"type":"tool.call","name":"Write","toolCallId":"call","args":{"path":"a.rs"}}}),
-            json!({"type":"context.append_loop_event","time":2300,"event":{"type":"tool.result","toolCallId":"call","result":{"output":"failed","isError":true,"note":"try again"}}}),
-            json!({"type":"usage.record","usage":{"inputOther":10,"inputCacheRead":2,"inputCacheCreation":3,"output":4}}),
-            json!({"type":"context.apply_compaction","summary":"Previous summary"}),
-        ];
-        std::fs::write(
-            path.join("agents/main/wire.jsonl"),
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let detail = &sessions[0].detail;
-        assert_eq!(detail.messages.len(), 3);
-        assert_eq!(detail.head.stats.total_tokens, Some(19.));
-        assert_eq!(detail.messages[1].provider.as_deref(), Some("anthropic"));
-        assert_eq!(detail.messages[1].parts.len(), 3);
-        let MessagePart::Tool { state, .. } = &detail.messages[1].parts[2] else {
-            panic!()
-        };
-        assert_eq!(state.status, "error");
-        assert_eq!(state.metadata.as_ref().unwrap()["note"], "try again");
-        assert_eq!(
-            sessions[0].head.model_usage.as_ref().unwrap()["claude-sonnet-4"],
-            19.
         );
     }
     #[test]

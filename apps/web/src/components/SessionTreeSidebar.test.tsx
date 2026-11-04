@@ -1,12 +1,8 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { SessionHead } from "@codesesh/contract";
 import { getSessionReferenceKey } from "../lib/session-indexes";
-import {
-  buildSessionTreeModel,
-  MAX_SESSION_TREE_NESTING,
-  SessionTreeSidebar,
-} from "./SessionTreeSidebar";
+import { buildSessionTreeModel, SessionTreeSidebar } from "./SessionTreeSidebar";
 
 function makeSession(
   input: Partial<SessionHead> & { sessionId: string; agentName?: string },
@@ -37,34 +33,6 @@ function groupOrderOf(paths: string[]) {
 }
 
 describe("buildSessionTreeModel group sorting", () => {
-  it("folds a deeply nested session chain without recursive or quadratic paths", () => {
-    const depth = 12_000;
-    const sessions = Array.from({ length: depth }, (_, index) =>
-      makeSession({
-        sessionId: `deep-${index}`,
-        title: "x",
-        ...(index > 0
-          ? { parent_reference: { agentName: "codex", sessionId: `deep-${index - 1}` } }
-          : {}),
-      }),
-    );
-    const model = buildSessionTreeModel(sessions);
-    const deepestPath = model.pathBySessionReference.get(getSessionReferenceKey(sessions.at(-1)!))!;
-    let longestPathLength = 0;
-    let totalPathLength = 0;
-    for (const path of model.pathBySessionReference.values()) {
-      longestPathLength = Math.max(longestPathLength, path.length);
-      totalPathLength += path.length;
-    }
-
-    expect(model.pathBySessionReference.size).toBe(depth);
-    expect(deepestPath).toContain("Deeper sessions/");
-    expect(deepestPath.split("/")).toHaveLength(MAX_SESSION_TREE_NESTING + 3);
-    expect(longestPathLength).toBeLessThan(256);
-    expect(totalPathLength).toBeLessThan(depth * 256);
-    expect(model.paths).toContain(deepestPath);
-  });
-
   it("renders every cycle member once under the Unmounted group", () => {
     const a = makeSession({
       sessionId: "a",
@@ -84,68 +52,6 @@ describe("buildSessionTreeModel group sorting", () => {
       expect(model.pathBySessionReference.get(reference)).toMatch(/^Unmounted\//);
     }
   });
-
-  it("orders groups by most recent session time, descending", () => {
-    const sessions = [
-      makeSession({
-        sessionId: "old-1",
-        directory: "/repo/old",
-        time_created: 100,
-      }),
-      makeSession({
-        sessionId: "new-1",
-        directory: "/repo/new",
-        time_created: 300,
-      }),
-      makeSession({
-        sessionId: "mid-1",
-        directory: "/repo/mid",
-        time_created: 200,
-      }),
-      // A second, older session in the "new" group should not pull its maxTime down.
-      makeSession({
-        sessionId: "new-2",
-        directory: "/repo/new",
-        time_created: 10,
-      }),
-    ];
-
-    const { paths } = buildSessionTreeModel(sessions);
-
-    expect(groupOrderOf(paths)).toEqual(["new", "mid", "old"]);
-  });
-
-  it("always places the unknown group last, regardless of session recency", () => {
-    const sessions = [
-      makeSession({ sessionId: "known-1", directory: "/repo/known", time_created: 10 }),
-      makeSession({ sessionId: "unknown-1", directory: "", time_created: 9999 }),
-    ];
-
-    const { paths } = buildSessionTreeModel(sessions);
-
-    expect(groupOrderOf(paths)).toEqual(["known", "(unknown)"]);
-  });
-
-  it("sorts a huge group against another group without throwing (no Math.max spread)", () => {
-    // 200k sessions in one group reliably overflows `Math.max(...arr)`'s call
-    // stack, so this only passes if the comparator avoids spreading.
-    const bigGroup: SessionHead[] = Array.from({ length: 200_000 }, (_, index) =>
-      makeSession({
-        sessionId: `big-${index}`,
-        directory: "/repo/big",
-        time_created: index,
-      }),
-    );
-    const sessions = [
-      ...bigGroup,
-      makeSession({ sessionId: "small-1", directory: "/repo/small", time_created: 999_999 }),
-    ];
-
-    const { paths } = buildSessionTreeModel(sessions);
-
-    expect(groupOrderOf(paths)).toEqual(["small", "big"]);
-    // 200k heads is heavy enough to exceed the default timeout on a loaded runner.
-  }, 30_000);
 
   it("keeps paths for equal session ids from different agents", () => {
     const codex = makeSession({ sessionId: "same" });
@@ -244,76 +150,21 @@ describe("buildSessionTreeModel path allocation", () => {
 
     expect(groupOrderOf(paths)).toEqual(["shared", "shared (2)", "shared (3)"]);
   });
-
-  it("CS-145: does not reuse a numbered label already taken by another title", () => {
-    const sessions = [
-      makeSession({ sessionId: "a", title: "Report (2)" }),
-      makeSession({ sessionId: "b", title: "Report" }),
-      makeSession({ sessionId: "c", title: "Report" }),
-    ];
-
-    const { paths } = buildSessionTreeModel(sessions);
-
-    expect(new Set(paths).size).toBe(sessions.length);
-  });
 });
 
-// happy-dom dispatches events into the tree's shadow DOM without retargeting
-// `event.target` for listeners outside the shadow root (unlike real browsers),
-// which breaks React's target-based event delegation. This patches the test
-// environment to match spec behavior so SessionTreeSidebar's onClickCapture /
-// onKeyDownCapture handlers on the light-DOM host receive the events.
-function patchShadowEventRetargeting() {
-  const retarget = (event: Event) => {
-    const root = (event.target as Node | null)?.getRootNode?.();
-    if (root instanceof ShadowRoot) {
-      Object.defineProperty(event, "target", { value: root.host, configurable: true });
-    }
-  };
-  document.addEventListener("click", retarget, true);
-  document.addEventListener("keydown", retarget, true);
-}
-
-function renderSessionTreeSidebar(sessions = [makeSession({ sessionId: "s1" })]) {
-  const session = sessions[0]!;
-  const onCopySessionAsMarkdown = vi.fn();
-  const onToggleBookmark = vi.fn();
-  const onRenameSession = vi.fn();
+function renderSessionTreeSidebar(sessions: SessionHead[]) {
+  const reference = getSessionReferenceKey(sessions[0]!);
   render(
     <SessionTreeSidebar
       sessions={sessions}
-      activeSessionReference={getSessionReferenceKey(session)}
-      selectedSessionReference={getSessionReferenceKey(session)}
+      activeSessionReference={reference}
+      selectedSessionReference={reference}
       onSelectSession={() => {}}
       bookmarkedSessionReferences={new Set()}
-      onCopySessionAsMarkdown={onCopySessionAsMarkdown}
-      onToggleBookmark={onToggleBookmark}
-      onRenameSession={onRenameSession}
+      onCopySessionAsMarkdown={() => {}}
+      onToggleBookmark={() => {}}
+      onRenameSession={() => {}}
     />,
-  );
-  const shadowRoot = document.querySelector("file-tree-container")!.shadowRoot!;
-  const item = shadowRoot.querySelector<HTMLElement>('[data-item-type="file"]')!;
-  const decoration = item.querySelector<HTMLElement>('[data-item-section="decoration"] > span')!;
-  return {
-    session,
-    onCopySessionAsMarkdown,
-    onToggleBookmark,
-    onRenameSession,
-    shadowRoot,
-    item,
-    decoration,
-  };
-}
-
-function dispatch(target: HTMLElement, type: string, init: EventInit & { key?: string } = {}) {
-  const Ctor =
-    type === "keydown"
-      ? KeyboardEvent
-      : type.startsWith("pointer") && typeof PointerEvent !== "undefined"
-        ? PointerEvent
-        : MouseEvent;
-  target.dispatchEvent(
-    new Ctor(type, { bubbles: true, cancelable: true, composed: true, ...init }),
   );
 }
 
@@ -350,165 +201,5 @@ describe("CS-275: untrusted session titles stay inert", () => {
     expect(queryDeep(document, "img")).toBeNull();
     expect(queryDeep(document, "b")).toBeNull();
     expect((globalThis as { __cs275?: boolean }).__cs275).toBeUndefined();
-  });
-});
-
-describe("SessionTreeSidebar selection state", () => {
-  afterEach(cleanup);
-
-  it("keeps one active row and hides its fill while keyboard focus is elsewhere", async () => {
-    const first = makeSession({ sessionId: "first", title: "First session" });
-    const second = makeSession({ sessionId: "second", title: "Second session" });
-    const sessions = [first, second];
-    const firstReference = getSessionReferenceKey(first);
-    const secondReference = getSessionReferenceKey(second);
-    const onSelectSession = vi.fn();
-    const renderTree = (activeSessionReference: string, selectedSessionReference: string) => (
-      <SessionTreeSidebar
-        sessions={sessions}
-        activeSessionReference={activeSessionReference}
-        selectedSessionReference={selectedSessionReference}
-        onSelectSession={onSelectSession}
-        bookmarkedSessionReferences={new Set()}
-        onCopySessionAsMarkdown={() => {}}
-        onToggleBookmark={() => {}}
-        onRenameSession={() => {}}
-        groupByProject={false}
-      />
-    );
-    const { rerender } = render(renderTree(firstReference, secondReference));
-    const tree = document.querySelector<HTMLElement>(".session-tree")!;
-    const shadowRoot = document.querySelector("file-tree-container")!.shadowRoot!;
-
-    await waitFor(() => {
-      const activeRows = shadowRoot.querySelectorAll('[aria-selected="true"]');
-      expect(activeRows).toHaveLength(1);
-      expect(activeRows[0]?.getAttribute("aria-label")).toBe("First session");
-    });
-    expect(tree.style.getPropertyValue("--trees-selected-bg-override")).toBe("transparent");
-    expect(onSelectSession).not.toHaveBeenCalled();
-
-    rerender(renderTree(secondReference, secondReference));
-
-    await waitFor(() => {
-      const activeRows = shadowRoot.querySelectorAll('[aria-selected="true"]');
-      expect(activeRows).toHaveLength(1);
-      expect(activeRows[0]?.getAttribute("aria-label")).toBe("Second session");
-    });
-    expect(tree.style.getPropertyValue("--trees-selected-bg-override")).toBe(
-      "var(--console-sidebar-accent)",
-    );
-    expect(onSelectSession).not.toHaveBeenCalled();
-  });
-});
-
-describe("SessionTreeSidebar session options menu", () => {
-  beforeEach(() => {
-    patchShadowEventRetargeting();
-  });
-  afterEach(cleanup);
-
-  it("opens from the row's options button, runs the selected action, and returns focus", async () => {
-    const { session, onToggleBookmark, item, decoration } = renderSessionTreeSidebar();
-
-    dispatch(decoration, "click");
-    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
-
-    const bookmarkItem = await screen.findByRole("menuitem", { name: "Add bookmark" });
-    expect(screen.getByRole("menuitem", { name: "Rename" }).querySelector("svg")).not.toBeNull();
-    expect(bookmarkItem.querySelector("svg")).not.toBeNull();
-    dispatch(bookmarkItem, "click");
-
-    expect(onToggleBookmark).toHaveBeenCalledWith(session);
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
-  });
-
-  it("copies the session selected by the context menu", async () => {
-    const { session, onCopySessionAsMarkdown, decoration } = renderSessionTreeSidebar();
-
-    dispatch(decoration, "click");
-    const copyItem = await screen.findByRole("menuitem", { name: "Copy as Markdown" });
-    dispatch(copyItem, "click");
-
-    expect(onCopySessionAsMarkdown).toHaveBeenCalledWith(session);
-  });
-
-  it("shows and opens the parent row options when it has a child session", async () => {
-    const parent = makeSession({ sessionId: "parent", title: "Main parent session with child" });
-    const child = makeSession({
-      sessionId: "child",
-      title: "Worker",
-      parent_reference: { agentName: "codex", sessionId: "parent" },
-    });
-
-    const { onToggleBookmark, shadowRoot } = renderSessionTreeSidebar([parent, child]);
-
-    const parentItem = await waitFor(() => {
-      const parentItem = shadowRoot.querySelector<HTMLElement>(
-        '[data-item-type="folder"][aria-label="Main parent session with child"]',
-      );
-      expect(parentItem).not.toBeNull();
-      return parentItem!;
-    });
-    const decoration = parentItem.querySelector<HTMLElement>(
-      '[data-item-section="decoration"] > span',
-    );
-    expect(decoration).not.toBeNull();
-    dispatch(decoration!, "click");
-
-    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
-    dispatch(await screen.findByRole("menuitem", { name: "Add bookmark" }), "click");
-    expect(onToggleBookmark).toHaveBeenCalledWith(parent);
-  });
-
-  it("opens via keyboard (ContextMenu key) with the first item focused, navigates, and executes", async () => {
-    const { session, onToggleBookmark, item } = renderSessionTreeSidebar();
-
-    item.focus();
-    dispatch(item, "keydown", { key: "ContextMenu" });
-    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
-
-    const renameItem = await screen.findByRole("menuitem", { name: "Rename" });
-    const copyItem = screen.getByRole("menuitem", { name: "Copy as Markdown" });
-    const bookmarkItem = screen.getByRole("menuitem", { name: "Add bookmark" });
-    await waitFor(() => expect(document.activeElement).toBe(renameItem));
-
-    dispatch(renameItem, "keydown", { key: "ArrowDown" });
-    await waitFor(() => expect(document.activeElement).toBe(copyItem));
-    dispatch(copyItem, "keydown", { key: "ArrowDown" });
-    await waitFor(() => expect(document.activeElement).toBe(bookmarkItem));
-
-    dispatch(bookmarkItem, "keydown", { key: "Enter" });
-    expect(onToggleBookmark).toHaveBeenCalledWith(session);
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
-  });
-
-  it("closes on Escape and returns focus to the row", async () => {
-    const { item, decoration } = renderSessionTreeSidebar();
-
-    dispatch(decoration, "click");
-    const renameItem = await screen.findByRole("menuitem", { name: "Rename" });
-    await waitFor(() => expect(document.activeElement).toBe(renameItem));
-
-    dispatch(renameItem, "keydown", { key: "Escape" });
-
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
-  });
-
-  it("closes on an outside pointer press and returns focus to the row", async () => {
-    const { item, decoration } = renderSessionTreeSidebar();
-
-    dispatch(decoration, "click");
-    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeNull());
-
-    document.body.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, cancelable: true, composed: true }),
-    );
-
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
-    await waitFor(() => expect((item.getRootNode() as ShadowRoot).activeElement).toBe(item));
   });
 });

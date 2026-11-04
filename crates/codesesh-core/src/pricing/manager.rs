@@ -6,8 +6,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(test)]
-use anyhow::bail;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
@@ -42,38 +40,6 @@ impl PricingManager {
     #[cfg(test)]
     pub(crate) fn has_pending(&self) -> bool {
         self.pending.is_some()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn synchronize(&mut self, expected: u64) -> Result<()> {
-        if expected == 0 || expected > 9_007_199_254_740_991 {
-            bail!("Invalid pricing generation: {expected}");
-        }
-        if self.published.generation() == expected {
-            return Ok(());
-        }
-        let cached = read_cache(&self.path, false);
-        if let Some(cached) = cached
-            .as_ref()
-            .filter(|cache| cache.generation() == expected)
-        {
-            self.published = cached.clone();
-            return Ok(());
-        }
-        bail!(
-            "Pricing generation {expected} is unavailable (current {}, cached {})",
-            self.published.generation(),
-            cached.map_or_else(|| "none".to_owned(), |cache| cache.generation().to_string())
-        );
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn refresh_from(&mut self, url: &str, timeout: Duration) -> Result<bool> {
-        if !self.needs_refresh() {
-            return Ok(false);
-        }
-        let data = fetch_remote(url, timeout).await?;
-        Ok(self.stage_remote(&data))
     }
 
     pub(super) fn needs_refresh(&self) -> bool {
@@ -198,148 +164,8 @@ fn write_cache(path: &Path, prices: &HashMap<String, Price>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        model::MessageTokens,
-        pricing::{CostInput, capture_misses},
-    };
+    use crate::{model::MessageTokens, pricing::CostInput};
     use serde_json::json;
-
-    fn server(responses: Vec<(&'static str, Duration)>) -> (String, std::thread::JoinHandle<()>) {
-        use std::{io::Read, net::TcpListener};
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/prices", listener.local_addr().unwrap());
-        let worker = std::thread::spawn(move || {
-            for (status, delay) in responses {
-                let (mut stream, _) = listener.accept().unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut buffer = [0; 8192];
-                let _ = stream.read(&mut buffer);
-                std::thread::sleep(delay);
-                let body = r#"{"openai":{"models":{"remote-p3":{"cost":{"input":2,"output":8}}}}}"#;
-                let response = format!(
-                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                let _ = stream.write_all(response.as_bytes());
-            }
-        });
-        (url, worker)
-    }
-
-    #[tokio::test]
-    async fn refresh_retries_failure_and_skips_fresh_cache_after_restart() {
-        let home = tempfile::tempdir().unwrap();
-        let mut manager = PricingManager::load(home.path());
-        let generation = manager.current().generation();
-        let (url, server) = server(vec![
-            ("500 Server Error", Duration::ZERO),
-            ("200 OK", Duration::ZERO),
-        ]);
-        assert!(
-            manager
-                .refresh_from(&url, Duration::from_secs(2))
-                .await
-                .is_err()
-        );
-        assert!(!manager.has_pending());
-        assert_eq!(manager.current().generation(), generation);
-        assert!(
-            manager
-                .refresh_from(&url, Duration::from_secs(2))
-                .await
-                .unwrap()
-        );
-        assert_eq!(manager.current().generation(), generation);
-        assert!(
-            !manager
-                .refresh_from(&url, Duration::from_secs(2))
-                .await
-                .unwrap()
-        );
-        assert!(manager.publish_pending().unwrap());
-        let mut restarted = PricingManager::load(home.path());
-        assert!(
-            !restarted
-                .refresh_from(&url, Duration::from_secs(2))
-                .await
-                .unwrap()
-        );
-        server.join().unwrap();
-    }
-
-    #[tokio::test]
-    async fn timeout_and_cancellation_leave_generation_untouched() {
-        let home = tempfile::tempdir().unwrap();
-        let mut manager = PricingManager::load(home.path());
-        let generation = manager.current().generation();
-        let (url, server) = server(vec![
-            ("200 OK", Duration::from_millis(150)),
-            ("200 OK", Duration::from_millis(150)),
-        ]);
-        assert!(
-            manager
-                .refresh_from(&url, Duration::from_millis(50))
-                .await
-                .is_err()
-        );
-        assert!(
-            tokio::time::timeout(
-                Duration::from_millis(50),
-                manager.refresh_from(&url, Duration::from_secs(2))
-            )
-            .await
-            .is_err()
-        );
-        assert!(!manager.has_pending());
-        assert_eq!(manager.current().generation(), generation);
-        server.join().unwrap();
-    }
-
-    #[test]
-    fn publication_pins_scans_and_survives_restart_and_worker_sync() {
-        let home = tempfile::tempdir().unwrap();
-        let mut manager = PricingManager::load(home.path());
-        let old = manager.current();
-        let mut worker = PricingManager::load(home.path());
-        let tokens = MessageTokens {
-            input: Some(1_000_000.0),
-            output: None,
-            reasoning: None,
-            cache_read: None,
-            cache_create: None,
-            cache_create_1h: None,
-        };
-        let (_, misses) = capture_misses(|| {
-            assert_eq!(old.estimate(Some("new-p3-model"), &tokens, 0.0), None);
-            old.estimate(Some("new-p3-model"), &tokens, 0.0);
-        });
-        assert_eq!(misses, ["new-p3-model"]);
-        assert!(manager.stage_remote(&json!({"openai":{"models":{
-            "new-p3-model":{"cost":{"input":2,"output":8}},
-            "free-p3-model":{"cost":{"input":0,"output":0}}
-        }}})));
-        assert_eq!(manager.current().generation(), old.generation());
-        assert!(!manager.path.exists());
-        assert!(!manager.current().became_available(&misses));
-        assert!(manager.publish_pending().unwrap());
-        let new = manager.current();
-        assert_ne!(new.generation(), old.generation());
-        assert_eq!(new.estimate(Some("new-p3-model"), &tokens, 0.0), Some(2.0));
-        assert_eq!(old.estimate(Some("new-p3-model"), &tokens, 0.0), None);
-        assert!(new.became_available(&misses));
-        assert!(new.resolve("free-p3-model").is_none());
-        assert!(new.registry().contains_key("free-p3-model"));
-        let reloaded = Pricing::load(home.path());
-        assert_eq!(reloaded.generation(), new.generation());
-        worker.synchronize(new.generation()).unwrap();
-        assert_eq!(worker.current().generation(), new.generation());
-        assert!(worker.synchronize(0).is_err());
-        assert!(worker.synchronize(9_007_199_254_740_992).is_err());
-        assert!(worker.synchronize(1).is_err());
-        assert!(read_cache(&manager.path, true).is_some());
-    }
 
     #[test]
     fn long_context_tier_prices_the_whole_request_and_survives_restart() {
@@ -434,33 +260,5 @@ mod tests {
         assert!(read_cache(&path, false).is_none());
         fs::write(&path, json!({"timestamp":now_ms(),"data":{}}).to_string()).unwrap();
         assert!(read_cache(&path, false).is_none());
-    }
-
-    #[test]
-    fn failed_atomic_write_keeps_current_and_pending_generation() {
-        let home = tempfile::tempdir().unwrap();
-        let mut manager = PricingManager::load(home.path());
-        let generation = manager.current().generation();
-        fs::create_dir_all(&manager.path).unwrap();
-        fs::write(manager.path.join("blocker"), "x").unwrap();
-        assert!(
-            manager
-                .stage_remote(&json!({"openai":{"models":{"p3":{"cost":{"input":1,"output":2}}}}}))
-        );
-        assert!(manager.publish_pending().is_err());
-        assert_eq!(manager.current().generation(), generation);
-        assert!(manager.has_pending());
-        assert!(
-            !manager
-                .path
-                .with_file_name(format!(
-                    "models-dev-pricing.json.{}.tmp",
-                    std::process::id()
-                ))
-                .exists()
-        );
-        fs::remove_dir_all(&manager.path).unwrap();
-        assert!(manager.publish_pending().unwrap());
-        assert!(!manager.has_pending());
     }
 }

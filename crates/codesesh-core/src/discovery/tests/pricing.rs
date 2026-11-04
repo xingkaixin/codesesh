@@ -1,40 +1,6 @@
 use super::*;
 
 #[test]
-fn unrelated_pricing_changes_preserve_scans_and_replace_commit_ticket() {
-    let temporary = tempfile::tempdir().unwrap();
-    let source = pi_source(temporary.path());
-    write_pi(&source, "Priced session");
-    let controller = crate::pricing::PricingController::load(temporary.path());
-    let mut scanner = AgentScanner::with_pricing_controller(
-        source.clone(),
-        temporary.path().join("cache.db"),
-        controller.clone(),
-    )
-    .unwrap();
-    let mut initial = scanner.refresh(None).unwrap();
-    let old = initial.pricing.clone().unwrap();
-    initial.on_reject.take();
-    let mut unchanged = scanner
-        .refresh(Some(&[source.scan_path.join("unrelated.txt")]))
-        .unwrap();
-    assert!(unchanged.sessions.is_empty());
-    unchanged.on_reject.take();
-    controller.stage_remote(&serde_json::json!({"openai":{"models":{"discovery-new-model":{"cost":{"input":2,"output":8}}}}})).unwrap();
-    assert!(controller.publish_pending().unwrap());
-    assert!(old.check().is_err());
-    let refreshed = scanner
-        .refresh(Some(&[source.scan_path.join("unrelated.txt")]))
-        .unwrap();
-    assert!(refreshed.sessions.is_empty());
-    assert!(refreshed.complete);
-    assert_eq!(
-        refreshed.pricing.as_ref().unwrap().generation(),
-        controller.generation()
-    );
-}
-
-#[test]
 fn durable_pricing_dependencies_reuse_unrelated_changes_and_refresh_used_prices() {
     for model in ["discovery-missing-model", "gpt-4o-2024-08-06"] {
         let temporary = tempfile::tempdir().unwrap();

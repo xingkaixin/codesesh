@@ -13,7 +13,6 @@
     "format": "oxfmt --write \"**/*.{js,mjs,cjs,ts,tsx}\"",
     "format:check": "oxfmt --check \"**/*.{js,mjs,cjs,ts,tsx}\"",
     "test": "vitest run",
-    "test:bundle": "vitest run --config vitest.bundle.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

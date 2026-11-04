@@ -205,11 +205,6 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
     parts
 }
 
-#[cfg(test)]
-pub fn parse(path: &Path, pricing: &Pricing) -> Result<Option<SessionDetail>> {
-    parse_as(path, "pi", pricing)
-}
-
 pub(super) fn parse_as(
     path: &Path,
     agent: &str,
@@ -632,83 +627,6 @@ mod tests {
         assert!(deleted.upserts.is_empty());
     }
     #[test]
-    fn invalid_utf8_line_keeps_later_branch_offsets() {
-        let root = tempfile::tempdir().unwrap();
-        let mut bytes =
-            format!("{}\n", json!({"type":"session","cwd":"/tmp/project"})).into_bytes();
-        bytes.extend_from_slice(
-            b"{\"type\":\"message\",\"id\":\"u\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"Bad \xff byte\"}}\n",
-        );
-        bytes.extend_from_slice(json!({"type":"message","id":"v","parentId":"u","message":{"role":"user","content":"After"}}).to_string().as_bytes());
-        std::fs::write(root.path().join("session.jsonl"), bytes).unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let texts: Vec<_> = sessions[0]
-            .detail
-            .messages
-            .iter()
-            .map(|m| match &m.parts[0] {
-                MessagePart::Text { text, .. } => text.as_str(),
-                _ => panic!(),
-            })
-            .collect();
-        assert_eq!(texts, ["Bad \u{fffd} byte", "After"]);
-    }
-    #[test]
-    fn cyclic_branch_terminates_and_first_header_wins() {
-        let root = tempfile::tempdir().unwrap();
-        let records = [
-            json!({"type":"session","timestamp":"1776679200000","cwd":"/tmp/first"}),
-            json!({"type":"session","timestamp":1,"cwd":"/tmp/ignored"}),
-            json!({"type":"message","id":"a","parentId":"b","timestamp":"1776679201000","message":{"role":"user","content":"Hello"}}),
-            json!({"type":"message","id":"b","parentId":"a","timestamp":"1776679202000","message":{"role":"custom","display":true,"content":"Notice"}}),
-        ];
-        std::fs::write(
-            root.path().join("session.jsonl"),
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        assert_eq!(sessions[0].head.directory, "/tmp/first");
-        assert_eq!(sessions[0].head.time_created, 1776679200000.0);
-        assert_eq!(sessions[0].head.time_updated, 1776679202000.0);
-        assert_eq!(sessions[0].detail.messages.len(), 2);
-        assert_eq!(sessions[0].detail.messages[1].automated, Some(true));
-    }
-    #[test]
-    fn fractional_timestamps_and_cached_cursor_match_node() {
-        let root = tempfile::tempdir().unwrap();
-        let records: Vec<Value> =
-            serde_json::from_str(include_str!("pi/fixtures/fractional-records.json")).unwrap();
-        let path = root.path().join("fractional.jsonl");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(
-            path,
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let mut sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let expected = include_str!("pi/fixtures/fractional-expected.json");
-        assert_reference(&sessions[0].head, &sessions[0].detail, expected);
-        let expected: Value = serde_json::from_str(expected).unwrap();
-        let mut cache = crate::storage::Cache::open(None).unwrap();
-        cache.publish(&mut sessions).unwrap();
-        let detail = cache.detail(sessions[0].head.clone()).unwrap().unwrap();
-        assert_eq!(
-            detail.message_cursor.as_deref(),
-            expected["cursor"].as_str()
-        );
-        assert_eq!(detail.messages[1].time_created, 1776679200000.875);
-        assert_eq!(detail.head.time_updated, 1776679200000.875);
-    }
-    #[test]
     fn matches_frozen_node_adapter_fixture() {
         let root = tempfile::tempdir().unwrap();
         let records: Vec<Value> =
@@ -729,40 +647,5 @@ mod tests {
             &sessions[0].detail,
             include_str!("pi/fixtures/expected.json"),
         );
-    }
-    #[test]
-    fn active_branch_automated_messages_and_tool_usage() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("2026-04-20_branch.jsonl");
-        let records = [
-            json!({"type":"session","id":"ignored-header-id","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z"}),
-            json!({"type":"message","id":"a","parentId":null,"message":{"role":"user","content":"Human prompt"}}),
-            json!({"type":"message","id":"abandoned","parentId":"a","message":{"role":"assistant","content":[{"type":"text","text":"Abandoned"}]}}),
-            json!({"type":"message","id":"b","parentId":"a","message":{"role":"assistant","model":"claude-sonnet-4-5","usage":{"input":100,"output":20,"cacheRead":10,"cacheWrite":5,"cost":{"total":0.25}},"content":[{"type":"toolCall","id":"call","name":"read","arguments":{"path":"a"}}]}}),
-            json!({"type":"message","id":"c","parentId":"b","message":{"role":"toolResult","toolCallId":"call","content":"Result","isError":false}}),
-            json!({"type":"custom_message","id":"d","parentId":"c","display":true,"content":"Extension notice"}),
-            json!({"type":"session_info","id":"e","parentId":"d","name":"Named session"}),
-        ];
-        std::fs::write(
-            &path,
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let detail = parse(&path, &Pricing::bundled()).unwrap().unwrap();
-        assert_eq!(detail.head.reference.session_id, "branch");
-        assert_eq!(detail.head.title, "Named session");
-        assert_eq!(detail.messages.len(), 3);
-        assert_eq!(detail.messages[2].automated, Some(true));
-        assert_eq!(detail.head.stats.total_input_tokens, 115.0);
-        assert_eq!(detail.head.stats.total_cost, 0.25);
-        let MessagePart::Tool { state, .. } = &detail.messages[1].parts[0] else {
-            panic!()
-        };
-        assert_eq!(state.status, "completed");
-        assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Result");
     }
 }

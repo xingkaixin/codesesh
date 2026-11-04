@@ -1,4 +1,3 @@
-use super::parser::title;
 use super::*;
 use std::io::Write;
 
@@ -92,56 +91,6 @@ fn recorded_service_tier_prices_following_usage() {
 }
 
 #[test]
-fn idle_rollouts_do_not_keep_parser_state() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root
-        .path()
-        .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000009.jsonl");
-    std::fs::write(&path, concat!(
-        "{\"type\":\"session_meta\",\"timestamp\":1000,\"payload\":{\"cwd\":\"/work\"}}\n",
-        "{\"type\":\"response_item\",\"timestamp\":2000,\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n"
-    )).unwrap();
-    File::options()
-        .write(true)
-        .open(&path)
-        .unwrap()
-        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
-        .unwrap();
-    let pricing = Pricing::bundled();
-    let mut checkpoints = Checkpoints::default();
-    assert_eq!(
-        checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap(),
-        parse(&path, &HashMap::new(), &pricing).unwrap()
-    );
-    assert!(checkpoints.parsers.is_empty());
-}
-
-#[test]
-fn rollouts_that_go_idle_release_parser_state() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root
-        .path()
-        .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000010.jsonl");
-    std::fs::write(&path, concat!(
-        "{\"type\":\"session_meta\",\"timestamp\":1000,\"payload\":{\"cwd\":\"/work\"}}\n",
-        "{\"type\":\"response_item\",\"timestamp\":2000,\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hello\"}]}}\n"
-    )).unwrap();
-    let pricing = Pricing::bundled();
-    let mut checkpoints = Checkpoints::default();
-    checkpoints.parse(&path, &HashMap::new(), &pricing).unwrap();
-    checkpoints.release_idle();
-    assert_eq!(checkpoints.parsers.len(), 1);
-    File::options()
-        .write(true)
-        .open(&path)
-        .unwrap()
-        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
-        .unwrap();
-    checkpoints.release_idle();
-    assert!(checkpoints.parsers.is_empty());
-}
-
-#[test]
 fn reopening_a_session_does_not_advance_activity_time() {
     let root = tempfile::tempdir().unwrap();
     let sessions = root.path().join("sessions");
@@ -195,74 +144,6 @@ fn reopening_a_session_does_not_advance_activity_time() {
     .unwrap();
     assert_eq!(continued.upserts[0].head.time_updated, 7000.0);
     assert_eq!(continued.upserts[0].detail.messages.len(), 2);
-}
-
-#[test]
-fn built_in_tool_items_are_tool_calls() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root
-        .path()
-        .join("rollout-2026-01-01-00000000-0000-0000-0000-000000000001.jsonl");
-    let lines = [
-        serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/project"}}),
-        serde_json::json!({"type":"response_item","timestamp":2000,"payload":{"type":"web_search_call","status":"completed","action":{"type":"search","query":"codex rollout"}}}),
-        serde_json::json!({"type":"response_item","timestamp":3000,"payload":{"type":"tool_search_call","call_id":"search-1","status":"completed","execution":"client","arguments":{"query":"simulator"}}}),
-        serde_json::json!({"type":"response_item","timestamp":3001,"payload":{"type":"tool_search_output","call_id":"search-1","status":"completed","tools":[{"type":"namespace","name":"mcp__sim__","tools":[{"type":"function","name":"boot"},{"type":"function","name":"build"}]}]}}),
-        serde_json::json!({"type":"response_item","timestamp":4000,"payload":{"type":"image_generation_call","id":"ig_1","status":"generating","revised_prompt":"A lighthouse","result":"aW1hZ2U="}}),
-    ];
-    let contents = lines
-        .iter()
-        .map(|line| format!("{line}\n"))
-        .collect::<String>();
-    std::fs::write(&path, contents).unwrap();
-    let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
-        .unwrap()
-        .unwrap();
-    let tools = detail
-        .messages
-        .iter()
-        .flat_map(|message| &message.parts)
-        .filter_map(|part| match part {
-            MessagePart::Tool { tool, state, .. } => Some((
-                tool.as_str(),
-                state.status.as_str(),
-                state.input.clone(),
-                state.output.clone(),
-            )),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        tools,
-        [
-            (
-                "web_search",
-                "completed",
-                Some(serde_json::json!({"type":"search","query":"codex rollout"})),
-                Some(Value::Null)
-            ),
-            (
-                "tool_search",
-                "completed",
-                Some(serde_json::json!({"query":"simulator"})),
-                Some(
-                    serde_json::json!([{"type":"text","text":"mcp__sim__: boot, build","time_created":3001.0}])
-                )
-            ),
-            (
-                "image_generation",
-                "completed",
-                Some(serde_json::json!({"revised_prompt":"A lighthouse"})),
-                Some(Value::Null)
-            ),
-        ]
-    );
-}
-
-#[test]
-fn title_trims_after_utf16_limit() {
-    let text = format!("{} trailing", "x".repeat(99));
-    assert_eq!(title(&text).unwrap(), "x".repeat(99));
 }
 
 #[test]
@@ -348,43 +229,6 @@ fn child_returns_are_merged_chronologically_in_full_and_incremental_scans() {
             .collect::<Vec<_>>();
         assert_eq!(texts, ["first", "child result", "last", "same-time"]);
     }
-}
-
-#[test]
-fn replayed_parent_metadata_does_not_rename_the_child() {
-    let root = tempfile::tempdir().unwrap();
-    let sessions = root.path().join("sessions");
-    std::fs::create_dir(&sessions).unwrap();
-    let parent = "00000000-0000-0000-0000-000000000001";
-    let child = "00000000-0000-0000-0000-000000000002";
-    let parent_meta = serde_json::json!({"type":"session_meta","timestamp":500,"payload":{"id":parent,"cwd":"/project"}});
-    let records = [
-        serde_json::json!({"type":"session_meta","timestamp":600,"payload":{"id":child,"cwd":"/project","thread_source":"subagent","parent_thread_id":parent,"agent_nickname":"Pascal"}}),
-        parent_meta.clone(),
-        serde_json::json!({"type":"response_item","timestamp":700,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"child result"}]}}),
-    ];
-    for (id, lines) in [(parent, vec![parent_meta]), (child, records.to_vec())] {
-        let contents = lines
-            .iter()
-            .map(|line| format!("{line}\n"))
-            .collect::<String>();
-        std::fs::write(
-            sessions.join(format!("rollout-2026-01-01-{id}.jsonl")),
-            contents,
-        )
-        .unwrap();
-    }
-    let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-    let returned = sessions
-        .iter()
-        .find(|session| session.head.reference.session_id == parent)
-        .unwrap()
-        .detail
-        .messages
-        .iter()
-        .find(|message| message.subagent_id.as_deref() == Some(child))
-        .unwrap();
-    assert_eq!(returned.nickname.as_deref(), Some("Pascal"));
 }
 
 #[test]

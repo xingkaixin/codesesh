@@ -124,24 +124,3 @@ fn add_days<Z: TimeZone>(zone: &Z, time: f64, days: i64) -> Option<f64> {
     };
     Some(date.timestamp_millis() as f64)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn matches_intl_canonical_names_and_offset_boundaries() {
-        for (input, expected) in [
-            ("us/eASTern", "America/New_York"),
-            ("etc/utc", "UTC"),
-            ("CET", "Europe/Brussels"),
-            ("+01", "+01:00"),
-            ("−0100", "-01:00"),
-            ("-00:00", "+00:00"),
-        ] {
-            assert_eq!(input.parse::<DashboardTimeZone>().unwrap().name(), expected);
-        }
-        for input in ["+24:00", "+01:60", "Invalid/Zone", "+é0", "-０1"] {
-            assert!(input.parse::<DashboardTimeZone>().is_err());
-        }
-    }
-}

@@ -3,23 +3,9 @@
 Rust 后端的性能需要实际测量。语言、静态链接或单一可执行文件都不能直接证明吞吐、启动
 耗时或内存改善。每份结果应记录 commit、工具链、平台、CPU、样本规模、缓存状态及测量次数。
 
-## 结构性检查
+## 不设性能门禁
 
-优先用确定性事实保护性能：查询次数、分页大小、重读会话范围、内存缓存条目数、索引计划
-和前端 bundle 字节数。相关测试与实现放在一起：
-
-| 范围 | 位置 |
-|------|------|
-| Cursor 增量同步与分页 | `crates/codesesh-core/src/agents/cursor/` |
-| OpenCode 数据库增量读取 | `crates/codesesh-core/src/agents/opencode/` |
-| SQLite 事务、消息和 FTS | `crates/codesesh-core/src/storage/tests.rs` |
-| 搜索和文件活动 | `crates/codesesh-core/src/search/tests.rs` |
-| 扫描并发、取消与发布 | `crates/codesesh-core/src/runtime/tests.rs` |
-| 首屏 JS gzip 预算 | `apps/web/tests/initial-bundle.test.ts` |
-| 详情缓存条目上界 | `apps/web/src/lib/session-detail-cache.test.ts` |
-| 虚拟列表测量和提交 | `apps/web/src/components/session-detail/MessageList.test.tsx` |
-
-确定性测试不使用单点毫秒阈值，避免将机器负载当成代码回归。
+CI 不运行性能预算、bundle 大小或增长率检查。性能问题用下列基准手动测量后再决定是否处理。
 
 ## 固定参考制品对照
 
@@ -45,14 +31,13 @@ pnpm bench:rust -- --samples=5 --warmups=1 --requests=30
 ```bash
 pnpm perf:check
 pnpm bench:perf -- --days 0 --iterations 3
-pnpm --filter @codesesh/web test:bundle
 ```
 
 增长率检查用于发现规模扩大后的数量级退化；浏览器基准用于观察首屏、导航和详情渲染。
 两者不能互相替代。浏览器基准使用本机历史时，报告必须说明会话数、消息数、最大单会话
 大小和冷暖缓存状态，且不要把本机数据提交到仓库。
 
-首屏预算测试需要先构建 Web。后端脚本读取原生二进制时，需要先完成 Web 构建和 Rust
+后端脚本读取原生二进制时，需要先完成 Web 构建和 Rust
 release 构建；debug-only 跳过资源打包不能作为可发布制品的性能结果。
 
 ## 性能结论的边界

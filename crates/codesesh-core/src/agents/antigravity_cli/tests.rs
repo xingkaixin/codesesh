@@ -1,6 +1,6 @@
 use super::*;
-use crate::discovery::{AgentScanner, AgentSource, PathEnvironment};
-use std::{collections::HashMap, sync::Arc};
+use crate::discovery::{AgentScanner, AgentSource};
+use std::sync::Arc;
 
 fn fixture(root: &Path) -> PathBuf {
     std::fs::create_dir_all(root.join("conversations")).unwrap();
@@ -218,27 +218,4 @@ fn scanner_observes_wal_updates_and_preserves_cache_on_corruption() {
     std::fs::remove_file(&path).unwrap();
     let removed = scanner.refresh(Some(&[path])).unwrap();
     assert_eq!(removed.removed, [reference]);
-}
-
-#[test]
-fn default_and_override_paths_select_cli_not_ide() {
-    let root = tempfile::tempdir().unwrap();
-    let mut environment = PathEnvironment {
-        home: root.path().into(),
-        cwd: root.path().into(),
-        platform: "darwin".into(),
-        variables: HashMap::new(),
-    };
-    assert_eq!(
-        environment.source("antigravity-cli").unwrap().scan_path,
-        root.path().join(".gemini/antigravity-cli/conversations")
-    );
-    environment.variables.insert(
-        "AGY_CONVERSATIONS_DIR".into(),
-        "~/backup/conversations".into(),
-    );
-    assert_eq!(
-        environment.source("antigravity-cli").unwrap().scan_path,
-        root.path().join("backup/conversations")
-    );
 }

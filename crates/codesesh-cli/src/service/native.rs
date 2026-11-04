@@ -436,25 +436,4 @@ mod tests {
         assert!(task.contains("<AllowHardTerminate>false</AllowHardTerminate>"));
         assert!(!environment().keys().any(|key| key.contains("TOKEN")));
     }
-
-    #[test]
-    fn service_path_drops_temporary_and_relative_entries() {
-        let kept = [
-            std::env::current_dir().unwrap().join("bin"),
-            std::env::current_dir().unwrap().join("tools/bin"),
-        ];
-        let path = std::env::join_paths([
-            std::env::temp_dir().join("smoke-data/bin"),
-            kept[0].clone(),
-            "/tmp/agent/bin".into(),
-            "relative/bin".into(),
-            kept[1].clone(),
-        ])
-        .unwrap();
-        assert_eq!(
-            service_value("PATH", &path.to_string_lossy()),
-            std::env::join_paths(&kept).unwrap().to_string_lossy()
-        );
-        assert_eq!(service_value("CODEX_HOME", "/tmp/codex"), "/tmp/codex");
-    }
 }

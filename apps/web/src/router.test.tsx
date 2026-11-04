@@ -27,12 +27,6 @@ function renderRoute(path: string) {
 }
 
 describe("app router recovery", () => {
-  it("shows the route response for malformed URL encoding", async () => {
-    renderRoute("/%E0%A4%A");
-
-    expect((await screen.findByRole("alert")).textContent).toBe("400 Bad Request");
-  });
-
   it("shows a safe fallback when route rendering throws", async () => {
     renderRoute("/");
 

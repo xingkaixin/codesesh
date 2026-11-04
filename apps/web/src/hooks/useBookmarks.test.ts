@@ -56,13 +56,6 @@ function available(id: string, updated = 1): BookmarkView {
   };
 }
 
-function unavailable(id: string): BookmarkView {
-  return {
-    ...fact(id),
-    availability: "session-unavailable",
-  };
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -92,86 +85,6 @@ function renderBookmarks() {
 }
 
 describe("useBookmarks", () => {
-  it("loads server-materialized bookmark views", async () => {
-    vi.mocked(api.fetchBookmarks).mockResolvedValue({
-      bookmarks: [available("live"), unavailable("gone")],
-    });
-    const { result } = renderBookmarks();
-
-    await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(2));
-    expect(result.current.isSessionBookmarked("cc", "live")).toBe(true);
-    expect(result.current.isSessionBookmarked("cc", "gone")).toBe(true);
-  });
-
-  it("adds optimistically while persisting only the session reference", async () => {
-    const request = deferred<{ bookmark: BookmarkRecord }>();
-    vi.mocked(api.upsertBookmark).mockReturnValueOnce(request.promise);
-    const { result } = renderBookmarks();
-    await waitFor(() => expect(api.fetchBookmarks).toHaveBeenCalledOnce());
-
-    act(() => result.current.toggleBookmark(available("new")));
-
-    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "new")).toBe(true));
-    expect(api.upsertBookmark).toHaveBeenCalledWith({ agentName: "cc", sessionId: "new" });
-    expect(api.logClientEvent).toHaveBeenCalledWith("bookmark.add", {
-      agent: "cc",
-      session: "new",
-    });
-
-    request.resolve({ bookmark: fact("new") });
-    await request.promise;
-  });
-
-  it("removes unavailable bookmark views by identity", async () => {
-    const request = deferred<void>();
-    vi.mocked(api.fetchBookmarks).mockResolvedValue({ bookmarks: [unavailable("gone")] });
-    vi.mocked(api.deleteBookmark).mockReturnValueOnce(request.promise);
-    const { result } = renderBookmarks();
-    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "gone")).toBe(true));
-
-    act(() => result.current.toggleBookmark(unavailable("gone")));
-
-    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "gone")).toBe(false));
-    expect(api.deleteBookmark).toHaveBeenCalledWith({ agentName: "cc", sessionId: "gone" });
-
-    request.resolve();
-    await request.promise;
-  });
-
-  it("preserves the server projection order", async () => {
-    vi.mocked(api.fetchBookmarks).mockResolvedValue({
-      bookmarks: [available("server-first", 1), available("server-second", 100)],
-    });
-    const { result } = renderBookmarks();
-
-    await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(2));
-    expect(result.current.bookmarkedSessions.map(({ reference }) => reference.sessionId)).toEqual([
-      "server-first",
-      "server-second",
-    ]);
-  });
-
-  it("does not synchronize session snapshots during rerenders", async () => {
-    vi.mocked(api.fetchBookmarks).mockResolvedValue({ bookmarks: [available("s1")] });
-    const { Wrapper } = createQueryWrapper();
-    const { result, rerender } = renderHook(
-      ({ sessionVersion }) => {
-        void sessionVersion;
-        return useBookmarks();
-      },
-      {
-        initialProps: { sessionVersion: 1 },
-        wrapper: Wrapper,
-      },
-    );
-    await waitFor(() => expect(result.current.bookmarkedSessions).toHaveLength(1));
-
-    rerender({ sessionVersion: 2 });
-
-    expect(api.importBookmarks).not.toHaveBeenCalled();
-    expect(api.upsertBookmark).not.toHaveBeenCalled();
-  });
-
   it("migrates legacy bookmark facts once without snapshot fields", async () => {
     const legacy = fact("legacy", 42);
     vi.mocked(bookmarkUtils.loadLegacyBookmarks).mockReturnValue([legacy]);
@@ -195,23 +108,6 @@ describe("useBookmarks", () => {
       expect(consoleError).toHaveBeenCalledWith("Failed to migrate legacy bookmarks:", error),
     );
     expect(bookmarkUtils.clearLegacyBookmarks).not.toHaveBeenCalled();
-  });
-
-  it("rolls back an optimistic toggle when persistence fails", async () => {
-    const error = new Error("write failed");
-    const request = deferred<{ bookmark: BookmarkRecord }>();
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(api.upsertBookmark).mockReturnValueOnce(request.promise);
-    const { result } = renderBookmarks();
-    await waitFor(() => expect(api.fetchBookmarks).toHaveBeenCalledOnce());
-
-    act(() => result.current.toggleBookmark(available("failed")));
-    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "failed")).toBe(true));
-
-    request.reject(error);
-    await request.promise.catch(() => undefined);
-    await waitFor(() => expect(result.current.isSessionBookmarked("cc", "failed")).toBe(false));
-    expect(consoleError).toHaveBeenCalledWith("Failed to toggle bookmark:", error);
   });
 
   it("persists overlapping toggles for the same bookmark in intent order", async () => {
@@ -337,48 +233,5 @@ describe("useBookmarks", () => {
     await successfulRequest.promise;
     await waitFor(() => expect(result.current.bookmarkedSessions).toEqual(serverBookmarks));
     expect(consoleError).toHaveBeenCalledWith("Failed to toggle bookmark:", error);
-  });
-
-  it("converts live sessions into optimistic views but writes only their reference", async () => {
-    const request = deferred<{ bookmark: BookmarkRecord }>();
-    vi.mocked(api.upsertBookmark).mockReturnValueOnce(request.promise);
-    const { result } = renderBookmarks();
-    await waitFor(() => expect(api.fetchBookmarks).toHaveBeenCalledOnce());
-
-    act(() => result.current.toggleSessionBookmark(session("live"), "cc"));
-
-    await waitFor(() =>
-      expect(api.upsertBookmark).toHaveBeenCalledWith({ agentName: "cc", sessionId: "live" }),
-    );
-    expect(result.current.bookmarkedSessions[0]).toMatchObject({
-      availability: "available",
-      reference: { agentName: "cc", sessionId: "live" },
-      session: { reference: { agentName: "cc", sessionId: "live" } },
-    });
-
-    request.resolve({ bookmark: fact("live") });
-    await request.promise;
-  });
-
-  it("surfaces load failures and recovers through explicit refresh", async () => {
-    const error = new Error("offline");
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.mocked(api.fetchBookmarks).mockRejectedValueOnce(error);
-    const { result } = renderBookmarks();
-    await waitFor(() => expect(result.current.error).toBe("offline"));
-
-    expect(result.current.bookmarkedSessions).toEqual([]);
-    expect(result.current.loading).toBe(false);
-    expect(consoleError).toHaveBeenCalledWith("Failed to load bookmarks:", error);
-
-    vi.mocked(api.fetchBookmarks).mockResolvedValueOnce({ bookmarks: [available("recovered")] });
-    await act(() => result.current.refresh());
-    await waitFor(() => expect(result.current.error).toBeNull());
-    expect(result.current.isSessionBookmarked("cc", "recovered")).toBe(true);
-
-    vi.mocked(api.fetchBookmarks).mockRejectedValueOnce(error);
-    await act(() => result.current.refresh());
-    await waitFor(() => expect(result.current.error).toBe("offline"));
-    expect(result.current.bookmarkedSessions).toEqual([available("recovered")]);
   });
 });

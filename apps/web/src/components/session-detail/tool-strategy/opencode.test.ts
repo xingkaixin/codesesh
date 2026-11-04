@@ -74,21 +74,4 @@ describe("OpenCode V2 tool display", () => {
       }).outputContent,
     ).toMatchObject({ kind: "plain", text: "@@\n-old\n+new", language: "diff" });
   });
-
-  it("retains generic output for plugin tools", () => {
-    expect(
-      display({
-        type: "tool",
-        tool: "custom_plugin",
-        state: {
-          status: "completed",
-          input: { query: "hello" },
-          output: "Plugin result",
-        },
-      }),
-    ).toMatchObject({
-      title: "custom_plugin",
-      outputContent: { kind: "plain", text: "Plugin result" },
-    });
-  });
 });

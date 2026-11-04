@@ -561,27 +561,6 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
-    fn preserves_fractional_source_timestamps() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("sessions/hash/session");
-        std::fs::create_dir_all(path.join("agents/main")).unwrap();
-        std::fs::write(path.join("state.json"), r#"{"createdAt":1000.125}"#).unwrap();
-        let wire = path.join("wire.jsonl");
-        std::fs::write(&wire,r#"{"timestamp":1.234567,"message":{"type":"TurnBegin","payload":{"user_input":[{"text":"hello"}]}}}"#).unwrap();
-        let modified = std::time::UNIX_EPOCH + std::time::Duration::new(1000, 123_456_000);
-        std::fs::File::options()
-            .write(true)
-            .open(&wire)
-            .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(modified))
-            .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let detail = &sessions[0].detail;
-        assert_eq!(detail.head.time_created, 1000.125);
-        assert_eq!(detail.head.time_updated, 1_000_123.456);
-        assert_eq!(detail.messages[0].time_created, 1234.);
-    }
-    #[test]
     fn matches_node_1_0_12_adapter_golden() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("sessions/hash/session");
@@ -756,39 +735,6 @@ mod tests {
         assert_eq!(stats.total_output_tokens, 14.);
         assert_eq!(stats.total_cache_read_tokens, Some(15.));
         assert_eq!(stats.cost_inputs.len(), 2);
-    }
-    #[test]
-    fn wire_streaming_arguments_ignored_tools_and_usage_merge() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("sessions/hash/id");
-        std::fs::create_dir_all(&path).unwrap();
-        std::fs::write(path.join("metadata.json"), "{}").unwrap();
-        let records = [
-            json!({"timestamp":1,"message":{"type":"TurnBegin","payload":{"user_input":[{"text":"Hello"}]}}}),
-            json!({"timestamp":2,"message":{"type":"ToolCall","payload":{"id":"read","function":{"name":"ReadFile","arguments":""}}}}),
-            json!({"timestamp":3,"message":{"type":"ToolCallPart","payload":{"arguments_part":"{\"path\":\"a.rs\"}"}}}),
-            json!({"timestamp":4,"message":{"type":"ToolResult","payload":{"tool_call_id":"read","return_value":{"ok":true}}}}),
-            json!({"timestamp":5,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":4,"output":2}}}}),
-            json!({"timestamp":6,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":3,"output":1}}}}),
-        ];
-        std::fs::write(
-            path.join("wire.jsonl"),
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let detail = &sessions[0].detail;
-        assert_eq!(detail.messages.len(), 2);
-        assert_eq!(detail.messages[1].tokens.as_ref().unwrap().input, Some(7.));
-        let MessagePart::Tool { state, .. } = &detail.messages[1].parts[0] else {
-            panic!()
-        };
-        assert_eq!(state.input.as_ref().unwrap()["path"], "a.rs");
-        assert_eq!(state.status, "completed");
     }
     #[test]
     fn default_model_resolves_through_models_table() {

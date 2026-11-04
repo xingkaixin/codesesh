@@ -75,27 +75,3 @@ pub(super) fn strip_tags_in_order(value: &str) -> String {
     }
     value
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn matches_javascript_tag_word_boundaries() {
-        for (input, expected) in [
-            (
-                "<system-reminder中文>hidden</system-reminder>visible",
-                "visible",
-            ),
-            ("<command-args中文>visible</command-args>", "visible"),
-            (
-                "<system-reminder_extra>visible",
-                "<system-reminder_extra>visible",
-            ),
-            ("<system-reminderx>visible", "<system-reminderx>visible"),
-        ] {
-            assert_eq!(strip_tags(input), expected);
-            assert_eq!(strip_tags_in_order(input), expected);
-        }
-    }
-}

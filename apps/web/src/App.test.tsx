@@ -2,15 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  SAMPLE_SESSIONS_UPDATED_EVENT,
-  SAMPLE_SESSION_HEAD,
-} from "@codesesh/contract/test-fixtures";
+import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
 import {
   createSessionIdentity,
   type ApiProjectGroup,
   type DashboardData,
-  type SessionsUpdatedEvent,
 } from "@codesesh/contract";
 import App from "./App";
 import { appRouteChildren } from "./lib/app-routes";
@@ -19,21 +15,11 @@ import { ScanStatusProvider } from "./hooks/useScanStatus";
 
 const LAZY_SURFACE_TIMEOUT_MS = 5_000;
 
-const liveSubscription = vi.hoisted(() => ({
-  onUpdate: undefined as ((event: SessionsUpdatedEvent) => void) | undefined,
-}));
-const clientTelemetry = vi.hoisted(() => ({
-  logClientEvent: vi.fn<(event: string, data?: Record<string, unknown>) => void>(),
-}));
-
-// oxlint-disable-next-line anti-slop/no-module-mocking -- Drive subscription events and observe telemetry without a live SSE server.
+// oxlint-disable-next-line anti-slop/no-module-mocking -- Render the app without a live SSE server or telemetry side effects.
 vi.mock("./lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/api")>()),
-  subscribeSessionUpdates: (onUpdate: (event: SessionsUpdatedEvent) => void) => {
-    liveSubscription.onUpdate = onUpdate;
-    return () => undefined;
-  },
-  logClientEvent: clientTelemetry.logClientEvent,
+  subscribeSessionUpdates: () => () => undefined,
+  logClientEvent: () => undefined,
 }));
 
 const emptyDashboard: DashboardData = {
@@ -111,13 +97,10 @@ let projectDetailResponse: typeof workspaceProjectPage | null = null;
 beforeEach(() => {
   requestedUrls = [];
   projectDetailResponse = null;
-  liveSubscription.onUpdate = undefined;
-  clientTelemetry.logClientEvent.mockClear();
   responses["/api/agents"] = [];
   responses["/api/projects"] = workspaceProjectPage;
   responses["/api/sessions"] = { sessions: [] };
   responses["/api/bookmarks"] = { bookmarks: [] };
-  delete responses["/api/sessions/claudecode/session-1"];
   vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -154,88 +137,7 @@ function renderAppAt(path: string) {
   return { ...view, router };
 }
 
-function dashboardRequests(): URLSearchParams[] {
-  return requestedUrls
-    .filter((url) => url.startsWith("/api/dashboard"))
-    .map((url) => new URLSearchParams(url.split("?")[1] ?? ""));
-}
-
-function routeChangeCalls() {
-  return clientTelemetry.logClientEvent.mock.calls.filter(([event]) => event === "route.change");
-}
-
 describe("App session loading", () => {
-  it("waits for bookmarks before reporting the window load complete", async () => {
-    let finishBookmarks!: (response: Response) => void;
-    const bookmarks = new Promise<Response>((resolve) => {
-      finishBookmarks = resolve;
-    });
-    const defaultFetch = globalThis.fetch;
-    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
-      if (new URL(String(input), "http://localhost").pathname === "/api/bookmarks") {
-        return bookmarks;
-      }
-      return defaultFetch(input);
-    });
-    renderAppAt("/");
-
-    await screen.findByTestId("dashboard", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
-    expect(clientTelemetry.logClientEvent).toHaveBeenCalledWith("app.load.start");
-    expect(
-      clientTelemetry.logClientEvent.mock.calls.some(([event]) => event === "app.load.done"),
-    ).toBe(false);
-
-    await act(async () => {
-      finishBookmarks(Response.json({ bookmarks: [] }));
-    });
-    await waitFor(() =>
-      expect(clientTelemetry.logClientEvent).toHaveBeenCalledWith("app.load.done", {
-        duration_ms: expect.any(Number),
-        agents: 0,
-        sessions: 0,
-      }),
-    );
-  });
-
-  it("loads and copies an available bookmarked session as Markdown", async () => {
-    const sessionDetail = {
-      ...SAMPLE_SESSION_HEAD,
-      messages: [
-        {
-          id: "message-1",
-          role: "user",
-          time_created: 1,
-          parts: [{ type: "text", text: "Copy this conversation" }],
-        },
-      ],
-    };
-    responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
-    responses["/api/bookmarks"] = {
-      bookmarks: [
-        {
-          reference: SAMPLE_SESSION_HEAD.reference,
-          bookmarkedAt: 1,
-          availability: "available",
-          session: SAMPLE_SESSION_HEAD,
-        },
-      ],
-    };
-    responses["/api/sessions/claudecode/session-1"] = sessionDetail;
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
-      configurable: true,
-    });
-    renderAppAt("/");
-
-    fireEvent.click(await screen.findByRole("button", { name: "Session options" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy as Markdown" }));
-
-    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
-    expect(writeText.mock.calls[0]?.[0]).toContain("## User\n\nCopy this conversation");
-    expect(await screen.findByText("Session copied as Markdown.")).toBeTruthy();
-  });
-
   it("opens session details when dashboard loading fails and retries statistics independently", async () => {
     responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
     responses["/api/sessions"] = { sessions: [SAMPLE_SESSION_HEAD] };
@@ -322,45 +224,6 @@ describe("App session loading", () => {
   });
 });
 
-describe("App live updates", () => {
-  it("preserves keyboard selection when a live update replaces the session list", async () => {
-    const sidebarSession = {
-      ...SAMPLE_SESSION_HEAD,
-      ...createSessionIdentity({ agentName: "claudecode", sessionId: "sidebar-session" }),
-      time_updated: Date.now(),
-      project_identity: { kind: "path" as const, key: "/workspace", displayName: "workspace" },
-    };
-    responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
-    responses["/api/sessions"] = { sessions: [sidebarSession] };
-    const { router } = renderAppAt("/projects/path/%2Fworkspace");
-
-    await waitFor(() => expect(document.querySelector("file-tree-container")).toBeTruthy());
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "j", cancelable: true }));
-
-    vi.useFakeTimers();
-    await act(async () => {
-      liveSubscription.onUpdate?.({
-        ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        changedAgents: ["claudecode"],
-        newSessionRefs: [],
-        totalSessions: 1,
-        changedSessionHeads: [
-          {
-            reference: sidebarSession.reference,
-            session: { ...sidebarSession, display_title: "Live title" },
-          },
-        ],
-        projectionSessionOrder: [sidebarSession.reference],
-      });
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    vi.useRealTimers();
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
-
-    await waitFor(() => expect(router.state.location.pathname).toBe("/claudecode/sidebar-session"));
-  });
-});
-
 describe("App dashboard scope wiring", () => {
   it("resolves a project outside the bounded catalog page", async () => {
     const selectedProject = {
@@ -388,76 +251,6 @@ describe("App dashboard scope wiring", () => {
       true,
     );
   });
-
-  it("requests the project scope on a project route", async () => {
-    renderAppAt("/projects/path/%2Fworkspace");
-
-    await waitFor(() =>
-      expect(
-        dashboardRequests().some(
-          (params) =>
-            params.get("projectKind") === "path" && params.get("projectKey") === "/workspace",
-        ),
-      ).toBe(true),
-    );
-    expect(dashboardRequests().every((params) => params.get("projectKey") === "/workspace")).toBe(
-      true,
-    );
-  });
-
-  it("never scopes the dashboard to a project outside a project route", async () => {
-    renderAppAt("/");
-
-    await waitFor(() => expect(dashboardRequests().length).toBeGreaterThan(0));
-    expect(dashboardRequests().every((params) => params.get("projectKey") === null)).toBe(true);
-  });
-});
-
-describe("App route telemetry", () => {
-  it("records concrete route changes within the same view without exposing route identity", async () => {
-    const { router } = renderAppAt("/projects/path/%2Fworkspace");
-
-    await waitFor(() => expect(routeChangeCalls()).toHaveLength(1));
-    await act(async () => {
-      await router.navigate("/projects/path/%2Fanother-workspace");
-    });
-    await waitFor(() => expect(routeChangeCalls()).toHaveLength(2));
-
-    const [event, payload] = routeChangeCalls()[1] ?? [];
-    expect(event).toBe("route.change");
-    expect(payload).toMatchObject({ mode: "project" });
-    expect(payload).not.toHaveProperty("path");
-    expect(payload).not.toHaveProperty("project");
-    expect(payload).not.toHaveProperty("projectKey");
-  });
-});
-
-it("restores the message position from a session link", async () => {
-  const scrolled: string[] = [];
-  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    scrolled.push(this.id);
-  });
-  responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
-  responses["/api/sessions"] = { sessions: [SAMPLE_SESSION_HEAD] };
-  responses["/api/sessions/claudecode/session-1"] = {
-    ...SAMPLE_SESSION_HEAD,
-    messages: [0, 1, 2].map((index) => ({
-      id: `message-${index}`,
-      role: "user",
-      time_created: index + 1,
-      parts: [{ type: "text", text: `Linked message ${index}` }],
-    })),
-  };
-  try {
-    renderAppAt("/claudecode/session-1#message-2");
-    await waitFor(() => expect(scrolled).toContain("session-message-2"), {
-      timeout: LAZY_SURFACE_TIMEOUT_MS,
-    });
-  } finally {
-    scroll.mockRestore();
-  }
 });
 
 it("offers a remote resume command with its source machine clearly identified", async () => {

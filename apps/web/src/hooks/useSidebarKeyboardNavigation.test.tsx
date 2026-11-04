@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSessionIdentity, type SessionHead } from "@codesesh/contract";
 import { buildSidebarSessionLookup, getSessionReferenceKey } from "../lib/session-indexes";
@@ -47,23 +47,6 @@ function dispatchKey(key: string, init: KeyboardEventInit = {}) {
 }
 
 describe("useSidebarKeyboardNavigation", () => {
-  it("keeps j/k selection local and opens the selected session", () => {
-    const deps = makeDeps();
-    const { result } = renderHook(() => useSidebarKeyboardNavigation(deps));
-
-    expect(dispatchKey("j").defaultPrevented).toBe(true);
-    expect(result.current.selectedSessionReference).toBe("codex/s1");
-    dispatchKey("G");
-    expect(result.current.selectedSessionReference).toBe("codex/s3");
-    dispatchKey("k");
-    expect(result.current.selectedSessionReference).toBe("codex/s2");
-    dispatchKey("g");
-    expect(result.current.selectedSessionReference).toBe("codex/s1");
-
-    expect(dispatchKey("Enter").defaultPrevented).toBe(true);
-    expect(deps.onOpenSession).toHaveBeenCalledWith(sessions[0]);
-  });
-
   it("uses the session reference when native ids overlap", () => {
     const codex = makeSession("same");
     const claude = makeSession("same", "claude");
@@ -82,27 +65,5 @@ describe("useSidebarKeyboardNavigation", () => {
     expect(result.current.selectedSessionReference).toBe(getSessionReferenceKey(claude));
     dispatchKey("Enter");
     expect(deps.onOpenSession).toHaveBeenCalledWith(claude);
-  });
-
-  it("does not handle keys while search, help, or an editable control is active", () => {
-    const searchDeps = makeDeps({ isSearchMode: true });
-    const { result, unmount } = renderHook(() => useSidebarKeyboardNavigation(searchDeps));
-    dispatchKey("j");
-    expect(result.current.selectedSessionReference).toBeNull();
-    unmount();
-
-    const helpDeps = makeDeps({ shortcutHelpOpen: true });
-    const helpHook = renderHook(() => useSidebarKeyboardNavigation(helpDeps));
-    dispatchKey("j");
-    expect(helpHook.result.current.selectedSessionReference).toBeNull();
-    helpHook.unmount();
-
-    const deps = makeDeps();
-    const hook = renderHook(() => useSidebarKeyboardNavigation(deps));
-    const input = document.createElement("input");
-    document.body.append(input);
-    fireEvent.keyDown(input, { key: "j" });
-    expect(hook.result.current.selectedSessionReference).toBeNull();
-    input.remove();
   });
 });

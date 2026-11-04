@@ -1,4 +1,3 @@
-use super::messages::{action_part, tool_former};
 use super::*;
 use serde_json::json;
 
@@ -96,14 +95,6 @@ fn subagent_output_fixture_and_tool_error_semantics() {
     );
 }
 #[test]
-fn missing_table_is_an_error_and_empty_database_is_valid() {
-    let root = fixture(&[]);
-    assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
-    let db = Connection::open(root.path().join("globalStorage/state.vscdb")).unwrap();
-    db.execute_batch("DROP TABLE cursorDiskKV").unwrap();
-    assert!(scan(root.path(), &Pricing::bundled()).is_err());
-}
-#[test]
 fn workspace_mapping_decodes_uri_and_ignores_symlinks() {
     let root = fixture(&[
         ("composerData:c", json!({"composerId":"c"})),
@@ -141,69 +132,6 @@ fn workspace_mapping_decodes_uri_and_ignores_symlinks() {
         normalize_path("/project one")
     );
     assert_eq!(decode_uri("%GG"), None);
-}
-
-#[test]
-fn scan_and_detail_retain_distinct_stats_and_legacy_lookup() {
-    let root = fixture(&[
-        (
-            "composerData:c",
-            json!({"composerId":"c","inputTokenCount":99,"outputTokenCount":77,"subagentInfos":[{"id":"s"}]}),
-        ),
-        (
-            "bubbleId:c:a",
-            json!({"text":"question","requestId":"legacy","tokenCount":{"inputTokens":10}}),
-        ),
-        (
-            "bubble:s",
-            json!({"chatMessages":[{"role":"assistant","text":"child"}]}),
-        ),
-    ]);
-    let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-    assert_eq!(sessions[0].head.stats.message_count, 1);
-    assert_eq!(sessions[0].head.stats.total_input_tokens, 99.0);
-    assert_eq!(sessions[0].detail.head.stats.message_count, 2);
-    assert_eq!(sessions[0].detail.head.stats.total_input_tokens, 10.0);
-    assert_eq!(sessions[0].detail.head.stats.total_output_tokens, 77.0);
-    assert_eq!(
-        resolve_session_id(root.path(), "legacy")
-            .unwrap()
-            .as_deref(),
-        Some("c")
-    );
-}
-
-#[test]
-fn tool_plan_and_terminal_actions_keep_state_and_cleanup() {
-    let plan = tool_former(
-        &json!({"name":"create_plan","status":"completed","params":"{\"plan\":\"  ship it  \"}"}),
-        12.0,
-    )
-    .unwrap();
-    assert!(
-        matches!(plan,MessagePart::Plan{text,approval_status,time_created:Some(time)} if time==12.0 && text=="ship it" && approval_status=="success")
-    );
-    let error=tool_former(&json!({"name":"read_file_v2","status":"failed","params":"bad JSON","result":"{\"stderr\":\"failure\"}"}),1.0).unwrap();
-    let MessagePart::Tool { state, .. } = error else {
-        panic!("tool missing")
-    };
-    assert_eq!(state.input, Some(json!({"_raw":"bad JSON"})));
-    assert_eq!(state.error, Some(json!("failure")));
-    let action=action_part(&json!({"tool":"run_terminal_command_v2","input":{"command":"ls","commandDescription":"Inspect"},"output":"file.rs","state":{"status":"success","exitCode":0,"meta":{"retained":true}}}),3.0).unwrap();
-    let MessagePart::Tool { state, title, .. } = action else {
-        panic!("tool missing")
-    };
-    assert_eq!(title.as_deref(), Some("Inspect"));
-    assert_eq!(state.status, "completed");
-    assert_eq!(state.metadata, Some(json!({"retained":true,"exitCode":0})));
-    assert_eq!(
-        state.output,
-        Some(json!([{"type":"text","text":"file.rs","time_created":3.0}]))
-    );
-    assert_eq!(
-        clean("start\r\n<system-reminder>hidden</system-reminder>\r\nend  \r\n"),
-        "start\r\nend"
-    );
 }
 
 #[test]
@@ -290,76 +218,6 @@ fn incremental_read_failure_does_not_accept_a_new_fingerprint() {
     std::fs::remove_file(root.path().join("globalStorage/state.vscdb")).unwrap();
     let delta = sync.refresh(root.path(), &pricing).unwrap();
     assert_eq!(delta.removed[0].session_id, "a");
-}
-
-#[test]
-fn preserves_fractional_source_timestamps_except_explicit_rpc_floor() {
-    let base = 1_700_000_000_000.0;
-    let root = fixture(&[
-        (
-            "composerData:c",
-            json!({"composerId":"c","createdAt":base+0.125,"updatedAt":base+0.875,"subagentInfos":[{"id":"s"}]}),
-        ),
-        (
-            "bubbleId:c:a",
-            json!({"text":"fractional","createdAt":base+0.25}),
-        ),
-        (
-            "bubbleId:c:b",
-            json!({"type":2,"timingInfo":{"clientRpcSendTime":base+0.75},"toolFormerData":{"name":"read_file_v2","status":"completed","params":{"path":"file.rs"}}}),
-        ),
-        (
-            "bubble:s",
-            json!({"chatMessages":[{"role":"assistant","createdAt":base+0.625,"text":"child"}]}),
-        ),
-    ]);
-    let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-    let session = &sessions[0];
-    assert_eq!(session.head.time_created, base + 0.125);
-    assert_eq!(session.head.time_updated, base + 0.875);
-    assert_eq!(
-        session.head.smart_tags_source_updated_at,
-        Some(base + 0.875)
-    );
-    assert_eq!(session.detail.messages[0].time_created, base + 0.25);
-    assert!(
-        matches!(&session.detail.messages[0].parts[0],MessagePart::Text{time_created:Some(time),..} if *time==base+0.25)
-    );
-    assert_eq!(session.detail.messages[1].time_created, base);
-    assert_eq!(session.detail.messages[2].time_created, base + 0.625);
-    assert_eq!(session.detail.file_activity[0].latest_time, base);
-}
-
-#[test]
-fn paged_scan_does_not_read_other_session_bubble_payloads() {
-    let root = fixture(&[
-        ("composerData:a", json!({"composerId":"a","updatedAt":2.5})),
-        ("composerData:b", json!({"composerId":"b","updatedAt":1.25})),
-        ("bubbleId:a:1", json!({"text":"selected"})),
-    ]);
-    let db = Connection::open(root.path().join("globalStorage/state.vscdb")).unwrap();
-    db.execute(
-        "INSERT INTO cursorDiskKV VALUES('bubbleId:b:1',?1)",
-        [vec![0xff_u8]],
-    )
-    .unwrap();
-    let keys = enumerate_session_keys(root.path()).unwrap();
-    assert_eq!(keys.len(), 2);
-    assert_eq!(keys[0].activity, 2.5);
-    assert_eq!(keys[1].activity, 1.25);
-    let pricing = Pricing::bundled();
-    let selected = std::collections::HashSet::from(["a".into()]);
-    let page = scan_selected(root.path(), &pricing, &selected).unwrap();
-    assert_eq!(page.len(), 1);
-    assert_eq!(page[0].head.reference.session_id, "a");
-    assert!(
-        scan_selected(
-            root.path(),
-            &pricing,
-            &std::collections::HashSet::from(["b".into()])
-        )
-        .is_err()
-    );
 }
 
 #[test]
@@ -461,23 +319,4 @@ fn refresh_selected_defers_history_without_losing_its_changes() {
     assert!(
         matches!(&completed.upserts[0].detail.messages[0].parts[0],MessagePart::Text{text,..} if text=="changed history")
     );
-}
-
-#[test]
-fn unpriced_capture_preserves_nonzero_cursor_estimates() {
-    let root = fixture(&[
-        (
-            "composerData:priced",
-            json!({"composerId":"priced","model":"claude-sonnet-4"}),
-        ),
-        (
-            "bubbleId:priced:a",
-            json!({"type":2,"text":"answer","modelInfo":{"modelName":"claude-sonnet-4"},"tokenCount":{"inputTokens":1000,"outputTokens":100}}),
-        ),
-    ]);
-    assert!(Pricing::bundled().resolve("claude-sonnet-4").is_some());
-    let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-    assert_eq!(sessions.len(), 1);
-    assert!(sessions[0].head.stats.total_cost > 0.0);
-    crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
 }

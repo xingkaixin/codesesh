@@ -31,9 +31,9 @@ pub struct StorageProgress {
 }
 
 pub(crate) use read::detail as detail_from_connection;
-pub use read::visit_detail_message_page;
 #[cfg(test)]
-pub(crate) use read::{detail_with_cursor, visit_detail_messages};
+pub(crate) use read::detail_with_cursor;
+pub use read::visit_detail_message_page;
 pub use snapshot::load as snapshot_from_connection;
 pub fn head_from_connection(
     connection: &Connection,
@@ -57,11 +57,6 @@ pub struct Cache {
 impl Cache {
     pub fn connection(&self) -> &Connection {
         &self.connection
-    }
-
-    #[cfg(test)]
-    pub(crate) fn connection_mut(&mut self) -> &mut Connection {
-        &mut self.connection
     }
 
     pub fn snapshot(&self) -> Result<Vec<SessionHead>> {

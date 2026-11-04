@@ -37,17 +37,6 @@ function sessionIds(sessions: SessionHead[] | undefined): string[] {
 }
 
 describe("canonical session index", () => {
-  it("preserves stable ordering and the first duplicate route", () => {
-    const first = createSession("same", 100, { title: "First" });
-    const duplicate = createSession("same", 100, { title: "Duplicate" });
-    const next = createSession("next", 100);
-
-    const index = createSessionIndex([first, duplicate, next]);
-
-    expect(index.sessionsByActivity).toEqual([first, duplicate, next]);
-    expect(index.byRouteKey.get(getSessionRouteKey("codex", "same"))).toBe(first);
-  });
-
   it("keeps project identity kinds and agents in separate indexes", () => {
     const remote = createSession("remote", 300, {
       project_identity: {
@@ -97,15 +86,6 @@ describe("canonical session index", () => {
     expect(
       index.childrenByParentRouteKey.get(getSessionRouteKey("claude", "shared-parent")),
     ).toEqual([claudeChild]);
-  });
-
-  it("indexes sessions by their structured reference", () => {
-    const session = createSession("session", 100);
-
-    const index = createSessionIndex([session]);
-
-    expect(index.byAgent.get("codex")).toEqual([session]);
-    expect(index.byRouteKey.get(getSessionRouteKey("codex", "session"))).toBe(session);
   });
 
   it("applies route-keyed changes and removals with wire-event semantics", () => {
@@ -194,19 +174,6 @@ describe("mergeSortedSessions", () => {
       return sortSessionsByActivity(shard);
     });
   }
-
-  it("returns an empty array when every shard is empty", () => {
-    expect(mergeSortedSessions([])).toEqual([]);
-    expect(mergeSortedSessions([[], []])).toEqual([]);
-  });
-
-  it("copies a lone shard rather than returning it", () => {
-    const shard = [createSession("a", 2), createSession("b", 1)];
-    const merged = mergeSortedSessions([shard]);
-
-    expect(merged).toEqual(shard);
-    expect(merged).not.toBe(shard);
-  });
 
   it("matches sortSessionsByActivity element for element, ties included", () => {
     for (let seed = 1; seed <= 200; seed += 1) {

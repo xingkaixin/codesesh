@@ -1,8 +1,4 @@
-#[cfg(test)]
-use super::CursorSync;
 use super::composer_id;
-#[cfg(test)]
-use crate::{agents::ParsedSession, pricing::Pricing};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
@@ -66,15 +62,6 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
         }
     }
     Ok(keys)
-}
-
-#[cfg(test)]
-pub fn scan_selected(
-    root: &Path,
-    pricing: &Pricing,
-    selected: &HashSet<String>,
-) -> Result<Vec<ParsedSession>> {
-    CursorSync::default().scan_selected(root, pricing, selected)
 }
 
 pub(super) fn selected_composer(raw: &str, selected: &HashSet<String>) -> Option<Value> {

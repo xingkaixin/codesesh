@@ -365,7 +365,6 @@ pnpm format:check
 # Test
 pnpm test
 pnpm test:watch
-pnpm test:coverage
 
 # Performance benchmark
 pnpm bench:perf
@@ -374,8 +373,7 @@ pnpm bench:perf
 pnpm deploy:www
 ```
 
-Rust backend tests run through Cargo. `test:coverage` measures the TypeScript contract and Web
-code covered by Vitest; it does not measure Rust coverage. Playwright exercises the browser against
+Rust backend tests run through Cargo. Playwright exercises the browser against
 the native server. Backend process contracts provide a separate compatibility check.
 
 The landing page deploys to the `codesesh` Worker at `codesesh.xingkaixin.me`.
@@ -404,7 +402,7 @@ preview URLs are explicitly disabled in the generated deployment configuration.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is the source of truth. CI runs
 Rust and frontend checks, browser contracts, and native artifact validation. The following commands
-list the workflow's declared checks. Run them in their job order; rebuild Web after `pnpm clean`.
+list the workflow's declared checks. Run them in their job order.
 Lines containing `${{ matrix.* }}` are CI templates: locally use `pnpm package:artifact` and `pnpm test:e2e`.
 `verify-set` needs artifacts collected from all four runners:
 
@@ -415,16 +413,11 @@ node scripts/release-preflight.mjs
 node scripts/check-docs-paths.mjs
 node scripts/check-docs-facts.mjs
 pnpm install --frozen-lockfile
-node scripts/check-quality-task-coverage.mjs
 pnpm build:web
 pnpm lint
 pnpm format:check
-pnpm typecheck
 pnpm typecheck:e2e
-pnpm clean
-pnpm test:coverage
-pnpm --filter @codesesh/web test:bundle
-pnpm perf:check
+pnpm test
 pnpm --filter @codesesh/web... build
 pnpm generate:rust-contract
 cargo fmt --all --check

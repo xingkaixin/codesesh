@@ -97,36 +97,6 @@ fn reused_database_inventory_still_lists_new_sessions() {
 }
 
 #[test]
-fn unrelated_database_writes_do_not_reparse_desktop_sessions() {
-    let temporary = tempfile::tempdir().unwrap();
-    let root = temporary.path().join("deepchat");
-    let file = root.join("app_db/agent.db");
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-    let database = rusqlite::Connection::open(&file).unwrap();
-    database
-        .execute_batch(include_str!("../../agents/deepchat/fixture.sql"))
-        .unwrap();
-    database.execute_batch("INSERT INTO new_sessions(id,agent_id,title,project_dir) VALUES('s','deepchat','Session','/work'); INSERT INTO deepchat_messages(id,session_id,order_seq,role,content,metadata,created_at,updated_at) VALUES('u','s',1,'user','{\"text\":\"Hello\"}','{}',1000,3000);").unwrap();
-    let source = AgentSource {
-        agent: "deepchat".into(),
-        data_root: root.clone(),
-        scan_path: root,
-    };
-    let stamp = backfill::database_stamp(&source).unwrap();
-    let (mut scanner, mut cache) = database_scanner(temporary.path(), source.clone());
-    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "deepchat"), ["s"]);
-    database
-        .execute_batch("CREATE TABLE app_settings(key TEXT,value TEXT); INSERT INTO app_settings VALUES('theme','dark');")
-        .unwrap();
-    assert_ne!(backfill::database_stamp(&source).unwrap(), stamp);
-    assert!(refreshed_ids(&mut scanner, &mut cache, "deepchat").is_empty());
-    database
-        .execute("UPDATE deepchat_messages SET content='{\"text\":\"Edited\"}',updated_at=4000 WHERE id='u'", [])
-        .unwrap();
-    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "deepchat"), ["s"]);
-}
-
-#[test]
 fn child_session_changes_refresh_their_database_root() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("zcode");

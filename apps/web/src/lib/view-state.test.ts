@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchRoutes } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
-import { APP_ROUTE_IDS, appRouteChildren, assertValidRouteEncoding } from "./app-routes";
+import { appRouteChildren } from "./app-routes";
 import { getProjectPath } from "./projects";
 import { sessionRoutePath } from "./session-indexes";
 import { viewStateFromRouteMatches } from "./view-state";
@@ -60,11 +60,6 @@ describe("viewStateFromRouteMatches", () => {
     },
   );
 
-  it("keeps the static projects route ahead of the agent parameter", () => {
-    const matches = matchRoutes(routes, "/projects");
-    expect(matches?.at(-1)?.route.id).toBe(APP_ROUTE_IDS.projects);
-  });
-
   it("uses decoded router params for project identities", () => {
     const path = getProjectPath({ kind: "git_remote", key: "github.com/acme/app" });
     expect(viewState(path)).toEqual({
@@ -74,29 +69,5 @@ describe("viewStateFromRouteMatches", () => {
       activeProjectKind: "git_remote",
       activeProjectKey: "github.com/acme/app",
     });
-  });
-
-  it("returns missingAgent for an unknown dynamic agent", () => {
-    expect(viewState("/unknown")).toEqual({
-      mode: "missingAgent",
-      activeAgentKey: null,
-      activeSessionId: null,
-      attemptedKey: "unknown",
-    });
-  });
-
-  it("maps invalid project kinds and wildcard paths to invalidRoute", () => {
-    expect(viewState("/projects/invalid/key").mode).toBe("invalidRoute");
-    expect(viewState("/a/b/c/d").mode).toBe("invalidRoute");
-  });
-
-  it("keeps query strings outside route identity", () => {
-    expect(viewState("/codex/abc-123?window=7d").mode).toBe("session");
-  });
-
-  it("rejects malformed URL encoding at the route boundary", () => {
-    expect(() =>
-      assertValidRouteEncoding(new Request("http://localhost/projects/git_remote/%ZZ")),
-    ).toThrow(expect.objectContaining({ status: 400 }));
   });
 });

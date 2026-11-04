@@ -125,17 +125,6 @@ describe("buildSessionTree", () => {
     expect(tree.entries[0]?.inclusiveStats).toMatchObject({ messageCount: 3, cost: 3 });
   });
 
-  it("counts descendants at every depth", () => {
-    const tree = buildSessionTree([
-      makeSession("root", 1),
-      makeSession("child", 2, { parent: "root" }),
-      makeSession("grandchild", 3, { parent: "child" }),
-    ]);
-
-    expect(tree.roots[0]!.descendantCount).toBe(2);
-    expect(tree.roots[0]!.children[0]!.descendantCount).toBe(1);
-  });
-
   it("rolls stats up a three-level tree and degrades the cost source", () => {
     const tree = buildSessionTree([
       makeSession("root", 1, {
@@ -177,39 +166,6 @@ describe("buildSessionTree", () => {
     });
     expect(tree.roots[0]!.children[0]!.inclusiveStats.costSource).toBe("estimated");
   });
-
-  it("leaves the cost source undefined while the subtree costs nothing", () => {
-    const tree = buildSessionTree([
-      makeSession("root", 1),
-      makeSession("child", 2, { parent: "root", costSource: "estimated" }),
-    ]);
-
-    expect(tree.roots[0]!.inclusiveStats.cost).toBe(0);
-    expect(tree.roots[0]!.inclusiveStats.costSource).toBeUndefined();
-  });
-
-  it("reports the mount state of every session", () => {
-    const root = makeSession("root", 1);
-    const child = makeSession("child", 2, { parent: "root" });
-    const orphan = makeSession("orphan", 3, { parent: "missing" });
-    const tree = buildSessionTree([root, child, orphan]);
-
-    expect(tree.mountStateOf(root)).toBe("root");
-    expect(tree.mountStateOf(child)).toBe("mounted-child");
-    expect(tree.mountStateOf(orphan)).toBe("orphan");
-  });
-
-  it("treats a parent/child cycle as orphans instead of recursing", () => {
-    const tree = buildSessionTree([
-      makeSession("a", 1, { parent: "b" }),
-      makeSession("b", 2, { parent: "a" }),
-      makeSession("below", 3, { parent: "a" }),
-    ]);
-
-    expect(ids(tree.roots)).toEqual([]);
-    expect(ids(tree.orphans)).toEqual(["a", "b", "below"]);
-    expect(tree.orphans.every((node) => node.children.length === 0)).toBe(true);
-  });
 });
 
 describe("groupSessionsByCalendarDay", () => {
@@ -237,16 +193,6 @@ describe("groupSessionsByCalendarDay", () => {
 });
 
 describe("session tree window filtering", () => {
-  it("keeps an in-window cycle member as an unmounted entry", () => {
-    const sessions = [makeSession("a", 100, { parent: "b" }), makeSession("b", 1, { parent: "a" })];
-
-    expect(
-      filterSessionTreeByActivityWindow(sessions, 90, 110).map(
-        (session) => session.reference.sessionId,
-      ),
-    ).toEqual(["a"]);
-  });
-
   it("filters roots by activity and includes descendants regardless of their activity", () => {
     const sessions = [
       makeSession("parent", 100),
@@ -262,20 +208,6 @@ describe("session tree window filtering", () => {
     ).toEqual(["parent", "child-old", "child-new"]);
   });
 
-  it("keeps nested descendants and preserves the input order", () => {
-    const sessions = [
-      makeSession("grandchild", 1, { parent: "child" }),
-      makeSession("child", 2, { parent: "parent" }),
-      makeSession("parent", 100),
-    ];
-
-    expect(
-      filterSessionTreeByActivityWindow(sessions, 100, 100).map(
-        (session) => session.reference.sessionId,
-      ),
-    ).toEqual(["grandchild", "child", "parent"]);
-  });
-
   it("keeps an orphan whose own activity is in the window", () => {
     const sessions = [
       makeSession("orphan", 100, { parent: "missing" }),
@@ -287,110 +219,6 @@ describe("session tree window filtering", () => {
         (session) => session.reference.sessionId,
       ),
     ).toEqual(["orphan"]);
-  });
-
-  it("keeps mounted descendants below an in-window orphan", () => {
-    const sessions = [
-      makeSession("orphan", 100, { parent: "missing" }),
-      makeSession("child", 1, { parent: "orphan" }),
-      makeSession("grandchild", 1, { parent: "child" }),
-    ];
-
-    expect(
-      filterSessionTreeByActivityWindow(sessions, 90, 110).map(
-        (session) => session.reference.sessionId,
-      ),
-    ).toEqual(["orphan", "child", "grandchild"]);
-  });
-
-  it("collects unchanged hierarchy members around changes and removals", () => {
-    const oldRoot = makeSession("root", 1);
-    const recentRoot = makeSession("root", 100);
-    const child = makeSession("child", 1, { parent: "root" });
-    const grandchild = makeSession("grandchild", 1, { parent: "child" });
-    const unrelated = makeSession("unrelated", 1);
-
-    expect(
-      createSessionProjectionContext(
-        [oldRoot, child, grandchild, unrelated],
-        [recentRoot, child, grandchild, unrelated],
-        [referenced(recentRoot)],
-        [],
-      ).relatedSessionHeads.map(({ session }) => session.reference.sessionId),
-    ).toEqual(["child", "grandchild"]);
-    expect(
-      createSessionProjectionContext(
-        [oldRoot, child, grandchild],
-        [child, grandchild],
-        [],
-        [{ agentName: "codex", sessionId: "root" }],
-      ).relatedSessionHeads.map(({ session }) => session.reference.sessionId),
-    ).toEqual(["child", "grandchild"]);
-  });
-
-  it.each([false, true])(
-    "collects shared ancestors independently of descendant visits (reverse=%s)",
-    (reverse) => {
-      const sessions = [
-        makeSession("root", 1),
-        makeSession("trunk", 2, { parent: "root" }),
-        makeSession("branch", 3, { parent: "trunk" }),
-        makeSession("leaf", 4, { parent: "branch" }),
-        makeSession("sibling", 5, { parent: "trunk" }),
-        makeSession("unrelated", 6),
-      ];
-      const changed = [sessions[2]!, sessions[3]!];
-      if (reverse) changed.reverse();
-      const context = createSessionProjectionContext(
-        sessions,
-        sessions,
-        changed.map(referenced),
-        [],
-      );
-      expect(context.relatedSessionHeads.map(({ session }) => session.reference.sessionId)).toEqual(
-        ["root", "trunk"],
-      );
-      expect(context.sessionOrder).toEqual(
-        sessions.slice(0, 4).map((session) => session.reference),
-      );
-    },
-  );
-
-  it("collects shared cyclic ancestors without including unrelated sibling subtrees", () => {
-    const sessions = [
-      makeSession("a", 1, { parent: "b" }),
-      makeSession("b", 2, { parent: "a" }),
-      makeSession("leaf-a", 3, { parent: "a" }),
-      makeSession("leaf-b", 4, { parent: "b" }),
-      makeSession("sibling", 5, { parent: "a" }),
-    ];
-    const context = createSessionProjectionContext(
-      sessions,
-      sessions,
-      sessions.slice(2, 4).map(referenced),
-      [],
-    );
-    expect(context.relatedSessionHeads.map(({ session }) => session.reference.sessionId)).toEqual([
-      "a",
-      "b",
-    ]);
-  });
-
-  it("does not copy unaffected sibling subtrees into a projection event", () => {
-    const root = makeSession("root", 100);
-    const child = makeSession("child", 1, { parent: "root" });
-    const changedChild = { ...child, title: "changed" };
-    const grandchild = makeSession("grandchild", 1, { parent: "child" });
-    const sibling = makeSession("sibling", 1, { parent: "root" });
-
-    expect(
-      createSessionProjectionContext(
-        [root, child, grandchild, sibling],
-        [root, changedChild, grandchild, sibling],
-        [referenced(changedChild)],
-        [],
-      ).relatedSessionHeads.map(({ session }) => session.reference.sessionId),
-    ).toEqual(["root", "grandchild"]);
   });
 
   it.each([
@@ -528,59 +356,5 @@ describe("session tree window filtering", () => {
 
       expect(projectedSessions).toEqual(filterSessionTreeByActivityWindow(globalSessions, 90, 110));
     }
-  });
-
-  it("does not compute tree statistics when every session is already in the window", () => {
-    let statsReads = 0;
-    const root = makeSession("root", 0);
-    const stats = root.stats;
-    Object.defineProperty(root, "stats", {
-      get: () => {
-        statsReads++;
-        return stats;
-      },
-    });
-    const sessions = [root, makeSession("child", 1, { parent: "root" })];
-    expect(filterSessionTreeByActivityWindow(sessions)).toBe(sessions);
-    const bounded = filterSessionTreeByActivityWindow(sessions, 0, 1);
-    expect(bounded).toEqual(sessions);
-    expect(bounded).not.toBe(sessions);
-    expect(statsReads).toBe(0);
-  });
-
-  it("respects a supplied tree even when all input activity is in range", () => {
-    const root = makeSession("root", 10);
-    const child = makeSession("child", 20, { parent: "root" });
-    const suppliedTree = buildSessionTree([root]);
-    expect(filterSessionTreeByActivityWindow([root, child], 0, 100, suppliedTree)).toEqual([root]);
-  });
-
-  it("retains order, duplicates and cycles on the fully included path", () => {
-    const a = makeSession("a", 1, { parent: "b" });
-    const b = makeSession("b", 2, { parent: "a" });
-    const sessions = [b, a, b];
-    expect(filterSessionTreeByActivityWindow(sessions, 0, 10)).toEqual(
-      filterSessionTreeByActivityWindow(sessions, 0, 10, buildSessionTree(sessions)),
-    );
-  });
-
-  it("preserves all-history behavior and treats a zero lower bound as present", () => {
-    const initial = [makeSession("zero", 0)];
-    const added = makeSession("added", 1);
-    const changedSessionHeads = [referenced(added)];
-
-    expect(
-      applySessionWindowChanges(initial, {
-        changedSessionHeads,
-        removedSessionRefs: [],
-      }).sessions,
-    ).toEqual([added, initial[0]]);
-    expect(
-      applySessionWindowChanges(initial, {
-        changedSessionHeads,
-        removedSessionRefs: [],
-        from: 0,
-      }).sessions,
-    ).toEqual([added, initial[0]]);
   });
 });

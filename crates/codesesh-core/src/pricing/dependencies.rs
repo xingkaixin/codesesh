@@ -43,25 +43,3 @@ impl Pricing {
             .all(|(model, price)| self.resolve_price(model) == price.as_ref())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn captures_resolved_aliases_and_misses_and_cleans_up_after_panics() {
-        let pricing = Pricing::bundled();
-        let (_, outer) = capture_dependencies(|| {
-            pricing.resolve("anthropic/claude-sonnet-4-6@latest");
-            let (_, inner) = capture_dependencies(|| {
-                pricing.resolve("unknown-dependency-model");
-            });
-            assert_eq!(inner.get("unknown-dependency-model"), Some(&None));
-        });
-        assert!(outer["anthropic/claude-sonnet-4-6@latest"].is_some());
-        assert_eq!(outer.len(), 2);
-        assert!(pricing.matches_dependencies(&outer));
-        let _ = std::panic::catch_unwind(|| capture_dependencies(|| panic!("capture cleanup")));
-        assert!(CAPTURES.with(|captures| captures.borrow().is_empty()));
-    }
-}

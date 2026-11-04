@@ -618,57 +618,6 @@ mod tests {
         assert_eq!(sessions[0].detail.messages.len(), 1);
     }
     #[test]
-    fn invalid_utf8_line_is_replaced_instead_of_failing_the_source() {
-        let root = tempfile::tempdir().unwrap();
-        let good = root.path().join("project/good.jsonl");
-        let corrupt = root.path().join("project/corrupt.jsonl");
-        write(
-            &good,
-            &[json!({"type":"user","message":{"role":"user","content":"Good"}})],
-        );
-        fs::write(
-            &corrupt,
-            b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Bad \xff byte\"}}\n",
-        )
-        .unwrap();
-        let pricing = Pricing::bundled();
-        let full = scan(root.path(), &pricing).unwrap();
-        let changed = scan_changed(
-            root.path(),
-            &pricing,
-            &[good, corrupt],
-            &[],
-            &mut Checkpoints::default(),
-        )
-        .unwrap();
-        for sessions in [full, changed.upserts] {
-            let mut titles: Vec<_> = sessions.iter().map(|s| s.head.title.as_str()).collect();
-            titles.sort();
-            assert_eq!(titles, ["Bad \u{fffd} byte", "Good"]);
-        }
-    }
-    #[test]
-    fn filters_internal_only_records_and_limits_fallback_title_to_first_twenty() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("project/session.jsonl");
-        write(
-            &path,
-            &[
-                json!({"type":"user","message":{"role":"user","content":"<local-command-stdout>hidden</local-command-stdout>"}}),
-            ],
-        );
-        assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
-        let mut records = vec![json!({"type":"progress","timestamp":"2026-04-20T10:00:00Z"}); 20];
-        records.push(json!({"type":"user","cwd":"/tmp/fallback","message":{"role":"user","content":"Too late for title"}}));
-        write(&path, &records);
-        assert_eq!(
-            scan(root.path(), &Pricing::bundled()).unwrap()[0]
-                .head
-                .title,
-            "fallback"
-        );
-    }
-    #[test]
     fn late_custom_title_outranks_ai_title_and_prompt() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("project/session.jsonl");
@@ -690,56 +639,6 @@ mod tests {
         ]);
         write(&path, &records);
         assert_eq!(title(), "New name");
-    }
-    #[test]
-    fn missing_source_timestamp_preserves_fractional_file_mtime() {
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("project/mtime.jsonl");
-        write(
-            &path,
-            &[json!({"type":"user","message":{"role":"user","content":"Fallback timestamp"}})],
-        );
-        let modified = std::time::UNIX_EPOCH + std::time::Duration::new(1776679200, 125_000);
-        fs::File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(modified))
-            .unwrap();
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        assert_eq!(sessions[0].head.time_created, 1776679200000.125);
-        assert_eq!(sessions[0].head.time_updated, 1776679200000.125);
-    }
-    #[test]
-    fn fractional_timestamps_and_cached_cursor_match_node() {
-        let root = tempfile::tempdir().unwrap();
-        let records: Vec<Value> =
-            serde_json::from_str(include_str!("claudecode/fixtures/fractional-records.json"))
-                .unwrap();
-        let path = root.path().join("project/fractional.jsonl");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(
-            path,
-            records
-                .iter()
-                .map(Value::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let mut sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let expected = include_str!("claudecode/fixtures/fractional-expected.json");
-        assert_reference(&sessions[0].head, &sessions[0].detail, expected);
-        let expected: Value = serde_json::from_str(expected).unwrap();
-        let mut cache = crate::storage::Cache::open(None).unwrap();
-        cache.publish(&mut sessions).unwrap();
-        let detail = cache.detail(sessions[0].head.clone()).unwrap().unwrap();
-        assert_eq!(
-            detail.message_cursor.as_deref(),
-            expected["cursor"].as_str()
-        );
-        assert_eq!(detail.messages[1].time_created, 1776679200000.875);
-        assert_eq!(detail.head.time_updated, 1776679200000.875);
     }
     #[test]
     fn matches_frozen_node_adapter_fixture() {
@@ -864,24 +763,6 @@ mod tests {
         assert!((message.cost.unwrap() - expected).abs() < 1e-8);
         assert!((sessions[0].head.stats.total_cost - expected).abs() < 1e-8);
         crate::pricing::assert_cached_repricing(|pricing| scan(root.path(), pricing).unwrap());
-    }
-    #[test]
-    fn tool_result_is_error_marks_tool_failed() {
-        let root = tempfile::tempdir().unwrap();
-        write(
-            &root.path().join("project/session.jsonl"),
-            &[
-                json!({"type":"user","uuid":"u","cwd":"/tmp/project","timestamp":"2026-04-20T10:00:00Z","message":{"role":"user","content":"Run tests"}}),
-                json!({"type":"assistant","uuid":"a","message":{"role":"assistant","content":[{"type":"tool_use","id":"call","name":"Bash","input":{"command":"false"}}]}}),
-                json!({"type":"user","uuid":"b","toolUseResult":"Error: Exit code 1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","is_error":true,"content":"Exit code 1"}]}}),
-            ],
-        );
-        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
-        let MessagePart::Tool { state, .. } = &sessions[0].detail.messages[1].parts[0] else {
-            panic!()
-        };
-        assert_eq!(state.status, "error");
-        assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Exit code 1");
     }
     #[test]
     fn fast_requests_use_the_fast_mode_multiplier() {

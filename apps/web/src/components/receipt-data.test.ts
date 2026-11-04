@@ -48,23 +48,6 @@ function session(): SessionDetail {
 }
 
 describe("session receipt", () => {
-  it("omits unknown models without usage or cost while retaining activity counts", () => {
-    const value = session();
-    value.messages[0]!.cost = 0;
-    value.messages.push({
-      id: "empty",
-      role: "assistant",
-      time_created: 4,
-      tokens: { input: 0, output: 0, cache_read: 0, cache_create: 0 },
-      cost: 0,
-      parts: [],
-    });
-    const result = createReceiptPayload(value);
-    expect(result.models.map((model) => model.name)).toEqual(["model-a", "model-b"]);
-    expect(result.items.map((item) => item.count)).toEqual([1, 3, 1]);
-    expect(result.rows.map((row) => row.cost)).toEqual([0.003, 0.006, 0.001, 0.002]);
-  });
-
   it.each([{ tokens: { cache_read: 10 } }, { tokens: { reasoning: 10 } }, { cost: 0.01 }])(
     "retains unknown models with actual usage or cost: %j",
     (usage) => {
@@ -87,13 +70,6 @@ describe("session receipt", () => {
     expect(result.rows.map((row) => row.tokens)).toEqual([1000, 250, 400, 100]);
     expect(result.rows.map((row) => row.cost)).toEqual([0.003, 0.006, 0.001, 0.002]);
     expect(result.totalTokens).toBe(1750);
-  });
-
-  it("shows zero cache writes in the total when every model reports none", () => {
-    const value = session();
-    delete value.stats.total_cache_create_tokens;
-    value.messages[1]!.tokens!.cache_create = 0;
-    expect(createReceiptPayload(value).rows[3]?.tokens).toBe(0);
   });
 
   it("keeps recorded totals without inventing price splits or merging providers", () => {

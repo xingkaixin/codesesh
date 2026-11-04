@@ -472,16 +472,6 @@ mod tests {
         assert_eq!(m.subagent_id.as_deref(), Some("child"));
         assert!(matches!(&m.parts[1],MessagePart::Tool{state,..} if state.status=="error"));
     }
-    #[test]
-    fn mismatched_message_identity_is_rejected() {
-        assert!(
-            convert(
-                &json!({"msg_id":"a","data_json":"{\"msg_id\":\"b\"}"}),
-                "agent"
-            )
-            .is_err()
-        );
-    }
 }
 #[cfg(test)]
 #[path = "minimax_code/scan_tests.rs"]

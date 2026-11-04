@@ -38,7 +38,6 @@ Local source changes are limited to:
 
 `POLICY.md` records the 12 enabled generic rules, six intentionally disabled
 rules, the native accumulating-spread companion, and justified local exceptions.
-Regression tests live in `scripts/anti-slop.test.mjs` and run the actual CLI.
 
 `@oxlint/plugins` is pinned to `1.83.0`, matching the installed and locked Oxlint
 version. Keep these versions aligned on upgrades. Lint and format ignore agent

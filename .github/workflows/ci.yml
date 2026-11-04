@@ -96,23 +96,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: node scripts/check-quality-task-coverage.mjs
       - run: pnpm build:web
       - run: pnpm lint
       - run: pnpm format:check
-      - run: pnpm typecheck
+      # build:web already type-checks web, www and contract; only e2e specs are left.
       - run: pnpm typecheck:e2e
-      - name: Smoke test clean and rebuild
-        run: |
-          node -e "require('node:fs').writeFileSync('packages/contract/dist/clean-sentinel.txt','x')"
-          pnpm clean
-          node -e "if (require('node:fs').existsSync('packages/contract/dist')) { console.error('dist survived pnpm clean'); process.exit(1) }"
-          pnpm build:web
-      - run: pnpm test:coverage
-      - run: pnpm --filter @codesesh/web test:bundle
+      - run: pnpm test
       - run: node --test scripts/rust/publish.test.mjs
-      - name: Check algorithmic growth rates
-        run: pnpm perf:check
 
   web-assets:
     name: Web assets

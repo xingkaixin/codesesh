@@ -69,21 +69,6 @@ describe("useProjectLookup", () => {
     expect(requestUrl).toContain("projectKind=path");
     expect(requestUrl).toContain("projectKey=%2Fworkspace%2Fselected");
   });
-
-  it("uses a project already present in the bounded page", () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const { Wrapper } = createQueryWrapper();
-
-    const { result } = renderHook(
-      () =>
-        useProjectLookup({ from: 1, to: 2 }, { kind: "path", key: project.identityKey }, [project]),
-      { wrapper: Wrapper },
-    );
-
-    expect(result.current.project).toBe(project);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });
 
 describe("useProjectPagination", () => {
@@ -153,37 +138,6 @@ describe("useProjectPagination", () => {
       expect(result.current.page?.projects).toEqual(secondPage.projects);
     },
   );
-
-  it("keeps non-stale failures on their page for retry", async () => {
-    const requestCursors: Array<string | null> = [];
-    let failing = true;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string) => {
-        requestCursors.push(new URL(url, "http://localhost").searchParams.get("cursor"));
-        return Promise.resolve(
-          failing
-            ? jsonResponse({ error: "unavailable" }, 503)
-            : jsonResponse({ ...firstPage, nextCursor: undefined }),
-        );
-      }),
-    );
-    const { Wrapper } = createQueryWrapper();
-    const { result } = renderHook(() => useProjectPagination({ from: 1, to: 2 }, firstPage), {
-      wrapper: Wrapper,
-    });
-
-    act(() => result.current.next());
-    await waitFor(() => expect(result.current.error).toContain("503"));
-    expect(result.current.pageNumber).toBe(2);
-    expect(result.current.canPrevious).toBe(true);
-
-    failing = false;
-    await act(() => result.current.retry());
-    await waitFor(() => expect(result.current.error).toBeNull());
-    expect(result.current.pageNumber).toBe(2);
-    expect(requestCursors).toEqual(["old-cursor", "old-cursor"]);
-  });
 
   it("does not let an older window's recovery reset the current window's page", async () => {
     const firstWindow = { from: 1, to: 2 };

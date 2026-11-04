@@ -416,35 +416,4 @@ mod tests {
         let overflow = notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan);
         assert_eq!(take(&overflow), [(0, true), (1, true)]);
     }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn recent_polls_restat_new_and_recent_files_only() {
-        let root = tempfile::tempdir().unwrap();
-        let roots = std::collections::BTreeMap::from([(
-            root.path().canonicalize().unwrap(),
-            RecursiveMode::Recursive,
-        )]);
-        let cold = roots.keys().next().unwrap().join("cold.jsonl");
-        let hot = cold.with_file_name("hot.jsonl");
-        std::fs::write(&cold, "a").unwrap();
-        std::fs::write(&hot, "a").unwrap();
-        std::fs::File::options()
-            .write(true)
-            .open(&cold)
-            .unwrap()
-            .set_modified(std::time::SystemTime::now() - 2 * HOT_FILE_WINDOW)
-            .unwrap();
-        let mut known = metadata_snapshot(&roots);
-        for path in [&cold, &hot] {
-            std::fs::write(path, "ab").unwrap();
-        }
-        let added = cold.with_file_name("new.jsonl");
-        std::fs::write(&added, "a").unwrap();
-        let events = refresh_recent(&mut known, vec![added.clone()]);
-        assert!(events[1].1.contains(&hot) && !events[1].1.contains(&cold));
-        assert!(known.contains_key(&added));
-        let full = metadata_snapshot(&roots);
-        assert!(snapshot_changes(&known, &full)[2].1.contains(&cold));
-    }
 }

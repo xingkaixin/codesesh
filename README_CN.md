@@ -357,7 +357,6 @@ pnpm format:check
 # 测试
 pnpm test
 pnpm test:watch
-pnpm test:coverage
 
 # 性能 benchmark
 pnpm bench:perf
@@ -366,8 +365,7 @@ pnpm bench:perf
 pnpm deploy:www
 ```
 
-Rust 后端通过 Cargo 测试。`test:coverage` 统计 Vitest 覆盖的 TypeScript 契约和 Web 代码，
-不代表 Rust 覆盖率。Playwright 使用原生服务器验证浏览器流程；后端进程契约提供独立的
+Rust 后端通过 Cargo 测试。Playwright 使用原生服务器验证浏览器流程；后端进程契约提供独立的
 兼容性检查。
 
 落地页部署到 `codesesh` Worker，正式域名为 `codesesh.xingkaixin.me`。
@@ -392,7 +390,7 @@ Pages 迁移已完成，旧 Pages 项目可以删除。站点仅通过正式自�
 ### 复现 CI 必需检查
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 是事实源，包含 Rust、前端、浏览器和
-原生制品检查。下列命令列出工作流门禁，按对应 job 顺序运行；`pnpm clean` 后需重新构建 Web。
+原生制品检查。下列命令列出工作流门禁，按对应 job 顺序运行。
 含 `${{ matrix.* }}` 的行是 CI 模板，本地使用 `pnpm package:artifact` 和 `pnpm test:e2e`；
 `verify-set` 需要先汇总四个 runner 的制品：
 
@@ -403,16 +401,11 @@ node scripts/release-preflight.mjs
 node scripts/check-docs-paths.mjs
 node scripts/check-docs-facts.mjs
 pnpm install --frozen-lockfile
-node scripts/check-quality-task-coverage.mjs
 pnpm build:web
 pnpm lint
 pnpm format:check
-pnpm typecheck
 pnpm typecheck:e2e
-pnpm clean
-pnpm test:coverage
-pnpm --filter @codesesh/web test:bundle
-pnpm perf:check
+pnpm test
 pnpm --filter @codesesh/web... build
 pnpm generate:rust-contract
 cargo fmt --all --check

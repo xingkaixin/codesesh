@@ -59,18 +59,6 @@ impl PathEnvironment {
         self.read_env_path(name)
             .unwrap_or_else(|| self.home.join(fallback))
     }
-    #[cfg(test)]
-    pub(crate) fn data_home(&self) -> PathBuf {
-        self.read_env_path("XDG_DATA_HOME").unwrap_or_else(|| {
-            if self.platform == "win32" {
-                self.read_env_path("LOCALAPPDATA")
-                    .or_else(|| self.read_env_path("APPDATA"))
-                    .unwrap_or_else(|| self.home.join("AppData/Local"))
-            } else {
-                self.home.join(".local/share")
-            }
-        })
-    }
     fn desktop(&self, name: &str) -> PathBuf {
         match self.platform.as_str() {
             "darwin" => self.home.join("Library/Application Support").join(name),

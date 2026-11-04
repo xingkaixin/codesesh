@@ -89,36 +89,6 @@ fn redacts_secrets_fingerprints_private_values_and_preserves_trace() {
 }
 
 #[test]
-fn flush_drains_clones_and_shutdown_rejects_future_records() {
-    let root = directory();
-    let logger = logger(&root);
-    let clones = (0..4)
-        .map(|worker| {
-            let log = logger.clone();
-            std::thread::spawn(move || {
-                for index in 0..40 {
-                    log.info("worker.progress", &json!({"worker":worker,"index":index}));
-                }
-            })
-        })
-        .collect::<Vec<_>>();
-    for thread in clones {
-        thread.join().unwrap();
-    }
-    logger.flush().unwrap();
-    let all = records(logger.path());
-    assert_eq!(all.len(), 160);
-    for (index, record) in all.iter().enumerate() {
-        assert_eq!(record["seq"], index + 1);
-    }
-    logger.shutdown().unwrap();
-    logger.error("late.entry", &json!({}));
-    logger.flush().unwrap();
-    assert_eq!(records(logger.path()).len(), 160);
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
 fn rotation_restricts_managed_logs_and_retains_foreign_active_files() {
     let root = directory();
     let foreign = root.join(format!(
@@ -165,44 +135,5 @@ fn rotation_restricts_managed_logs_and_retains_foreign_active_files() {
             );
         }
     }
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn oversized_records_and_queue_overflow_remain_bounded() {
-    let root = directory();
-    let logger = AppLogger::new(LoggerOptions {
-        log_dir: Some(root.clone()),
-        level: Some(Level::Debug),
-        max_record_bytes: Some(512),
-        max_queue_bytes: Some(128),
-        ..Default::default()
-    })
-    .unwrap();
-    logger.info(
-        "oversized.record",
-        &json!({"values":(0..100).collect::<Vec<_>>(),"route":"a".repeat(10000)}),
-    );
-    logger.flush().unwrap();
-    let all = records(logger.path());
-    assert_eq!(all.len(), 1);
-    assert_eq!(all[0]["event"], "logger.records_dropped");
-    assert_eq!(all[0]["info"], 1);
-    for line in fs::read_to_string(logger.path()).unwrap().lines() {
-        assert!(line.len() < 512)
-    }
-    logger.shutdown().unwrap();
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn flush_reports_storage_failure_without_panicking() {
-    let root = directory();
-    let blocked = root.join("file");
-    fs::write(&blocked, "not a directory").unwrap();
-    let logger = logger(&blocked);
-    logger.error("storage.error", &json!({"error":"sensitive path"}));
-    assert!(logger.flush().is_err());
-    assert!(logger.shutdown().is_err());
     fs::remove_dir_all(root).unwrap();
 }

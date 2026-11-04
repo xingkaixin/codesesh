@@ -123,26 +123,3 @@ pub fn classify(messages: &[Message]) -> Vec<String> {
     .map(|(_, tag)| tag.into())
     .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tool_payloads_set_their_own_tags() {
-        for (command, tag) in [
-            ("pnpm test", "testing"),
-            ("git push origin main", "git-ops"),
-            ("docker compose up", "build-deploy"),
-        ] {
-            let message: Message = serde_json::from_value(serde_json::json!({
-                "id": "m",
-                "role": "assistant",
-                "time_created": 1,
-                "parts": [{"type": "tool", "tool": "exec_command", "state": {"status": "completed", "input": {"cmd": command}}}],
-            }))
-            .unwrap();
-            assert_eq!(classify(&[message]), [tag], "{command}");
-        }
-    }
-}

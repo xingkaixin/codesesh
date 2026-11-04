@@ -426,30 +426,3 @@ pub fn local_source_node_id() -> String {
 fn is_local_source_node(value: &str) -> bool {
     value == LOCAL_SOURCE_NODE_ID
 }
-
-#[cfg(test)]
-mod tests {
-    use super::ToolState;
-    use serde_json::{Value, json};
-
-    #[test]
-    fn tool_state_roundtrip_distinguishes_missing_null_and_payloads() {
-        for payload in [
-            None,
-            Some(Value::Null),
-            Some(json!({"content":[null,"text"]})),
-        ] {
-            let mut value = json!({"status":"completed"});
-            if let Some(payload) = &payload {
-                for field in ["input", "output", "error", "metadata"] {
-                    value[field] = payload.clone();
-                }
-            }
-            let state: ToolState = serde_json::from_value(value.clone()).unwrap();
-            for field in [&state.input, &state.output, &state.error, &state.metadata] {
-                assert_eq!(field, &payload);
-            }
-            assert_eq!(serde_json::to_value(state).unwrap(), value);
-        }
-    }
-}

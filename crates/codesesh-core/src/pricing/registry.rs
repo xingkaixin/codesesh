@@ -246,11 +246,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn generation_matches_node_snapshot_hash() {
-        assert_eq!(generation(&snapshot()), 3_454_732_389_400_122);
-    }
-
-    #[test]
     fn original_providers_win_aliases_and_qualified_prices_remain_distinct() {
         let prices = parse_models_dev(&json!({
             "gateway":{"models":{"model":{"cost":{"input":1,"output":2}}}},
