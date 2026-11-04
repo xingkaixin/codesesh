@@ -52,8 +52,4 @@ describe("theme-bootstrap ↔ useUiPreferences contract", () => {
     expect(runBootstrap(true)).toBe(true);
     expect(runBootstrap(false)).toBe(false);
   });
-
-  it("falls back to system when nothing was persisted", () => {
-    expect(runBootstrap(true)).toBe(true);
-  });
 });

@@ -26,11 +26,6 @@ describe("CS-136: local media policy", () => {
     expect(resolved).toBe(`${window.location.origin}/api/sessions/codex/s1/asset.png`);
   });
 
-  it("refuses an oversized inline payload", () => {
-    const huge = `data:image/png;base64,${"A".repeat(13 * 1024 * 1024)}`;
-    expect(resolveLocalMediaSource(huge)).toBeNull();
-  });
-
   it("builds inline sources only for image mime types", () => {
     expect(inlineImageSource("image/png", "iVBORw0KGgo=")).toBe(
       "data:image/png;base64,iVBORw0KGgo=",

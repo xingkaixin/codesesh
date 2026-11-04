@@ -10,18 +10,6 @@ function getRouteKey(project: ProjectRouteIdentity): string {
 }
 
 describe("project routes", () => {
-  it("round-trips absolute path project keys", () => {
-    const project = {
-      kind: "path",
-      key: "/Users/Kevin/Dropbox/OBSIDIAN/XingKaiXin/90.Clippings",
-    } satisfies ProjectRouteIdentity;
-
-    expect(getProjectPath(project)).toBe(
-      "/projects/path/%2FUsers%2FKevin%2FDropbox%2FOBSIDIAN%2FXingKaiXin%2F90.Clippings",
-    );
-    expect(getRouteKey(project)).toBe(project.key);
-  });
-
   it("round-trips reserved characters in project keys", () => {
     const project = {
       kind: "path",

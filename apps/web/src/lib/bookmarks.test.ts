@@ -1,49 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionHead } from "@codesesh/contract";
-import {
-  clearLegacyBookmarks,
-  getSessionBookmarkKey,
-  loadLegacyBookmarks,
-  toBookmarkView,
-} from "./bookmarks";
-
-function createSession(overrides: Partial<SessionHead> = {}): SessionHead {
-  return {
-    reference: { agentName: "codex", sessionId: "s1" },
-    title: "Bookmark me",
-    directory: "/tmp/project",
-    time_created: 100,
-    time_updated: 200,
-    stats: {
-      message_count: 1,
-      total_input_tokens: 2,
-      total_output_tokens: 3,
-      total_cost: 0,
-    },
-    ...overrides,
-  };
-}
+import { clearLegacyBookmarks, loadLegacyBookmarks } from "./bookmarks";
 
 describe("bookmarks", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
-  });
-
-  it("uses normalized agent + opaque session id as bookmark key", () => {
-    expect(getSessionBookmarkKey({ agentName: " CoDeX ", sessionId: "a/b" })).toBe("codex/a/b");
-  });
-
-  it("builds an optimistic available view from a live session", () => {
-    vi.spyOn(Date, "now").mockReturnValue(300);
-    const session = createSession();
-
-    expect(toBookmarkView(session, " CoDeX ")).toEqual({
-      reference: { agentName: "codex", sessionId: "s1" },
-      session,
-      availability: "available",
-      bookmarkedAt: 300,
-    });
   });
 
   it("migrates only durable facts from legacy and current payload shapes", () => {

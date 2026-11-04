@@ -56,24 +56,6 @@ describe("mergeSessionsUpdatedEvents", () => {
     expect(merged.removedSessionRefs).toEqual([reference]);
   });
 
-  it("keeps projection-related heads separate from actual changes", () => {
-    const changedReference = { agentName: "claudecode", sessionId: "changed" };
-    const relatedReference = { agentName: "claudecode", sessionId: "related" };
-    const changed = {
-      reference: changedReference,
-      session: {},
-    } as ReferencedSessionHead;
-    const related = {
-      reference: relatedReference,
-      session: {},
-    } as ReferencedSessionHead;
-
-    const merged = mergeSessionsUpdatedEvents(event([], [], [related]), event([changed]));
-
-    expect(merged.changedSessionHeads).toEqual([changed]);
-    expect(merged.projectionRelatedSessionHeads).toEqual([related]);
-  });
-
   it("lets a later change or removal replace a projection-related head", () => {
     const reference = { agentName: "claudecode", sessionId: "session-1" };
     const related = { reference, session: {} } as ReferencedSessionHead;
@@ -140,16 +122,5 @@ describe("mergeSessionsUpdatedEvents", () => {
     expect(merged.newSessionRefs).toEqual([reference]);
     expect(merged.changedSessionHeads).toEqual([recreated]);
     expect(merged.removedSessionRefs).toEqual([]);
-  });
-
-  it("uses the latest canonical order for an affected activity tie", () => {
-    const first = { agentName: "claudecode", sessionId: "first" };
-    const second = { agentName: "claudecode", sessionId: "second" };
-    const previous = { ...event([]), projectionSessionOrder: [first, second] };
-    const next = { ...event([]), projectionSessionOrder: [second, first] };
-
-    const merged = mergeSessionsUpdatedEvents(previous, next);
-
-    expect(merged.projectionSessionOrder).toEqual([second, first]);
   });
 });

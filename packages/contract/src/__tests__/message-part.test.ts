@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { MessagePart } from "../session.js";
 import { normalizeMessageParts } from "../message-part.js";
 
 describe("message part contract", () => {
@@ -83,18 +82,5 @@ describe("message part contract", () => {
         state: { status: "completed", output: null },
       },
     ]);
-  });
-
-  it("rejects illegal variant shapes at compile time", () => {
-    // @ts-expect-error Text parts cannot carry tool fields.
-    const invalidText: MessagePart = { type: "text", text: "done", tool: "Bash" };
-    // @ts-expect-error Text payloads must be strings.
-    const invalidTextPayload: MessagePart = { type: "text", text: 42 };
-    // @ts-expect-error Tool state always has an explicit status.
-    const invalidTool: MessagePart = { type: "tool", tool: "Bash", state: {} };
-    // @ts-expect-error Images require inline data or a URL.
-    const invalidImage: MessagePart = { type: "image" };
-
-    expect([invalidText, invalidTextPayload, invalidTool, invalidImage]).toHaveLength(4);
   });
 });

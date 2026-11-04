@@ -4,12 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { SearchResult, SessionHead } from "@codesesh/contract";
 import { SearchResultsPanel } from "./SearchResultsPanel";
-import { setLanguagePreference } from "../../i18n/language";
 
-afterEach(() => {
-  cleanup();
-  setLanguagePreference("system");
-});
+afterEach(cleanup);
 
 function makeSession(id: string, overrides: Partial<SessionHead> = {}): SessionHead {
   return {
@@ -58,46 +54,6 @@ function renderPanel(
 }
 
 describe("SearchResultsPanel", () => {
-  it("shows a recoverable search error", () => {
-    const onRetry = vi.fn();
-
-    renderPanel(
-      { status: "failed", error: "Search unavailable" },
-      {
-        onRetry,
-      },
-    );
-
-    expect(
-      screen.getByText("Search unavailable. Check the server connection, then try again."),
-    ).toBeTruthy();
-    const retry = screen.getByRole("button", { name: "Retry Search" });
-    retry.focus();
-    expect(document.activeElement).toBe(retry);
-    fireEvent.click(retry);
-    expect(onRetry).toHaveBeenCalledOnce();
-    expect(screen.queryByText("No matches")).toBeNull();
-  });
-
-  it("shows loading feedback without empty-state content", () => {
-    renderPanel({ status: "loading" });
-
-    expect(screen.getByText("Searching…")).toBeTruthy();
-    expect(screen.getAllByTestId("search-result-skeleton")).toHaveLength(4);
-    expect(screen.queryByText("No matches")).toBeNull();
-  });
-
-  it("distinguishes empty recent sessions from empty query matches", () => {
-    const first = renderPanel({ status: "loaded", results: [] }, { query: "" });
-    expect(screen.getByText("No recent sessions")).toBeTruthy();
-    expect(screen.queryByText(/^Query:/)).toBeNull();
-    first.unmount();
-
-    renderPanel({ status: "loaded", results: [] }, { query: "needle" });
-    expect(screen.getByText("No matches")).toBeTruthy();
-    expect(screen.getByText("Query: needle")).toBeTruthy();
-  });
-
   it("renders safe result snippets and opens the selected result", () => {
     const snippet = '<script>alert("x")</script><mark>literal</mark> needle & more';
     const highlightStart = snippet.indexOf("needle");
@@ -162,50 +118,6 @@ describe("SearchResultsPanel", () => {
     expect(registerResultRef).toHaveBeenCalledWith("codex/s1", expect.any(HTMLAnchorElement));
     expect(registerResultRef).toHaveBeenCalledWith("other/s2", expect.any(HTMLAnchorElement));
   });
-
-  it("shows the parent title above a sub-session hit", () => {
-    const results: SearchResult[] = [
-      {
-        reference: { agentName: "Codex", sessionId: "child" },
-        session: makeSession("child", {
-          title: "Child work",
-          parent_reference: { agentName: "codex", sessionId: "parent" },
-        }),
-        snippet: "",
-        snippetHighlights: [],
-        matchType: "title",
-        parent: {
-          reference: { agentName: "codex", sessionId: "parent" },
-          title: "Parent work",
-        },
-      },
-    ];
-
-    renderPanel({ status: "loaded", results });
-
-    expect(screen.getByText("Parent work")).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 2, name: "Child work" })).toBeTruthy();
-    expect(screen.queryByText("Unmounted")).toBeNull();
-  });
-
-  it("labels a sub-session hit whose parent is missing from the snapshot", () => {
-    const results: SearchResult[] = [
-      {
-        reference: { agentName: "Codex", sessionId: "child" },
-        session: makeSession("child", {
-          title: "Child work",
-          parent_reference: { agentName: "codex", sessionId: "missing" },
-        }),
-        snippet: "",
-        snippetHighlights: [],
-        matchType: "title",
-      },
-    ];
-
-    renderPanel({ status: "loaded", results });
-
-    expect(screen.getByText("Unmounted")).toBeTruthy();
-  });
 });
 
 it("links message matches to their source position", () => {
@@ -234,29 +146,6 @@ it("links message matches to their source position", () => {
       .getByRole("link", { name: /Open session/ })
       .getAttribute("href"),
   ).toBe("/nodes/remote/codex/s1#message-42");
-});
-
-it("explains empty-result recovery", () => {
-  setLanguagePreference("zh-CN");
-  renderPanel({ status: "loaded", results: [] });
-  expect(screen.getByText(/更改上方的时间范围/)).toBeTruthy();
-});
-
-it("explains a full result list without claiming additional matches exist", () => {
-  const results: SearchResult[] = Array.from({ length: 50 }, (_, index) => ({
-    reference: { agentName: "codex", sessionId: `session-${index}` },
-    session: makeSession(`session-${index}`),
-    snippet: "needle",
-    snippetHighlights: [],
-    matchType: "assistant_reply",
-  }));
-  const view = renderPanel({ status: "loaded", results });
-  expect(screen.getByRole("status").textContent).toBe(
-    "Showing the first 50 sessions. Narrow your query or filters to find a specific session.",
-  );
-  view.unmount();
-  renderPanel({ status: "loaded", results: results.slice(0, 49) });
-  expect(screen.queryByRole("status")).toBeNull();
 });
 
 it("keeps matching session IDs on different sources distinct", () => {

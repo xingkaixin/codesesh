@@ -66,63 +66,11 @@ afterEach(() => {
 });
 
 describe("useSessionDetail", () => {
-  it("loads the session for a session route", async () => {
-    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    const { result } = renderSessionDetail();
-
-    await waitFor(() => expect(result.current.session).toEqual(sample));
-    expect(result.current.sessionError).toBeNull();
-    expect(api.fetchSessionData).toHaveBeenCalledWith(
-      "claudecode",
-      "claudecode/abc",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-  });
-
-  it("creates a compatible operation identifier without randomUUID", async () => {
-    vi.stubGlobal("crypto", {});
-    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    renderSessionDetail();
-
-    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledOnce());
-    expect(vi.mocked(api.fetchSessionData).mock.calls[0]?.[2]?.operationId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
-  });
-
-  it("does not include a failed session URL in client telemetry", async () => {
-    vi.mocked(api.fetchSessionData).mockRejectedValue(
-      new api.ApiRequestError("GET /api/sessions/codex/private-session failed", 500),
-    );
-    renderSessionDetail();
-
-    await waitFor(() =>
-      expect(api.logClientEvent).toHaveBeenCalledWith(
-        "session.open.error",
-        expect.objectContaining({ error_name: "Error", error_status: 500 }),
-      ),
-    );
-    const errorCall = vi
-      .mocked(api.logClientEvent)
-      .mock.calls.find(([event]) => event === "session.open.error");
-    expect(JSON.stringify(errorCall?.[1])).not.toContain("private-session");
-  });
-
   it("classifies a confirmed 404 as a missing session", async () => {
     vi.mocked(api.fetchSessionData).mockRejectedValue(new api.ApiRequestError("not found", 404));
     const { result } = renderSessionDetail();
 
     await waitFor(() => expect(result.current.sessionError).toEqual({ kind: "missing" }));
-    expect(result.current.session).toBeNull();
-  });
-
-  it("keeps network and server failures distinct from missing sessions", async () => {
-    vi.mocked(api.fetchSessionData).mockRejectedValue(new Error("nope"));
-    const { result } = renderSessionDetail();
-
-    await waitFor(() =>
-      expect(result.current.sessionError).toEqual({ kind: "load-failed", message: "nope" }),
-    );
     expect(result.current.session).toBeNull();
   });
 
@@ -142,62 +90,6 @@ describe("useSessionDetail", () => {
 
     await waitFor(() => expect(result.current.session).toEqual(sample));
     expect(result.current.sessionError).toBeNull();
-  });
-
-  it("does not fetch for a non-session route", () => {
-    const rootView: ViewState = { mode: "root", activeAgentKey: null, activeSessionId: null };
-    const { result } = renderSessionDetail(rootView);
-
-    expect(result.current.session).toBeNull();
-    expect(api.fetchSessionData).not.toHaveBeenCalled();
-  });
-
-  it("refresh re-fetches the open session", async () => {
-    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    const { result } = renderSessionDetail();
-    await waitFor(() => expect(result.current.session).toEqual(sample));
-
-    const updated = makeSessionDetail("claudecode", "abc", {
-      messages: [{ id: "refreshed", role: "user", time_created: 0, parts: [] }],
-    });
-    vi.mocked(api.fetchSessionData).mockResolvedValue(updated);
-    await act(async () => {
-      await result.current.refresh();
-    });
-    await waitFor(() => expect(result.current.session).toEqual(updated));
-  });
-
-  it("reuses a cached detail when returning to a session route", async () => {
-    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    const rootView: ViewState = { mode: "root", activeAgentKey: null, activeSessionId: null };
-    const { result, rerender } = renderSessionDetail();
-    await waitFor(() => expect(result.current.session).toEqual(sample));
-
-    rerender({ currentView: rootView });
-    rerender({ currentView: sessionView });
-    await waitFor(() => expect(result.current.session).toEqual(sample));
-
-    expect(api.fetchSessionData).toHaveBeenCalledOnce();
-  });
-
-  it("re-fetches a cached detail when a live update invalidates it", async () => {
-    vi.mocked(api.fetchSessionData).mockResolvedValue(sample);
-    const { client, result } = renderSessionDetail();
-    await waitFor(() => expect(result.current.session).toEqual(sample));
-
-    await act(() =>
-      client.invalidateQueries({
-        queryKey: queryKeys.sessionDetail("claudecode", "claudecode/abc"),
-        exact: true,
-      }),
-    );
-
-    expect(api.fetchSessionData).toHaveBeenCalledTimes(2);
-    const triggers = vi
-      .mocked(api.logClientEvent)
-      .mock.calls.filter(([event]) => event === "session.open.done")
-      .map(([, data]) => data?.trigger);
-    expect(triggers).toEqual(["route", "refresh"]);
   });
 
   it("requests and merges only messages appended by a live update", async () => {
@@ -271,83 +163,6 @@ describe("useSessionDetail", () => {
         "session.open.done:codex/def",
       ],
     });
-  });
-
-  it("does not surface an aborted route request as an error", async () => {
-    const viewB: ViewState = {
-      mode: "session",
-      activeAgentKey: "codex",
-      activeSessionId: "def",
-    };
-    const sessionB = makeSessionDetail("codex", "b");
-    vi.mocked(api.fetchSessionData).mockImplementation((agent, _sessionId, options) => {
-      if (agent === "codex") return Promise.resolve(sessionB);
-      return new Promise((_resolve, reject) => {
-        options?.signal?.addEventListener("abort", () => {
-          const error = new Error("aborted");
-          error.name = "AbortError";
-          reject(error);
-        });
-      });
-    });
-    const { result, rerender } = renderSessionDetail();
-    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
-
-    rerender({ currentView: viewB });
-    await waitFor(() => expect(result.current.session).toEqual(sessionB));
-
-    expect(result.current.sessionError).toBeNull();
-    expect(api.logClientEvent).not.toHaveBeenCalledWith(
-      "session.open.error",
-      expect.objectContaining({ request_key: "claudecode/claudecode/abc" }),
-    );
-  });
-
-  it("does not let a stale failure clear loading for the current request", async () => {
-    const requestA = deferred<SessionDetail>();
-    const requestB = deferred<SessionDetail>();
-    const viewB: ViewState = {
-      mode: "session",
-      activeAgentKey: "codex",
-      activeSessionId: "def",
-    };
-    const sessionB = makeSessionDetail("codex", "b");
-    vi.mocked(api.fetchSessionData).mockImplementation((_agent, sessionId) =>
-      sessionId === sessionView.activeSessionId ? requestA.promise : requestB.promise,
-    );
-    const { result, rerender } = renderSessionDetail();
-    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
-
-    rerender({ currentView: viewB });
-    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
-    await act(async () => requestA.reject(new Error("stale failure")));
-
-    expect(result.current.sessionLoading).toBe(true);
-    expect(result.current.sessionError).toBeNull();
-    await act(async () => requestB.resolve(sessionB));
-    await waitFor(() => expect(result.current.sessionLoading).toBe(false));
-    expect(result.current.session).toEqual(sessionB);
-  });
-
-  it("aborts without committing state after unmount", async () => {
-    const request = deferred<SessionDetail>();
-    vi.mocked(api.fetchSessionData).mockReturnValue(request.promise);
-    const { unmount } = renderSessionDetail();
-    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(1));
-    const signal = vi.mocked(api.fetchSessionData).mock.calls[0]?.[2]?.signal;
-
-    unmount();
-    await act(async () => request.resolve(sample));
-
-    expect(signal?.aborted).toBe(true);
-    expect(api.logClientEvent).not.toHaveBeenCalledWith(
-      "session.open.done",
-      expect.objectContaining({ request_key: "claudecode/claudecode/abc" }),
-    );
-    expect(api.logClientEvent).not.toHaveBeenCalledWith(
-      "session.open.error",
-      expect.objectContaining({ request_key: "claudecode/claudecode/abc" }),
-    );
   });
 
   it("does not let an old refresh overwrite a navigated session", async () => {

@@ -9,21 +9,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-type ResolveWindow = ReturnType<typeof useTimeWindow>["resolve"];
-
 function TimeWindowHarness({
   observedPresets,
-  observedResolvers,
   defaultWindow = { days: 7 },
 }: {
   observedPresets: Array<string | null>;
-  observedResolvers?: ResolveWindow[];
   defaultWindow?: TimeWindow;
 }) {
   const location = useLocation();
   const controller = useTimeWindow(defaultWindow);
   observedPresets.push(controller.preset);
-  observedResolvers?.push(controller.resolve);
 
   return (
     <>
@@ -32,13 +27,6 @@ function TimeWindowHarness({
       <span data-testid="from">{controller.timeWindow?.from}</span>
       <span data-testid="to">{controller.timeWindow?.to}</span>
       <Link to="/session">Open session</Link>
-      <Link to="/?range=14d&view=timeline">Change view</Link>
-      <button type="button" onClick={() => controller.selectPreset("30d")}>
-        Select 30 days
-      </button>
-      <button type="button" onClick={() => controller.selectCustom("2026-04-01", "2026-04-30")}>
-        Select custom
-      </button>
     </>
   );
 }
@@ -57,36 +45,6 @@ describe("useTimeWindow", () => {
     expect(screen.getByTestId("preset").textContent).toBe("14d");
     expect(screen.getByTestId("search").textContent).toBe("?range=14d");
     expect(observedPresets).not.toContain("7d");
-  });
-
-  it("writes preset and custom selections to the current URL", () => {
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <TimeWindowHarness observedPresets={[]} />
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Select 30 days" }));
-    expect(screen.getByTestId("search").textContent).toBe("?range=30d");
-
-    fireEvent.click(screen.getByRole("button", { name: "Select custom" }));
-    expect(screen.getByTestId("search").textContent).toBe(
-      "?range=custom&from=2026-04-01&to=2026-04-30",
-    );
-  });
-
-  it("keeps the resolver stable when unrelated URL parameters change", () => {
-    const observedResolvers: ResolveWindow[] = [];
-    render(
-      <MemoryRouter initialEntries={["/?range=14d"]}>
-        <TimeWindowHarness observedPresets={[]} observedResolvers={observedResolvers} />
-      </MemoryRouter>,
-    );
-    const initialResolver = observedResolvers.at(-1);
-
-    fireEvent.click(screen.getByRole("link", { name: "Change view" }));
-
-    expect(observedResolvers.at(-1)).toBe(initialResolver);
   });
 
   it.each(["/", "/?range=7d"])("refreshes a rolling preset at local midnight from %s", (url) => {

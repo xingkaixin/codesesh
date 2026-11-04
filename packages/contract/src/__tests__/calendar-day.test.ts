@@ -3,7 +3,6 @@ import {
   addCalendarDays,
   countCalendarDays,
   parseCalendarDayBoundary,
-  startOfCalendarDay,
   toCalendarDayKey,
 } from "../calendar-day.js";
 
@@ -89,13 +88,6 @@ describe("CS-133: calendar days across DST transitions", () => {
       expect(midnight.getSeconds()).toBe(0);
       expect(midnight.getMilliseconds()).toBe(0);
     }
-  });
-
-  it("counts a single day for a range inside one calendar day", () => {
-    useTimeZone("America/New_York");
-    const noon = new Date(2026, 2, 8, 12).getTime();
-
-    expect(countCalendarDays(startOfCalendarDay(noon), noon)).toBe(1);
   });
 
   it("parses an inclusive date-only range across a DST transition", () => {

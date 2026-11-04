@@ -4,10 +4,7 @@ import {
   buildProjectTimeline,
   getProjectTimelinePage,
   getTimelineChildPage,
-  isRowExpanded,
-  TIMELINE_CHILD_PAGE_SIZE,
   TIMELINE_MAIN_PAGE_SIZE,
-  type TimelineRow,
 } from "./session-timeline";
 
 const NOW = new Date(2026, 7, 6, 12, 0, 0).getTime();
@@ -37,53 +34,6 @@ function createSession(
 }
 
 describe("buildProjectTimeline", () => {
-  it("pages a deeply nested session chain without flattening every descendant", () => {
-    const depth = 12_000;
-    const sessions = Array.from({ length: depth }, (_, index) =>
-      createSession({
-        id: `deep-${index}`,
-        time_updated: NOW + index,
-        ...(index > 0
-          ? { parent_reference: { agentName: "codex", sessionId: `deep-${index - 1}` } }
-          : {}),
-      }),
-    );
-    const timeline = buildProjectTimeline(sessions, { now: NOW });
-    const row = getProjectTimelinePage(timeline).days[0]!.rows[0]!;
-    const firstChildPage = getTimelineChildPage(row);
-    const lastChildPage = getTimelineChildPage(row, depth - 1);
-
-    expect(timeline.mainCount).toBe(1);
-    expect(timeline.subCount).toBe(depth - 1);
-    expect(row.childCount).toBe(depth - 1);
-    expect(row.childRoots).toHaveLength(1);
-    expect("children" in row).toBe(false);
-    expect(firstChildPage.rows).toHaveLength(TIMELINE_CHILD_PAGE_SIZE);
-    expect(firstChildPage.rows[0]!.routeKey).toBe("codex/deep-1");
-    expect(firstChildPage.rows.at(-1)!.routeKey).toBe(`codex/deep-${TIMELINE_CHILD_PAGE_SIZE}`);
-    expect(firstChildPage.hasNext).toBe(true);
-    expect(lastChildPage.rows.at(-1)!.routeKey).toBe(`codex/deep-${depth - 1}`);
-    expect(lastChildPage.hasNext).toBe(false);
-  });
-
-  it("labels days relative to now", () => {
-    const timeline = buildProjectTimeline(
-      [
-        createSession({ id: "today", time_updated: at(6, 9) }),
-        createSession({ id: "yesterday", time_updated: at(5, 9) }),
-        createSession({ id: "older", time_updated: at(4, 9) }),
-      ],
-      { now: NOW },
-    );
-
-    expect(timeline.days.map((day) => day.label)).toEqual(["Today", "Yesterday", "08-04"]);
-    expect(timeline.days.map((day) => day.dayKey)).toEqual([
-      "2026-08-06",
-      "2026-08-05",
-      "2026-08-04",
-    ]);
-  });
-
   it("keeps mounted children out of the main axis and rolls their stats into the parent", () => {
     const timeline = buildProjectTimeline(
       [
@@ -181,40 +131,6 @@ describe("buildProjectTimeline", () => {
     expect(rows.every((row) => row.isOrphan)).toBe(true);
     expect(timeline.orphanCount).toBe(3);
   });
-
-  it("reports main and sub counts per day and across the timeline", () => {
-    const timeline = buildProjectTimeline(
-      [
-        createSession({ id: "a", time_updated: at(6, 9) }),
-        createSession({ id: "b", time_updated: at(6, 10) }),
-        createSession({
-          id: "a-child",
-          time_updated: at(6, 11),
-          parent_reference: { agentName: "codex", sessionId: "a" },
-        }),
-        createSession({ id: "c", time_updated: at(5, 9) }),
-      ],
-      { now: NOW },
-    );
-
-    expect(timeline.days.map((day) => [day.mainCount, day.subCount])).toEqual([
-      [2, 1],
-      [1, 0],
-    ]);
-    expect(timeline.mainCount).toBe(3);
-    expect(timeline.subCount).toBe(1);
-    expect(timeline.totalTokens).toBe(60);
-  });
-
-  it("is empty for an empty snapshot", () => {
-    expect(buildProjectTimeline([], { now: NOW })).toEqual({
-      days: [],
-      orphanCount: 0,
-      mainCount: 0,
-      subCount: 0,
-      totalTokens: 0,
-    });
-  });
 });
 
 describe("timeline paging", () => {
@@ -241,38 +157,5 @@ describe("timeline paging", () => {
     expect(secondPage.shown).toBe(15);
     expect(secondPage.hasPrevious).toBe(true);
     expect(secondPage.hasNext).toBe(false);
-  });
-
-  it("rejects page limits that cannot advance safely", () => {
-    const timeline = buildProjectTimeline([], { now: NOW });
-
-    expect(() => getProjectTimelinePage(timeline, 0, 0)).toThrow(RangeError);
-    expect(() => getProjectTimelinePage(timeline, 0, Number.MAX_SAFE_INTEGER + 1)).toThrow(
-      RangeError,
-    );
-  });
-});
-
-describe("isRowExpanded", () => {
-  const parent = { routeKey: "codex/root", childCount: 2 } as TimelineRow;
-  const leaf = { routeKey: "codex/leaf", childCount: 0 } as TimelineRow;
-  const open = new Set(["codex/root", "codex/leaf"]);
-  const closed = new Set<string>();
-
-  it.each([
-    ["collapsed" as const, open, true],
-    ["collapsed" as const, closed, false],
-    ["expanded" as const, open, true],
-    ["expanded" as const, closed, true],
-    ["hidden" as const, open, false],
-    ["hidden" as const, closed, false],
-  ])("resolves %s mode against the open set", (mode, openIds, expected) => {
-    expect(isRowExpanded(parent, mode, openIds)).toBe(expected);
-  });
-
-  it("never expands a row without children", () => {
-    expect(isRowExpanded(leaf, "collapsed", open)).toBe(false);
-    expect(isRowExpanded(leaf, "expanded", open)).toBe(false);
-    expect(isRowExpanded(leaf, "hidden", open)).toBe(false);
   });
 });

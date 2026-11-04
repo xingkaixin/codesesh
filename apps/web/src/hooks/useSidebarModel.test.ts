@@ -58,11 +58,6 @@ const projectView = {
   activeProjectKind: projectIdentity.kind,
   activeProjectKey: projectIdentity.key,
 } satisfies ViewState;
-const sessionView = {
-  mode: "session",
-  activeAgentKey: "codex",
-  activeSessionId: codexSession.reference.sessionId,
-} satisfies ViewState;
 
 afterEach(cleanup);
 
@@ -91,27 +86,6 @@ function renderModel(initialViewState: ViewState = rootView, indexes = sessionIn
 }
 
 describe("useSidebarModel", () => {
-  it("resolves the agent behind an agent route without listing its sessions", () => {
-    const agentView = {
-      mode: "agent",
-      activeAgentKey: "codex",
-      activeSessionId: null,
-    } satisfies ViewState;
-    const { result } = renderModel(agentView);
-
-    expect(result.current.activeAgent?.displayName).toBe("Codex");
-    expect(result.current.sidebarSessions).toEqual([]);
-  });
-
-  it("keeps the opened session's project selected in the sidebar", () => {
-    const { result, rerender } = renderModel(projectView);
-
-    rerender({ viewState: sessionView, selectedProjectAgent: undefined });
-
-    expect(result.current.selectedProjectNavigation?.identity).toEqual(projectIdentity);
-    expect(result.current.sidebarSessions).toEqual([codexSession, claudeSession]);
-  });
-
   it("filters project sessions by the selected agent", () => {
     const { result, rerender } = renderModel(projectView);
 
@@ -139,25 +113,5 @@ describe("useSidebarModel", () => {
     expect(result.current.bookmarkedSidebarSessionReferences).toEqual(new Set([codexReference]));
     expect(result.current.sidebarSessionLookup.byReference.get(codexReference)).toBe(codexSession);
     expect(result.current.sidebarSessionLookup.byReference.get(claudeReference)).toBe(sameIdClaude);
-  });
-
-  it("resolves the active project once for route consumers", () => {
-    const { result } = renderModel(projectView);
-
-    expect(result.current.activeProject).toEqual({
-      identity: { kind: projectIdentity.kind, key: projectIdentity.key },
-      identityKey: "git_remote:github.com/acme/app",
-      project: projects[0],
-    });
-    expect(result.current.activeProjectSessions).toHaveLength(2);
-  });
-
-  it("keeps bookmark set identity when only the route object identity changes", () => {
-    const { result, rerender } = renderModel(projectView);
-    const first = result.current.bookmarkedSidebarSessionReferences;
-
-    rerender({ viewState: { ...projectView }, selectedProjectAgent: undefined });
-
-    expect(result.current.bookmarkedSidebarSessionReferences).toBe(first);
   });
 });

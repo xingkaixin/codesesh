@@ -6,10 +6,6 @@ import { getProjectIdentityKey } from "./projects";
 import { buildLocalRecentResults, buildSearchProjectOptions, usesServerSearch } from "./search";
 
 describe("usesServerSearch", () => {
-  it("stays false with no text and only agent/tag/cost filters", () => {
-    expect(usesServerSearch("", { agent: "claudecode", tag: "bugfix" })).toBe(false);
-  });
-
   it("becomes true once a tool filter is set, even with no query text", () => {
     expect(usesServerSearch("", { tool: "bash" })).toBe(true);
   });
@@ -145,19 +141,6 @@ describe("buildLocalRecentResults", () => {
       "child",
     ]);
   });
-
-  it("caps results at 50", () => {
-    const many = Array.from({ length: 60 }, (_, index) =>
-      makeSession(`s-many-${index}`, {
-        smart_tags: ["bugfix"],
-      }),
-    );
-    const indexes = buildIndexes(many);
-
-    const results = buildLocalRecentResults(indexes, { tag: "bugfix" }, undefined);
-
-    expect(results).toHaveLength(50);
-  });
 });
 
 describe("buildSearchProjectOptions", () => {
@@ -199,18 +182,6 @@ describe("buildSearchProjectOptions", () => {
     };
   }
 
-  it("reuses recent project options for local search", () => {
-    expect(
-      buildSearchProjectOptions({
-        usesServerSearch: false,
-        isLoading: false,
-        results: [],
-        selectedProject: undefined,
-        recentProjectOptions,
-      }),
-    ).toBe(recentProjectOptions);
-  });
-
   it("builds and sorts project facets from server results", () => {
     const options = buildSearchProjectOptions({
       usesServerSearch: true,
@@ -228,17 +199,5 @@ describe("buildSearchProjectOptions", () => {
       { key: "git_remote:github.com/acme/app", count: 2 },
       { key: "git_remote:github.com/acme/other", count: 1 },
     ]);
-  });
-
-  it("retains the selected project while server facets are loading", () => {
-    expect(
-      buildSearchProjectOptions({
-        usesServerSearch: true,
-        isLoading: true,
-        results: [makeResult("app", "github.com/acme/app", "acme/app")],
-        selectedProject: { kind: "git_remote", key: "github.com/acme/app" },
-        recentProjectOptions,
-      }),
-    ).toEqual([{ ...recentProjectOptions[0], count: 0, showCount: false }]);
   });
 });

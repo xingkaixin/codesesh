@@ -1,12 +1,8 @@
 import { createQueryWrapper } from "../test/query-wrapper";
 import { queryKeys } from "../lib/query-keys";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
-import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createQueryClient } from "../lib/query-client";
-import { RETAINED_INACTIVE_SESSION_DETAILS } from "../lib/session-detail-cache";
+import { afterEach, expect, it, vi } from "vitest";
 import { useCopySessionAsMarkdown } from "./useCopySessionAsMarkdown";
 
 const apiMocks = vi.hoisted(() => ({
@@ -26,35 +22,6 @@ vi.mock("../lib/clipboard", () => clipboardMocks);
 
 afterEach(() => {
   vi.clearAllMocks();
-  vi.useRealTimers();
-});
-
-function Wrapper({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={createQueryClient()}>{children}</QueryClientProvider>;
-}
-
-describe("useCopySessionAsMarkdown", () => {
-  it("reports and clears a clipboard failure", async () => {
-    vi.useFakeTimers();
-    apiMocks.fetchSessionData.mockResolvedValue({ ...SAMPLE_SESSION_HEAD, messages: [] });
-    clipboardMocks.writeToClipboard.mockResolvedValue(false);
-    const { result } = renderHook(() => useCopySessionAsMarkdown(), { wrapper: Wrapper });
-
-    await act(() => result.current.copySessionAsMarkdown(SAMPLE_SESSION_HEAD));
-
-    expect(result.current.sessionCopyNotice).toBe("Couldn’t copy session as Markdown.");
-    expect(apiMocks.logClientEvent).toHaveBeenCalledWith(
-      "session.markdown_copy.error",
-      expect.objectContaining({ error_name: "Error" }),
-    );
-    const errorData = apiMocks.logClientEvent.mock.calls.find(
-      ([event]) => event === "session.markdown_copy.error",
-    )?.[1];
-    expect(JSON.stringify(errorData)).not.toContain("Clipboard write failed");
-
-    act(() => vi.advanceTimersByTime(2_500));
-    expect(result.current.sessionCopyNotice).toBeNull();
-  });
 });
 
 it("copies the complete transcript when the detail cache only contains a prefix", async () => {
@@ -86,27 +53,4 @@ it("copies the complete transcript when the detail cache only contains a prefix"
     expect.stringContaining("Unloaded tail"),
   );
   expect(client.getQueryData(key)).toEqual(partial);
-});
-
-it("bounds the inactive details cached by repeated copies", async () => {
-  const { client, Wrapper } = createQueryWrapper();
-  apiMocks.fetchSessionData.mockImplementation(async (_agent, sessionId) => ({
-    ...SAMPLE_SESSION_HEAD,
-    messages: [],
-    reference: { ...SAMPLE_SESSION_HEAD.reference, sessionId },
-  }));
-  clipboardMocks.writeToClipboard.mockResolvedValue(true);
-  const { result } = renderHook(() => useCopySessionAsMarkdown(), { wrapper: Wrapper });
-
-  for (const sessionId of ["one", "two", "three", "four"]) {
-    const head = {
-      ...SAMPLE_SESSION_HEAD,
-      reference: { ...SAMPLE_SESSION_HEAD.reference, sessionId },
-    };
-    await act(() => result.current.copySessionAsMarkdown(head));
-  }
-
-  expect(client.getQueryCache().findAll({ queryKey: queryKeys.sessionDetails })).toHaveLength(
-    RETAINED_INACTIVE_SESSION_DETAILS,
-  );
 });

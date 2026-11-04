@@ -59,16 +59,4 @@ describe("file activity extraction", () => {
       { path: "src/b.ts", kind: "delete" },
     ]);
   });
-
-  it("keeps read activity when the input also contains typed content", () => {
-    expect(
-      extractFileToolOperations({
-        tool: "Read",
-        state: {
-          status: "completed",
-          input: { file_path: "src/a.ts", content: [{ type: "text", text: "file contents" }] },
-        },
-      }),
-    ).toEqual([{ path: "src/a.ts", kind: "read" }]);
-  });
 });

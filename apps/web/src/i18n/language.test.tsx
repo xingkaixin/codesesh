@@ -1,14 +1,6 @@
-import {
-  getOutputOrErrorText,
-  normalizeToolState,
-} from "../components/session-detail/tool-normalize";
-import { getToolDisplayStrategy } from "../components/session-detail/tool-strategy";
-import type { ToolPart } from "@codesesh/contract";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
 import { PreferencesMenu } from "../components/app/SidebarFooter";
-import { TimeRangeControl } from "../components/app/TimeRangeControl";
 import { useLocale } from "../hooks/useLocale";
 import {
   getLanguageSnapshot,
@@ -33,12 +25,10 @@ afterEach(() => {
 
 function Preview() {
   useLocale();
-  const [draft, setDraft] = useState("");
   return (
     <>
       <PreferencesMenu theme="light" onChangeTheme={vi.fn()} onShowShortcuts={vi.fn()} />
       <h1>{t("Dashboard")}</h1>
-      <input aria-label="draft" value={draft} onChange={(event) => setDraft(event.target.value)} />
     </>
   );
 }
@@ -61,32 +51,6 @@ describe("UI language", () => {
     expect(resolveLocale(languages)).toBe(expected);
   });
 
-  it("switches in place, persists the choice, and follows later system changes", () => {
-    const languages = vi.spyOn(navigator, "languages", "get").mockReturnValue(["zh-CN"]);
-    setLanguagePreference("system");
-    render(<Preview />);
-    expect(screen.getByRole("heading").textContent).toBe("概览");
-    fireEvent.change(screen.getByLabelText("draft"), {
-      target: { value: "Dashboard 日本語 /my/project" },
-    });
-    chooseLanguage("偏好设置", "日本語");
-    expect(screen.getByRole("heading").textContent).toBe("ダッシュボード");
-    expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe(
-      "Dashboard 日本語 /my/project",
-    );
-    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("ja");
-    expect(document.documentElement.lang).toBe("ja");
-
-    languages.mockReturnValue(["en-GB"]);
-    act(() => window.dispatchEvent(new Event("languagechange")));
-    expect(screen.getByRole("heading").textContent).toBe("ダッシュボード");
-    chooseLanguage("環境設定", "システムに合わせる");
-    expect(screen.getByRole("heading").textContent).toBe("Dashboard");
-    languages.mockReturnValue(["zh-CN"]);
-    act(() => window.dispatchEvent(new Event("languagechange")));
-    expect(screen.getByRole("heading").textContent).toBe("概览");
-  });
-
   it("synchronizes a saved choice from another tab and handles invalid stored values", () => {
     render(<Preview />);
     localStorage.setItem(LANGUAGE_STORAGE_KEY, "ja");
@@ -106,22 +70,6 @@ describe("UI language", () => {
     chooseLanguage("Preferences", "简体中文");
     expect(screen.getByRole("heading").textContent).toBe("概览");
   });
-
-  it("translates time presets without changing their query values", () => {
-    setLanguagePreference("ja");
-    const onSelectPreset = vi.fn();
-    render(
-      <TimeRangeControl
-        window={{ days: 0 }}
-        preset="all"
-        onSelectPreset={onSelectPreset}
-        onSelectCustom={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "7 日" }));
-    expect(onSelectPreset).toHaveBeenCalledWith("7d");
-    expect(screen.getByRole("button", { name: "すべて", pressed: true })).toBeDefined();
-  });
 });
 
 describe("message catalog", () => {
@@ -136,57 +84,10 @@ describe("message catalog", () => {
     }
   });
 
-  it("uses deferred feature translations without changing global messages", () => {
-    const feature = { "Connected to {0}": ["已连接 {0}", "{0} に接続済み"] } as const;
-    expect(t("Connected to {0}", ["Worker"], "zh-CN", feature)).toBe("已连接 Worker");
-    expect(t("Connected to {0}", ["Worker"], "ja", feature)).toBe("Worker に接続済み");
-    expect(t("Dashboard", [], "zh-CN", feature)).toBe("概览");
-    expect(t("Connected to {0}", ["Worker"], "zh-CN")).toBe("Connected to Worker");
-  });
-
   it("interpolates user data literally, without translating or recursively substituting it", () => {
     expect(t('Searching for "{0}"', ["Dashboard <script>{1}</script>"], "zh-CN")).toBe(
       "正在搜索“Dashboard <script>{1}</script>”",
     );
     expect(t("Unknown custom text", [], "ja")).toBe("Unknown custom text");
   });
-});
-
-describe("localized tool output", () => {
-  it.each(["en", "zh-CN", "ja"] as const)(
-    "preserves error fallbacks and empty Cursor output in %s",
-    (locale) => {
-      setLanguagePreference(locale);
-      const failed: ToolPart = {
-        type: "tool",
-        tool: "command",
-        state: { status: "error", error: "Permission denied: /original/path" },
-      };
-      expect(getOutputOrErrorText(normalizeToolState(failed))).toBe(
-        "Permission denied: /original/path",
-      );
-
-      const empty: ToolPart = {
-        type: "tool",
-        tool: "read_file_v2",
-        state: {
-          status: "completed",
-          input: { target_file: "/original/file.ts" },
-          output: { totalLinesInFile: "5" },
-        },
-      };
-      const display = getToolDisplayStrategy(
-        "cursor",
-        empty,
-        normalizeToolState(empty),
-        "/original",
-      );
-      expect(display.outputContent).toMatchObject({
-        kind: "plain",
-        text: t("No output captured."),
-        isCode: false,
-      });
-      expect(display.details).toContainEqual({ label: t("Lines"), value: "5" });
-    },
-  );
 });

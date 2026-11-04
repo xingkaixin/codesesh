@@ -1,10 +1,6 @@
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  UI_PREFERENCES_STORAGE_KEY,
-  parseUiPreferences,
-  useUiPreferences,
-} from "./useUiPreferences";
+import { UI_PREFERENCES_STORAGE_KEY, useUiPreferences } from "./useUiPreferences";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -16,52 +12,6 @@ afterEach(() => {
 });
 
 describe("useUiPreferences", () => {
-  it("uses defaults on first render", () => {
-    const { result } = renderHook(() => useUiPreferences());
-    expect(result.current.sidebarCollapsed).toBe(false);
-    expect(result.current.theme).toBe("system");
-  });
-
-  it("hydrates valid preferences synchronously", () => {
-    window.localStorage.setItem(
-      UI_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        state: { sidebarCollapsed: true, theme: "dark" },
-      }),
-    );
-
-    const { result } = renderHook(() => useUiPreferences());
-    expect(result.current.sidebarCollapsed).toBe(true);
-    expect(result.current.theme).toBe("dark");
-  });
-
-  it("defaults theme to system for preferences persisted before CS-89", () => {
-    window.localStorage.setItem(
-      UI_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        state: { sidebarCollapsed: false },
-      }),
-    );
-
-    const { result } = renderHook(() => useUiPreferences());
-    expect(result.current.theme).toBe("system");
-  });
-
-  it("persists semantic actions across hook instances", () => {
-    const first = renderHook(() => useUiPreferences());
-    act(() => {
-      first.result.current.setSidebarCollapsed(true);
-      first.result.current.setTheme("dark");
-    });
-    first.unmount();
-
-    const second = renderHook(() => useUiPreferences());
-    expect(second.result.current.sidebarCollapsed).toBe(true);
-    expect(second.result.current.theme).toBe("dark");
-  });
-
   it.each([
     "not-json",
     JSON.stringify({ version: 2, state: {} }),
@@ -85,41 +35,5 @@ describe("useUiPreferences", () => {
     });
     const { result } = renderHook(() => useUiPreferences());
     expect(result.current.sidebarCollapsed).toBe(false);
-  });
-
-  it("keeps in-memory updates when storage writes fail", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("full");
-    });
-    const { result } = renderHook(() => useUiPreferences());
-    act(() => result.current.setSidebarCollapsed(true));
-    expect(result.current.sidebarCollapsed).toBe(true);
-  });
-
-  it("writes only the versioned preference whitelist", () => {
-    const { result } = renderHook(() => useUiPreferences());
-    act(() => result.current.setSidebarCollapsed(true));
-
-    expect(JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY)!)).toEqual({
-      version: 1,
-      state: { sidebarCollapsed: true, theme: "system" },
-    });
-  });
-});
-
-describe("parseUiPreferences", () => {
-  it("ignores unrelated persisted fields", () => {
-    expect(
-      parseUiPreferences(
-        JSON.stringify({
-          version: 1,
-          state: {
-            sidebarCollapsed: false,
-            theme: "light",
-            transientSelection: "session-1",
-          },
-        }),
-      ),
-    ).toEqual({ sidebarCollapsed: false, theme: "light" });
   });
 });

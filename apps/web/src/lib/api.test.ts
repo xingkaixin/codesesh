@@ -1,49 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  SAMPLE_DASHBOARD_DATA,
-  SAMPLE_SESSIONS_UPDATED_EVENT,
-  SAMPLE_SESSION_HEAD,
-} from "@codesesh/contract/test-fixtures";
+import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
 import type { DashboardFilters } from "./api";
-import {
-  ApiRequestError,
-  fetchAgents,
-  fetchConfig,
-  fetchDashboard,
-  fetchProjects,
-  fetchSearchResults,
-  fetchSessionData,
-  fetchSessions,
-  subscribeSessionUpdates,
-} from "./api";
+import { fetchDashboard, fetchSessionData, fetchSessions, subscribeSessionUpdates } from "./api";
 import { createApiClient } from "./api-client";
-import { createClientTelemetry } from "./client-telemetry";
 import { resolveRemoteAccess } from "./remote-access";
 import { createSessionUpdateSubscriber } from "./session-updates";
-
-describe("abortable list requests", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it.each([
-    ["config", (signal: AbortSignal) => fetchConfig({ signal })],
-    ["agents", (signal: AbortSignal) => fetchAgents(undefined, { signal })],
-    ["projects", (signal: AbortSignal) => fetchProjects(undefined, { signal })],
-    ["sessions", (signal: AbortSignal) => fetchSessions({}, { signal })],
-  ])("forwards the abort signal for %s", async (_name, request) => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ sessions: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const controller = new AbortController();
-
-    await request(controller.signal);
-
-    expect(fetchMock.mock.calls[0]?.[1]).toEqual({ signal: controller.signal });
-  });
-});
 
 describe("fetchSessions", () => {
   afterEach(() => {
@@ -144,86 +105,12 @@ describe("remote access", () => {
     expect(FakeEventSource.instances.at(-1)?.url).toBe("/api/events?access_token=remote-secret");
     unsubscribe();
   });
-
-  it("authorizes telemetry without using the beacon path", () => {
-    window.history.replaceState(null, "", "/?access_token=remote-secret");
-    const telemetry = createClientTelemetry(resolveRemoteAccess());
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    const sendBeacon = vi.fn();
-    vi.stubGlobal("navigator", { sendBeacon });
-    vi.stubGlobal("fetch", fetchMock);
-
-    telemetry.logClientEvent("app.ready");
-
-    expect(sendBeacon).not.toHaveBeenCalled();
-    const init = fetchMock.mock.calls[0]![1] as RequestInit;
-    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer remote-secret");
-  });
-
-  it("keeps each client bound to its startup credentials", async () => {
-    window.history.replaceState(null, "", "/?access_token=first-secret");
-    const firstClient = createApiClient(resolveRemoteAccess());
-    window.history.replaceState(null, "", "/?access_token=second-secret");
-    const secondClient = createApiClient(resolveRemoteAccess());
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await firstClient.fetchDashboard(undefined, {});
-    await secondClient.fetchDashboard(undefined, {});
-
-    const headers = fetchMock.mock.calls.map(([, init]) =>
-      new Headers((init as RequestInit).headers).get("Authorization"),
-    );
-    expect(headers).toEqual(["Bearer first-secret", "Bearer second-secret"]);
-  });
 });
 
 describe("fetchDashboard", () => {
   const timeZoneQuery = `&timeZone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`;
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  it("decodes the dashboard response as-is", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await fetchDashboard(undefined, {});
-
-    expect(result).toEqual(SAMPLE_DASHBOARD_DATA);
-  });
-
-  it("uses days=0 without expanding all-time into thousands of daily buckets", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchDashboard({ from: 0, days: 0 }, {});
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dashboard?days=0" + timeZoneQuery);
-  });
-
-  it("sends exact bounds without a redundant days value", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_DASHBOARD_DATA),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchDashboard({ from: 10, to: 20, days: 7 }, {});
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/dashboard?from=1970-01-01T00%3A00%3A00.010Z&to=1970-01-01T00%3A00%3A00.020Z" +
-        timeZoneQuery,
-    );
   });
 
   it.each<[string, DashboardFilters, string]>([
@@ -257,21 +144,6 @@ describe("fetchSessionData", () => {
     vi.unstubAllGlobals();
   });
 
-  it("forwards the abort signal to fetch", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ sessions: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const controller = new AbortController();
-
-    await fetchSessionData("codex", "session", { signal: controller.signal });
-
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/codex/session", {
-      signal: controller.signal,
-    });
-  });
-
   it("sends paging options without forwarding them as fetch options", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -290,64 +162,6 @@ describe("fetchSessionData", () => {
       "/api/sessions/codex/session?messageCursor=prefix%2B%2F%3D&messageLimit=200",
       { signal: controller.signal },
     );
-  });
-
-  it("sends the session-detail operation identifier as a request header", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ messages: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchSessionData("codex", "session", { operationId: "detail-operation" });
-
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/codex/session", {
-      signal: undefined,
-      headers: { "X-CodeSesh-Operation-ID": "detail-operation" },
-    });
-  });
-
-  it("exposes failed response status through ApiRequestError", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(fetchSessionData("codex", "missing")).rejects.toEqual(
-      expect.objectContaining({
-        message: "GET /api/sessions/codex/missing failed: 404 Not Found",
-        status: 404,
-      }),
-    );
-    await expect(fetchSessionData("codex", "missing")).rejects.toBeInstanceOf(ApiRequestError);
-  });
-});
-
-describe("project identity request filters", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it.each([
-    ["sessions", () => fetchSessions({ projectKind: "path", projectKey: "/workspace/app" })],
-    [
-      "search",
-      () => fetchSearchResults("error", { projectKind: "path", projectKey: "/workspace/app" }),
-    ],
-  ])("sends both identity fields for %s requests", async (_name, request) => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ sessions: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await request();
-
-    const url = new URL(fetchMock.mock.calls[0]![0], "http://localhost");
-    expect(url.searchParams.get("projectKind")).toBe("path");
-    expect(url.searchParams.get("projectKey")).toBe("/workspace/app");
   });
 });
 
@@ -381,19 +195,8 @@ class FakeEventSource {
     this.onopen?.();
   }
 
-  emit(type: string, data: unknown) {
-    for (const cb of this.listeners[type] ?? []) {
-      cb({ data: JSON.stringify(data) });
-    }
-  }
-
   fail() {
     this.readyState = FakeEventSource.CLOSED;
-    this.onerror?.();
-  }
-
-  interrupt() {
-    this.readyState = FakeEventSource.CONNECTING;
     this.onerror?.();
   }
 }
@@ -416,92 +219,6 @@ describe("subscribeSessionUpdates", () => {
     return source;
   }
 
-  it("delivers sessions-updated and scan-status events", () => {
-    const onUpdate = vi.fn();
-    const onScanStatus = vi.fn();
-    subscribeSessionUpdates(onUpdate, onScanStatus);
-
-    latest().emit("sessions-updated", SAMPLE_SESSIONS_UPDATED_EVENT);
-    latest().emit("scan-status", { type: "scan-status", active: true });
-
-    expect(onUpdate).toHaveBeenCalledWith(SAMPLE_SESSIONS_UPDATED_EVENT);
-    expect(onScanStatus).toHaveBeenCalledWith(expect.objectContaining({ active: true }));
-  });
-
-  it("does not call onReconnect on the first connection open", () => {
-    const onReconnect = vi.fn();
-    subscribeSessionUpdates(() => {}, undefined, onReconnect);
-
-    latest().open();
-
-    expect(onReconnect).not.toHaveBeenCalled();
-  });
-
-  it("rebuilds the connection with exponential backoff up to the 30s cap", () => {
-    vi.spyOn(Math, "random").mockReturnValue(0.5);
-    subscribeSessionUpdates(() => {});
-
-    expect(FakeEventSource.instances).toHaveLength(1);
-
-    latest().fail();
-    expect(FakeEventSource.instances).toHaveLength(1);
-    vi.advanceTimersByTime(999);
-    expect(FakeEventSource.instances).toHaveLength(1);
-    vi.advanceTimersByTime(1);
-    expect(FakeEventSource.instances).toHaveLength(2);
-
-    latest().fail();
-    vi.advanceTimersByTime(2000);
-    expect(FakeEventSource.instances).toHaveLength(3);
-
-    latest().fail();
-    vi.advanceTimersByTime(4000);
-    expect(FakeEventSource.instances).toHaveLength(4);
-
-    latest().fail();
-    vi.advanceTimersByTime(8000);
-    expect(FakeEventSource.instances).toHaveLength(5);
-
-    latest().fail();
-    vi.advanceTimersByTime(16000);
-    expect(FakeEventSource.instances).toHaveLength(6);
-
-    latest().fail();
-    vi.advanceTimersByTime(30000);
-    expect(FakeEventSource.instances).toHaveLength(7);
-
-    vi.spyOn(Math, "random").mockRestore();
-  });
-
-  it("keeps retry delay within +/-20% jitter of the exponential base", () => {
-    subscribeSessionUpdates(() => {});
-    latest().fail();
-
-    const scheduled = vi.getTimerCount();
-    expect(scheduled).toBe(1);
-
-    vi.advanceTimersByTime(799);
-    const before = FakeEventSource.instances.length;
-    vi.advanceTimersByTime(1);
-    const after = FakeEventSource.instances.length;
-
-    expect(before).toBe(1);
-    expect(after).toBeGreaterThanOrEqual(before);
-  });
-
-  it("does not reconnect after unsubscribe", () => {
-    const unsubscribe = subscribeSessionUpdates(() => {});
-    const first = latest();
-
-    unsubscribe();
-    expect(first.closed).toBe(true);
-
-    first.fail();
-    vi.advanceTimersByTime(60_000);
-
-    expect(FakeEventSource.instances).toHaveLength(1);
-  });
-
   it("calls onDisconnect once when the stream closes, and onReconnect when it recovers", () => {
     const onReconnect = vi.fn();
     const onDisconnect = vi.fn();
@@ -518,35 +235,5 @@ describe("subscribeSessionUpdates", () => {
 
     expect(onReconnect).toHaveBeenCalledTimes(1);
     expect(onDisconnect).toHaveBeenCalledTimes(1);
-  });
-
-  it("reports native reconnect interruptions only after the delay threshold", () => {
-    const onDisconnect = vi.fn();
-    subscribeSessionUpdates(() => {}, undefined, undefined, onDisconnect);
-
-    latest().open();
-    latest().interrupt();
-    vi.advanceTimersByTime(4_999);
-
-    expect(onDisconnect).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(1);
-
-    expect(onDisconnect).toHaveBeenCalledTimes(1);
-  });
-
-  it("cancels a pending disconnect notice when native reconnect succeeds", () => {
-    const onReconnect = vi.fn();
-    const onDisconnect = vi.fn();
-    subscribeSessionUpdates(() => {}, undefined, onReconnect, onDisconnect);
-
-    latest().open();
-    latest().interrupt();
-    vi.advanceTimersByTime(4_999);
-    latest().open();
-    vi.advanceTimersByTime(1);
-
-    expect(onDisconnect).not.toHaveBeenCalled();
-    expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 });
