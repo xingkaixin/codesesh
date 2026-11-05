@@ -40,6 +40,7 @@ export function MessagePagingControls({
 }) {
   const locale = useLocale();
   const [loadAll, setLoadAll] = useState(false);
+  if (loadAll && failed) setLoadAll(false);
   useEffect(() => {
     if (loadAll && !loading && !failed) loadMore();
   }, [loadAll, loading, failed, loadMore, loaded]);
@@ -63,19 +64,14 @@ export function MessagePagingControls({
         {showLoadAll && (
           <button
             type="button"
-            disabled={loading || (loadAll && !failed)}
+            disabled={loading || loadAll}
             onClick={() => {
               setLoadAll(true);
               if (failed) loadMore();
             }}
             className={BUTTON_CLASS}
           >
-            {t(
-              loadAll && !failed ? "Loading all messages…" : "Load all messages",
-              [],
-              locale,
-              MESSAGES,
-            )}
+            {t(loadAll ? "Loading all messages…" : "Load all messages", [], locale, MESSAGES)}
           </button>
         )}
       </div>
