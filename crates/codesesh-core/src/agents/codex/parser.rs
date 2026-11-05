@@ -26,7 +26,7 @@ pub(super) struct Parser {
     message_count: usize,
     message_title: Option<String>,
     current: Option<usize>,
-    pending_plan: Option<MessagePart>,
+    pending_plan: Option<(String, f64)>,
     latest_text: Option<usize>,
     tools: HashMap<String, (usize, usize)>,
     tool_events: tool_events::ToolEvents,
@@ -222,11 +222,7 @@ impl Parser {
                 });
                 let text = if role == "assistant" {
                     if let Some(captures) = PLAN.captures(&full_text) {
-                        *pending_plan = Some(MessagePart::Plan {
-                            text: captures[1].trim().into(),
-                            approval_status: PlanApprovalStatus::Success,
-                            time_created: Some(time),
-                        });
+                        *pending_plan = Some((captures[1].trim().into(), time));
                     }
                     clean(&PLAN.replace(&full_text, ""))
                 } else {
@@ -234,12 +230,6 @@ impl Parser {
                 };
                 if text.trim().is_empty() || (role == "user" && developer_message(&text)) {
                     return;
-                }
-                if role == "user"
-                    && text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN")
-                    && let (Some(index), Some(plan)) = (*current, pending_plan.take())
-                {
-                    messages[index].parts.push(plan);
                 }
                 if role == "user" && !text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN") {
                     static NOTIFICATION: LazyLock<Regex> = LazyLock::new(|| {
@@ -287,11 +277,20 @@ impl Parser {
                 if role == "user" && line_index < 20 && message_title.is_none() {
                     *message_title = title(&text);
                 }
+                let implements = text.trim_start().starts_with("PLEASE IMPLEMENT THIS PLAN");
                 let part = MessagePart::Text {
                     text,
                     time_created: Some(time),
                 };
                 if role == "user" {
+                    if let Some(plan) = pending_plan.take() {
+                        let status = if implements {
+                            PlanApprovalStatus::Success
+                        } else {
+                            PlanApprovalStatus::Pending
+                        };
+                        attach_plan(messages, *current, plan, status, model.clone());
+                    }
                     messages.push(message(Role::User, part, time, None));
                     *current = None;
                     *latest_text = None;
@@ -530,11 +529,18 @@ impl Parser {
             message_title,
             current,
             pending_plan,
+            model,
             has_record,
             ..
         } = self;
-        if let (Some(index), Some(plan)) = (current, pending_plan) {
-            messages[index].parts.push(plan);
+        if let Some(plan) = pending_plan {
+            attach_plan(
+                &mut messages,
+                current,
+                plan,
+                PlanApprovalStatus::Pending,
+                model,
+            );
         }
         if !has_record {
             return None;
@@ -714,6 +720,24 @@ fn projected_record(line: &str) -> serde_json::Result<Value> {
         serde_json::json!({"type":header.kind,"timestamp":header.timestamp,"model":header.model,"turn_id":header.turn_id,"compaction_response_id":header.compaction_response_id})
     };
     Ok(serde_json::json!({"type":record.kind,"timestamp":record.timestamp,"payload":payload}))
+}
+
+fn attach_plan(
+    messages: &mut Vec<Message>,
+    current: Option<usize>,
+    (text, time): (String, f64),
+    approval_status: PlanApprovalStatus,
+    model: Option<String>,
+) {
+    let plan = MessagePart::Plan {
+        text,
+        approval_status,
+        time_created: Some(time),
+    };
+    match current {
+        Some(index) => messages[index].parts.push(plan),
+        None => messages.push(message(Role::Assistant, plan, time, model)),
+    }
 }
 
 fn assistant_part(
