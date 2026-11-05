@@ -1,20 +1,17 @@
 import { t } from "../../i18n/translate";
 import type { PlanPart } from "@codesesh/contract";
 
-export type CodexPlanApprovalStatus = "success" | "fail";
-
 export interface CodexPlanDisplay {
   title: "plan";
   secondaryText?: undefined;
-  approvalStatus: CodexPlanApprovalStatus;
+  approvalStatus: PlanPart["approval_status"];
   expandable: boolean;
   contentLabel: string;
   contentMarkdown: string;
 }
 
 export function buildCodexPlanDisplay(part: PlanPart): CodexPlanDisplay {
-  const approvalStatus: CodexPlanApprovalStatus =
-    part.approval_status === "fail" ? "fail" : "success";
+  const approvalStatus = part.approval_status;
   const contentMarkdown = part.text.trim();
 
   return {

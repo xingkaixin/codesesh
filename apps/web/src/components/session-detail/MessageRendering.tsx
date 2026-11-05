@@ -6,6 +6,7 @@ import {
   CalendarRange,
   CheckCircle2,
   ChevronDown,
+  CircleDashed,
   CircleHelp,
   Lightbulb,
   LoaderCircle,
@@ -72,6 +73,17 @@ const TOOL_STATUS_META: Record<
     icon: LoaderCircle,
   },
 };
+
+const PLAN_STATUS_META: Record<PlanPart["approval_status"], (typeof TOOL_STATUS_META)[ToolStatus]> =
+  {
+    pending: {
+      label: "Pending",
+      className: "bg-[var(--console-surface-muted)] text-[var(--console-muted)]",
+      icon: CircleDashed,
+    },
+    success: TOOL_STATUS_META.completed,
+    fail: TOOL_STATUS_META.error,
+  };
 
 function renderHighlightedText(text: string, query?: string) {
   const pattern = buildHighlightPattern(query);
@@ -455,8 +467,7 @@ const PlanItem = memo(function PlanItem({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
     [locale, part],
   );
-  const statusMeta =
-    display.approvalStatus === "fail" ? TOOL_STATUS_META.error : TOOL_STATUS_META.completed;
+  const statusMeta = PLAN_STATUS_META[display.approvalStatus];
   const StatusIcon = statusMeta.icon;
   const title = (
     <>
