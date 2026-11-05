@@ -122,11 +122,5 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
       detail ? ` · ${detail}` : "",
     ]);
   }
-
-  if (status.searchIndexMaintenance?.failedAgents.length) {
-    return t("Background search index maintenance paused · {0}", [
-      status.searchIndexMaintenance.failedAgents.join(", "),
-    ]);
-  }
   return null;
 }

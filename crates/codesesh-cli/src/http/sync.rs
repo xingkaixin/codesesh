@@ -230,7 +230,7 @@ pub async fn nodes(AxumState(state): AxumState<Arc<State>>) -> Response {
                 .map_or(head.time_updated, |last| last.max(head.time_updated)),
         );
     }
-    let enabled = !state.runtime.status().agent_statuses.is_empty();
+    let enabled = state.runtime.scans_local_agents();
     let local = (enabled || local_sessions > 0).then_some(codesesh_core::sync::LocalNode {
         enabled,
         sessions: local_sessions,

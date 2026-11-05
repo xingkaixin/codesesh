@@ -39,7 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wire::AgentScanStatus::export_all(&config)?;
     wire::BackfillProgress::export_all(&config)?;
     wire::BackfillStatus::export_all(&config)?;
-    wire::SearchIndexMaintenanceStatus::export_all(&config)?;
     wire::ScanStatusEvent::export_all(&config)?;
     wire::SearchResultParent::export_all(&config)?;
     wire::SearchHighlightRange::export_all(&config)?;

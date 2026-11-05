@@ -5,7 +5,6 @@ export type { AgentScanStatus } from "./generated/AgentScanStatus.js";
 export type { ScanCompletion } from "./generated/ScanCompletion.js";
 export type { BackfillProgress } from "./generated/BackfillProgress.js";
 export type { BackfillStatus } from "./generated/BackfillStatus.js";
-export type { SearchIndexMaintenanceStatus } from "./generated/SearchIndexMaintenanceStatus.js";
 export type { ScanStatusEvent } from "./generated/ScanStatusEvent.js";
 import type { PublicReferencedSessionHead } from "./session.js";
 import { getSessionReferenceKey, type SessionReference } from "./session-reference.js";

@@ -4,7 +4,6 @@ import type { AgentScanStatus } from "./AgentScanStatus";
 import type { BackfillStatus } from "./BackfillStatus";
 import type { ScanPhase } from "./ScanPhase";
 import type { ScanStatusEventType } from "./ScanStatusEventType";
-import type { SearchIndexMaintenanceStatus } from "./SearchIndexMaintenanceStatus";
 
 export type ScanStatusEvent = {
   sources?: { [key in string]: AgentCollectionStatus };
@@ -20,5 +19,4 @@ export type ScanStatusEvent = {
   updatedAt: number;
   completedAt?: number;
   backfill: BackfillStatus;
-  searchIndexMaintenance?: SearchIndexMaintenanceStatus;
 };

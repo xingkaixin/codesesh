@@ -561,24 +561,6 @@ pub struct BackfillStatus {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-pub struct SearchIndexMaintenanceStatus {
-    pub active: bool,
-    #[serde(rename = "pendingAgents")]
-    pub pending_agents: Vec<String>,
-    #[serde(rename = "currentAgent")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub current_agent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub remaining: Option<f64>,
-    #[serde(rename = "completedAgents")]
-    pub completed_agents: Vec<String>,
-    #[serde(rename = "failedAgents")]
-    pub failed_agents: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub enum ScanStatusEventType {
     #[serde(rename = "scan-status")]
     ScanStatus,
@@ -627,10 +609,6 @@ pub struct ScanStatusEvent {
     #[ts(optional)]
     pub completed_at: Option<f64>,
     pub backfill: BackfillStatus,
-    #[serde(rename = "searchIndexMaintenance")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub search_index_maintenance: Option<SearchIndexMaintenanceStatus>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
