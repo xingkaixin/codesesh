@@ -433,3 +433,69 @@ fn partial_existing_source_is_not_a_deletion() {
     assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
     assert!(deleted.upserts.is_empty());
 }
+
+#[test]
+fn plans_keep_their_turn_and_stay_pending_without_approval() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root
+        .path()
+        .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000011.jsonl");
+    let say = |time: u64, role: &str, text: &str| {
+        let kind = if role == "user" {
+            "input_text"
+        } else {
+            "output_text"
+        };
+        serde_json::json!({"type":"response_item","timestamp":time,"payload":{"type":"message","role":role,"content":[{"type":kind,"text":text}]}})
+    };
+    let records = [
+        serde_json::json!({"type":"session_meta","timestamp":1000,"payload":{"cwd":"/work"}}),
+        say(2000, "user", "Plan it"),
+        say(3000, "assistant", "<proposed_plan>A</proposed_plan>"),
+        say(4000, "user", "PLEASE IMPLEMENT THIS PLAN:\nA"),
+        say(5000, "assistant", "Done <proposed_plan>B</proposed_plan>"),
+        say(6000, "user", "Try another approach"),
+        say(7000, "assistant", "<proposed_plan>C</proposed_plan>"),
+    ];
+    std::fs::write(
+        &path,
+        records.iter().map(|r| format!("{r}\n")).collect::<String>(),
+    )
+    .unwrap();
+    let detail = parse(&path, &HashMap::new(), &Pricing::bundled())
+        .unwrap()
+        .unwrap();
+    let plans = detail
+        .messages
+        .iter()
+        .enumerate()
+        .flat_map(|(index, message)| message.parts.iter().map(move |part| (index, part)))
+        .filter_map(|(index, part)| match part {
+            MessagePart::Plan {
+                text,
+                approval_status,
+                ..
+            } => Some((index, text.as_str(), *approval_status)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let reply = detail
+        .messages
+        .iter()
+        .position(|message| {
+            matches!(&message.parts[0], MessagePart::Text { text, .. } if text == "Try another approach")
+        })
+        .unwrap();
+    assert_eq!(
+        plans
+            .iter()
+            .map(|(_, text, status)| (*text, *status))
+            .collect::<Vec<_>>(),
+        [
+            ("A", PlanApprovalStatus::Success),
+            ("B", PlanApprovalStatus::Pending),
+            ("C", PlanApprovalStatus::Pending),
+        ]
+    );
+    assert!(plans[1].0 < reply);
+}

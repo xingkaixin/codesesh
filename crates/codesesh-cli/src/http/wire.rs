@@ -82,7 +82,7 @@ fn part(value: core::MessagePart) -> Result<wire::WireMessagePart> {
             time_created,
         } => W::Plan(wire::WirePlanPart {
             text,
-            approval_status: closed(approval_status)?,
+            approval_status,
             time_created,
         }),
         C::Tool {

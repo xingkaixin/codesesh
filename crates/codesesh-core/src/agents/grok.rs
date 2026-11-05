@@ -441,7 +441,7 @@ mod tests {
             matches!(&m.parts[1],MessagePart::Tool{state,..} if state.status==crate::model::ToolPartStatus::Error&&state.error==Some(json!("failed")))
         );
         assert!(
-            matches!(&m.parts[2],MessagePart::Plan{approval_status,..} if approval_status=="success")
+            matches!(&m.parts[2],MessagePart::Plan{approval_status,..} if *approval_status==crate::model::PlanApprovalStatus::Pending)
         );
     }
 }

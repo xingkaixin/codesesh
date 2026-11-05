@@ -153,12 +153,7 @@ pub(super) fn plan(v: &Value, time: f64) -> Option<MessagePart> {
             .map(|(s, c)| format!("- [{}] {s}", if *c { "x" } else { " " }))
             .collect::<Vec<_>>()
             .join("\n"),
-        approval_status: if entries.iter().all(|(_, c)| *c) {
-            "success"
-        } else {
-            "fail"
-        }
-        .into(),
+        approval_status: PlanApprovalStatus::Pending,
         time_created: Some(time),
     })
 }
