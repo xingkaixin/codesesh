@@ -137,7 +137,7 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
 }
 
 #[test]
-fn rescans_deduplicate_cancel_before_dispatch_and_keep_terminal_states() {
+fn rescans_deduplicate_cancel_active_and_keep_terminal_states() {
     let mut cache = Cache::open(None).unwrap();
     cache.initialize_hub("hub").unwrap();
     let token = cache.create_pairing_token().unwrap();
@@ -189,7 +189,6 @@ fn rescans_deduplicate_cancel_before_dispatch_and_keep_terminal_states() {
         .rescan
         .unwrap();
     assert_eq!(offered.id, next.id);
-    assert!(!cache.cancel_rescan(&grant.node_id, &next.id).unwrap());
     assert_eq!(
         cache
             .worker_hello(&grant.node_id, &hello, "1.1.1")
@@ -223,6 +222,35 @@ fn rescans_deduplicate_cancel_before_dispatch_and_keep_terminal_states() {
             .status,
         crate::sync::RescanStatus::Dispatched
     );
+    assert!(cache.cancel_rescan(&grant.node_id, &next.id).unwrap());
+    hello.rescan = Some(crate::sync::RescanProgress {
+        id: next.id.clone(),
+        pending_agents: vec![],
+        target_sequence: Some(0),
+        error: None,
+    });
+    assert!(
+        cache
+            .worker_hello(&grant.node_id, &hello, "1.1.1")
+            .unwrap()
+            .rescan
+            .is_none()
+    );
+    assert_eq!(
+        cache
+            .rescan_tasks()
+            .unwrap()
+            .iter()
+            .find(|task| task.request.id == next.id)
+            .unwrap()
+            .status,
+        crate::sync::RescanStatus::Cancelled
+    );
+    let retry = cache
+        .request_rescan(&nodes, &[], "manual")
+        .unwrap()
+        .remove(0);
+    assert_ne!(retry.id, next.id);
 }
 
 #[test]

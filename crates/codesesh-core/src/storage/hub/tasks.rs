@@ -73,9 +73,14 @@ impl Cache {
     }
 
     pub fn cancel_rescan(&mut self, node: &str, task: &str) -> Result<bool> {
+        // Late progress from a Worker that already received the task is ignored by the
+        // active-status guard in `worker_hello`, so dispatched and running tasks can end here.
         Ok(self.connection.execute(
-            "UPDATE hub_rescans SET status=? WHERE id=? AND node_id=? AND status=?",
-            params![RescanStatus::Cancelled, task, node, RescanStatus::Waiting],
+            &format!(
+                "UPDATE hub_rescans SET status=? WHERE id=? AND node_id=? AND status IN ({})",
+                *ACTIVE_RESCANS
+            ),
+            params![RescanStatus::Cancelled, task, node],
         )? == 1)
     }
 

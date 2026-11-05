@@ -46,9 +46,7 @@ export function NodeTasks({
     try {
       await cancelRescan(nodeId, task.request.id);
     } catch {
-      setError(
-        t("Unable to cancel. The task may already be dispatched; check its updated status."),
-      );
+      setError(t("Unable to cancel. The task may have already ended; check its updated status."));
     } finally {
       await Promise.all([
         client.invalidateQueries({ queryKey: ["source-nodes"] }),
@@ -99,7 +97,7 @@ export function NodeTasks({
             </p>
           )}
         </div>
-        {task.status === "waiting" && (
+        {isActiveTask(task.status) && (
           <button
             className={nodeButton}
             disabled={unavailable || cancelling !== null}
@@ -107,7 +105,7 @@ export function NodeTasks({
               void cancel(task);
             }}
           >
-            {t("Cancel queued task")}
+            {t("Cancel task")}
           </button>
         )}
       </li>
