@@ -14,7 +14,7 @@ pub(super) fn transcript(
     let mut mode = None;
     let mut model = initial_model;
     let mut latest_plan: Option<(usize, usize)> = None;
-    let mut tools = HashMap::<String, (usize, usize)>::new();
+    let mut tools = tool_calls::ToolCalls::new();
     for index in canonical(records, fallback) {
         let Some(e) = unpack(&records[index], fallback) else {
             continue;
@@ -77,8 +77,8 @@ pub(super) fn transcript(
             continue;
         }
         if kind == "tool_call_update" {
-            if let Some((i, p)) = string(&u["toolCallId"]).and_then(|id| tools.get(&id).copied())
-                && let MessagePart::Tool { state, .. } = &mut messages[i].parts[p]
+            if let Some(id) = string(&u["toolCallId"])
+                && let Some(state) = tool_calls::pending(&tools, &mut messages, &id)
             {
                 let s = status(&u["status"]);
                 if let Some(s) = s {
@@ -245,7 +245,8 @@ pub(super) fn transcript(
             call_id: Some(id), ..
         } = &p
         {
-            tools.insert(id.clone(), (i, messages[i].parts.len()));
+            let at = (i, messages[i].parts.len());
+            tool_calls::register(&mut tools, &mut messages, id, at);
             messages[i].mode = Some("tool".into())
         } else if messages[i].mode.is_none() {
             messages[i].mode = mode.clone()

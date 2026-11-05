@@ -1,8 +1,8 @@
-use super::ParsedSession;
+use super::{ParsedSession, tool_calls};
 use crate::{model::*, pricing::Pricing, projects::path_identity};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -405,6 +405,12 @@ mod tests {
                 "p",
                 "tool_call_update",
                 json!({"toolCallId":"c","status":"failed","content":[{"type":"content","content":{"type":"text","text":"failed"}}]}),
+            ),
+            update(
+                4,
+                "p",
+                "tool_call_update",
+                json!({"toolCallId":"c","status":"in_progress"}),
             ),
             update(
                 5,

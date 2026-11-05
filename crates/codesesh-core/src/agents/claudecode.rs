@@ -739,6 +739,34 @@ mod tests {
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Failed");
     }
     #[test]
+    fn first_tool_result_settles_the_call_even_when_empty() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project/session.jsonl");
+        write(
+            &path,
+            &[
+                json!({"type":"user","uuid":"u","cwd":"/tmp/project","message":{"role":"user","content":"Inspect files"}}),
+                json!({"type":"assistant","uuid":"a","message":{"role":"assistant","content":[{"type":"tool_use","id":"read","name":"Read","input":{}},{"type":"tool_use","id":"touch","name":"Bash","input":{}}]}}),
+                json!({"type":"user","uuid":"r1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"read","content":"first"}]}}),
+                json!({"type":"user","uuid":"r2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"read","content":"replayed"}]}}),
+                json!({"type":"user","uuid":"r3","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"touch","content":""}]}}),
+            ],
+        );
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let [
+            MessagePart::Tool { state: read, .. },
+            MessagePart::Tool { state: touch, .. },
+        ] = sessions[0].detail.messages[1].parts.as_slice()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            read.output,
+            Some(json!([{"type":"text","text":"first","time_created":0.0}]))
+        );
+        assert_eq!(touch.status, crate::model::ToolPartStatus::Completed);
+    }
+    #[test]
     fn one_hour_cache_writes_cost_twice_input() {
         let root = tempfile::tempdir().unwrap();
         write(

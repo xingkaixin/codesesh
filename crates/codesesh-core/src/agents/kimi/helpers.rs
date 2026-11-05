@@ -1,9 +1,6 @@
-use crate::model::*;
+use crate::{agents::tool_calls, model::*};
 use serde_json::Value;
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 pub fn records(path: &Path) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Value>>>> {
     use std::io::BufRead;
@@ -183,7 +180,7 @@ pub fn tool(name: &str, id: &str, input: Option<Value>, ts: f64, code: bool) -> 
 pub struct Builder {
     pub messages: Vec<Message>,
     pub current: Option<usize>,
-    calls: HashMap<String, (usize, usize)>,
+    calls: tool_calls::ToolCalls,
 }
 impl Builder {
     #[allow(clippy::too_many_arguments)]
@@ -207,7 +204,7 @@ impl Builder {
                 call_id: Some(id), ..
             } = part
             {
-                self.calls.insert(id.clone(), (i, p));
+                tool_calls::register(&mut self.calls, &mut self.messages, id, (i, p));
             }
         }
         if role == Role::Assistant {
@@ -246,11 +243,13 @@ impl Builder {
     ) {
         if let Some(i) = self.current {
             let m = &mut self.messages[i];
-            if let MessagePart::Tool {
-                call_id: Some(id), ..
-            } = &part
-            {
-                self.calls.insert(id.clone(), (i, m.parts.len()));
+            let call = match &part {
+                MessagePart::Tool {
+                    call_id: Some(id), ..
+                } => Some((id.clone(), (i, m.parts.len()))),
+                _ => None,
+            };
+            if call.is_some() {
                 m.mode = Some("tool".into());
             }
             m.parts.push(part);
@@ -259,6 +258,9 @@ impl Builder {
             }
             if m.provider.is_none() {
                 m.provider = provider.map(str::to_owned);
+            }
+            if let Some((id, at)) = call {
+                tool_calls::register(&mut self.calls, &mut self.messages, &id, at);
             }
         } else {
             self.append(
@@ -287,16 +289,17 @@ impl Builder {
         status: ToolPartStatus,
         note: Option<String>,
     ) -> bool {
-        if let Some(state) = self.state(id) {
+        if !self.calls.contains_key(id) {
+            return false;
+        }
+        if let Some(state) = tool_calls::pending(&self.calls, &mut self.messages, id) {
             state.output = Some(serde_json::to_value(parts).unwrap());
             state.status = status;
             if let Some(note) = note {
                 state.metadata = Some(serde_json::json!({"note":clean(&note)}));
             }
-            true
-        } else {
-            false
         }
+        true
     }
     pub fn usage(
         &mut self,

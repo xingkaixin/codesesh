@@ -1,5 +1,5 @@
 use super::{common::*, internal, output_parts, user_parts};
-use crate::agents::jsonl::timestamp;
+use crate::agents::{jsonl::timestamp, tool_calls};
 use crate::{
     model::*,
     pricing::{Pricing, priced_model},
@@ -82,14 +82,16 @@ impl Transcript {
             _ => false,
         };
         if !duplicate {
-            if let MessagePart::Tool {
-                call_id: Some(id), ..
-            } = &part
-                && !id.is_empty()
-            {
-                self.tools.insert(id.clone(), (index, m.parts.len()));
-            }
+            let call = match &part {
+                MessagePart::Tool {
+                    call_id: Some(id), ..
+                } if !id.is_empty() => Some((id.clone(), (index, m.parts.len()))),
+                _ => None,
+            };
             m.parts.push(part);
+            if let Some((id, at)) = call {
+                tool_calls::register(&mut self.tools, &mut self.messages, &id, at);
+            }
             let flags = self.part_flags.entry(index).or_default();
             flags.0 |= is_text;
             flags.1 |= is_tool;
@@ -107,42 +109,24 @@ impl Transcript {
         updates: &Value,
         is_error: bool,
     ) -> bool {
-        let Some(&(i, p)) = self.tools.get(id) else {
+        if !self.tools.contains_key(id) {
             return false;
-        };
-        let MessagePart::Tool { state, .. } = &mut self.messages[i].parts[p] else {
-            return false;
-        };
-        let has_output = !output.is_empty();
-        if has_output {
-            let extra = output.into_iter().map(|p| serde_json::to_value(p).unwrap());
-            match &mut state.output {
-                Some(Value::Array(existing)) => existing.extend(extra),
-                None | Some(Value::Null) => state.output = Some(Value::Array(extra.collect())),
-                Some(existing) => {
-                    let mut combined = vec![existing.clone()];
-                    combined.extend(extra);
-                    state.output = Some(Value::Array(combined));
-                }
-            }
         }
-        if let Some(success) = updates["success"].as_bool() {
-            state.status = if success {
-                ToolPartStatus::Completed
-            } else {
-                ToolPartStatus::Error
-            };
-        }
+        let Some(state) = tool_calls::pending(&self.tools, &mut self.messages, id) else {
+            return true;
+        };
+        let status = if is_error || updates["success"] == false {
+            ToolPartStatus::Error
+        } else {
+            ToolPartStatus::Completed
+        };
+        state.output = Some(serde_json::to_value(output).unwrap());
+        state.status = status;
         if let Some(name) = updates
             .get("commandName")
             .filter(|v| !v.is_null() && **v != false && **v != "")
         {
             state.metadata = Some(json!({"commandName":name}));
-        }
-        if is_error {
-            state.status = ToolPartStatus::Error;
-        } else if has_output && state.status == ToolPartStatus::Running {
-            state.status = ToolPartStatus::Completed;
         }
         true
     }

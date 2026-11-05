@@ -1,8 +1,8 @@
 pub(crate) fn parser_version(agent: &str) -> &'static str {
     if agent == "codex" {
-        "rust-parser-v8"
+        "rust-parser-v9"
     } else {
-        "rust-parser-v4"
+        "rust-parser-v5"
     }
 }
 
@@ -24,6 +24,7 @@ pub(crate) mod minimax_code;
 pub(crate) mod omp;
 pub(crate) mod opencode;
 pub(crate) mod pi;
+mod tool_calls;
 pub(crate) mod zcode;
 
 pub use codex::parse as parse_codex;

@@ -1,4 +1,4 @@
-use super::{ParsedSession, claudecode::common::*, jsonl::timestamp};
+use super::{ParsedSession, claudecode::common::*, jsonl::timestamp, tool_calls};
 use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -309,7 +309,7 @@ pub(super) fn parse_as(
     let mut prompt_title = None;
     let mut messages = Vec::<Message>::new();
     let mut models = BTreeMap::<String, f64>::new();
-    let mut tools = HashMap::<String, (usize, usize)>::new();
+    let mut tools = tool_calls::ToolCalls::new();
     let mut reader = BufReader::with_capacity(64 * 1024, File::open(path)?);
     let mut line = String::new();
     let mut position = 0;
@@ -408,15 +408,15 @@ pub(super) fn parse_as(
                 }
                 "toolResult" => {
                     let call_id = text(&raw["toolCallId"]).trim().to_owned();
-                    if let Some((i, p)) = tools.remove(&call_id)
-                        && let MessagePart::Tool { state, .. } = &mut messages[i].parts[p]
-                    {
-                        state.output = Some(serde_json::to_value(text_parts(&raw["content"], ts))?);
-                        state.status = if raw["isError"] == true {
+                    if let Some(state) = tool_calls::pending(&tools, &mut messages, &call_id) {
+                        let status = if raw["isError"] == true {
                             ToolPartStatus::Error
                         } else {
                             ToolPartStatus::Completed
                         };
+                        let output = serde_json::to_value(text_parts(&raw["content"], ts))?;
+                        state.output = Some(output);
+                        state.status = status;
                         state.metadata = raw.get("details").cloned();
                     }
                     continue;
@@ -501,7 +501,8 @@ pub(super) fn parse_as(
                 call_id: Some(id), ..
             } = part
             {
-                tools.insert(id.clone(), (messages.len(), p));
+                let at = (messages.len(), p);
+                tool_calls::register(&mut tools, &mut messages, id, at);
             }
         }
         msg.time_completed = None;
