@@ -266,12 +266,12 @@ fn replacement_preserves_identity_history_and_name_and_revokes_old_credentials()
     assert!(
         tasks
             .iter()
-            .any(|item| item.request.reason == "worker-replacement" && item.status == "waiting")
+            .any(|item| item.request.reason == "worker-replacement"
+                && item.status == crate::sync::RescanStatus::Waiting)
     );
     assert!(
-        tasks
-            .iter()
-            .any(|item| item.request.id == task.id && item.status == "superseded")
+        tasks.iter().any(|item| item.request.id == task.id
+            && item.status == crate::sync::RescanStatus::Superseded)
     );
     let revoked_token = cache.create_replacement_token(&new.node_id).unwrap();
     cache.revoke_worker(&new.node_id).unwrap();

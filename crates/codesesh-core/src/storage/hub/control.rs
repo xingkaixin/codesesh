@@ -247,7 +247,7 @@ impl Cache {
                 "DELETE FROM hub_ignored_sources WHERE node_id=?",
                 [&node_id],
             )?;
-            tx.execute("UPDATE hub_rescans SET status='superseded' WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading')", [&node_id])?;
+            super::tasks::supersede_rescans(&tx, &node_id)?;
             let request = crate::sync::RescanRequest {
                 id: uuid::Uuid::new_v4().to_string(),
                 agents: vec![],
@@ -264,8 +264,13 @@ impl Cache {
                 created_at: chrono::Utc::now().timestamp_millis(),
             };
             tx.execute(
-                "INSERT INTO hub_rescans VALUES(?,?,?,'waiting',NULL)",
-                params![request.id, node_id, serde_json::to_string(&request)?],
+                "INSERT INTO hub_rescans VALUES(?,?,?,?,NULL)",
+                params![
+                    request.id,
+                    node_id,
+                    serde_json::to_string(&request)?,
+                    RescanStatus::Waiting
+                ],
             )?;
         }
         let hub_id = tx.query_row("SELECT value FROM hub_meta WHERE key='hub_id'", [], |r| {

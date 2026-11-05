@@ -46,15 +46,16 @@ impl Cache {
     }
 
     pub fn rescan_tasks(&self) -> Result<Vec<crate::sync::NodeTask>> {
-        let mut query = self.connection.prepare(
-            "SELECT node_id,request,status,progress FROM hub_rescans WHERE status IN ('waiting','dispatched','running','paused','uploading') OR rowid IN (SELECT MAX(rowid) FROM hub_rescans WHERE status NOT IN ('waiting','dispatched','running','paused','uploading') GROUP BY node_id) ORDER BY rowid DESC",
-        )?;
+        let active = &*ACTIVE_RESCANS;
+        let mut query = self.connection.prepare(&format!(
+            "SELECT node_id,request,status,progress FROM hub_rescans WHERE status IN ({active}) OR rowid IN (SELECT MAX(rowid) FROM hub_rescans WHERE status NOT IN ({active}) GROUP BY node_id) ORDER BY rowid DESC",
+        ))?;
         let rows = query
             .query_map([], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
+                    r.get::<_, RescanStatus>(2)?,
                     r.get::<_, Option<String>>(3)?,
                 ))
             })?
@@ -72,7 +73,10 @@ impl Cache {
     }
 
     pub fn cancel_rescan(&mut self, node: &str, task: &str) -> Result<bool> {
-        Ok(self.connection.execute("UPDATE hub_rescans SET status='cancelled' WHERE id=? AND node_id=? AND status='waiting'", params![task, node])? == 1)
+        Ok(self.connection.execute(
+            "UPDATE hub_rescans SET status=? WHERE id=? AND node_id=? AND status=?",
+            params![RescanStatus::Cancelled, task, node, RescanStatus::Waiting],
+        )? == 1)
     }
 
     pub fn rescan_history(
@@ -80,13 +84,13 @@ impl Cache {
         node: &str,
         before: Option<i64>,
     ) -> Result<crate::sync::RescanHistory> {
-        let mut query = self.connection.prepare("SELECT rowid,request,status,progress FROM hub_rescans WHERE node_id=? AND status NOT IN ('waiting','dispatched','running','paused','uploading') AND rowid<? ORDER BY rowid DESC LIMIT 21")?;
+        let mut query = self.connection.prepare(&format!("SELECT rowid,request,status,progress FROM hub_rescans WHERE node_id=? AND status NOT IN ({}) AND rowid<? ORDER BY rowid DESC LIMIT 21", *ACTIVE_RESCANS))?;
         let rows = query
             .query_map(params![node, before.unwrap_or(i64::MAX)], |r| {
                 Ok((
                     r.get::<_, i64>(0)?,
                     r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
+                    r.get::<_, RescanStatus>(2)?,
                     r.get::<_, Option<String>>(3)?,
                 ))
             })?
@@ -132,7 +136,7 @@ impl Cache {
         );
         tx.execute("DELETE FROM hub_chunks WHERE node_id=?", [node])?;
         tx.execute("UPDATE hub_nodes SET stream_id=?,confirmed_sequence=0,confirmed_digest=NULL,confirmed_reference=NULL,recovery_epoch=? WHERE id=?",params![recovery.new_stream,epoch,node])?;
-        tx.execute("UPDATE hub_rescans SET status='superseded' WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading')",[node])?;
+        supersede_rescans(&tx, node)?;
         let task = crate::sync::RescanRequest {
             id: recovery.new_stream.clone(),
             agents: Vec::new(),
@@ -149,8 +153,13 @@ impl Cache {
             created_at: chrono::Utc::now().timestamp_millis(),
         };
         tx.execute(
-            "INSERT INTO hub_rescans VALUES(?,?,?,'waiting',NULL)",
-            params![task.id, node, serde_json::to_string(&task)?],
+            "INSERT INTO hub_rescans VALUES(?,?,?,?,NULL)",
+            params![
+                task.id,
+                node,
+                serde_json::to_string(&task)?,
+                RescanStatus::Waiting
+            ],
         )?;
         tx.commit()?;
         Ok(())
@@ -243,26 +252,26 @@ impl Cache {
                 |r| r.get(0),
             )?;
             let status = if progress.error.is_some() {
-                "failed"
+                RescanStatus::Failed
             } else if error.is_some() {
-                "paused"
+                RescanStatus::Paused
             } else if progress
                 .target_sequence
                 .is_some_and(|target| target <= confirmed_sequence)
             {
                 if incomplete > 0 {
-                    "partial"
+                    RescanStatus::Partial
                 } else {
-                    "completed"
+                    RescanStatus::Completed
                 }
             } else if progress.target_sequence.is_some() {
-                "uploading"
+                RescanStatus::Uploading
             } else {
-                "running"
+                RescanStatus::Running
             };
-            tx.execute("UPDATE hub_rescans SET status=?,progress=? WHERE id=? AND node_id=? AND status IN ('waiting','dispatched','running','paused','uploading')",params![status,serde_json::to_string(progress)?,progress.id,node])?;
+            tx.execute(&format!("UPDATE hub_rescans SET status=?,progress=? WHERE id=? AND node_id=? AND status IN ({})", *ACTIVE_RESCANS),params![status,serde_json::to_string(progress)?,progress.id,node])?;
         }
-        let rescan: Option<String> = tx.query_row("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading') ORDER BY rowid LIMIT 1",[node],|r|r.get(0)).optional()?;
+        let rescan: Option<String> = tx.query_row(&format!("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ({}) ORDER BY rowid LIMIT 1", *ACTIVE_RESCANS),[node],|r|r.get(0)).optional()?;
         let rescan: Option<crate::sync::RescanRequest> = if error.is_none() {
             rescan.map(|raw| serde_json::from_str(&raw)).transpose()?
         } else {
@@ -270,8 +279,8 @@ impl Cache {
         };
         if let Some(request) = &rescan {
             tx.execute(
-                "UPDATE hub_rescans SET status='dispatched' WHERE id=? AND status='waiting'",
-                [&request.id],
+                "UPDATE hub_rescans SET status=? WHERE id=? AND status=?",
+                params![RescanStatus::Dispatched, request.id, RescanStatus::Waiting],
             )?;
         }
         let result = crate::sync::HubHello {
@@ -304,7 +313,10 @@ pub(super) fn queue_rescan(
     reason: &str,
 ) -> Result<crate::sync::RescanRequest> {
     let catalog = crate::agents::catalog(0);
-    let mut existing = tx.prepare("SELECT request FROM hub_rescans WHERE node_id=? AND status IN ('waiting','dispatched','running','paused','uploading') ORDER BY rowid")?;
+    let mut existing = tx.prepare(&format!(
+        "SELECT request FROM hub_rescans WHERE node_id=? AND status IN ({}) ORDER BY rowid",
+        *ACTIVE_RESCANS
+    ))?;
     let requests_for_node = existing
         .query_map([node], |r| r.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -336,8 +348,24 @@ pub(super) fn queue_rescan(
         created_at: chrono::Utc::now().timestamp_millis(),
     };
     tx.execute(
-        "INSERT INTO hub_rescans VALUES(?,?,?,'waiting',NULL)",
-        params![request.id, node, serde_json::to_string(&request)?],
+        "INSERT INTO hub_rescans VALUES(?,?,?,?,NULL)",
+        params![
+            request.id,
+            node,
+            serde_json::to_string(&request)?,
+            RescanStatus::Waiting
+        ],
     )?;
     Ok(request)
+}
+
+pub(super) fn supersede_rescans(tx: &Transaction<'_>, node: &str) -> Result<()> {
+    tx.execute(
+        &format!(
+            "UPDATE hub_rescans SET status=? WHERE node_id=? AND status IN ({})",
+            *ACTIVE_RESCANS
+        ),
+        params![RescanStatus::Superseded, node],
+    )?;
+    Ok(())
 }

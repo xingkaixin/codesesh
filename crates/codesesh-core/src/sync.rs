@@ -14,7 +14,7 @@ pub use hub_types::{
     PairingGrant, Receipt, Recovery, RescanHistory, Upload, WorkerHello,
 };
 pub(crate) use hub_types::{
-    NodeHealth, NodeTask, RescanProgress, RescanRequest, RescanScanProgress,
+    NodeHealth, NodeTask, RescanProgress, RescanRequest, RescanScanProgress, RescanStatus,
 };
 
 fn local_worker_mac(

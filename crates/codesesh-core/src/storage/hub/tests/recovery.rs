@@ -126,7 +126,7 @@ fn recovery_survives_another_epoch_change_before_acknowledgment() {
                 .rescan_tasks()
                 .unwrap()
                 .iter()
-                .filter(|task| task.status == "waiting")
+                .filter(|task| task.status == crate::sync::RescanStatus::Waiting)
                 .count(),
             1
         );

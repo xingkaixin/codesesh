@@ -5,9 +5,7 @@ import { cancelRescan, fetchRescanHistory } from "../../lib/api";
 import { isNodeOnline } from "../../hooks/useNodes";
 import { t } from "../../i18n/translate";
 import { nodeButton } from "./NodeDialog";
-import { taskLabel, taskReason } from "./node-status";
-
-const activeStatuses = new Set(["waiting", "dispatched", "running", "paused", "uploading"]);
+import { isActiveTask, taskLabel, taskReason } from "./node-status";
 
 export function NodeTasks({
   node,
@@ -34,13 +32,13 @@ export function NodeTasks({
   });
   const nodeTasks = tasks.filter((task) => task.nodeId === nodeId);
   const active = nodeTasks
-    .filter((task) => activeStatuses.has(task.status))
+    .filter((task) => isActiveTask(task.status))
     .sort(
       (a, b) =>
         Number(a.status === "waiting") - Number(b.status === "waiting") ||
         a.request.createdAt - b.request.createdAt,
     );
-  const latest = nodeTasks.find((task) => !activeStatuses.has(task.status));
+  const latest = nodeTasks.find((task) => !isActiveTask(task.status));
   const visible = active.length || showHistory ? active : latest ? [latest] : [];
   const cancel = async (task: NodeTask) => {
     setCancelling(task.request.id);
