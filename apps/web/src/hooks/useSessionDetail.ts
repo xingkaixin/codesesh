@@ -1,6 +1,6 @@
 import { t } from "../i18n/translate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import type { SessionDetail } from "@codesesh/contract";
 import { ApiRequestError, fetchSessionData, logClientEvent } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
@@ -13,6 +13,16 @@ export interface SessionMessagePaging {
 }
 
 export type SessionDetailError = { kind: "missing" } | { kind: "load-failed"; message: string };
+
+export type SessionDetailPhase =
+  | { kind: "loading" }
+  | SessionDetailError
+  | { kind: "ready"; session: SessionDetail; messagePaging?: SessionMessagePaging };
+
+interface PageRequest {
+  base: SessionDetail;
+  failed: boolean;
+}
 
 function getSessionDetailError(error: unknown): SessionDetailError {
   if (error instanceof ApiRequestError && error.status === 404) return { kind: "missing" };
@@ -133,24 +143,40 @@ export function useSessionDetail(viewState: ViewState) {
     await query.refetch({ cancelRefetch: true });
   }, [query, route]);
 
-  const { refetch } = query;
+  const { data, error, isError, refetch } = query;
+  const [pageRequest, setPageRequest] = useState<PageRequest | null>(null);
   const loadMore = useCallback(() => {
-    void refetch({ cancelRefetch: false });
-  }, [refetch]);
-  const partial = Boolean(
-    query.data &&
-    query.data.messages.length < (query.data.message_total ?? query.data.messages.length),
-  );
-  const messagePaging: SessionMessagePaging | undefined = partial
-    ? { loading: query.isFetching, failed: query.isError, loadMore }
-    : undefined;
+    if (!data) return;
+    setPageRequest({ base: data, failed: false });
+    void refetch({ cancelRefetch: false }).then((result) => {
+      setPageRequest((current) => {
+        if (current?.base !== data) return current;
+        return result.isError ? { base: data, failed: true } : null;
+      });
+    });
+  }, [data, refetch]);
 
-  return {
-    session: route ? (query.data ?? null) : null,
-    sessionLoading: route !== null && query.isPending,
-    sessionError:
-      route !== null && query.isError && !partial ? getSessionDetailError(query.error) : null,
-    messagePaging,
-    refresh,
-  };
+  // A page request is tied to the data it extends; any newer data supersedes it.
+  const page = pageRequest?.base === data ? pageRequest : null;
+  let phase: SessionDetailPhase;
+  if (data) {
+    const partial = data.messages.length < (data.message_total ?? data.messages.length);
+    phase = {
+      kind: "ready",
+      session: data,
+      ...(partial && {
+        messagePaging: {
+          loading: page !== null && !page.failed,
+          failed: page?.failed ?? false,
+          loadMore,
+        },
+      }),
+    };
+  } else if (isError) {
+    phase = getSessionDetailError(error);
+  } else {
+    phase = { kind: "loading" };
+  }
+
+  return { phase, refresh };
 }

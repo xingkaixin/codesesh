@@ -13,14 +13,13 @@ import {
   type SetStateAction,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
-import type { SessionDetailError, SessionMessagePaging } from "../../hooks/useSessionDetail";
+import type { SessionDetailPhase } from "../../hooks/useSessionDetail";
 import type { AgentCatalog } from "../../lib/agents";
 import type {
   AgentInfo,
   AppConfig,
   ApiProjectGroup,
   ApiProjectPage,
-  SessionDetail,
   SessionHead,
 } from "@codesesh/contract";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
@@ -73,10 +72,7 @@ interface LoadModel {
 }
 
 interface SessionDetailModel {
-  messagePaging?: SessionMessagePaging;
-  session: SessionDetail | null;
-  loading: boolean;
-  error: SessionDetailError | null;
+  phase: SessionDetailPhase;
   retry: () => void;
 }
 
@@ -341,7 +337,8 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
   const locale = useLocale();
 
   const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
-  const currentSession = route.detail.session;
+  const { phase } = route.detail;
+  const currentSession = phase.kind === "ready" ? phase.session : null;
   const currentSessionAgentName = currentSession?.reference.agentName;
   const currentSessionId = currentSession?.reference.sessionId;
   const childSessions = useMemo(
@@ -366,8 +363,8 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
     [toggleSessionBookmark],
   );
 
-  if (route.detail.loading) return <SessionDetailSkeleton />;
-  if (route.detail.error?.kind === "missing") {
+  if (phase.kind === "loading") return <SessionDetailSkeleton />;
+  if (phase.kind === "missing") {
     return (
       <LazySurface>
         <DetailLanding
@@ -383,7 +380,7 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
       </LazySurface>
     );
   }
-  if (route.detail.error?.kind === "load-failed") {
+  if (phase.kind === "load-failed") {
     return (
       <LazySurface>
         <DetailLanding
@@ -391,7 +388,7 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
           agentCatalog={route.agentCatalog}
           sessions={route.sessions}
           agentItems={agentItems}
-          loadFailureMessage={route.detail.error.message}
+          loadFailureMessage={phase.message}
           isBookmarked={route.bookmarks.isBookmarked}
           onToggleBookmark={toggleBookmark}
           onRetry={route.detail.retry}
@@ -399,24 +396,23 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
       </LazySurface>
     );
   }
-  if (!currentSession) return <SessionDetailSkeleton />;
   return (
     <RenderProfiler
       id="SessionDetail"
       detail={{
-        messages: currentSession.messages.length,
-        session: currentSession.reference.sessionId,
+        messages: phase.session.messages.length,
+        session: phase.session.reference.sessionId,
       }}
     >
       <LazySurface>
         <SessionDetailView
           key={getSessionRouteKey(
-            currentSession.reference.agentName,
-            currentSession.reference.sessionId,
-            currentSession.reference.sourceNodeId,
+            phase.session.reference.agentName,
+            phase.session.reference.sessionId,
+            phase.session.reference.sourceNodeId,
           )}
-          session={currentSession}
-          messagePaging={route.detail.messagePaging}
+          session={phase.session}
+          messagePaging={phase.messagePaging}
           agentCatalog={route.agentCatalog}
           highlightQuery={route.detailHighlightQuery}
           childSessions={childSessions}
