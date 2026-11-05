@@ -485,6 +485,9 @@ impl Parser {
                         state.error = (status == ToolPartStatus::Error).then(|| output.clone());
                         state.output = Some(output);
                         state.status = status;
+                        if status != ToolPartStatus::Running {
+                            settle_exec_calls(tools, messages, call_id, status);
+                        }
                     }
                     return;
                 }
@@ -585,6 +588,25 @@ impl Parser {
             message_update: None,
             file_activity,
         })
+    }
+}
+
+// Calls decoded from an exec script share its single output, so they end with it.
+fn settle_exec_calls(
+    tools: &tool_calls::ToolCalls,
+    messages: &mut [Message],
+    call_id: &str,
+    status: ToolPartStatus,
+) {
+    let prefix = format!("{call_id}#");
+    for id in tools.keys().filter(|id| id.starts_with(&prefix)) {
+        if let Some(state) = tool_calls::pending(tools, messages, id) {
+            state.status = if status == ToolPartStatus::Completed {
+                status
+            } else {
+                ToolPartStatus::Unknown
+            };
+        }
     }
 }
 

@@ -236,6 +236,25 @@ mod tests {
     }
 
     #[test]
+    fn exec_output_and_empty_output_settle_their_calls() {
+        let messages = parse(vec![
+            json!({"type":"response_item","timestamp":2000,"payload":{"type":"custom_tool_call","name":"exec","call_id":"exec-1","input":"await tools.update_plan({plan:[]}); await tools.exec_command({cmd:'ls'});"}}),
+            json!({"type":"response_item","timestamp":3000,"payload":{"type":"custom_tool_call_output","call_id":"exec-1","output":"Script completed\nWall time 0.1 seconds\nOutput:\nok"}}),
+            json!({"type":"response_item","timestamp":4000,"payload":{"type":"function_call","name":"shell","call_id":"shell-1","arguments":"{}"}}),
+            json!({"type":"response_item","timestamp":5000,"payload":{"type":"function_call_output","call_id":"shell-1","output":""}}),
+        ]);
+        let statuses = messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                MessagePart::Tool { state, .. } => Some(state.status),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(statuses, [ToolPartStatus::Completed; 3]);
+    }
+
+    #[test]
     fn mcp_results_follow_arguments_despite_reversed_completion_and_exec_summary() {
         let second = completed(
             "event-b",
