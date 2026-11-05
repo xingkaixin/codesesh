@@ -440,7 +440,7 @@ pub async fn cancel_task(
         Ok(true) => Json(json!({"cancelled":true})).into_response(),
         Ok(false) => error(
             StatusCode::CONFLICT,
-            "Only tasks not yet dispatched can be cancelled. Refresh node state.",
+            "Only active tasks can be cancelled. Refresh node state.",
         ),
         Err(_) => retry("Hub is busy"),
     }

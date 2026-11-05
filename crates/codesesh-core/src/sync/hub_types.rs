@@ -181,12 +181,80 @@ pub struct Recovery {
     pub new_stream: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "lowercase")]
+pub enum RescanStatus {
+    Waiting,
+    Dispatched,
+    Running,
+    Paused,
+    Uploading,
+    Completed,
+    Partial,
+    Failed,
+    Cancelled,
+    Superseded,
+}
+
+impl RescanStatus {
+    pub const ALL: [Self; 10] = [
+        Self::Waiting,
+        Self::Dispatched,
+        Self::Running,
+        Self::Paused,
+        Self::Uploading,
+        Self::Completed,
+        Self::Partial,
+        Self::Failed,
+        Self::Cancelled,
+        Self::Superseded,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Dispatched => "dispatched",
+            Self::Running => "running",
+            Self::Paused => "paused",
+            Self::Uploading => "uploading",
+            Self::Completed => "completed",
+            Self::Partial => "partial",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Superseded => "superseded",
+        }
+    }
+
+    pub fn is_active(self) -> bool {
+        matches!(
+            self,
+            Self::Waiting | Self::Dispatched | Self::Running | Self::Paused | Self::Uploading
+        )
+    }
+}
+
+impl rusqlite::ToSql for RescanStatus {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
+
+impl rusqlite::types::FromSql for RescanStatus {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        let text = value.as_str()?;
+        Self::ALL
+            .into_iter()
+            .find(|status| status.as_str() == text)
+            .ok_or(rusqlite::types::FromSqlError::InvalidType)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeTask {
     pub node_id: String,
     pub request: RescanRequest,
-    pub status: String,
+    pub status: RescanStatus,
     pub progress: Option<RescanProgress>,
 }
 

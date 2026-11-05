@@ -1,4 +1,9 @@
-import { AGENT_CATALOG, type HostInfo, type SourceNode } from "@codesesh/contract";
+import {
+  AGENT_CATALOG,
+  type HostInfo,
+  type RescanStatus,
+  type SourceNode,
+} from "@codesesh/contract";
 import { t } from "../../i18n/translate";
 import { isNodeOnline } from "../../hooks/useNodes";
 
@@ -17,8 +22,25 @@ export function nodeStatus(node: SourceNode, now: number) {
   return node.queue?.batches ? t("Connected, uploading") : t("Connected, up to date");
 }
 
-export function taskLabel(status: string) {
-  const labels: Record<string, string> = {
+const ACTIVE_TASK: Record<RescanStatus, boolean> = {
+  waiting: true,
+  dispatched: true,
+  running: true,
+  paused: true,
+  uploading: true,
+  completed: false,
+  partial: false,
+  failed: false,
+  cancelled: false,
+  superseded: false,
+};
+
+export function isActiveTask(status: RescanStatus) {
+  return ACTIVE_TASK[status];
+}
+
+export function taskLabel(status: RescanStatus) {
+  const labels: Record<RescanStatus, string> = {
     waiting: t("Waiting for node"),
     dispatched: t("Dispatched to Worker"),
     cancelled: t("Cancelled"),
@@ -30,7 +52,7 @@ export function taskLabel(status: string) {
     partial: t("Source content is missing"),
     superseded: t("Replaced by recovery"),
   };
-  return labels[status] ?? status;
+  return labels[status];
 }
 
 export function taskReason(reason: string) {

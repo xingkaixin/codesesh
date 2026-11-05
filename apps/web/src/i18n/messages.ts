@@ -46,9 +46,9 @@ export const messages = {
   "Execute TypeScript": ["执行 TypeScript", "TypeScript を実行"],
   "Dispatched to Worker": ["已派发给 Worker", "Worker に送信済み"],
   Cancelled: ["已取消", "キャンセル済み"],
-  "Unable to cancel. The task may already be dispatched; check its updated status.": [
-    "无法取消，任务可能已经派发，请查看更新后的状态。",
-    "キャンセルできません。送信済みの可能性があります。更新後の状態を確認してください。",
+  "Unable to cancel. The task may have already ended; check its updated status.": [
+    "无法取消，任务可能已经结束，请查看更新后的状态。",
+    "キャンセルできません。すでに終了した可能性があります。更新後の状態を確認してください。",
   ],
   "Pending Agents: {0}": ["待完成 Agent：{0}", "未完了の Agent: {0}"],
   "Requested manually": ["由手动操作触发", "手動でリクエスト"],
@@ -58,7 +58,7 @@ export const messages = {
     "{0}：已扫描 {1} / {2} 项来源",
     "{0}: ソース項目 {1} / {2} 件をスキャン済み",
   ],
-  "Cancel queued task": ["取消排队任务", "待機タスクをキャンセル"],
+  "Cancel task": ["取消任务", "タスクをキャンセル"],
   "Rescan tasks": ["重采集任务", "再収集タスク"],
   "Hide task history": ["收起任务历史", "タスク履歴を閉じる"],
   "Task history": ["任务历史", "タスク履歴"],

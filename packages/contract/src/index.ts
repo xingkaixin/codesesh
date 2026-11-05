@@ -27,6 +27,7 @@ export type { HubNodes } from "./generated/HubNodes.js";
 export type { Node as SourceNode } from "./generated/Node.js";
 export type { RescanHistory } from "./generated/RescanHistory.js";
 export type { NodeTask } from "./generated/NodeTask.js";
+export type { RescanStatus } from "./generated/RescanStatus.js";
 
 export type { AgentCollectionStatus } from "./generated/AgentCollectionStatus.js";
 export type { HostInfo } from "./generated/HostInfo.js";
