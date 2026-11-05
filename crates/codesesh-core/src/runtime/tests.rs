@@ -111,7 +111,10 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
     until(|| runtime.snapshot()[0].stats.message_count == 2).await;
     fail.store(true, Ordering::Release);
     runtime.refresh("codex").unwrap();
-    until(|| runtime.status().agent_statuses["codex"].status == "failed").await;
+    until(|| {
+        runtime.status().agent_statuses["codex"].status == crate::wire::AgentScanPhase::Failed
+    })
+    .await;
     assert_eq!(runtime.snapshot()[0].title, "after rewrite");
     runtime.shutdown().await.unwrap();
     let restored = Runtime::start(database.clone(), vec![], 1).await.unwrap();
@@ -178,7 +181,10 @@ async fn failed_transaction_never_publishes_and_retries_from_last_good_state() {
         .await
         .unwrap();
     let mut events = runtime.subscribe();
-    until(|| runtime.status().agent_statuses["codex"].status == "failed").await;
+    until(|| {
+        runtime.status().agent_statuses["codex"].status == crate::wire::AgentScanPhase::Failed
+    })
+    .await;
     assert!(runtime.snapshot().is_empty());
     assert!(rejected.load(Ordering::Acquire));
     while let Ok(event) = events.try_recv() {
@@ -226,7 +232,10 @@ async fn backfill_resumes_a_durable_checkpoint_after_restart() {
     let runtime = Runtime::start(database.clone(), vec![source], 1)
         .await
         .unwrap();
-    until(|| runtime.status().agent_statuses["codex"].status == "failed").await;
+    until(|| {
+        runtime.status().agent_statuses["codex"].status == crate::wire::AgentScanPhase::Failed
+    })
+    .await;
     assert_eq!(runtime.snapshot().len(), 1);
     runtime.shutdown().await.unwrap();
     let source = AgentSource {
@@ -274,7 +283,10 @@ async fn removed_root_keeps_last_good_data_and_is_watched_after_recreation() {
         .unwrap();
     until(|| runtime.status().completed_agents.len() == 1).await;
     fs::remove_dir_all(&root).unwrap();
-    until(|| runtime.status().agent_statuses["codex"].status == "failed").await;
+    until(|| {
+        runtime.status().agent_statuses["codex"].status == crate::wire::AgentScanPhase::Failed
+    })
+    .await;
     assert_eq!(runtime.snapshot()[0].title, "before");
     fs::create_dir(&root).unwrap();
     write_source(&path, "recreated");

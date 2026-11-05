@@ -5,6 +5,7 @@ mod writer;
 use crate::{
     agents::ParsedSession,
     model::{SessionHead, SessionReference},
+    wire::AgentScanPhase,
 };
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags};
@@ -471,8 +472,12 @@ impl Runtime {
             let mut checkpoint = match self.checkpoint(&source.name).await {
                 Ok(value) => value,
                 Err(error) => {
-                    self.report(&source.name, "failed", Some(error.to_string()))
-                        .await;
+                    self.report(
+                        &source.name,
+                        AgentScanPhase::Failed,
+                        Some(error.to_string()),
+                    )
+                    .await;
                     continue;
                 }
             };
@@ -482,7 +487,8 @@ impl Runtime {
                 if cancellation.is_cancelled() {
                     break;
                 }
-                self.report(&source.name, "scanning", None).await;
+                self.report(&source.name, AgentScanPhase::Scanning, None)
+                    .await;
                 let task = match prefetched.take() {
                     Some(task) => task,
                     None => {
@@ -518,7 +524,7 @@ impl Runtime {
                         if !cancellation.is_cancelled() {
                             self.report(
                                 &source.name,
-                                "failed",
+                                AgentScanPhase::Failed,
                                 Some(match error {
                                     Ok(Err(error)) => error.to_string(),
                                     Err(error) => error.to_string(),
@@ -537,7 +543,7 @@ impl Runtime {
                 {
                     self.report(
                         &source.name,
-                        "failed",
+                        AgentScanPhase::Failed,
                         Some("incomplete scan did not advance its durable checkpoint".into()),
                     )
                     .await;
@@ -545,7 +551,8 @@ impl Runtime {
                 }
                 checkpoint = batch.checkpoint.clone();
                 let complete = batch.complete;
-                self.report(&source.name, "publishing", None).await;
+                self.report(&source.name, AgentScanPhase::Publishing, None)
+                    .await;
                 let (tx, rx) = oneshot::channel();
                 if self
                     .inner
@@ -580,7 +587,8 @@ impl Runtime {
                 drop(permit);
                 match publication {
                     Ok(Ok(())) if complete => {
-                        self.report(&source.name, "complete", None).await;
+                        self.report(&source.name, AgentScanPhase::Complete, None)
+                            .await;
                         break;
                     }
                     Ok(Ok(())) => {
@@ -595,7 +603,7 @@ impl Runtime {
                         if !cancellation.is_cancelled() {
                             self.report(
                                 &source.name,
-                                "failed",
+                                AgentScanPhase::Failed,
                                 Some(format!("publication failed: {error:?}")),
                             )
                             .await;
@@ -629,13 +637,13 @@ impl Runtime {
         .await
     }
 
-    async fn report(&self, agent: &str, state: &str, error: Option<String>) {
+    async fn report(&self, agent: &str, phase: AgentScanPhase, error: Option<String>) {
         let _ = self
             .inner
             .writer
             .send(writer::Command::Status {
                 agent: agent.to_owned(),
-                state: state.to_owned(),
+                phase,
                 error,
             })
             .await;

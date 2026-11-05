@@ -17,7 +17,7 @@ pub(super) enum Command {
     },
     Status {
         agent: String,
-        state: String,
+        phase: crate::wire::AgentScanPhase,
         error: Option<String>,
     },
     HubControl(Box<dyn FnOnce(&mut Cache) + Send>),
@@ -208,9 +208,9 @@ pub(super) fn run(
                             status.backfill.current_agent = Some(agent.clone());
                             status.backfill.progress = Some(super::status::ScanProgress {
                                 phase: if checkpoint["incremental"] == true {
-                                    "checking"
+                                    crate::wire::BackfillPhase::Checking
                                 } else {
-                                    "scanning"
+                                    crate::wire::BackfillPhase::Scanning
                                 },
                                 processed: processed as usize,
                                 total: total as usize,
@@ -247,7 +247,7 @@ pub(super) fn run(
             }
             Command::Status {
                 agent,
-                state,
+                phase,
                 error,
             } => {
                 let count = snapshots
@@ -256,7 +256,7 @@ pub(super) fn run(
                     .filter(|head| head.reference.agent_name == agent)
                     .count();
                 let mut status = statuses.borrow().as_ref().clone();
-                status.update(&agent, state, error, count);
+                status.update(&agent, phase, error, count);
                 let status = Arc::new(status);
                 statuses.send_replace(status.clone());
                 let _ = events.send(Event::Status(status));

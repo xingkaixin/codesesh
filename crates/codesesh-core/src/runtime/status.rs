@@ -1,3 +1,4 @@
+use crate::wire::{AgentScanPhase, BackfillPhase, ScanCompleteness, ScanPhase};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -5,7 +6,7 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
     pub agent_name: String,
-    pub status: String,
+    pub status: AgentScanPhase,
     pub processed: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total: Option<usize>,
@@ -18,7 +19,7 @@ pub struct AgentStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub completeness: Option<String>,
+    pub completeness: Option<ScanCompleteness>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -36,7 +37,7 @@ pub struct BackgroundStatus {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ScanProgress {
-    pub phase: &'static str,
+    pub phase: BackfillPhase,
     pub processed: usize,
     pub total: usize,
 }
@@ -47,7 +48,7 @@ pub struct ScanStatus {
     pub sources: BTreeMap<String, crate::discovery::AgentCollectionStatus>,
     #[serde(rename = "type")]
     pub kind: &'static str,
-    pub phase: &'static str,
+    pub phase: ScanPhase,
     pub active: bool,
     pub pending_agents: Vec<String>,
     pub scanning_agents: Vec<String>,
@@ -74,9 +75,9 @@ impl ScanStatus {
                 .collect(),
             kind: "scan-status",
             phase: if names.is_empty() {
-                "idle"
+                ScanPhase::Idle
             } else {
-                "initializing"
+                ScanPhase::Initializing
             },
             active: !names.is_empty(),
             started_at: (!names.is_empty()).then_some(now),
@@ -92,7 +93,7 @@ impl ScanStatus {
                         agent.clone(),
                         AgentStatus {
                             agent_name: agent,
-                            status: "pending".into(),
+                            status: AgentScanPhase::Pending,
                             processed: 0,
                             total: None,
                             sessions: 0,
@@ -114,17 +115,17 @@ impl ScanStatus {
     pub(super) fn update(
         &mut self,
         agent: &str,
-        state: String,
+        phase: AgentScanPhase,
         error: Option<String>,
         count: usize,
     ) {
         let now = chrono::Utc::now().timestamp_millis();
-        if state == "failed" {
+        if phase == AgentScanPhase::Failed {
             let source = self.sources.entry(agent.into()).or_default();
             source.error = error.clone();
             source.complete = false;
         }
-        if state == "scanning" && !self.active {
+        if phase == AgentScanPhase::Scanning && !self.active {
             self.agent_statuses.clear();
             self.started_at = Some(now);
         }
@@ -133,15 +134,16 @@ impl ScanStatus {
             .get(agent)
             .and_then(|status| status.started_at)
             .unwrap_or(now);
-        let total = if state == "complete" {
+        let total = if phase == AgentScanPhase::Complete {
             Some(count)
         } else {
             self.agent_statuses
                 .get(agent)
                 .and_then(|status| status.total)
         };
-        let completed_at = matches!(state.as_str(), "complete" | "failed").then_some(now);
-        if state == "failed"
+        let completed_at =
+            matches!(phase, AgentScanPhase::Complete | AgentScanPhase::Failed).then_some(now);
+        if phase == AgentScanPhase::Failed
             && self
                 .backfill
                 .pending_agents
@@ -162,8 +164,9 @@ impl ScanStatus {
             agent.into(),
             AgentStatus {
                 agent_name: agent.into(),
-                completeness: (state == "complete").then(|| "complete".into()),
-                status: state,
+                completeness: (phase == AgentScanPhase::Complete)
+                    .then_some(ScanCompleteness::Complete),
+                status: phase,
                 processed: count,
                 total,
                 started_at: Some(started_at),
@@ -177,25 +180,25 @@ impl ScanStatus {
         self.scanning_agents.clear();
         self.completed_agents.clear();
         for (name, status) in &self.agent_statuses {
-            match status.status.as_str() {
-                "pending" => self.pending_agents.push(name.clone()),
-                "complete" => self.completed_agents.push(name.clone()),
-                "failed" => (),
+            match status.status {
+                AgentScanPhase::Pending => self.pending_agents.push(name.clone()),
+                AgentScanPhase::Complete => self.completed_agents.push(name.clone()),
+                AgentScanPhase::Failed => (),
                 _ => self.scanning_agents.push(name.clone()),
             }
         }
         self.active = !self.pending_agents.is_empty() || !self.scanning_agents.is_empty();
         self.phase = if !self.active {
-            "idle"
+            ScanPhase::Idle
         } else if self
             .scanning_agents
             .iter()
-            .all(|name| self.agent_statuses[name].status == "publishing")
+            .all(|name| self.agent_statuses[name].status == AgentScanPhase::Publishing)
             && self.pending_agents.is_empty()
         {
-            "publishing"
+            ScanPhase::Publishing
         } else {
-            "scanning"
+            ScanPhase::Scanning
         };
         self.updated_at = now;
         self.completed_at = (!self.active).then_some(now);
