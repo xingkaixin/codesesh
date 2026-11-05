@@ -228,7 +228,12 @@ fn scan_directories(
                         }
                         let parts = context_output(&r["content"], created);
                         if !parts.is_empty()
-                            && !builder.resolve(call.trim(), parts.clone(), "completed", None)
+                            && !builder.resolve(
+                                call.trim(),
+                                parts.clone(),
+                                ToolPartStatus::Completed,
+                                None,
+                            )
                         {
                             builder.append(id, Role::Tool, created, parts, None, None, None);
                         }
@@ -365,7 +370,12 @@ fn scan_directories(
                     }
                     let parts = wire_output(&p["return_value"], ts);
                     if !parts.is_empty()
-                        && !builder.resolve(call.trim(), parts.clone(), "completed", None)
+                        && !builder.resolve(
+                            call.trim(),
+                            parts.clone(),
+                            ToolPartStatus::Completed,
+                            None,
+                        )
                     {
                         builder.append(id, Role::Tool, ts, parts, None, None, None);
                     }
@@ -699,7 +709,7 @@ mod tests {
         let MessagePart::Tool { state, .. } = &detail.messages[1].parts[1] else {
             panic!()
         };
-        assert_eq!(state.status, "completed");
+        assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
         assert_eq!(state.input.as_ref().unwrap()["path"], "src/main.rs");
         assert_eq!(detail.file_activity.len(), 1);
     }

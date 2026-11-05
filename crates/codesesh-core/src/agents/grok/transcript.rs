@@ -82,13 +82,13 @@ pub(super) fn transcript(
             {
                 let s = status(&u["status"]);
                 if let Some(s) = s {
-                    state.status = s.into()
+                    state.status = s
                 }
                 if let Some(v) = u.get("rawInput") {
                     state.input = Some(v.clone())
                 }
                 if let Some(v) = output(u) {
-                    if s == Some("error") {
+                    if s == Some(ToolPartStatus::Error) {
                         state.error = Some(v)
                     } else {
                         state.output = Some(v)
@@ -181,7 +181,7 @@ pub(super) fn transcript(
                     tool: name,
                     call_id: Some(call_id),
                     state: Box::new(ToolState {
-                        status: status(&u["status"]).unwrap_or("running").into(),
+                        status: status(&u["status"]).unwrap_or(ToolPartStatus::Running),
                         input: u.get("rawInput").cloned(),
                         output: Some(Value::Null),
                         error: None,

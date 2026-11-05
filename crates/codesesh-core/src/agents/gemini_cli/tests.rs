@@ -91,13 +91,13 @@ fn jsonl_updates_replay_into_messages_tools_and_usage() {
     let MessagePart::Tool { state, .. } = &messages[1].parts[1] else {
         panic!("missing read tool")
     };
-    assert_eq!(state.status, "completed");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     assert_eq!(state.input, Some(json!({"file_path":"src/main.rs"})));
     assert_eq!(state.output, Some(json!("fn main() {}")));
     let MessagePart::Tool { state, .. } = &messages[1].parts[2] else {
         panic!("missing shell tool")
     };
-    assert_eq!(state.status, "error");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Error);
     assert_eq!(state.error, Some(json!("exit 1")));
     assert_eq!(state.output, None);
 
@@ -111,7 +111,7 @@ fn jsonl_updates_replay_into_messages_tools_and_usage() {
         panic!("missing content function call")
     };
     assert_eq!(call_id.as_deref(), Some("call-ls"));
-    assert_eq!(state.status, "completed");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     assert_eq!(state.output, Some(json!("src/")));
 
     assert_eq!(

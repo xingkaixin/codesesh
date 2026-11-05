@@ -62,7 +62,7 @@ fn text(role: &str, agent: Option<&str>, model: Option<&str>, parts: &[MessagePa
                 }
                 push(tool, &mut fields);
                 let mut state_fields = Vec::new();
-                push(&state.status, &mut state_fields);
+                push(state.status.as_str(), &mut state_fields);
                 for value in [&state.input, &state.output, &state.error, &state.metadata]
                     .into_iter()
                     .flatten()

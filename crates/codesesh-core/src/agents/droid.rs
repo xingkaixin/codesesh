@@ -147,7 +147,7 @@ fn parse(
                             call_id: Some(call),
                             time_created: Some(time),
                             state: Box::new(ToolState {
-                                status: "running".into(),
+                                status: ToolPartStatus::Running,
                                 input: Some(
                                     block
                                         .get("input")
@@ -175,11 +175,10 @@ fn parse(
                                 &mut messages[index].parts[part]
                         {
                             state.status = if block["is_error"] == true {
-                                "error"
+                                ToolPartStatus::Error
                             } else {
-                                "completed"
-                            }
-                            .into();
+                                ToolPartStatus::Completed
+                            };
                             state.output =
                                 Some(serde_json::to_value(output(&block["content"], time))?);
                         }

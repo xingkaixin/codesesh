@@ -109,13 +109,12 @@ fn convert(row: &Value, agent: &str) -> Result<Message> {
             time_created: None,
             state: Box::new(ToolState {
                 status: if failed {
-                    "error"
+                    ToolPartStatus::Error
                 } else if call["tool_call_status"] == 2 {
-                    "completed"
+                    ToolPartStatus::Completed
                 } else {
-                    "running"
-                }
-                .into(),
+                    ToolPartStatus::Running
+                },
                 input: call.get("tool_call_args").map(parse),
                 output: call.get("tool_call_result_data").map(parse),
                 error: failed.then(|| {
@@ -470,7 +469,9 @@ mod tests {
         let m = convert(&row, "MiniMax Code").unwrap();
         assert_eq!(m.automated, Some(true));
         assert_eq!(m.subagent_id.as_deref(), Some("child"));
-        assert!(matches!(&m.parts[1],MessagePart::Tool{state,..} if state.status=="error"));
+        assert!(
+            matches!(&m.parts[1],MessagePart::Tool{state,..} if state.status==crate::model::ToolPartStatus::Error)
+        );
     }
 }
 #[cfg(test)]

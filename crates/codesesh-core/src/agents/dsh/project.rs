@@ -122,7 +122,7 @@ fn tool(id: &str, name: &str, args: &Value, time: f64) -> MessagePart {
         call_id: (!id.is_empty()).then(|| id.into()),
         time_created: Some(time),
         state: Box::new(ToolState {
-            status: "running".into(),
+            status: ToolPartStatus::Running,
             input: Some(input),
             output: None,
             error: None,
@@ -581,11 +581,10 @@ impl Projector<'_> {
                     {
                         state.output = Some(serde_json::to_value(output)?);
                         state.status = if b["isError"] == true || d["error"].is_object() {
-                            "error"
+                            ToolPartStatus::Error
                         } else {
-                            "completed"
-                        }
-                        .into();
+                            ToolPartStatus::Completed
+                        };
                         state.metadata = d.get("meta").cloned();
                         if let Some(v) = &mut state.metadata {
                             clean_value(v);

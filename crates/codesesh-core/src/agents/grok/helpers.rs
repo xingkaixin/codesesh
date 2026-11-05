@@ -316,11 +316,11 @@ pub(super) fn message(
         automated: None,
     }
 }
-pub(super) fn status(v: &Value) -> Option<&'static str> {
+pub(super) fn status(v: &Value) -> Option<ToolPartStatus> {
     match text(v).to_lowercase().as_str() {
-        "completed" => Some("completed"),
-        "failed" => Some("error"),
-        "in_progress" | "pending" => Some("running"),
+        "completed" => Some(ToolPartStatus::Completed),
+        "failed" => Some(ToolPartStatus::Error),
+        "in_progress" | "pending" => Some(ToolPartStatus::Running),
         _ => None,
     }
 }

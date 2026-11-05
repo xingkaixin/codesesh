@@ -304,12 +304,12 @@ fn tool(call: &Value, time: f64, later: &HashMap<&str, &Value>) -> MessagePart {
         .filter(|error| !error.is_null())
         .cloned();
     let status = match call["status"].as_str() {
-        Some("success") => "completed",
-        Some("error" | "cancelled") => "error",
-        Some(_) => "running",
-        None if error.is_some() => "error",
-        None if response.is_some() => "completed",
-        None => "unknown",
+        Some("success") => ToolPartStatus::Completed,
+        Some("error" | "cancelled") => ToolPartStatus::Error,
+        Some(_) => ToolPartStatus::Running,
+        None if error.is_some() => ToolPartStatus::Error,
+        None if response.is_some() => ToolPartStatus::Completed,
+        None => ToolPartStatus::Unknown,
     };
     let output = response
         .filter(|_| error.is_none())
@@ -320,7 +320,7 @@ fn tool(call: &Value, time: f64, later: &HashMap<&str, &Value>) -> MessagePart {
         title: None,
         time_created: Some(time),
         state: Box::new(ToolState {
-            status: status.into(),
+            status,
             input: Some(
                 call.get("args")
                     .filter(|args| !args.is_null())

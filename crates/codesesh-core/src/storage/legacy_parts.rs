@@ -179,7 +179,7 @@ mod tests {
             panic!("tool")
         };
         assert_eq!(tool, "Read");
-        assert_eq!(state.status, "completed");
+        assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
         assert_eq!(state.input.as_ref().unwrap()["path"], "src/main.rs");
         assert_eq!(state.output.as_ref().unwrap(), "done");
         assert_eq!(state.metadata.as_ref().unwrap()["duration"], 2);

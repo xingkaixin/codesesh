@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use crate::model::{Message, MessagePart, ToolState};
+use crate::model::{Message, MessagePart, ToolPartStatus, ToolState};
 
 type Position = (usize, usize);
 
@@ -45,7 +45,11 @@ impl ToolEvents {
         let result = &item["result"];
         let error = item["status"] == "failed" || result["isError"] == true;
         let mut state = ToolState {
-            status: if error { "error" } else { "completed" }.into(),
+            status: if error {
+                ToolPartStatus::Error
+            } else {
+                ToolPartStatus::Completed
+            },
             input: Some(arguments.clone()),
             output: (!result.is_null()).then(|| result.clone()),
             error: error.then(|| result.clone()),
@@ -225,7 +229,7 @@ mod tests {
                 panic!()
             };
             assert_eq!(tool, "exec");
-            assert_eq!(state.status, status);
+            assert_eq!(state.status.as_str(), status);
             assert_eq!(state.output.as_ref(), Some(&expected));
             assert_eq!(state.error.is_some(), status == "error");
         }
@@ -260,9 +264,9 @@ mod tests {
         let MessagePart::Tool { state: b, .. } = parts[1] else {
             panic!()
         };
-        assert_eq!(a.status, "completed");
+        assert_eq!(a.status, ToolPartStatus::Completed);
         assert_eq!(a.output.as_ref().unwrap()["content"][0]["text"], "thread a");
-        assert_eq!(b.status, "error");
+        assert_eq!(b.status, ToolPartStatus::Error);
         assert_eq!(
             b.error.as_ref().unwrap()["content"][0]["text"],
             "invalid cursor"

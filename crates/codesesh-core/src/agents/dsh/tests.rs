@@ -100,7 +100,7 @@ fn plaintext_and_zstd_preserve_prefix_fork_usage_and_tools() {
         let MessagePart::Tool { state, .. } = &d.messages[1].parts[0] else {
             panic!("tool expected")
         };
-        assert_eq!(state.status, "completed");
+        assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     }
 }
 #[test]

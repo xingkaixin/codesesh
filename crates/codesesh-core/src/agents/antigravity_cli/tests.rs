@@ -149,7 +149,7 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
         panic!("missing tool")
     };
     assert_eq!(call_id.as_deref(), Some("call-1"));
-    assert_eq!(state.status, "unknown");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Unknown);
     assert_eq!(state.input, Some(json!({"path":"a"})));
     assert!(state.output.is_none());
     assert!(

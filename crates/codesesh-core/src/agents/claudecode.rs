@@ -735,7 +735,7 @@ mod tests {
         let MessagePart::Tool { state, .. } = &d.messages[1].parts[1] else {
             panic!()
         };
-        assert_eq!(state.status, "error");
+        assert_eq!(state.status, crate::model::ToolPartStatus::Error);
         assert_eq!(state.output.as_ref().unwrap()[0]["text"], "Failed");
     }
     #[test]

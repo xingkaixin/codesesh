@@ -62,7 +62,7 @@ fn qoder_cn_reads_claude_layout_from_its_override_and_reports_deleted_subagents(
     let crate::model::MessagePart::Tool { state, .. } = &message.parts[0] else {
         panic!()
     };
-    assert_eq!(state.status, "completed");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     let subagent = batch
         .sessions
         .iter()
@@ -176,7 +176,7 @@ fn omp_reads_xdg_sessions_with_nested_subagents_and_reports_deleted_advisors() {
     let crate::model::MessagePart::Tool { state, .. } = &message.parts[0] else {
         panic!()
     };
-    assert_eq!(state.status, "completed");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     let reference = |id: &str| Some(session(id).head.reference.clone());
     assert_eq!(session("001a").head.parent_reference, reference("000a"));
     assert_eq!(session("002a").head.parent_reference, reference("001a"));

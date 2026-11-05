@@ -186,7 +186,7 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
                     call_id: (!id.is_empty()).then_some(id),
                     time_created: Some(time),
                     state: Box::new(ToolState {
-                        status: "running".into(),
+                        status: ToolPartStatus::Running,
                         input: Some(
                             item.get("arguments")
                                 .filter(|v| !v.is_null())
@@ -413,11 +413,10 @@ pub(super) fn parse_as(
                     {
                         state.output = Some(serde_json::to_value(text_parts(&raw["content"], ts))?);
                         state.status = if raw["isError"] == true {
-                            "error"
+                            ToolPartStatus::Error
                         } else {
-                            "completed"
-                        }
-                        .into();
+                            ToolPartStatus::Completed
+                        };
                         state.metadata = raw.get("details").cloned();
                     }
                     continue;
@@ -441,7 +440,11 @@ pub(super) fn parse_as(
                             call_id: None,
                             time_created: Some(ts),
                             state: Box::new(ToolState {
-                                status: if is_error { "error" } else { "completed" }.into(),
+                                status: if is_error {
+                                    ToolPartStatus::Error
+                                } else {
+                                    ToolPartStatus::Completed
+                                },
                                 input: Some(json!({"command": text(&raw["command"])})),
                                 output: Some(if output.is_empty() {
                                     json!([])

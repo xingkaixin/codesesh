@@ -127,7 +127,11 @@ impl Transcript {
             }
         }
         if let Some(success) = updates["success"].as_bool() {
-            state.status = if success { "completed" } else { "error" }.into();
+            state.status = if success {
+                ToolPartStatus::Completed
+            } else {
+                ToolPartStatus::Error
+            };
         }
         if let Some(name) = updates
             .get("commandName")
@@ -136,9 +140,9 @@ impl Transcript {
             state.metadata = Some(json!({"commandName":name}));
         }
         if is_error {
-            state.status = "error".into();
-        } else if has_output && state.status == "running" {
-            state.status = "completed".into();
+            state.status = ToolPartStatus::Error;
+        } else if has_output && state.status == ToolPartStatus::Running {
+            state.status = ToolPartStatus::Completed;
         }
         true
     }
@@ -203,7 +207,7 @@ impl Transcript {
                                 call_id: Some(call),
                                 time_created: Some(time),
                                 state: Box::new(ToolState {
-                                    status: "running".into(),
+                                    status: ToolPartStatus::Running,
                                     input: Some(
                                         part.get("input")
                                             .filter(|v| !v.is_null())

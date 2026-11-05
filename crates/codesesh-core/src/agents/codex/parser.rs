@@ -396,7 +396,7 @@ impl Parser {
                         tool,
                         call_id: Some(call_id.clone()),
                         state: Box::new(ToolState {
-                            status: "running".into(),
+                            status: ToolPartStatus::Running,
                             input: Some(clean_value(input)),
                             output: Some(Value::Null),
                             error: None,
@@ -428,11 +428,10 @@ impl Parser {
                     state: Box::new(ToolState {
                         // Only tool search records its result in a later item.
                         status: if tool == "tool_search" {
-                            "running"
+                            ToolPartStatus::Running
                         } else {
-                            "completed"
-                        }
-                        .into(),
+                            ToolPartStatus::Completed
+                        },
                         input: Some(clean_value(input)),
                         output: Some(Value::Null),
                         error: None,
@@ -470,12 +469,12 @@ impl Parser {
                     .join("\n");
                 if let Some((i, p)) = tools.get(payload["call_id"].as_str().unwrap_or(""))
                     && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
-                    && state.status == "running"
+                    && state.status == ToolPartStatus::Running
                 {
                     state.output = Some(
                         serde_json::json!([{ "type": "text", "text": found, "time_created": time }]),
                     );
-                    state.status = "completed".into();
+                    state.status = ToolPartStatus::Completed;
                 }
             }
             "function_call_output" | "custom_tool_call_output" => {
@@ -483,13 +482,13 @@ impl Parser {
                 if payload["type"] == "custom_tool_call_output" {
                     if let Some((i, p)) = tools.get(call_id)
                         && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
-                        && state.status == "running"
+                        && state.status == ToolPartStatus::Running
                     {
                         let (output, status) = exec::output(&payload["output"], time);
                         let output = clean_value(output);
-                        state.error = (status == "error").then(|| output.clone());
+                        state.error = (status == ToolPartStatus::Error).then(|| output.clone());
                         state.output = Some(output);
-                        state.status = status.into();
+                        state.status = status;
                     }
                     return;
                 }
@@ -509,12 +508,12 @@ impl Parser {
                 if !output.is_empty()
                     && let Some((i, p)) = tools.get(call_id)
                     && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
-                    && state.status == "running"
+                    && state.status == ToolPartStatus::Running
                 {
                     state.output = Some(
                         serde_json::json!([{ "type": "text", "text": output, "time_created": time }]),
                     );
-                    state.status = "completed".into();
+                    state.status = ToolPartStatus::Completed;
                 }
             }
             _ => {}

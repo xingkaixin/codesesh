@@ -78,7 +78,7 @@ fn subagent_output_fixture_and_tool_error_semantics() {
     let MessagePart::Tool { state, .. } = &messages[0].parts[0] else {
         panic!("tool missing")
     };
-    assert_eq!(state.status, "completed");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     assert_eq!(state.error, None);
     assert_eq!(messages[1].subagent_id.as_deref(), Some("s"));
     let MessagePart::Tool { tool, state, .. } = &messages[1].parts[0] else {

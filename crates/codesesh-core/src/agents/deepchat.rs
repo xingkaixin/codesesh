@@ -36,9 +36,9 @@ fn assistant_part(block: &Value) -> Option<MessagePart> {
             return None;
         }
         let status = match block["status"].as_str() {
-            Some("pending" | "loading") => "running",
-            Some("error" | "denied") => "error",
-            _ => "completed",
+            Some("pending" | "loading") => ToolPartStatus::Running,
+            Some("error" | "denied") => ToolPartStatus::Error,
+            _ => ToolPartStatus::Completed,
         };
         let output = tool.get("response").map(parse);
         return Some(MessagePart::Tool {
@@ -47,10 +47,10 @@ fn assistant_part(block: &Value) -> Option<MessagePart> {
             title: None,
             time_created: time,
             state: Box::new(ToolState {
-                status: status.into(),
+                status,
                 input: tool.get("params").map(parse),
                 output: output.clone(),
-                error: if status == "error" {
+                error: if status == ToolPartStatus::Error {
                     output
                         .filter(|v| !v.is_null())
                         .or_else(|| content.clone().map(Value::String))

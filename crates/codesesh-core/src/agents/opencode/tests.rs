@@ -233,7 +233,7 @@ fn v1_normalizes_legacy_tool_state_and_hides_internal_parts() {
     match &session.detail.messages[0].parts[1] {
         MessagePart::Tool { tool, state, .. } => {
             assert_eq!(tool, "edit");
-            assert_eq!(state.status, "completed");
+            assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
             assert_eq!(state.metadata.as_ref().unwrap()["duration"], 12);
             assert_eq!(state.input.as_ref().unwrap()["text"], "visible");
         }

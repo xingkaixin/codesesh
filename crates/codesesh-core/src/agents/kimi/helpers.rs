@@ -171,7 +171,7 @@ pub fn tool(name: &str, id: &str, input: Option<Value>, ts: f64, code: bool) -> 
         title: Some(title.into()),
         time_created: Some(ts),
         state: Box::new(ToolState {
-            status: "running".into(),
+            status: ToolPartStatus::Running,
             input,
             output: Some(Value::Null),
             error: None,
@@ -284,12 +284,12 @@ impl Builder {
         &mut self,
         id: &str,
         parts: Vec<MessagePart>,
-        status: &str,
+        status: ToolPartStatus,
         note: Option<String>,
     ) -> bool {
         if let Some(state) = self.state(id) {
             state.output = Some(serde_json::to_value(parts).unwrap());
-            state.status = status.into();
+            state.status = status;
             if let Some(note) = note {
                 state.metadata = Some(serde_json::json!({"note":clean(&note)}));
             }
