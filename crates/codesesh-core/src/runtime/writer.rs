@@ -185,38 +185,23 @@ pub(super) fn run(
                         );
                     }
                     let mut status = statuses.borrow().as_ref().clone();
-                    if let Some(presence) = batch.source_presence.clone() {
-                        status
-                            .sources
-                            .entry(agent.clone())
-                            .or_default()
-                            .collected(presence, batch.complete);
-                    }
-                    if !batch.complete
-                        || status
-                            .backfill
-                            .pending_agents
-                            .iter()
-                            .any(|name| name == &agent)
-                    {
-                        status.backfill(&agent, batch.complete);
-                        if !batch.complete
-                            && let Some(checkpoint) = &batch.checkpoint
-                            && let (Some(processed), Some(total)) =
-                                (checkpoint["offset"].as_u64(), checkpoint["total"].as_u64())
-                        {
-                            status.backfill.current_agent = Some(agent.clone());
-                            status.backfill.progress = Some(super::status::ScanProgress {
-                                phase: if checkpoint["incremental"] == true {
-                                    crate::wire::BackfillPhase::Checking
-                                } else {
-                                    crate::wire::BackfillPhase::Scanning
-                                },
-                                processed: processed as usize,
-                                total: total as usize,
-                            });
-                        }
-                    }
+                    let progress = batch.checkpoint.as_ref().and_then(|checkpoint| {
+                        Some(super::status::ScanProgress {
+                            phase: if checkpoint["incremental"] == true {
+                                crate::wire::BackfillPhase::Checking
+                            } else {
+                                crate::wire::BackfillPhase::Scanning
+                            },
+                            processed: checkpoint["offset"].as_u64()? as usize,
+                            total: checkpoint["total"].as_u64()? as usize,
+                        })
+                    });
+                    status.published(
+                        &agent,
+                        batch.complete,
+                        batch.source_presence.clone(),
+                        progress,
+                    );
                     if !batch.sessions.is_empty()
                         && !status
                             .search_index_maintenance
