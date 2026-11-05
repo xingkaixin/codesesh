@@ -14,6 +14,11 @@ export interface SessionMessagePaging {
 
 export type SessionDetailError = { kind: "missing" } | { kind: "load-failed"; message: string };
 
+export type SessionDetailPhase =
+  | { kind: "loading" }
+  | SessionDetailError
+  | { kind: "ready"; session: SessionDetail; messagePaging?: SessionMessagePaging };
+
 function getSessionDetailError(error: unknown): SessionDetailError {
   if (error instanceof ApiRequestError && error.status === 404) return { kind: "missing" };
   return {
@@ -133,24 +138,26 @@ export function useSessionDetail(viewState: ViewState) {
     await query.refetch({ cancelRefetch: true });
   }, [query, route]);
 
-  const { refetch } = query;
+  const { data, error, isError, isFetching, refetch } = query;
   const loadMore = useCallback(() => {
     void refetch({ cancelRefetch: false });
   }, [refetch]);
-  const partial = Boolean(
-    query.data &&
-    query.data.messages.length < (query.data.message_total ?? query.data.messages.length),
-  );
-  const messagePaging: SessionMessagePaging | undefined = partial
-    ? { loading: query.isFetching, failed: query.isError, loadMore }
-    : undefined;
 
-  return {
-    session: route ? (query.data ?? null) : null,
-    sessionLoading: route !== null && query.isPending,
-    sessionError:
-      route !== null && query.isError && !partial ? getSessionDetailError(query.error) : null,
-    messagePaging,
-    refresh,
-  };
+  let phase: SessionDetailPhase;
+  if (data) {
+    const partial = data.messages.length < (data.message_total ?? data.messages.length);
+    phase = {
+      kind: "ready",
+      session: data,
+      ...(partial && {
+        messagePaging: { loading: isFetching, failed: isError, loadMore },
+      }),
+    };
+  } else if (isError) {
+    phase = getSessionDetailError(error);
+  } else {
+    phase = { kind: "loading" };
+  }
+
+  return { phase, refresh };
 }

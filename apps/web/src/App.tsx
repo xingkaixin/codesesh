@@ -112,7 +112,8 @@ export default function App() {
   );
 
   const sessionDetail = useSessionDetail(viewState);
-  const { session, sessionError } = sessionDetail;
+  const sessionPhase = sessionDetail.phase;
+  const session = sessionPhase.kind === "ready" ? sessionPhase.session : null;
 
   useEffect(() => {
     logClientEvent("route.change", {
@@ -265,7 +266,10 @@ export default function App() {
     activeAgent,
     sidebarSessionCount: sidebarSessions.length,
     session,
-    sessionError: sessionError?.kind ?? null,
+    sessionError:
+      sessionPhase.kind === "missing" || sessionPhase.kind === "load-failed"
+        ? sessionPhase.kind
+        : null,
     sessionSourceLabel: sessionSourceNodeId
       ? sourceName(sessionSourceNodeId, sourceNodes.data?.nodes)
       : null,
@@ -339,10 +343,7 @@ export default function App() {
         sessions: sessionIndexes.byLandingAgent.get(viewState.activeAgentKey) ?? [],
         bookmarks: bookmarkActions,
         detail: {
-          session: sessionDetail.session,
-          messagePaging: sessionDetail.messagePaging,
-          loading: sessionDetail.sessionLoading,
-          error: sessionDetail.sessionError,
+          phase: sessionPhase,
           retry: () => void sessionDetail.refresh(),
         },
         detailHighlightQuery,

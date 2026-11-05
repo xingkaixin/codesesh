@@ -48,6 +48,16 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
+type SessionDetailResult = ReturnType<typeof useSessionDetail>;
+
+function sessionOf({ phase }: SessionDetailResult) {
+  return phase.kind === "ready" ? phase.session : null;
+}
+
+function pagingOf({ phase }: SessionDetailResult) {
+  return phase.kind === "ready" ? phase.messagePaging : undefined;
+}
+
 function renderSessionDetail(view: ViewState = sessionView) {
   const { client, Wrapper } = createQueryWrapper();
   return {
@@ -70,8 +80,7 @@ describe("useSessionDetail", () => {
     vi.mocked(api.fetchSessionData).mockRejectedValue(new api.ApiRequestError("not found", 404));
     const { result } = renderSessionDetail();
 
-    await waitFor(() => expect(result.current.sessionError).toEqual({ kind: "missing" }));
-    expect(result.current.session).toBeNull();
+    await waitFor(() => expect(result.current.phase).toEqual({ kind: "missing" }));
   });
 
   it.each([500, 503])("recovers from a %i detail response with a local retry", async (status) => {
@@ -81,15 +90,31 @@ describe("useSessionDetail", () => {
     const { result } = renderSessionDetail();
 
     await waitFor(() =>
-      expect(result.current.sessionError).toEqual({
+      expect(result.current.phase).toEqual({
         kind: "load-failed",
         message: "server unavailable",
       }),
     );
     await act(() => result.current.refresh());
 
-    await waitFor(() => expect(result.current.session).toEqual(sample));
-    expect(result.current.sessionError).toBeNull();
+    await waitFor(() => expect(result.current.phase).toEqual({ kind: "ready", session: sample }));
+  });
+
+  it("keeps a loaded session on screen when a background refresh fails", async () => {
+    vi.mocked(api.fetchSessionData)
+      .mockResolvedValueOnce(sample)
+      .mockRejectedValueOnce(new api.ApiRequestError("server unavailable", 503));
+    const { client, result } = renderSessionDetail();
+    await waitFor(() => expect(sessionOf(result.current)).toEqual(sample));
+
+    await act(() =>
+      client.invalidateQueries({
+        queryKey: queryKeys.sessionDetail("claudecode", "claudecode/abc"),
+      }),
+    );
+
+    expect(api.fetchSessionData).toHaveBeenCalledTimes(2);
+    expect(result.current.phase).toEqual({ kind: "ready", session: sample });
   });
 
   it("requests and merges only messages appended by a live update", async () => {
@@ -107,7 +132,7 @@ describe("useSessionDetail", () => {
     });
     vi.mocked(api.fetchSessionData).mockResolvedValueOnce(initial).mockResolvedValueOnce(appended);
     const { client, result } = renderSessionDetail();
-    await waitFor(() => expect(result.current.session).toEqual(initial));
+    await waitFor(() => expect(sessionOf(result.current)).toEqual(initial));
 
     await act(() =>
       client.invalidateQueries({
@@ -117,7 +142,7 @@ describe("useSessionDetail", () => {
     );
 
     await waitFor(() =>
-      expect(result.current.session?.messages).toEqual([firstMessage, nextMessage]),
+      expect(sessionOf(result.current)?.messages).toEqual([firstMessage, nextMessage]),
     );
     expect(api.fetchSessionData).toHaveBeenLastCalledWith(
       "claudecode",
@@ -146,11 +171,11 @@ describe("useSessionDetail", () => {
     rerender({ currentView: viewB });
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
     await act(async () => requestB.resolve(sessionB));
-    await waitFor(() => expect(result.current.session).toEqual(sessionB));
+    await waitFor(() => expect(sessionOf(result.current)).toEqual(sessionB));
     await act(async () => requestA.resolve(sessionA));
 
     expect({
-      sessionId: result.current.session?.reference.sessionId,
+      sessionId: sessionOf(result.current)?.reference.sessionId,
       lifecycle: vi
         .mocked(api.logClientEvent)
         .mock.calls.map(([event, fields]) => `${event}:${fields?.request_key}`),
@@ -179,7 +204,7 @@ describe("useSessionDetail", () => {
       .mockReturnValueOnce(refreshRequest.promise)
       .mockResolvedValueOnce(sessionB);
     const { result, rerender } = renderSessionDetail();
-    await waitFor(() => expect(result.current.session).toEqual(sample));
+    await waitFor(() => expect(sessionOf(result.current)).toEqual(sample));
 
     let refreshPromise!: Promise<void>;
     act(() => {
@@ -187,12 +212,11 @@ describe("useSessionDetail", () => {
     });
     await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
     rerender({ currentView: viewB });
-    await waitFor(() => expect(result.current.session).toEqual(sessionB));
+    await waitFor(() => expect(sessionOf(result.current)).toEqual(sessionB));
     await act(async () => refreshRequest.resolve(refreshedA));
     await refreshPromise;
 
-    expect(result.current.session).toEqual(sessionB);
-    expect(result.current.sessionError).toBeNull();
+    expect(result.current.phase).toEqual({ kind: "ready", session: sessionB });
   });
 });
 
@@ -222,28 +246,27 @@ it("retains loaded messages on a page failure, retries the prefix and resets rew
     })
     .mockResolvedValueOnce(rewritten);
   const { result } = renderSessionDetail();
-  await waitFor(() => expect(result.current.session).toEqual(initial));
+  await waitFor(() => expect(sessionOf(result.current)).toEqual(initial));
   expect(api.fetchSessionData).toHaveBeenCalledTimes(1);
   expect(api.fetchSessionData).toHaveBeenLastCalledWith(
     "claudecode",
     "claudecode/abc",
     expect.objectContaining({ messageLimit: 200 }),
   );
-  act(() => result.current.messagePaging?.loadMore());
-  await waitFor(() => expect(result.current.messagePaging?.failed).toBe(true));
-  expect(result.current.sessionError).toBeNull();
-  expect(result.current.session).toEqual(initial);
-  act(() => result.current.messagePaging?.loadMore());
+  act(() => pagingOf(result.current)?.loadMore());
+  await waitFor(() => expect(pagingOf(result.current)?.failed).toBe(true));
+  expect(sessionOf(result.current)).toEqual(initial);
+  act(() => pagingOf(result.current)?.loadMore());
   await waitFor(() =>
-    expect(result.current.session?.messages).toEqual([firstMessage, secondMessage]),
+    expect(sessionOf(result.current)?.messages).toEqual([firstMessage, secondMessage]),
   );
-  expect(result.current.messagePaging).toBeUndefined();
+  expect(pagingOf(result.current)).toBeUndefined();
   expect(api.fetchSessionData).toHaveBeenLastCalledWith(
     "claudecode",
     "claudecode/abc",
     expect.objectContaining({ messageCursor: "first", messageLimit: 200 }),
   );
   await act(() => result.current.refresh());
-  await waitFor(() => expect(result.current.session).toEqual(rewritten));
-  expect(result.current.messagePaging?.failed).toBe(false);
+  await waitFor(() => expect(sessionOf(result.current)).toEqual(rewritten));
+  expect(pagingOf(result.current)?.failed).toBe(false);
 });
