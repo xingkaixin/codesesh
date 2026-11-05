@@ -379,10 +379,7 @@ async function web(fixture, config, command, hot = false, traffic = false) {
     const duringBackfill = [];
     await poll(async () => {
       const { body: status } = await request(server, "/api/status");
-      if (
-        traffic &&
-        (status.active || status.backfill?.active || status.searchIndexMaintenance?.active)
-      ) {
+      if (traffic && (status.active || status.backfill?.active)) {
         for (const [name, path] of [
           ["list", "/api/sessions"],
           ["search", "/api/search?q=benchmark-needle"],
@@ -403,7 +400,6 @@ async function web(fixture, config, command, hot = false, traffic = false) {
       return (
         !status.active &&
         !status.backfill?.active &&
-        !status.searchIndexMaintenance?.active &&
         config.agents.every((agent) => status.completedAgents?.includes(agent))
       );
     }, "all scan/backfill/index completion");

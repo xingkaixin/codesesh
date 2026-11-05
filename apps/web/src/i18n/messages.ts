@@ -673,10 +673,6 @@ export const messages = {
     "会话刷新完成，部分数据不可用 · {0}{1}",
     "セッションの更新が完了、一部データは利用不可 · {0}{1}",
   ],
-  "Background search index maintenance paused · {0}": [
-    "后台搜索索引维护已暂停 · {0}",
-    "バックグラウンドの検索インデックス更新を一時停止 · {0}",
-  ],
   Finalizing: ["正在完成", "最終処理中"],
   Publishing: ["正在发布", "反映中"],
   "Queued to publish": ["等待发布", "反映待ち"],

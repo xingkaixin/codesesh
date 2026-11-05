@@ -62,7 +62,6 @@ pub struct ScanStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<i64>,
     pub backfill: BackgroundStatus,
-    pub search_index_maintenance: BackgroundStatus,
 }
 
 impl ScanStatus {
@@ -109,7 +108,6 @@ impl ScanStatus {
                 .collect(),
             updated_at: now,
             backfill: BackgroundStatus::default(),
-            search_index_maintenance: BackgroundStatus::default(),
         }
     }
 

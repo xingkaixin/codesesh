@@ -202,17 +202,6 @@ pub(super) fn run(
                         batch.source_presence.clone(),
                         progress,
                     );
-                    if !batch.sessions.is_empty()
-                        && !status
-                            .search_index_maintenance
-                            .completed_agents
-                            .contains(&agent)
-                    {
-                        status
-                            .search_index_maintenance
-                            .completed_agents
-                            .push(agent.clone());
-                    }
                     let status = Arc::new(status);
                     statuses.send_replace(status.clone());
                     let _ = events.send(Event::Status(status));

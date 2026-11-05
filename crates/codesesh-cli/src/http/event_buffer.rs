@@ -143,22 +143,6 @@ fn milestone(status: &Value) -> Value {
         sorted(
             &status["backfill"]["partialAgents"],
             &["completeness", "sourceFailureCount", "sourceFailureSummary"]
-        ),
-        status["searchIndexMaintenance"]["active"]
-            .as_bool()
-            .unwrap_or(false),
-        status["searchIndexMaintenance"]["currentAgent"],
-        status["searchIndexMaintenance"]["pendingAgents"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default(),
-        status["searchIndexMaintenance"]["completedAgents"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default(),
-        status["searchIndexMaintenance"]["failedAgents"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
+        )
     ])
 }
