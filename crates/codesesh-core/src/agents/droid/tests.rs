@@ -119,7 +119,7 @@ fn reads_transcript_tools_and_session_usage() {
     let MessagePart::Tool { state, .. } = &messages[1].parts[2] else {
         panic!()
     };
-    assert_eq!(state.status, "error");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Error);
     assert_eq!(
         state.output.as_ref().unwrap()[0]["text"],
         "Error: make failed"
@@ -127,7 +127,7 @@ fn reads_transcript_tools_and_session_usage() {
     let MessagePart::Tool { state, .. } = &messages[1].parts[3] else {
         panic!()
     };
-    assert_eq!(state.status, "completed");
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     assert_eq!(state.output.as_ref().unwrap()[0]["text"], "fn main() {}");
     assert!(matches!(&messages[2].parts[..], [MessagePart::Text { text, .. }] if text == "Fixed"));
 

@@ -185,7 +185,7 @@ fn parse(
                     title: None,
                     time_created: None,
                     state: Box::new(ToolState {
-                        status: "unknown".into(),
+                        status: ToolPartStatus::Unknown,
                         input,
                         output: None,
                         error: None,

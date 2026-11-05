@@ -1,8 +1,8 @@
-use super::ParsedSession;
+use super::{ParsedSession, tool_calls};
 use crate::{model::*, pricing::Pricing, projects::path_identity};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -407,6 +407,12 @@ mod tests {
                 json!({"toolCallId":"c","status":"failed","content":[{"type":"content","content":{"type":"text","text":"failed"}}]}),
             ),
             update(
+                4,
+                "p",
+                "tool_call_update",
+                json!({"toolCallId":"c","status":"in_progress"}),
+            ),
+            update(
                 5,
                 "p",
                 "plan",
@@ -432,7 +438,7 @@ mod tests {
         assert_eq!(m.cost, Some(0.001));
         assert!(matches!(&m.parts[0],MessagePart::Reasoning{text,..} if text=="Thinking"));
         assert!(
-            matches!(&m.parts[1],MessagePart::Tool{state,..} if state.status=="error"&&state.error==Some(json!("failed")))
+            matches!(&m.parts[1],MessagePart::Tool{state,..} if state.status==crate::model::ToolPartStatus::Error&&state.error==Some(json!("failed")))
         );
         assert!(
             matches!(&m.parts[2],MessagePart::Plan{approval_status,..} if approval_status=="success")

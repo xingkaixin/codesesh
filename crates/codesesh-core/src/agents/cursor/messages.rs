@@ -1,7 +1,10 @@
 use super::text::{clean_value, js_string};
 use super::{clean, internal, model, number, string};
 use crate::{
-    model::{CostSource, Message, MessagePart, MessageTokens, Role, SessionStats, ToolState},
+    model::{
+        CostSource, Message, MessagePart, MessageTokens, Role, SessionStats, ToolPartStatus,
+        ToolState,
+    },
     pricing::Pricing,
 };
 use anyhow::Result;
@@ -138,9 +141,9 @@ fn parse_json(value: &Value) -> Value {
 pub(super) fn tool_former(value: &Value, time: f64) -> Option<MessagePart> {
     let name = string(value, "name").filter(|s| !s.is_empty())?;
     let status = match string(value, "status") {
-        Some("completed") => "completed",
-        Some("error" | "failed") => "error",
-        _ => "running",
+        Some("completed") => ToolPartStatus::Completed,
+        Some("error" | "failed") => ToolPartStatus::Error,
+        _ => ToolPartStatus::Running,
     };
     let input = value.get("params").filter(|v| truthy(v)).map(|v| {
         if let Some(text) = v.as_str() {
@@ -150,14 +153,17 @@ pub(super) fn tool_former(value: &Value, time: f64) -> Option<MessagePart> {
         }
     });
     let output = value.get("result").map(parse_json);
-    let error = output.as_ref().filter(|_| status == "error").map(|v| {
-        v.get("error")
-            .filter(|v| !v.is_null())
-            .or_else(|| v.get("message").filter(|v| !v.is_null()))
-            .or_else(|| v.get("stderr").filter(|v| !v.is_null()))
-            .unwrap_or(v)
-            .clone()
-    });
+    let error = output
+        .as_ref()
+        .filter(|_| status == ToolPartStatus::Error)
+        .map(|v| {
+            v.get("error")
+                .filter(|v| !v.is_null())
+                .or_else(|| v.get("message").filter(|v| !v.is_null()))
+                .or_else(|| v.get("stderr").filter(|v| !v.is_null()))
+                .unwrap_or(v)
+                .clone()
+        });
     if name == "create_plan" {
         let text = input
             .as_ref()
@@ -171,7 +177,7 @@ pub(super) fn tool_former(value: &Value, time: f64) -> Option<MessagePart> {
             let text = clean(&text);
             return (!text.is_empty()).then(|| MessagePart::Plan {
                 text,
-                approval_status: if status == "completed" {
+                approval_status: if status == ToolPartStatus::Completed {
                     "success"
                 } else {
                     "fail"
@@ -192,7 +198,7 @@ pub(super) fn tool_former(value: &Value, time: f64) -> Option<MessagePart> {
         title: Some(format!("Tool: {tool}")),
         time_created: Some(time),
         state: Box::new(ToolState {
-            status: status.into(),
+            status,
             input: input.map(clean_value),
             output: output.map(clean_value),
             error: error.map(clean_value),
@@ -390,12 +396,12 @@ pub(super) fn action_part(action: &Value, time: f64) -> Option<MessagePart> {
         .or(normalized_output);
     let error = state.get("error").cloned();
     let status = match string(state, "status") {
-        Some("running") => "running",
-        Some("completed" | "success") => "completed",
-        Some("error") => "error",
-        _ if error.as_ref().is_some_and(|v| !v.is_null()) => "error",
-        _ if output.is_some() => "completed",
-        _ => "running",
+        Some("running") => ToolPartStatus::Running,
+        Some("completed" | "success") => ToolPartStatus::Completed,
+        Some("error") => ToolPartStatus::Error,
+        _ if error.as_ref().is_some_and(|v| !v.is_null()) => ToolPartStatus::Error,
+        _ if output.is_some() => ToolPartStatus::Completed,
+        _ => ToolPartStatus::Running,
     };
     let mut metadata = state
         .get("metadata")
@@ -429,7 +435,7 @@ pub(super) fn action_part(action: &Value, time: f64) -> Option<MessagePart> {
         }
     }
     let mut state = ToolState {
-        status: status.into(),
+        status,
         input,
         output,
         error,

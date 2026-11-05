@@ -1,4 +1,4 @@
-use crate::{model::*, pricing::Pricing};
+use crate::{agents::tool_calls, model::*, pricing::Pricing};
 use anyhow::{Result, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -122,7 +122,7 @@ fn tool(id: &str, name: &str, args: &Value, time: f64) -> MessagePart {
         call_id: (!id.is_empty()).then(|| id.into()),
         time_created: Some(time),
         state: Box::new(ToolState {
-            status: "running".into(),
+            status: ToolPartStatus::Running,
             input: Some(input),
             output: None,
             error: None,
@@ -275,7 +275,7 @@ struct Projector<'a> {
     canonical: HashSet<String>,
     messages: Vec<Message>,
     current: Option<usize>,
-    tools: HashMap<String, (usize, usize)>,
+    tools: tool_calls::ToolCalls,
     pending: Option<Pending>,
     settled: HashSet<String>,
     provider: Option<String>,
@@ -301,7 +301,7 @@ impl Projector<'_> {
                 call_id: Some(id), ..
             } = p
             {
-                self.tools.insert(id.clone(), (index, part));
+                tool_calls::register(&mut self.tools, &mut self.messages, id, (index, part));
             }
         }
         self.messages.push(m);
@@ -554,7 +554,7 @@ impl Projector<'_> {
                 if let Some(current) = self.current {
                     let index = self.messages[current].parts.len();
                     self.messages[current].parts.push(part);
-                    self.tools.insert(id.into(), (current, index));
+                    tool_calls::register(&mut self.tools, &mut self.messages, id, (current, index));
                 } else {
                     self.push(message(id.into(), Role::Assistant, time, vec![part]));
                 }
@@ -575,17 +575,14 @@ impl Projector<'_> {
                     );
                     let b = &blocks[0];
                     let output = content(&b["content"], time, self.attachments, &self.canonical);
-                    if let Some((message, part)) = self.tools.remove(id)
-                        && let MessagePart::Tool { state, .. } =
-                            &mut self.messages[message].parts[part]
-                    {
-                        state.output = Some(serde_json::to_value(output)?);
-                        state.status = if b["isError"] == true || d["error"].is_object() {
-                            "error"
+                    if let Some(state) = tool_calls::pending(&self.tools, &mut self.messages, id) {
+                        let status = if b["isError"] == true || d["error"].is_object() {
+                            ToolPartStatus::Error
                         } else {
-                            "completed"
-                        }
-                        .into();
+                            ToolPartStatus::Completed
+                        };
+                        state.output = Some(serde_json::to_value(output)?);
+                        state.status = status;
                         state.metadata = d.get("meta").cloned();
                         if let Some(v) = &mut state.metadata {
                             clean_value(v);

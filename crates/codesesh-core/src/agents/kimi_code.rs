@@ -142,7 +142,7 @@ fn scan_directories(
                         }
                         let parts = output_parts(&m["content"], ts);
                         if !call.is_empty()
-                            && builder.resolve(call, parts.clone(), "completed", None)
+                            && builder.resolve(call, parts.clone(), ToolPartStatus::Completed, None)
                         {
                             continue;
                         }
@@ -254,9 +254,9 @@ fn scan_directories(
                                 call,
                                 parts.clone(),
                                 if result["isError"] == true {
-                                    "error"
+                                    ToolPartStatus::Error
                                 } else {
-                                    "completed"
+                                    ToolPartStatus::Completed
                                 },
                                 string(&result["note"]).filter(|s| !s.is_empty()),
                             ) {

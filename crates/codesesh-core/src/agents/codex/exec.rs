@@ -1,6 +1,8 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use regex::Regex;
+
+use crate::model::ToolPartStatus;
 use serde_json::{Map, Number, Value};
 
 #[derive(Debug, PartialEq)]
@@ -33,7 +35,7 @@ pub fn patch_text(args: &Value) -> &str {
         .unwrap_or("")
 }
 
-pub fn output(value: &Value, time: f64) -> (Value, &'static str) {
+pub fn output(value: &Value, time: f64) -> (Value, ToolPartStatus) {
     static ENVELOPE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^Script (?:completed|failed)\nWall time [^\n]*\nOutput:\n?").unwrap()
     });
@@ -46,11 +48,11 @@ pub fn output(value: &Value, time: f64) -> (Value, &'static str) {
         .find_map(|item| item.as_str().or_else(|| item["text"].as_str()))
         .unwrap_or("");
     let status = if first_text.starts_with("Script failed\n") {
-        "error"
+        ToolPartStatus::Error
     } else if first_text.starts_with("Script running with cell ID ") {
-        "running"
+        ToolPartStatus::Running
     } else {
-        "completed"
+        ToolPartStatus::Completed
     };
     let mut first_text_block = true;
     let blocks = items

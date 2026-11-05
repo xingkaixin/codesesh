@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use crate::model::{Message, MessagePart, ToolState};
+use crate::model::{Message, MessagePart, ToolPartStatus, ToolState};
 
 type Position = (usize, usize);
 
@@ -45,7 +45,11 @@ impl ToolEvents {
         let result = &item["result"];
         let error = item["status"] == "failed" || result["isError"] == true;
         let mut state = ToolState {
-            status: if error { "error" } else { "completed" }.into(),
+            status: if error {
+                ToolPartStatus::Error
+            } else {
+                ToolPartStatus::Completed
+            },
             input: Some(arguments.clone()),
             output: (!result.is_null()).then(|| result.clone()),
             error: error.then(|| result.clone()),
@@ -225,10 +229,29 @@ mod tests {
                 panic!()
             };
             assert_eq!(tool, "exec");
-            assert_eq!(state.status, status);
+            assert_eq!(state.status.as_str(), status);
             assert_eq!(state.output.as_ref(), Some(&expected));
             assert_eq!(state.error.is_some(), status == "error");
         }
+    }
+
+    #[test]
+    fn exec_output_and_empty_output_settle_their_calls() {
+        let messages = parse(vec![
+            json!({"type":"response_item","timestamp":2000,"payload":{"type":"custom_tool_call","name":"exec","call_id":"exec-1","input":"await tools.update_plan({plan:[]}); await tools.exec_command({cmd:'ls'});"}}),
+            json!({"type":"response_item","timestamp":3000,"payload":{"type":"custom_tool_call_output","call_id":"exec-1","output":"Script completed\nWall time 0.1 seconds\nOutput:\nok"}}),
+            json!({"type":"response_item","timestamp":4000,"payload":{"type":"function_call","name":"shell","call_id":"shell-1","arguments":"{}"}}),
+            json!({"type":"response_item","timestamp":5000,"payload":{"type":"function_call_output","call_id":"shell-1","output":""}}),
+        ]);
+        let statuses = messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                MessagePart::Tool { state, .. } => Some(state.status),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(statuses, [ToolPartStatus::Completed; 3]);
     }
 
     #[test]
@@ -260,9 +283,9 @@ mod tests {
         let MessagePart::Tool { state: b, .. } = parts[1] else {
             panic!()
         };
-        assert_eq!(a.status, "completed");
+        assert_eq!(a.status, ToolPartStatus::Completed);
         assert_eq!(a.output.as_ref().unwrap()["content"][0]["text"], "thread a");
-        assert_eq!(b.status, "error");
+        assert_eq!(b.status, ToolPartStatus::Error);
         assert_eq!(
             b.error.as_ref().unwrap()["content"][0]["text"],
             "invalid cursor"

@@ -97,7 +97,7 @@ fn part(value: core::MessagePart) -> Result<wire::WireMessagePart> {
             title,
             time_created,
             state: wire::WireToolState {
-                status: closed(state.status)?,
+                status: state.status,
                 input: state.input,
                 output: state.output,
                 error: state.error,

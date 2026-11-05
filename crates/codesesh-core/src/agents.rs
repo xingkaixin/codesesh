@@ -1,8 +1,8 @@
 pub(crate) fn parser_version(agent: &str) -> &'static str {
     if agent == "codex" {
-        "rust-parser-v8"
+        "rust-parser-v9"
     } else {
-        "rust-parser-v4"
+        "rust-parser-v5"
     }
 }
 
@@ -24,6 +24,7 @@ pub(crate) mod minimax_code;
 pub(crate) mod omp;
 pub(crate) mod opencode;
 pub(crate) mod pi;
+mod tool_calls;
 pub(crate) mod zcode;
 
 pub use codex::parse as parse_codex;
@@ -196,6 +197,7 @@ pub(crate) fn is_session_file(
 // The only place smart tags are derived; parsers leave them empty for this pass to fill.
 pub(crate) fn complete_projections(session: &mut ParsedSession) {
     let source_updated_at = session.head.time_updated;
+    tool_calls::settle_interrupted(&mut session.detail.messages);
     let smart_tags = smart_tags::classify(&session.detail.messages);
     for head in [&mut session.head, &mut session.detail.head] {
         let projection = crate::projects::compute_identity_projection(&head.directory);

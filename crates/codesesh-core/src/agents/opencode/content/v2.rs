@@ -63,11 +63,10 @@ fn assistant_part(value: &Value) -> Option<MessagePart> {
                 time_created: value["time"]["created"].as_f64(),
                 state: Box::new(ToolState {
                     status: match state["status"].as_str() {
-                        Some("completed") => "completed",
-                        Some("error") => "error",
-                        _ => "running",
-                    }
-                    .into(),
+                        Some("completed") => ToolPartStatus::Completed,
+                        Some("error") => ToolPartStatus::Error,
+                        _ => ToolPartStatus::Running,
+                    },
                     input: state.get("input").map(clean_value),
                     output: output(&state["content"]),
                     error: state.get("error").map(clean_value),
@@ -168,13 +167,13 @@ pub(super) fn message(row: &Value) -> Result<Option<Message>> {
         }
         "shell" => {
             let status = if raw["status"] == "running" {
-                "running"
+                ToolPartStatus::Running
             } else if raw["status"] == "exited"
                 && (raw["exit"].is_null() || number(&raw["exit"]) == 0.0)
             {
-                "completed"
+                ToolPartStatus::Completed
             } else {
-                "error"
+                ToolPartStatus::Error
             };
             let mut metadata = Map::new();
             for key in ["shellID", "exit"] {
@@ -195,12 +194,12 @@ pub(super) fn message(row: &Value) -> Result<Option<Message>> {
                 title: None,
                 time_created: None,
                 state: Box::new(ToolState {
-                    status: status.into(),
+                    status,
                     input: Some(clean_value(&Value::Object(input))),
                     output: raw["output"]["output"]
                         .as_str()
                         .map(|s| Value::String(clean(s))),
-                    error: (status == "error").then(|| {
+                    error: (status == ToolPartStatus::Error).then(|| {
                         json!(format!(
                             "Shell {} (exit: {})",
                             string(&raw["status"]),

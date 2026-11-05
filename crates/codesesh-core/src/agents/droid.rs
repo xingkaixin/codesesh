@@ -1,4 +1,4 @@
-use super::{ParsedSession, claudecode::common::*, jsonl::timestamp};
+use super::{ParsedSession, claudecode::common::*, jsonl::timestamp, tool_calls};
 use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -107,7 +107,7 @@ fn parse(
         .to_string_lossy()
         .into_owned();
     let mut messages = Vec::<Message>::new();
-    let mut tools = HashMap::<String, (usize, usize)>::new();
+    let mut tools = tool_calls::ToolCalls::new();
     while let Some(line) = lines.next_line()? {
         let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
@@ -140,14 +140,15 @@ fn parse(
                     Some("tool_use") => {
                         let tool = text(&block["name"]);
                         let call = text(&block["id"]);
-                        tools.insert(call.clone(), (messages.len(), parts.len()));
+                        let at = (messages.len(), parts.len());
+                        tool_calls::register(&mut tools, &mut messages, &call, at);
                         parts.push(MessagePart::Tool {
                             title: Some(format!("Tool: {tool}")),
                             tool,
                             call_id: Some(call),
                             time_created: Some(time),
                             state: Box::new(ToolState {
-                                status: "running".into(),
+                                status: ToolPartStatus::Running,
                                 input: Some(
                                     block
                                         .get("input")
@@ -170,18 +171,16 @@ fn parse(
                 match block["type"].as_str() {
                     Some("text") => parts.extend(text_part(&text(&block["text"]), time)),
                     Some("tool_result") => {
-                        if let Some(&(index, part)) = tools.get(&text(&block["tool_use_id"]))
-                            && let MessagePart::Tool { state, .. } =
-                                &mut messages[index].parts[part]
-                        {
-                            state.status = if block["is_error"] == true {
-                                "error"
+                        let id = text(&block["tool_use_id"]);
+                        if let Some(state) = tool_calls::pending(&tools, &mut messages, &id) {
+                            let status = if block["is_error"] == true {
+                                ToolPartStatus::Error
                             } else {
-                                "completed"
-                            }
-                            .into();
-                            state.output =
-                                Some(serde_json::to_value(output(&block["content"], time))?);
+                                ToolPartStatus::Completed
+                            };
+                            let output = serde_json::to_value(output(&block["content"], time))?;
+                            state.output = Some(output);
+                            state.status = status;
                         }
                     }
                     _ => {}

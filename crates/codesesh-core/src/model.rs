@@ -44,6 +44,17 @@ pub enum ToolPartStatus {
     Error,
 }
 
+impl ToolPartStatus {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Error => "error",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum PlanApprovalStatus {
@@ -334,7 +345,7 @@ pub enum MessagePart {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ToolState {
-    pub status: String,
+    pub status: ToolPartStatus,
     #[serde(
         default,
         deserialize_with = "present_value",

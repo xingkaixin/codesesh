@@ -1,6 +1,6 @@
 use super::{clean, content, exec, message, patch, rollout, tool_events, usage::Usage};
 use crate::{
-    agents::{file_activity, jsonl::timestamp},
+    agents::{file_activity, jsonl::timestamp, tool_calls},
     model::*,
     pricing::Pricing,
     projects::path_identity,
@@ -396,7 +396,7 @@ impl Parser {
                         tool,
                         call_id: Some(call_id.clone()),
                         state: Box::new(ToolState {
-                            status: "running".into(),
+                            status: ToolPartStatus::Running,
                             input: Some(clean_value(input)),
                             output: Some(Value::Null),
                             error: None,
@@ -406,7 +406,7 @@ impl Parser {
                     };
                     let position = tool_part(messages, latest_text.or(*current), part, time, model);
                     tool_events.register(&namespace, &name, position);
-                    tools.insert(call_id, position);
+                    tool_calls::register(tools, messages, &call_id, position);
                     *current = Some(position.0);
                 }
             }
@@ -428,11 +428,10 @@ impl Parser {
                     state: Box::new(ToolState {
                         // Only tool search records its result in a later item.
                         status: if tool == "tool_search" {
-                            "running"
+                            ToolPartStatus::Running
                         } else {
-                            "completed"
-                        }
-                        .into(),
+                            ToolPartStatus::Completed
+                        },
                         input: Some(clean_value(input)),
                         output: Some(Value::Null),
                         error: None,
@@ -442,7 +441,7 @@ impl Parser {
                 };
                 let position = tool_part(messages, latest_text.or(*current), part, time, model);
                 if let Some(call_id) = call_id {
-                    tools.insert(call_id, position);
+                    tool_calls::register(tools, messages, &call_id, position);
                 }
                 *current = Some(position.0);
             }
@@ -468,28 +467,27 @@ impl Parser {
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
-                if let Some((i, p)) = tools.get(payload["call_id"].as_str().unwrap_or(""))
-                    && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
-                    && state.status == "running"
+                if let Some(state) =
+                    tool_calls::pending(tools, messages, payload["call_id"].as_str().unwrap_or(""))
                 {
                     state.output = Some(
                         serde_json::json!([{ "type": "text", "text": found, "time_created": time }]),
                     );
-                    state.status = "completed".into();
+                    state.status = ToolPartStatus::Completed;
                 }
             }
             "function_call_output" | "custom_tool_call_output" => {
                 let call_id = payload["call_id"].as_str().unwrap_or("");
                 if payload["type"] == "custom_tool_call_output" {
-                    if let Some((i, p)) = tools.get(call_id)
-                        && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
-                        && state.status == "running"
-                    {
+                    if let Some(state) = tool_calls::pending(tools, messages, call_id) {
                         let (output, status) = exec::output(&payload["output"], time);
                         let output = clean_value(output);
-                        state.error = (status == "error").then(|| output.clone());
+                        state.error = (status == ToolPartStatus::Error).then(|| output.clone());
                         state.output = Some(output);
-                        state.status = status.into();
+                        state.status = status;
+                        if status != ToolPartStatus::Running {
+                            settle_exec_calls(tools, messages, call_id, status);
+                        }
                     }
                     return;
                 }
@@ -506,15 +504,13 @@ impl Parser {
                     Regex::new(r"^Script completed\nWall time [^\n]*\nOutput:\n?").unwrap()
                 });
                 let output = clean(&ENVELOPE.replace(&output, ""));
-                if !output.is_empty()
-                    && let Some((i, p)) = tools.get(call_id)
-                    && let MessagePart::Tool { state, .. } = &mut messages[*i].parts[*p]
-                    && state.status == "running"
-                {
-                    state.output = Some(
-                        serde_json::json!([{ "type": "text", "text": output, "time_created": time }]),
-                    );
-                    state.status = "completed".into();
+                if let Some(state) = tool_calls::pending(tools, messages, call_id) {
+                    if !output.is_empty() {
+                        state.output = Some(
+                            serde_json::json!([{ "type": "text", "text": output, "time_created": time }]),
+                        );
+                    }
+                    state.status = ToolPartStatus::Completed;
                 }
             }
             _ => {}
@@ -592,6 +588,25 @@ impl Parser {
             message_update: None,
             file_activity,
         })
+    }
+}
+
+// Calls decoded from an exec script share its single output, so they end with it.
+fn settle_exec_calls(
+    tools: &tool_calls::ToolCalls,
+    messages: &mut [Message],
+    call_id: &str,
+    status: ToolPartStatus,
+) {
+    let prefix = format!("{call_id}#");
+    for id in tools.keys().filter(|id| id.starts_with(&prefix)) {
+        if let Some(state) = tool_calls::pending(tools, messages, id) {
+            state.status = if status == ToolPartStatus::Completed {
+                status
+            } else {
+                ToolPartStatus::Unknown
+            };
+        }
     }
 }
 

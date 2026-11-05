@@ -189,12 +189,12 @@ pub(super) fn part(raw: &Value, time: f64) -> Option<MessagePart> {
             let output = first(&[state.get("output"), state.get("result"), raw.get("output")]);
             let error = state.get("error").map(clean_value);
             let status = match state["status"].as_str() {
-                Some("running") => "running",
-                Some("error") => "error",
-                Some("completed" | "success") => "completed",
-                _ if error.as_ref().is_some_and(|v| !v.is_null()) => "error",
-                _ if output.is_some() => "completed",
-                _ => "running",
+                Some("running") => ToolPartStatus::Running,
+                Some("error") => ToolPartStatus::Error,
+                Some("completed" | "success") => ToolPartStatus::Completed,
+                _ if error.as_ref().is_some_and(|v| !v.is_null()) => ToolPartStatus::Error,
+                _ if output.is_some() => ToolPartStatus::Completed,
+                _ => ToolPartStatus::Running,
             };
             let mut metadata = state
                 .get("metadata")
@@ -235,7 +235,7 @@ pub(super) fn part(raw: &Value, time: f64) -> Option<MessagePart> {
                 call_id: nonempty(&raw["callID"]),
                 time_created: time,
                 state: Box::new(ToolState {
-                    status: status.into(),
+                    status,
                     input,
                     output,
                     error,

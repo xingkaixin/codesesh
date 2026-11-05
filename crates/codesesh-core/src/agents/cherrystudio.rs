@@ -71,13 +71,12 @@ fn part(value: &Value) -> Option<MessagePart> {
             time_created: None,
             state: Box::new(ToolState {
                 status: if failed {
-                    "error"
+                    ToolPartStatus::Error
                 } else if state == "output-available" {
-                    "completed"
+                    ToolPartStatus::Completed
                 } else {
-                    "running"
-                }
-                .into(),
+                    ToolPartStatus::Running
+                },
                 input: value.get("input").cloned(),
                 output: value.get("output").cloned(),
                 error: failed.then(|| {

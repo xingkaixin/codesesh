@@ -130,7 +130,7 @@ pub fn tool_metadata(message: &Message) -> Result<Option<String>> {
                 tool: tool.clone(),
                 call_id: call_id.clone(),
                 state: Box::new(crate::model::ToolState {
-                    status: state.status.clone(),
+                    status: state.status,
                     input: None,
                     output: None,
                     error: state.error.clone(),
