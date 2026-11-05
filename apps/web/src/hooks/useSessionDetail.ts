@@ -1,6 +1,6 @@
 import { t } from "../i18n/translate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import type { SessionDetail } from "@codesesh/contract";
 import { ApiRequestError, fetchSessionData, logClientEvent } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
@@ -18,6 +18,11 @@ export type SessionDetailPhase =
   | { kind: "loading" }
   | SessionDetailError
   | { kind: "ready"; session: SessionDetail; messagePaging?: SessionMessagePaging };
+
+interface PageRequest {
+  base: SessionDetail;
+  failed: boolean;
+}
 
 function getSessionDetailError(error: unknown): SessionDetailError {
   if (error instanceof ApiRequestError && error.status === 404) return { kind: "missing" };
@@ -138,11 +143,21 @@ export function useSessionDetail(viewState: ViewState) {
     await query.refetch({ cancelRefetch: true });
   }, [query, route]);
 
-  const { data, error, isError, isFetching, refetch } = query;
+  const { data, error, isError, refetch } = query;
+  const [pageRequest, setPageRequest] = useState<PageRequest | null>(null);
   const loadMore = useCallback(() => {
-    void refetch({ cancelRefetch: false });
-  }, [refetch]);
+    if (!data) return;
+    setPageRequest({ base: data, failed: false });
+    void refetch({ cancelRefetch: false }).then((result) => {
+      setPageRequest((current) => {
+        if (current?.base !== data) return current;
+        return result.isError ? { base: data, failed: true } : null;
+      });
+    });
+  }, [data, refetch]);
 
+  // A page request is tied to the data it extends; any newer data supersedes it.
+  const page = pageRequest?.base === data ? pageRequest : null;
   let phase: SessionDetailPhase;
   if (data) {
     const partial = data.messages.length < (data.message_total ?? data.messages.length);
@@ -150,7 +165,11 @@ export function useSessionDetail(viewState: ViewState) {
       kind: "ready",
       session: data,
       ...(partial && {
-        messagePaging: { loading: isFetching, failed: isError, loadMore },
+        messagePaging: {
+          loading: page !== null && !page.failed,
+          failed: page?.failed ?? false,
+          loadMore,
+        },
       }),
     };
   } else if (isError) {

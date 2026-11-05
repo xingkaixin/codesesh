@@ -117,6 +117,37 @@ describe("useSessionDetail", () => {
     expect(result.current.phase).toEqual({ kind: "ready", session: sample });
   });
 
+  it("keeps paging state out of a background refresh of a partial session", async () => {
+    const partial = {
+      ...sample,
+      messages: [{ id: "m1", role: "user" as const, time_created: 0, parts: [] }],
+      message_cursor: "first",
+      message_total: 2,
+    };
+    const refreshRequest = deferred<SessionDetail>();
+    vi.mocked(api.fetchSessionData)
+      .mockResolvedValueOnce(partial)
+      .mockReturnValueOnce(refreshRequest.promise);
+    const { client, result } = renderSessionDetail();
+    await waitFor(() => expect(sessionOf(result.current)).toEqual(partial));
+
+    let refresh!: Promise<void>;
+    act(() => {
+      refresh = client.invalidateQueries({
+        queryKey: queryKeys.sessionDetail("claudecode", "claudecode/abc"),
+      });
+    });
+    await waitFor(() => expect(api.fetchSessionData).toHaveBeenCalledTimes(2));
+    expect(pagingOf(result.current)).toMatchObject({ loading: false, failed: false });
+
+    await act(async () => {
+      refreshRequest.reject(new Error("refresh unavailable"));
+      await refresh;
+    });
+    expect(sessionOf(result.current)).toEqual(partial);
+    expect(pagingOf(result.current)).toMatchObject({ loading: false, failed: false });
+  });
+
   it("requests and merges only messages appended by a live update", async () => {
     const firstMessage = { id: "m1", role: "user" as const, time_created: 0, parts: [] };
     const nextMessage = { id: "m2", role: "user" as const, time_created: 0, parts: [] };
