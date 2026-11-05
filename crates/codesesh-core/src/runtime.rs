@@ -273,6 +273,9 @@ impl Runtime {
     pub fn statuses(&self) -> watch::Receiver<Arc<ScanStatus>> {
         self.inner.statuses.clone()
     }
+    pub fn scans_local_agents(&self) -> bool {
+        !self.inner.controls.is_empty()
+    }
 
     pub fn refresh_all(&self) {
         for control in &self.inner.controls {
