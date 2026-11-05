@@ -86,7 +86,10 @@ function normalizePlanPart(
   value: Record<string, unknown>,
   time_created: number | undefined,
 ): PlanPart | null {
-  const approval_status = value.approval_status === "fail" ? "fail" : "success";
+  const approval_status =
+    value.approval_status === "fail" || value.approval_status === "pending"
+      ? value.approval_status
+      : "success";
   const text = planText(value.text ?? (approval_status === "fail" ? value.output : value.input));
   return text ? { type: "plan", text, approval_status, ...timeField(time_created) } : null;
 }

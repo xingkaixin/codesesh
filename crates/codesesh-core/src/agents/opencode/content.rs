@@ -134,14 +134,14 @@ pub(super) fn part(raw: &Value, time: f64) -> Option<MessagePart> {
             })
         }
         "plan" => {
-            let approval_status = if raw["approval_status"] == "fail" {
-                "fail"
-            } else {
-                "success"
+            let approval_status = match raw["approval_status"].as_str() {
+                Some("success") => PlanApprovalStatus::Success,
+                Some("fail") => PlanApprovalStatus::Fail,
+                _ => PlanApprovalStatus::Pending,
             };
             let text = clean(&plan_text(
                 raw.get("text").filter(|v| !v.is_null()).unwrap_or(
-                    &raw[if approval_status == "fail" {
+                    &raw[if approval_status == PlanApprovalStatus::Fail {
                         "output"
                     } else {
                         "input"
@@ -150,7 +150,7 @@ pub(super) fn part(raw: &Value, time: f64) -> Option<MessagePart> {
             ));
             (!text.is_empty()).then_some(MessagePart::Plan {
                 text,
-                approval_status: approval_status.into(),
+                approval_status,
                 time_created: time,
             })
         }

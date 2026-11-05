@@ -58,6 +58,7 @@ impl ToolPartStatus {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum PlanApprovalStatus {
+    Pending,
     Success,
     Fail,
 }
@@ -306,7 +307,7 @@ pub enum MessagePart {
     },
     Plan {
         text: String,
-        approval_status: String,
+        approval_status: PlanApprovalStatus,
         #[ts(type = "number")]
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

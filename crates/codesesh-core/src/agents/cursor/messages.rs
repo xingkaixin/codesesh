@@ -2,8 +2,8 @@ use super::text::{clean_value, js_string};
 use super::{clean, internal, model, number, string};
 use crate::{
     model::{
-        CostSource, Message, MessagePart, MessageTokens, Role, SessionStats, ToolPartStatus,
-        ToolState,
+        CostSource, Message, MessagePart, MessageTokens, PlanApprovalStatus, Role, SessionStats,
+        ToolPartStatus, ToolState,
     },
     pricing::Pricing,
 };
@@ -177,12 +177,13 @@ pub(super) fn tool_former(value: &Value, time: f64) -> Option<MessagePart> {
             let text = clean(&text);
             return (!text.is_empty()).then(|| MessagePart::Plan {
                 text,
-                approval_status: if status == ToolPartStatus::Completed {
-                    "success"
-                } else {
-                    "fail"
-                }
-                .into(),
+                approval_status: match status {
+                    ToolPartStatus::Completed => PlanApprovalStatus::Success,
+                    ToolPartStatus::Error => PlanApprovalStatus::Fail,
+                    ToolPartStatus::Running | ToolPartStatus::Unknown => {
+                        PlanApprovalStatus::Pending
+                    }
+                },
                 time_created: Some(time),
             });
         }

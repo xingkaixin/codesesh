@@ -224,7 +224,7 @@ impl Parser {
                     if let Some(captures) = PLAN.captures(&full_text) {
                         *pending_plan = Some(MessagePart::Plan {
                             text: captures[1].trim().into(),
-                            approval_status: "success".into(),
+                            approval_status: PlanApprovalStatus::Success,
                             time_created: Some(time),
                         });
                     }

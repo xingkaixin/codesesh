@@ -192,6 +192,6 @@ mod tests {
             panic!("plan")
         };
         assert_eq!(text, "Implement it");
-        assert_eq!(approval_status, "success");
+        assert_eq!(*approval_status, crate::model::PlanApprovalStatus::Success);
     }
 }

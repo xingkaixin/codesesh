@@ -341,12 +341,11 @@ fn content_parts(content: &Value, ts: f64) -> Vec<MessagePart> {
                     parts.push(MessagePart::Plan {
                         text: s,
                         time_created: Some(ts),
-                        approval_status: if value["approved"] == false {
-                            "fail"
-                        } else {
-                            "success"
-                        }
-                        .into(),
+                        approval_status: match value["approved"].as_bool() {
+                            Some(true) => PlanApprovalStatus::Success,
+                            Some(false) => PlanApprovalStatus::Fail,
+                            None => PlanApprovalStatus::Pending,
+                        },
                     });
                 }
             }
