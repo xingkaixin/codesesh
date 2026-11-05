@@ -227,13 +227,16 @@ fn scan_directories(
                             continue;
                         }
                         let parts = context_output(&r["content"], created);
-                        if !parts.is_empty()
-                            && !builder.resolve(
-                                call.trim(),
-                                parts.clone(),
-                                ToolPartStatus::Completed,
-                                None,
-                            )
+                        let status = if content_text(&r["content"], false)
+                            .trim_start()
+                            .starts_with("<system>ERROR:")
+                        {
+                            ToolPartStatus::Error
+                        } else {
+                            ToolPartStatus::Completed
+                        };
+                        if !builder.resolve(call.trim(), parts.clone(), status, None)
+                            && !parts.is_empty()
                         {
                             builder.append(id, Role::Tool, created, parts, None, None, None);
                         }
@@ -369,13 +372,13 @@ fn scan_directories(
                         continue;
                     }
                     let parts = wire_output(&p["return_value"], ts);
-                    if !parts.is_empty()
-                        && !builder.resolve(
-                            call.trim(),
-                            parts.clone(),
-                            ToolPartStatus::Completed,
-                            None,
-                        )
+                    let status = if p["return_value"]["is_error"] == true {
+                        ToolPartStatus::Error
+                    } else {
+                        ToolPartStatus::Completed
+                    };
+                    if !builder.resolve(call.trim(), parts.clone(), status, None)
+                        && !parts.is_empty()
                     {
                         builder.append(id, Role::Tool, ts, parts, None, None, None);
                     }
@@ -661,6 +664,7 @@ mod tests {
             json!({"role":"assistant","content":[{"type":"think","think":"Inspect it"}],"tool_calls":[{"id":"c1","function":{"name":"ReadFile","arguments":"{\"path\":\"src/main.rs\"}"}}]}),
             json!({"role":"tool","tool_call_id":"c1","content":"source code"}),
             json!({"role":"assistant","content":"Checking again","tool_calls":[{"id":"c2","function":{"name":"ReadFile","arguments":"{\"path\":\"src/main.rs\"}"}}]}),
+            json!({"role":"tool","tool_call_id":"c2","content":"<system>ERROR: `src/main.rs` does not exist.</system>"}),
             json!({"role":"_usage","token_count":99}),
         ];
         std::fs::write(
@@ -706,6 +710,10 @@ mod tests {
             (text.as_str(), call_id.as_deref()),
             ("Checking again", Some("c2"))
         );
+        let MessagePart::Tool { state, .. } = &detail.messages[2].parts[1] else {
+            panic!()
+        };
+        assert_eq!(state.status, crate::model::ToolPartStatus::Error);
         let MessagePart::Tool { state, .. } = &detail.messages[1].parts[1] else {
             panic!()
         };
