@@ -136,7 +136,7 @@ impl Cache {
         );
         tx.execute("DELETE FROM hub_chunks WHERE node_id=?", [node])?;
         tx.execute("UPDATE hub_nodes SET stream_id=?,confirmed_sequence=0,confirmed_digest=NULL,confirmed_reference=NULL,recovery_epoch=? WHERE id=?",params![recovery.new_stream,epoch,node])?;
-        supersede_rescans(&tx, node)?;
+        end_active_rescans(&tx, node, RescanStatus::Superseded)?;
         let task = crate::sync::RescanRequest {
             id: recovery.new_stream.clone(),
             agents: Vec::new(),
@@ -359,13 +359,17 @@ pub(super) fn queue_rescan(
     Ok(request)
 }
 
-pub(super) fn supersede_rescans(tx: &Transaction<'_>, node: &str) -> Result<()> {
-    tx.execute(
+pub(super) fn end_active_rescans(
+    connection: &rusqlite::Connection,
+    node: &str,
+    status: RescanStatus,
+) -> Result<()> {
+    connection.execute(
         &format!(
             "UPDATE hub_rescans SET status=? WHERE node_id=? AND status IN ({})",
             *ACTIVE_RESCANS
         ),
-        params![RescanStatus::Superseded, node],
+        params![status, node],
     )?;
     Ok(())
 }

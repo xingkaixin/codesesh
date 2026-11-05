@@ -24,9 +24,16 @@ fn pairing_is_one_time_and_revocation_keeps_history() {
         grant.node_id
     );
     assert!(cache.authenticate_worker("wrong").is_err());
+    cache
+        .request_rescan(std::slice::from_ref(&grant.node_id), &[], "manual")
+        .unwrap();
     cache.revoke_worker(&grant.node_id).unwrap();
     assert!(cache.authenticate_worker(&grant.credential).is_err());
     assert!(cache.nodes().unwrap()[0].revoked);
+    assert_eq!(
+        cache.rescan_tasks().unwrap()[0].status,
+        crate::sync::RescanStatus::Cancelled
+    );
     assert!(cache.initialize_hub("different-hub").is_err());
 }
 

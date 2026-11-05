@@ -247,7 +247,7 @@ impl Cache {
                 "DELETE FROM hub_ignored_sources WHERE node_id=?",
                 [&node_id],
             )?;
-            super::tasks::supersede_rescans(&tx, &node_id)?;
+            super::tasks::end_active_rescans(&tx, &node_id, RescanStatus::Superseded)?;
             let request = crate::sync::RescanRequest {
                 id: uuid::Uuid::new_v4().to_string(),
                 agents: vec![],
@@ -379,6 +379,7 @@ impl Cache {
                 == 1,
             "Unknown node"
         );
+        super::tasks::end_active_rescans(&self.connection, node, RescanStatus::Cancelled)?;
         Ok(())
     }
 
