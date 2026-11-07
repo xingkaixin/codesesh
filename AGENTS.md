@@ -6,6 +6,32 @@ Rust workspace（`crates/`）+ pnpm/Turbo（`apps/`、`packages/`），工具链
 
 改动前按 `docs/README.md` 找对应文档；模块边界和运行模式见 `docs/architecture.md`；领域术语以 `CONTEXT.md` 为准。
 
+## 原则
+
+详见 `docs/product.md` 和 `docs/architecture.md`。
+
+- 只读：不修改、删除 Agent 原始历史。来源消失时保留已采集会话；删除需要扫描结果明确确认。
+- 未知如实表达：缺失的用量、成本、工具结果或审批状态保持 unknown/pending，不用 0 或推测值。
+- 新能力须归入"找回 / 看清 / 复用"之一，否则不做。
+- 适配器只做解析；项目身份、定价、存储和发布在下游处理。
+- 所有写入经 runtime writer，不另开写连接；先提交数据库，再发布快照和 SSE。
+- wire 类型和状态枚举在 Rust 定义一次并导出 TypeScript，前端不手写重复类型。
+
+## 隐性约束
+
+- 适配器解析输出变化时，提升 `crates/codesesh-core/src/agents.rs` 的 `parser_version`，
+  否则已缓存会话不会重新解析。
+- 工具调用与结果配对使用 `crates/codesesh-core/src/agents/tool_calls.rs`，适配器不自写配对规则。
+- 持久化类型的 serde 形式保持兼容；schema 变化在 `crates/codesesh-core/src/storage/schema.rs`
+  写迁移并提升 `CACHE_SCHEMA_VERSION`。
+- 同一数据目录只运行单机或 Hub/Worker 一种模式。
+
+## 测试与文档
+
+- 只写证明产品或逻辑假设、保证打包发布的测试；不测接线、mock 次数、文案、类名和快照。
+  同一假设只在最接近真实数据的一层验证一次。
+- 文档只记录当前事实和设计决策；计划和进度写在 PR 里；新文档在 `docs/README.md` 登记。
+
 ## 验证
 
 后端基本验证（涉及 CLI 的构建前先运行 `pnpm build:web`）：
