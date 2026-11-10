@@ -45,7 +45,7 @@ interface SessionTreeModel {
   sortOrderByPath: Map<string, number>;
   pathBySessionReference: Map<string, string>;
   groupPathBySessionReference: Map<string, string>;
-  groupCountByPath: Map<string, string>;
+  countByPath: Map<string, string>;
   sessionByPath: Map<string, SessionHead>;
 }
 
@@ -149,7 +149,7 @@ export function buildSessionTreeModel(
   const sortOrderByPath = new Map<string, number>();
   const pathBySessionReference = new Map<string, string>();
   const groupPathBySessionReference = new Map<string, string>();
-  const groupCountByPath = new Map<string, string>();
+  const countByPath = new Map<string, string>();
   const sessionByPath = new Map<string, SessionHead>();
   const allocateSessionPath = createPathAllocator();
   const paths: string[] = [];
@@ -190,8 +190,8 @@ export function buildSessionTreeModel(
       sortOrderByPath.set(groupPath, order);
       sortOrderByPath.set(bareGroupPath, order);
       order += 1;
-      groupCountByPath.set(groupPath, `${group.nodes.length}`);
-      groupCountByPath.set(bareGroupPath, `${group.nodes.length}`);
+      countByPath.set(groupPath, `${group.nodes.length}`);
+      countByPath.set(bareGroupPath, `${group.nodes.length}`);
     }
 
     const rootTitleCounts = new Map<string, number>();
@@ -230,6 +230,8 @@ export function buildSessionTreeModel(
         sortOrderByPath.set(sessionPath, order);
         sessionByPath.set(basePath, session);
         sessionByPath.set(sessionPath, session);
+        countByPath.set(basePath, `${node.children.length}`);
+        countByPath.set(sessionPath, `${node.children.length}`);
       } else {
         paths.push(basePath);
         sortOrderByPath.set(basePath, order);
@@ -272,8 +274,8 @@ export function buildSessionTreeModel(
       const overflowPath = `${overflowBasePath}/`;
       sortOrderByPath.set(overflowBasePath, order);
       sortOrderByPath.set(overflowPath, order);
-      groupCountByPath.set(overflowBasePath, `${node.descendantCount}`);
-      groupCountByPath.set(overflowPath, `${node.descendantCount}`);
+      countByPath.set(overflowBasePath, `${node.descendantCount}`);
+      countByPath.set(overflowPath, `${node.descendantCount}`);
       order += 1;
       for (let index = node.children.length - 1; index >= 0; index -= 1) {
         pending.push({
@@ -292,7 +294,7 @@ export function buildSessionTreeModel(
     sortOrderByPath,
     pathBySessionReference,
     groupPathBySessionReference,
-    groupCountByPath,
+    countByPath,
     sessionByPath,
   };
 }
@@ -343,7 +345,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     [locale, sessions, groupByProject, sourceLabel],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
-  const groupCountByPathRef = useRef(modelData.groupCountByPath);
+  const countByPathRef = useRef(modelData.countByPath);
   const sessionByPathRef = useRef(modelData.sessionByPath);
   const onSelectSessionRef = useRef(onSelectSession);
   const onCopySessionAsMarkdownRef = useRef(onCopySessionAsMarkdown);
@@ -379,20 +381,25 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
       const session = sessionByPathRef.current.get(paths[0] ?? "");
       if (session) onSelectSessionRef.current(session);
     },
+    // SESSION_TREE_UNSAFE_CSS tells rows apart by these shapes: sessions use parts, groups plain text.
     renderRowDecoration({ item }) {
       const session = sessionByPathRef.current.get(item.path);
+      const count = countByPathRef.current.get(item.path);
       if (session) {
-        return { text: "⋯", title: t("Session options"), parts: [{ text: "⋯" }] };
+        const menu = { text: "⋯" };
+        return {
+          text: "⋯",
+          title: t("Session options"),
+          parts: count ? [{ text: count }, menu] : [menu],
+        };
       }
-      return groupCountByPathRef.current.get(item.path)
-        ? { text: groupCountByPathRef.current.get(item.path)!, title: t("Sessions") }
-        : null;
+      return count ? { text: count, title: t("Sessions") } : null;
     },
   });
 
   useEffect(() => {
     sortOrderRef.current = modelData.sortOrderByPath;
-    groupCountByPathRef.current = modelData.groupCountByPath;
+    countByPathRef.current = modelData.countByPath;
     sessionByPathRef.current = modelData.sessionByPath;
     model.resetPaths(modelData.paths);
   }, [model, modelData]);
