@@ -5,43 +5,19 @@
  */
 
 export const SESSION_TREE_UNSAFE_CSS = `
-  [data-item-section='spacing-item'] {
-    border-left: none;
-  }
-
-  [data-type='item'][data-item-type='file'] > [data-item-section='icon'] {
+  [data-type='item'] > [data-item-section='icon'] {
     display: none;
   }
 
-  [data-type='item'][data-item-type='file'] > [data-item-section='spacing'] {
-    padding-left: 2px;
+  [data-type='item'] > [data-item-section='spacing'] {
+    padding-left: 3px;
+    margin-right: calc(-1 * var(--trees-item-row-gap));
   }
 
-  [data-type='item'][data-item-type='file'] > [data-item-section='spacing'] > [data-item-section='spacing-item'] {
-    margin-right: 4px;
-  }
-
-  [data-type='item'][data-item-parent-path][data-item-type='folder'] > [data-item-section='spacing'] {
-    padding-left: 2px;
-  }
-
-  [data-type='item'][data-item-parent-path][data-item-type='folder']
-    > [data-item-section='spacing']
-    > [data-item-section='spacing-item'] {
-    margin-right: 4px;
-  }
-
-  [data-type='item'][data-item-parent-path][data-item-type='folder'] > [data-item-section='icon'] {
-    flex: 0 0 8px;
-    width: 8px;
-    margin-left: calc(-1 * (8px + var(--trees-item-row-gap)));
-  }
-
-  [data-type='item'][data-item-parent-path][data-item-type='folder']
-    > [data-item-section='icon']
-    > svg {
-    width: 8px;
-    height: 8px;
+  [data-type='item'] > [data-item-section='spacing'] > [data-item-section='spacing-item'] {
+    border-left-color: var(--console-border-strong);
+    margin: 0 11px 0 0;
+    opacity: 1;
   }
 
   [data-type='item'] > [data-item-section='content'] {
@@ -62,12 +38,13 @@ export const SESSION_TREE_UNSAFE_CSS = `
     padding-inline: 6px 2px;
   }
 
-  [data-type='item'] > [data-item-section='decoration']:has(> span[title='Session options']) {
+  /* Session decorations render as text parts and group counts as plain text; titles are translated. */
+  [data-type='item'] > [data-item-section='decoration']:has(> span > span) {
     flex-basis: 24px;
     padding-inline: 0;
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options'] {
+  [data-type='item'] > [data-item-section='decoration'] > span:has(> span) {
     box-sizing: border-box;
     width: 24px;
     height: 24px;
@@ -85,14 +62,50 @@ export const SESSION_TREE_UNSAFE_CSS = `
       transform var(--dur-fast) var(--ease-out);
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:hover {
+  [data-type='item'] > [data-item-section='decoration'] > span:has(> span):hover {
     color: var(--console-text);
     background-color: var(--console-surface-muted);
     border-color: var(--console-border);
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:active {
+  [data-type='item'] > [data-item-section='decoration'] > span:has(> span):active {
     transform: scale(0.97);
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span:not(:has(> span)),
+  [data-type='item'] > [data-item-section='decoration'] > span > span:first-child:not(:last-child) {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span:not(:has(> span))::after,
+  [data-type='item'] > [data-item-section='decoration'] > span > span:first-child:not(:last-child)::after {
+    content: '›';
+    display: inline-block;
+    margin-left: 2px;
+    font-family: var(--font-sans);
+    transition: transform var(--dur-fast) var(--ease-out);
+  }
+
+  [data-type='item'][aria-expanded='true'] > [data-item-section='decoration'] > span:not(:has(> span))::after,
+  [data-type='item'][aria-expanded='true']
+    > [data-item-section='decoration']
+    > span
+    > span:first-child:not(:last-child)::after {
+    transform: rotate(90deg);
+  }
+
+  [data-type='item'][aria-expanded='true'] > [data-item-section='decoration'] > span {
+    color: var(--console-text-secondary);
+  }
+
+  [data-type='item'] > [data-item-section='decoration'] > span > span:last-child:not(:first-child),
+  [data-type='item']:hover > [data-item-section='decoration'] > span > span:first-child:not(:last-child) {
+    display: none;
+  }
+
+  [data-type='item']:hover > [data-item-section='decoration'] > span > span:last-child:not(:first-child) {
+    display: inline;
   }
 
   [data-type='item'] [data-truncate-group-container='middle'] {
