@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useState, type ReactNode } from "react";
 import { t } from "../../i18n/translate";
+import { cn } from "../../lib/utils";
 import { X } from "../ui/icons";
 import {
   BUTTON_GHOST_CLASS,
@@ -62,7 +63,7 @@ export function NodeDialog({
               <Dialog.Close
                 disabled={busy}
                 aria-label={t("Close")}
-                className={`${BUTTON_GHOST_CLASS} w-8 px-0`}
+                className={cn(BUTTON_GHOST_CLASS, "w-8 px-0")}
               >
                 <X aria-hidden="true" className="size-4" />
               </Dialog.Close>
