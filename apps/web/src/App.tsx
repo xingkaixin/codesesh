@@ -49,6 +49,7 @@ import { agentRoutePath, buildSessionIndexes, getSessionAgentKey } from "./lib/s
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 import { APP_ROUTE_IDS } from "./lib/app-routes";
+import { cn } from "./lib/utils";
 
 const ScanStatusNotice = lazy(() =>
   import("./components/app/ScanStatusNotice").then((module) => ({
@@ -575,7 +576,10 @@ export default function App() {
         <main
           id="main"
           tabIndex={-1}
-          className="my-2 mr-2 ml-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] outline-none min-[1025px]:ml-0"
+          className={cn(
+            "my-2 mr-2 ml-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--console-border)] bg-[var(--console-bg)] outline-none",
+            !sidebarCollapsed && "min-[1025px]:ml-0",
+          )}
         >
           <AppPageHeader
             route={routeHeader}
