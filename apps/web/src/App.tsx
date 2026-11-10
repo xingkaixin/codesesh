@@ -427,7 +427,23 @@ export default function App() {
       : null;
   const resumeDescriptionId = useId();
 
-  let headerActions: ReactNode = null;
+  const searchExitButton = isSearchMode ? (
+    <button
+      type="button"
+      onClick={closeSearch}
+      className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs text-[var(--console-text)] motion-hover hover:bg-[var(--console-sidebar-accent)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+    >
+      <kbd
+        aria-hidden
+        className="hidden h-[18px] items-center rounded-[4px] border border-b-2 border-[var(--console-border)] bg-[var(--console-surface)] px-[5px] text-[10px] font-semibold text-[var(--console-muted)] sm:inline-flex"
+      >
+        Esc
+      </kbd>
+      {t("Exit search")}
+    </button>
+  ) : null;
+
+  let headerActions: ReactNode = searchExitButton;
   if (sessionRouteActive && session && resumeSession) {
     const agentKey = viewState.activeAgentKey;
     headerActions = (
@@ -448,6 +464,7 @@ export default function App() {
   } else if (!sessionRouteActive && timeWindow && timeWindowController.preset) {
     headerActions = (
       <>
+        {searchExitButton}
         <TimeRangeControl
           window={timeWindow}
           preset={timeWindowController.preset}

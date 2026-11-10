@@ -963,7 +963,7 @@ export const messages = {
   "Search results": ["搜索结果", "検索結果"],
   Move: ["移动", "移動"],
   Open: ["打开", "開く"],
-  Exit: ["退出", "終了"],
+  "Exit search": ["退出搜索", "検索を終了"],
   Close: ["关闭", "閉じる"],
   "Custom titles stay in CodeSesh and never change the original session file.": [
     "自定义标题只保存在 CodeSesh，不改动原始会话文件。",
