@@ -310,7 +310,7 @@ export function SearchResultsPanel({
           </span>
           <span className="inline-flex items-center gap-1.5 text-[var(--console-muted)]">
             <Kbd>J</Kbd>
-            <Kbd>K</Kbd> {t("Move")} <Kbd>Enter</Kbd> {t("Open")} <Kbd>Esc</Kbd> {t("Exit")}
+            <Kbd>K</Kbd> {t("Move")} <Kbd>Enter</Kbd> {t("Open")}
           </span>
         </div>
         {results.length === SEARCH_RESULT_LIMIT ? (
