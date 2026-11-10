@@ -62,12 +62,13 @@ export const SESSION_TREE_UNSAFE_CSS = `
     padding-inline: 6px 2px;
   }
 
-  [data-type='item'] > [data-item-section='decoration']:has(> span[title='Session options']) {
+  /* Session decorations render as text parts and group counts as plain text; titles are translated. */
+  [data-type='item'] > [data-item-section='decoration']:has(> span > span) {
     flex-basis: 24px;
     padding-inline: 0;
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options'] {
+  [data-type='item'] > [data-item-section='decoration'] > span:has(> span) {
     box-sizing: border-box;
     width: 24px;
     height: 24px;
@@ -85,13 +86,13 @@ export const SESSION_TREE_UNSAFE_CSS = `
       transform var(--dur-fast) var(--ease-out);
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:hover {
+  [data-type='item'] > [data-item-section='decoration'] > span:has(> span):hover {
     color: var(--console-text);
     background-color: var(--console-surface-muted);
     border-color: var(--console-border);
   }
 
-  [data-type='item'] > [data-item-section='decoration'] > span[title='Session options']:active {
+  [data-type='item'] > [data-item-section='decoration'] > span:has(> span):active {
     transform: scale(0.97);
   }
 

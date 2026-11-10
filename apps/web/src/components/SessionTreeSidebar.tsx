@@ -382,7 +382,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     renderRowDecoration({ item }) {
       const session = sessionByPathRef.current.get(item.path);
       if (session) {
-        return { text: "⋯", title: t("Session options") };
+        return { text: "⋯", title: t("Session options"), parts: [{ text: "⋯" }] };
       }
       return groupCountByPathRef.current.get(item.path)
         ? { text: groupCountByPathRef.current.get(item.path)!, title: t("Sessions") }
