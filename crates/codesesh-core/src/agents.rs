@@ -60,8 +60,12 @@ pub(crate) struct SessionRecord {
 }
 impl From<&ParsedSession> for SessionRecord {
     fn from(session: &ParsedSession) -> Self {
+        let mut head = session.head.clone();
+        // Records outlive the batch as the scan baseline, which never reads the per-request
+        // cost inputs; a Worker keeps every record for the life of the process.
+        head.stats.cost_inputs = Vec::new();
         Self {
-            head: session.head.clone(),
+            head,
             source: session.source.clone(),
             attachments: if session.head.reference.agent_name == "dsh" {
                 dsh::AttachmentReferences::from_messages(&session.detail.messages)
