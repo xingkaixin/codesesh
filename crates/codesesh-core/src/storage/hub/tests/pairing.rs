@@ -331,3 +331,43 @@ fn local_replacement_requires_installation_proof() {
         "local"
     );
 }
+
+#[test]
+fn adopted_history_is_incomplete_while_a_backfill_is_in_flight() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    let mut session = crate::storage::tests::source(dir.path(), "existing");
+    cache
+        .apply_checkpoint(
+            std::slice::from_mut(&mut session),
+            &[],
+            "codex",
+            &None,
+            true,
+        )
+        .unwrap();
+    cache
+        .apply_checkpoint(
+            &mut [],
+            &[],
+            "codex",
+            &Some(serde_json::json!({"offset": 1, "total": 2})),
+            false,
+        )
+        .unwrap();
+    cache.initialize_hub("hub").unwrap();
+    cache.configure_local_worker("private-local-key").unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let stream = worker.stream_id().unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let proof = crate::sync::local_worker_proof("private-local-key", "hub", &token, &stream);
+    let grant = cache
+        .pair_worker_with_origin(&token, "Local", "1.1.1", &stream, Some(("hub", &proof)))
+        .unwrap();
+    worker.bind("http://127.0.0.1/", &grant).unwrap();
+
+    assert_eq!(worker.adopt_local_history(&cache, &grant).unwrap(), Some(1));
+
+    assert!(!worker.collection_complete(&["codex".into()]).unwrap());
+    assert!(worker.checkpoint("codex").unwrap().is_some());
+}

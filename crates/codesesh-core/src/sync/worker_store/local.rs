@@ -76,11 +76,14 @@ impl WorkerStore {
                     |r| r.get(0),
                 )
                 .optional()?;
-            let complete: bool = snapshot.query_row(
-                "SELECT EXISTS(SELECT 1 FROM cache_initialization WHERE agent_name=?)",
-                [&agent.name],
-                |r| r.get(0),
-            )?;
+            // The initialization row survives a later re-backfill, so it only means
+            // "complete" while no checkpoint is in flight.
+            let complete = checkpoint.is_none()
+                && snapshot.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM cache_initialization WHERE agent_name=?)",
+                    [&agent.name],
+                    |r| r.get(0),
+                )?;
             tx.execute(
                 "INSERT INTO worker_sources VALUES(?,?,?,?)",
                 params![agent.name, state, checkpoint, complete],
