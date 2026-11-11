@@ -66,7 +66,7 @@ pub fn open(path: &Path) -> Result<Cache> {
             "Database initialization cancelled; original database retained"
         );
         crate::service::report(
-            "database",
+            crate::service::Phase::Database,
             &progress.phase,
             progress.total.map(|total| (progress.done, total)),
             None,

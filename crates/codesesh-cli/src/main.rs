@@ -586,7 +586,7 @@ async fn announce(
     println!("{advertised}");
     logger.flush()?;
     service::report(
-        "ready",
+        service::Phase::Ready,
         &format!("Hub listening at {origin}"),
         None,
         Some(startup.as_str()),

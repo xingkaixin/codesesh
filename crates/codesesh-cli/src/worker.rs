@@ -1,6 +1,7 @@
 mod connection;
 mod scanning;
 
+use crate::service::Phase;
 use anyhow::{Context, Result, ensure};
 use codesesh_core::{
     discovery::{self, PathEnvironment},
@@ -196,7 +197,7 @@ pub async fn run(
                 "Same-machine Hub verified; adopting existing local scan progress (no history import)."
             );
             crate::service::report(
-                "starting",
+                Phase::Starting,
                 "Adopting existing local scan progress",
                 None,
                 None,
@@ -253,12 +254,21 @@ pub async fn run(
     }
 
     eprintln!("Worker {} paired with {}", grant.node_id, origin);
-    crate::service::report("starting", "Worker paired; connecting to Hub", None, None);
+    crate::service::report(
+        Phase::Starting,
+        "Worker paired; connecting to Hub",
+        None,
+        None,
+    );
     let mut next_status = Instant::now();
     let mut next_hello = Instant::now();
     let mut next_upload = Instant::now();
-    let mut paused = collector.store.pause_reason()?.is_some();
-    let mut online = false;
+    let mut link = if collector.store.pause_reason()?.is_some() {
+        Link::Paused
+    } else {
+        Link::Connecting
+    };
+    let mut reported = None;
     let mut retry_seconds = 1u64;
     let mut shutdown = Box::pin(crate::shutdown_signal());
     let mut next_tick = Instant::now();
@@ -269,15 +279,8 @@ pub async fn run(
             _ = tokio::time::sleep_until(next_tick.into()) => {}
         }
         next_tick = Instant::now() + Duration::from_millis(100);
-        if Instant::now() >= next_status {
+        if Instant::now() >= next_status || reported != Some(link) {
             let queue = collector.store.queue_status()?;
-            let phase = if paused {
-                "paused"
-            } else if online {
-                "connected"
-            } else {
-                "offline"
-            };
             let detail = format!(
                 "{} pending batches, {} bytes{}",
                 queue.batches,
@@ -288,13 +291,14 @@ pub async fn run(
                     .map(|reason| format!("; {reason}"))
                     .unwrap_or_default()
             );
-            crate::service::report(phase, &detail, None, None);
+            crate::service::report(link.phase(), &detail, None, None);
+            reported = Some(link);
             next_status = Instant::now() + Duration::from_secs(5);
         }
         if Instant::now() >= next_hello {
             if let Some(recovery) = collector.store.recovery()? {
                 crate::service::report(
-                    "recovering",
+                    Phase::Recovering,
                     "Reconciling the Hub data epoch; pending queue preserved",
                     None,
                     None,
@@ -334,8 +338,7 @@ pub async fn run(
                         false
                     }
                 };
-                online = false;
-                paused = true;
+                link = Link::Recovering;
                 if !refresh_epoch {
                     continue;
                 }
@@ -361,8 +364,7 @@ pub async fn run(
                         collector.scanning.reset();
                         collector.store.prepare_recovery(&hello.epoch)?;
                         next_hello = Instant::now();
-                        online = false;
-                        paused = true;
+                        link = Link::Recovering;
                         continue;
                     }
                     if hello.error.is_none()
@@ -371,14 +373,18 @@ pub async fn run(
                     {
                         collector.scanning.reset();
                     }
-                    paused = hello.error.is_some();
+                    let answered = if hello.error.is_some() {
+                        Link::Paused
+                    } else {
+                        Link::Connected
+                    };
                     collector
                         .store
                         .set_pause(hello.error.map(|_| "VERSION_INCOMPATIBLE"))?;
-                    if !online && !paused {
+                    if answered == Link::Connected && link != Link::Connected {
                         log_info("worker.connected", serde_json::json!({}));
                     }
-                    online = !paused;
+                    link = answered;
                     if let Some(reason) = hello.error {
                         eprintln!(
                             "Worker paused: {reason:?}; Hub {}, minimum Worker {}",
@@ -390,7 +396,7 @@ pub async fn run(
                         );
                     }
                     next_hello = Instant::now()
-                        + Duration::from_secs(if paused {
+                        + Duration::from_secs(if link == Link::Paused {
                             60
                         } else {
                             hello.heartbeat_seconds.clamp(5, 60) as u64
@@ -403,8 +409,7 @@ pub async fn run(
                         StatusCode::UNAUTHORIZED | StatusCode::CONFLICT
                     ) =>
                 {
-                    paused = true;
-                    online = false;
+                    link = Link::Paused;
                     next_hello = Instant::now() + retry_delay(&response, 60);
                     let status = response.status();
                     let reason = response.text().await?;
@@ -417,7 +422,7 @@ pub async fn run(
                 }
                 result => {
                     request_failed("hello", result.ok().map(|response| response.status()));
-                    online = false;
+                    link = link.unreachable();
                     next_hello = Instant::now() + backoff(retry_seconds);
                     retry_seconds = (retry_seconds * 2).min(60);
                 }
@@ -425,9 +430,9 @@ pub async fn run(
         }
         collector
             .scanning
-            .tick(&mut collector.store, paused)
+            .tick(&mut collector.store, link.suspended())
             .await?;
-        if online
+        if link == Link::Connected
             && Instant::now() >= next_upload
             && let Some(pending) = collector.store.next_upload()?
         {
@@ -466,8 +471,7 @@ pub async fn run(
                     if response.status() == StatusCode::CONFLICT
                         || response.status() == StatusCode::UNAUTHORIZED =>
                 {
-                    paused = true;
-                    online = false;
+                    link = Link::Paused;
                     next_hello = Instant::now() + retry_delay(&response, 60);
                     let status = response.status();
                     let error = response.text().await?;
@@ -485,7 +489,7 @@ pub async fn run(
                 }
                 Err(_) => {
                     request_failed("upload", None);
-                    online = false;
+                    link = link.unreachable();
                     next_hello = Instant::now() + backoff(retry_seconds);
                     retry_seconds = (retry_seconds * 2).min(60);
                 }
@@ -509,6 +513,45 @@ pub async fn run(
         }
     }
     Ok(())
+}
+
+/// The Worker's standing with its Hub. Uploads run only while `Connected`;
+/// collection is held while `Paused` or `Recovering`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Link {
+    /// No hello has been answered yet in this process.
+    Connecting,
+    Connected,
+    /// The Hub could not be reached; hello retries with backoff.
+    Offline,
+    /// The Hub refused this Worker; the reason is persisted as `pause_reason`.
+    Paused,
+    /// Reconciling a changed Hub data epoch before uploads resume.
+    Recovering,
+}
+
+impl Link {
+    fn phase(self) -> Phase {
+        match self {
+            Self::Connecting => Phase::Connecting,
+            Self::Connected => Phase::Connected,
+            Self::Offline => Phase::Offline,
+            Self::Paused => Phase::Paused,
+            Self::Recovering => Phase::Recovering,
+        }
+    }
+
+    fn suspended(self) -> bool {
+        matches!(self, Self::Paused | Self::Recovering)
+    }
+
+    /// A request got no usable answer. A refusal or pending recovery outlives the outage.
+    fn unreachable(self) -> Self {
+        match self {
+            Self::Connecting | Self::Connected | Self::Offline => Self::Offline,
+            Self::Paused | Self::Recovering => self,
+        }
+    }
 }
 
 fn retry_delay(response: &reqwest::Response, fallback_seconds: u64) -> Duration {
