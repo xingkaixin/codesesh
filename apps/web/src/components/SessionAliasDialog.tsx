@@ -24,6 +24,11 @@ export interface SessionAliasTarget {
   displayTitle?: string;
 }
 
+type Submission =
+  | { status: "editing" }
+  | { status: "submitting" }
+  | { status: "failed"; message: string };
+
 interface SessionAliasDialogProps {
   target: SessionAliasTarget | null;
   onClose: () => void;
@@ -43,9 +48,12 @@ function SessionAliasDialogState({ target, onClose, onSave, onRemove }: SessionA
   useLocale();
 
   const [alias, setAlias] = useState(() => target?.displayTitle ?? target?.title ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [submission, setSubmission] = useState<Submission>({ status: "editing" });
+  // Identifies the request this mounted dialog is waiting on, so a result that
+  // arrives after the dialog closed cannot close a dialog reopened for another session.
   const activeRequest = useRef<symbol | null>(null);
+  const saving = submission.status === "submitting";
+  const error = submission.status === "failed" ? submission.message : null;
 
   useEffect(
     () => () => {
@@ -58,19 +66,20 @@ function SessionAliasDialogState({ target, onClose, onSave, onRemove }: SessionA
     if (activeRequest.current) return;
     const request = Symbol();
     activeRequest.current = request;
-    setSaving(true);
-    setError(null);
+    setSubmission({ status: "submitting" });
     try {
       await operation();
-      if (activeRequest.current === request) onClose();
+      if (activeRequest.current !== request) return;
+      activeRequest.current = null;
+      setSubmission({ status: "editing" });
+      onClose();
     } catch (operationError) {
       if (activeRequest.current !== request) return;
-      setError(operationError instanceof Error ? operationError.message : fallbackError);
-    } finally {
-      if (activeRequest.current === request) {
-        activeRequest.current = null;
-        setSaving(false);
-      }
+      activeRequest.current = null;
+      setSubmission({
+        status: "failed",
+        message: operationError instanceof Error ? operationError.message : fallbackError,
+      });
     }
   };
 

@@ -409,7 +409,10 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(after.message_update.as_deref(), Some("reset"));
+        assert_eq!(
+            after.message_update,
+            Some(crate::model::MessageUpdate::Reset)
+        );
         assert_eq!(after.messages[0].cost, Some(0.75));
         assert_eq!(after.messages[0].cost_source, Some(CostSource::Recorded));
         assert_eq!(after.messages[1].cost, Some(2.0));
@@ -435,7 +438,10 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(unchanged.message_update.as_deref(), Some("append"));
+        assert_eq!(
+            unchanged.message_update,
+            Some(crate::model::MessageUpdate::Append)
+        );
         assert!(unchanged.messages.is_empty());
         let revision: String = cache
             .connection()

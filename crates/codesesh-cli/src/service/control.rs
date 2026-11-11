@@ -1,4 +1,4 @@
-use super::{Descriptor, Report, ServiceRole, path, write_private};
+use super::{Descriptor, Phase, Report, ServiceRole, path, write_private};
 use anyhow::Result;
 use axum::{
     Json, Router,
@@ -36,7 +36,7 @@ pub(super) async fn start(home: &Path, role: ServiceRole) -> Result<()> {
         pairing_path: path(home, role, "pairing"),
         report: Arc::new(Mutex::new(Report {
             pid: std::process::id(),
-            phase: "starting".into(),
+            phase: Phase::Starting,
             detail: "Checking mode locks and legacy directory migration".into(),
             progress: None,
             url: None,
@@ -110,11 +110,11 @@ pub async fn shutdown_requested() {
         std::future::pending::<()>().await;
     }
 }
-pub fn report(phase: &str, detail: &str, progress: Option<(u64, u64)>, url: Option<&str>) {
+pub fn report(phase: Phase, detail: &str, progress: Option<(u64, u64)>, url: Option<&str>) {
     if let Some(control) = CONTROL.get()
         && let Ok(mut report) = control.report.lock()
     {
-        report.phase = phase.into();
+        report.phase = phase;
         report.detail = detail.into();
         report.progress = progress;
         report.updated_at = chrono::Utc::now().timestamp_millis();
@@ -125,9 +125,9 @@ pub fn report(phase: &str, detail: &str, progress: Option<(u64, u64)>, url: Opti
 }
 pub fn finished(error: Option<&anyhow::Error>) {
     if let Some(error) = error {
-        report("failed", &format!("{error:#}"), None, None);
+        report(Phase::Failed, &format!("{error:#}"), None, None);
     } else {
-        report("stopped", "Service exited normally", None, None);
+        report(Phase::Stopped, "Service exited normally", None, None);
     }
     if let Some(control) = CONTROL.get()
         && let Ok(report) = control.report.lock()

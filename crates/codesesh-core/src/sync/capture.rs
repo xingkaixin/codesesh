@@ -1,6 +1,8 @@
 use crate::{
     agents::ParsedSession,
-    model::{Message, SessionDetail, SessionFileActivity, SessionHead},
+    model::{
+        DetailFreshness, Message, MessageUpdate, SessionDetail, SessionFileActivity, SessionHead,
+    },
     pricing::CostInput,
 };
 use anyhow::{Result, ensure};
@@ -21,11 +23,11 @@ struct DetailRef<'a> {
     #[serde(flatten)]
     head: &'a SessionHead,
     messages: &'a [Message],
-    detail_freshness: &'a str,
+    detail_freshness: DetailFreshness,
     #[serde(skip_serializing_if = "Option::is_none")]
     message_cursor: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    message_update: &'a Option<String>,
+    message_update: Option<MessageUpdate>,
     file_activity: &'a [SessionFileActivity],
 }
 
@@ -41,9 +43,9 @@ impl<'a> CapturedSessionRef<'a> {
             detail: DetailRef {
                 head: &session.head,
                 messages,
-                detail_freshness: &session.detail.detail_freshness,
+                detail_freshness: session.detail.detail_freshness,
                 message_cursor: &session.detail.message_cursor,
-                message_update: &session.detail.message_update,
+                message_update: session.detail.message_update,
                 file_activity: &session.detail.file_activity,
             },
             source_path: session.source.to_string_lossy(),

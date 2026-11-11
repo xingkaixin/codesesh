@@ -164,7 +164,8 @@ pub(super) fn rebuild(
                 if next != stored {
                     db.prepare_cached("UPDATE messages SET content_text=? WHERE rowid=?")?
                         .execute(params![next, rowid])?;
-                    db.execute("DELETE FROM cache_meta WHERE key=?", [INDEX_KEY])?;
+                    // An interrupted index run must not resume past rows rewritten here.
+                    reset_index(db)?;
                 }
                 last = rowid;
             }

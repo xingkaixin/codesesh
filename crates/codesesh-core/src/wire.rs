@@ -265,21 +265,7 @@ pub struct WireMessage {
     pub automated: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-pub enum DetailFreshness {
-    #[serde(rename = "fresh")]
-    Fresh,
-    #[serde(rename = "stale")]
-    Stale,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-pub enum MessageUpdate {
-    #[serde(rename = "reset")]
-    Reset,
-    #[serde(rename = "append")]
-    Append,
-}
+pub use crate::model::{DetailFreshness, MessageUpdate};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct WireSessionDetail {

@@ -19,35 +19,44 @@ import {
   nodeStatus,
 } from "./node-status";
 
+type Operation =
+  | { status: "idle" }
+  | { status: "pairing" }
+  | { status: "ignoring" }
+  | { status: "failed"; message: string }
+  | { status: "done"; message: string };
+
+const IDLE: Operation = { status: "idle" };
+
 export function NodePanel({ onClose }: { onClose: () => void }) {
   useLocale();
   const query = useNodes();
   const now = useNodeClock();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [action, setAction] = useState<NodeAction | null>(null);
-  const [pairing, setPairing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [ignoring, setIgnoring] = useState(false);
+  const [operation, setOperation] = useState<Operation>(IDLE);
+  const pairing = operation.status === "pairing";
+  const working = pairing || operation.status === "ignoring";
+  const failed = (failure: unknown): Operation => ({
+    status: "failed",
+    message: failure instanceof Error ? failure.message : t("Unable to update node."),
+  });
   const nodes = query.data?.nodes ?? [];
   const active = nodes.filter((node) => !node.revoked);
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0];
   const recoveryHint = selected ? nodeRecoveryHint(selected) : null;
   const toggleIgnored = async (nodeId: string, agent: string, ignored: boolean) => {
-    setIgnoring(true);
-    setError(null);
+    setOperation({ status: "ignoring" });
     try {
       await setSourceIgnored(nodeId, agent, ignored);
       await query.refetch();
+      setOperation(IDLE);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t("Unable to update node."));
-    } finally {
-      setIgnoring(false);
+      setOperation(failed(failure));
     }
   };
   const pair = async () => {
-    setPairing(true);
-    setError(null);
+    setOperation({ status: "pairing" });
     try {
       const value = await createPairingToken();
       setAction({
@@ -55,10 +64,9 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
         token: value.token,
         expires: Date.now() + value.expiresInSeconds * 1000,
       });
+      setOperation(IDLE);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t("Unable to update node."));
-    } finally {
-      setPairing(false);
+      setOperation(failed(failure));
     }
   };
   return (
@@ -70,7 +78,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
       headerAction={
         <button
           className={nodePrimary}
-          disabled={pairing || query.isError}
+          disabled={working || query.isError}
           onClick={() => {
             void pair();
           }}
@@ -80,12 +88,15 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
         </button>
       }
     >
-      {(error || query.isError) && (
+      {(operation.status === "failed" || query.isError) && (
         <p role="alert" className="mt-4 text-sm text-[var(--console-error)]">
-          {error ?? t("Unable to load nodes. Check the Hub connection.")}
+          {operation.status === "failed"
+            ? operation.message
+            : t("Unable to load nodes. Check the Hub connection.")}
           <button
             className={`${nodeButton} ml-2`}
             onClick={() => {
+              setOperation(IDLE);
               void query.refetch();
             }}
           >
@@ -120,7 +131,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                       aria-pressed={selected.id === node.id}
                       onClick={() => {
                         setSelectedId(node.id);
-                        setNotice(null);
+                        setOperation((current) => (current.status === "done" ? IDLE : current));
                       }}
                       className={`motion-hover w-full rounded-md border px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] ${selected.id === node.id ? "border-[var(--brand)] bg-[var(--brand-soft)]" : "border-transparent hover:bg-[var(--console-surface-muted)]"}`}
                     >
@@ -247,7 +258,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                   </div>
                   <button
                     className={nodeButton}
-                    disabled={ignoring}
+                    disabled={working}
                     onClick={() => {
                       void toggleIgnored(selected.id, agent, true);
                     }}
@@ -271,7 +282,7 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
                 activity={selected.agents}
                 ignored={selected.ignoredSources}
                 onStopIgnoring={
-                  query.isError || ignoring
+                  query.isError || working
                     ? undefined
                     : (agent) => {
                         void toggleIgnored(selected.id, agent, false);
@@ -373,9 +384,9 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
           {t("Local collection is disabled. Saved history remains available.")}
         </p>
       )}
-      {notice && (
+      {operation.status === "done" && (
         <p role="status" className="mt-3 text-sm text-[var(--console-success)]">
-          {notice}
+          {operation.message}
         </p>
       )}
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--console-border)] pt-4 text-xs text-[var(--console-muted)]">
@@ -408,7 +419,10 @@ export function NodePanel({ onClose }: { onClose: () => void }) {
           action={action}
           onClose={() => setAction(null)}
           onUpdated={() => {
-            setNotice(action.kind === "rescan" ? t("Rescan requested.") : t("Node updated."));
+            setOperation({
+              status: "done",
+              message: action.kind === "rescan" ? t("Rescan requested.") : t("Node updated."),
+            });
             void query.refetch();
           }}
         />

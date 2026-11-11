@@ -207,7 +207,7 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
         detail: SessionDetail {
             head: detail_head,
             messages,
-            detail_freshness: "fresh".into(),
+            detail_freshness: crate::model::DetailFreshness::Fresh,
             message_cursor: None,
             message_update: None,
             file_activity,

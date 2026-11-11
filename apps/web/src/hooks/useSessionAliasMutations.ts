@@ -16,8 +16,13 @@ interface SaveAliasVariables extends SessionAliasIdentity {
 export function useSessionAliasMutations(refreshSessionSnapshot: () => Promise<void>) {
   const queryClient = useQueryClient();
 
+  // The alias is already stored when this runs. A failed refresh is reported by the
+  // session list itself, so it must not reject the mutation and read as a failed save.
   const refreshAliasConsumers = useCallback(async () => {
-    await Promise.all([refreshSessionSnapshot(), invalidateSessionDerivedQueries(queryClient)]);
+    await Promise.allSettled([
+      refreshSessionSnapshot(),
+      invalidateSessionDerivedQueries(queryClient),
+    ]);
   }, [queryClient, refreshSessionSnapshot]);
 
   const { mutateAsync: mutateAlias } = useMutation({

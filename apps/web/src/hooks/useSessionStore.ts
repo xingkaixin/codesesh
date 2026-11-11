@@ -135,6 +135,28 @@ async function fetchSessionProjection(
   }
 }
 
+/**
+ * How far the displayed session list is from the full window.
+ * - `loading`: no page, or only the first page, has arrived and the rest is on its way.
+ * - `complete`: every page is displayed; a background refresh does not leave this state.
+ * - `failed`: the list may be incomplete or out of date; `retrying` while a new attempt runs.
+ */
+export type SessionListLoad =
+  | { status: "loading" }
+  | { status: "complete" }
+  | { status: "failed"; retrying: boolean };
+
+function sessionListLoad(query: {
+  data: SessionProjection | undefined;
+  isError: boolean;
+  isFetching: boolean;
+}): SessionListLoad {
+  if (query.data === undefined) return { status: "loading" };
+  if (query.isError) return { status: "failed", retrying: query.isFetching };
+  if (query.data.complete) return { status: "complete" };
+  return query.isFetching ? { status: "loading" } : { status: "failed", retrying: false };
+}
+
 function commitSessionProjection(
   projection: SessionProjection,
   pendingLoads: PendingSessionProjectionLoads,
@@ -415,12 +437,7 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
     window: hasSessionData ? window : null,
     agents,
     sessions: hasSessionData ? projectionQuery.data.sessions : EMPTY_SESSIONS,
-    sessionsLoading: projectionQuery.isFetching,
-    sessionsError:
-      projectionQuery.data !== undefined &&
-      (projectionQuery.isError || (!projectionQuery.data.complete && !projectionQuery.isFetching))
-        ? t("Session loading failed. Displayed sessions may be incomplete or out of date.")
-        : null,
+    sessionListLoad: sessionListLoad(projectionQuery),
     projects,
     projectPage,
     projectsError,

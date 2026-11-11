@@ -231,14 +231,22 @@ pub fn visit_detail_message_page(
                 start + emitted,
                 &cursor::with_cost_revision(&digest, cost_revision),
             )?),
-            message_update: Some(if append { "append" } else { "reset" }.into()),
+            message_update: Some(if append {
+                crate::model::MessageUpdate::Append
+            } else {
+                crate::model::MessageUpdate::Reset
+            }),
             head: SessionHead {
                 version: None,
                 summary_files: None,
                 ..head
             },
             messages: Vec::new(),
-            detail_freshness: if pending { "stale" } else { "fresh" }.into(),
+            detail_freshness: if pending {
+                crate::model::DetailFreshness::Stale
+            } else {
+                crate::model::DetailFreshness::Fresh
+            },
             file_activity,
         },
         count as usize,

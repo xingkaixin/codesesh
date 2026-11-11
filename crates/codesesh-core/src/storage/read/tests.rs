@@ -38,7 +38,10 @@ fn pages_preserve_order_and_reset_on_rewrite_or_a_different_source() {
     let (first, total) = page(&cache, session.head.clone(), None, 2);
     assert_eq!(total, 5);
     assert_eq!(first.messages, full.messages[..2]);
-    assert_eq!(first.message_update.as_deref(), Some("reset"));
+    assert_eq!(
+        first.message_update,
+        Some(crate::model::MessageUpdate::Reset)
+    );
     let (second, _) = page(
         &cache,
         session.head.clone(),
@@ -46,7 +49,10 @@ fn pages_preserve_order_and_reset_on_rewrite_or_a_different_source() {
         2,
     );
     assert_eq!(second.messages, full.messages[2..4]);
-    assert_eq!(second.message_update.as_deref(), Some("append"));
+    assert_eq!(
+        second.message_update,
+        Some(crate::model::MessageUpdate::Append)
+    );
     let (last, _) = page(
         &cache,
         session.head.clone(),
@@ -68,13 +74,19 @@ fn pages_preserve_order_and_reset_on_rewrite_or_a_different_source() {
     remote.detail.head.reference = remote.head.reference.clone();
     cache.publish(std::slice::from_mut(&mut remote)).unwrap();
     let (isolated, _) = page(&cache, remote.head, first.message_cursor.as_deref(), 2);
-    assert_eq!(isolated.message_update.as_deref(), Some("reset"));
+    assert_eq!(
+        isolated.message_update,
+        Some(crate::model::MessageUpdate::Reset)
+    );
     assert_eq!(isolated.messages, first.messages);
 
     session.detail.messages[0].id = "rewritten".into();
     cache.publish(std::slice::from_mut(&mut session)).unwrap();
     let (reset, _) = page(&cache, session.head, first.message_cursor.as_deref(), 2);
-    assert_eq!(reset.message_update.as_deref(), Some("reset"));
+    assert_eq!(
+        reset.message_update,
+        Some(crate::model::MessageUpdate::Reset)
+    );
     assert_eq!(reset.messages.len(), 2);
     assert_eq!(reset.messages[0].id, "rewritten");
 }

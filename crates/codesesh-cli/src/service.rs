@@ -45,6 +45,40 @@ struct Configuration {
     directory: PathBuf,
     environment: std::collections::BTreeMap<String, String>,
 }
+/// Lifecycle of a background service process, as published on its control
+/// endpoint and in `last.json`. Hub: Starting -> DirectoryMigration ->
+/// Database -> Ready. Worker: Starting -> Connecting -> Connected | Offline |
+/// Paused | Recovering. Both end in Stopped or Failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Phase {
+    Starting,
+    DirectoryMigration,
+    Database,
+    Ready,
+    Connecting,
+    Connected,
+    Offline,
+    Paused,
+    Recovering,
+    Stopped,
+    Failed,
+}
+impl Phase {
+    /// Startup is over; `start` and `status --watch` stop following here.
+    fn settled(self) -> bool {
+        matches!(
+            self,
+            Self::Ready | Self::Connected | Self::Offline | Self::Paused | Self::Recovering
+        )
+    }
+}
+impl std::fmt::Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // serde's Formatter serializer prints the wire name, so it is declared once.
+        self.serialize(f)
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 struct Descriptor {
     endpoint: String,
@@ -53,7 +87,7 @@ struct Descriptor {
 #[derive(Clone, Serialize, Deserialize)]
 struct Report {
     pid: u32,
-    phase: String,
+    phase: Phase,
     detail: String,
     progress: Option<(u64, u64)>,
     url: Option<String>,
@@ -204,7 +238,7 @@ async fn show_status(home: &Path, role: ServiceRole, watch: bool) -> Result<()> 
             }
             if let Ok(bytes) = std::fs::read(path(home, role, "last.json"))
                 && let Ok(last) = serde_json::from_slice::<Report>(&bytes)
-                && last.phase == "failed"
+                && last.phase == Phase::Failed
             {
                 println!("Last exit: {} — {}", last.phase, last.detail);
             }
@@ -472,10 +506,7 @@ async fn watch_status(home: &Path, role: ServiceRole, limit: Option<Duration>) -
                 previous = report.detail.clone();
                 last_output = tokio::time::Instant::now();
             }
-            if matches!(
-                report.phase.as_str(),
-                "ready" | "connected" | "offline" | "paused"
-            ) {
+            if report.phase.settled() {
                 bar.finish_and_clear();
                 display(role, &report);
                 return Ok(());
@@ -491,7 +522,7 @@ async fn watch_status(home: &Path, role: ServiceRole, limit: Option<Duration>) -
                     bar.finish_and_clear();
                     display(role, &last);
                     ensure!(
-                        last.phase != "failed",
+                        last.phase != Phase::Failed,
                         "Service failed. Service stdout/stderr: {}",
                         path(home, role, "log").display()
                     );

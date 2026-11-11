@@ -18,6 +18,35 @@ pub struct WorkerStore {
     db: Connection,
 }
 
+/// What a Worker decided about the standalone history on its machine. Unset
+/// until the Worker is paired and the decision is made; never changes after.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryChoice {
+    /// Queued for upload as this Worker's own sessions.
+    Import,
+    /// Left in the standalone database.
+    Ignore,
+    /// The same-machine Hub already holds it; its scan progress was adopted.
+    Local,
+}
+
+impl HistoryChoice {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Import => "import",
+            Self::Ignore => "ignore",
+            Self::Local => "local",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self> {
+        [Self::Import, Self::Ignore, Self::Local]
+            .into_iter()
+            .find(|choice| choice.as_str() == value)
+            .with_context(|| format!("Unknown history choice {value:?} in Worker state"))
+    }
+}
+
 pub struct PendingUpload {
     pub sequence: i64,
     pub payload_version: u32,
@@ -322,23 +351,24 @@ impl WorkerStore {
         Ok(None)
     }
 
-    pub fn history_choice(&self) -> Result<Option<String>> {
-        Ok(self
+    pub fn history_choice(&self) -> Result<Option<HistoryChoice>> {
+        let stored: Option<String> = self
             .db
             .query_row(
                 "SELECT value FROM worker_meta WHERE key='history_choice'",
                 [],
                 |r| r.get(0),
             )
-            .optional()?)
+            .optional()?;
+        stored.as_deref().map(HistoryChoice::parse).transpose()
     }
 
-    pub fn finish_history_import(&mut self, choice: &str) -> Result<()> {
+    pub fn finish_history_import(&mut self, choice: HistoryChoice) -> Result<()> {
         ensure!(
-            matches!(choice, "import" | "ignore"),
-            "Invalid history choice"
+            choice != HistoryChoice::Local,
+            "Local history is adopted together with its scan progress"
         );
-        self.db.execute("INSERT INTO worker_meta VALUES('history_choice',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[choice])?;
+        self.db.execute("INSERT INTO worker_meta VALUES('history_choice',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[choice.as_str()])?;
         Ok(())
     }
 

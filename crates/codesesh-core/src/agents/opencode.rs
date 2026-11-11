@@ -217,7 +217,7 @@ fn detail(
     SessionDetail {
         head,
         messages,
-        detail_freshness: "fresh".into(),
+        detail_freshness: crate::model::DetailFreshness::Fresh,
         message_cursor: None,
         message_update: None,
         file_activity,
