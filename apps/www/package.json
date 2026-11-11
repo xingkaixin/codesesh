@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
-    "@astrojs/markdown-satteri": "0.4.6",
+    "@astrojs/markdown-satteri": "0.4.7",
     "@codesesh/contract": "workspace:*",
     "@hugeicons/core-free-icons": "catalog:",
     "@tailwindcss/vite": "catalog:",
