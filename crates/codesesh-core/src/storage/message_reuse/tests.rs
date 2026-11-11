@@ -61,7 +61,10 @@ fn append_preserves_existing_message_rows_and_rewrites_or_truncations_match_a_fu
     let update = detail_with_cursor(cache.connection(), session.head.clone(), cursor.as_deref())
         .unwrap()
         .unwrap();
-    assert_eq!(update.message_update.as_deref(), Some("append"));
+    assert_eq!(
+        update.message_update,
+        Some(crate::model::MessageUpdate::Append)
+    );
     assert_eq!(update.messages.len(), 1);
     matches_full_rebuild(&cache, &session);
     cache.publish(std::slice::from_mut(&mut session)).unwrap();
@@ -80,7 +83,10 @@ fn append_preserves_existing_message_rows_and_rewrites_or_truncations_match_a_fu
     let reset = detail_with_cursor(cache.connection(), session.head.clone(), cursor.as_deref())
         .unwrap()
         .unwrap();
-    assert_eq!(reset.message_update.as_deref(), Some("reset"));
+    assert_eq!(
+        reset.message_update,
+        Some(crate::model::MessageUpdate::Reset)
+    );
     let tools: Vec<String> = cache
         .connection()
         .prepare("SELECT tool_name FROM message_tools ORDER BY tool_name")

@@ -30,7 +30,7 @@ pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail>
         smart_tags_classifier_revision: value.head.smart_tags_classifier_revision.take(),
         smart_tags_source_updated_at: value.head.smart_tags_source_updated_at.take(),
         head: head(value.head)?,
-        detail_freshness: Some(closed(value.detail_freshness)?),
+        detail_freshness: Some(value.detail_freshness),
         messages: value
             .messages
             .into_iter()
@@ -38,7 +38,7 @@ pub fn detail(mut value: core::SessionDetail) -> Result<wire::WireSessionDetail>
             .collect::<Result<_>>()?,
         message_total: None,
         message_cursor: value.message_cursor,
-        message_update: value.message_update.map(closed).transpose()?,
+        message_update: value.message_update,
         file_activity: Some(
             value
                 .file_activity

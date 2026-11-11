@@ -245,7 +245,7 @@ impl Cache {
         transaction.commit()?;
         for (session, cursor) in sessions.iter_mut().zip(cursors) {
             session.detail.message_cursor = Some(cursor);
-            session.detail.message_update = Some("reset".into());
+            session.detail.message_update = Some(crate::model::MessageUpdate::Reset);
         }
         Ok(())
     }

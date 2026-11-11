@@ -387,18 +387,34 @@ pub(crate) fn present_value<'de, D: serde::Deserializer<'de>>(
     serde_json::Value::deserialize(deserializer).map(Some)
 }
 
+/// Whether the stored detail reflects the latest source, or a reindex is still pending.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum DetailFreshness {
+    Fresh,
+    Stale,
+}
+
+/// How a message page relates to the client's cursor: continue it, or start over.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageUpdate {
+    Reset,
+    Append,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct SessionDetail {
     #[serde(flatten)]
     pub head: SessionHead,
     pub messages: Vec<Message>,
-    pub detail_freshness: String,
+    pub detail_freshness: DetailFreshness,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub message_cursor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub message_update: Option<String>,
+    pub message_update: Option<MessageUpdate>,
     pub file_activity: Vec<SessionFileActivity>,
 }
 

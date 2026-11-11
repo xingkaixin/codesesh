@@ -127,7 +127,7 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
     ];
     session.detail.messages[0].cost_inputs = session.head.stats.cost_inputs.clone();
     session.detail.message_cursor = Some("cursor".into());
-    session.detail.message_update = Some("append".into());
+    session.detail.message_update = Some(crate::model::MessageUpdate::Append);
     session.detail.file_activity = vec![crate::model::SessionFileActivity {
         reference: session.head.reference.clone(),
         project_identity_key: session.head.project_identity.key.clone(),
