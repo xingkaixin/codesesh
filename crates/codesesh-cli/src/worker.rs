@@ -5,8 +5,8 @@ use anyhow::{Context, Result, ensure};
 use codesesh_core::{
     discovery::{self, PathEnvironment},
     sync::{
-        HubHello, PAYLOAD_VERSION, PROTOCOL_VERSION, PairingGrant, Receipt, Upload, WorkerHello,
-        WorkerStore,
+        HistoryChoice, HubHello, PAYLOAD_VERSION, PROTOCOL_VERSION, PairingGrant, Receipt, Upload,
+        WorkerHello, WorkerStore,
     },
 };
 use reqwest::StatusCode;
@@ -188,7 +188,7 @@ pub async fn run(
             identity.trim() == grant.hub_id,
             "Hub returned a local source belonging to another installation"
         );
-        if collector.store.history_choice()?.as_deref() != Some("local")
+        if collector.store.history_choice()? != Some(HistoryChoice::Local)
             && collector.store.next_upload()?.is_none()
             && collector.store.recovery()?.is_none()
         {
@@ -241,12 +241,14 @@ pub async fn run(
                         store.save_batch(&head.reference.agent_name, &mut batch)?;
                     }
                 }
-                store.finish_history_import("import")?;
+                store.finish_history_import(HistoryChoice::Import)?;
                 Ok(store)
             })
             .await??;
         } else {
-            collector.store.finish_history_import("ignore")?;
+            collector
+                .store
+                .finish_history_import(HistoryChoice::Ignore)?;
         }
     }
 

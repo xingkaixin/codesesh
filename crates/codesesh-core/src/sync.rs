@@ -7,7 +7,7 @@ pub(crate) use capture::CapturedSession;
 pub(crate) use protocol::{MessageState, Operation, PayloadError, SnapshotBase};
 pub use protocol::{PAYLOAD_VERSION, PROTOCOL_VERSION, check_compatibility};
 pub(crate) use worker_store::QueueStatus;
-pub use worker_store::WorkerStore;
+pub use worker_store::{HistoryChoice, WorkerStore};
 
 pub use hub_types::{
     CollectionStatus, HostInfo, HubHello, HubNodes, LocalNode, Node, NodeAgentActivity,

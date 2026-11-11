@@ -23,7 +23,7 @@ impl WorkerStore {
             hub_id == grant.hub_id,
             "Local Hub belongs to another installation"
         );
-        if epoch != grant.epoch || self.history_choice()?.as_deref() == Some("local") {
+        if epoch != grant.epoch || self.history_choice()? == Some(HistoryChoice::Local) {
             return Ok(None);
         }
         ensure!(
@@ -86,7 +86,7 @@ impl WorkerStore {
                 params![agent.name, state, checkpoint, complete],
             )?;
         }
-        tx.execute("INSERT INTO worker_meta VALUES('history_choice','local') ON CONFLICT(key) DO UPDATE SET value=excluded.value", [])?;
+        tx.execute("INSERT INTO worker_meta VALUES('history_choice',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [HistoryChoice::Local.as_str()])?;
         tx.commit()?;
         snapshot.commit()?;
         Ok(Some(count))
