@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.4.5] - 2026-11-11
+
+This patch makes tool outcomes and plan approvals more accurate, keeps loaded sessions readable when a background refresh fails, and adds clearer search and sub-session navigation. It also fixes Hub/Worker collection states and reduces retained scan data. (#873–#890)
+
+### Features
+
+- Show sub-session counts and indent guides in the session tree, align parent session titles with their siblings, and keep session menu controls styled in every locale. (#888)
+- Add a clickable Esc button to leave search mode. (#887)
+
+### Bug Fixes
+
+- Pair tool results through one shared rule across adapters: the first result settles the newest matching call, empty results still complete it, and later duplicate results are ignored. Unfinished calls before a later user turn become unknown; calls in the final turn can remain running. Codex exec-script calls settle with the script output, and Kimi failures are recognized instead of always appearing completed. (#880)
+- Show plans as pending when the source records no approval decision. Preserve Codex plans in the turn that proposed them, including plan-only messages, and mark them approved only when an implementation request follows. (#881)
+- Keep loaded session details visible after a failed background refresh, track message paging separately, and stop loading all messages after a page failure. (#877)
+- Allow cancellation of dispatched rescans and cancel active rescans when a Worker is revoked, so abandoned tasks no longer remain active or block another request for the same scope. (#878)
+- Keep backfill completion and pending lists consistent, retain earlier scan failures across scan rounds, and keep adopted history incomplete while a backfill is still in progress. Report a Worker as connecting until the Hub answers and as recovering until recovery resolves. (#879, #890)
+- Stop marking a complete session list as incomplete during background refreshes, avoid showing a saved alias as a failed save when the view refresh fails, and clear node-operation errors on retry. (#890)
+- Preserve the content's left gap when the sidebar is collapsed and prevent the node dialog's close icon from shrinking. (#885, #886)
+
+### Performance
+
+- Stop retaining per-request cost inputs in scan baseline records that never use them, reducing memory held by long-running Workers after a full reparse. (#889)
+
+### Design
+
+- Update the Claude Code, Codex, Kimi, and MiniMax Code icons to the corresponding product or brand marks. (#884)
+
+### Refactor
+
+- Define rescan, scan, tool, Worker, and session-detail states with Rust enums and derive the frontend contract from them, preserving existing serialized values. Reset the search-index cursor when stored search text changes. (#878–#880, #890)
+
+### Build
+
+- Update `rusqlite` to 0.41.1 and refresh frontend and development dependencies. (#874–#876)
+- Retain tests of product behavior, logic assumptions, and release artifacts; remove redundant presentation and tooling tests, coverage thresholds, and bundle and growth-rate gates. (#873)
+
+### Documentation
+
+- Record project principles and constraints in `AGENTS.md`, update the testing guide, and remove stale bundle-test and source-access terminology. (#873, #883)
+
+### Compatibility
+
+- Cached sessions are reparsed after upgrading to apply the corrected tool and plan states. The first refresh can take longer on large histories. (#880, #881)
+
 ## [1.4.4] - 2026-11-03
 
 This patch makes the Web UI catch up faster after the live event stream reconnects, keeps session refreshes out of session-open logs, and trims the product site's font downloads. CI on `main` no longer cancels pending runs, and dependencies are updated. (#853–#871)

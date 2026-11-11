@@ -101,6 +101,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.5",
+        date: "2026-11-11",
+        title: "Clearer tool outcomes and session navigation",
+        summary:
+          "CodeSesh 1.4.5 shows tool outcomes and pending plan approvals more accurately, keeps loaded sessions readable when a refresh fails, and makes search and sub-sessions easier to navigate.",
+        direction:
+          "Keep local AI coding history faithful to what the Agent recorded, and keep it readable while collection and live updates continue.",
+        highlights: [
+          {
+            title: "Tool and plan states backed by the source",
+            description:
+              "Empty tool results now complete their calls, Kimi failures are recognized, and older unfinished calls become unknown. Plans without a recorded approval decision stay pending, and Codex plans remain in the turn that proposed them.",
+          },
+          {
+            title: "Keep reading through a failed refresh",
+            description:
+              "A background refresh failure no longer removes the session you already opened. Loading all messages stops if a page fails, and a complete session list no longer appears incomplete during a refresh.",
+          },
+          {
+            title: "Easier search and sub-session navigation",
+            description:
+              "Leave search with a clickable Esc button, and see sub-session counts and indent guides directly in the session tree. Session menu controls keep their styling in every language.",
+          },
+          {
+            title: "More accurate multi-machine collection status",
+            description:
+              "Workers show when they are connecting or recovering, history still being collected stays incomplete, and dispatched rescans can be cancelled when a Worker stops responding.",
+          },
+        ],
+      },
+      {
         version: "1.4.4",
         date: "2026-11-03",
         title: "Faster catch-up after reconnecting",
@@ -984,6 +1015,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.5",
+        date: "2026-11-11",
+        title: "更准确的工具状态，更清楚的会话导航",
+        summary:
+          "CodeSesh 1.4.5 更准确地显示工具结果和待审批计划，后台刷新失败时保留已加载的会话内容，并让搜索和子会话更容易浏览。",
+        direction:
+          "让本地 AI 编码历史忠实反映 Agent 的原始记录，并在持续采集和实时更新时保持可读。",
+        highlights: [
+          {
+            title: "工具与计划状态以来源记录为准",
+            description:
+              "空工具结果也能结束调用，Kimi 失败结果会正确标记，较早轮次中未结束的调用显示为未知。没有审批记录的计划保持待审批，Codex 计划保留在提出它的轮次。",
+          },
+          {
+            title: "刷新失败也能继续阅读",
+            description:
+              "后台刷新失败不再移除已打开的会话。加载全部消息遇到分页失败时会停止，完整会话列表也不再因后台刷新而提示结果尚未完整。",
+          },
+          {
+            title: "更方便的搜索和子会话导航",
+            description:
+              "点击 Esc 按钮即可退出搜索，会话树直接显示子会话数量和缩进引导线。会话菜单按钮在各语言下保持一致样式。",
+          },
+          {
+            title: "多机采集状态更准确",
+            description:
+              "Worker 会显示连接中或恢复中，仍在采集的历史不会提前标记完成；Worker 无响应时，已下发的重新扫描任务也能取消。",
+          },
+        ],
+      },
+      {
         version: "1.4.4",
         date: "2026-11-03",
         title: "重连后更快恢复同步",
@@ -1842,6 +1904,37 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.5",
+        date: "2026-11-11",
+        title: "ツールの状態とセッション構造をわかりやすく",
+        summary:
+          "CodeSesh 1.4.5 は、ツールの結果と承認待ちの計画をより正確に表示します。更新に失敗しても読み込み済みのセッションを表示し続け、検索やサブセッションもたどりやすくなりました。",
+        direction:
+          "ローカルの AI コーディング履歴をエージェントの記録に忠実に保ち、収集やライブ更新が続いても読みやすくします。",
+        highlights: [
+          {
+            title: "元の記録に基づくツールと計画の状態",
+            description:
+              "空の結果でもツール呼び出しが完了し、Kimi の失敗を正しく認識します。以前のターンで未完了の呼び出しは不明となり、承認の記録がない計画は承認待ちのままです。Codex の計画は提案されたターンに残ります。",
+          },
+          {
+            title: "更新に失敗しても読み続けられる",
+            description:
+              "バックグラウンド更新に失敗しても、開いているセッションは消えません。全メッセージの読み込みはページ取得に失敗すると停止し、完全なセッション一覧が更新中に不完全と表示されることもなくなりました。",
+          },
+          {
+            title: "検索とサブセッションをたどりやすく",
+            description:
+              "Esc ボタンをクリックして検索を終了でき、セッションツリーにはサブセッション数とインデントガイドが表示されます。メニューボタンのスタイルもすべての言語で統一しました。",
+          },
+          {
+            title: "複数マシンの収集状態を正確に表示",
+            description:
+              "Worker は接続中や復旧中の状態を表示し、収集中の履歴を完了扱いにしません。Worker が応答しない場合は、送信済みの再スキャンも取り消せます。",
+          },
+        ],
+      },
       {
         version: "1.4.4",
         date: "2026-11-03",
