@@ -75,8 +75,7 @@ export default function App() {
     activeAgents,
     agentCatalog,
     sessions,
-    sessionsLoading,
-    sessionsError,
+    sessionListLoad,
     projects,
     projectPage,
     projectsError,
@@ -170,6 +169,10 @@ export default function App() {
     toggleSessionBookmark,
     refresh: refreshBookmarks,
   } = bookmarks;
+  const sessionsError =
+    sessionListLoad.status === "failed"
+      ? t("Session loading failed. Displayed sessions may be incomplete or out of date.")
+      : null;
   useWindowLoadTelemetry({
     window: timeWindow,
     pending:
@@ -422,9 +425,7 @@ export default function App() {
         : { to: agentRoutePath(viewState.activeAgentKey), label: t("Back to sessions") }
       : null;
   const sessionLoadNotice =
-    !loading && !error && (sessionsLoading || sessionsError)
-      ? { loading: sessionsLoading, error: sessionsError }
-      : null;
+    !loading && !error && sessionListLoad.status !== "complete" ? sessionListLoad : null;
   const resumeDescriptionId = useId();
 
   const searchExitButton = isSearchMode ? (
@@ -515,16 +516,14 @@ export default function App() {
       ) : null}
       {sessionLoadNotice ? (
         <div
-          role={sessionLoadNotice.error ? "alert" : "status"}
+          role={sessionLoadNotice.status === "failed" ? "alert" : "status"}
           className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-3 py-2 text-xs text-[var(--console-warning)]"
         >
-          <span>
-            {sessionLoadNotice.error ?? t("Loading sessions… Results are not yet complete.")}
-          </span>
-          {sessionLoadNotice.error ? (
+          <span>{sessionsError ?? t("Loading sessions… Results are not yet complete.")}</span>
+          {sessionLoadNotice.status === "failed" ? (
             <button
               type="button"
-              disabled={sessionLoadNotice.loading}
+              disabled={sessionLoadNotice.retrying}
               onClick={() => void retrySessions()}
               className="rounded-md border border-current px-2 py-0.5 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:opacity-50"
             >

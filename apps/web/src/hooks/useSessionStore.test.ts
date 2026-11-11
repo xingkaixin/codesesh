@@ -143,9 +143,27 @@ describe("useSessionStore", () => {
 
     await act(() => result.current.retrySessions());
 
-    await waitFor(() => expect(result.current.sessionsError).not.toBeNull());
+    await waitFor(() => expect(result.current.sessionListLoad.status).toBe("failed"));
     expect(result.current.sessions).toEqual(completeSessions);
     expect(result.current.error).toBeNull();
+  });
+
+  it("keeps a complete session list complete while it refreshes in the background", async () => {
+    const { result } = await renderStore();
+    const refresh = deferred<{ sessions: SessionHead[] }>();
+    vi.mocked(api.fetchSessions).mockReturnValueOnce(refresh.promise);
+
+    let retried!: Promise<void>;
+    act(() => {
+      retried = result.current.retrySessions();
+    });
+
+    await waitFor(() => expect(api.fetchSessions).toHaveBeenCalledTimes(2));
+    expect(result.current.sessionListLoad.status).toBe("complete");
+    await act(async () => {
+      refresh.resolve({ sessions: [SAMPLE_SESSION_HEAD] });
+      await retried;
+    });
   });
 
   it("preserves live additions received while the first page is still loading", async () => {
