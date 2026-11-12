@@ -27,6 +27,12 @@ peerDependencyRules:
   allowedVersions:
     "eslint-plugin-jsx-a11y>eslint": "10"
 
+packageExtensions:
+  "@astrojs/astro2tsx@0.1.3":
+    dependencies:
+      # astro2tsx pins emnapi core 1.x, so its WASM runtime must use the same ABI.
+      "@emnapi/runtime": "1.11.3"
+
 overrides:
   "esbuild@>=0.27.3 <0.28.1": "0.28.2"
   "nanoid@<3.3.18": "^3.3.18"
