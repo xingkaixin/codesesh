@@ -1,6 +1,8 @@
 pub(crate) fn parser_version(agent: &str) -> &'static str {
     if agent == "codex" {
         "rust-parser-v10"
+    } else if agent == "antigravity-cli" {
+        "rust-parser-v7"
     } else {
         "rust-parser-v6"
     }
@@ -116,7 +118,7 @@ pub(crate) fn scan_agent(
     pricing: &Pricing,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match agent {
-        "antigravity-cli" => antigravity_cli::scan(scan_path, data_root, pricing),
+        "antigravity-cli" => antigravity_cli::scan(scan_path, pricing),
         "gemini-cli" => gemini_cli::scan(scan_path, pricing),
         "claudecode" | "qoder" | "qoder-cn" => claudecode::scan_as(scan_path, agent, pricing),
         "codex" => codex::scan(data_root, pricing),

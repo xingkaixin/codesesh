@@ -1036,8 +1036,7 @@ impl AgentScanner {
             }
             "antigravity-cli" if paths.is_some() => {
                 let paths = paths.unwrap();
-                let upserts =
-                    agents::antigravity_cli::scan_paths(&self.source.data_root, pricing, paths)?;
+                let upserts = agents::antigravity_cli::scan_paths(pricing, paths)?;
                 Ok(selected_delta(upserts, &self.previous, |session| {
                     paths.contains(&session.source)
                 }))

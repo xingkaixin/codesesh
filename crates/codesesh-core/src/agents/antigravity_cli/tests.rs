@@ -30,6 +30,88 @@ fn bytes(tag: u32, value: impl AsRef<[u8]>) -> Vec<u8> {
 }
 
 #[test]
+fn acp_reads_native_workspace_and_model_without_a_summary_store() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(temp.path());
+    std::fs::remove_file(temp.path().join("conversation_summaries.db")).unwrap();
+    let workspace = temp.path().join("acp-project");
+    let workspace_uri = url::Url::from_file_path(&workspace).unwrap();
+    let db = Connection::open(&path).unwrap();
+    db.execute_batch("DELETE FROM steps; CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);").unwrap();
+    db.execute(
+        "INSERT INTO trajectory_metadata_blob VALUES ('session', ?1)",
+        [[
+            bytes(7, "https://example.invalid"),
+            bytes(7, workspace_uri.as_str()),
+        ]
+        .concat()],
+    )
+    .unwrap();
+    let usage = [
+        varint(2, 21_889),
+        varint(3, 6_004),
+        varint(9, 4_897),
+        varint(10, 1_107),
+    ]
+    .concat();
+    db.execute(
+        "INSERT INTO steps VALUES (0,14,3,?1)",
+        [bytes(19, bytes(2, "Find ACP history"))],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO steps VALUES (1,15,3,?1)",
+        [[
+            bytes(
+                5,
+                [
+                    bytes(9, &usage),
+                    bytes(24, bytes(8, "gemini-2.5-flash-high")),
+                ]
+                .concat(),
+            ),
+            bytes(20, bytes(1, "Found it")),
+        ]
+        .concat()],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO gen_metadata VALUES (0,?1)",
+        [bytes(
+            1,
+            [
+                varint(3, 326),
+                bytes(4, usage),
+                bytes(19, "gemini-2.5-flash-n"),
+            ]
+            .concat(),
+        )],
+    )
+    .unwrap();
+    drop(db);
+
+    let sessions = scan(&temp.path().join("conversations"), &Pricing::bundled()).unwrap();
+    let session = &sessions[0];
+    assert_eq!(session.head.directory, workspace.to_string_lossy());
+    assert_eq!(session.head.title, "Find ACP history");
+    assert_eq!(session.head.stats.message_count, 2);
+    assert_eq!(session.head.stats.total_tokens, Some(27_893.0));
+    assert_eq!(session.head.stats.total_input_tokens, 21_889.0);
+    assert_eq!(session.head.stats.total_output_tokens, 6_004.0);
+    assert_eq!(
+        session.detail.messages[1].model.as_deref(),
+        Some("gemini-2.5-flash-high")
+    );
+    assert_eq!(session.head.stats.cost_source, Some(CostSource::Estimated));
+    assert!(session.head.stats.total_cost > 0.0);
+
+    let db = Connection::open(&path).unwrap();
+    db.execute("UPDATE trajectory_metadata_blob SET data=X'3aff'", [])
+        .unwrap();
+    assert!(scan(&temp.path().join("conversations"), &Pricing::bundled()).is_err());
+}
+
+#[test]
 fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path());
@@ -79,7 +161,7 @@ fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
     db.execute("INSERT INTO steps VALUES (7, 132, 3, ?1)", [tool])
         .unwrap();
     let scan_root = temp.path().join("conversations");
-    let sessions = scan(&scan_root, temp.path(), &Pricing::bundled()).unwrap();
+    let sessions = scan(&scan_root, &Pricing::bundled()).unwrap();
     let session = &sessions[0];
     let message = session.detail.messages.last().unwrap();
     assert_eq!(message.id, "session:7");
@@ -109,21 +191,14 @@ fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
         session.head.model_usage,
         Some(BTreeMap::from([("gemini-2.5-flash".into(), 225.0)]))
     );
-    crate::pricing::assert_cached_repricing(|pricing| {
-        scan(&scan_root, temp.path(), pricing).unwrap()
-    });
+    crate::pricing::assert_cached_repricing(|pricing| scan(&scan_root, pricing).unwrap());
 }
 
 #[test]
 fn native_steps_preserve_order_tools_and_unknown_usage() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path());
-    let sessions = scan(
-        &temp.path().join("conversations"),
-        temp.path(),
-        &Pricing::bundled(),
-    )
-    .unwrap();
+    let sessions = scan(&temp.path().join("conversations"), &Pricing::bundled()).unwrap();
     assert_eq!(sessions.len(), 1);
     let session = &sessions[0];
     assert_eq!(session.head.reference.agent_name, "antigravity-cli");
@@ -174,12 +249,7 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
         )
         .unwrap();
     assert!(stored.contains("unknown"));
-    assert_eq!(
-        scan_paths(temp.path(), &Pricing::bundled(), &[path])
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(scan_paths(&Pricing::bundled(), &[path]).unwrap().len(), 1);
 }
 
 #[test]

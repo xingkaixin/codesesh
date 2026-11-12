@@ -17,10 +17,15 @@ and were checked against 14 local CLI databases on 2026-10-12. This is
 compatibility evidence, not an official schema guarantee. Fixtures are synthetic
 and contain no private transcript.
 
+ACP workspace and model fallbacks were checked against one local conversation on
+2026-11-12. Step model field numbers also match
+[T3 Code's native usage reader at ee90bdc](https://github.com/pingdotgg/t3code/blob/ee90bdc9405d8d4b8ff78ce2133ccb04844298ab/apps/server/src/provider/Drivers/antigravityUsageReader.ts).
+
 - `steps.idx` supplies stable message identity and ordering.
 - `steps.step_payload` is decoded for user prompts (field 19), assistant text
-  (field 20), title updates (field 30), and step metadata (field 5). Field 5 equals
-  the `steps.metadata` column in every observed row.
+  (field 20), title updates (field 30), and step metadata (field 5). The embedded
+  metadata and `steps.metadata` column carry the same decoded fields in the
+  observed CLI and ACP conversations, but their bytes can differ.
 - Step metadata supplies the native creation time (field 1), tool calls (field 4),
   model usage (field 9) and retry attempts (field 28, usage in field 2). Usage maps
   input, cache creation, cache read, total output, reasoning and visible output
@@ -30,17 +35,20 @@ and contain no private transcript.
   provider message (field 12) and message (field 7) ids, because retry lists
   repeat the final attempt. Zero-token records are ignored.
 - `gen_metadata.data` field 1 maps a model id (field 3) to a model name
-  (field 19); step usage carries the model id in field 1. Generation usage repeats
-  step usage with the same response ids in all observed rows, so it is not counted
-  again. Usage without a model id (observed on step type 23 retries) keeps its
-  tokens but has no cost estimate.
+  (field 19); step usage carries the model id in field 1 when available. Primary
+  usage without an id falls back to the step's model configuration (metadata field
+  24, API name field 12 or name field 8). Retries without their own model id remain
+  unknown because they can use a different model. Generation usage repeats step
+  usage in the observed conversations, so it is not counted again.
 - Usage from a model response without visible text is attached to the next
   assistant message, normally its first tool call. Usage still pending after the
   last step is kept on a usage-only assistant message. Cost is estimated from
   model prices; Antigravity records no cost.
 - The matching row in `conversation_summaries` supplies title, workspace file URIs,
   update time, and explicit parent conversation identity when available. Entries
-  without a conversation database are not imported.
+  without a conversation database are not imported. Each conversation store uses
+  its own summary database. Without a summary workspace, `trajectory_metadata_blob.data`
+  supplies workspace file URIs from repeated field 7; the first local URI is used.
 - Tool results and numeric tool status meanings are not established. Calls
   therefore use `unknown` status, retaining native step type/status in tool
   metadata.
