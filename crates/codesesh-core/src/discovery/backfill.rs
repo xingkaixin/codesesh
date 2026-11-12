@@ -172,6 +172,17 @@ fn session_fingerprints(source: &AgentSource) -> Result<HashMap<String, String>>
     }
 }
 pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
+    if source.antigravity_profiles.is_some() {
+        let mut items = Vec::new();
+        for root in source.scan_roots()? {
+            let mut store = source.clone();
+            store.antigravity_profiles = None;
+            store.data_root = root.parent().unwrap_or(&root).to_owned();
+            store.scan_path = root;
+            items.extend(inventory(&store)?);
+        }
+        return Ok(items);
+    }
     if source.agent == "codex" {
         return codex_inventory(source);
     }

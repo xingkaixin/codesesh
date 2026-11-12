@@ -194,6 +194,7 @@ fn omp_reads_xdg_sessions_with_nested_subagents_and_reports_deleted_advisors() {
 fn claude_workflow_agents_are_nested_under_their_session() {
     let temporary = tempfile::tempdir().unwrap();
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "claudecode".into(),
         data_root: temporary.path().to_owned(),
         scan_path: temporary.path().join("projects"),

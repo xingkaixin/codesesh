@@ -167,6 +167,7 @@ fn legacy_snapshots_subagents_and_scanner_updates() {
 
     let mut scanner = AgentScanner::new(
         AgentSource {
+            antigravity_profiles: None,
             agent: "gemini-cli".into(),
             data_root: temp.path().join(".gemini"),
             scan_path: root.clone(),

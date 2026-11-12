@@ -10,6 +10,7 @@ fn removed_zcode_database_retains_sessions_and_resumes_after_restore() {
     database.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('retained','Before removal',1000,2000,'/project');").unwrap();
     drop(database);
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "zcode".into(),
         data_root: root.clone(),
         scan_path: root,
@@ -85,6 +86,7 @@ fn reused_database_inventory_still_lists_new_sessions() {
     let database = rusqlite::Connection::open(&file).unwrap();
     database.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('first','First',1000,2000,'/project');").unwrap();
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "zcode".into(),
         data_root: root.clone(),
         scan_path: root,
@@ -105,6 +107,7 @@ fn child_session_changes_refresh_their_database_root() {
     let database = rusqlite::Connection::open(&file).unwrap();
     database.execute_batch("CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); INSERT INTO session(id,parent_id,title,time_created,time_updated,directory) VALUES('root',NULL,'Root',1000,2000,'/project'),('child','root','Child',1000,2000,'/project');").unwrap();
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "zcode".into(),
         data_root: root.clone(),
         scan_path: root,

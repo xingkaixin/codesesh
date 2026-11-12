@@ -19,6 +19,7 @@ fn fixture() -> (tempfile::TempDir, AgentSource, PathBuf) {
     (
         temp,
         AgentSource {
+            antigravity_profiles: None,
             agent: "codex".into(),
             scan_path: root.join("sessions"),
             data_root: root,

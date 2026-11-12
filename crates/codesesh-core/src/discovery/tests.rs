@@ -2,6 +2,7 @@ use super::*;
 use std::collections::HashMap;
 
 mod agent_layouts;
+mod antigravity;
 mod backfill_pages;
 mod codex;
 mod databases;
@@ -20,6 +21,7 @@ fn environment(root: &Path) -> PathEnvironment {
 
 fn pi_source(root: &Path) -> AgentSource {
     AgentSource {
+        antigravity_profiles: None,
         agent: "pi".into(),
         data_root: root.to_owned(),
         scan_path: root.join("agent/sessions"),

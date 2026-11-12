@@ -14,6 +14,7 @@ fn codex_title_index_refresh_only_parses_the_renamed_session() {
         std::fs::write(sessions.join(format!("rollout-2026-09-01T00-00-00-{id}.jsonl")), format!("{}\n{}\n", serde_json::json!({"type":"session_meta","timestamp":"2026-09-01T00:00:00Z","payload":{"id":id,"cwd":"/tmp/codex-index-fixture"}}),serde_json::json!({"type":"response_item","timestamp":"2026-09-01T00:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Initial"}]}}))).unwrap();
     }
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "codex".into(),
         data_root: root.clone(),
         scan_path: sessions,
@@ -93,6 +94,7 @@ fn codex_compression_resume_and_archive_keep_cached_identity() {
     let path = write_codex_rollout(&root.join("sessions"), 1);
     let original = std::fs::read(&path).unwrap();
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "codex".into(),
         scan_path: root.join("sessions"),
         data_root: root.clone(),
@@ -180,6 +182,7 @@ fn codex_archived_only_store_is_discovered_and_watched() {
     let path = write_codex_rollout(&root.join("archived_sessions"), 1);
     compress_codex_rollout(&path);
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "codex".into(),
         scan_path: root.join("sessions"),
         data_root: root.to_owned(),
@@ -212,6 +215,7 @@ fn codex_compression_during_backfill_does_not_remove_prior_batches() {
         write_codex_rollout(&root.join("sessions"), id);
     }
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "codex".into(),
         scan_path: root.join("sessions"),
         data_root: root.to_owned(),

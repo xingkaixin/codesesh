@@ -5,6 +5,20 @@ under the home directory. `AGY_CONVERSATIONS_DIR` overrides the conversation dir
 its parent is used for the optional `conversation_summaries.db`. Antigravity IDE
 `.gemini/antigravity/conversations/*.pb` files are a separate unsupported format.
 
+Automatic discovery also includes Antigravity ACP profiles hosted by T3 Code:
+
+```text
+<T3 home>/userdata/providers/antigravity/<instance>/antigravity-acp/conversations/*.db
+```
+
+T3 home defaults to `~/.t3`; `T3CODE_HOME` selects another base directory. For a
+T3 server started with `--base-dir`, set `T3CODE_HOME` to that same directory when
+running or installing the CodeSesh Worker service. `AGY_CONVERSATIONS_DIR` selects
+only its explicit conversation directory and disables automatic T3 profile discovery.
+Profiles added after startup are discovered through the shared profile parent.
+CLI and isolated ACP conversations share the `antigravity-cli` Agent identity.
+CodeSesh reads their native stores without opening T3's application database.
+
 ## Evidence and scope
 
 No authoritative public Protobuf schema was available for this CLI store. The
@@ -63,6 +77,9 @@ ACP workspace and model fallbacks were checked against one local conversation on
 SQLite is opened read-only in a transaction. Database/WAL changes and summary
 changes invalidate source fingerprints; the existing paged scanner handles updates,
 deletions, restart reuse and publication. Each conversation is an independent source.
+If a conversation directory disappears, its cached sessions remain available even
+when another profile is still present. Removing an individual database from an
+available conversation directory confirms that session's deletion.
 
 `prost` owns Protobuf validation and unknown-field skipping. The small local message
 structs declare only fields confirmed locally or by the cited readers. Cache creation

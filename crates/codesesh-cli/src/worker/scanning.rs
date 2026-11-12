@@ -262,6 +262,7 @@ mod tests {
         std::fs::create_dir(&agents).unwrap();
         let sources = ["codex", "claudecode"]
             .map(|agent| AgentSource {
+                antigravity_profiles: None,
                 agent: agent.into(),
                 data_root: agents.clone(),
                 scan_path: agents.join(agent),

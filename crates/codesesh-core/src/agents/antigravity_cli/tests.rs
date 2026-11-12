@@ -257,6 +257,7 @@ fn scanner_observes_wal_updates_and_preserves_cache_on_corruption() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path());
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "antigravity-cli".into(),
         data_root: temp.path().into(),
         scan_path: temp.path().join("conversations"),

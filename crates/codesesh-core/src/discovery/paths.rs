@@ -204,6 +204,12 @@ impl PathEnvironment {
             agent: agent.into(),
             data_root,
             scan_path,
+            antigravity_profiles: (agent == "antigravity-cli"
+                && self.read_env_path("AGY_CONVERSATIONS_DIR").is_none())
+            .then(|| {
+                self.home_path("T3CODE_HOME", ".t3")
+                    .join("userdata/providers/antigravity")
+            }),
         })
     }
 }
@@ -213,4 +219,35 @@ pub struct AgentSource {
     pub agent: String,
     pub data_root: PathBuf,
     pub scan_path: PathBuf,
+    pub antigravity_profiles: Option<PathBuf>,
+}
+
+impl AgentSource {
+    pub(crate) fn scan_roots(&self) -> std::io::Result<Vec<PathBuf>> {
+        let mut roots = vec![self.scan_path.clone()];
+        let Some(profiles) = &self.antigravity_profiles else {
+            return Ok(roots);
+        };
+        let entries = match std::fs::read_dir(profiles) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(roots),
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                roots.push(entry.path().join("antigravity-acp/conversations"));
+            }
+        }
+        roots.sort();
+        roots.dedup();
+        Ok(roots)
+    }
+
+    pub(crate) fn retains_missing_source(&self, path: &Path) -> std::io::Result<bool> {
+        let Some(directory) = path.parent().filter(|_| self.agent == "antigravity-cli") else {
+            return Ok(false);
+        };
+        Ok(!directory.try_exists()?)
+    }
 }
