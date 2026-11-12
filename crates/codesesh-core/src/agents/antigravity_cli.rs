@@ -11,7 +11,7 @@ use std::{
 
 mod proto;
 
-pub fn scan(root: &Path, data_root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     let mut paths = Vec::new();
     if root.try_exists()? {
         for entry in walkdir::WalkDir::new(root).follow_links(false) {
@@ -23,28 +23,34 @@ pub fn scan(root: &Path, data_root: &Path, pricing: &Pricing) -> Result<Vec<Pars
             }
         }
     }
-    scan_paths(data_root, pricing, &paths)
+    scan_paths(pricing, &paths)
 }
 
-pub fn scan_paths(
-    data_root: &Path,
-    pricing: &Pricing,
-    paths: &[PathBuf],
-) -> Result<Vec<ParsedSession>> {
-    let summary_path = data_root.join("conversation_summaries.db");
-    let summaries = if summary_path.try_exists()? {
-        let db = Connection::open_with_flags(summary_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        db.execute_batch("BEGIN")?;
-        Some(db)
-    } else {
-        None
-    };
+pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf]) -> Result<Vec<ParsedSession>> {
+    let mut stores = BTreeMap::<_, std::collections::BTreeSet<_>>::new();
+    for path in paths {
+        let root = path
+            .parent()
+            .and_then(Path::parent)
+            .context("Antigravity conversation has no store directory")?;
+        stores.entry(root).or_default().insert(path);
+    }
     let mut sessions = Vec::new();
-    for path in paths.iter().collect::<std::collections::BTreeSet<_>>() {
-        if path.try_exists()?
-            && let Some(session) = parse(path, summaries.as_ref(), pricing)?
-        {
-            sessions.push(session);
+    for (root, paths) in stores {
+        let summary_path = root.join("conversation_summaries.db");
+        let summaries = if summary_path.try_exists()? {
+            let db = Connection::open_with_flags(summary_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            db.execute_batch("BEGIN")?;
+            Some(db)
+        } else {
+            None
+        };
+        for path in paths {
+            if path.try_exists()?
+                && let Some(session) = parse(path, summaries.as_ref(), pricing)?
+            {
+                sessions.push(session);
+            }
         }
     }
     Ok(sessions)
@@ -75,14 +81,9 @@ fn parse(
             |row| Ok(Summary { title: row.get(0)?, workspaces: row.get(1)?, modified: row.get(2)?, parent: row.get(3)? }),
         ).optional()
     }).transpose()?.flatten().unwrap_or_default();
-    let directory = serde_json::from_str::<Vec<String>>(&summary.workspaces)
+    let mut directory = serde_json::from_str::<Vec<String>>(&summary.workspaces)
         .ok()
-        .and_then(|paths| {
-            paths
-                .into_iter()
-                .find_map(|path| url::Url::parse(&path).ok()?.to_file_path().ok())
-        })
-        .map(|path| path.to_string_lossy().into_owned())
+        .and_then(workspace_path)
         .unwrap_or_default();
     let time = chrono::DateTime::parse_from_str(&summary.modified, "%Y-%m-%d %H:%M:%S%.f%:z")
         .ok()
@@ -90,6 +91,9 @@ fn parse(
         .unwrap_or(crate::time::file_mtime_ms(path)?);
     let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     db.execute_batch("BEGIN")?;
+    if directory.is_empty() {
+        directory = trajectory_workspace(&db, path)?.unwrap_or_default();
+    }
     let models = model_names(&db, path)?;
     let mut statement = db
         .prepare("SELECT idx,step_type,status,step_payload FROM steps ORDER BY idx")
@@ -120,10 +124,24 @@ fn parse(
             .filter(|created| created.seconds > 0)
             .map(|created| created.seconds as f64 * 1000.0 + f64::from(created.nanos / 1_000_000))
             .unwrap_or(time);
-        for usage in metadata
+        let step_model = metadata.model.and_then(|model| {
+            model
+                .api_name
+                .filter(|name| !name.is_empty())
+                .or_else(|| model.name.filter(|name| !name.is_empty()))
+        });
+        // Retries can switch models; step metadata names only the primary request.
+        for (usage, fallback_model) in metadata
             .usage
             .into_iter()
-            .chain(metadata.retries.into_iter().filter_map(|retry| retry.usage))
+            .map(|usage| (usage, step_model.clone()))
+            .chain(
+                metadata
+                    .retries
+                    .into_iter()
+                    .filter_map(|retry| retry.usage)
+                    .map(|usage| (usage, None)),
+            )
         {
             let Some(tokens) = tokens(&usage) else {
                 continue;
@@ -139,7 +157,10 @@ fn parse(
             if !ids.fold(true, |fresh, id| seen.insert(id) && fresh) {
                 continue;
             }
-            let model = usage.model_id.and_then(|id| models.get(&id)).cloned();
+            let model = match usage.model_id {
+                Some(id) => models.get(&id).cloned(),
+                None => fallback_model,
+            };
             pending.push((index, created, model, tokens));
         }
         let part = match kind {
@@ -265,6 +286,38 @@ fn parse(
     session.head.summary_files = Some(Value::String(notice));
     session.detail.head = session.head.clone();
     Ok(Some(session))
+}
+
+fn workspace_path(uris: Vec<String>) -> Option<String> {
+    uris.into_iter()
+        .find_map(|uri| url::Url::parse(&uri).ok()?.to_file_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn trajectory_workspace(db: &Connection, path: &Path) -> Result<Option<String>> {
+    let exists: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='trajectory_metadata_blob')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(None);
+    }
+    let mut statement = db.prepare("SELECT data FROM trajectory_metadata_blob")?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let data: Vec<u8> = row.get(0)?;
+        let metadata = proto::TrajectoryMetadata::decode(data.as_slice()).with_context(|| {
+            format!(
+                "invalid Antigravity workspace metadata in {}",
+                path.display()
+            )
+        })?;
+        if let Some(directory) = workspace_path(metadata.workspaces) {
+            return Ok(Some(directory));
+        }
+    }
+    Ok(None)
 }
 
 fn model_names(db: &Connection, path: &Path) -> Result<HashMap<u64, String>> {

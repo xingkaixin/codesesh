@@ -38,8 +38,24 @@ pub(super) struct StepMetadata {
     pub call: Option<ToolCall>,
     #[prost(message, optional, tag = "9")]
     pub usage: Option<Usage>,
+    #[prost(message, optional, tag = "24")]
+    pub model: Option<Model>,
     #[prost(message, repeated, tag = "28")]
     pub retries: Vec<Retry>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct Model {
+    #[prost(string, optional, tag = "8")]
+    pub name: Option<String>,
+    #[prost(string, optional, tag = "12")]
+    pub api_name: Option<String>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct TrajectoryMetadata {
+    #[prost(string, repeated, tag = "7")]
+    pub workspaces: Vec<String>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]

@@ -51,6 +51,7 @@ impl AgentSource {
             ],
             _ => vec![root.clone()],
         };
+        roots.extend(self.antigravity_profiles.iter().cloned());
         roots.sort();
         roots.dedup();
         roots
@@ -253,7 +254,15 @@ impl AgentScanner {
                     .cloned(),
             );
         }
-        let removed: HashSet<_> = delta.removed.iter().cloned().collect();
+        let mut removed = HashSet::new();
+        for reference in delta.removed {
+            if let Some((_, Some(path))) = self.baseline.get(&reference)
+                && self.source.retains_missing_source(path)?
+            {
+                continue;
+            }
+            removed.insert(reference);
+        }
         let changed: HashSet<_> = delta
             .upserts
             .iter()
@@ -291,6 +300,7 @@ impl AgentScanner {
                 "generation": self.pricing.generation(),
                 "priceDependencies": self.price_dependencies,
                 "root": self.source.scan_path,
+                "antigravityProfiles": self.source.antigravity_profiles,
                 "files": self.file_fingerprints,
                 "databaseSessions": self.fingerprints,
                 "emptySources": self.empty_sources,
@@ -898,6 +908,12 @@ impl AgentScanner {
             && state["version"] == 1
             && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
             && state["root"].as_str() == self.source.scan_path.to_str()
+            && state["antigravityProfiles"].as_str()
+                == self
+                    .source
+                    .antigravity_profiles
+                    .as_deref()
+                    .and_then(|path| path.to_str())
         {
             self.price_dependencies =
                 serde_json::from_value(state["priceDependencies"].clone()).ok();
@@ -1036,8 +1052,7 @@ impl AgentScanner {
             }
             "antigravity-cli" if paths.is_some() => {
                 let paths = paths.unwrap();
-                let upserts =
-                    agents::antigravity_cli::scan_paths(&self.source.data_root, pricing, paths)?;
+                let upserts = agents::antigravity_cli::scan_paths(pricing, paths)?;
                 Ok(selected_delta(upserts, &self.previous, |session| {
                     paths.contains(&session.source)
                 }))

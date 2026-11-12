@@ -125,6 +125,7 @@ fn cold_invalid_transcript_does_not_block_first_backfill_page() {
 fn cursor_database_pages_preserve_prior_pages_and_seed_incremental_state() {
     let temporary = tempfile::tempdir().unwrap();
     let source = AgentSource {
+        antigravity_profiles: None,
         agent: "cursor".into(),
         data_root: temporary.path().join("cursor"),
         scan_path: temporary.path().join("cursor"),

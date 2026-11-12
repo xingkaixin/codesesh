@@ -6,6 +6,7 @@ fn missing_sources_are_empty_but_corrupt_databases_report_failures() {
     let pi = pi_source(temporary.path());
     write_pi(&pi, "Survives another agent failure");
     let deep = AgentSource {
+        antigravity_profiles: None,
         agent: "deepchat".into(),
         data_root: temporary.path().join("deep"),
         scan_path: temporary.path().join("deep"),

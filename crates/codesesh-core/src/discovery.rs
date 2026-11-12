@@ -119,23 +119,18 @@ pub(crate) fn scan_sources(
 }
 
 pub(crate) fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
-    if !(exists(&source.scan_path)?
-        || source.agent == "codex" && exists(&source.data_root.join("archived_sessions"))?)
-    {
-        return Ok(AgentScan {
-            available: false,
-            sessions: vec![],
-        });
+    let mut sessions = Vec::new();
+    for root in source.scan_roots()? {
+        if !(exists(&root)?
+            || source.agent == "codex" && exists(&source.data_root.join("archived_sessions"))?)
+        {
+            continue;
+        }
+        sessions.extend(
+            agents::scan_agent(&source.agent, &root, &source.data_root, pricing)
+                .with_context(|| format!("scanning {} at {}", source.agent, root.display()))?,
+        );
     }
-    let mut sessions =
-        agents::scan_agent(&source.agent, &source.scan_path, &source.data_root, pricing)
-            .with_context(|| {
-                format!(
-                    "scanning {} at {}",
-                    source.agent,
-                    source.scan_path.display()
-                )
-            })?;
     for session in &mut sessions {
         agents::complete_projections(session);
     }
@@ -160,15 +155,18 @@ fn has_sources(source: &AgentSource) -> Result<bool> {
     if let Some(database) = agents::database_path(&source.agent, &source.scan_path) {
         return Ok(exists(&database)?);
     }
-    let root = agents::session_root(&source.agent, &source.scan_path);
-    if !exists(&root)? {
-        return Ok(false);
-    }
-    for entry in walkdir::WalkDir::new(&root).follow_links(false) {
-        let entry =
-            entry.with_context(|| format!("checking source availability at {}", root.display()))?;
-        if entry.file_type().is_file() && agents::is_session_file(&source.agent, &root, &entry)? {
-            return Ok(true);
+    for scan_path in source.scan_roots()? {
+        let root = agents::session_root(&source.agent, &scan_path);
+        if !exists(&root)? {
+            continue;
+        }
+        for entry in walkdir::WalkDir::new(&root).follow_links(false) {
+            let entry = entry
+                .with_context(|| format!("checking source availability at {}", root.display()))?;
+            if entry.file_type().is_file() && agents::is_session_file(&source.agent, &root, &entry)?
+            {
+                return Ok(true);
+            }
         }
     }
     Ok(false)

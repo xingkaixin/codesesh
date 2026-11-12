@@ -20,6 +20,7 @@ fn signature(source: &AgentSource) -> Result<String> {
         env!("CARGO_PKG_VERSION"),
         &source.scan_path,
         &source.data_root,
+        &source.antigravity_profiles,
         super::source_inventory_signature(source)?,
     ))?)
 }
@@ -39,9 +40,15 @@ fn project_identities_current(heads: &[SessionHead]) -> bool {
     })
 }
 fn source_present(source: &AgentSource) -> Result<bool> {
-    let path = agents::database_path(&source.agent, &source.scan_path)
-        .unwrap_or_else(|| source.scan_path.clone());
-    Ok(path.try_exists()?)
+    if let Some(path) = agents::database_path(&source.agent, &source.scan_path) {
+        return Ok(path.try_exists()?);
+    }
+    for root in source.scan_roots()? {
+        if root.try_exists()? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 fn output(mut heads: Vec<SessionHead>, options: &ScanOptions) -> SessionIndex {
     if let Some(cwd) = options.cwd.as_deref().filter(|cwd| !cwd.is_empty()) {
@@ -117,22 +124,27 @@ pub fn run(
                 for session in &mut scanned.sessions {
                     session.set_source_node(node);
                 }
-                let references: HashSet<_> = scanned
+                let mut references: HashSet<_> = scanned
                     .sessions
                     .iter()
                     .map(|session| session.head.reference.clone())
                     .collect();
                 if agents::database_path(&source.agent, &source.scan_path).is_none() {
-                    for head in old
-                        .iter()
-                        .filter(|head| !references.contains(&head.reference))
-                    {
-                        if let Some(path) = baseline.source_paths.get(&head.reference)
-                            && Path::new(path).try_exists()?
-                        {
+                    for head in &old {
+                        if references.contains(&head.reference) {
+                            continue;
+                        }
+                        let Some(path) = baseline.source_paths.get(&head.reference).map(Path::new)
+                        else {
+                            continue;
+                        };
+                        if source.retains_missing_source(path)? {
+                            references.insert(head.reference.clone());
+                            heads.push(head.clone());
+                        } else if path.try_exists()? {
                             bail!(
                                 "Previously cached session could not be parsed from {}; retaining cached sessions",
-                                path
+                                path.display()
                             );
                         }
                     }

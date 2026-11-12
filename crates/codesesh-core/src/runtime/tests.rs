@@ -346,6 +346,7 @@ async fn collection_status_distinguishes_absent_empty_and_disappeared_sources() 
     fs::create_dir(&root).unwrap();
     let database = temporary.path().join("cache.db");
     let source = crate::discovery::AgentSource {
+        antigravity_profiles: None,
         agent: "codex".into(),
         data_root: temporary.path().into(),
         scan_path: root.clone(),
