@@ -245,6 +245,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             "conversation_summaries.db",
             "conversation_summaries.db-wal",
             "conversation_summaries.db-journal",
+            "history.jsonl",
         ],
         "kimi-code" => &["session_index.jsonl"],
         "droid" => &["settings.json"],

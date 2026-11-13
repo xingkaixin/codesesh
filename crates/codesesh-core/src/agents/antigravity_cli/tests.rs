@@ -290,3 +290,201 @@ fn scanner_observes_wal_updates_and_preserves_cache_on_corruption() {
     let removed = scanner.refresh(Some(&[path])).unwrap();
     assert_eq!(removed.removed, [reference]);
 }
+
+#[test]
+fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let conversations = temp.path().join("conversations");
+    std::fs::create_dir_all(&conversations).unwrap();
+    let aux_dir = temp.path().join("aux-space");
+    let project_dir = temp.path().join("proj-space");
+    let unrelated_dir = temp.path().join("other-space");
+    let aux_uri = url::Url::from_file_path(&aux_dir).unwrap();
+    let project_uri = url::Url::from_file_path(&project_dir).unwrap();
+    let workspaces_json = json!([aux_uri.as_str(), project_uri.as_str()]).to_string();
+
+    let summaries = Connection::open(temp.path().join("conversation_summaries.db")).unwrap();
+    summaries
+        .execute_batch(
+            "CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT);",
+        )
+        .unwrap();
+
+    let create_session = |id: &str, parent: &str, steps: Vec<(i64, Vec<u8>)>| -> PathBuf {
+        let db_path = conversations.join(format!("{id}.db"));
+        let db = Connection::open(&db_path).unwrap();
+        db.execute_batch(
+            "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL, status INTEGER NOT NULL, step_payload BLOB);
+             CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);",
+        )
+        .unwrap();
+        for (idx, payload) in steps {
+            db.execute(
+                "INSERT INTO steps VALUES (?1, ?2, 3, ?3)",
+                rusqlite::params![idx, if idx == 0 { 14 } else { 132 }, payload],
+            )
+            .unwrap();
+        }
+        summaries
+            .execute(
+                "INSERT INTO conversation_summaries VALUES (?1, '', ?2, '2026-09-02 16:57:28.971105+00:00', ?3)",
+                [id, &workspaces_json, parent],
+            )
+            .unwrap();
+        db_path
+    };
+
+    let file_ctx_uri = url::Url::from_file_path(project_dir.join("src/main.rs")).unwrap();
+    let user_items_prompt = bytes(
+        19,
+        [
+            bytes(3, bytes(1, "Check ")),
+            bytes(
+                3,
+                [
+                    bytes(1, "@main.rs"),
+                    bytes(2, bytes(1, bytes(5, file_ctx_uri.as_str()))),
+                ]
+                .concat(),
+            ),
+        ]
+        .concat(),
+    );
+    create_session("ctx-session", "", vec![(0, user_items_prompt)]);
+
+    let cmd_input =
+        json!({"command": format!("cd {} && cargo test", project_dir.display())}).to_string();
+    create_session(
+        "cmd-session",
+        "",
+        vec![
+            (0, bytes(19, bytes(2, "Run tests"))),
+            (
+                1,
+                bytes(
+                    5,
+                    bytes(
+                        4,
+                        [
+                            bytes(1, "call-cmd"),
+                            bytes(2, "run_command"),
+                            bytes(3, cmd_input),
+                        ]
+                        .concat(),
+                    ),
+                ),
+            ),
+        ],
+    );
+
+    let parent_tool = json!({"path": project_dir.join("Cargo.toml")}).to_string();
+    create_session(
+        "parent-z",
+        "",
+        vec![
+            (0, bytes(19, bytes(2, "Parent"))),
+            (
+                1,
+                bytes(
+                    5,
+                    bytes(
+                        4,
+                        [
+                            bytes(1, "call-parent"),
+                            bytes(2, "read_file"),
+                            bytes(3, parent_tool),
+                        ]
+                        .concat(),
+                    ),
+                ),
+            ),
+        ],
+    );
+
+    let unrelated_tool = json!({"path": unrelated_dir.join("notes.md")}).to_string();
+    let child_db = create_session(
+        "child-a",
+        "parent-z",
+        vec![
+            (0, bytes(19, bytes(2, "Child"))),
+            (
+                1,
+                bytes(
+                    5,
+                    bytes(
+                        4,
+                        [
+                            bytes(1, "call-child"),
+                            bytes(2, "read_file"),
+                            bytes(3, unrelated_tool),
+                        ]
+                        .concat(),
+                    ),
+                ),
+            ),
+        ],
+    );
+
+    create_session("greeting", "", vec![(0, bytes(19, bytes(2, "Hello")))]);
+    drop(summaries);
+
+    let scanned = scan(&conversations, &Pricing::bundled()).unwrap();
+    let dir_of = |sessions: &[ParsedSession], id: &str| {
+        sessions
+            .iter()
+            .find(|s| s.head.reference.session_id == id)
+            .unwrap()
+            .head
+            .directory
+            .clone()
+    };
+    let project_str = project_dir.to_string_lossy().into_owned();
+    let aux_str = aux_dir.to_string_lossy().into_owned();
+
+    assert_eq!(dir_of(&scanned, "ctx-session"), project_str);
+    assert_eq!(
+        scanned
+            .iter()
+            .find(|s| s.head.reference.session_id == "ctx-session")
+            .unwrap()
+            .head
+            .title,
+        "Check @main.rs"
+    );
+    assert_eq!(dir_of(&scanned, "cmd-session"), project_str);
+    assert_eq!(dir_of(&scanned, "parent-z"), project_str);
+    assert_eq!(dir_of(&scanned, "child-a"), project_str);
+    assert_eq!(dir_of(&scanned, "greeting"), aux_str);
+
+    let standalone_child = scan_paths(&Pricing::bundled(), &[child_db]).unwrap();
+    assert_eq!(standalone_child.len(), 1);
+    assert_eq!(standalone_child[0].head.directory, project_str);
+
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "antigravity-cli".into(),
+        data_root: temp.path().into(),
+        scan_path: conversations,
+    };
+    let history_path = temp.path().join("history.jsonl");
+    assert!(source.watch_roots().contains(&history_path));
+
+    let mut scanner = AgentScanner::new(
+        source,
+        temp.path().join("cache.db"),
+        Arc::new(Pricing::bundled()),
+    );
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(dir_of(&initial.sessions, "greeting"), aux_str);
+    initial.on_reject.take();
+
+    let history_lines = format!(
+        "{{invalid-json\n{{\"workspace\":\"{}\"}}\n{}\n",
+        project_dir.display(),
+        json!({"conversationId": "greeting", "workspace": project_dir.to_string_lossy()}),
+    );
+    std::fs::write(&history_path, history_lines).unwrap();
+
+    let refreshed = scanner.refresh(Some(&[history_path])).unwrap();
+    assert_eq!(dir_of(&refreshed.sessions, "greeting"), project_str);
+}

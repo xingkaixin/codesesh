@@ -36,10 +36,12 @@ ACP workspace and model fallbacks were checked against one local conversation on
 [T3 Code's native usage reader at ee90bdc](https://github.com/pingdotgg/t3code/blob/ee90bdc9405d8d4b8ff78ce2133ccb04844298ab/apps/server/src/provider/Drivers/antigravityUsageReader.ts).
 
 - `steps.idx` supplies stable message identity and ordering.
-- `steps.step_payload` is decoded for user prompts (field 19), assistant text
-  (field 20), title updates (field 30), and step metadata (field 5). The embedded
-  metadata and `steps.metadata` column carry the same decoded fields in the
-  observed CLI and ACP conversations, but their bytes can differ.
+- `steps.step_payload` is decoded for user prompts (field 19: direct text field 2
+  or item segments in repeated field 3, plus file/directory context URIs in item
+  field 2), assistant text (field 20), title updates (field 30), and step
+  metadata (field 5). The embedded metadata and `steps.metadata` column carry
+  the same decoded fields in the observed CLI and ACP conversations, but their
+  bytes can differ.
 - Step metadata supplies the native creation time (field 1), tool calls (field 4),
   model usage (field 9) and retry attempts (field 28, usage in field 2). Usage maps
   input, cache creation, cache read, total output, reasoning and visible output
@@ -58,11 +60,16 @@ ACP workspace and model fallbacks were checked against one local conversation on
   assistant message, normally its first tool call. Usage still pending after the
   last step is kept on a usage-only assistant message. Cost is estimated from
   model prices; Antigravity records no cost.
-- The matching row in `conversation_summaries` supplies title, workspace file URIs,
-  update time, and explicit parent conversation identity when available. Entries
-  without a conversation database are not imported. Each conversation store uses
-  its own summary database. Without a summary workspace, `trajectory_metadata_blob.data`
-  supplies workspace file URIs from repeated field 7; the first local URI is used.
+- The matching row in `conversation_summaries` supplies title, workspace file URIs
+  (`workspace_uris`), update time, and explicit parent conversation identity when
+  available. Entries without a conversation database are not imported. Each
+  conversation store uses its own summary database. Candidate local workspace
+  paths come from `conversation_summaries.workspace_uris`, or
+  `trajectory_metadata_blob.data` repeated field 7 when summary workspaces are
+  empty. When multiple local workspaces are present, the adapter selects the
+  candidate matching `history.jsonl` for that conversation, then explicit user
+  context URIs and tool-call path/command inputs in `steps`, then the parent
+  conversation's workspace, falling back to the first local URI.
 - Tool results and numeric tool status meanings are not established. Calls
   therefore use `unknown` status, retaining native step type/status in tool
   metadata.
@@ -74,9 +81,10 @@ ACP workspace and model fallbacks were checked against one local conversation on
   steps are counted in the visible compatibility notice.
 - Resume commands remain unavailable; tools use the existing default renderer.
 
-SQLite is opened read-only in a transaction. Database/WAL changes and summary
-changes invalidate source fingerprints; the existing paged scanner handles updates,
-deletions, restart reuse and publication. Each conversation is an independent source.
+SQLite is opened read-only in a transaction. Database/WAL, summary, and
+`history.jsonl` changes invalidate source fingerprints; the existing paged scanner
+handles updates, deletions, restart reuse and publication. Each conversation is
+an independent source.
 If a conversation directory disappears, its cached sessions remain available even
 when another profile is still present. Removing an individual database from an
 available conversation directory confirms that session's deletion.
