@@ -27,6 +27,7 @@ impl AgentSource {
             "antigravity-cli" => vec![
                 root.clone(),
                 self.data_root.join("conversation_summaries.db"),
+                self.data_root.join("history.jsonl"),
             ],
             "cursor" => vec![
                 root.join("globalStorage/state.vscdb"),

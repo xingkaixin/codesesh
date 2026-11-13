@@ -2,7 +2,7 @@ pub(crate) fn parser_version(agent: &str) -> &'static str {
     if agent == "codex" {
         "rust-parser-v10"
     } else if agent == "antigravity-cli" {
-        "rust-parser-v7"
+        "rust-parser-v8"
     } else {
         "rust-parser-v6"
     }

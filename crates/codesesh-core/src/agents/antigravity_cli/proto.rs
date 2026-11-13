@@ -14,8 +14,30 @@ pub(super) struct Step {
 pub(super) struct UserPrompt {
     #[prost(string, optional, tag = "2")]
     pub text: Option<String>,
-    #[prost(message, optional, tag = "3")]
-    pub content: Option<Text>,
+    #[prost(message, repeated, tag = "3")]
+    pub items: Vec<UserItem>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct UserItem {
+    #[prost(string, optional, tag = "1")]
+    pub text: Option<String>,
+    #[prost(message, optional, tag = "2")]
+    pub context: Option<UserContext>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct UserContext {
+    #[prost(message, optional, tag = "1")]
+    pub file: Option<ContextTarget>,
+    #[prost(message, optional, tag = "2")]
+    pub directory: Option<ContextTarget>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct ContextTarget {
+    #[prost(string, optional, tag = "5")]
+    pub uri: Option<String>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]

@@ -18,6 +18,7 @@ fn signature(source: &AgentSource) -> Result<String> {
     Ok(serde_json::to_string(&(
         "json-index-v1",
         env!("CARGO_PKG_VERSION"),
+        agents::parser_version(&source.agent),
         &source.scan_path,
         &source.data_root,
         &source.antigravity_profiles,
