@@ -68,47 +68,46 @@ export function buildCursorToolStrategy(
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  if (state.status === "error") return defaultStrategy;
+
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
-  if (toolKey === "read_file_v2") {
+  if (toolKey === "read" || toolKey === "read_file_v2") {
     const content = extractCursorReadContent(state.outputValue);
-    return buildFileReadStrategy({
+    const totalLines = getCursorOutputRecord(state.outputValue).totalLinesInFile;
+    const lineCount = typeof totalLines === "number" ? String(totalLines) : toPlainText(totalLines);
+    const read = buildFileReadStrategy({
       defaultStrategy,
       state,
       filePath,
       displayPath,
       text: content,
-      details:
-        content === t("No output captured.")
-          ? [
-              {
-                label: t("Lines"),
-                value: toPlainText(getCursorOutputRecord(state.outputValue).totalLinesInFile),
-              },
-            ]
-          : [],
+      details: lineCount ? [{ label: t("Lines"), value: lineCount }] : [],
       isCode: content !== t("No output captured."),
     });
+    return { ...read, showInputPreview: true };
   }
 
-  if (toolKey === "edit_file_v2") {
+  if (toolKey === "edit" || toolKey === "edit_file_v2") {
     const diffText = toStringValue(input.streamingContent);
-    return buildFileEditStrategy({
+    const edit = buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      outputContent: {
-        kind: "plain",
-        text: diffText || getOutputOrErrorText(state),
-        language: diffText ? "diff" : "text",
-        isCode: Boolean(diffText),
-      },
+      outputContent: diffText
+        ? { kind: "plain", text: diffText, language: "diff", isCode: true }
+        : defaultStrategy.outputContent,
     });
+    return {
+      ...edit,
+      showInputPreview: true,
+      contentLabel: diffText ? t("Request") : undefined,
+    };
   }
 
-  if (toolKey === "ripgrep_raw_search") {
+  if (toolKey === "grep" || toolKey === "ripgrep_raw_search") {
     const pattern = toPlainText(input.pattern);
     const path = toPlainText(input.path);
     const summary = [getDisplayPath(path, baseDirectory), pattern].filter(Boolean).join(" · ");
@@ -118,7 +117,7 @@ export function buildCursorToolStrategy(
       title: "grep",
       secondaryText: summary || undefined,
       details: [],
-      showInputPreview: false,
+      showInputPreview: true,
       outputContent: {
         kind: "plain",
         text: getOutputOrErrorText(state),
@@ -128,7 +127,7 @@ export function buildCursorToolStrategy(
     };
   }
 
-  if (toolKey === "glob_file_search") {
+  if (toolKey === "glob" || toolKey === "glob_file_search") {
     const pattern = toPlainText(input.globPattern);
     const targetDirectory = toPlainText(input.targetDirectory);
     const summary = [getDisplayPath(targetDirectory, baseDirectory), pattern]
@@ -140,7 +139,7 @@ export function buildCursorToolStrategy(
       title: "glob",
       secondaryText: summary || undefined,
       details: [],
-      showInputPreview: false,
+      showInputPreview: true,
       outputContent: {
         kind: "plain",
         text: formatCursorSearchOutput(state.outputValue),
@@ -150,7 +149,7 @@ export function buildCursorToolStrategy(
     };
   }
 
-  if (toolKey === "run_terminal_command_v2") {
+  if (toolKey === "bash" || toolKey === "run_terminal_command_v2") {
     const command = toPlainText(input.command);
     const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
     const description = toPlainText(input.commandDescription);
@@ -165,7 +164,7 @@ export function buildCursorToolStrategy(
       title: "bash",
       secondaryText,
       details: [],
-      showInputPreview: false,
+      showInputPreview: true,
       outputContent: {
         kind: "plain",
         text: getOutputOrErrorText(state),
