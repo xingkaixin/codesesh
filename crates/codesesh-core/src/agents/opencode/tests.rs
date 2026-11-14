@@ -91,6 +91,88 @@ fn v2_preserves_sequence_tools_tokens_children_and_source() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 #[test]
+fn v2_links_only_unambiguous_task_children() {
+    let tool = |name: &str, metadata: Value| json!({"type":"tool","name":name,"state":{"status":"completed","metadata":metadata}});
+    for (content, child) in [
+        (
+            vec![tool("task", json!({"sessionId":"child"}))],
+            Some("child"),
+        ),
+        (
+            vec![tool("task", json!({"sessionID":"child"}))],
+            Some("child"),
+        ),
+        (
+            vec![tool("subagent", json!({"sessionId":"child"}))],
+            Some("child"),
+        ),
+        (
+            vec![tool("subagent", json!({"sessionID":"child"}))],
+            Some("child"),
+        ),
+        (
+            vec![
+                tool("task", json!({"sessionId":"child"})),
+                tool("subagent", json!({"sessionID":"child"})),
+            ],
+            Some("child"),
+        ),
+        (
+            vec![
+                tool("task", json!({"sessionId":"child"})),
+                tool("task", json!({"sessionId":"other"})),
+            ],
+            None,
+        ),
+        (
+            vec![tool(
+                "task",
+                json!({"sessionId":"child","sessionID":"other"}),
+            )],
+            None,
+        ),
+        (vec![tool("task", json!({"sessionId":""}))], None),
+        (vec![tool("read", json!({"sessionId":"child"}))], None),
+    ] {
+        let message = content::v2_message(&json!({
+            "id":"assistant", "type":"assistant", "data":json!({"content":content}).to_string()
+        }))
+        .unwrap()
+        .unwrap();
+        assert_eq!(message.subagent_id.as_deref(), child);
+    }
+}
+
+#[test]
+fn v2_invalid_input_error_is_a_failure_without_guessing_other_tool_results() {
+    let error = "Invalid input for tool edit: JSON parsing failed";
+    let parsed = content::v2_message(&json!({
+        "id":"assistant", "type":"assistant", "data":json!({"content":[
+            {"type":"tool","name":"invalid","state":{"status":"completed","input":{"tool":"edit","error":error},"content":[{"type":"text","text":"[Old tool result content cleared]"}],"metadata":{"truncated":false}}},
+            {"type":"tool","name":"edit","state":{"status":"completed","input":{"error":error},"content":[{"type":"text","text":"error mentioned in output"}]}},
+            {"type":"tool","name":"invalid","state":{"status":"completed","input":{"tool":"edit"},"content":[]}}
+        ]}).to_string()
+    })).unwrap().unwrap();
+    let MessagePart::Tool { state, .. } = &parsed.parts[0] else {
+        panic!("expected tool");
+    };
+    assert_eq!(state.status, ToolPartStatus::Error);
+    assert_eq!(state.error, Some(json!(error)));
+    assert_eq!(state.input.as_ref().unwrap()["error"], error);
+    assert_eq!(
+        state.output,
+        Some(json!("[Old tool result content cleared]"))
+    );
+    for part in &parsed.parts[1..] {
+        let MessagePart::Tool { state, .. } = part else {
+            panic!("expected tool");
+        };
+        assert_eq!(state.status, ToolPartStatus::Completed);
+        assert_eq!(state.error, None);
+    }
+}
+
+#[test]
 fn v2_estimates_unrecorded_message_costs_outside_forks() {
     let (temp, db) = database(true);
     db.execute_batch("INSERT INTO session_v2(id,cost) VALUES('root',0.5);INSERT INTO session_v2(id,fork_session_id) VALUES('fork','root');").unwrap();
