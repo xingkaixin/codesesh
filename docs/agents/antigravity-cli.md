@@ -70,16 +70,33 @@ ACP workspace and model fallbacks were checked against one local conversation on
   candidate matching `history.jsonl` for that conversation, then explicit user
   context URIs and tool-call path/command inputs in `steps`, then the parent
   conversation's workspace, falling back to the first local URI.
-- Tool results and numeric tool status meanings are not established. Calls
-  therefore use `unknown` status, retaining native step type/status in tool
-  metadata.
+  When a child has no title update or summary title, the same summary row's
+  nonempty `agent_name` supplies its display title before the prompt fallback.
+  Names do not identify sessions or establish parent relationships.
+- Tool results were checked against local CLI and ACP databases on 2026-11-14.
+  Step type 132 carries text in payload `140/2/1`. Legacy `view_file` (step type
+  8) carries content in `14/4`, `run_command` (21) carries output in `28/21/1`,
+  and `call_mcp_tool` (38) carries its result text in `47/3`. The adapter retains
+  these strings without interpreting arbitrary output text as success or failure.
+- Explicit errors come from `steps.error_details` fields 2/3, falling back to
+  payload field 31 with the same structure. Duplicate message/detail text is
+  displayed once. These calls use `error` status; other calls remain `unknown`
+  because the complete numeric status mapping is not established. Native step
+  type/status remain in tool metadata.
+- A `swarm add` result with `status: "added"` and a `conversation_id` supplies
+  the existing message-level sub-session link. The summary's explicit parent
+  identity still owns the session hierarchy; names and task text are never
+  used to infer it.
 - Steps without a native creation time use the summary update time, falling back
   to the conversation database modification time. The session summary counts
   unrecognized steps.
 - Empty databases are omitted. Unsupported table schemas or malformed Protobuf
   fail the refresh, retaining the last committed cache. Unrecognized but valid
   steps are counted in the visible compatibility notice.
-- Resume commands remain unavailable; tools use the existing default renderer.
+- Read/view, command, write/edit and `swarm` calls have dedicated displays.
+  Native results and errors remain visible; requested file content and diffs are
+  labeled separately from execution evidence. Full tool input remains available.
+  Other tools retain a text result fallback. Resume commands remain unavailable.
 
 SQLite is opened read-only in a transaction. Database/WAL, summary, and
 `history.jsonl` changes invalidate source fingerprints; the existing paged scanner

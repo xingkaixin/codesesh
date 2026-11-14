@@ -794,6 +794,8 @@ export const messages = {
   "find tools": ["查找工具", "ツールを検索"],
   Matches: ["匹配项", "一致した項目"],
   Result: ["结果", "結果"],
+  "Requested content": ["请求写入的内容", "書き込み要求の内容"],
+  "Requested changes": ["请求的修改", "変更要求"],
   "report findings": ["报告发现", "調査結果を報告"],
   "structured output": ["结构化输出", "構造化出力"],
   "{0} fields": ["{0} 个字段", "{0} フィールド"],
