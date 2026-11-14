@@ -1,12 +1,13 @@
 /**
  * Kimi-Code tool display strategy.
  *
- * Kimi-Code uses the same native workflow tool vocabulary as ZCode, while its
- * agent adapter and transcript format remain independent. Normalize from the
- * raw tool name so persisted display titles cannot hide the tool semantics.
+ * Translate Kimi-Code's source-specific fields before reusing ZCode views.
+ * Keep the original input text available for previews.
  */
 import type { ToolPart } from "@codesesh/contract";
-import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize";
+import { getKimiEditEntries } from "../diff";
+import { type NormalizedToolState, type ToolDisplayStrategy, toRecord } from "../tool-normalize";
+import { buildKimiToolStrategy } from "./kimi";
 import { buildZCodeToolStrategy } from "./zcode";
 
 export function buildKimiCodeToolStrategy(
@@ -14,5 +15,31 @@ export function buildKimiCodeToolStrategy(
   state: NormalizedToolState,
   baseDirectory?: string,
 ): ToolDisplayStrategy {
-  return buildZCodeToolStrategy({ ...tool, title: "" }, state, baseDirectory);
+  const toolKey = tool.tool.toLowerCase();
+  if (
+    ["read", "readfile", "agent", "searchweb"].includes(toolKey) ||
+    (toolKey === "strreplacefile" &&
+      state.status === "completed" &&
+      getKimiEditEntries(state.inputValue).length > 0)
+  ) {
+    return buildKimiToolStrategy(tool, state, baseDirectory);
+  }
+
+  const input = toRecord(state.inputValue);
+  let normalizedInput = state.inputValue;
+  if (toolKey === "todolist" && Array.isArray(input.todos)) {
+    normalizedInput = {
+      ...input,
+      todos: input.todos.map((todo) => {
+        const item = toRecord(todo);
+        return item.status === "done" ? { ...item, status: "completed" } : todo;
+      }),
+    };
+  }
+
+  return buildZCodeToolStrategy(
+    { ...tool, title: "" },
+    { ...state, inputValue: normalizedInput },
+    baseDirectory,
+  );
 }
