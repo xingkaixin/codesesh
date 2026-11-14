@@ -137,6 +137,74 @@ describe("getToolDisplayStrategy", () => {
     expect(strategy.outputContent).toMatchObject({ kind: "plain", text: sourceText });
   });
 
+  it.each(["claudecode", "zcode"])(
+    "shows the failed %s edit result instead of the proposed diff",
+    (agentName) => {
+      const error = "String to replace not found in file.";
+      const tool = part({
+        tool: "Edit",
+        title: "Edit",
+        state: {
+          status: "error",
+          input: { file_path: "/repo/example.ts", old_string: "old", new_string: "new" },
+          ...(agentName === "claudecode" ? { output: [{ type: "text", text: error }] } : { error }),
+        },
+      });
+      const strategy = getToolDisplayStrategy(agentName, tool, normalizeToolState(tool));
+
+      expect(strategy.outputContent).toEqual({
+        kind: "plain",
+        text: error,
+        language: "text",
+        isCode: false,
+      });
+    },
+  );
+
+  it("shows the Codex patch failure instead of file operations from its input", () => {
+    const error = "apply_patch verification failed: invalid patch";
+    const tool = part({
+      tool: "patch",
+      title: "patch",
+      state: {
+        status: "error",
+        input: [
+          { type: "delete_file", path: "example.ts" },
+          { type: "write_file", path: "example.ts", content: "new" },
+        ],
+        output: [{ type: "text", text: error }],
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toEqual({
+      kind: "plain",
+      text: error,
+      language: "text",
+      isCode: false,
+    });
+  });
+
+  it("keeps the failed ZCode read error visible when no output was captured", () => {
+    const error = "File does not exist.";
+    const tool = part({
+      tool: "Read",
+      state: {
+        status: "error",
+        input: { file_path: "/repo/missing.ts" },
+        error,
+      },
+    });
+    const strategy = getToolDisplayStrategy("zcode", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toEqual({
+      kind: "plain",
+      text: error,
+      language: "text",
+      isCode: false,
+    });
+  });
+
   it.each(FILE_TOOL_CASES)(
     "normalizes %s %s to the canonical %s file strategy",
     (agentName, toolName, title) => {
@@ -261,7 +329,7 @@ describe("getToolDisplayStrategy", () => {
       },
     });
   });
-  it("decodes Grok terminal bytes into terminal output", () => {
+  it.each([0, 1])("keeps Grok terminal bytes and its explicit exit code %i", (exitCode) => {
     const tool = part({
       tool: "run_terminal_command",
       title: "bash",
@@ -272,7 +340,7 @@ describe("getToolDisplayStrategy", () => {
           type: "Bash",
           output: [112, 97, 115, 115, 101, 100, 10],
           output_for_prompt: "exit: 0\npassed",
-          exit_code: 0,
+          exit_code: exitCode,
           command: "pnpm test",
           current_dir: "/repo",
           signal: null,
@@ -289,10 +357,10 @@ describe("getToolDisplayStrategy", () => {
       details: [
         { label: "Command", value: "pnpm test" },
         { label: "Workdir", value: "." },
-        { label: "Exit code", value: "0" },
+        { label: "Exit code", value: String(exitCode) },
       ],
       showInputPreview: false,
-      contentLabel: "Terminal output",
+      contentLabel: exitCode === 0 ? "Terminal output" : "Error",
       outputContent: { kind: "plain", text: "passed\n", language: "text", isCode: false },
     });
   });

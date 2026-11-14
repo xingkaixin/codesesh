@@ -222,12 +222,15 @@ export function buildCodexToolStrategy(
       secondaryText: summary || undefined,
       details: [],
       showInputPreview: false,
-      outputContent: buildCodexPatchOutputContent(
-        entries,
-        getOutputOrErrorText(state),
-        detectLanguageByFilePath,
-        formatPathForDisplay,
-      ),
+      outputContent:
+        state.status === "error"
+          ? { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false }
+          : buildCodexPatchOutputContent(
+              entries,
+              getOutputOrErrorText(state),
+              detectLanguageByFilePath,
+              formatPathForDisplay,
+            ),
     };
   }
 

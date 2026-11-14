@@ -146,7 +146,7 @@ export function buildClaudeToolStrategy(
       defaultStrategy,
       displayPath,
       outputContent:
-        diffBlocks.length > 0
+        state.status !== "error" && diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
           : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
     });

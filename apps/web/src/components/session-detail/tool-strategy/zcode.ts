@@ -181,7 +181,7 @@ export function buildZCodeToolStrategy(
           : null,
       ].filter((item): item is ToolDetailItem => item != null),
       outputContent:
-        blocks.length > 0
+        state.status !== "error" && blocks.length > 0
           ? { kind: "structured-diff", blocks }
           : { kind: "plain", text: outputText, language: "text", isCode: false },
     });
