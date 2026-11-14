@@ -56,6 +56,9 @@ fn assistant_part(value: &Value) -> Option<MessagePart> {
         }
         Some("tool") if value["name"].as_str().is_some_and(|name| !name.is_empty()) => {
             let state = &value["state"];
+            let invalid_error = (value["name"] == "invalid")
+                .then(|| nonempty(&state["input"]["error"]))
+                .flatten();
             Some(MessagePart::Tool {
                 tool: string(&value["name"]),
                 call_id: optional_string(&value["id"]),
@@ -63,13 +66,16 @@ fn assistant_part(value: &Value) -> Option<MessagePart> {
                 time_created: value["time"]["created"].as_f64(),
                 state: Box::new(ToolState {
                     status: match state["status"].as_str() {
+                        _ if invalid_error.is_some() => ToolPartStatus::Error,
                         Some("completed") => ToolPartStatus::Completed,
                         Some("error") => ToolPartStatus::Error,
                         _ => ToolPartStatus::Running,
                     },
                     input: state.get("input").map(clean_value),
                     output: output(&state["content"]),
-                    error: state.get("error").map(clean_value),
+                    error: invalid_error
+                        .map(|error| clean_value(&Value::String(error)))
+                        .or_else(|| state.get("error").map(clean_value)),
                     metadata: state.get("metadata").map(clean_value),
                 }),
             })
@@ -154,11 +160,17 @@ pub(super) fn message(row: &Value) -> Result<Option<Message>> {
                 .parts
                 .iter()
                 .filter_map(|part| match part {
-                    MessagePart::Tool { tool, state, .. } if tool == "subagent" => state
-                        .metadata
-                        .as_ref()
-                        .and_then(|v| nonempty(&v["sessionID"])),
+                    MessagePart::Tool { tool, state, .. }
+                        if matches!(tool.as_str(), "task" | "subagent") =>
+                    {
+                        state.metadata.as_ref()
+                    }
                     _ => None,
+                })
+                .flat_map(|metadata| {
+                    ["sessionId", "sessionID"]
+                        .into_iter()
+                        .filter_map(move |key| nonempty(&metadata[key]))
                 })
                 .collect();
             if children.len() == 1 {
