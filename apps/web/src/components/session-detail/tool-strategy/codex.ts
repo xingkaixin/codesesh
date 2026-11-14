@@ -86,7 +86,7 @@ export function buildCodexToolStrategy(
   baseDirectory?: string,
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
-  const toolKey = normalizeToolName(tool);
+  const toolKey = normalizeToolName(tool).replace(/^agents\./, "collaboration.");
   const metadata = toRecord(state.metadataValue);
   const namespace = toPlainText(metadata.namespace);
   const formatPathForDisplay = (path: string) => getDisplayPath(path, baseDirectory);
@@ -222,12 +222,15 @@ export function buildCodexToolStrategy(
       secondaryText: summary || undefined,
       details: [],
       showInputPreview: false,
-      outputContent: buildCodexPatchOutputContent(
-        entries,
-        getOutputOrErrorText(state),
-        detectLanguageByFilePath,
-        formatPathForDisplay,
-      ),
+      outputContent:
+        state.status === "error"
+          ? { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false }
+          : buildCodexPatchOutputContent(
+              entries,
+              getOutputOrErrorText(state),
+              detectLanguageByFilePath,
+              formatPathForDisplay,
+            ),
     };
   }
 

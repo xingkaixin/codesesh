@@ -8,7 +8,6 @@ import type { DiffBlock, DiffLineItem } from "../tool-output/types";
 import {
   type NormalizedToolState,
   getOutputOrErrorText,
-  normalizeEscapedNewlines,
   toStringValue,
   toRecord,
 } from "./tool-normalize";
@@ -22,16 +21,14 @@ export function buildStructuredDiffFromTexts(
   return [
     {
       label: getDiffBlockLabel(filePath),
-      lines: diffPartsToLines(
-        diffLines(normalizeEscapedNewlines(oldValue), normalizeEscapedNewlines(newValue)),
-      ),
+      lines: diffPartsToLines(diffLines(oldValue, newValue)),
     },
   ];
 }
 
 export function createDiffBlock(oldValue: string, newValue: string) {
-  const oldLines = normalizeEscapedNewlines(oldValue).split("\n");
-  const newLines = normalizeEscapedNewlines(newValue).split("\n");
+  const oldLines = oldValue.split("\n");
+  const newLines = newValue.split("\n");
   const diffLines = [
     "@@",
     ...oldLines.map((line) => `- ${line}`),
@@ -41,9 +38,8 @@ export function createDiffBlock(oldValue: string, newValue: string) {
 }
 
 export function splitDiffChunkLines(value: string) {
-  const normalized = normalizeEscapedNewlines(value);
-  const lines = normalized.split("\n");
-  if (normalized.endsWith("\n")) lines.pop();
+  const lines = value.split("\n");
+  if (value.endsWith("\n")) lines.pop();
   return lines;
 }
 
@@ -81,9 +77,7 @@ export function buildKimiEditDiffBlocks(state: NormalizedToolState, filePath: st
       if (!oldValue.trim() && !newValue.trim()) return null;
       return {
         label,
-        lines: diffPartsToLines(
-          diffLines(normalizeEscapedNewlines(oldValue), normalizeEscapedNewlines(newValue)),
-        ),
+        lines: diffPartsToLines(diffLines(oldValue, newValue)),
       };
     })
     .filter((block): block is DiffBlock => block != null && block.lines.length > 0);
@@ -101,9 +95,7 @@ export function buildPiEditDiffBlocks(state: NormalizedToolState, filePath: stri
       if (!oldValue.trim() && !newValue.trim()) return null;
       return {
         label,
-        lines: diffPartsToLines(
-          diffLines(normalizeEscapedNewlines(oldValue), normalizeEscapedNewlines(newValue)),
-        ),
+        lines: diffPartsToLines(diffLines(oldValue, newValue)),
       };
     })
     .filter((block): block is DiffBlock => block != null && block.lines.length > 0);
@@ -187,7 +179,7 @@ export function buildZCodeEditDiffBlocks(
 export function extractEditDiff(state: NormalizedToolState) {
   const metadata = toRecord(state.metadataValue);
   const diffText = toStringValue(metadata.diff);
-  if (diffText.trim()) return normalizeEscapedNewlines(diffText);
+  if (diffText.trim()) return diffText;
 
   const edits = getKimiEditEntries(state.inputValue);
   const generatedDiff = edits

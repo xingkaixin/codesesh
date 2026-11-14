@@ -146,7 +146,7 @@ export function buildClaudeToolStrategy(
       defaultStrategy,
       displayPath,
       outputContent:
-        diffBlocks.length > 0
+        state.status !== "error" && diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
           : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
     });
@@ -236,7 +236,7 @@ export function buildClaudeToolStrategy(
           : null,
         input.run_in_background === true ? { label: t("Mode"), value: t("Background") } : null,
       ].filter((item): item is { label: string; value: string } => item != null),
-      showInputPreview: false,
+      showInputPreview: true,
       contentLabel: t("Agent result"),
       outputContent: {
         kind: "plain",

@@ -181,7 +181,7 @@ export function buildZCodeToolStrategy(
           : null,
       ].filter((item): item is ToolDetailItem => item != null),
       outputContent:
-        blocks.length > 0
+        state.status !== "error" && blocks.length > 0
           ? { kind: "structured-diff", blocks }
           : { kind: "plain", text: outputText, language: "text", isCode: false },
     });
@@ -236,7 +236,7 @@ export function buildZCodeToolStrategy(
       title: subagentType ? t("agent · {0}", [subagentType]) : "agent",
       secondaryText: description || undefined,
       details: subagentType ? [{ label: t("Type"), value: subagentType }] : [],
-      showInputPreview: false,
+      showInputPreview: true,
       outputContent: {
         kind: "plain",
         text: outputText,

@@ -58,7 +58,7 @@ const TOOL_STATUS_META: Record<
     icon: CircleHelp,
   },
   completed: {
-    label: "Success",
+    label: "Completed",
     className: "bg-[var(--positive-soft)] text-[var(--positive)]",
     icon: CheckCircle2,
   },
@@ -81,7 +81,7 @@ const PLAN_STATUS_META: Record<PlanPart["approval_status"], (typeof TOOL_STATUS_
       className: "bg-[var(--console-surface-muted)] text-[var(--console-muted)]",
       icon: CircleDashed,
     },
-    success: TOOL_STATUS_META.completed,
+    success: { ...TOOL_STATUS_META.completed, label: "Success" },
     fail: TOOL_STATUS_META.error,
   };
 

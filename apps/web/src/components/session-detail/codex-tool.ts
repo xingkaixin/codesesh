@@ -39,10 +39,6 @@ function toDisplayValue(value: unknown) {
   return "";
 }
 
-function normalizeEscapedNewlines(text: string) {
-  return text.replace(/\\n/g, "\n");
-}
-
 function stripRecommendedSuffix(value: string) {
   return value.replace(/\s*\(Recommended\)\s*$/i, "").trim();
 }
@@ -81,8 +77,7 @@ function parseJsonText<T>(value: string): T | null {
 }
 
 export function stripCodexShellOutputPreamble(text: string) {
-  const normalized = normalizeEscapedNewlines(text);
-  const lines = normalized.split("\n");
+  const lines = text.split("\n");
   if (lines.length < 5) {
     return text;
   }

@@ -16,7 +16,6 @@ import {
   formatToolOutput,
   getOutputOrErrorText,
   getToolTitle,
-  normalizeEscapedNewlines,
   toPlainText,
   toRecord,
   toStringValue,
@@ -38,7 +37,7 @@ export function getCursorOutputRecord(rawOutput: unknown) {
 export function extractCursorReadContent(rawOutput: unknown) {
   const output = getCursorOutputRecord(rawOutput);
   const contents = toStringValue(output.contents);
-  if (contents) return normalizeEscapedNewlines(contents);
+  if (contents) return contents;
   return t("No output captured.");
 }
 
@@ -96,7 +95,7 @@ export function buildCursorToolStrategy(
   }
 
   if (toolKey === "edit_file_v2") {
-    const diffText = normalizeEscapedNewlines(toStringValue(input.streamingContent));
+    const diffText = toStringValue(input.streamingContent);
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,

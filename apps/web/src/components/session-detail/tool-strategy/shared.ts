@@ -18,7 +18,6 @@ import {
   getOutputOrErrorText,
   getToolTitle,
   joinToolText,
-  normalizeEscapedNewlines,
   toPlainText,
   toRecord,
   toStringValue,
@@ -58,7 +57,7 @@ export function extractWriteContent(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);
   if (state.status === "completed") {
     const contentText = toStringValue(input.content);
-    if (contentText.trim()) return normalizeEscapedNewlines(contentText);
+    if (contentText.trim()) return contentText;
   }
   return getOutputOrErrorText(state);
 }
@@ -129,16 +128,24 @@ function buildFileToolStrategy(options: FileToolStrategyOptions): ToolDisplayStr
 }
 
 export function buildFileReadStrategy(options: FileReadStrategyOptions): ToolDisplayStrategy {
+  const failed = options.state.status === "error";
   return buildFileToolStrategy({
     ...options,
     Icon: BookOpenText,
     title: "read",
-    outputContent: options.outputContent ?? {
-      kind: "plain",
-      text: options.text ?? extractReadContent(options.state.outputValue),
-      language: detectLanguageByFilePath(options.filePath),
-      isCode: options.isCode ?? true,
-    },
+    outputContent: failed
+      ? {
+          kind: "plain",
+          text: getOutputOrErrorText(options.state),
+          language: "text",
+          isCode: false,
+        }
+      : (options.outputContent ?? {
+          kind: "plain",
+          text: options.text ?? extractReadContent(options.state.outputValue),
+          language: detectLanguageByFilePath(options.filePath),
+          isCode: options.isCode ?? true,
+        }),
   });
 }
 
