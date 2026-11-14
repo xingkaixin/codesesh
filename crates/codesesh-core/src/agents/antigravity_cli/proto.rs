@@ -2,12 +2,54 @@
 pub(super) struct Step {
     #[prost(message, optional, tag = "5")]
     pub metadata: Option<StepMetadata>,
+    #[prost(message, optional, tag = "14")]
+    pub view_file: Option<FileView>,
     #[prost(message, optional, tag = "19")]
     pub user: Option<UserPrompt>,
     #[prost(message, optional, tag = "20")]
     pub assistant: Option<Text>,
+    #[prost(message, optional, tag = "28")]
+    pub run_command: Option<CommandRun>,
     #[prost(message, optional, tag = "30")]
     pub title: Option<Title>,
+    #[prost(message, optional, tag = "31")]
+    pub error: Option<ErrorDetails>,
+    #[prost(message, optional, tag = "47")]
+    pub mcp: Option<McpCall>,
+    #[prost(message, optional, tag = "140")]
+    pub tool: Option<ToolExecution>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct ToolExecution {
+    #[prost(message, optional, tag = "2")]
+    pub result: Option<Text>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct FileView {
+    #[prost(string, optional, tag = "4")]
+    pub content: Option<String>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct CommandRun {
+    #[prost(message, optional, tag = "21")]
+    pub output: Option<Text>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct McpCall {
+    #[prost(string, optional, tag = "3")]
+    pub result: Option<String>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct ErrorDetails {
+    #[prost(string, optional, tag = "2")]
+    pub message: Option<String>,
+    #[prost(string, optional, tag = "3")]
+    pub details: Option<String>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
