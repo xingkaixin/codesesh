@@ -269,7 +269,7 @@ describe("getToolDisplayStrategy", () => {
       expect(strategy).toMatchObject({
         title,
         secondaryText: "src/example.ts",
-        showInputPreview: false,
+        showInputPreview: agentName === "cursor",
       });
       if (title !== "edit") {
         expect(strategy.outputContent).toMatchObject({
