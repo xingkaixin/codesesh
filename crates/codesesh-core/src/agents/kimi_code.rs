@@ -141,9 +141,15 @@ fn scan_directories(
                             continue;
                         }
                         let parts = output_parts(&m["content"], ts);
-                        if !call.is_empty()
-                            && builder.resolve(call, parts.clone(), ToolPartStatus::Completed, None)
+                        let status = if content_text(&m["content"], false)
+                            .trim_start()
+                            .starts_with("<system>ERROR:")
                         {
+                            ToolPartStatus::Error
+                        } else {
+                            ToolPartStatus::Completed
+                        };
+                        if !call.is_empty() && builder.resolve(call, parts.clone(), status, None) {
                             continue;
                         }
                         if !parts.is_empty() {
@@ -430,6 +436,80 @@ pub fn affected_session_dirs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn compatibility_results_recognize_system_errors_and_preserve_output() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("sessions/hash/session");
+        std::fs::create_dir_all(path.join("agents/main")).unwrap();
+        std::fs::write(path.join("state.json"), "{}").unwrap();
+        let cases = [
+            (
+                "ReadFile",
+                json!({"path": "src/missing.rs"}),
+                "<system>ERROR: `src/missing.rs` does not exist.</system>",
+                ToolPartStatus::Error,
+            ),
+            (
+                "Shell",
+                json!({"command": "cargo check"}),
+                "<system>ERROR: Command killed by timeout (60s)</system>",
+                ToolPartStatus::Error,
+            ),
+            (
+                "StrReplaceFile",
+                json!({"path": "src/main.rs", "edit": {"old": "before", "new": "after"}}),
+                "<system>ERROR: No replacements were made</system>",
+                ToolPartStatus::Error,
+            ),
+            (
+                "Shell",
+                json!({"command": "cat example.txt"}),
+                "Example containing ERROR: without a system error prefix",
+                ToolPartStatus::Completed,
+            ),
+        ];
+        let mut records = Vec::new();
+        for (i, (name, input, output, _)) in cases.iter().enumerate() {
+            let call_id = format!("{name}:{i}");
+            records.push(json!({"type": "context.append_message", "message": {
+                "role": "assistant", "content": [],
+                "toolCalls": [{"id": call_id, "function": {"name": name, "arguments": input.to_string()}}]
+            }}));
+            records.push(json!({"type": "context.append_message", "message": {
+                "role": "tool", "toolCallId": call_id,
+                "content": [{"type": "text", "text": output}]
+            }}));
+        }
+        std::fs::write(
+            path.join("agents/main/wire.jsonl"),
+            records
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let states = sessions[0]
+            .detail
+            .messages
+            .iter()
+            .flat_map(|m| &m.parts)
+            .filter_map(|part| match part {
+                MessagePart::Tool { state, .. } => Some(state),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(states.len(), cases.len());
+        for (state, (_, _, output, status)) in states.into_iter().zip(cases) {
+            assert_eq!(state.status, status);
+            assert_eq!(state.output.as_ref().unwrap()[0]["text"], output);
+        }
+    }
+
     #[test]
     fn matches_node_1_0_12_adapter_golden() {
         let root = tempfile::tempdir().unwrap();

@@ -1,9 +1,11 @@
 /**
- * Kimi tool display strategy — glob/grep/shell/readFile/strReplaceFile/writeFile.
+ * Kimi tool display strategy.
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
 import type { ToolPart } from "@codesesh/contract";
+import { t } from "../../../i18n/translate";
+import type { ToolDetailItem } from "../codex-tool";
 import { buildKimiEditDiffBlocks, extractEditDiff } from "../diff";
 import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
@@ -20,6 +22,7 @@ import {
   buildSearchToolStrategy,
   buildShellToolStrategy,
 } from "./shared";
+import { buildZCodeToolStrategy } from "./zcode";
 
 export function buildKimiToolStrategy(
   tool: ToolPart,
@@ -63,8 +66,21 @@ export function buildKimiToolStrategy(
     });
   }
 
-  if (toolKey === "readfile") {
-    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+  if (toolKey === "readfile" || toolKey === "read") {
+    return buildFileReadStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
+      details: [
+        typeof input.line_offset === "number"
+          ? { label: t("Offset"), value: String(input.line_offset) }
+          : null,
+        typeof input.n_lines === "number"
+          ? { label: t("Lines"), value: String(input.n_lines) }
+          : null,
+      ].filter((item): item is ToolDetailItem => item != null),
+    });
   }
 
   if (toolKey === "strreplacefile") {
@@ -81,6 +97,15 @@ export function buildKimiToolStrategy(
 
   if (toolKey === "writefile") {
     return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+  }
+
+  if (toolKey === "agent" || toolKey === "searchweb") {
+    const strategy = buildZCodeToolStrategy(
+      { ...tool, tool: toolKey === "searchweb" ? "websearch" : tool.tool, title: "" },
+      state,
+      baseDirectory,
+    );
+    return { ...strategy, showInputPreview: toolKey === "agent" };
   }
 
   return defaultStrategy;
