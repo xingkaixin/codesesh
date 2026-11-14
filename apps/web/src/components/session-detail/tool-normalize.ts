@@ -3,7 +3,7 @@ import { t } from "../../i18n/translate";
  * Tool / message text normalization and the shared NormalizedToolState type.
  *
  * Leaf helpers (escapeRegExp, parseInputCandidate, compactText, toRecord,
- * toPlainText, toStringValue, parseJsonText, normalizeEscapedNewlines) live
+ * toPlainText, toStringValue, parseJsonText) live
  * in ./utils and are re-exported here for convenience.
  */
 import type { LoaderCircle } from "../ui/icons";
@@ -11,14 +11,7 @@ import type { Message, ToolPart } from "@codesesh/contract";
 import type { ToolOutputContent } from "../tool-output/types";
 import type { ToolDetailItem } from "./codex-tool";
 import { inlineImageSource, resolveLocalMediaSource } from "../../lib/local-media-policy";
-import {
-  compactText,
-  normalizeEscapedNewlines,
-  parseInputCandidate,
-  toPlainText,
-  toRecord,
-  toStringValue,
-} from "./utils";
+import { compactText, parseInputCandidate, toPlainText, toRecord, toStringValue } from "./utils";
 
 export type ToolStatus = "unknown" | "running" | "completed" | "error";
 
@@ -108,14 +101,7 @@ export function toDisplayText(value: unknown) {
   }
 }
 
-export {
-  compactText,
-  normalizeEscapedNewlines,
-  parseInputCandidate,
-  toPlainText,
-  toRecord,
-  toStringValue,
-};
+export { compactText, parseInputCandidate, toPlainText, toRecord, toStringValue };
 
 export function extractToolTextSegments(value: unknown): string[] {
   if (typeof value === "string") return [value];
@@ -189,8 +175,7 @@ export function getToolTitle(tool: ToolPart, fallback = t("Tool")) {
 export function formatToolOutput(value: unknown) {
   const structuredText = joinToolText(value);
   const text = structuredText || toDisplayText(value);
-  const normalized = normalizeEscapedNewlines(text);
-  return normalized || t("No output captured.");
+  return text || t("No output captured.");
 }
 
 export function getOutputOrErrorText(state: NormalizedToolState) {

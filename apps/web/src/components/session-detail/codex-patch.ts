@@ -20,10 +20,6 @@ function toStringValue(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-function normalizeEscapedNewlines(text: string) {
-  return text.replace(/\\n/g, "\n");
-}
-
 export function normalizeCodexPatchEntry(entry: unknown): CodexPatchEntry | null {
   const record = toRecord(entry);
   const type = toStringValue(record.type);
@@ -95,7 +91,7 @@ function buildCodexPatchSections(
         operation: "write",
         language: detectLanguageByFilePath(entry.path),
         isCode: true,
-        text: normalizeEscapedNewlines(entry.content),
+        text: entry.content,
       });
       return sections;
     }
@@ -106,7 +102,7 @@ function buildCodexPatchSections(
         operation: "edit",
         language: "diff",
         isCode: true,
-        text: normalizeEscapedNewlines(entry.content),
+        text: entry.content,
       });
       return sections;
     }

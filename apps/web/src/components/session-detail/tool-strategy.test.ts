@@ -39,6 +39,104 @@ const FILE_TOOL_CASES = [
 ] as const;
 
 describe("getToolDisplayStrategy", () => {
+  const sourceText = 'let newline = UInt8(ascii: "\\n")\nlet value = 1';
+
+  it.each(["deepchat", "claudecode"])(
+    "preserves literal escapes in decoded %s read output",
+    (agentName) => {
+      const tool = part({
+        tool: "Read",
+        state: { status: "completed", output: sourceText },
+      });
+      const strategy = getToolDisplayStrategy(agentName, tool, normalizeToolState(tool));
+
+      expect(strategy.outputContent).toMatchObject({ kind: "plain", text: sourceText });
+    },
+  );
+
+  it("decodes the Cursor JSON envelope without unescaping its file contents again", () => {
+    const tool = part({
+      tool: "read_file_v2",
+      state: { status: "completed", output: JSON.stringify({ contents: sourceText }) },
+    });
+    const strategy = getToolDisplayStrategy("cursor", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toMatchObject({ kind: "plain", text: sourceText });
+  });
+
+  it("preserves literal escapes in written file contents", () => {
+    const tool = part({
+      tool: "Write",
+      state: { status: "completed", input: { content: sourceText }, output: "File written" },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toMatchObject({ kind: "plain", text: sourceText });
+  });
+
+  it("keeps literal escapes on their original lines in an edit diff", () => {
+    const tool = part({
+      tool: "Edit",
+      state: {
+        status: "completed",
+        input: { old_string: "let value = 0", new_string: sourceText },
+      },
+    });
+    const strategy = getToolDisplayStrategy("claudecode", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toMatchObject({
+      kind: "structured-diff",
+      blocks: [
+        {
+          lines: [
+            { type: "remove", text: "let value = 0" },
+            { type: "add", text: 'let newline = UInt8(ascii: "\\n")' },
+            { type: "add", text: "let value = 1" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("preserves literal escapes in Codex patch contents", () => {
+    const tool = part({
+      tool: "patch",
+      title: "patch",
+      state: {
+        status: "completed",
+        input: [{ type: "write_file", path: "example.swift", content: sourceText }],
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toMatchObject({
+      kind: "file-sections",
+      sections: [{ text: sourceText }],
+    });
+  });
+
+  it("preserves literal escapes after removing the Codex shell envelope", () => {
+    const tool = part({
+      tool: "bash",
+      title: "bash",
+      state: {
+        status: "completed",
+        input: { cmd: "cat example.swift" },
+        output: [
+          "Chunk ID: example",
+          "Wall time: 0.1 seconds",
+          "Process exited with code 0",
+          "Original token count: 10",
+          "Output:",
+          sourceText,
+        ].join("\n"),
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy.outputContent).toMatchObject({ kind: "plain", text: sourceText });
+  });
+
   it.each(FILE_TOOL_CASES)(
     "normalizes %s %s to the canonical %s file strategy",
     (agentName, toolName, title) => {

@@ -18,7 +18,6 @@ import {
   getOutputOrErrorText,
   getToolTitle,
   joinToolText,
-  normalizeEscapedNewlines,
   toPlainText,
   toRecord,
   toStringValue,
@@ -58,7 +57,7 @@ export function extractWriteContent(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);
   if (state.status === "completed") {
     const contentText = toStringValue(input.content);
-    if (contentText.trim()) return normalizeEscapedNewlines(contentText);
+    if (contentText.trim()) return contentText;
   }
   return getOutputOrErrorText(state);
 }

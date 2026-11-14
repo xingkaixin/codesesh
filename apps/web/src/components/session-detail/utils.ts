@@ -42,7 +42,3 @@ export function parseJsonText<T>(value: string): T | null {
     return null;
   }
 }
-
-export function normalizeEscapedNewlines(text: string): string {
-  return text.replaceAll(/\\n/g, "\n");
-}
