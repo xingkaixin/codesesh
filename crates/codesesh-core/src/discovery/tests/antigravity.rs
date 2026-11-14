@@ -22,9 +22,9 @@ fn write_summary(directory: &Path, id: &str, title: &str) {
             .join("conversation_summaries.db"),
     )
     .unwrap();
-    db.execute_batch("CREATE TABLE IF NOT EXISTS conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT);").unwrap();
+    db.execute_batch("CREATE TABLE IF NOT EXISTS conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT, agent_name TEXT);").unwrap();
     db.execute(
-        "INSERT OR REPLACE INTO conversation_summaries VALUES (?1,?2,'[]','','')",
+        "INSERT OR REPLACE INTO conversation_summaries (conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id) VALUES (?1,?2,'[]','','')",
         [id, title],
     )
     .unwrap();

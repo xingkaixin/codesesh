@@ -8,10 +8,10 @@ fn fixture(root: &Path) -> PathBuf {
     let db = Connection::open(&path).unwrap();
     db.execute_batch(include_str!("fixture.sql")).unwrap();
     let summaries = Connection::open(root.join("conversation_summaries.db")).unwrap();
-    summaries.execute_batch("CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT);").unwrap();
+    summaries.execute_batch("CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT, agent_name TEXT);").unwrap();
     let workspace = url::Url::from_file_path(root.join("agy-fixture")).unwrap();
     summaries.execute(
-        "INSERT INTO conversation_summaries VALUES ('session', '', ?1, '2026-09-02 16:57:28.971105+00:00', '')",
+        "INSERT INTO conversation_summaries (conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id) VALUES ('session', '', ?1, '2026-09-02 16:57:28.971105+00:00', '')",
         [json!([workspace.as_str()]).to_string()],
     ).unwrap();
     path
@@ -27,6 +27,196 @@ fn bytes(tag: u32, value: impl AsRef<[u8]>) -> Vec<u8> {
     let mut buffer = Vec::new();
     prost::encoding::bytes::encode(tag, &value.as_ref().to_vec(), &mut buffer);
     buffer
+}
+
+#[test]
+fn native_tool_results_keep_new_and_legacy_evidence_without_guessing_success() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(temp.path());
+    let db = Connection::open(&path).unwrap();
+    db.execute("DELETE FROM steps", []).unwrap();
+    let cases = [
+        (
+            132,
+            "read_file",
+            bytes(140, bytes(2, bytes(1, "10: const x = 1;"))),
+            "10: const x = 1;",
+        ),
+        (
+            132,
+            "run_command",
+            bytes(
+                140,
+                bytes(
+                    2,
+                    bytes(1, "Command exited with code 1.\nCommand output:\nfailed"),
+                ),
+            ),
+            "Command exited with code 1.\nCommand output:\nfailed",
+        ),
+        (
+            8,
+            "view_file",
+            bytes(14, bytes(4, "const pattern = /\\n/;")),
+            "const pattern = /\\n/;",
+        ),
+        (
+            21,
+            "run_command",
+            bytes(28, [varint(6, 0), bytes(21, bytes(1, "done\r\n"))].concat()),
+            "done\r\n",
+        ),
+        (
+            38,
+            "call_mcp_tool",
+            bytes(
+                47,
+                bytes(3, r#"{"width":728,"screenshot":{"mimeType":"image/png"}}"#),
+            ),
+            r#"{"width":728,"screenshot":{"mimeType":"image/png"}}"#,
+        ),
+    ];
+    for (index, (kind, name, result, _)) in cases.iter().enumerate() {
+        let call = bytes(
+            5,
+            bytes(
+                4,
+                [bytes(1, format!("call-{index}")), bytes(2, name)].concat(),
+            ),
+        );
+        db.execute(
+            "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (?1,?2,3,?3)",
+            rusqlite::params![index as i64, kind, [call, result.clone()].concat()],
+        )
+        .unwrap();
+    }
+    let sessions = scan_paths(&Pricing::bundled(), &[path]).unwrap();
+    let messages = &sessions[0].detail.messages;
+    assert_eq!(messages.len(), cases.len());
+    for (message, (_, name, _, expected)) in messages.iter().zip(cases) {
+        let MessagePart::Tool { tool, state, .. } = &message.parts[0] else {
+            panic!("missing tool");
+        };
+        assert_eq!(tool, name);
+        assert_eq!(state.status, ToolPartStatus::Unknown);
+        assert_eq!(state.output, Some(Value::String(expected.into())));
+        assert!(state.error.is_none());
+    }
+}
+
+#[test]
+fn explicit_tool_errors_survive_column_and_payload_forms() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(temp.path());
+    let db = Connection::open(&path).unwrap();
+    db.execute("DELETE FROM steps", []).unwrap();
+    let error = [
+        bytes(
+            2,
+            "invalid line range: StartLine 170 is greater than EndLine 100",
+        ),
+        bytes(
+            3,
+            "invalid line range: StartLine 170 is greater than EndLine 100",
+        ),
+    ]
+    .concat();
+    for index in 0..2 {
+        let payload = [
+            bytes(
+                5,
+                bytes(
+                    4,
+                    [
+                        bytes(2, "read_file"),
+                        bytes(3, r#"{"Path":"/repo/a.ts","StartLine":170,"EndLine":100}"#),
+                    ]
+                    .concat(),
+                ),
+            ),
+            bytes(140, bytes(2, bytes(1, "partial output"))),
+            if index == 1 {
+                bytes(31, &error)
+            } else {
+                Vec::new()
+            },
+        ]
+        .concat();
+        db.execute(
+            "INSERT INTO steps (idx,step_type,status,step_payload,error_details) VALUES (?1,132,7,?2,?3)",
+            rusqlite::params![index, payload, (index == 0).then_some(&error)],
+        ).unwrap();
+    }
+    let sessions = scan_paths(&Pricing::bundled(), &[path]).unwrap();
+    for message in &sessions[0].detail.messages {
+        let MessagePart::Tool { state, .. } = &message.parts[0] else {
+            panic!("missing tool")
+        };
+        assert_eq!(state.status, ToolPartStatus::Error);
+        assert_eq!(state.output, Some(json!("partial output")));
+        assert_eq!(
+            state.error,
+            Some(json!(
+                "invalid line range: StartLine 170 is greater than EndLine 100"
+            ))
+        );
+    }
+}
+
+#[test]
+fn child_names_fall_back_without_replacing_titles_or_session_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(temp.path());
+    let db = Connection::open(&path).unwrap();
+    db.execute("DELETE FROM steps", []).unwrap();
+    db.execute(
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (0,132,3,?1)",
+        [[
+            bytes(5, bytes(4, [bytes(2, "swarm"), bytes(3, r#"{"action":"add","name":"worker","brief":"Check parsing"}"#)].concat())),
+            bytes(140, bytes(2, bytes(1, "Created At: 2026-11-14T10:00:00+08:00\nCompleted At: 2026-11-14T10:00:01+08:00\n{\"status\":\"added\",\"name\":\"worker\",\"conversation_id\":\"child-id\"}"))),
+        ].concat()],
+    ).unwrap();
+    let summaries = Connection::open(temp.path().join("conversation_summaries.db")).unwrap();
+    summaries
+        .execute("UPDATE conversation_summaries SET agent_name='worker'", [])
+        .unwrap();
+    let title = || {
+        scan_paths(&Pricing::bundled(), std::slice::from_ref(&path))
+            .unwrap()
+            .remove(0)
+    };
+    let root = title();
+    assert_eq!(root.head.title, "Untitled Session");
+    assert_eq!(
+        root.detail.messages[0].subagent_id.as_deref(),
+        Some("child-id")
+    );
+    summaries
+        .execute(
+            "UPDATE conversation_summaries SET parent_conversation_id='parent-id'",
+            [],
+        )
+        .unwrap();
+    let child = title();
+    assert_eq!(child.head.title, "worker");
+    assert_eq!(child.head.reference.session_id, "session");
+    assert_eq!(
+        child.head.parent_reference.as_ref().unwrap().session_id,
+        "parent-id"
+    );
+    summaries
+        .execute(
+            "UPDATE conversation_summaries SET title='Summary title'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(title().head.title, "Summary title");
+    db.execute(
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (1,23,3,?1)",
+        [bytes(30, bytes(4, "Updated title"))],
+    )
+    .unwrap();
+    assert_eq!(title().head.title, "Updated title");
 }
 
 #[test]
@@ -55,12 +245,12 @@ fn acp_reads_native_workspace_and_model_without_a_summary_store() {
     ]
     .concat();
     db.execute(
-        "INSERT INTO steps VALUES (0,14,3,?1)",
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (0,14,3,?1)",
         [bytes(19, bytes(2, "Find ACP history"))],
     )
     .unwrap();
     db.execute(
-        "INSERT INTO steps VALUES (1,15,3,?1)",
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (1,15,3,?1)",
         [[
             bytes(
                 5,
@@ -156,10 +346,16 @@ fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
         )],
     )
     .unwrap();
-    db.execute("INSERT INTO steps VALUES (6, 15, 3, ?1)", [response])
-        .unwrap();
-    db.execute("INSERT INTO steps VALUES (7, 132, 3, ?1)", [tool])
-        .unwrap();
+    db.execute(
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (6, 15, 3, ?1)",
+        [response],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (7, 132, 3, ?1)",
+        [tool],
+    )
+    .unwrap();
     let scan_root = temp.path().join("conversations");
     let sessions = scan(&scan_root, &Pricing::bundled()).unwrap();
     let session = &sessions[0];
@@ -306,7 +502,7 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
     let summaries = Connection::open(temp.path().join("conversation_summaries.db")).unwrap();
     summaries
         .execute_batch(
-            "CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT);",
+            "CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT, agent_name TEXT);",
         )
         .unwrap();
 
@@ -314,20 +510,20 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
         let db_path = conversations.join(format!("{id}.db"));
         let db = Connection::open(&db_path).unwrap();
         db.execute_batch(
-            "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL, status INTEGER NOT NULL, step_payload BLOB);
+            "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL, status INTEGER NOT NULL, step_payload BLOB, error_details BLOB);
              CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);",
         )
         .unwrap();
         for (idx, payload) in steps {
             db.execute(
-                "INSERT INTO steps VALUES (?1, ?2, 3, ?3)",
+                "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (?1, ?2, 3, ?3)",
                 rusqlite::params![idx, if idx == 0 { 14 } else { 132 }, payload],
             )
             .unwrap();
         }
         summaries
             .execute(
-                "INSERT INTO conversation_summaries VALUES (?1, '', ?2, '2026-09-02 16:57:28.971105+00:00', ?3)",
+                "INSERT INTO conversation_summaries (conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id) VALUES (?1, '', ?2, '2026-09-02 16:57:28.971105+00:00', ?3)",
                 [id, &workspaces_json, parent],
             )
             .unwrap();

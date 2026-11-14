@@ -79,13 +79,14 @@ struct Summary {
     workspaces: String,
     modified: String,
     parent: String,
+    agent_name: String,
 }
 
 fn load_summary(summaries: Option<&Connection>, id: &str) -> Result<Summary> {
     Ok(summaries
         .map(|db| {
             db.query_row(
-                "SELECT title,workspace_uris,last_modified_time,parent_conversation_id FROM conversation_summaries WHERE conversation_id=?1",
+                "SELECT title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries WHERE conversation_id=?1",
                 [id],
                 |row| {
                     Ok(Summary {
@@ -93,6 +94,7 @@ fn load_summary(summaries: Option<&Connection>, id: &str) -> Result<Summary> {
                         workspaces: row.get(1)?,
                         modified: row.get(2)?,
                         parent: row.get(3)?,
+                        agent_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
                     })
                 },
             )
@@ -135,7 +137,7 @@ fn parse(
     let mut command_hits = vec![0usize; candidates.len()];
     let models = model_names(&db, path)?;
     let mut statement = db
-        .prepare("SELECT idx,step_type,status,step_payload FROM steps ORDER BY idx")
+        .prepare("SELECT idx,step_type,status,step_payload,error_details FROM steps ORDER BY idx")
         .with_context(|| format!("unsupported Antigravity CLI database {}", path.display()))?;
     let mut rows = statement.query([])?;
     let mut messages = Vec::new();
@@ -157,6 +159,19 @@ fn parse(
         let step = proto::Step::decode(payload.as_slice()).with_context(|| {
             format!("invalid Antigravity CLI step {index} in {}", path.display())
         })?;
+        let output = tool_output(&step, kind);
+        let error_details: Option<Vec<u8>> = row.get(4)?;
+        let error = error_details
+            .map(|data| proto::ErrorDetails::decode(data.as_slice()))
+            .transpose()
+            .with_context(|| {
+                format!(
+                    "invalid Antigravity CLI error at step {index} in {}",
+                    path.display()
+                )
+            })?
+            .and_then(tool_error)
+            .or_else(|| step.error.and_then(tool_error));
         let metadata = step.metadata.unwrap_or_default();
         let created = metadata
             .created
@@ -226,6 +241,7 @@ fn parse(
             }
             _ => None,
         };
+        let mut subagent_id = None;
         let part = part.or_else(|| {
             let call = metadata.call?;
             let name = call
@@ -235,6 +251,9 @@ fn parse(
             let input = call
                 .input
                 .map(|input| serde_json::from_str(&input).unwrap_or(Value::String(input)));
+            if error.is_none() {
+                subagent_id = swarm_child_id(&name, input.as_ref(), output.as_deref());
+            }
             if candidates.len() > 1
                 && let Some(input) = &input
             {
@@ -255,10 +274,14 @@ fn parse(
                     title: None,
                     time_created: None,
                     state: Box::new(ToolState {
-                        status: ToolPartStatus::Unknown,
+                        status: if error.is_some() {
+                            ToolPartStatus::Error
+                        } else {
+                            ToolPartStatus::Unknown
+                        },
                         input,
-                        output: None,
-                        error: None,
+                        output: output.map(Value::String),
+                        error: error.map(Value::String),
                         metadata: Some(
                             json!({"antigravity_step_type":kind,"antigravity_status":status}),
                         ),
@@ -268,6 +291,7 @@ fn parse(
         });
         if let Some((role, part)) = part {
             let mut message = common::message(format!("{id}:{index}"), role, created, vec![part]);
+            message.subagent_id = subagent_id;
             if message.role == Role::Assistant {
                 message.agent = Some("antigravity-cli".into());
                 attach(
@@ -324,7 +348,9 @@ fn parse(
             MessagePart::Text { text, .. } => Some(text.as_str()),
             _ => None,
         });
-    let title = common::title(&[Some(&title), prompt]);
+    let agent_name =
+        (!summary.parent.is_empty() && summary.parent != id).then_some(summary.agent_name.as_str());
+    let title = common::title(&[Some(&title), agent_name, prompt]);
     stats.message_count = messages.len();
     let times = messages.iter().map(|message| message.time_created);
     let created = times.clone().fold(time, f64::min);
@@ -343,11 +369,54 @@ fn parse(
         messages,
     );
     let notice = format!(
-        "Partial Antigravity CLI import: {unsupported} unsupported steps. Tool outcomes are not decoded."
+        "Partial Antigravity CLI import: {unsupported} unsupported steps. Numeric tool statuses remain unknown; explicit results and errors are retained."
     );
     session.head.summary_files = Some(Value::String(notice));
     session.detail.head = session.head.clone();
     Ok(Some(session))
+}
+
+fn tool_output(step: &proto::Step, kind: i64) -> Option<String> {
+    match kind {
+        132 => step.tool.as_ref()?.result.as_ref()?.text.clone(),
+        8 => step.view_file.as_ref()?.content.clone(),
+        21 => step.run_command.as_ref()?.output.as_ref()?.text.clone(),
+        38 => step.mcp.as_ref()?.result.clone(),
+        _ => None,
+    }
+    .filter(|text| !text.is_empty())
+}
+
+fn tool_error(error: proto::ErrorDetails) -> Option<String> {
+    let mut parts = Vec::new();
+    for text in [error.message, error.details].into_iter().flatten() {
+        if !text.trim().is_empty() && !parts.contains(&text) {
+            parts.push(text);
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("\n"))
+}
+
+fn swarm_child_id(tool: &str, input: Option<&Value>, output: Option<&str>) -> Option<String> {
+    if tool != "swarm" || input?.get("action")?.as_str()? != "add" {
+        return None;
+    }
+    let output = output?;
+    let body = if output.starts_with("Created At: ") {
+        let (_, rest) = output.split_once('\n')?;
+        rest.strip_prefix("Completed At: ")?.split_once('\n')?.1
+    } else {
+        output
+    };
+    let result: Value = serde_json::from_str(body).ok()?;
+    if result.get("status")?.as_str()? != "added" {
+        return None;
+    }
+    result
+        .get("conversation_id")?
+        .as_str()
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_owned)
 }
 
 fn user_prompt_text(user: proto::UserPrompt) -> Option<String> {
