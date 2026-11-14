@@ -1,6 +1,6 @@
 import { t } from "../../../i18n/translate";
 /**
- * Grok tool display strategy — read_file/run_terminal_command/web_fetch rendering.
+ * Grok tool display strategy for native result envelopes.
  *
  * Pure logic — no React. Consumed by ./index's TOOL_STRATEGY_BUILDERS.
  */
@@ -16,10 +16,11 @@ import {
   normalizeToolName,
   toPlainText,
   toRecord,
+  toDisplayText,
   toStringValue,
 } from "../tool-normalize";
-import { buildDefaultToolStrategy, buildFileReadStrategy } from "./shared";
-import { FileSearch, SquareTerminal } from "../../ui/icons";
+import { buildDefaultToolStrategy, buildFileReadStrategy, buildSearchToolStrategy } from "./shared";
+import { Bot, FileSearch, SquareTerminal, Wrench } from "../../ui/icons";
 
 const READ_ERROR_KEYS = [
   "FileNotFound",
@@ -37,6 +38,15 @@ function integerValue(value: unknown) {
 function payloadFromState(state: NormalizedToolState) {
   const output = toRecord(state.outputValue);
   return Object.keys(output).length > 0 ? output : toRecord(state.errorValue);
+}
+
+function payloadDetails(payload: Record<string, unknown>, omitted: string[]) {
+  return Object.entries(payload)
+    .filter(([key, value]) => !omitted.includes(key) && value != null)
+    .map(([label, value]) => ({
+      label,
+      value: typeof value === "string" ? value : toDisplayText(value),
+    }));
 }
 
 function messageFromPayload(payload: Record<string, unknown>) {
@@ -171,10 +181,10 @@ function buildGrokReadStrategy(
   });
 }
 
-function decodeTerminalOutput(payload: Record<string, unknown>) {
-  if (typeof payload.output === "string") return payload.output;
-  if (Array.isArray(payload.output)) {
-    const bytes = payload.output;
+function decodeByteText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const bytes = value;
     if (
       bytes.every(
         (value) =>
@@ -183,9 +193,8 @@ function decodeTerminalOutput(payload: Record<string, unknown>) {
     ) {
       return new TextDecoder().decode(Uint8Array.from(bytes));
     }
-    return "";
   }
-  return toStringValue(payload.output_for_prompt);
+  return null;
 }
 
 function buildGrokBashStrategy(
@@ -197,6 +206,28 @@ function buildGrokBashStrategy(
   const payload = payloadFromState(state);
   const command = toStringValue(input.command) || toStringValue(payload.command);
   const description = toPlainText(input.description) || toPlainText(payload.description);
+  if (payload.type === "BackgroundTaskStarted") {
+    return {
+      ...defaultStrategy,
+      Icon: Bot,
+      title: "task",
+      secondaryText: toPlainText(payload.task_id) || description || undefined,
+      details: payloadDetails(payload, ["type", "summary", "retrieval_hint"]),
+      outputContent:
+        payload.status === "running"
+          ? {
+              kind: "task-list",
+              items: [
+                {
+                  label: toStringValue(payload.summary) || toPlainText(payload.task_id),
+                  status: "in_progress",
+                  detail: toStringValue(payload.retrieval_hint) || undefined,
+                },
+              ],
+            }
+          : defaultStrategy.outputContent,
+    };
+  }
   const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
   const currentDirectory = getDisplayPath(toPlainText(payload.current_dir), baseDirectory);
   const outputFile = getDisplayPath(toPlainText(payload.output_file), baseDirectory);
@@ -214,7 +245,11 @@ function buildGrokBashStrategy(
     if (outputFile) details.push({ label: t("Full output"), value: outputFile });
   }
 
-  const outputText = decodeTerminalOutput(payload) || messageFromPayload(payload);
+  const outputText =
+    decodeByteText(payload.output) ??
+    (toStringValue(payload.output_for_prompt) ||
+      messageFromPayload(payload) ||
+      getOutputOrErrorText(state));
   const failed = state.status === "error" || (exitCode !== null && exitCode !== 0);
   return {
     ...defaultStrategy,
@@ -230,6 +265,33 @@ function buildGrokBashStrategy(
       language: "text",
       isCode: false,
     },
+  };
+}
+
+function buildGrokTaskOutputStrategy(
+  state: NormalizedToolState,
+  defaultStrategy: ToolDisplayStrategy,
+  baseDirectory?: string,
+): ToolDisplayStrategy {
+  const payload = payloadFromState(state);
+  const result = toRecord(payload.Result);
+  if (decodeByteText(result.output) === null) return defaultStrategy;
+
+  const terminal = buildGrokBashStrategy(
+    { ...state, outputValue: result },
+    defaultStrategy,
+    baseDirectory,
+  );
+  return {
+    ...terminal,
+    Icon: Bot,
+    title: "task",
+    secondaryText: toPlainText(result.task_id) || undefined,
+    details: [
+      ...payloadDetails(result, ["output"]),
+      ...payloadDetails(payload, ["type", "Result"]),
+    ],
+    showInputPreview: true,
   };
 }
 
@@ -308,8 +370,46 @@ export function buildGrokToolStrategy(
   if (toolKey === "bash" || nativeTool === "run_terminal_command") {
     return buildGrokBashStrategy(state, defaultStrategy, baseDirectory);
   }
+  if (nativeTool === "get_command_or_subagent_output") {
+    return buildGrokTaskOutputStrategy(state, defaultStrategy, baseDirectory);
+  }
   if (toolKey === "web fetch" || nativeTool === "web_fetch") {
     return buildGrokWebFetchStrategy(state, defaultStrategy, baseDirectory);
+  }
+  const payload = payloadFromState(state);
+  const input = toRecord(state.inputValue);
+  if (nativeTool === "search_tool" && typeof payload.content === "string") {
+    const search = buildSearchToolStrategy({
+      defaultStrategy,
+      state,
+      title: "search_tool",
+      pattern: toPlainText(input.query),
+    });
+    return {
+      ...search,
+      details: payloadDetails(payload, ["type", "content"]),
+      showInputPreview: true,
+      outputContent: { kind: "plain", text: payload.content, language: "text", isCode: false },
+    };
+  }
+  const mcpOutput = toRecord(payload.output);
+  if (
+    nativeTool === "use_tool" &&
+    typeof mcpOutput.OkayOutput === "string" &&
+    Object.keys(mcpOutput).length === 1
+  ) {
+    return {
+      ...defaultStrategy,
+      Icon: Wrench,
+      secondaryText: toPlainText(input.tool_name) || toPlainText(payload.tool_name) || undefined,
+      details: payloadDetails(payload, ["type", "output"]),
+      outputContent: buildSemanticOutputContent(mcpOutput.OkayOutput) ?? {
+        kind: "plain",
+        text: mcpOutput.OkayOutput,
+        language: "text",
+        isCode: false,
+      },
+    };
   }
   return defaultStrategy;
 }
