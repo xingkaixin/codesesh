@@ -101,6 +101,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.6",
+        date: "2026-11-14",
+        title: "More complete tool results and task history",
+        summary:
+          "CodeSesh 1.4.6 preserves more recorded tool output, errors, and delegated task context in session replay. It also collects T3 Code's isolated Antigravity history and restores recorded Pi fork and clone relationships.",
+        direction:
+          "Make local AI coding history useful for checking what happened: keep requests, recorded results, and task relationships visible, and leave missing evidence unknown.",
+        highlights: [
+          {
+            title: "Read the captured output and errors",
+            description:
+              "Tool cards retain source-code escapes, file content, edit failures, read ranges, exit codes, and truncation details across affected Agents. You can distinguish requested changes from recorded results without losing the original input.",
+          },
+          {
+            title: "Follow delegated work with its context",
+            description:
+              "More task cards show full requests and replies, recorded answers, and todo states. DeepChat child-task results are easier to read, OpenCode task links lead to their child sessions, and Grok background launch receipts stay separate from task outcomes.",
+          },
+          {
+            title: "Find Antigravity history created through T3 Code",
+            description:
+              "Isolated Antigravity ACP profiles join CLI history in the same Agent entry. Sessions use recorded workspace context to select their project, and replay keeps confirmed tool text, explicit errors, and child-agent names.",
+          },
+          {
+            title: "Keep Pi results and session lineage",
+            description:
+              "Pi cards preserve written content, Agent replies, and execution details. Recorded fork and clone relationships connect sessions and refresh when parent records change, without presenting a fork as a delegated task.",
+          },
+        ],
+      },
+      {
         version: "1.4.5",
         date: "2026-11-11",
         title: "Clearer tool outcomes and session navigation",
@@ -1015,6 +1046,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.6",
+        date: "2026-11-14",
+        title: "工具结果和任务过程更完整",
+        summary:
+          "CodeSesh 1.4.6 在会话回放中保留更多已记录的工具输出、错误和委派任务上下文。同时采集 T3 Code 隔离的 Antigravity 历史，并恢复 Pi 原生记录中的 fork 和 clone 关系。",
+        direction:
+          "让本地 AI 编码历史能用于核对实际过程：保留请求、已记录的结果和任务关系，缺少依据的内容继续保持未知。",
+        highlights: [
+          {
+            title: "看清已记录的输出和错误",
+            description:
+              "修正多个 Agent 工具卡片中的源码转义、文件内容、编辑失败、读取范围、退出码和截断信息。回放时能区分请求的修改与已记录的结果，并查看完整原始输入。",
+          },
+          {
+            title: "带着上下文查看委派任务",
+            description:
+              "更多任务卡片展示完整请求与回复、已记录的问答和待办状态。DeepChat 子任务结果更易读，OpenCode 任务链接可进入对应子会话，Grok 后台启动回执与任务结果分开展示。",
+          },
+          {
+            title: "找回通过 T3 Code 创建的 Antigravity 历史",
+            description:
+              "隔离的 Antigravity ACP profile 与 CLI 历史归入同一个 Agent。会话根据已记录的工作区上下文选择项目，回放保留已确认的工具文本、明确错误和子 Agent 名称。",
+          },
+          {
+            title: "保留 Pi 结果和会话来源关系",
+            description:
+              "Pi 卡片保留写入内容、Agent 回复和执行信息。原生 fork 与 clone 记录关联父子会话，父记录变化时刷新关系，不将分叉会话显示为委派任务。",
+          },
+        ],
+      },
+      {
         version: "1.4.5",
         date: "2026-11-11",
         title: "更准确的工具状态，更清楚的会话导航",
@@ -1904,6 +1966,37 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.6",
+        date: "2026-11-14",
+        title: "ツール結果とタスクの経緯をより詳しく",
+        summary:
+          "CodeSesh 1.4.6 は、記録済みのツール出力、エラー、委任タスクの文脈をセッション再生に反映します。T3 Code が隔離した Antigravity 履歴を収集し、Pi に記録された fork と clone の関係も復元します。",
+        direction:
+          "ローカルの AI コーディング履歴で実際の経緯を確認できるように、依頼、記録済みの結果、タスクの関係を残し、根拠のない内容は不明のままにします。",
+        highlights: [
+          {
+            title: "記録された出力とエラーを確認",
+            description:
+              "対象エージェントのツールカードで、コードのエスケープ、ファイル内容、編集失敗、読み取り範囲、終了コード、切り詰め情報を保持します。依頼した変更と記録済みの結果を区別し、元の入力も確認できます。",
+          },
+          {
+            title: "委任した作業を文脈とともにたどる",
+            description:
+              "より多くのタスクカードで依頼と返信の全文、記録済みの回答、ToDo の状態を表示します。DeepChat の子タスク結果は読みやすくなり、OpenCode のタスクリンクから子セッションへ移動できます。Grok のバックグラウンド起動受付はタスク結果と分けて表示します。",
+          },
+          {
+            title: "T3 Code 経由の Antigravity 履歴を見つける",
+            description:
+              "隔離された Antigravity ACP プロファイルを CLI 履歴と同じエージェントにまとめます。記録済みのワークスペース情報からプロジェクトを選び、確認できたツールのテキスト、明示的なエラー、子エージェント名を再生に残します。",
+          },
+          {
+            title: "Pi の結果とセッションの派生関係を保持",
+            description:
+              "Pi のカードに書き込んだ内容、Agent の返信、実行情報を残します。元の fork・clone 記録から親子セッションを関連付け、親の記録が変わると関係を更新します。分岐したセッションを委任タスクとしては扱いません。",
+          },
+        ],
+      },
       {
         version: "1.4.5",
         date: "2026-11-11",
