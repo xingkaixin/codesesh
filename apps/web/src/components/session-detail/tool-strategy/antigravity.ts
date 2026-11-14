@@ -44,18 +44,21 @@ export function buildAntigravityToolStrategy(
 
   switch (tool.tool) {
     case "read_file":
-    case "view_file":
+    case "view_file": {
+      const read = buildFileReadStrategy({
+        defaultStrategy,
+        state,
+        filePath,
+        displayPath,
+        text: resultText,
+        isCode: state.status !== "error",
+      });
       return {
-        ...buildFileReadStrategy({
-          defaultStrategy,
-          state,
-          filePath,
-          displayPath,
-          text: resultText,
-          isCode: state.status !== "error",
-        }),
+        ...read,
         showInputPreview: true,
+        outputContent: state.status === "error" ? resultContent : read.outputContent,
       };
+    }
     case "run_command": {
       const shell = buildShellToolStrategy({
         defaultStrategy,
