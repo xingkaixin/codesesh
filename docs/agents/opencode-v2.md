@@ -92,7 +92,10 @@ V2 迁移完成后不回退单个缺失会话到 V1。这样不会让 V2 已删�
 
 工具名字保持原样，未知工具使用通用卡片。Web 为 shell 复用命令显示，edit 支持
 path + oldString/newString 的 diff，并保留失败时的错误显示。read/write/glob/grep/skill
-沿用已有展示能力。subagent 结果有明确且唯一的 metadata.sessionID 时关联子会话。
+沿用已有展示能力。task/subagent 结果有明确且唯一的 metadata.sessionId 或 sessionID
+时关联子会话；多个不同子会话不挂消息关系。invalid 的 input.error 明确存在时按工具错误
+保留。question 按原始问题索引读取 metadata.answers，缺答保持未记录，不推测答案归属。
+工具输出的截断标记、退出码和完整输出路径作为来源上下文展示，不自动读取路径所指文件。
 
 ## 用量与费用
 
