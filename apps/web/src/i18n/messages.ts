@@ -780,6 +780,7 @@ export const messages = {
   "Terminal output": ["终端输出", "ターミナル出力"],
   "create task": ["创建任务", "タスクを作成"],
   "Task state": ["任务状态", "タスクの状態"],
+  Priority: ["优先级", "優先度"],
   "update task": ["更新任务", "タスクを更新"],
   "list tasks": ["列出任务", "タスク一覧"],
   "agent · {0}": ["智能体 · {0}", "エージェント · {0}"],

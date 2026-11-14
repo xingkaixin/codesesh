@@ -12,6 +12,17 @@ function display(
   return getToolDisplayStrategy("deepchat", tool, normalizeToolState(tool), "/repo");
 }
 
+function childResult(value: unknown) {
+  return {
+    schemaVersion: 1,
+    kind: "child_agent_result",
+    trust: "untrusted",
+    handling: "synthesize_evidence_only",
+    source: { kind: "live_delegation", operation: "inspect" },
+    payload: { format: "json", utf8Bytes: 200, value },
+  };
+}
+
 describe("DeepChat tool display", () => {
   it("shows file contents and read bounds while retaining write receipts", () => {
     const source = 'const newline = "\\n";\n';
@@ -118,5 +129,176 @@ describe("DeepChat tool display", () => {
         isCode: false,
       });
     }
+  });
+
+  it("shows recorded plan step states, priorities and the explanation", () => {
+    const strategy = display(
+      "update_plan",
+      {
+        explanation: "Inspect before changing the parser",
+        plan: [
+          { step: "Inspect", status: "completed", priority: "high" },
+          { step: "Implement", status: "in_progress" },
+          { step: "Verify", status: "pending" },
+        ],
+      },
+      {},
+    );
+    expect(strategy.details).toContainEqual({
+      label: "Summary",
+      value: "Inspect before changing the parser",
+    });
+    expect(strategy.outputContent).toEqual({
+      kind: "task-list",
+      items: [
+        { label: "Inspect", status: "completed", detail: "Priority: high" },
+        { label: "Implement", status: "in_progress" },
+        { label: "Verify", status: "pending" },
+      ],
+    });
+    expect(
+      display(
+        "update_plan",
+        { plan: [{ step: "Inspect", status: "completed" }] },
+        "Plan update failed",
+        "error",
+      ).outputContent,
+    ).toMatchObject({ kind: "plain", text: "Plan update failed" });
+  });
+
+  it("shows recorded answers, multiple selections and custom text without inventing an answer", () => {
+    const input = {
+      header: "Scope",
+      question: "Which checks should run?",
+      multiple: true,
+      custom: true,
+      options: [
+        { label: "Lint", description: "Static checks" },
+        { label: "Types", description: "Type checks" },
+      ],
+    };
+    expect(display("deepchat_question", input, "Lint, Types").outputContent).toMatchObject({
+      kind: "question-list",
+      questions: [{ question: input.question, options: input.options, answers: ["Lint", "Types"] }],
+    });
+    expect(
+      display("deepchat_question", input, "Check the Rust adapter, too").outputContent,
+    ).toMatchObject({
+      questions: [{ answers: ["Check the Rust adapter, too"] }],
+    });
+    expect(display("deepchat_question", input, null).outputContent).toMatchObject({
+      questions: [{ answers: [], unansweredLabel: "No answer recorded" }],
+    });
+  });
+
+  it("unwraps child task state and relationships while retaining the full request and envelope", () => {
+    const delegation = {
+      id: "task-1",
+      parentSessionId: "parent-1",
+      childSessionId: "child-1",
+      slotId: "review",
+      targetAgentId: "agent-1",
+      title: "Review parser",
+      status: "queued",
+    };
+    const turns = [
+      {
+        id: "turn-1",
+        seq: 1,
+        status: "queued",
+        promptPreview: "Inspect the parser",
+        resultPreview: null,
+        errorPreview: null,
+      },
+    ];
+    const output = childResult({ delegation, turns });
+    expect(
+      display(
+        "deepchat_subagents",
+        {
+          operation: "spawn",
+          title: delegation.title,
+          slotId: "review",
+          prompt: "Inspect the complete parser implementation",
+        },
+        output,
+      ),
+    ).toMatchObject({
+      details: [{ value: "Inspect the complete parser implementation" }],
+      outputContent: {
+        kind: "property-list",
+        items: [
+          { label: "delegation", value: delegation },
+          { label: "turns", value: turns },
+        ],
+      },
+      rawOutput: output,
+      showInputPreview: true,
+    });
+    const tasks = [
+      delegation,
+      {
+        id: "task-2",
+        title: "Failed review",
+        status: "failed",
+        errorPreview: "Provider rejected the request",
+      },
+      { id: "task-3", title: "Idle review", status: "idle" },
+    ];
+    expect(
+      display("deepchat_subagents", { operation: "list" }, childResult(tasks)).outputContent,
+    ).toMatchObject({
+      kind: "property-list",
+      items: tasks.map((task) => ({ label: task.title, value: task })),
+    });
+  });
+
+  it("keeps child events, timeouts and result pagination distinct from tool completion", () => {
+    const event = {
+      id: 1,
+      delegationId: "task-1",
+      kind: "turn_failed",
+      contentPreview: "Provider rejected the request",
+      contentTruncated: false,
+    };
+    expect(
+      display(
+        "deepchat_subagents",
+        { operation: "wait", delegationIds: ["task-1"] },
+        childResult({ events: [event], cursor: 1, timedOut: false }),
+      ).outputContent,
+    ).toMatchObject({
+      kind: "property-list",
+      items: [
+        { label: "events", value: [event] },
+        { label: "cursor", value: 1 },
+        { label: "timedOut", value: false },
+      ],
+    });
+    const result = {
+      schemaVersion: 1,
+      delegationId: "task-1",
+      childSessionId: "child-1",
+      text: "Partial child reply",
+      nextCursor: "result-cursor",
+      done: false,
+    };
+    expect(
+      display(
+        "deepchat_subagents",
+        { operation: "read_result", delegationId: "task-1" },
+        childResult(result),
+      ).outputContent,
+    ).toMatchObject({
+      kind: "property-list",
+      items: [
+        { label: "text", value: result.text },
+        { label: "schemaVersion", value: 1 },
+        { label: "delegationId", value: "task-1" },
+        { label: "childSessionId", value: "child-1" },
+        { label: "nextCursor", value: "result-cursor" },
+        { label: "done", value: false },
+      ],
+    });
   });
 });

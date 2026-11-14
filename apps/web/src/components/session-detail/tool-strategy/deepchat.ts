@@ -1,8 +1,8 @@
 import type { ToolPart } from "@codesesh/contract";
 import { t } from "../../../i18n/translate";
 import { detectLanguageByFilePath } from "../../tool-output/language";
-import type { PlainToolOutputContent } from "../../tool-output/types";
-import { NotebookPen, SquareTerminal } from "../../ui/icons";
+import type { PlainToolOutputContent, TaskListItem } from "../../tool-output/types";
+import { Bot, CircleHelp, ListTodo, NotebookPen, SquareTerminal } from "../../ui/icons";
 import { getDisplayPath } from "../path-extract";
 import {
   type NormalizedToolState,
@@ -178,6 +178,113 @@ export function buildDeepChatToolStrategy(
           ? textOutput(output.output)
           : defaultStrategy.outputContent,
       rawOutput: typeof output.output === "string" ? state.outputValue : undefined,
+    };
+  }
+
+  if (toolKey === "update_plan" && Array.isArray(input.plan)) {
+    const items: TaskListItem[] = [];
+    for (const value of input.plan) {
+      const step = toRecord(value);
+      const status = step.status;
+      if (status !== "pending" && status !== "in_progress" && status !== "completed") {
+        return defaultStrategy;
+      }
+      items.push({
+        label: toStringValue(step.step),
+        status,
+        detail: toPlainText(step.priority) ? `${t("Priority")}: ${step.priority}` : undefined,
+      });
+    }
+    return {
+      ...defaultStrategy,
+      Icon: ListTodo,
+      title: t("update plan"),
+      secondaryText: undefined,
+      details: toPlainText(input.explanation)
+        ? [{ label: t("Summary"), value: toStringValue(input.explanation) }]
+        : [],
+      contentLabel: t("Plan"),
+      outputContent: { kind: "task-list", items },
+    };
+  }
+
+  if (toolKey === "deepchat_question" && typeof input.question === "string") {
+    const answer = toStringValue(state.outputValue);
+    const options = (Array.isArray(input.options) ? input.options : []).map((value) => {
+      const option = toRecord(value);
+      return {
+        label: toStringValue(option.label),
+        description: toStringValue(option.description) || undefined,
+      };
+    });
+    const selections = input.multiple === true ? answer.split(", ") : [answer];
+    const answers = answer
+      ? selections.every((selection) => options.some((option) => option.label === selection))
+        ? selections
+        : [answer]
+      : [];
+    return {
+      ...defaultStrategy,
+      Icon: CircleHelp,
+      title: t("ask user"),
+      secondaryText: toPlainText(input.header) || undefined,
+      contentLabel: t("Questions"),
+      outputContent: {
+        kind: "question-list",
+        questions: [
+          {
+            header: toPlainText(input.header) || undefined,
+            question: input.question,
+            options,
+            answers,
+            unansweredLabel: t("No answer recorded"),
+          },
+        ],
+      },
+      rawOutput: answers.length > 1 ? state.outputValue : undefined,
+    };
+  }
+
+  if (toolKey === "deepchat_subagents") {
+    const payload = toRecord(output.payload);
+    if (
+      output.schemaVersion !== 1 ||
+      output.kind !== "child_agent_result" ||
+      payload.format !== "json" ||
+      !("value" in payload)
+    ) {
+      return defaultStrategy;
+    }
+    const value = payload.value;
+    const { text, ...record } = toRecord(value);
+    const outputContent = Array.isArray(value)
+      ? {
+          kind: "property-list" as const,
+          items: value.map((delegation) => {
+            const task = toRecord(delegation);
+            return { label: toPlainText(task.title) || toPlainText(task.id), value: delegation };
+          }),
+        }
+      : buildSemanticOutputContent(typeof text === "string" ? { text, ...record } : value);
+    return {
+      ...defaultStrategy,
+      Icon: Bot,
+      secondaryText:
+        [toPlainText(input.operation), toPlainText(input.title) || toPlainText(input.delegationId)]
+          .filter(Boolean)
+          .join(" · ") || undefined,
+      details:
+        toPlainText(input.prompt) || toPlainText(input.task)
+          ? [
+              {
+                label: t("Request"),
+                value: toStringValue(input.prompt) || toStringValue(input.task),
+              },
+            ]
+          : [],
+      contentLabel: t("Agent result"),
+      outputContent: outputContent ?? textOutput(value),
+      rawOutput: state.outputValue,
     };
   }
 
