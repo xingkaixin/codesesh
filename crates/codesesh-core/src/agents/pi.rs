@@ -219,6 +219,21 @@ fn session_id(path: &Path, header: &Value, agent: &str) -> String {
         .to_owned()
 }
 
+pub(crate) fn parent_fingerprint(path: &Path, root: &Path) -> Result<String> {
+    let mut lines = super::jsonl::JsonLines::new(File::open(path)?);
+    while let Some(line) = lines.next_line()? {
+        let Ok(header) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if header["type"] == "session" {
+            return Ok(parent_reference(&header, root)
+                .map(|parent| parent.session_id)
+                .unwrap_or_default());
+        }
+    }
+    Ok(String::new())
+}
+
 fn parent_reference(header: &Value, root: &Path) -> Option<SessionReference> {
     let parent = Path::new(header["parentSession"].as_str()?);
     if !parent.is_absolute()
