@@ -33,7 +33,7 @@ pub(super) fn scan_as(root: &Path, agent: &str, pricing: &Pricing) -> Result<Vec
         if !entry.file_type().is_file() || entry.path().extension().is_none_or(|e| e != "jsonl") {
             continue;
         }
-        let result = match parse_as(entry.path(), agent, pricing) {
+        let result = match parse_as(entry.path(), agent, pricing, root) {
             Err(error) if error.is::<InvalidSession>() => continue,
             result => result?,
         };
@@ -91,7 +91,7 @@ pub(super) fn scan_changed_as(
         let parsed = match std::fs::metadata(&source) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => return Err(error.into()),
-            Ok(_) => match parse_as(&source, agent, pricing) {
+            Ok(_) => match parse_as(&source, agent, pricing, root) {
                 Err(error) if error.is::<InvalidSession>() && old.is_empty() => None,
                 result => result?,
             },
@@ -205,10 +205,52 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
     parts
 }
 
-pub(super) fn parse_as(
+fn session_id(path: &Path, header: &Value, agent: &str) -> String {
+    let header_id = text(&header["id"]).trim().to_owned();
+    // omp names subagent and advisor transcripts after the task, so only their header id is unique.
+    if agent == "omp" && !header_id.is_empty() {
+        return header_id;
+    }
+    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    stem.split_once('_')
+        .map(|(_, id)| id)
+        .filter(|id| !id.is_empty())
+        .unwrap_or(&stem)
+        .to_owned()
+}
+
+fn parent_reference(header: &Value, root: &Path) -> Option<SessionReference> {
+    let parent = Path::new(header["parentSession"].as_str()?);
+    if !parent.is_absolute()
+        || parent
+            .extension()
+            .is_none_or(|extension| extension != "jsonl")
+    {
+        return None;
+    }
+    let parent = parent.canonicalize().ok()?;
+    if !parent.starts_with(root.canonicalize().ok()?) {
+        return None;
+    }
+    let mut lines = super::jsonl::JsonLines::new(File::open(&parent).ok()?);
+    let header: Value = serde_json::from_str(lines.next_line().ok()??).ok()?;
+    let id = header["id"].as_str()?.trim();
+    // Only link native header IDs that the existing Pi source identity can resolve.
+    if header["type"] != "session" || id.is_empty() || session_id(&parent, &header, "pi") != id {
+        return None;
+    }
+    Some(SessionReference {
+        source_node_id: crate::model::local_source_node_id(),
+        agent_name: "pi".into(),
+        session_id: id.into(),
+    })
+}
+
+fn parse_as(
     path: &Path,
     agent: &str,
     pricing: &Pricing,
+    root: &Path,
 ) -> Result<Option<SessionDetail>> {
     let file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
     let mut header = None;
@@ -283,17 +325,7 @@ pub(super) fn parse_as(
     }
     branch.reverse();
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let header_id = text(&header["id"]).trim().to_owned();
-    // omp names subagent and advisor transcripts after the task, so only their header id is unique.
-    let id = if agent == "omp" && !header_id.is_empty() {
-        header_id
-    } else {
-        stem.split_once('_')
-            .map(|(_, id)| id)
-            .filter(|id| !id.is_empty())
-            .unwrap_or(&stem)
-            .to_owned()
-    };
+    let id = session_id(path, &header, agent);
     let cwd = text(&header["cwd"]).trim().to_owned();
     let cwd = if cwd.is_empty() {
         stem.to_string()
@@ -543,6 +575,8 @@ pub(super) fn parse_as(
     );
     if agent == "omp" {
         detail.head.parent_reference = super::omp::parent(path);
+    } else if agent == "pi" {
+        detail.head.parent_reference = parent_reference(&header, root);
     }
     Ok(Some(detail))
 }
@@ -550,6 +584,59 @@ pub(super) fn parse_as(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_native_parent_headers_only_within_the_discovered_root() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let write_session = |path: &Path, id: &str, parent: Option<&Path>| {
+            let records = [
+                json!({"type":"session","version":3,"id":id,"cwd":"/tmp/project","timestamp":1000,"parentSession":parent}),
+                json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","content":"Review parser"}}),
+            ];
+            std::fs::write(
+                path,
+                records
+                    .iter()
+                    .map(Value::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+        };
+        let parent = root.path().join("2026-11-01_parent.jsonl");
+        write_session(&parent, "parent", None);
+        let child = root.path().join("2026-11-02_fork.jsonl");
+        write_session(&child, "fork", Some(&parent));
+        let pricing = Pricing::bundled();
+        let sessions = scan(root.path(), &pricing).unwrap();
+        let child_session = sessions.iter().find(|s| s.source == child).unwrap();
+        let parent_session = sessions.iter().find(|s| s.source == parent).unwrap();
+        assert_eq!(
+            child_session.head.parent_reference.as_ref(),
+            Some(&parent_session.head.reference)
+        );
+        assert!(
+            child_session
+                .detail
+                .messages
+                .iter()
+                .all(|message| message.subagent_id.is_none())
+        );
+
+        let missing = root.path().join("2026-11-01_missing.jsonl");
+        let external = outside.path().join("2026-11-01_external.jsonl");
+        write_session(&external, "external", None);
+        let mismatched = root.path().join("2026-11-01_filename.jsonl");
+        write_session(&mismatched, "native-header-id", None);
+        for parent in [&missing, &external, &mismatched] {
+            write_session(&child, "fork", Some(parent));
+            let changed =
+                scan_changed(root.path(), &pricing, std::slice::from_ref(&child), &[]).unwrap();
+            assert!(changed.upserts[0].head.parent_reference.is_none());
+        }
+    }
+
     #[test]
     fn incremental_update_only_reads_changed_transcript_and_reports_deletion() {
         let root = tempfile::tempdir().unwrap();
