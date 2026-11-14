@@ -6,6 +6,7 @@ import { t } from "../../../i18n/translate";
  */
 import type { ToolPart } from "@codesesh/contract";
 import { buildDshEditDiffBlocks } from "../diff";
+import type { ToolDetailItem } from "../codex-tool";
 import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
@@ -30,6 +31,7 @@ export function buildDshToolStrategy(
 ): ToolDisplayStrategy {
   const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
   const input = toRecord(state.inputValue);
+  const metadata = toRecord(state.metadataValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
@@ -54,8 +56,19 @@ export function buildDshToolStrategy(
       };
     }
 
-    case "read":
-      return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+    case "read": {
+      const details: ToolDetailItem[] = [];
+      if (typeof metadata.offset === "number") {
+        details.push({ label: t("Offset"), value: String(metadata.offset) });
+      }
+      if (Array.isArray(metadata.lines)) {
+        details.push({ label: t("Lines"), value: String(metadata.lines.length) });
+      }
+      if (typeof metadata.totalLines === "number") {
+        details.push({ label: t("Total"), value: String(metadata.totalLines) });
+      }
+      return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath, details });
+    }
 
     case "write":
       return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
@@ -72,7 +85,24 @@ export function buildDshToolStrategy(
       });
     }
 
-    case "glob":
+    case "glob": {
+      const search = buildSearchToolStrategy({
+        defaultStrategy,
+        state,
+        title: "glob",
+        path: toPlainText(input.path),
+        pattern: toPlainText(input.pattern),
+        baseDirectory,
+      });
+      if (metadata.truncated === true) {
+        search.details.push({ label: t("Output"), value: t("Truncated") });
+      }
+      if (typeof metadata.total === "number") {
+        search.details.push({ label: t("Total"), value: String(metadata.total) });
+      }
+      return search;
+    }
+
     case "grep":
       return buildSearchToolStrategy({
         defaultStrategy,
