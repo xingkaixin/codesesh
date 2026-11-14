@@ -131,3 +131,164 @@ describe("Grok result envelopes", () => {
     });
   });
 });
+
+describe("Grok semantic tool results", () => {
+  it("renders applied edits rather than the proposed replacement", () => {
+    const strategy = display("search_replace", {
+      status: "completed",
+      input: { file_path: "/repo/src/a.ts", old_string: "requested", new_string: "proposed" },
+      output: {
+        type: "SearchReplace",
+        EditsApplied: {
+          absolute_path: "/repo/src/a.ts",
+          edits: {
+            details: [
+              { old_string: "old value", new_string: "new value", old_line: 12, new_line: 12 },
+              { old_string: "old value", new_string: "new value", old_line: 24, new_line: 24 },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(strategy.showInputPreview).toBe(true);
+    expect(strategy.secondaryText).toBe("src/a.ts");
+    expect(strategy.outputContent).toMatchObject({
+      kind: "structured-diff",
+      blocks: [
+        {
+          lines: [
+            { type: "remove", text: "old value" },
+            { type: "add", text: "new value" },
+          ],
+        },
+        {
+          lines: [
+            { type: "remove", text: "old value" },
+            { type: "add", text: "new value" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it.each(["search_replace", "write"])(
+    "keeps failed %s results ahead of requested content",
+    (tool) => {
+      const error = { message: "Permission denied", error: "tool_execution_failed" };
+      const strategy = display(tool, {
+        status: "error",
+        input: {
+          file_path: "/repo/src/a.ts",
+          old_string: "old value",
+          new_string: "new value",
+          content: "proposed file",
+        },
+        error,
+      });
+
+      expect(strategy.showInputPreview).toBe(true);
+      expect(strategy.outputContent.kind).not.toBe("structured-diff");
+      expect(JSON.stringify(strategy.outputContent)).toContain("Permission denied");
+      expect(JSON.stringify(strategy.outputContent)).not.toContain("proposed file");
+    },
+  );
+
+  it.each(["saved file\n", ""])("shows the saved write content %j", (content) => {
+    const strategy = display("write", {
+      status: "completed",
+      input: { file_path: "/repo/src/a.ts", content: "requested content" },
+      output: {
+        type: "Write",
+        EditsApplied: { absolute_path: "/repo/src/a.ts", new_string: content },
+      },
+    });
+    expect(strategy.showInputPreview).toBe(true);
+    expect(strategy.outputContent).toMatchObject({
+      kind: "plain",
+      text: content || "File is empty.",
+      isCode: content.length > 0,
+    });
+  });
+
+  it("decodes grep UTF-8 streams without interpreting no matches as a failure", () => {
+    const stdout = "<workspace_result>没有匹配</workspace_result>\n";
+    const stderr = "Search warning\n";
+    const strategy = display("grep", {
+      status: "completed",
+      input: { path: "/repo/src", pattern: "missing", head_limit: 20 },
+      output: {
+        type: "GrepSearch",
+        stdout: Array.from(new TextEncoder().encode(stdout)),
+        stderr: Array.from(new TextEncoder().encode(stderr)),
+        exit_code: 1,
+        match_count: 0,
+        file_matches: [],
+      },
+    });
+
+    expect(strategy.showInputPreview).toBe(true);
+    expect(strategy.secondaryText).toBe("src · missing");
+    expect(strategy.outputContent).toMatchObject({ kind: "plain", text: stdout });
+    expect(strategy.details).toContainEqual({ label: "exit_code", value: "1" });
+    expect(strategy.details).toContainEqual({ label: "match_count", value: "0" });
+    expect(strategy.details).toContainEqual({ label: "stderr", value: stderr });
+    expect(strategy.contentLabel).not.toBe("Error");
+  });
+
+  it("shows structured grep matches with their paths and line numbers", () => {
+    const strategy = display("grep", {
+      status: "completed",
+      input: { path: "/repo/src", pattern: "value" },
+      output: {
+        type: "GrepSearch",
+        stdout: [],
+        stderr: [],
+        exit_code: 0,
+        match_count: 1,
+        file_matches: [{ path: "/repo/src/a.ts", matches: [{ line_number: 4, content: "value" }] }],
+        truncated: true,
+      },
+    });
+    expect(strategy.outputContent).toMatchObject({ kind: "plain", text: "src/a.ts:4: value" });
+    expect(strategy.details).toContainEqual({ label: "truncated", value: "true" });
+  });
+
+  it("opens directory content and uses the returned todo state after a merge", () => {
+    const list = display("list_dir", {
+      status: "completed",
+      input: { target_directory: "src" },
+      output: {
+        type: "ListDir",
+        Content: { absolute_root_path: "/repo/src", content: "a.ts\nb.ts" },
+      },
+    });
+    expect(list.showInputPreview).toBe(true);
+    expect(list.secondaryText).toBe("src");
+    expect(list.outputContent).toMatchObject({ kind: "plain", text: "a.ts\nb.ts" });
+
+    const todos = display("todo_write", {
+      status: "completed",
+      input: { merge: true, todos: [{ id: "edit", status: "completed" }] },
+      output: {
+        type: "Todo",
+        TodosUpdated: {
+          todos: [
+            { content: "Edit file", status: "completed", priority: "high" },
+            { content: "Review file", status: "in_progress", priority: "medium" },
+            { content: "Commit", status: "pending", priority: "low" },
+          ],
+        },
+      },
+    });
+    expect(todos.showInputPreview).toBe(true);
+    expect(todos.outputContent).toEqual({
+      kind: "task-list",
+      items: [
+        { label: "Edit file", status: "completed", detail: "high" },
+        { label: "Review file", status: "in_progress", detail: "medium" },
+        { label: "Commit", status: "pending", detail: "low" },
+      ],
+    });
+  });
+});
