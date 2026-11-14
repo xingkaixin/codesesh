@@ -34,6 +34,7 @@ import { Link } from "react-router-dom";
 import type { MessageBlock } from "./blocks";
 import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { buildCodexPlanDisplay } from "./codex-plan";
+import { toDisplayText } from "./tool-normalize";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
 import { useTimelineAnchorRef } from "./TimelineAnchorRegistry";
@@ -539,6 +540,7 @@ const ToolItem = memo(function ToolItem({
   const [expanded, setExpanded] = useState(false);
   const anchorRef = useTimelineAnchorRef(anchorId);
   const state = useMemo(() => normalizeToolState(tool), [tool]);
+  const [rawOutputExpanded, setRawOutputExpanded] = useState(false);
   const strategy = useMemo(
     () => getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory),
 
@@ -636,6 +638,26 @@ const ToolItem = memo(function ToolItem({
                 </div>
               ) : null}
               <ToolOutputRenderer outputContent={strategy.outputContent} />
+              {strategy.rawOutput != null ? (
+                <details
+                  onToggle={(event) => setRawOutputExpanded(event.currentTarget.open)}
+                  className="min-w-0"
+                >
+                  <summary className="cursor-pointer rounded-sm py-2 text-xs font-semibold text-[var(--console-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">
+                    {t("Raw output")}
+                  </summary>
+                  {rawOutputExpanded ? (
+                    <ToolOutputRenderer
+                      outputContent={{
+                        kind: "plain",
+                        text: toDisplayText(strategy.rawOutput),
+                        language: "text",
+                        isCode: false,
+                      }}
+                    />
+                  ) : null}
+                </details>
+              ) : null}
             </div>
             {strategy.showInputPreview ? (
               <div className="border-t border-[var(--console-border)] px-3 py-2">
