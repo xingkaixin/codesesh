@@ -34,6 +34,7 @@ export interface ToolDisplayStrategy {
   showInputPreview: boolean;
   contentLabel?: string;
   outputContent: ToolOutputContent;
+  rawOutput?: unknown;
 }
 
 function toSafeImageSource(part: Record<string, unknown>) {
