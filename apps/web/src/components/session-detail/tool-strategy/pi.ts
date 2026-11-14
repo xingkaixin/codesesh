@@ -8,11 +8,7 @@ import { t } from "../../../i18n/translate";
 import type { ToolPart } from "@codesesh/contract";
 import type { ToolDetailItem } from "../codex-tool";
 import { buildPiEditDiffBlocks } from "../diff";
-import {
-  getDisplayPath,
-  getDisplayTextWithRelativePaths,
-  getFilePathFromInput,
-} from "../path-extract";
+import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
@@ -26,8 +22,10 @@ import {
   buildFileEditStrategy,
   buildFileReadStrategy,
   buildFileWriteStrategy,
+  buildSearchToolStrategy,
+  buildShellToolStrategy,
 } from "./shared";
-import { Bot, FilePlus2, Image as ImageIcon, ListTodo, SquareTerminal } from "../../ui/icons";
+import { Bot, FilePlus2, Image as ImageIcon, ListTodo } from "../../ui/icons";
 
 export function getPiTodoTaskFromDetails(state: NormalizedToolState) {
   const input = toRecord(state.inputValue);
@@ -115,15 +113,16 @@ export function buildPiToolStrategy(
   if (toolKey === "write") {
     return buildFileWriteStrategy({
       defaultStrategy,
-      state,
+      state: { ...state, inputValue: { ...input, content: input.content ?? input.contents } },
       filePath,
       displayPath,
       Icon: FilePlus2,
     });
   }
 
-  if (toolKey === "edit") {
-    const diffBlocks = buildPiEditDiffBlocks(state, displayPath || filePath);
+  if (toolKey === "edit" || toolKey === "strreplace") {
+    const diffBlocks =
+      state.status === "completed" ? buildPiEditDiffBlocks(state, displayPath || filePath) : [];
     const firstChangedLine =
       typeof metadata.firstChangedLine === "number"
         ? String(metadata.firstChangedLine)
@@ -148,16 +147,22 @@ export function buildPiToolStrategy(
       ...defaultStrategy,
       Icon: Bot,
       title: subagentType ? t("agent · {0}", [subagentType]) : "agent",
-      secondaryText: [agentId ? `#${agentId}` : "", description].filter(Boolean).join(" · "),
+      secondaryText: [agentId ? `#${agentId}` : "", description, status]
+        .filter(Boolean)
+        .join(" · "),
       details: [
         agentId ? { label: t("Agent"), value: agentId } : null,
         subagentType ? { label: t("Type"), value: subagentType } : null,
-        status ? { label: t("Status"), value: status } : null,
+        status ? { label: t("Task state"), value: status } : null,
+        input.run_in_background === true ? { label: t("Mode"), value: t("Background") } : null,
+        toStringValue(input.prompt)
+          ? { label: t("Request"), value: toStringValue(input.prompt) }
+          : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
       outputContent: {
         kind: "plain",
-        text: toStringValue(input.prompt) || getOutputOrErrorText(state),
+        text: getOutputOrErrorText(state),
         language: "markdown",
         isCode: false,
       },
@@ -210,21 +215,57 @@ export function buildPiToolStrategy(
     };
   }
 
-  if (toolKey === "bash" || toolKey === "batch") {
-    const command = toPlainText(input.command);
-    const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
+  if (toolKey === "grep" || toolKey === "glob" || toolKey === "ls") {
+    const strategy = buildSearchToolStrategy({
+      defaultStrategy,
+      state,
+      title: tool.tool,
+      path: toPlainText(input.path) || toPlainText(input.target_directory),
+      pattern:
+        toPlainText(input.pattern) || toPlainText(input.glob_pattern) || toPlainText(input.glob),
+      baseDirectory,
+    });
     return {
-      ...defaultStrategy,
-      Icon: SquareTerminal,
-      title: toolKey === "batch" ? "batch" : "bash",
-      secondaryText: displayCommand ? `(${displayCommand})` : undefined,
-      showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      ...strategy,
+      showInputPreview:
+        toolKey === "grep" && Object.keys(input).some((key) => key !== "path" && key !== "pattern"),
+    };
+  }
+
+  if (toolKey === "bash" || toolKey === "batch" || toolKey === "shell") {
+    const truncation = toRecord(metadata.truncation);
+    const truncated = metadata.truncated === true || truncation.truncated === true;
+    const fullOutputPath = toStringValue(metadata.fullOutputPath);
+    const exitCode = metadata.exitCode;
+    return {
+      ...buildShellToolStrategy({
+        defaultStrategy,
+        state,
+        title: tool.tool,
+        command: toStringValue(input.command),
+        description: toPlainText(input.description),
+        baseDirectory,
+      }),
+      showInputPreview: Object.keys(input).some(
+        (key) => key !== "command" && key !== "description",
+      ),
+      details: [
+        typeof exitCode === "number" || typeof exitCode === "string"
+          ? { label: t("Exit code"), value: String(exitCode) }
+          : null,
+        metadata.cancelled === true ? { label: t("Status"), value: t("Cancelled") } : null,
+        truncated ? { label: t("Output"), value: t("Truncated") } : null,
+        typeof truncation.outputLines === "number" && typeof truncation.totalLines === "number"
+          ? { label: t("Lines"), value: `${truncation.outputLines} / ${truncation.totalLines}` }
+          : null,
+        typeof truncation.outputBytes === "number" && typeof truncation.totalBytes === "number"
+          ? {
+              label: t("Size"),
+              value: t("{0} bytes", [`${truncation.outputBytes} / ${truncation.totalBytes}`]),
+            }
+          : null,
+        fullOutputPath ? { label: t("Full output"), value: fullOutputPath } : null,
+      ].filter((item): item is ToolDetailItem => item != null),
     };
   }
 

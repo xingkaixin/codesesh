@@ -297,6 +297,10 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         let metadata = std::fs::metadata(entry.path())?;
         let (mut activity, mut fingerprint) = stamp_metadata(&metadata)?;
         let mut bytes = metadata.len();
+        if source.agent == "pi" {
+            fingerprint.push(':');
+            fingerprint.push_str(&crate::agents::pi::parent_fingerprint(entry.path(), &root)?);
+        }
         if source.agent == "antigravity-cli" {
             for suffix in ["-wal", "-journal"] {
                 let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
