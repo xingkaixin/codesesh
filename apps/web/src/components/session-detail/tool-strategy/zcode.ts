@@ -236,7 +236,7 @@ export function buildZCodeToolStrategy(
       title: subagentType ? t("agent · {0}", [subagentType]) : "agent",
       secondaryText: description || undefined,
       details: subagentType ? [{ label: t("Type"), value: subagentType }] : [],
-      showInputPreview: false,
+      showInputPreview: true,
       outputContent: {
         kind: "plain",
         text: outputText,

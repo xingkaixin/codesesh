@@ -236,7 +236,7 @@ export function buildClaudeToolStrategy(
           : null,
         input.run_in_background === true ? { label: t("Mode"), value: t("Background") } : null,
       ].filter((item): item is { label: string; value: string } => item != null),
-      showInputPreview: false,
+      showInputPreview: true,
       contentLabel: t("Agent result"),
       outputContent: {
         kind: "plain",

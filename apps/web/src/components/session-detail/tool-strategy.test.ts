@@ -205,6 +205,46 @@ describe("getToolDisplayStrategy", () => {
     });
   });
 
+  it.each(["send_message", "followup_task"])(
+    "shows the complete message for Codex agents.%s",
+    (operation) => {
+      const message = "Inspect the parser.\nKeep the source data unchanged.";
+      const tool = part({
+        tool: "agents." + operation,
+        title: "agents." + operation,
+        state: { status: "completed", input: { target: "parser", message } },
+      });
+      const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+      expect(strategy.outputContent).toEqual({
+        kind: "property-list",
+        items: [
+          { label: "Recipient", value: "parser" },
+          { label: "Message", value: message },
+        ],
+      });
+    },
+  );
+
+  it("shows the Codex agents.wait_agent timeout and captured updates", () => {
+    const tool = part({
+      tool: "agents.wait_agent",
+      title: "agents.wait_agent",
+      state: {
+        status: "completed",
+        input: { timeout_ms: 60000 },
+        output: { timed_out: false },
+      },
+    });
+    const strategy = getToolDisplayStrategy("codex", tool, normalizeToolState(tool));
+
+    expect(strategy.secondaryText).toBe("60s timeout");
+    expect(strategy.outputContent).toEqual({
+      kind: "property-list",
+      items: [{ label: "timed_out", value: false }],
+    });
+  });
+
   it.each(FILE_TOOL_CASES)(
     "normalizes %s %s to the canonical %s file strategy",
     (agentName, toolName, title) => {
