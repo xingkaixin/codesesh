@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.4.6] - 2026-11-14
+
+This patch preserves more of the recorded tool inputs, results, errors, and task context when replaying AI coding sessions. It also collects T3 Code's isolated Antigravity ACP history and fixes Antigravity project selection and Pi session lineage. (#898–#903, #905–#908)
+
+### Features
+
+- Discover Antigravity ACP profiles isolated by T3 Code alongside CLI history under the existing Antigravity agent. Honor `T3CODE_HOME`, retain the single-directory `AGY_CONVERSATIONS_DIR` override, and recover workspace and model metadata from native records when summary data is absent. (#898)
+
+### Bug Fixes
+
+- Preserve literal escape sequences in source text, diffs, patches, and terminal output. Show captured read, edit, and patch failures instead of hiding them behind empty output or proposed changes, and label tool-call completion separately from plan approval success. (#901)
+- Keep complete delegation requests available for Claude Code and ZCode, and recognize Codex `agents.*` calls in the collaboration views. (#901)
+- Restore Cursor's canonical read, edit, shell, and search views while retaining native-name compatibility, errors, and edit receipts. Show DSH read ranges and glob truncation with known totals. (#900)
+- Recognize explicit Kimi-Code compatibility errors, native completed todos, replacement diffs, and ranged reads. Use the existing task and search views for Kimi delegation and web searches. (#902)
+- Show Grok background launch receipts separately from task outcomes, open known task and MCP result envelopes, and render captured file changes, search results, directories, and todos. Retain recorded exit codes, stderr, and truncation metadata. (#903)
+- Present DeepChat file, search, command, process, plan, and question results with their recorded context. Unwrap known child-agent results to show requests, identities, states, events, and paged replies, with the original envelope still available. (#905)
+- Preserve Pi written content, Agent requests and results, edit failures, and recorded execution metadata. Resolve native fork/clone parent headers and refresh cached relationships when a parent is restored, renamed, or no longer matches, without treating lineage as subagent execution. (#906)
+- Restore OpenCode V2 inline child-session links from recorded task metadata. Show recorded question answers, todo states, delegated requests and results, fetch context, and truncation metadata, and recognize explicit invalid-input errors. (#907)
+- Select Antigravity's active workspace using recorded history and source context, with parent-session and native metadata fallbacks. Preserve confirmed result text, explicit errors, and native child-agent names, and add dedicated file, command, edit, and swarm views. Unresolved numeric tool statuses remain unknown. (#899, #908)
+
+### Build
+
+- Update `axum-server` to 0.9, refresh Rust, frontend, and development dependencies, and update pnpm setup and GitHub Release actions. (#892–#897)
+
+### Documentation
+
+- Update Antigravity and OpenCode compatibility notes, document Pi relationship cache invalidation, and make the image-content non-goal explicit. (#898, #899, #906–#908)
+
+### Compatibility
+
+- Cached Antigravity, Kimi-Code, OpenCode, and Pi sessions are reparsed after upgrading. The first refresh can take longer on large histories. Missing results and unresolved statuses remain unknown; referenced output files are not opened automatically. (#899, #902, #906–#908)
+
 ## [1.4.5] - 2026-11-11
 
 This patch makes tool outcomes and plan approvals more accurate, keeps loaded sessions readable when a background refresh fails, and adds clearer search and sub-session navigation. It also fixes Hub/Worker collection states and reduces retained scan data. (#873–#890)
