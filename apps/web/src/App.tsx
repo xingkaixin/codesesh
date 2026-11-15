@@ -21,6 +21,7 @@ import { useScanStatusPublisher } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
+import { useModelPricing } from "./hooks/useModelPricing";
 import { useSidebarModel } from "./hooks/useSidebarModel";
 import { useNodes } from "./hooks/useNodes";
 import { useSessionStore } from "./hooks/useSessionStore";
@@ -43,6 +44,8 @@ import { SessionHeaderActions } from "./components/app/SessionHeaderActions";
 import { TimeRangeControl } from "./components/app/TimeRangeControl";
 import { sourceName } from "./components/nodes/SourceBadge";
 import { AppMainContent } from "./components/app/AppMainContent";
+import { PricingNotice } from "./components/app/PricingNotice";
+import type { PricingDrawerTab } from "./components/pricing/PricingDrawer";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey, getProjectPath } from "./lib/projects";
 import { agentRoutePath, buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
@@ -51,6 +54,11 @@ import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 import { APP_ROUTE_IDS } from "./lib/app-routes";
 import { cn } from "./lib/utils";
 
+const PricingDrawer = lazy(() =>
+  import("./components/pricing/PricingDrawer").then((module) => ({
+    default: module.PricingDrawer,
+  })),
+);
 const ScanStatusNotice = lazy(() =>
   import("./components/app/ScanStatusNotice").then((module) => ({
     default: module.ScanStatusNotice,
@@ -95,6 +103,22 @@ export default function App() {
 
   const location = useLocation();
   const setScanStatus = useScanStatusPublisher();
+  const hubEnabled = Boolean(appConfig.config?.hubEnabled);
+  const modelPricing = useModelPricing(timeWindow, appConfig.config != null && !hubEnabled);
+  const pricingOverview = modelPricing.overview;
+  const pricingAttentionCount = pricingOverview?.attentionCount ?? 0;
+  const unmatchedModelCount = pricingOverview?.unmatchedModels?.length ?? 0;
+  const officialAvailableCount =
+    pricingOverview?.overrides?.filter((item) => item.officialPriceAvailable).length ?? 0;
+  const [pricingDrawerOpen, setPricingDrawerOpen] = useState(false);
+  const [pricingDrawerMounted, setPricingDrawerMounted] = useState(false);
+  const [pricingDrawerTab, setPricingDrawerTab] = useState<PricingDrawerTab>("unmatched");
+  const [pricingNoticeDismissed, setPricingNoticeDismissed] = useState(false);
+  const openPricingDrawer = useCallback((tab: PricingDrawerTab) => {
+    setPricingDrawerTab(tab);
+    setPricingDrawerMounted(true);
+    setPricingDrawerOpen(true);
+  }, []);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
   const mobileNavigationOpen = mobileNavigationPath === location.pathname;
@@ -284,6 +308,8 @@ export default function App() {
   const overview = {
     window: loadedWindow,
     rangePreset: timeWindowController.preset ?? "all",
+    unmatchedModelCount: !hubEnabled ? unmatchedModelCount : undefined,
+    onOpenPricing: !hubEnabled ? () => openPricingDrawer("unmatched") : undefined,
   };
   const bookmarkActions = {
     isBookmarked: bookmarks.isSessionBookmarked,
@@ -491,9 +517,14 @@ export default function App() {
   }
 
   const scanStatusVisible =
-    appConfig.config != null &&
-    !appConfig.config.hubEnabled &&
-    (viewState.mode === "root" || isSearchMode);
+    appConfig.config != null && !hubEnabled && (viewState.mode === "root" || isSearchMode);
+  const pricingNoticeVisible =
+    appConfig.config != null && !hubEnabled && !pricingNoticeDismissed && pricingAttentionCount > 0;
+  const sidebarPricingTab: PricingDrawerTab =
+    unmatchedModelCount === 0 &&
+    (officialAvailableCount > 0 || (pricingOverview?.overrides.length ?? 0) > 0)
+      ? "overrides"
+      : "unmatched";
   const intro = (
     <>
       {routeHeader.hero ? (
@@ -509,10 +540,24 @@ export default function App() {
           ) : null}
         </AppPageHero>
       ) : null}
-      {scanStatusVisible ? (
-        <Suspense fallback={null}>
-          <ScanStatusNotice visible />
-        </Suspense>
+      {scanStatusVisible || pricingNoticeVisible ? (
+        <div className="flex flex-wrap items-start gap-2">
+          {scanStatusVisible ? (
+            <Suspense fallback={null}>
+              <ScanStatusNotice visible />
+            </Suspense>
+          ) : null}
+          {pricingNoticeVisible ? (
+            <PricingNotice
+              visible
+              attentionCount={pricingAttentionCount}
+              unmatchedCount={unmatchedModelCount}
+              officialAvailableCount={officialAvailableCount}
+              onOpenPricing={openPricingDrawer}
+              onDismiss={() => setPricingNoticeDismissed(true)}
+            />
+          ) : null}
+        </div>
       ) : null}
       {sessionLoadNotice ? (
         <div
@@ -534,7 +579,9 @@ export default function App() {
       ) : null}
     </>
   );
-  const hasIntro = Boolean(routeHeader.hero || scanStatusVisible || sessionLoadNotice);
+  const hasIntro = Boolean(
+    routeHeader.hero || scanStatusVisible || pricingNoticeVisible || sessionLoadNotice,
+  );
 
   return (
     <ResolvedThemeContext.Provider value={resolvedTheme}>
@@ -565,8 +612,9 @@ export default function App() {
             sourceNodes: sourceNodes.data?.nodes,
             isSearchMode,
             shortcutHelpOpen,
-            hubEnabled: Boolean(appConfig.config?.hubEnabled),
+            hubEnabled,
             sessionCount: sessions.length,
+            pricingAttentionCount: !hubEnabled ? pricingAttentionCount : undefined,
             theme,
           }}
           actions={{
@@ -584,6 +632,12 @@ export default function App() {
               setMobileNavigationOpen(false);
               openSearchAndFocus();
             },
+            onOpenPricing: !hubEnabled
+              ? () => {
+                  setMobileNavigationOpen(false);
+                  openPricingDrawer(sidebarPricingTab);
+                }
+              : undefined,
             onChangeTheme: setTheme,
             onShowShortcuts: showShortcutHelp,
           }}
@@ -616,6 +670,17 @@ export default function App() {
           </AppMainContent>
         </main>
         <AppToasts messages={[sessionCopyNotice, liveNotice]} />
+        {!hubEnabled && pricingDrawerMounted ? (
+          <Suspense fallback={null}>
+            <PricingDrawer
+              open={pricingDrawerOpen}
+              onOpenChange={setPricingDrawerOpen}
+              initialTab={pricingDrawerTab}
+              agentCatalog={agentCatalog}
+              pricing={modelPricing}
+            />
+          </Suspense>
+        ) : null}
         <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
         <SessionAliasDialog
           target={sessionAliases.target}

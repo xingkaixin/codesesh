@@ -37,6 +37,8 @@ export function OverviewScreen({
   window,
   agentCatalog,
   rangePreset,
+  unmatchedModelCount,
+  onOpenPricing,
   children,
 }: {
   children?: ReactNode;
@@ -46,6 +48,8 @@ export function OverviewScreen({
   window: AppConfig["window"] | null;
   agentCatalog: AgentCatalog;
   rangePreset: TimeWindowPreset;
+  unmatchedModelCount?: number;
+  onOpenPricing?: () => void;
 }) {
   useLocale();
 
@@ -90,6 +94,8 @@ export function OverviewScreen({
               totals={dashboard.totals}
               daily={dashboard.dailyActivity}
               rangeDays={dashboard.window.days}
+              unmatchedModelCount={unmatchedModelCount}
+              onOpenPricing={onOpenPricing}
             />
           )}
           {children}

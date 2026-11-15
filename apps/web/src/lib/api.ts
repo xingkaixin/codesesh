@@ -34,6 +34,11 @@ export const {
   deleteBookmark,
   upsertSessionAlias,
   deleteSessionAlias,
+  fetchPricingOverview,
+  fetchOfficialPricingModels,
+  savePricingOverride,
+  acknowledgeOfficialPricing,
+  deletePricingOverride,
 } = apiClient;
 
 export const { logClientEvent } = createClientTelemetry(remoteAccess);

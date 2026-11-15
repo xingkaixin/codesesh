@@ -199,6 +199,7 @@ async function refreshLiveSnapshotAggregates(
     ),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews }),
   ]);
 }
 

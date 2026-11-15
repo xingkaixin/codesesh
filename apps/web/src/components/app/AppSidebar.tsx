@@ -142,6 +142,7 @@ export interface AppSidebarViewModel {
   shortcutHelpOpen: boolean;
   hubEnabled: boolean;
   sessionCount: number;
+  pricingAttentionCount?: number;
   theme: Theme;
 }
 
@@ -157,6 +158,7 @@ export interface AppSidebarActions {
   onRetryProjects: () => void;
   onRetryBookmarks: () => void;
   onOpenSearch: () => void;
+  onOpenPricing?: () => void;
   onChangeTheme: (theme: Theme) => void;
   onShowShortcuts: () => void;
 }
@@ -231,6 +233,7 @@ export function AppSidebar({
     shortcutHelpOpen,
     hubEnabled,
     sessionCount,
+    pricingAttentionCount,
     theme,
   },
   actions: {
@@ -245,6 +248,7 @@ export function AppSidebar({
     onRetryProjects,
     onRetryBookmarks,
     onOpenSearch,
+    onOpenPricing,
     onChangeTheme,
     onShowShortcuts,
   },
@@ -550,6 +554,8 @@ export function AppSidebar({
       <SidebarFooter
         hubEnabled={hubEnabled}
         sessionCount={sessionCount}
+        pricingAttentionCount={pricingAttentionCount}
+        onOpenPricing={onOpenPricing}
         theme={theme}
         onChangeTheme={onChangeTheme}
         onShowShortcuts={onShowShortcuts}

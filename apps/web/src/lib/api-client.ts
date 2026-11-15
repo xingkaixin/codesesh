@@ -1,6 +1,9 @@
 import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/contract";
 import type {
   HubNodes,
+  OfficialModelListResponse,
+  PricingMutationResponse,
+  PricingOverviewResponse,
   RescanHistory,
   AgentInfo,
   ApiProjectGroup,
@@ -19,6 +22,7 @@ import type {
   SessionListPage,
   SessionReference,
   SmartTag,
+  UpsertPricingOverrideRequest,
 } from "@codesesh/contract";
 import type { RemoteAccess } from "./remote-access";
 
@@ -79,6 +83,20 @@ export class ApiRequestError extends Error {
 function appendTimeWindow(params: URLSearchParams, window?: AppConfig["window"]): void {
   if (window?.from != null) params.set("from", new Date(window.from).toISOString());
   if (window?.to != null) params.set("to", new Date(window.to).toISOString());
+}
+
+function buildPricingWindowQuery(from?: number, to?: number, days?: number): string {
+  const params = new URLSearchParams();
+  if (days === 0) {
+    params.set("days", "0");
+  } else if (from != null) {
+    params.set("from", new Date(from).toISOString());
+    if (to != null) params.set("to", new Date(to).toISOString());
+  } else {
+    if (to != null) params.set("to", new Date(to).toISOString());
+    if (days != null) params.set("days", String(days));
+  }
+  return params.size ? `?${params}` : "";
 }
 
 export function createApiClient(access: RemoteAccess) {
@@ -393,6 +411,67 @@ export function createApiClient(access: RemoteAccess) {
     );
   }
 
+  async function fetchPricingOverview(
+    from?: number,
+    to?: number,
+    days?: number,
+  ): Promise<PricingOverviewResponse> {
+    return fetchJson(`/api/pricing/overview${buildPricingWindowQuery(from, to, days)}`);
+  }
+
+  async function fetchOfficialPricingModels(
+    q?: string,
+    limit?: number,
+  ): Promise<OfficialModelListResponse> {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (limit != null) params.set("limit", String(limit));
+    const suffix = params.size ? `?${params}` : "";
+    return fetchJson(`/api/pricing/models${suffix}`);
+  }
+
+  async function savePricingOverride(
+    request: UpsertPricingOverrideRequest,
+    from?: number,
+    to?: number,
+    days?: number,
+  ): Promise<PricingMutationResponse> {
+    return fetchJson(`/api/pricing/overrides${buildPricingWindowQuery(from, to, days)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  }
+
+  async function acknowledgeOfficialPricing(
+    model: string,
+    from?: number,
+    to?: number,
+    days?: number,
+  ): Promise<PricingOverviewResponse> {
+    return fetchJson(
+      `/api/pricing/overrides/acknowledge${buildPricingWindowQuery(from, to, days)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      },
+    );
+  }
+
+  async function deletePricingOverride(
+    model: string,
+    from?: number,
+    to?: number,
+    days?: number,
+  ): Promise<PricingMutationResponse> {
+    return fetchJson(`/api/pricing/overrides/delete${buildPricingWindowQuery(from, to, days)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model }),
+    });
+  }
+
   return Object.freeze({
     fetchNodes,
     fetchRescanHistory,
@@ -418,6 +497,11 @@ export function createApiClient(access: RemoteAccess) {
     deleteBookmark,
     upsertSessionAlias,
     deleteSessionAlias,
+    fetchPricingOverview,
+    fetchOfficialPricingModels,
+    savePricingOverride,
+    acknowledgeOfficialPricing,
+    deletePricingOverride,
   });
 }
 

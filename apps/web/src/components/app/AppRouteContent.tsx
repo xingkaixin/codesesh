@@ -79,6 +79,8 @@ interface SessionDetailModel {
 interface OverviewModel {
   window: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
+  unmatchedModelCount?: number;
+  onOpenPricing?: () => void;
 }
 
 interface ProjectAgentFilterModel {
@@ -264,6 +266,8 @@ function RootRouteContent({ route }: { route: RootRouteModel }) {
           window={route.overview.window}
           agentCatalog={route.agentCatalog}
           rangePreset={route.overview.rangePreset}
+          unmatchedModelCount={route.overview.unmatchedModelCount}
+          onOpenPricing={route.overview.onOpenPricing}
         />
       </LazySurface>
     </RenderProfiler>

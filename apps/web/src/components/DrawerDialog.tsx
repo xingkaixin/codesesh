@@ -17,6 +17,10 @@ const VARIANT_STYLES = {
     backdrop: "z-50 bg-[var(--scrim)] min-[1025px]:hidden",
     popup: "console-scrollbar z-[51] w-[min(90vw,380px)] overflow-y-auto p-3 min-[1025px]:hidden",
   },
+  panel: {
+    backdrop: "z-[60] bg-[var(--scrim)]",
+    popup: "console-scrollbar z-[61] flex w-[min(94vw,520px)] flex-col overflow-y-auto p-4",
+  },
 } as const;
 
 const SIDE_STYLES = {

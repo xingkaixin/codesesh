@@ -142,10 +142,14 @@ export function OverviewSummary({
   totals,
   daily,
   rangeDays,
+  unmatchedModelCount,
+  onOpenPricing,
 }: {
   totals: DashboardTotals;
   daily: readonly DashboardDailyBucket[];
   rangeDays?: number;
+  unmatchedModelCount?: number;
+  onOpenPricing?: () => void;
 }) {
   useLocale();
 
@@ -166,6 +170,8 @@ export function OverviewSummary({
   const compositionLabel = TOKEN_KINDS.map(
     (kind) => `${t(kind.label)} ${formatShare(kinds[kind.key] / kindTotal)}`,
   ).join(", ");
+  const showEstimatedBadge = totals.costEstimated > 0;
+  const showUnmatchedBadge = (unmatchedModelCount ?? 0) > 0 && onOpenPricing != null;
 
   return (
     <Panel aria-label={t("Usage summary")} className="overflow-hidden">
@@ -191,14 +197,28 @@ export function OverviewSummary({
         <Metric
           label={t("API value")}
           badge={
-            totals.costEstimated > 0 ? (
-              <span
-                title={t(
-                  "API value prices this usage at public model rates where an agent records no cost. It is not a bill.",
-                )}
-                className="rounded-full bg-[var(--console-warning-bg)] px-2 text-[11px] font-medium text-[var(--console-warning)]"
-              >
-                {t("Estimated")}
+            showEstimatedBadge || showUnmatchedBadge ? (
+              <span className="inline-flex flex-wrap items-center gap-1">
+                {showEstimatedBadge ? (
+                  <span
+                    title={t(
+                      "API value prices this usage at public model rates where an agent records no cost. It is not a bill.",
+                    )}
+                    className="rounded-full bg-[var(--console-warning-bg)] px-2 text-[11px] font-medium text-[var(--console-warning)]"
+                  >
+                    {t("Estimated")}
+                  </span>
+                ) : null}
+                {showUnmatchedBadge ? (
+                  <button
+                    type="button"
+                    onClick={onOpenPricing}
+                    aria-haspopup="dialog"
+                    className="console-mono rounded-full border border-[var(--console-warning-border)] bg-[var(--console-warning-bg)] px-2 text-[11px] font-medium text-[var(--console-warning)] hover:bg-[var(--brand-soft)] hover:text-[var(--brand-ink)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                  >
+                    {t("{0} unmatched", [formatCompact(unmatchedModelCount ?? 0)])}
+                  </button>
+                ) : null}
               </span>
             ) : null
           }

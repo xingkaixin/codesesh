@@ -97,10 +97,13 @@ let projectDetailResponse: typeof workspaceProjectPage | null = null;
 beforeEach(() => {
   requestedUrls = [];
   projectDetailResponse = null;
+  responses["/api/config"] = { window: { days: 30 } };
   responses["/api/agents"] = [];
   responses["/api/projects"] = workspaceProjectPage;
   responses["/api/sessions"] = { sessions: [] };
+  responses["/api/dashboard"] = emptyDashboard;
   responses["/api/bookmarks"] = { bookmarks: [] };
+  responses["/api/pricing/overview"] = { unmatchedModels: [], overrides: [], attentionCount: 0 };
   vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -289,4 +292,99 @@ it("offers a remote resume command with its source machine clearly identified", 
     "cd '/office/worktree' && claude --resume 'session-1'",
   );
   expect(screen.getByText("Run this command on office, in a POSIX-compatible shell.")).toBeTruthy();
+});
+
+describe("App model pricing entries", () => {
+  it("exposes sidebar, inline notice, and overview KPI entry points in standalone mode and opens drawer", async () => {
+    responses["/api/pricing/overview"] = {
+      unmatchedModels: [
+        {
+          modelKey: "ollama/qwen3",
+          displayModel: "ollama/qwen3",
+          agents: ["opencode"],
+          sessionCount: 2,
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 1500,
+        },
+      ],
+      overrides: [
+        {
+          modelKey: "custom/model",
+          displayModel: "custom/model",
+          kind: "manual",
+          targetModel: null,
+          effectiveRates: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+          targetMissing: false,
+          officialPriceAvailable: true,
+          officialRates: { input: 1.5, output: 3, cacheRead: 0, cacheWrite: 0 },
+          updatedAt: 100,
+        },
+      ],
+      attentionCount: 2,
+    };
+    responses["/api/pricing/models"] = { models: [], total: 0 };
+
+    renderAppAt("/");
+
+    const sidebarPricingButton = await screen.findByRole("button", { name: /Pricing/i });
+    await waitFor(() => {
+      expect(sidebarPricingButton.textContent).toContain("2");
+    });
+    expect(await screen.findByText("1 unmatched · 1 official updates")).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "button",
+        { name: "1 unmatched" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss pricing notice" }));
+    expect(screen.queryByText("1 unmatched · 1 official updates")).toBeNull();
+    expect(screen.getByRole("button", { name: /Pricing/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "1 unmatched" }));
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "Model pricing" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
+    expect(await screen.findByText("ollama/qwen3")).toBeTruthy();
+  });
+
+  it("hides all pricing entry points and skips pricing requests in hub mode", async () => {
+    responses["/api/config"] = { hubEnabled: true, window: { days: 30 } };
+    responses["/api/nodes"] = { nodes: [] };
+    responses["/api/pricing/overview"] = {
+      unmatchedModels: [
+        {
+          modelKey: "ollama/qwen3",
+          displayModel: "ollama/qwen3",
+          agents: ["opencode"],
+          sessionCount: 2,
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 1500,
+        },
+      ],
+      overrides: [],
+      attentionCount: 1,
+    };
+
+    renderAppAt("/");
+
+    await screen.findByText("API value", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
+    expect(screen.queryByRole("button", { name: /Pricing/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "1 unmatched" })).toBeNull();
+    expect(screen.queryByText(/unmatched models missing pricing/i)).toBeNull();
+    expect(requestedUrls.some((url) => url.includes("/api/pricing/"))).toBe(false);
+  });
 });
