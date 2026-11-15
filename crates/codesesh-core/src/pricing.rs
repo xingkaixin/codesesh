@@ -46,8 +46,16 @@ static ALIASES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 #[derive(Clone, Debug)]
 pub struct Pricing {
     official: Arc<HashMap<String, Price>>,
-    overrides: Arc<HashMap<String, Price>>,
+    overrides: Arc<HashMap<String, ResolvedPrice>>,
     generation: u64,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub(crate) struct ResolvedPrice {
+    #[serde(flatten)]
+    price: Price,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_model: Option<String>,
 }
 
 fn normalize(model: &str) -> String {
@@ -145,30 +153,29 @@ impl Pricing {
         self.generation
     }
 
-    fn resolve_override(&self, model: &str) -> Option<&Price> {
+    fn resolve_override(&self, model: &str) -> Option<&ResolvedPrice> {
         let key = normalize_override_model_key(model)?;
         self.overrides.get(&key)
     }
 
-    fn resolve_entry(&self, model: &str) -> (Option<&Price>, bool) {
-        if let Some(price) = self.resolve_override(model) {
-            return (Some(price), true);
+    fn resolve_entry(&self, model: &str) -> Option<(&Price, Option<&str>)> {
+        if let Some(entry) = self.resolve_override(model) {
+            return Some((&entry.price, entry.target_model.as_deref()));
         }
-        (official_resolve_price_in(&self.official, model), false)
+        official_resolve_price_in(&self.official, model).map(|price| (price, None))
     }
 
-    fn resolve_price(&self, model: &str) -> Option<&Price> {
-        self.resolve_entry(model).0
-    }
-
-    fn resolve_with_source(&self, model: &str) -> (Option<&Price>, bool) {
-        let (price, from_override) = self.resolve_entry(model);
-        dependencies::record(model, price);
-        (price, from_override)
+    fn resolve_dependency(&self, model: &str) -> Option<ResolvedPrice> {
+        self.resolve_entry(model)
+            .map(|(price, target_model)| ResolvedPrice {
+                price: price.clone(),
+                target_model: target_model.map(str::to_owned),
+            })
     }
 
     pub fn resolve(&self, model: &str) -> Option<&Price> {
-        self.resolve_with_source(model).0
+        dependencies::record(model, || self.resolve_dependency(model));
+        self.resolve_entry(model).map(|(price, _)| price)
     }
 
     pub(crate) fn official_price(&self, model: &str) -> Option<&Price> {
@@ -235,7 +242,7 @@ impl Pricing {
             .iter()
             .map(|record| {
                 let compiled = self.resolve_override(&record.model_key);
-                let effective_rates = compiled.map(price_rates_per_million);
+                let effective_rates = compiled.map(|entry| price_rates_per_million(&entry.price));
                 let target_missing =
                     record.kind == PricingOverrideKind::Remap && compiled.is_none();
                 let official = self.official_price(&record.model_key);
@@ -278,12 +285,12 @@ impl Pricing {
         aggregate: bool,
     ) -> Option<f64> {
         let model = model.filter(|model| !model.is_empty())?;
-        let (model, multiplier) = tier::split(model);
-        let (price, from_override) = self.resolve_with_source(model);
-        let Some(price) = price else {
+        dependencies::record(model, || self.resolve_dependency(model));
+        let Some((price, target_model)) = self.resolve_entry(model) else {
             cost::record_miss(model);
             return None;
         };
+        let multiplier = tier::split_for_target(model, target_model).1;
         let price = if aggregate {
             price
         } else {
@@ -299,12 +306,17 @@ impl Pricing {
         if !cost.is_finite() {
             return None;
         }
-        let billable_result = if from_override {
-            cost >= 0.0
-        } else {
-            cost > 0.0
-        };
-        billable_result.then(|| round_cost(cost))
+        let has_usage = [
+            tokens.input,
+            tokens.output,
+            tokens.reasoning,
+            tokens.cache_read,
+            tokens.cache_create,
+        ]
+        .into_iter()
+        .any(|value| positive(value) > 0.0)
+            || positive(Some(web_search)) > 0.0;
+        (cost > 0.0 || (!price.billable() && has_usage)).then(|| round_cost(cost))
     }
 }
 
@@ -362,22 +374,32 @@ fn official_resolve_price_in<'a>(
 fn compile_overrides(
     official: &HashMap<String, Price>,
     records: &[ModelPriceOverrideRecord],
-) -> HashMap<String, Price> {
+) -> HashMap<String, ResolvedPrice> {
     let mut compiled = HashMap::new();
     for record in records {
         let Some(key) = normalize_override_model_key(&record.model_key) else {
             continue;
         };
-        let price = match record.kind {
-            PricingOverrideKind::Remap => record
-                .target_model
-                .as_deref()
-                .and_then(|target| official_resolve_price_in(official, target))
-                .cloned(),
-            PricingOverrideKind::Manual => record.rates.as_ref().and_then(manual_price),
+        let entry = match record.kind {
+            PricingOverrideKind::Remap => record.target_model.as_deref().and_then(|target| {
+                Some(ResolvedPrice {
+                    price: official_resolve_price_in(official, target)?.clone(),
+                    target_model: Some(normalize(target)),
+                })
+            }),
+            PricingOverrideKind::Manual => {
+                record
+                    .rates
+                    .as_ref()
+                    .and_then(manual_price)
+                    .map(|price| ResolvedPrice {
+                        price,
+                        target_model: None,
+                    })
+            }
         };
-        if let Some(price) = price {
-            compiled.insert(key, price);
+        if let Some(entry) = entry {
+            compiled.insert(key, entry);
         }
     }
     compiled
@@ -399,6 +421,7 @@ fn manual_price(rates: &PricingRatePerMillion) -> Option<Price> {
         input_cost_per_token: rates.input / 1_000_000.0,
         output_cost_per_token: output,
         cache_create_cost_per_token: rates.cache_write / 1_000_000.0,
+        cache_create_1h_cost_per_token: Some(rates.cache_write / 1_000_000.0),
         cache_read_cost_per_token: rates.cache_read / 1_000_000.0,
         reasoning_cost_per_token: output,
         web_search_cost_per_request: 0.0,
@@ -459,7 +482,7 @@ mod tests {
     #[test]
     fn fallback_never_prices_a_model_as_another_version() {
         let pricing = Pricing::bundled();
-        let price = |model| pricing.resolve_price(model);
+        let price = |model| pricing.resolve(model);
         assert_eq!(price("claude-opus-4-9"), None);
         assert_eq!(price("claude-opus-4-9-thinking"), None);
         assert_eq!(price("claude-opus-4-9@eu"), None);
@@ -473,7 +496,7 @@ mod tests {
     #[test]
     fn aliases_keep_the_model_generation_price() {
         let pricing = Pricing::bundled();
-        let price = |model| pricing.resolve_price(model);
+        let price = |model| pricing.resolve(model);
         assert_eq!(price("claude-4-opus"), price("claude-opus-4"));
         assert_eq!(price("gpt-5.1-codex-high"), price("gpt-5.1-codex"));
     }
@@ -601,7 +624,7 @@ mod tests {
         assert!(pricing.resolve("missing-target").is_none());
         assert_eq!(
             pricing.estimate(Some("gpt-5.4@fast"), &tokens, 0.0),
-            Some(3.0)
+            Some(2.25)
         );
 
         let (hash, _) = pricing.official_price_hash_and_json("gpt-5.4").unwrap();
@@ -639,6 +662,45 @@ mod tests {
                 .models
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn remap_uses_target_tiers_and_invalidates_same_rate_dependencies() {
+        let official = registry::snapshot();
+        let record =
+            |target| override_record("acme/alias", PricingOverrideKind::Remap, Some(target), None);
+        let pricing = Pricing::from_official_and_overrides(official.clone(), &[record("gpt-5.4")]);
+        let tokens = serde_json::from_value(serde_json::json!({"input": 1_000_000})).unwrap();
+        for (tier, expected) in [("", 2.5), ("@fast", 5.0), ("@flex", 1.25)] {
+            assert_eq!(
+                pricing.estimate(Some(&format!("acme/alias{tier}")), &tokens, 0.0),
+                Some(expected)
+            );
+            assert_eq!(
+                pricing.estimate(Some(&format!("gpt-5.4{tier}")), &tokens, 0.0),
+                Some(expected)
+            );
+        }
+        let (_, dependencies) =
+            capture_dependencies(|| pricing.estimate(Some("acme/alias@fast"), &tokens, 0.0));
+        let mut official = official;
+        official.insert("same-rate-model".into(), official["gpt-5.4"].clone());
+        let changed =
+            Pricing::from_official_and_overrides(official.clone(), &[record("same-rate-model")]);
+        let unchanged = Pricing::from_official_and_overrides(official, &[record("gpt-5.4")]);
+        assert_ne!(changed.generation(), unchanged.generation());
+        assert!(!changed.matches_dependencies(&dependencies));
+        assert!(unchanged.matches_dependencies(&dependencies));
+        assert_eq!(
+            changed.estimate(Some("acme/alias@fast"), &tokens, 0.0),
+            Some(2.5)
+        );
+
+        let legacy: PriceDependencies = serde_json::from_value(serde_json::json!({
+            "gpt-5.4": serde_json::to_value(pricing.official_price("gpt-5.4").unwrap()).unwrap()
+        }))
+        .unwrap();
+        assert!(pricing.matches_dependencies(&legacy));
     }
 
     #[test]

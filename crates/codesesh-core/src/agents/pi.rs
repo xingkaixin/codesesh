@@ -428,7 +428,13 @@ fn parse_as(
                     };
                     let recorded =
                         coerced_number(&u["cost"]["total"]).filter(|v| v.is_finite() && *v != 0.0);
+                    let has_usage = ["input", "output", "cacheRead", "cacheWrite"]
+                        .iter()
+                        .any(|key| u[key].as_f64().is_some());
                     m.cost = recorded.or_else(|| {
+                        if !has_usage {
+                            return None;
+                        }
                         pricing.estimate_tracked(
                             m.model.as_deref(),
                             &tokens,
@@ -441,7 +447,7 @@ fn parse_as(
                     } else {
                         m.cost.map(|_| CostSource::Estimated)
                     };
-                    m.tokens = Some(tokens);
+                    m.tokens = has_usage.then_some(tokens);
                     let total = u["totalTokens"]
                         .as_f64()
                         .unwrap_or(input + output + read + write);
@@ -598,6 +604,64 @@ fn parse_as(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn absent_usage_stays_unknown_with_paid_and_free_overrides() {
+        let root = tempfile::tempdir().unwrap();
+        let records = [
+            json!({"type":"session","id":"missing-usage","cwd":"/tmp/project","timestamp":1000}),
+            json!({"type":"message","id":"missing","parentId":null,"timestamp":1001,"message":{"role":"assistant","model":"acme/alias","content":[{"type":"text","text":"No usage reported"}]}}),
+            json!({"type":"message","id":"measured","parentId":"missing","timestamp":1002,"message":{"role":"assistant","model":"acme/alias","content":[{"type":"text","text":"Measured usage"}],"usage":{"input":1000000,"output":0}}}),
+        ];
+        std::fs::write(
+            root.path().join("session.jsonl"),
+            records
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let controller = crate::pricing::PricingController::load(root.path());
+        for rates in [
+            None,
+            Some(crate::wire::PricingRatePerMillion {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+            }),
+        ] {
+            let free = rates.is_some();
+            let pricing = controller
+                .replace_overrides(vec![crate::state::ModelPriceOverrideRecord {
+                    model_key: "acme/alias".into(),
+                    display_model: "acme/alias".into(),
+                    kind: if free {
+                        crate::wire::PricingOverrideKind::Manual
+                    } else {
+                        crate::wire::PricingOverrideKind::Remap
+                    },
+                    target_model: (!free).then(|| "gpt-5.4".into()),
+                    rates,
+                    acknowledged_official_hash: None,
+                    acknowledged_official_json: None,
+                    created_at: 1,
+                    updated_at: 1,
+                }])
+                .unwrap()
+                .pricing;
+            for agent in ["pi", "omp"] {
+                let sessions = scan_as(root.path(), agent, &pricing).unwrap();
+                let messages = &sessions[0].detail.messages;
+                assert_eq!(messages[0].tokens, None);
+                assert_eq!(messages[0].cost, None);
+                assert_eq!(messages[0].cost_source, None);
+                assert_eq!(messages[1].cost, Some(if free { 0.0 } else { 2.5 }));
+                assert_eq!(messages[1].cost_source, Some(CostSource::Estimated));
+            }
+        }
+    }
 
     #[test]
     fn resolves_native_parent_headers_only_within_the_discovered_root() {

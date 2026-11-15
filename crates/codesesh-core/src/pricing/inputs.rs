@@ -31,7 +31,10 @@ impl super::Price {
             cache_read: read * self.cache_read_cost_per_token,
             // models.dev lists only the 5-minute write price; Anthropic bills 1-hour writes at 2x input.
             cache_create: (create - create_1h) * self.cache_create_cost_per_token
-                + create_1h * 2.0 * self.input_cost_per_token,
+                + create_1h
+                    * self
+                        .cache_create_1h_cost_per_token
+                        .unwrap_or(2.0 * self.input_cost_per_token),
         }
     }
 
