@@ -24,10 +24,11 @@ const TIMED_USAGE_SQL: &str = "
     AND NOT EXISTS (
         SELECT 1
         FROM json_each(s.meta_json, '$.rustPricing.messages') pricing_message
-        JOIN messages m ON m.source_node_id = s.source_node_id
-                       AND m.agent_name = s.agent_name
-                       AND m.session_id = s.session_id
-                       AND m.message_index = CAST(pricing_message.key AS INTEGER)
+        -- CROSS JOIN pins json_each as the outer loop; otherwise SQLite rescans meta_json per message.
+        CROSS JOIN messages m ON m.source_node_id = s.source_node_id
+                             AND m.agent_name = s.agent_name
+                             AND m.session_id = s.session_id
+                             AND m.message_index = CAST(pricing_message.key AS INTEGER)
         JOIN json_each(pricing_message.value, '$.inputs') cost_input
         WHERE codesesh_pricing_model_key(json_extract(cost_input.value, '$.model'))
               IS NOT codesesh_pricing_model_key(m.model)
