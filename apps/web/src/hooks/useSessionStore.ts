@@ -199,7 +199,7 @@ async function refreshLiveSnapshotAggregates(
     ),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricing }),
   ]);
 }
 
@@ -225,7 +225,7 @@ function liveAggregateRefreshDelay(queryClient: QueryClient, window: AppConfig["
       .map((query) => query.state),
     ...queryClient
       .getQueryCache()
-      .findAll({ queryKey: queryKeys.pricingOverviews, type: "active" })
+      .findAll({ queryKey: queryKeys.pricing, type: "active" })
       .map((query) => query.state),
   ];
   if (states.some((state) => !state || state.data === undefined || state.isInvalidated)) return 0;
@@ -308,7 +308,7 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
         { throwOnError: true, cancelRefetch: true },
       ),
       queryClient.invalidateQueries({
-        queryKey: queryKeys.pricingOverviews,
+        queryKey: queryKeys.pricing,
         refetchType: "active",
       }),
       refreshProjectQueries(queryClient, window),

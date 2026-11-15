@@ -52,6 +52,7 @@ import { agentRoutePath, buildSessionIndexes, getSessionAgentKey } from "./lib/s
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 import { APP_ROUTE_IDS } from "./lib/app-routes";
+import { formatTimeWindowLabel } from "./lib/scan-format";
 import { cn } from "./lib/utils";
 
 const PricingDrawer = lazy(() =>
@@ -105,11 +106,16 @@ export default function App() {
   const setScanStatus = useScanStatusPublisher();
   const hubEnabled = Boolean(appConfig.config?.hubEnabled);
   const modelPricing = useModelPricing(timeWindow, appConfig.config != null);
-  const pricingOverview = modelPricing.overview;
-  const pricingAttentionCount = pricingOverview?.attentionCount ?? 0;
-  const unmatchedModelCount = pricingOverview?.unmatchedModels?.length ?? 0;
-  const officialAvailableCount =
-    pricingOverview?.overrides?.filter((item) => item.officialPriceAvailable).length ?? 0;
+  const pricingOverrides = modelPricing.overrides ?? [];
+  const unmatchedModelCount =
+    modelPricing.unmatched.status === "ready" ? modelPricing.unmatched.models.length : 0;
+  const officialAvailableCount = pricingOverrides.filter(
+    (item) => item.officialPriceAvailable,
+  ).length;
+  const pricingAttentionCount =
+    unmatchedModelCount +
+    pricingOverrides.filter((item) => item.officialPriceAvailable || item.targetMissing).length;
+  const pricingPending = modelPricing.unmatched.status === "pending";
   const [pricingDrawerOpen, setPricingDrawerOpen] = useState(false);
   const [pricingDrawerMounted, setPricingDrawerMounted] = useState(false);
   const [pricingDrawerTab, setPricingDrawerTab] = useState<PricingDrawerTab>("unmatched");
@@ -521,8 +527,7 @@ export default function App() {
   const pricingNoticeVisible =
     appConfig.config != null && !pricingNoticeDismissed && pricingAttentionCount > 0;
   const sidebarPricingTab: PricingDrawerTab =
-    unmatchedModelCount === 0 &&
-    (officialAvailableCount > 0 || (pricingOverview?.overrides.length ?? 0) > 0)
+    unmatchedModelCount === 0 && (officialAvailableCount > 0 || pricingOverrides.length > 0)
       ? "overrides"
       : "unmatched";
   const intro = (
@@ -614,7 +619,7 @@ export default function App() {
             shortcutHelpOpen,
             hubEnabled,
             sessionCount: sessions.length,
-            pricingAttentionCount,
+            pricingAttentionCount: pricingPending ? null : pricingAttentionCount,
             theme,
           }}
           actions={{
@@ -676,6 +681,8 @@ export default function App() {
               initialTab={pricingDrawerTab}
               agentCatalog={agentCatalog}
               pricing={modelPricing}
+              scopeLabel={formatTimeWindowLabel(timeWindow)}
+              sessionCount={sessions.length}
             />
           </Suspense>
         ) : null}

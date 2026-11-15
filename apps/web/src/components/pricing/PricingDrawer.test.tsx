@@ -1,8 +1,8 @@
 import type {
   AgentInfo,
   OfficialModelListResponse,
-  PricingMutationResponse,
-  PricingOverviewResponse,
+  ModelPriceOverrideView,
+  UnmatchedModelStat,
   UpsertPricingOverrideRequest,
 } from "@codesesh/contract";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/contract/test-fixtures";
@@ -36,7 +36,12 @@ const officialModels: OfficialModelListResponse = {
   total: 2,
 };
 
-function createOverview(): PricingOverviewResponse {
+interface PricingFixture {
+  unmatchedModels: UnmatchedModelStat[];
+  overrides: ModelPriceOverrideView[];
+}
+
+function createOverview(): PricingFixture {
   return {
     unmatchedModels: [
       {
@@ -86,8 +91,17 @@ function createOverview(): PricingOverviewResponse {
         updatedAt: 300,
       },
     ],
-    attentionCount: 3,
   };
+}
+
+function readPricing(fixture: PricingFixture, parsed: URL, init?: RequestInit): Response | null {
+  if (parsed.pathname === "/api/pricing/unmatched") {
+    return Response.json({ unmatchedModels: fixture.unmatchedModels });
+  }
+  if (parsed.pathname === "/api/pricing/overrides" && (init?.method ?? "GET") === "GET") {
+    return Response.json({ overrides: fixture.overrides });
+  }
+  return null;
 }
 
 function DrawerHarness({ initialTab }: { initialTab: PricingDrawerTab }) {
@@ -101,6 +115,8 @@ function DrawerHarness({ initialTab }: { initialTab: PricingDrawerTab }) {
       initialTab={initialTab}
       agentCatalog={catalog}
       pricing={pricing}
+      scopeLabel="Last 30d"
+      sessionCount={655}
     />
   );
 }
@@ -122,6 +138,24 @@ afterEach(() => {
 });
 
 describe("PricingDrawer", () => {
+  it("never reports zero unmatched models before counting finishes", async () => {
+    const fixture = createOverview();
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const parsed = new URL(String(input), "http://localhost");
+      if (parsed.pathname === "/api/pricing/unmatched") return new Promise<Response>(() => {});
+      return Promise.resolve(readPricing(fixture, parsed, init) ?? Response.json({}));
+    });
+
+    renderDrawer("unmatched");
+
+    expect(await screen.findByText("3 pricing rules are active and unaffected.")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Counting" })).toBeTruthy();
+    expect(screen.queryByText("All models in range are priced")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "View rules" }));
+    expect(await screen.findByText("custom/old")).toBeTruthy();
+  });
+
   it("remaps an unmatched model using official search results", async () => {
     let currentOverview = createOverview();
     let capturedSaveBody: UpsertPricingOverrideRequest | null = null;
@@ -129,9 +163,8 @@ describe("PricingDrawer", () => {
 
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const parsed = new URL(String(input), "http://localhost");
-      if (parsed.pathname === "/api/pricing/overview") {
-        return Response.json(currentOverview);
-      }
+      const read = readPricing(currentOverview, parsed, init);
+      if (read) return read;
       if (parsed.pathname === "/api/pricing/models") {
         const q = parsed.searchParams.get("q") ?? "";
         modelSearchQueries.push(q);
@@ -159,10 +192,8 @@ describe("PricingDrawer", () => {
               updatedAt: 400,
             },
           ],
-          attentionCount: 2,
         };
-        const payload: PricingMutationResponse = { overview: currentOverview };
-        return Response.json(payload);
+        return Response.json({ overrides: currentOverview.overrides });
       }
       return Response.json({});
     });
@@ -204,16 +235,15 @@ describe("PricingDrawer", () => {
 
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const parsed = new URL(String(input), "http://localhost");
-      if (parsed.pathname === "/api/pricing/overview") {
-        return Response.json(currentOverview);
-      }
+      const read = readPricing(currentOverview, parsed, init);
+      if (read) return read;
       if (parsed.pathname === "/api/pricing/models") {
         return Response.json(officialModels);
       }
       if (parsed.pathname === "/api/pricing/overrides" && init?.method === "PUT") {
         capturedSaveBody = JSON.parse(String(init.body));
-        currentOverview = { ...currentOverview, unmatchedModels: [], attentionCount: 2 };
-        return Response.json({ overview: currentOverview });
+        currentOverview = { ...currentOverview, unmatchedModels: [] };
+        return Response.json({ overrides: currentOverview.overrides });
       }
       return Response.json({});
     });
@@ -245,9 +275,8 @@ describe("PricingDrawer", () => {
 
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const parsed = new URL(String(input), "http://localhost");
-      if (parsed.pathname === "/api/pricing/overview") {
-        return Response.json(currentOverview);
-      }
+      const read = readPricing(currentOverview, parsed, init);
+      if (read) return read;
       if (parsed.pathname === "/api/pricing/models") {
         return Response.json(officialModels);
       }
@@ -259,9 +288,8 @@ describe("PricingDrawer", () => {
           overrides: currentOverview.overrides.map((item) =>
             item.modelKey === body.model ? { ...item, officialPriceAvailable: false } : item,
           ),
-          attentionCount: 2,
         };
-        return Response.json(currentOverview);
+        return Response.json({ overrides: currentOverview.overrides });
       }
       if (parsed.pathname === "/api/pricing/overrides/delete") {
         const body = JSON.parse(String(init?.body));
@@ -269,9 +297,8 @@ describe("PricingDrawer", () => {
         currentOverview = {
           ...currentOverview,
           overrides: currentOverview.overrides.filter((item) => item.modelKey !== body.model),
-          attentionCount: Math.max(0, currentOverview.attentionCount - 1),
         };
-        return Response.json({ overview: currentOverview });
+        return Response.json({ overrides: currentOverview.overrides });
       }
       return Response.json({});
     });
@@ -324,18 +351,16 @@ describe("PricingDrawer", () => {
 
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const parsed = new URL(String(input), "http://localhost");
-      if (parsed.pathname === "/api/pricing/overview") {
-        return Response.json(currentOverview);
-      }
+      const read = readPricing(currentOverview, parsed, init);
+      if (read) return read;
       if (parsed.pathname === "/api/pricing/overrides/delete") {
         const body = JSON.parse(String(init?.body));
         deletedModels.push(body.model);
         currentOverview = {
           ...currentOverview,
           overrides: currentOverview.overrides.filter((item) => item.modelKey !== body.model),
-          attentionCount: 1,
         };
-        return Response.json({ overview: currentOverview });
+        return Response.json({ overrides: currentOverview.overrides });
       }
       return Response.json({});
     });

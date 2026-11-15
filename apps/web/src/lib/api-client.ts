@@ -2,8 +2,7 @@ import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/contra
 import type {
   HubNodes,
   OfficialModelListResponse,
-  PricingMutationResponse,
-  PricingOverviewResponse,
+  PricingOverridesResponse,
   RescanHistory,
   AgentInfo,
   ApiProjectGroup,
@@ -22,6 +21,7 @@ import type {
   SessionListPage,
   SessionReference,
   SmartTag,
+  UnmatchedModelsResponse,
   UpsertPricingOverrideRequest,
 } from "@codesesh/contract";
 import type { RemoteAccess } from "./remote-access";
@@ -411,12 +411,16 @@ export function createApiClient(access: RemoteAccess) {
     );
   }
 
-  async function fetchPricingOverview(
+  async function fetchPricingOverrides(): Promise<PricingOverridesResponse> {
+    return fetchJson("/api/pricing/overrides");
+  }
+
+  async function fetchUnmatchedModels(
     from?: number,
     to?: number,
     days?: number,
-  ): Promise<PricingOverviewResponse> {
-    return fetchJson(`/api/pricing/overview${buildPricingWindowQuery(from, to, days)}`);
+  ): Promise<UnmatchedModelsResponse> {
+    return fetchJson(`/api/pricing/unmatched${buildPricingWindowQuery(from, to, days)}`);
   }
 
   async function fetchOfficialPricingModels(
@@ -432,40 +436,24 @@ export function createApiClient(access: RemoteAccess) {
 
   async function savePricingOverride(
     request: UpsertPricingOverrideRequest,
-    from?: number,
-    to?: number,
-    days?: number,
-  ): Promise<PricingMutationResponse> {
-    return fetchJson(`/api/pricing/overrides${buildPricingWindowQuery(from, to, days)}`, {
+  ): Promise<PricingOverridesResponse> {
+    return fetchJson("/api/pricing/overrides", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
     });
   }
 
-  async function acknowledgeOfficialPricing(
-    model: string,
-    from?: number,
-    to?: number,
-    days?: number,
-  ): Promise<PricingOverviewResponse> {
-    return fetchJson(
-      `/api/pricing/overrides/acknowledge${buildPricingWindowQuery(from, to, days)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
-      },
-    );
+  async function acknowledgeOfficialPricing(model: string): Promise<PricingOverridesResponse> {
+    return fetchJson("/api/pricing/overrides/acknowledge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model }),
+    });
   }
 
-  async function deletePricingOverride(
-    model: string,
-    from?: number,
-    to?: number,
-    days?: number,
-  ): Promise<PricingMutationResponse> {
-    return fetchJson(`/api/pricing/overrides/delete${buildPricingWindowQuery(from, to, days)}`, {
+  async function deletePricingOverride(model: string): Promise<PricingOverridesResponse> {
+    return fetchJson("/api/pricing/overrides/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model }),
@@ -497,7 +485,8 @@ export function createApiClient(access: RemoteAccess) {
     deleteBookmark,
     upsertSessionAlias,
     deleteSessionAlias,
-    fetchPricingOverview,
+    fetchPricingOverrides,
+    fetchUnmatchedModels,
     fetchOfficialPricingModels,
     savePricingOverride,
     acknowledgeOfficialPricing,
