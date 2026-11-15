@@ -1005,11 +1005,14 @@ pub struct OfficialModelOption {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct PricingOverviewResponse {
-    pub unmatched_models: Vec<UnmatchedModelStat>,
+pub struct PricingOverridesResponse {
     pub overrides: Vec<ModelPriceOverrideView>,
-    #[ts(type = "number")]
-    pub attention_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UnmatchedModelsResponse {
+    pub unmatched_models: Vec<UnmatchedModelStat>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
@@ -1037,10 +1040,4 @@ pub struct UpsertPricingOverrideRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PricingModelActionRequest {
     pub model: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct PricingMutationResponse {
-    pub overview: PricingOverviewResponse,
 }

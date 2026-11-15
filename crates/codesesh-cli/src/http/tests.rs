@@ -729,7 +729,8 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
     let (hub_app, hub_runtime, hub_pricing, _hub_dir) =
         pricing_app(&[], Some(StateStore::memory().unwrap()), true).await;
     for (method, path, body) in [
-        (Method::GET, "/api/pricing/overview", ""),
+        (Method::GET, "/api/pricing/overrides", ""),
+        (Method::GET, "/api/pricing/unmatched", ""),
         (Method::GET, "/api/pricing/models", ""),
         (
             Method::PUT,
@@ -756,8 +757,10 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
     }
 
-    let (status, _) = request(&hub_app, Method::GET, "/api/pricing/overview", &auth, "").await;
-    assert_eq!(status, StatusCode::OK);
+    for path in ["/api/pricing/overrides", "/api/pricing/unmatched"] {
+        let (status, _) = request(&hub_app, Method::GET, path, &auth, "").await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+    }
     let (status, hub_models) = request(
         &hub_app,
         Method::GET,
@@ -824,17 +827,17 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
             .unwrap();
     }
 
-    let (status, hub_overview) = request(
+    let (status, hub_unmatched) = request(
         &hub_app,
         Method::GET,
-        "/api/pricing/overview?days=0",
+        "/api/pricing/unmatched?days=0",
         &auth,
         "",
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        hub_overview["unmatchedModels"][0]["modelKey"],
+        hub_unmatched["unmatchedModels"][0]["modelKey"],
         "acme/hub-worker-v1"
     );
 
@@ -842,19 +845,29 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
     let (status, put_resp) = request(
         &hub_app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"acme/hub-worker-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(put_resp["overrides"][0]["modelKey"], "acme/hub-worker-v1");
+    assert_ne!(stale_pricing.generation(), hub_pricing.generation());
+    let (status, hub_unmatched) = request(
+        &hub_app,
+        Method::GET,
+        "/api/pricing/unmatched?days=0",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
-        put_resp["overview"]["unmatchedModels"]
+        hub_unmatched["unmatchedModels"]
             .as_array()
             .unwrap()
             .is_empty()
     );
-    assert_ne!(stale_pricing.generation(), hub_pricing.generation());
 
     let (status, sessions_json) =
         request(&hub_app, Method::GET, "/api/sessions?days=0", &auth, "").await;
@@ -922,7 +935,7 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
     let (status, _) = request(
         &hub_app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"acme/hub-worker-v1","kind":"manual","rates":{"input":3.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
@@ -950,7 +963,7 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
     let (status, _) = request(
         &no_saved_app,
         Method::GET,
-        "/api/pricing/overview",
+        "/api/pricing/overrides",
         &auth,
         "",
     )
@@ -1061,12 +1074,19 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     )
     .await;
 
-    let (status, overview) =
-        request(&app, Method::GET, "/api/pricing/overview?days=0", &auth, "").await;
+    let (status, overrides) = request(&app, Method::GET, "/api/pricing/overrides", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(overview["attentionCount"], 1);
-    assert_eq!(overview["overrides"].as_array().unwrap().len(), 0);
-    let unmatched = overview["unmatchedModels"].as_array().unwrap();
+    assert_eq!(overrides["overrides"].as_array().unwrap().len(), 0);
+    let (status, unmatched) = request(
+        &app,
+        Method::GET,
+        "/api/pricing/unmatched?days=0",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let unmatched = unmatched["unmatchedModels"].as_array().unwrap();
     assert_eq!(unmatched.len(), 1);
     assert_eq!(unmatched[0]["modelKey"], "acme/unmatched-v1");
     assert_eq!(unmatched[0]["displayModel"], "acme/unmatched-v1");
@@ -1081,24 +1101,23 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, zero_resp) = request(
         &app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"acme/unmatched-v1","kind":"manual","rates":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(zero_resp["overview"]["attentionCount"], 0);
-    assert_eq!(
-        zero_resp["overview"]["unmatchedModels"]
-            .as_array()
-            .unwrap()
-            .len(),
-        0
-    );
-    assert_eq!(
-        zero_resp["overview"]["overrides"].as_array().unwrap().len(),
-        1
-    );
+    assert_eq!(zero_resp["overrides"].as_array().unwrap().len(), 1);
+    let (status, unmatched) = request(
+        &app,
+        Method::GET,
+        "/api/pricing/unmatched?days=0",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(unmatched["unmatchedModels"].as_array().unwrap().len(), 0);
     let (status, sessions_json) =
         request(&app, Method::GET, "/api/sessions?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
@@ -1111,7 +1130,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, _) = request(
         &app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"acme/unmatched-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
@@ -1142,7 +1161,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, _) = request(
         &app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"acme/unmatched-v1","kind":"remap","targetModel":"gpt-5"}"#,
     )
@@ -1155,13 +1174,13 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, official_override) = request(
         &app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"gpt-5","kind":"manual","rates":{"input":3.0,"output":6.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let gpt5_entry = official_override["overview"]["overrides"]
+    let gpt5_entry = official_override["overrides"]
         .as_array()
         .unwrap()
         .iter()
@@ -1172,13 +1191,13 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, official_edit) = request(
         &app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"gpt-5","kind":"manual","rates":{"input":4.0,"output":8.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let gpt5_edited = official_edit["overview"]["overrides"]
+    let gpt5_edited = official_edit["overrides"]
         .as_array()
         .unwrap()
         .iter()
@@ -1189,7 +1208,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, _) = request(
         &app,
         Method::POST,
-        "/api/pricing/overrides/delete?days=0",
+        "/api/pricing/overrides/delete",
         &json_auth,
         r#"{"model":"gpt-5"}"#,
     )
@@ -1199,7 +1218,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, _) = request(
         &app,
         Method::PUT,
-        "/api/pricing/overrides?days=0",
+        "/api/pricing/overrides",
         &json_auth,
         r#"{"model":"acme/unmatched-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
     )
@@ -1220,24 +1239,21 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     );
     pricing.publish_pending().unwrap();
 
-    let (status, overview) =
-        request(&app, Method::GET, "/api/pricing/overview?days=0", &auth, "").await;
+    let (status, listed) = request(&app, Method::GET, "/api/pricing/overrides", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(overview["attentionCount"], 1);
-    assert_eq!(overview["overrides"][0]["officialPriceAvailable"], true);
-    assert_eq!(overview["overrides"][0]["effectiveRates"]["input"], 2.0);
-    assert_eq!(overview["overrides"][0]["effectiveRates"]["output"], 10.0);
+    assert_eq!(listed["overrides"][0]["officialPriceAvailable"], true);
+    assert_eq!(listed["overrides"][0]["effectiveRates"]["input"], 2.0);
+    assert_eq!(listed["overrides"][0]["effectiveRates"]["output"], 10.0);
 
     let (status, acked) = request(
         &app,
         Method::POST,
-        "/api/pricing/overrides/acknowledge?days=0",
+        "/api/pricing/overrides/acknowledge",
         &json_auth,
         r#"{"model":"acme/unmatched-v1"}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(acked["attentionCount"], 0);
     assert_eq!(acked["overrides"][0]["officialPriceAvailable"], false);
     assert_eq!(acked["overrides"][0]["effectiveRates"]["input"], 2.0);
     let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
@@ -1261,24 +1277,23 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     let (status, deleted) = request(
         &app,
         Method::POST,
-        "/api/pricing/overrides/delete?days=0",
+        "/api/pricing/overrides/delete",
         &json_auth,
         r#"{"model":"acme/unmatched-v1"}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(deleted["overview"]["attentionCount"], 0);
-    assert_eq!(
-        deleted["overview"]["overrides"].as_array().unwrap().len(),
-        0
-    );
-    assert_eq!(
-        deleted["overview"]["unmatchedModels"]
-            .as_array()
-            .unwrap()
-            .len(),
-        0
-    );
+    assert_eq!(deleted["overrides"].as_array().unwrap().len(), 0);
+    let (status, unmatched) = request(
+        &app,
+        Method::GET,
+        "/api/pricing/unmatched?days=0",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(unmatched["unmatchedModels"].as_array().unwrap().len(), 0);
 
     let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);

@@ -25,12 +25,12 @@ use codesesh_core::{
     runtime::Runtime,
     session_list::SnapshotPaginator,
     state::StateStore,
-    wire::{DashboardData, PricingOverviewResponse, WireSessionHead},
+    wire::{DashboardData, UnmatchedModelsResponse, WireSessionHead},
 };
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, atomic::AtomicU64},
+    sync::{Arc, Mutex},
 };
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
@@ -64,9 +64,8 @@ pub struct State {
     details: Arc<Semaphore>,
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
     dashboard_cache: Arc<Mutex<catalog::CatalogCache<DashboardData>>>,
-    pricing_overview_cache: Arc<Mutex<catalog::CatalogCache<PricingOverviewResponse>>>,
+    pricing_unmatched_cache: Arc<Mutex<catalog::CatalogCache<UnmatchedModelsResponse>>>,
     pricing_write_lock: Arc<AsyncMutex<()>>,
-    pricing_state_revision: Arc<AtomicU64>,
     query_scope: codesesh_core::search::QueryScope,
 }
 
@@ -105,9 +104,8 @@ impl State {
             details: Arc::new(Semaphore::new(2)),
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             dashboard_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
-            pricing_overview_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
+            pricing_unmatched_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             pricing_write_lock: Arc::new(AsyncMutex::new(())),
-            pricing_state_revision: Arc::new(AtomicU64::new(0)),
         }
     }
     fn snapshot(&self) -> Arc<Vec<SessionHead>> {
@@ -201,9 +199,12 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/search", get(search::search))
         .route("/api/file-activity", get(search::file_activity))
         .route("/api/dashboard", get(catalog::dashboard))
-        .route("/api/pricing/overview", get(pricing::overview))
+        .route("/api/pricing/unmatched", get(pricing::unmatched))
         .route("/api/pricing/models", get(pricing::models))
-        .route("/api/pricing/overrides", put(pricing::put_override))
+        .route(
+            "/api/pricing/overrides",
+            get(pricing::overrides).put(pricing::put_override),
+        )
         .route(
             "/api/pricing/overrides/acknowledge",
             post(pricing::acknowledge_override),
