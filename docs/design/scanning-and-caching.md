@@ -68,7 +68,7 @@ TTL，也不会使窗口外的历史会话自动失效。删除判断必须基�
 价格缓存有效期为 24 小时。启动立即使用本地价格，过期缓存仍可用；缓存缺失或损坏时使用
 内置快照。Web 模式在启动页面后后台尝试刷新缺失或过期的价格，不等待网络请求。
 下载或写入失败保留当前价格，不影响服务。`--json` 使用本地价格完成输出，不等待远程更新。
-`Pricing`（`crates/codesesh-core/src/pricing.rs`）由官方目录与用户覆盖规则两层合成，单机模式启动（含 `--json` 与服务模式）在加载价格前先读取用户状态库中的 `model_price_overrides`，Hub 模式不加载该表并拒绝 `/api/pricing/*` 请求（404）。用户覆盖优先于官方价格，`$0` `manual` 覆盖记为 `CostSource::Estimated`，`remap` 仅映射已有官方价格的模型。
+`Pricing`（`crates/codesesh-core/src/pricing.rs`）由官方目录与用户覆盖规则两层合成，单机模式（含 `--json` 与服务模式）和 Hub 模式启动时在加载价格前先读取用户状态库中的 `model_price_overrides`，对本地扫描和 Worker 上传的会话统一生效。用户覆盖优先于官方价格，`$0` `manual` 覆盖记为 `CostSource::Estimated`，`remap` 仅映射已有官方价格的模型。
 
 一个扫描批次使用固定价格快照，同时 `runtime::writer` 在重算与发布阶段通过 `PricingSnapshot::with_latest` 读取最新覆盖规则。官方价格更新或覆盖规则变更时，`PricingController::replace_overrides` 生成新代际，并通过 `Runtime::reprice_all` 从缓存的计价输入更新估算费用，不重新解析会话正文或重建全文索引；旧缓存缺少计价输入时读取一次来源补齐。已有记录成本仍优先于模型估算。`models.dev` 后续上线或更新官方价格时保留已有自定义规则，并在 `/api/pricing/overview` 标记 `officialPriceAvailable`：确认已知官方价不触发重算，删除规则后恢复官方价格并重算。未匹配模型的模型分布与 token 统计由 `crates/codesesh-core/src/analytics/unmatched.rs` 聚合 `session_usage_bucket` 与特例会话的 `meta_json`。价格缓存和会话缓存是独立文件。
 

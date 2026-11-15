@@ -116,14 +116,10 @@ async fn run() -> Result<()> {
     .then(|| node_identity::lock(&environment.home, "collector.lock"))
     .transpose()?;
     let saved = open_user_state(&environment.home, logger).await?;
-    let overrides = if scan_local {
-        saved
-            .as_ref()
-            .map(|store| store.list_model_price_overrides().unwrap_or_default())
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let overrides = saved
+        .as_ref()
+        .map(|store| store.list_model_price_overrides().unwrap_or_default())
+        .unwrap_or_default();
     let (pricing_controller, pricing) = load_pricing(&environment.home, overrides, logger)?;
     let (cache_path, _temporary) =
         prepare_cache(&args, &environment.home, hub_enabled, logger).await?;

@@ -91,9 +91,9 @@ pub(super) fn run(
                 pricing,
                 response,
             } => {
-                let result = pricing.with_current(|| {
+                let result = pricing.with_latest(|active_pricing| {
                     let node = cache.authenticate_worker(&credential)?;
-                    let receipt = cache.receive_upload(&node, &upload, &pricing.pricing)?;
+                    let receipt = cache.receive_upload(&node, &upload, active_pricing)?;
                     if let Some(reference) = &receipt.changed {
                         publish_changes(
                             &cache,

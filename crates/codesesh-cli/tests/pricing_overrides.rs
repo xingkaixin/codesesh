@@ -129,7 +129,7 @@ fn write_codex_fixture(home: &Path, model: &str, input_tokens: u64, output_token
 }
 
 #[tokio::test]
-async fn cli_persists_overrides_across_clear_cache_json_and_blocks_hub() {
+async fn cli_persists_overrides_across_clear_cache_json_and_hub_restart() {
     let home = tempfile::tempdir().unwrap();
     write_codex_fixture(home.path(), "acme/cli-persist-v1", 1_000_000, 500_000);
     let client = reqwest::Client::new();
@@ -212,7 +212,48 @@ async fn cli_persists_overrides_across_clear_cache_json_and_blocks_hub() {
     let (hub_server, hub_origin) = spawn_server(hub_home.path(), &["hub"]);
     assert_eq!(
         wait_for_status(&client, &format!("{hub_origin}/api/pricing/overview")).await,
-        reqwest::StatusCode::NOT_FOUND
+        reqwest::StatusCode::OK
+    );
+    let hub_put = client
+        .put(format!("{hub_origin}/api/pricing/overrides?days=0"))
+        .json(&serde_json::json!({
+            "model": "acme/hub-persist-v1",
+            "kind": "manual",
+            "rates": { "input": 3.0, "output": 12.0, "cacheRead": 0.0, "cacheWrite": 0.0 }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(hub_put.status(), reqwest::StatusCode::OK);
+    let hub_put_body: Value = hub_put.json().await.unwrap();
+    assert_eq!(
+        hub_put_body["overview"]["overrides"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        hub_put_body["overview"]["overrides"][0]["modelKey"],
+        "acme/hub-persist-v1"
     );
     drop(hub_server);
+
+    let (restarted_hub, restarted_hub_origin) = spawn_server(hub_home.path(), &["hub"]);
+    let hub_overview = wait_for_json(
+        &client,
+        &format!("{restarted_hub_origin}/api/pricing/overview?days=0"),
+    )
+    .await;
+    assert_eq!(hub_overview["overrides"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        hub_overview["overrides"][0]["modelKey"],
+        "acme/hub-persist-v1"
+    );
+    assert_eq!(hub_overview["overrides"][0]["effectiveRates"]["input"], 3.0);
+    assert_eq!(
+        hub_overview["overrides"][0]["effectiveRates"]["output"],
+        12.0
+    );
+    drop(restarted_hub);
 }

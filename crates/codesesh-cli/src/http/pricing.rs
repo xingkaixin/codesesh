@@ -44,17 +44,6 @@ impl IntoResponse for ApiError {
     }
 }
 
-fn require_local(state: &State) -> Result<(), ApiError> {
-    if state.hub_enabled {
-        Err(ApiError::static_msg(
-            StatusCode::NOT_FOUND,
-            "Pricing overrides are only available in local mode",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn parse_window(raw: Option<&str>, options: &super::Options) -> Result<DashboardWindow, ApiError> {
     let query = Params::new(raw);
     resolve_dashboard_window(&query, options)
@@ -224,7 +213,6 @@ pub async fn overview(
     RawQuery(raw): RawQuery,
 ) -> Response {
     async {
-        require_local(&state)?;
         let window = parse_window(raw.as_deref(), &state.options)?;
         load_overview(&state, window.from, window.base_to)
             .await
@@ -236,7 +224,6 @@ pub async fn overview(
 
 pub async fn models(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQuery) -> Response {
     async {
-        require_local(&state)?;
         let query = Params::new(raw.as_deref());
         let limit = query
             .limit(50, 200)
@@ -263,7 +250,6 @@ pub async fn put_override(
     bytes: Bytes,
 ) -> Response {
     async {
-        require_local(&state)?;
         let window = parse_window(raw.as_deref(), &state.options)?;
         let _guard = state.pricing_write_lock.lock().await;
         ensure_saved_available(&state).await?;
@@ -361,7 +347,6 @@ pub async fn acknowledge_override(
     bytes: Bytes,
 ) -> Response {
     async {
-        require_local(&state)?;
         let window = parse_window(raw.as_deref(), &state.options)?;
         let _guard = state.pricing_write_lock.lock().await;
         ensure_saved_available(&state).await?;
@@ -420,7 +405,6 @@ pub async fn delete_override(
     bytes: Bytes,
 ) -> Response {
     async {
-        require_local(&state)?;
         let window = parse_window(raw.as_deref(), &state.options)?;
         let _guard = state.pricing_write_lock.lock().await;
         ensure_saved_available(&state).await?;

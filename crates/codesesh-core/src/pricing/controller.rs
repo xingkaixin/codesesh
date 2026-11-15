@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
@@ -151,11 +151,12 @@ impl PricingSnapshot {
     #[cfg(test)]
     pub(crate) fn check(&self) -> Result<()> {
         if !self.is_current() {
-            bail!("pricing generation cancelled");
+            anyhow::bail!("pricing generation cancelled");
         }
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn with_current<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
         // Hold the read lock through SQLite commit and snapshot publication, not just the check.
         let manager = self
@@ -165,7 +166,7 @@ impl PricingSnapshot {
             .read()
             .map_err(|_| anyhow!("pricing lock poisoned"))?;
         if manager.current().generation() != self.generation() {
-            bail!("pricing generation cancelled");
+            anyhow::bail!("pricing generation cancelled");
         }
         commit()
     }
