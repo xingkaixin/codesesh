@@ -9,7 +9,19 @@ use anyhow::Result;
 use rusqlite::{Connection, params_from_iter, types::Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-const HEAD_OR_SPECIAL_AGENTS_SQL: &str = "'droid','kimi','kimi-code','minimax-code','grok','cursor','opencode','zcode','antigravity-cli','dsh','claudecode','qoder','qoder-cn','codex','deepchat','cherrystudio'";
+// Match Dashboard's usage reconciliation before assigning head totals to message times.
+const TIMED_USAGE_SQL: &str = "
+    c.input_tokens = s.total_input_tokens
+    AND (c.output_tokens = s.total_output_tokens OR c.output_tokens + c.reasoning_tokens = s.total_output_tokens)
+    AND c.cache_read_tokens = COALESCE(s.total_cache_read_tokens, 0)
+    AND c.cache_create_tokens = COALESCE(s.total_cache_create_tokens, 0)
+    AND c.input_tokens + s.total_output_tokens = COALESCE(s.total_tokens, s.total_input_tokens + s.total_output_tokens)
+    AND c.untimed_input_tokens = 0
+    AND c.untimed_output_tokens = 0
+    AND c.untimed_reasoning_tokens = 0
+    AND c.untimed_cache_read_tokens = 0
+    AND c.untimed_cache_create_tokens = 0
+";
 
 #[derive(Default)]
 struct ModelAcc {
@@ -96,7 +108,8 @@ fn collect_bucket_unmatched(
     }
     let sql = format!(
         "SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
-                SUM(b.input_tokens), SUM(b.output_tokens), SUM(b.reasoning_tokens),
+                SUM(b.input_tokens), SUM(b.output_tokens),
+                SUM(CASE WHEN c.output_tokens = s.total_output_tokens THEN 0 ELSE b.reasoning_tokens END),
                 SUM(b.cache_read_tokens), SUM(b.cache_create_tokens)
          FROM session_usage_bucket b
          JOIN sessions s ON s.source_node_id = b.source_node_id
@@ -106,8 +119,8 @@ fn collect_bucket_unmatched(
                                     AND c.agent_name = s.agent_name
                                     AND c.session_id = s.session_id
          WHERE s.publication_id IS NULL
-           AND s.agent_name NOT IN ({HEAD_OR_SPECIAL_AGENTS_SQL})
-           AND c.untimed_message_count = 0
+           AND ({TIMED_USAGE_SQL})
+           AND (s.cost_source IS NOT 'recorded' OR json_array_length(s.meta_json, '$.rustPricing.head.inputs') > 0)
            AND b.cost_source = ''
            AND b.model <> ''
            AND (b.input_tokens > 0 OR b.output_tokens > 0 OR b.reasoning_tokens > 0 OR b.cache_read_tokens > 0 OR b.cache_create_tokens > 0)
@@ -182,19 +195,16 @@ fn collect_meta_unmatched(
         params.push(Value::Real(to));
     }
     let sql = format!(
-        "SELECT s.source_node_id, s.agent_name, s.session_id, s.cost_source, s.meta_json
+        "SELECT s.source_node_id, s.agent_name, s.session_id, s.meta_json
          FROM sessions s
          WHERE s.publication_id IS NULL
            AND s.meta_json LIKE '%\"rustPricing\"%'
-           AND (
-             s.agent_name IN ({HEAD_OR_SPECIAL_AGENTS_SQL})
-             OR NOT EXISTS (
+           AND NOT EXISTS (
                SELECT 1 FROM session_cost_summary c
                WHERE c.source_node_id = s.source_node_id
                  AND c.agent_name = s.agent_name
                  AND c.session_id = s.session_id
-                 AND c.untimed_message_count = 0
-             )
+                 AND ({TIMED_USAGE_SQL})
            )
            {scope_sql}
            {window}"
@@ -205,12 +215,11 @@ fn collect_meta_unmatched(
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, String>(4)?,
+            row.get::<_, String>(3)?,
         ))
     })?;
     for row in rows {
-        let (node_id, agent_name, session_id, session_cost_source, raw_meta) = row?;
+        let (node_id, agent_name, session_id, raw_meta) = row?;
         if !raw_meta.contains("\"cost\":null") && !raw_meta.contains("\"cost\": null") {
             continue;
         }
@@ -220,46 +229,22 @@ fn collect_meta_unmatched(
         if stored.state.version != 1 {
             continue;
         }
-        if !stored.state.head.inputs.is_empty() {
-            for input in &stored.state.head.inputs {
-                if input.cost.is_some() {
-                    continue;
-                }
-                let Some(raw_model) = input.model.as_deref() else {
-                    continue;
-                };
-                record_unmatched_tokens(
-                    acc,
-                    pricing,
-                    &node_id,
-                    &agent_name,
-                    &session_id,
-                    raw_model,
-                    &input.tokens,
-                );
+        for input in &stored.state.head.inputs {
+            if input.cost.is_some() {
+                continue;
             }
-        } else if !(matches!(agent_name.as_str(), "opencode" | "zcode")
-            && session_cost_source.as_deref() == Some("recorded"))
-        {
-            for basis in stored.state.messages.values() {
-                for input in &basis.inputs {
-                    if input.cost.is_some() {
-                        continue;
-                    }
-                    let Some(raw_model) = input.model.as_deref() else {
-                        continue;
-                    };
-                    record_unmatched_tokens(
-                        acc,
-                        pricing,
-                        &node_id,
-                        &agent_name,
-                        &session_id,
-                        raw_model,
-                        &input.tokens,
-                    );
-                }
-            }
+            let Some(raw_model) = input.model.as_deref() else {
+                continue;
+            };
+            record_unmatched_tokens(
+                acc,
+                pricing,
+                &node_id,
+                &agent_name,
+                &session_id,
+                raw_model,
+                &input.tokens,
+            );
         }
     }
     Ok(())
@@ -378,6 +363,13 @@ mod tests {
                     stats.total_input_tokens += t.input.unwrap_or(0.0);
                     stats.total_output_tokens +=
                         t.output.unwrap_or(0.0) + t.reasoning.unwrap_or(0.0);
+                    stats.total_cache_read_tokens = Some(
+                        stats.total_cache_read_tokens.unwrap_or(0.0) + t.cache_read.unwrap_or(0.0),
+                    );
+                    stats.total_cache_create_tokens = Some(
+                        stats.total_cache_create_tokens.unwrap_or(0.0)
+                            + t.cache_create.unwrap_or(0.0),
+                    );
                 }
                 stats.total_cost += message.cost.unwrap_or(0.0);
                 stats
@@ -459,6 +451,136 @@ mod tests {
             subagent_id: None,
             nickname: None,
             automated: None,
+        }
+    }
+
+    #[test]
+    fn codex_model_changes_follow_dashboard_windows_without_counting_head_copies() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("rollout-model-change.jsonl");
+        let lines = [
+            serde_json::json!({"type":"session_meta","timestamp":900000,"payload":{"cwd":"/tmp/project","model":"acme/old"}}),
+            serde_json::json!({"type":"response_item","timestamp":900001,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Old"}]}}),
+            serde_json::json!({"type":"response_item","timestamp":900002,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Old answer"}]}}),
+            serde_json::json!({"type":"event_msg","timestamp":900003,"payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":1100},"last_token_usage":{"input_tokens":1000,"output_tokens":100,"reasoning_output_tokens":25}}}}),
+            serde_json::json!({"type":"turn_context","timestamp":1800000,"payload":{"model":"gpt-5.4"}}),
+            serde_json::json!({"type":"response_item","timestamp":1800001,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"New"}]}}),
+            serde_json::json!({"type":"response_item","timestamp":1800002,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"New answer"}]}}),
+            serde_json::json!({"type":"event_msg","timestamp":1800003,"payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":1210},"last_token_usage":{"input_tokens":100,"output_tokens":10}}}}),
+        ];
+        std::fs::write(
+            &path,
+            lines
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let pricing = Pricing::bundled();
+        let detail = crate::agents::parse_codex(&path, &HashMap::new(), &pricing)
+            .unwrap()
+            .unwrap();
+        let mut session = ParsedSession {
+            source: path,
+            head: detail.head.clone(),
+            detail,
+        };
+        let mut cache = Cache::open(None).unwrap();
+        cache.publish(std::slice::from_mut(&mut session)).unwrap();
+        for (from, to, expected_tokens, expected_unmatched) in [
+            (900000.0, 1799999.0, 1100.0, 1100.0),
+            (1800000.0, 2699999.0, 110.0, 0.0),
+            (900000.0, 2699999.0, 1210.0, 1100.0),
+        ] {
+            let unmatched = query_unmatched_models(
+                cache.connection(),
+                &QueryScope::default(),
+                Some(from),
+                Some(to),
+                &pricing,
+            )
+            .unwrap();
+            assert_eq!(
+                unmatched.iter().map(|m| m.total_tokens).sum::<f64>(),
+                expected_unmatched
+            );
+            if expected_unmatched > 0.0 {
+                assert_eq!(unmatched.len(), 1);
+                assert_eq!(unmatched[0].model_key, "acme/old");
+                assert_eq!(unmatched[0].session_count, 1);
+                assert_eq!(unmatched[0].output_tokens, 100.0);
+            }
+            let scope = crate::analytics::DashboardScope::default();
+            let zone = "UTC".parse().unwrap();
+            let (dashboard, _) = crate::analytics::dashboard_response(
+                cache.connection(),
+                &cache.snapshot().unwrap(),
+                &crate::analytics::DashboardResponseOptions {
+                    aggregate: crate::analytics::DashboardOptions {
+                        by_agent_names: &["codex".into()],
+                        scope: &scope,
+                        from: Some(from),
+                        to,
+                        agent_info: None,
+                        compare: None,
+                        cost_facts: None,
+                        time_zone: &zone,
+                    },
+                    days: 1,
+                    query_scope: None,
+                },
+            )
+            .unwrap();
+            assert_eq!(dashboard.aggregate.totals.tokens, expected_tokens);
+        }
+    }
+
+    #[test]
+    fn incomplete_or_untimed_message_usage_falls_back_to_head_once() {
+        let pricing = Pricing::bundled();
+        let partial = serde_json::from_value(serde_json::json!({"input":100,"output":10})).unwrap();
+        let total: MessageTokens =
+            serde_json::from_value(serde_json::json!({"input":1000,"output":100})).unwrap();
+        for (message_time, message_tokens) in [(900000.0, partial), (0.0, total.clone())] {
+            let message =
+                assistant_message("m", message_time, "acme/unknown", message_tokens, &pricing);
+            let mut session = make_session(
+                TestSession {
+                    node_id: "local",
+                    agent: "pi",
+                    id: "incomplete",
+                    directory: "/tmp/project",
+                    time: 1800000.0,
+                    messages: vec![message],
+                    head_inputs_model: Some(("acme/unknown", total.clone())),
+                },
+                &pricing,
+            );
+            let mut cache = Cache::open(None).unwrap();
+            cache.publish(std::slice::from_mut(&mut session)).unwrap();
+            assert!(
+                query_unmatched_models(
+                    cache.connection(),
+                    &QueryScope::default(),
+                    Some(900000.0),
+                    Some(1799999.0),
+                    &pricing
+                )
+                .unwrap()
+                .is_empty()
+            );
+            let current = query_unmatched_models(
+                cache.connection(),
+                &QueryScope::default(),
+                Some(1800000.0),
+                Some(2699999.0),
+                &pricing,
+            )
+            .unwrap();
+            assert_eq!(current.len(), 1);
+            assert_eq!(current[0].total_tokens, 1100.0);
+            assert_eq!(current[0].session_count, 1);
         }
     }
 
