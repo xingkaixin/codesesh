@@ -6,10 +6,10 @@ use crate::{
     wire::UnmatchedModelStat,
 };
 use anyhow::Result;
-use rusqlite::{Connection, params_from_iter, types::Value};
+use rusqlite::{Connection, functions::FunctionFlags, params_from_iter, types::Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-// Match Dashboard's usage reconciliation before assigning head totals to message times.
+// A display message can merge several models, so matching totals alone cannot justify its buckets.
 const TIMED_USAGE_SQL: &str = "
     c.input_tokens = s.total_input_tokens
     AND (c.output_tokens = s.total_output_tokens OR c.output_tokens + c.reasoning_tokens = s.total_output_tokens)
@@ -21,6 +21,17 @@ const TIMED_USAGE_SQL: &str = "
     AND c.untimed_reasoning_tokens = 0
     AND c.untimed_cache_read_tokens = 0
     AND c.untimed_cache_create_tokens = 0
+    AND NOT EXISTS (
+        SELECT 1
+        FROM json_each(s.meta_json, '$.rustPricing.messages') pricing_message
+        JOIN messages m ON m.source_node_id = s.source_node_id
+                       AND m.agent_name = s.agent_name
+                       AND m.session_id = s.session_id
+                       AND m.message_index = CAST(pricing_message.key AS INTEGER)
+        JOIN json_each(pricing_message.value, '$.inputs') cost_input
+        WHERE codesesh_pricing_model_key(json_extract(cost_input.value, '$.model'))
+              IS NOT codesesh_pricing_model_key(m.model)
+    )
 ";
 
 #[derive(Default)]
@@ -42,6 +53,15 @@ pub fn query_unmatched_models(
     to: Option<f64>,
     pricing: &Pricing,
 ) -> Result<Vec<UnmatchedModelStat>> {
+    connection.create_scalar_function(
+        "codesesh_pricing_model_key",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            let model: Option<String> = context.get(0)?;
+            Ok(model.as_deref().and_then(normalize_override_model_key))
+        },
+    )?;
     let (scope_sql, scope_params) = scope_where(connection, scope)?;
     let mut acc: HashMap<String, ModelAcc> = HashMap::new();
     collect_bucket_unmatched(
@@ -460,6 +480,7 @@ mod tests {
         let path = root.path().join("rollout-model-change.jsonl");
         let lines = [
             serde_json::json!({"type":"session_meta","timestamp":900000,"payload":{"cwd":"/tmp/project","model":"acme/old"}}),
+            serde_json::json!({"type":"event_msg","timestamp":900000,"payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}),
             serde_json::json!({"type":"response_item","timestamp":900001,"payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Old"}]}}),
             serde_json::json!({"type":"response_item","timestamp":900002,"payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Old answer"}]}}),
             serde_json::json!({"type":"event_msg","timestamp":900003,"payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":1100},"last_token_usage":{"input_tokens":1000,"output_tokens":100,"reasoning_output_tokens":25}}}}),
@@ -533,6 +554,88 @@ mod tests {
             )
             .unwrap();
             assert_eq!(dashboard.aggregate.totals.tokens, expected_tokens);
+        }
+    }
+
+    #[test]
+    fn merged_model_usage_keeps_each_unmatched_model() {
+        for (second_model, display_model, expected_models) in [
+            ("gpt-5.4", "gpt-5.4", vec![("acme/first", 1100.0)]),
+            (
+                "acme/second",
+                "acme/first",
+                vec![("acme/first", 1100.0), ("acme/second", 110.0)],
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let dir = root.path().join("sessions/project");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("summary.json"),
+                serde_json::json!({"info":{"id":"merged","cwd":"/tmp/project"},"created_at":"1970-01-01T00:15:00Z","current_model_id":display_model}).to_string(),
+            ).unwrap();
+            let update = |time, kind: &str, mut fields: serde_json::Value| {
+                fields["sessionUpdate"] = kind.into();
+                serde_json::json!({
+                    "method":if kind == "turn_completed" { "_x.ai/session/update" } else { "session/update" },
+                    "params":{"update":fields,"_meta":{"agentTimestampMs":time,"promptId":"p"}}
+                })
+            };
+            let records = [
+                update(
+                    900001,
+                    "user_message_chunk",
+                    serde_json::json!({"content":{"type":"text","text":"Hi"}}),
+                ),
+                update(
+                    900002,
+                    "agent_message_chunk",
+                    serde_json::json!({"content":{"type":"text","text":"Hello"}}),
+                ),
+                update(
+                    900003,
+                    "turn_completed",
+                    serde_json::json!({"usage":{
+                        "inputTokens":1100,"outputTokens":110,"totalTokens":1210,
+                        "modelUsage":{
+                            "acme/first":{"inputTokens":1000,"outputTokens":100,"totalTokens":1100},
+                            (second_model):{"inputTokens":100,"outputTokens":10,"totalTokens":110}
+                        }
+                    }}),
+                ),
+            ];
+            std::fs::write(
+                dir.join("updates.jsonl"),
+                records
+                    .iter()
+                    .map(serde_json::Value::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+            let pricing = Pricing::bundled();
+            let mut sessions = crate::agents::grok::scan(root.path(), &pricing).unwrap();
+            assert_eq!(sessions.len(), 1);
+            let mut cache = Cache::open(None).unwrap();
+            cache.publish(&mut sessions).unwrap();
+            for (from, to) in [(None, None), (Some(900000.0), Some(1799999.0))] {
+                let unmatched = query_unmatched_models(
+                    cache.connection(),
+                    &QueryScope::default(),
+                    from,
+                    to,
+                    &pricing,
+                )
+                .unwrap();
+                assert_eq!(
+                    unmatched
+                        .iter()
+                        .map(|m| (m.model_key.as_str(), m.total_tokens))
+                        .collect::<Vec<_>>(),
+                    expected_models,
+                );
+                assert!(unmatched.iter().all(|m| m.session_count == 1));
+            }
         }
     }
 
