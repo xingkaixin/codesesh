@@ -316,7 +316,7 @@ impl Pricing {
         .into_iter()
         .any(|value| positive(value) > 0.0)
             || positive(Some(web_search)) > 0.0;
-        (cost > 0.0 || (!price.billable() && has_usage)).then(|| round_cost(cost))
+        has_usage.then(|| round_cost(cost))
     }
 }
 

@@ -582,6 +582,17 @@ mod tests {
                         cache_write: 7.0,
                     }),
                 ),
+                record(
+                    "acme/free-input",
+                    PricingOverrideKind::Manual,
+                    None,
+                    Some(PricingRatePerMillion {
+                        input: 0.0,
+                        output: 10.0,
+                        cache_read: 0.0,
+                        cache_write: 7.0,
+                    }),
+                ),
             ])
             .unwrap()
             .pricing;
@@ -591,13 +602,15 @@ mod tests {
             {"id":"flex","role":"assistant","time_created":1001,"model":"acme/alias@flex","tokens":{"input":1000000},"parts":[]},
             {"id":"cache","role":"assistant","time_created":1002,"model":"acme/manual","tokens":{"input":1000000,"cache_create":1000000,"cache_create_1h":1000000},"parts":[]},
             {"id":"missing","role":"assistant","time_created":1003,"model":"acme/alias","tokens":{"input":0,"output":0},"parts":[]},
-            {"id":"missing-manual","role":"assistant","time_created":1004,"model":"acme/manual","tokens":{},"parts":[]}
+            {"id":"missing-manual","role":"assistant","time_created":1004,"model":"acme/manual","tokens":{},"parts":[]},
+            {"id":"free-read","role":"assistant","time_created":1005,"model":"acme/manual","tokens":{"input":1000000,"cache_read":1000000,"output":0},"parts":[]},
+            {"id":"free-input","role":"assistant","time_created":1006,"model":"acme/free-input","tokens":{"input":1000000,"output":0},"parts":[]}
         ])).unwrap();
         for (message, previous_cost) in session
             .detail
             .messages
             .iter_mut()
-            .zip([2.5, 2.5, 4.0, 0.0, 0.0])
+            .zip([2.5, 2.5, 4.0, 0.0, 0.0, 0.0, 0.0])
         {
             pricing.apply_message_cost(message);
             message.cost = Some(previous_cost);
@@ -630,12 +643,15 @@ mod tests {
         let head = cache.head(&session.head.reference).unwrap().unwrap();
         assert_eq!(head.stats.total_cost, 13.25);
         let detail = cache.detail(head).unwrap().unwrap();
-        for (message, expected) in
-            detail
-                .messages
-                .iter()
-                .zip([Some(5.0), Some(1.25), Some(7.0), None, None])
-        {
+        for (message, expected) in detail.messages.iter().zip([
+            Some(5.0),
+            Some(1.25),
+            Some(7.0),
+            None,
+            None,
+            Some(0.0),
+            Some(0.0),
+        ]) {
             assert_eq!(message.cost, expected);
             assert_eq!(message.cost_source, expected.map(|_| CostSource::Estimated));
         }
