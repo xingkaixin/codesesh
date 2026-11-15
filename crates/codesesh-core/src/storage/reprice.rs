@@ -545,6 +545,134 @@ mod tests {
     }
 
     #[test]
+    fn repricing_repairs_legacy_override_costs_without_original_sources() {
+        use crate::{
+            state::ModelPriceOverrideRecord,
+            wire::{PricingOverrideKind, PricingRatePerMillion},
+        };
+        let root = tempfile::tempdir().unwrap();
+        let controller = PricingController::load(root.path());
+        let record = |model: &str, kind, target: Option<&str>, rates| ModelPriceOverrideRecord {
+            model_key: model.into(),
+            display_model: model.into(),
+            kind,
+            target_model: target.map(str::to_owned),
+            rates,
+            acknowledged_official_hash: None,
+            acknowledged_official_json: None,
+            created_at: 1,
+            updated_at: 1,
+        };
+        let pricing = controller
+            .replace_overrides(vec![
+                record(
+                    "acme/alias",
+                    PricingOverrideKind::Remap,
+                    Some("gpt-5.4"),
+                    None,
+                ),
+                record(
+                    "acme/manual",
+                    PricingOverrideKind::Manual,
+                    None,
+                    Some(PricingRatePerMillion {
+                        input: 2.0,
+                        output: 10.0,
+                        cache_read: 0.0,
+                        cache_write: 7.0,
+                    }),
+                ),
+                record(
+                    "acme/free-input",
+                    PricingOverrideKind::Manual,
+                    None,
+                    Some(PricingRatePerMillion {
+                        input: 0.0,
+                        output: 10.0,
+                        cache_read: 0.0,
+                        cache_write: 7.0,
+                    }),
+                ),
+            ])
+            .unwrap()
+            .pricing;
+        let mut session = super::super::tests::source(root.path(), "legacy-overrides");
+        session.detail.messages = serde_json::from_value(json!([
+            {"id":"fast","role":"assistant","time_created":1000,"model":"acme/alias@fast","tokens":{"input":1000000},"parts":[]},
+            {"id":"flex","role":"assistant","time_created":1001,"model":"acme/alias@flex","tokens":{"input":1000000},"parts":[]},
+            {"id":"cache","role":"assistant","time_created":1002,"model":"acme/manual","tokens":{"input":1000000,"cache_create":1000000,"cache_create_1h":1000000},"parts":[]},
+            {"id":"missing","role":"assistant","time_created":1003,"model":"acme/alias","tokens":{"input":0,"output":0},"parts":[]},
+            {"id":"missing-manual","role":"assistant","time_created":1004,"model":"acme/manual","tokens":{},"parts":[]},
+            {"id":"free-read","role":"assistant","time_created":1005,"model":"acme/manual","tokens":{"input":1000000,"cache_read":1000000,"output":0},"parts":[]},
+            {"id":"free-input","role":"assistant","time_created":1006,"model":"acme/free-input","tokens":{"input":1000000,"output":0},"parts":[]}
+        ])).unwrap();
+        for (message, previous_cost) in session
+            .detail
+            .messages
+            .iter_mut()
+            .zip([2.5, 2.5, 4.0, 0.0, 0.0, 0.0, 0.0])
+        {
+            pricing.apply_message_cost(message);
+            message.cost = Some(previous_cost);
+            message.cost_source = Some(CostSource::Estimated);
+            for input in &mut message.cost_inputs {
+                input.cost = Some(previous_cost);
+                input.generation = 1;
+            }
+        }
+        session.head.stats.cost_inputs = session
+            .detail
+            .messages
+            .iter()
+            .flat_map(|m| m.cost_inputs.clone())
+            .collect();
+        session.head.stats.total_cost = 9.0;
+        session.head.stats.cost_source = Some(CostSource::Estimated);
+        let path = root.path().join("cache.db");
+        let mut cache = Cache::open(Some(&path)).unwrap();
+        cache.publish(std::slice::from_mut(&mut session)).unwrap();
+        mark_repriced(cache.connection(), 1).unwrap();
+        drop(cache);
+        std::fs::remove_file(&session.source).unwrap();
+        let mut cache = Cache::open(Some(&path)).unwrap();
+        assert!(needs_reprice(cache.connection(), pricing.generation()).unwrap());
+        assert_eq!(
+            cache.reprice("codex", &pricing).unwrap(),
+            [session.head.reference.clone()]
+        );
+        let head = cache.head(&session.head.reference).unwrap().unwrap();
+        assert_eq!(head.stats.total_cost, 13.25);
+        let detail = cache.detail(head).unwrap().unwrap();
+        for (message, expected) in detail.messages.iter().zip([
+            Some(5.0),
+            Some(1.25),
+            Some(7.0),
+            None,
+            None,
+            Some(0.0),
+            Some(0.0),
+        ]) {
+            assert_eq!(message.cost, expected);
+            assert_eq!(message.cost_source, expected.map(|_| CostSource::Estimated));
+        }
+        let breakdown = pricing.message_cost_breakdown(&detail.messages[2]).unwrap();
+        assert_eq!(breakdown.cache_create, 7.0);
+        assert_eq!(breakdown.total(), 7.0);
+        let stored: StoredPricing = serde_json::from_str(
+            &cache
+                .connection()
+                .query_row(
+                    "SELECT meta_json FROM sessions WHERE session_id=?",
+                    [&session.head.reference.session_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stored.state.generation, Some(pricing.generation()));
+    }
+
+    #[test]
     fn zero_dollar_override_round_trips_between_null_and_estimated() {
         let root = tempfile::tempdir().unwrap();
         let controller = PricingController::load(root.path());

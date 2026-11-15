@@ -12,6 +12,8 @@ pub struct Price {
     pub input_cost_per_token: f64,
     pub output_cost_per_token: f64,
     pub cache_create_cost_per_token: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_create_1h_cost_per_token: Option<f64>,
     pub cache_read_cost_per_token: f64,
     pub reasoning_cost_per_token: f64,
     pub web_search_cost_per_request: f64,
@@ -48,6 +50,7 @@ impl Price {
                 .unwrap_or(output),
             web_search_cost_per_request: nonnegative(value.get("webSearchCostPerRequest"))
                 .unwrap_or(0.01),
+            cache_create_1h_cost_per_token: nonnegative(value.get("cacheCreate1hCostPerToken")),
             long_context: value.get("longContext").and_then(|tier| {
                 Some(Box::new(LongContext {
                     threshold: nonnegative(tier.get("threshold"))?,
@@ -83,6 +86,10 @@ impl Price {
                 "null"
             });
         }
+        if let Some(rate) = self.cache_create_1h_cost_per_token {
+            output.push_str(",\"cacheCreate1hCostPerToken\":");
+            output.push_str(buffer.format(rate));
+        }
         if let Some(tier) = &self.long_context {
             output.push_str(",\"longContext\":{\"threshold\":");
             output.push_str(buffer.format(tier.threshold));
@@ -115,6 +122,7 @@ pub(super) fn snapshot() -> HashMap<String, Price> {
             cache_read_cost_per_token: nonnegative(values.get(3)).unwrap_or(input * 0.1),
             reasoning_cost_per_token: nonnegative(values.get(4)).unwrap_or(output),
             web_search_cost_per_request: nonnegative(values.get(5)).unwrap_or(0.01),
+            cache_create_1h_cost_per_token: None,
             long_context: None,
         };
         let model = normalize(&model);
@@ -128,11 +136,12 @@ pub(super) fn snapshot() -> HashMap<String, Price> {
 
 pub(super) fn generation_with_overrides(
     prices: &HashMap<String, Price>,
-    overrides: &HashMap<String, Price>,
+    overrides: &HashMap<String, super::ResolvedPrice>,
 ) -> u64 {
     let mut entries: Vec<_> = prices.iter().collect();
     entries.sort_by(|(left, _), (right, _)| left.encode_utf16().cmp(right.encode_utf16()));
     let mut hash = Sha256::new();
+    hash.update(b"pricing-v2\n");
     for (name, price) in entries {
         hash.update(name);
         hash.update(b"\0");
@@ -144,10 +153,14 @@ pub(super) fn generation_with_overrides(
         let mut override_entries: Vec<_> = overrides.iter().collect();
         override_entries
             .sort_by(|(left, _), (right, _)| left.encode_utf16().cmp(right.encode_utf16()));
-        for (name, price) in override_entries {
+        for (name, entry) in override_entries {
             hash.update(name);
             hash.update(b"\0");
-            hash.update(price.json());
+            hash.update(entry.price.json());
+            hash.update(b"\0");
+            if let Some(target) = &entry.target_model {
+                hash.update(target);
+            }
             hash.update(b"\n");
         }
     }
@@ -213,6 +226,7 @@ pub fn parse_models_dev(data: &Value) -> HashMap<String, Price> {
                     .unwrap_or(input),
                 reasoning_cost_per_token: output,
                 web_search_cost_per_request: 0.01,
+                cache_create_1h_cost_per_token: None,
                 long_context: None,
             };
             price.long_context = long_context(cost.get("tiers"), &price);
@@ -247,6 +261,7 @@ fn long_context(tiers: Option<&Value>, base: &Price) -> Option<Box<LongContext>>
                     cache_read_cost_per_token: rate("cache_read", base.cache_read_cost_per_token),
                     reasoning_cost_per_token: output,
                     web_search_cost_per_request: base.web_search_cost_per_request,
+                    cache_create_1h_cost_per_token: None,
                     long_context: None,
                 },
             })
@@ -285,6 +300,7 @@ mod tests {
                 cache_read_cost_per_token: 0.0,
                 reasoning_cost_per_token: 1.0,
                 web_search_cost_per_request: 1.0,
+                cache_create_1h_cost_per_token: None,
                 long_context: None
             }
             .billable()

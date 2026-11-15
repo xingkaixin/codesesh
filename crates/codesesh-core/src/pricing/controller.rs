@@ -83,16 +83,6 @@ impl PricingController {
         self.inner.generation.load(Ordering::Acquire)
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_pending(&self) -> Result<bool> {
-        Ok(self
-            .inner
-            .manager
-            .read()
-            .map_err(|_| anyhow!("pricing lock poisoned"))?
-            .has_pending())
-    }
-
     pub fn stage_remote(&self, data: &Value) -> Result<bool> {
         Ok(self
             .inner
@@ -143,34 +133,6 @@ impl PricingSnapshot {
         self.pricing.generation()
     }
 
-    #[cfg(test)]
-    pub(crate) fn is_current(&self) -> bool {
-        self.controller.generation() == self.generation()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn check(&self) -> Result<()> {
-        if !self.is_current() {
-            anyhow::bail!("pricing generation cancelled");
-        }
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_current<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
-        // Hold the read lock through SQLite commit and snapshot publication, not just the check.
-        let manager = self
-            .controller
-            .inner
-            .manager
-            .read()
-            .map_err(|_| anyhow!("pricing lock poisoned"))?;
-        if manager.current().generation() != self.generation() {
-            anyhow::bail!("pricing generation cancelled");
-        }
-        commit()
-    }
-
     pub(crate) fn with_latest<T>(&self, commit: impl FnOnce(&Pricing) -> Result<T>) -> Result<T> {
         // Hold the read lock through SQLite commit and snapshot publication using the latest pricing.
         let manager = self
@@ -180,76 +142,5 @@ impl PricingSnapshot {
             .read()
             .map_err(|_| anyhow!("pricing lock poisoned"))?;
         commit(manager.current_ref())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn remote() -> Value {
-        json!({"openai":{"models":{"controller-new-model":{"cost":{"input":2,"output":8}}}}})
-    }
-
-    #[test]
-    fn pending_does_not_interrupt_scans_and_old_commits_are_rejected_after_publication() {
-        let home = tempfile::tempdir().unwrap();
-        let controller = PricingController::load(home.path());
-        let before = controller.snapshot().unwrap();
-        assert!(controller.stage_remote(&remote()).unwrap());
-        assert!(controller.has_pending().unwrap());
-        assert!(before.is_current());
-        assert_eq!(before.with_current(|| Ok(7)).unwrap(), 7);
-        assert!(controller.publish_pending().unwrap());
-        assert!(!before.is_current());
-        assert!(before.check().is_err());
-        let mut committed = false;
-        assert!(
-            before
-                .with_current(|| {
-                    committed = true;
-                    Ok(())
-                })
-                .is_err()
-        );
-        assert!(!committed);
-        let current = controller.snapshot().unwrap();
-        assert!(current.is_current());
-        assert!(current.pricing.resolve("controller-new-model").is_some());
-        assert!(before.pricing.resolve("controller-new-model").is_none());
-    }
-
-    #[test]
-    fn with_latest_reads_replaced_overrides_without_cancelling() {
-        let home = tempfile::tempdir().unwrap();
-        let controller = PricingController::load(home.path());
-        let before = controller.snapshot().unwrap();
-        let updated = controller
-            .replace_overrides(vec![ModelPriceOverrideRecord {
-                model_key: "local-test".into(),
-                display_model: "local-test".into(),
-                kind: crate::wire::PricingOverrideKind::Manual,
-                target_model: None,
-                rates: Some(crate::wire::PricingRatePerMillion {
-                    input: 1.0,
-                    output: 2.0,
-                    cache_read: 0.0,
-                    cache_write: 0.0,
-                }),
-                acknowledged_official_hash: None,
-                acknowledged_official_json: None,
-                created_at: 1,
-                updated_at: 1,
-            }])
-            .unwrap();
-        assert!(!before.is_current());
-        let seen_gen = before
-            .with_latest(|latest| {
-                assert!(latest.resolve("local-test").is_some());
-                Ok(latest.generation())
-            })
-            .unwrap();
-        assert_eq!(seen_gen, updated.generation());
     }
 }

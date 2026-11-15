@@ -16,13 +16,17 @@ pub fn priced_model<'a>(model: Option<&'a str>, tier: Option<&str>) -> Option<Co
 }
 
 pub(super) fn split(model: &str) -> (&str, f64) {
+    split_for_target(model, None)
+}
+
+pub(super) fn split_for_target<'a>(model: &'a str, target_model: Option<&str>) -> (&'a str, f64) {
     let Some((base, multipliers)) = model
         .rsplit_once('@')
         .and_then(|(base, tier)| Some((base, MULTIPLIERS.get(tier)?)))
     else {
         return (model, 1.0);
     };
-    let normalized = super::normalize(base);
+    let normalized = super::normalize(target_model.unwrap_or(base));
     let mut name = normalized.rsplit('/').next().unwrap_or_default();
     loop {
         if let Some(multiplier) = multipliers.get(name) {

@@ -154,6 +154,81 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
 }
 
 #[tokio::test]
+async fn writer_reprices_old_scan_inputs_before_committing_and_publishing() {
+    use crate::{
+        pricing::PricingController, state::ModelPriceOverrideRecord, wire::PricingOverrideKind,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("session.jsonl");
+    let records = [
+        serde_json::json!({"type":"session","id":"old-pricing","cwd":"/tmp/project","timestamp":1000}),
+        serde_json::json!({"type":"message","id":"m","parentId":null,"timestamp":1001,"message":{"role":"assistant","model":"acme/alias@fast","content":[{"type":"text","text":"Answer"}],"usage":{"input":1000000,"output":0}}}),
+    ];
+    fs::write(
+        &path,
+        records
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let controller = PricingController::load(root.path());
+    let old = controller.snapshot().unwrap();
+    let source_path = root.path().to_owned();
+    let source = AgentSource {
+        name: "pi".into(),
+        roots: vec![],
+        release_idle: None,
+        scan: Arc::new(move |_| {
+            let sessions = crate::agents::pi::scan(&source_path, &old.pricing)?;
+            assert_eq!(sessions[0].detail.messages[0].cost, None);
+            controller.replace_overrides(vec![ModelPriceOverrideRecord {
+                model_key: "acme/alias".into(),
+                display_model: "acme/alias".into(),
+                kind: PricingOverrideKind::Remap,
+                target_model: Some("gpt-5.4".into()),
+                rates: None,
+                acknowledged_official_hash: None,
+                acknowledged_official_json: None,
+                created_at: 1,
+                updated_at: 1,
+            }])?;
+            Ok(ScanBatch {
+                source_presence: None,
+                sessions,
+                removed: vec![],
+                checkpoint: None,
+                complete: true,
+                on_reject: None,
+                pricing: Some(old.clone()),
+            })
+        }),
+    };
+    let database = root.path().join("cache.db");
+    let runtime = Runtime::start(database.clone(), vec![source], 1)
+        .await
+        .unwrap();
+    until(|| runtime.status().completed_agents.len() == 1).await;
+    let head = runtime.snapshot()[0].clone();
+    assert_eq!(head.stats.total_cost, 5.0);
+    assert_eq!(
+        head.stats.cost_source,
+        Some(crate::model::CostSource::Estimated)
+    );
+    runtime.shutdown().await.unwrap();
+    let cache = crate::storage::Cache::open_read_only(&database).unwrap();
+    let stored = cache.head(&head.reference).unwrap().unwrap();
+    assert_eq!(stored.stats.total_cost, 5.0);
+    let detail = cache.detail(stored).unwrap().unwrap();
+    assert_eq!(detail.messages[0].cost, Some(5.0));
+    assert_eq!(
+        detail.messages[0].cost_source,
+        Some(crate::model::CostSource::Estimated)
+    );
+}
+
+#[tokio::test]
 async fn failed_transaction_never_publishes_and_retries_from_last_good_state() {
     let temporary = tempfile::tempdir().unwrap();
     let path = temporary.path().join("rollout-fixture.jsonl");

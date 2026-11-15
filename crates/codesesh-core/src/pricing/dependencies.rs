@@ -1,7 +1,7 @@
-use super::{Price, Pricing};
+use super::{Pricing, ResolvedPrice};
 use std::{cell::RefCell, collections::HashMap};
 
-pub(crate) type PriceDependencies = HashMap<String, Option<Price>>;
+pub(crate) type PriceDependencies = HashMap<String, Option<ResolvedPrice>>;
 
 thread_local! {
     static CAPTURES: RefCell<Vec<PriceDependencies>> = const { RefCell::new(Vec::new()) };
@@ -26,11 +26,11 @@ pub(crate) fn capture_dependencies<T>(run: impl FnOnce() -> T) -> (T, PriceDepen
     (result, dependencies)
 }
 
-pub(super) fn record(model: &str, price: Option<&Price>) {
+pub(super) fn record(model: &str, price: impl Fn() -> Option<ResolvedPrice>) {
     CAPTURES.with(|captures| {
         for capture in captures.borrow_mut().iter_mut() {
             if !capture.contains_key(model) {
-                capture.insert(model.to_owned(), price.cloned());
+                capture.insert(model.to_owned(), price());
             }
         }
     });
@@ -40,6 +40,6 @@ impl Pricing {
     pub(crate) fn matches_dependencies(&self, dependencies: &PriceDependencies) -> bool {
         dependencies
             .iter()
-            .all(|(model, price)| self.resolve_price(model) == price.as_ref())
+            .all(|(model, price)| self.resolve_dependency(model).as_ref() == price.as_ref())
     }
 }
