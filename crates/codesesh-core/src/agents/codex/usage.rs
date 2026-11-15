@@ -13,6 +13,7 @@ pub struct Usage {
     output: f64,
     cache_read: f64,
     cost: f64,
+    estimated: bool,
     models: BTreeMap<String, f64>,
     cost_inputs: Vec<crate::pricing::CostInput>,
     assigned_prefix: usize,
@@ -169,6 +170,7 @@ impl Usage {
         self.output += output + reasoning;
         self.cache_read += cache_read;
         self.cost += cost.unwrap_or(0.0);
+        self.estimated |= cost.is_some();
         let mut merge_target = None;
         for index in (0..messages.len()).rev() {
             // Parsing only appends messages and this accumulator only adds tokens.
@@ -228,7 +230,7 @@ impl Usage {
             total_output_tokens: self.output,
             total_cost: self.cost,
             cost_inputs: self.cost_inputs.clone(),
-            cost_source: (self.cost > 0.0).then_some(CostSource::Estimated),
+            cost_source: self.estimated.then_some(CostSource::Estimated),
             total_cache_read_tokens: (self.cache_read > 0.0).then_some(self.cache_read),
             ..Default::default()
         }

@@ -69,13 +69,19 @@ pub(super) fn run(
         match command {
             Command::HubControl(operation) => operation(&mut cache),
             Command::Reprice { pricing, response } => {
-                let result = pricing.with_current(|| {
+                let result = pricing.with_latest(|active_pricing| {
+                    if !crate::storage::needs_reprice(
+                        cache.connection(),
+                        active_pricing.generation(),
+                    )? {
+                        return Ok(());
+                    }
                     let mut references = Vec::new();
                     for agent in crate::agents::catalog(0) {
-                        references.extend(cache.reprice(&agent.name, &pricing.pricing)?);
+                        references.extend(cache.reprice(&agent.name, active_pricing)?);
                     }
                     publish_changes(&cache, &snapshots, &events, &references)?;
-                    crate::storage::mark_repriced(cache.connection(), pricing.generation())
+                    crate::storage::mark_repriced(cache.connection(), active_pricing.generation())
                 });
                 let _ = response.send(result);
             }
@@ -110,12 +116,12 @@ pub(super) fn run(
                     batch.removed.clear();
                 }
                 let pricing = batch.pricing.take();
-                let mut publish = || -> Result<()> {
+                let mut publish = |active_pricing: Option<&crate::pricing::Pricing>| -> Result<()> {
                     cancellation.check()?;
                     let write_started = Instant::now();
-                    if let Some(ticket) = &pricing {
+                    if let Some(active_pricing) = active_pricing {
                         for session in &mut batch.sessions {
-                            crate::storage::reprice_session(session, &ticket.pricing);
+                            crate::storage::reprice_session(session, active_pricing);
                         }
                     }
                     cache.apply_checkpoint(
@@ -126,13 +132,16 @@ pub(super) fn run(
                         batch.complete,
                     )?;
                     let mut repriced = Vec::new();
-                    if let Some(ticket) = &pricing
-                        && priced_generations.get(&agent) != Some(&ticket.generation())
+                    if let Some(active_pricing) = active_pricing
+                        && priced_generations.get(&agent) != Some(&active_pricing.generation())
                     {
-                        if crate::storage::needs_reprice(cache.connection(), ticket.generation())? {
-                            repriced = cache.reprice(&agent, &ticket.pricing)?;
+                        if crate::storage::needs_reprice(
+                            cache.connection(),
+                            active_pricing.generation(),
+                        )? {
+                            repriced = cache.reprice(&agent, active_pricing)?;
                         }
-                        priced_generations.insert(agent.clone(), ticket.generation());
+                        priced_generations.insert(agent.clone(), active_pricing.generation());
                     }
                     let write_elapsed = write_started.elapsed();
                     let snapshot_started = Instant::now();
@@ -208,8 +217,10 @@ pub(super) fn run(
                     Ok(())
                 };
                 let result = match &pricing {
-                    Some(ticket) => ticket.with_current(publish),
-                    None => publish(),
+                    Some(ticket) => {
+                        ticket.with_latest(|active_pricing| publish(Some(active_pricing)))
+                    }
+                    None => publish(None),
                 };
                 let complete = batch.complete;
                 drop(batch);

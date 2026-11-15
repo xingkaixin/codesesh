@@ -204,7 +204,10 @@ pub(super) fn refresh_scoped(
                     children.total_cache_read_tokens,
                     children.total_cache_create_tokens,
                 );
-                if detail.head.stats.total_cost > 0.0 {
+                if detail.head.stats.total_cost > 0.0
+                    || detail.head.stats.cost_source == Some(CostSource::Estimated)
+                    || children.cost_source == Some(CostSource::Estimated)
+                {
                     detail.head.stats.cost_source = Some(
                         if detail.head.stats.cost_source == Some(CostSource::Estimated)
                             || children.cost_source == Some(CostSource::Estimated)

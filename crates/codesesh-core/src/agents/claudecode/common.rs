@@ -156,11 +156,13 @@ pub fn stats(messages: &[Message]) -> SessionStats {
     }
     stats.total_cache_read_tokens = (read != 0.0).then_some(read);
     stats.total_cache_create_tokens = (create != 0.0).then_some(create);
-    stats.cost_source = (stats.total_cost > 0.0).then_some(if estimated {
-        CostSource::Estimated
+    stats.cost_source = if estimated {
+        Some(CostSource::Estimated)
+    } else if stats.total_cost > 0.0 {
+        Some(CostSource::Recorded)
     } else {
-        CostSource::Recorded
-    });
+        None
+    };
     stats
 }
 

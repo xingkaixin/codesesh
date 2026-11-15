@@ -139,11 +139,12 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
     }
     stats.total_cache_read_tokens = positive(cache_read);
     stats.total_cache_create_tokens = positive(cache_create);
-    stats.cost_source = (stats.total_cost > 0.0 && !unknown).then_some(if estimated {
-        CostSource::Estimated
-    } else {
-        CostSource::Recorded
-    });
+    stats.cost_source =
+        ((stats.total_cost > 0.0 || estimated) && !unknown).then_some(if estimated {
+            CostSource::Estimated
+        } else {
+            CostSource::Recorded
+        });
     let first = canonical(&records, created)
         .into_iter()
         .filter_map(|index| unpack(&records[index], created))

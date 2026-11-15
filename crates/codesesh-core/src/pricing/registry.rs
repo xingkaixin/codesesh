@@ -126,7 +126,10 @@ pub(super) fn snapshot() -> HashMap<String, Price> {
     prices
 }
 
-pub(super) fn generation(prices: &HashMap<String, Price>) -> u64 {
+pub(super) fn generation_with_overrides(
+    prices: &HashMap<String, Price>,
+    overrides: &HashMap<String, Price>,
+) -> u64 {
     let mut entries: Vec<_> = prices.iter().collect();
     entries.sort_by(|(left, _), (right, _)| left.encode_utf16().cmp(right.encode_utf16()));
     let mut hash = Sha256::new();
@@ -135,6 +138,18 @@ pub(super) fn generation(prices: &HashMap<String, Price>) -> u64 {
         hash.update(b"\0");
         hash.update(price.json());
         hash.update(b"\n");
+    }
+    if !overrides.is_empty() {
+        hash.update(b"--overrides--\n");
+        let mut override_entries: Vec<_> = overrides.iter().collect();
+        override_entries
+            .sort_by(|(left, _), (right, _)| left.encode_utf16().cmp(right.encode_utf16()));
+        for (name, price) in override_entries {
+            hash.update(name);
+            hash.update(b"\0");
+            hash.update(price.json());
+            hash.update(b"\n");
+        }
     }
     let digest = hash.finalize();
     let mut head = [0; 8];

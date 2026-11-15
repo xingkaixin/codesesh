@@ -44,6 +44,9 @@ fn parse_composer(
     }
     let model_usage = model_usage(&messages);
     let scan_cost = messages.iter().map(|m| m.cost.unwrap_or(0.0)).sum::<f64>();
+    let scan_estimated = messages
+        .iter()
+        .any(|m| m.cost_source == Some(CostSource::Estimated));
     let scan_stats = SessionStats {
         message_count: messages.len(),
         total_input_tokens: number(composer, "inputTokenCount").unwrap_or(0.0),
@@ -53,7 +56,7 @@ fn parse_composer(
             .iter()
             .flat_map(|m| m.cost_inputs.iter().cloned())
             .collect(),
-        cost_source: (scan_cost > 0.0).then_some(CostSource::Estimated),
+        cost_source: scan_estimated.then_some(CostSource::Estimated),
         ..Default::default()
     };
     let scan_title = session_title(composer, &messages);

@@ -12,6 +12,7 @@ export * from "./agent-catalog.js";
 export * from "./file-activity.js";
 export type * from "./search.js";
 export type * from "./bookmarks.js";
+export type * from "./pricing.js";
 export type * from "./dashboard.js";
 export type * from "./model-cost.js";
 export * from "./events.js";

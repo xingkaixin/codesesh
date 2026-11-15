@@ -7,6 +7,7 @@ use std::{
 
 const BOOKMARKS: &str = "CREATE TABLE IF NOT EXISTS bookmarks(agent_name TEXT NOT NULL, session_id TEXT NOT NULL, bookmarked_at INTEGER NOT NULL, PRIMARY KEY(agent_name, session_id));";
 const ALIASES: &str = "CREATE TABLE IF NOT EXISTS session_aliases(agent_name TEXT NOT NULL, session_id TEXT NOT NULL, alias TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(agent_name, session_id));";
+const MODEL_PRICE_OVERRIDES: &str = "CREATE TABLE IF NOT EXISTS model_price_overrides(model_key TEXT PRIMARY KEY, display_model TEXT NOT NULL, rule_kind TEXT NOT NULL CHECK(rule_kind IN ('remap','manual')), target_model TEXT, input_per_1m REAL, output_per_1m REAL, cache_read_per_1m REAL, cache_write_per_1m REAL, acknowledged_official_hash TEXT, acknowledged_official_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);";
 
 pub fn state_directory(
     home: &Path,
@@ -90,14 +91,18 @@ fn ensure_schema(db: &mut Connection, path: Option<&Path>) -> Result<()> {
     if version == 0 && bookmarks {
         version = 1;
     }
-    if version > 4 {
+    if version > 5 {
         bail!("Unsupported future state schema {version}");
     }
-    if version == 4 {
+    if version == 5 {
         return Ok(());
     }
     if version < 0 {
         bail!("state-migration current version must be a non-negative safe integer");
+    }
+    if version == 4 {
+        backup_populated(db, path)?;
+        return migrate_v4_to_v5(db);
     }
     if version == 0 && !meta && !bookmarks {
         return set_schema(db);
@@ -126,6 +131,18 @@ fn ensure_schema(db: &mut Connection, path: Option<&Path>) -> Result<()> {
     set_schema(db)
 }
 
+fn migrate_v4_to_v5(db: &mut Connection) -> Result<()> {
+    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute_batch(MODEL_PRICE_OVERRIDES)?;
+    tx.execute(
+        "INSERT INTO state_meta(key,value) VALUES ('version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [],
+    )?;
+    tx.pragma_update(None, "user_version", 5)?;
+    tx.commit()?;
+    Ok(())
+}
+
 fn set_schema(db: &Connection) -> Result<()> {
     db.execute_batch(
         "CREATE TABLE IF NOT EXISTS state_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);",
@@ -152,8 +169,9 @@ fn set_schema(db: &Connection) -> Result<()> {
              DROP TABLE local_{table};"
         ))?;
     }
-    tx.execute("INSERT INTO state_meta(key,value) VALUES ('version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value", [])?;
-    tx.pragma_update(None, "user_version", 4)?;
+    tx.execute_batch(MODEL_PRICE_OVERRIDES)?;
+    tx.execute("INSERT INTO state_meta(key,value) VALUES ('version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value", [])?;
+    tx.pragma_update(None, "user_version", 5)?;
     tx.commit()?;
     Ok(())
 }
@@ -163,7 +181,7 @@ fn backup_populated(db: &Connection, path: Option<&Path>) -> Result<()> {
         return Ok(());
     };
     let mut populated = false;
-    for table in ["bookmarks", "session_aliases"] {
+    for table in ["bookmarks", "session_aliases", "model_price_overrides"] {
         if exists(db, table)?
             && db
                 .query_row(&format!("SELECT 1 FROM {table} LIMIT 1"), [], |_| Ok(()))

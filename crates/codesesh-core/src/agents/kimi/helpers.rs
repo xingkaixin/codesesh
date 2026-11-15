@@ -387,7 +387,7 @@ pub fn finish(
     }
     stats.message_count = messages.len();
     stats.total_cost = crate::pricing::round_cost(stats.total_cost);
-    if stats.total_cost > 0. {
+    if stats.total_cost > 0. || stats.cost_inputs.iter().any(|i| i.cost.is_some()) {
         stats.cost_source = Some(CostSource::Estimated);
     }
     let (project_identity, signature) = crate::projects::path_identity(&directory);

@@ -106,7 +106,7 @@ fn legacy_snapshot_migration_backs_up_and_newer_schema_is_preserved() {
             .unwrap(),
         "snapshot"
     );
-    state.db.pragma_update(None, "user_version", 4).unwrap();
+    state.db.pragma_update(None, "user_version", 5).unwrap();
     drop(state);
     let state = StateStore::open(&path).unwrap();
     assert_eq!(
@@ -114,7 +114,7 @@ fn legacy_snapshot_migration_backs_up_and_newer_schema_is_preserved() {
             .db
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        4
+        5
     );
 }
 
@@ -125,4 +125,117 @@ fn invalid_state_is_not_silently_replaced() {
     std::fs::write(&path, b"corrupt database").unwrap();
     assert!(StateStore::open(&path).is_err());
     assert_eq!(std::fs::read(path).unwrap(), b"corrupt database");
+}
+
+#[test]
+fn v4_migrates_to_v5_and_manages_model_price_overrides() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.db");
+    let db = Connection::open(&path).unwrap();
+    db.execute_batch(
+        "CREATE TABLE state_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+         INSERT INTO state_meta VALUES('version','4');
+         CREATE TABLE bookmarks(source_node_id TEXT NOT NULL DEFAULT 'local',agent_name TEXT NOT NULL,session_id TEXT NOT NULL,bookmarked_at INTEGER NOT NULL,PRIMARY KEY(source_node_id,agent_name,session_id));
+         CREATE TABLE session_aliases(source_node_id TEXT NOT NULL DEFAULT 'local',agent_name TEXT NOT NULL,session_id TEXT NOT NULL,alias TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(source_node_id,agent_name,session_id));
+         INSERT INTO bookmarks VALUES('local','codex','s1',42);
+         PRAGMA user_version=4;",
+    )
+    .unwrap();
+    drop(db);
+
+    let state = StateStore::open(&path).unwrap();
+    assert_eq!(
+        state
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        5
+    );
+    assert_eq!(state.list_bookmarks().unwrap().len(), 1);
+    let backups: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|v| v == "bak"))
+        .collect();
+    assert_eq!(backups.len(), 1);
+
+    assert!(
+        state
+            .upsert_model_price_override(UpsertModelPriceOverride {
+                model_key: "bad-remap".into(),
+                display_model: "bad-remap".into(),
+                kind: PricingOverrideKind::Remap,
+                target_model: Some("   ".into()),
+                rates: None,
+            })
+            .is_err()
+    );
+    assert!(
+        state
+            .upsert_model_price_override(UpsertModelPriceOverride {
+                model_key: "bad-rate".into(),
+                display_model: "bad-rate".into(),
+                kind: PricingOverrideKind::Manual,
+                target_model: None,
+                rates: Some(PricingRatePerMillion {
+                    input: 1_000_000.1,
+                    output: 0.0,
+                    cache_read: 0.0,
+                    cache_write: 0.0,
+                }),
+            })
+            .is_err()
+    );
+
+    let created = state
+        .upsert_model_price_override(UpsertModelPriceOverride {
+            model_key: "  Custom_Model@fast ".into(),
+            display_model: "Custom_Model".into(),
+            kind: PricingOverrideKind::Manual,
+            target_model: None,
+            rates: Some(PricingRatePerMillion {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+            }),
+        })
+        .unwrap();
+    assert_eq!(created.model_key, "custom-model");
+    state
+        .db
+        .execute(
+            "UPDATE model_price_overrides SET created_at=100, updated_at=100 WHERE model_key=?",
+            params![created.model_key],
+        )
+        .unwrap();
+    assert!(
+        state
+            .acknowledge_official_price("custom-model", "hash-v1", "{\"input\":1}", 200)
+            .unwrap()
+    );
+
+    let updated = state
+        .upsert_model_price_override(UpsertModelPriceOverride {
+            model_key: "custom_model".into(),
+            display_model: "Custom Model".into(),
+            kind: PricingOverrideKind::Remap,
+            target_model: Some("Claude_Sonnet_4_5".into()),
+            rates: None,
+        })
+        .unwrap();
+    assert_eq!(updated.created_at, 100);
+    assert!(updated.updated_at >= 200);
+    assert_eq!(updated.target_model.as_deref(), Some("claude-sonnet-4-5"));
+    assert_eq!(updated.rates, None);
+    assert_eq!(
+        updated.acknowledged_official_hash.as_deref(),
+        Some("hash-v1")
+    );
+
+    let list = state.list_model_price_overrides().unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(state.delete_model_price_override("custom-model").unwrap());
+    assert!(!state.delete_model_price_override("custom-model").unwrap());
+    assert!(state.list_model_price_overrides().unwrap().is_empty());
 }

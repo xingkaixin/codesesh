@@ -11,6 +11,7 @@ pub mod pricing;
 pub mod state;
 
 pub mod analytics;
+pub use analytics::query_unmatched_models;
 pub mod session_list;
 
 pub mod search;

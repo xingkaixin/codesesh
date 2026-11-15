@@ -436,12 +436,11 @@ fn parse_as(
                             &mut m.cost_inputs,
                         )
                     });
-                    m.cost_source =
-                        (m.cost.unwrap_or(0.0) > 0.0).then_some(if recorded.is_some() {
-                            CostSource::Recorded
-                        } else {
-                            CostSource::Estimated
-                        });
+                    m.cost_source = if recorded.is_some() {
+                        recorded.filter(|v| *v > 0.0).map(|_| CostSource::Recorded)
+                    } else {
+                        m.cost.map(|_| CostSource::Estimated)
+                    };
                     m.tokens = Some(tokens);
                     let total = u["totalTokens"]
                         .as_f64()
@@ -553,7 +552,7 @@ fn parse_as(
             }
         }
         msg.time_completed = None;
-        if msg.cost == Some(0.0) {
+        if msg.cost == Some(0.0) && msg.cost_source.is_none() {
             msg.cost = None;
         }
         messages.push(msg);

@@ -463,6 +463,7 @@ impl Parser {
             ..Default::default()
         };
         let mut models = BTreeMap::<String, f64>::new();
+        let mut head_estimated = false;
         for key in self.usage_order {
             let (model, tokens) = &self.usage_by_request[&key];
             head_stats.total_input_tokens += tokens.input.unwrap_or(0.0);
@@ -472,14 +473,15 @@ impl Parser {
             *head_stats.total_cache_create_tokens.as_mut().unwrap() +=
                 tokens.cache_create.unwrap_or(0.0);
             let speed = self.fast_requests.contains(&key).then_some("fast");
-            head_stats.total_cost += pricing
-                .estimate_tracked(
-                    priced_model(model.as_deref(), speed).as_deref(),
-                    tokens,
-                    0.0,
-                    &mut head_stats.cost_inputs,
-                )
-                .unwrap_or(0.0);
+            if let Some(cost) = pricing.estimate_tracked(
+                priced_model(model.as_deref(), speed).as_deref(),
+                tokens,
+                0.0,
+                &mut head_stats.cost_inputs,
+            ) {
+                head_stats.total_cost += cost;
+                head_estimated = true;
+            }
             if let Some(model) = model {
                 *models.entry(model.clone()).or_default() +=
                     tokens.input.unwrap_or(0.0) + tokens.output.unwrap_or(0.0);
@@ -508,7 +510,7 @@ impl Parser {
                     agent_name: self.agent.clone(),
                     session_id: id.clone(),
                 });
-        head_stats.cost_source = (head_stats.total_cost > 0.0).then_some(CostSource::Estimated);
+        head_stats.cost_source = head_estimated.then_some(CostSource::Estimated);
         let mut head = detail.head.clone();
         head.stats = head_stats;
         Ok(Some((head, detail)))

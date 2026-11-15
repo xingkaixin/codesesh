@@ -235,10 +235,14 @@ fn parse(
             cache_create: stats.total_cache_create_tokens,
             ..Default::default()
         };
-        stats.total_cost = pricing
-            .estimate_aggregate_tracked(model.as_deref(), &tokens, 0.0, &mut stats.cost_inputs)
-            .unwrap_or(0.0);
-        stats.cost_source = (stats.total_cost > 0.0).then_some(CostSource::Estimated);
+        let estimated = pricing.estimate_aggregate_tracked(
+            model.as_deref(),
+            &tokens,
+            0.0,
+            &mut stats.cost_inputs,
+        );
+        stats.total_cost = estimated.unwrap_or(0.0);
+        stats.cost_source = estimated.map(|_| CostSource::Estimated);
         if let Some(model) = model {
             models.insert(model, input + output);
         }

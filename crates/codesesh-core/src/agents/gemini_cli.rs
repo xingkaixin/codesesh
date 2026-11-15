@@ -497,10 +497,7 @@ fn parse(path: &Path, root: &Path, pricing: &Pricing) -> Result<Option<ParsedSes
                         0.0,
                         &mut message.cost_inputs,
                     );
-                    message.cost_source = message
-                        .cost
-                        .filter(|cost| *cost > 0.0)
-                        .map(|_| CostSource::Estimated);
+                    message.cost_source = message.cost.map(|_| CostSource::Estimated);
                     if let Some(model) = &message.model
                         && input + output + thoughts > 0.0
                     {

@@ -33,10 +33,10 @@ pub(crate) fn mark_repriced(connection: &Connection, generation: u64) -> Result<
 }
 
 #[derive(Deserialize, Serialize)]
-struct CostBasis {
-    cost: Option<f64>,
-    source: Option<CostSource>,
-    inputs: Vec<CostInput>,
+pub(crate) struct CostBasis {
+    pub(crate) cost: Option<f64>,
+    pub(crate) source: Option<CostSource>,
+    pub(crate) inputs: Vec<CostInput>,
     fixed_source: CostSource,
     round_total: bool,
 }
@@ -44,14 +44,16 @@ struct CostBasis {
 impl CostBasis {
     fn reprice(&mut self, pricing: &Pricing) -> bool {
         let mut delta = 0.0;
+        let mut input_changed = false;
         let previous_estimate: f64 = self.inputs.iter().filter_map(|input| input.cost).sum();
         for input in &mut self.inputs {
             let cost = pricing.estimate_input(input);
+            input_changed |= cost != input.cost;
             delta += cost.unwrap_or(0.0) - input.cost.unwrap_or(0.0);
             input.cost = cost;
             input.generation = pricing.generation();
         }
-        if delta == 0.0 {
+        if delta == 0.0 && !input_changed {
             return false;
         }
         let fixed = if self.round_total {
@@ -60,15 +62,19 @@ impl CostBasis {
             self.cost.unwrap_or(0.0) - previous_estimate
         };
         let estimated: f64 = self.inputs.iter().filter_map(|input| input.cost).sum();
+        let any_estimated = self.inputs.iter().any(|input| input.cost.is_some());
+        if !any_estimated && fixed <= 0.0 {
+            self.cost = None;
+            self.source = None;
+            return true;
+        }
         let cost = if self.round_total {
             crate::pricing::round_cost(fixed + estimated)
         } else {
             fixed + estimated
         };
         self.cost = Some(cost);
-        self.source = if cost <= 0.0 {
-            None
-        } else if estimated > 0.0 {
+        self.source = if estimated > 0.0 || (any_estimated && fixed <= 0.0) {
             Some(CostSource::Estimated)
         } else if fixed > 0.0 {
             Some(self.fixed_source.clone())
@@ -80,17 +86,17 @@ impl CostBasis {
 }
 
 #[derive(Deserialize)]
-struct StoredPricing {
+pub(crate) struct StoredPricing {
     #[serde(rename = "rustPricing")]
-    state: PricingState,
+    pub(crate) state: PricingState,
 }
 
 #[derive(Deserialize, Serialize)]
-struct PricingState {
-    version: u32,
-    generation: Option<u64>,
-    head: CostBasis,
-    messages: BTreeMap<usize, CostBasis>,
+pub(crate) struct PricingState {
+    pub(crate) version: u32,
+    pub(crate) generation: Option<u64>,
+    pub(crate) head: CostBasis,
+    pub(crate) messages: BTreeMap<usize, CostBasis>,
 }
 
 pub(super) fn state(session: &ParsedSession) -> Result<serde_json::Value> {
@@ -536,5 +542,93 @@ mod tests {
                 .total_cost,
             session.head.stats.total_cost
         );
+    }
+
+    #[test]
+    fn zero_dollar_override_round_trips_between_null_and_estimated() {
+        let root = tempfile::tempdir().unwrap();
+        let controller = PricingController::load(root.path());
+        let initial_pricing = controller.snapshot().unwrap().pricing;
+        let mut session = super::super::tests::source(root.path(), "zero-override");
+        session.detail.messages = serde_json::from_value(json!([
+            {"id":"m1","role":"assistant","time_created":1000,"model":"local-free-model","parts":[{"type":"text","text":"ok"}]}
+        ]))
+        .unwrap();
+        let tokens: MessageTokens =
+            serde_json::from_value(json!({"input":1_000,"output":500})).unwrap();
+        let msg = &mut session.detail.messages[0];
+        msg.tokens = Some(tokens.clone());
+        msg.cost = initial_pricing.estimate_tracked(
+            msg.model.as_deref(),
+            &tokens,
+            0.0,
+            &mut msg.cost_inputs,
+        );
+        msg.cost_source = msg.cost.map(|_| CostSource::Estimated);
+        session.head.stats.cost_inputs = msg.cost_inputs.clone();
+        session.head.stats.total_cost = 0.0;
+        session.head.stats.cost_source = None;
+        let reference = session.head.reference.clone();
+        let mut cache = Cache::open(None).unwrap();
+        cache.publish(std::slice::from_mut(&mut session)).unwrap();
+
+        let zero_snap = controller
+            .replace_overrides(vec![crate::state::ModelPriceOverrideRecord {
+                model_key: "local-free-model".into(),
+                display_model: "local-free-model".into(),
+                kind: crate::wire::PricingOverrideKind::Manual,
+                target_model: None,
+                rates: Some(crate::wire::PricingRatePerMillion {
+                    input: 0.0,
+                    output: 0.0,
+                    cache_read: 0.0,
+                    cache_write: 0.0,
+                }),
+                acknowledged_official_hash: None,
+                acknowledged_official_json: None,
+                created_at: 1,
+                updated_at: 1,
+            }])
+            .unwrap();
+        assert_eq!(
+            cache.reprice("codex", &zero_snap.pricing).unwrap(),
+            std::slice::from_ref(&reference)
+        );
+        let head = cache.head(&reference).unwrap().unwrap();
+        assert_eq!(head.stats.total_cost, 0.0);
+        assert_eq!(head.stats.cost_source, Some(CostSource::Estimated));
+        let detail = cache.detail(head).unwrap().unwrap();
+        assert_eq!(detail.messages[0].cost, Some(0.0));
+        assert_eq!(detail.messages[0].cost_source, Some(CostSource::Estimated));
+        let bucket_source: String = cache
+            .connection()
+            .query_row(
+                "SELECT cost_source FROM session_usage_bucket WHERE session_id=?",
+                [&reference.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bucket_source, "estimated");
+
+        let cleared_snap = controller.replace_overrides(Vec::new()).unwrap();
+        assert_eq!(
+            cache.reprice("codex", &cleared_snap.pricing).unwrap(),
+            std::slice::from_ref(&reference)
+        );
+        let head = cache.head(&reference).unwrap().unwrap();
+        assert_eq!(head.stats.total_cost, 0.0);
+        assert_eq!(head.stats.cost_source, None);
+        let detail = cache.detail(head).unwrap().unwrap();
+        assert_eq!(detail.messages[0].cost, None);
+        assert_eq!(detail.messages[0].cost_source, None);
+        let bucket_source: String = cache
+            .connection()
+            .query_row(
+                "SELECT cost_source FROM session_usage_bucket WHERE session_id=?",
+                [&reference.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bucket_source, "");
     }
 }

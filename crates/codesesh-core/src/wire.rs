@@ -948,3 +948,99 @@ pub struct WireSessionListPage {
     #[ts(optional)]
     pub next_cursor: Option<String>,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PricingRatePerMillion {
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_write: f64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum PricingOverrideKind {
+    Remap,
+    Manual,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPriceOverrideView {
+    pub model_key: String,
+    pub display_model: String,
+    pub kind: PricingOverrideKind,
+    pub target_model: Option<String>,
+    pub effective_rates: Option<PricingRatePerMillion>,
+    pub target_missing: bool,
+    pub official_price_available: bool,
+    pub official_rates: Option<PricingRatePerMillion>,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UnmatchedModelStat {
+    pub model_key: String,
+    pub display_model: String,
+    pub agents: Vec<String>,
+    #[ts(type = "number")]
+    pub session_count: usize,
+    pub input_tokens: f64,
+    pub output_tokens: f64,
+    pub cache_read_tokens: f64,
+    pub cache_write_tokens: f64,
+    pub total_tokens: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialModelOption {
+    pub model: String,
+    pub rates: PricingRatePerMillion,
+    pub has_long_context: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PricingOverviewResponse {
+    pub unmatched_models: Vec<UnmatchedModelStat>,
+    pub overrides: Vec<ModelPriceOverrideView>,
+    #[ts(type = "number")]
+    pub attention_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialModelListResponse {
+    pub models: Vec<OfficialModelOption>,
+    #[ts(type = "number")]
+    pub total: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertPricingOverrideRequest {
+    pub model: String,
+    pub kind: PricingOverrideKind,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub target_model: Option<String>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub rates: Option<PricingRatePerMillion>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PricingModelActionRequest {
+    pub model: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PricingMutationResponse {
+    pub overview: PricingOverviewResponse,
+}
