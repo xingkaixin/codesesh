@@ -223,6 +223,10 @@ function liveAggregateRefreshDelay(queryClient: QueryClient, window: AppConfig["
       .getQueryCache()
       .findAll({ queryKey: queryKeys.dashboards, type: "active" })
       .map((query) => query.state),
+    ...queryClient
+      .getQueryCache()
+      .findAll({ queryKey: queryKeys.pricingOverviews, type: "active" })
+      .map((query) => query.state),
   ];
   if (states.some((state) => !state || state.data === undefined || state.isInvalidated)) return 0;
   const oldestUpdate = Math.min(...states.map((state) => state!.dataUpdatedAt));
@@ -303,6 +307,10 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
         { queryKey: queryKeys.dashboards, refetchType: "active" },
         { throwOnError: true, cancelRefetch: true },
       ),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.pricingOverviews,
+        refetchType: "active",
+      }),
       refreshProjectQueries(queryClient, window),
     ]);
     const failure = agentsResult.error ?? projectionResult.error;

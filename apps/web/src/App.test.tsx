@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -358,9 +358,31 @@ describe("App model pricing entries", () => {
     expect(await screen.findByText("ollama/qwen3")).toBeTruthy();
   });
 
-  it("hides all pricing entry points and skips pricing requests in hub mode", async () => {
+  it("exposes pricing notice, sidebar trigger, overview badge, and drawer in hub mode", async () => {
     responses["/api/config"] = { hubEnabled: true, window: { days: 30 } };
-    responses["/api/nodes"] = { nodes: [] };
+    responses["/api/nodes"] = {
+      nodes: [
+        {
+          id: "worker-one",
+          name: "Office worker",
+          version: "1.1.1",
+          pairedAt: 1,
+          lastSeen: Date.now(),
+          lastConfirmedAt: null,
+          revoked: false,
+          incompleteSessions: 0,
+          collectionComplete: true,
+          queue: { batches: 0, bytes: 0, oldestAt: null },
+          error: null,
+          agents: {},
+          ignoredSources: [],
+        },
+      ],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    };
     responses["/api/pricing/overview"] = {
       unmatchedModels: [
         {
@@ -378,13 +400,40 @@ describe("App model pricing entries", () => {
       overrides: [],
       attentionCount: 1,
     };
+    responses["/api/pricing/models"] = { models: [], total: 0 };
 
     renderAppAt("/");
 
-    await screen.findByText("API value", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS });
-    expect(screen.queryByRole("button", { name: /Pricing/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: "1 unmatched" })).toBeNull();
-    expect(screen.queryByText(/unmatched models missing pricing/i)).toBeNull();
-    expect(requestedUrls.some((url) => url.includes("/api/pricing/"))).toBe(false);
+    const sidebar = await screen.findByRole("complementary", { name: "Primary navigation" });
+    expect(await within(sidebar).findByText("Source nodes 1/1 online")).toBeTruthy();
+    expect(within(sidebar).getByRole("button", { name: "Manage" })).toBeTruthy();
+    const sidebarPricingButton = await within(sidebar).findByRole("button", { name: /^Pricing/i });
+    await waitFor(() => {
+      expect(sidebarPricingButton.textContent).toContain("1");
+    });
+    expect(await screen.findByText("1 unmatched models missing pricing")).toBeTruthy();
+    expect(
+      await screen.findByRole(
+        "button",
+        { name: "1 unmatched" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("API value")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss pricing notice" }));
+    expect(screen.queryByText("1 unmatched models missing pricing")).toBeNull();
+    expect(within(sidebar).getByRole("button", { name: /^Pricing/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "1 unmatched" }));
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "Model pricing" },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
+    expect(await screen.findByText("ollama/qwen3")).toBeTruthy();
   });
 });

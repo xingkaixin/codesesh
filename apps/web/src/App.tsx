@@ -104,7 +104,7 @@ export default function App() {
   const location = useLocation();
   const setScanStatus = useScanStatusPublisher();
   const hubEnabled = Boolean(appConfig.config?.hubEnabled);
-  const modelPricing = useModelPricing(timeWindow, appConfig.config != null && !hubEnabled);
+  const modelPricing = useModelPricing(timeWindow, appConfig.config != null);
   const pricingOverview = modelPricing.overview;
   const pricingAttentionCount = pricingOverview?.attentionCount ?? 0;
   const unmatchedModelCount = pricingOverview?.unmatchedModels?.length ?? 0;
@@ -308,8 +308,8 @@ export default function App() {
   const overview = {
     window: loadedWindow,
     rangePreset: timeWindowController.preset ?? "all",
-    unmatchedModelCount: !hubEnabled ? unmatchedModelCount : undefined,
-    onOpenPricing: !hubEnabled ? () => openPricingDrawer("unmatched") : undefined,
+    unmatchedModelCount,
+    onOpenPricing: () => openPricingDrawer("unmatched"),
   };
   const bookmarkActions = {
     isBookmarked: bookmarks.isSessionBookmarked,
@@ -519,7 +519,7 @@ export default function App() {
   const scanStatusVisible =
     appConfig.config != null && !hubEnabled && (viewState.mode === "root" || isSearchMode);
   const pricingNoticeVisible =
-    appConfig.config != null && !hubEnabled && !pricingNoticeDismissed && pricingAttentionCount > 0;
+    appConfig.config != null && !pricingNoticeDismissed && pricingAttentionCount > 0;
   const sidebarPricingTab: PricingDrawerTab =
     unmatchedModelCount === 0 &&
     (officialAvailableCount > 0 || (pricingOverview?.overrides.length ?? 0) > 0)
@@ -614,7 +614,7 @@ export default function App() {
             shortcutHelpOpen,
             hubEnabled,
             sessionCount: sessions.length,
-            pricingAttentionCount: !hubEnabled ? pricingAttentionCount : undefined,
+            pricingAttentionCount,
             theme,
           }}
           actions={{
@@ -632,12 +632,10 @@ export default function App() {
               setMobileNavigationOpen(false);
               openSearchAndFocus();
             },
-            onOpenPricing: !hubEnabled
-              ? () => {
-                  setMobileNavigationOpen(false);
-                  openPricingDrawer(sidebarPricingTab);
-                }
-              : undefined,
+            onOpenPricing: () => {
+              setMobileNavigationOpen(false);
+              openPricingDrawer(sidebarPricingTab);
+            },
             onChangeTheme: setTheme,
             onShowShortcuts: showShortcutHelp,
           }}
@@ -670,7 +668,7 @@ export default function App() {
           </AppMainContent>
         </main>
         <AppToasts messages={[sessionCopyNotice, liveNotice]} />
-        {!hubEnabled && pricingDrawerMounted ? (
+        {pricingDrawerMounted ? (
           <Suspense fallback={null}>
             <PricingDrawer
               open={pricingDrawerOpen}

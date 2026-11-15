@@ -84,7 +84,7 @@ afterEach(() => {
 });
 
 describe("useModelPricing", () => {
-  it("stays disabled when hubEnabled disables pricing", async () => {
+  it("stays disabled until app config is ready", async () => {
     const requestedUrls: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       requestedUrls.push(String(input));
