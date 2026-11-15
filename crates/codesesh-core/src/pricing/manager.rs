@@ -59,11 +59,6 @@ impl PricingManager {
         self.published.clone()
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_pending(&self) -> bool {
-        self.pending.is_some()
-    }
-
     pub(super) fn needs_refresh(&self) -> bool {
         self.pending.is_none() && read_cache_prices(&self.path, true).is_none()
     }
