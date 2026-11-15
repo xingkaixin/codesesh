@@ -146,6 +146,14 @@ fn validate(state: &State, request: &Request) -> Result<(), (StatusCode, &'stati
     if worker_route && !state.hub_enabled {
         return Err((StatusCode::NOT_FOUND, "Hub mode is not enabled"));
     }
+    let pricing_route =
+        request.uri().path() == "/api/pricing" || request.uri().path().starts_with("/api/pricing/");
+    if pricing_route && state.hub_enabled {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Pricing overrides are only available in local mode",
+        ));
+    }
     let bearer = text("authorization")
         .and_then(|v| v.strip_prefix("Bearer "))
         .filter(|v| !v.is_empty());
