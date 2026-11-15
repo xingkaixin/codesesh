@@ -1,7 +1,7 @@
 import type {
-  PricingMutationResponse,
-  PricingOverviewResponse,
+  PricingOverridesResponse,
   ScanStatusEvent,
+  UnmatchedModelsResponse,
   UpsertPricingOverrideRequest,
 } from "@codesesh/contract";
 import { SAMPLE_SCAN_STATUS_EVENT } from "@codesesh/contract/test-fixtures";
@@ -14,7 +14,7 @@ import { queryKeys } from "../lib/query-keys";
 import { ScanStatusProvider, useScanStatusPublisher } from "./useScanStatus";
 import { useModelPricing } from "./useModelPricing";
 
-const initialOverview: PricingOverviewResponse = {
+const initialUnmatched: UnmatchedModelsResponse = {
   unmatchedModels: [
     {
       modelKey: "ollama/qwen3",
@@ -28,12 +28,13 @@ const initialOverview: PricingOverviewResponse = {
       totalTokens: 1500,
     },
   ],
-  overrides: [],
-  attentionCount: 1,
 };
 
-const updatedAfterSave: PricingOverviewResponse = {
-  unmatchedModels: [],
+const emptyUnmatched: UnmatchedModelsResponse = { unmatchedModels: [] };
+
+const noOverrides: PricingOverridesResponse = { overrides: [] };
+
+const overridesAfterSave: PricingOverridesResponse = {
   overrides: [
     {
       modelKey: "ollama/qwen3",
@@ -47,11 +48,9 @@ const updatedAfterSave: PricingOverviewResponse = {
       updatedAt: 10,
     },
   ],
-  attentionCount: 0,
 };
 
-const updatedAfterAcknowledge: PricingOverviewResponse = {
-  unmatchedModels: [],
+const overridesAfterAcknowledge: PricingOverridesResponse = {
   overrides: [
     {
       modelKey: "custom/model",
@@ -65,7 +64,6 @@ const updatedAfterAcknowledge: PricingOverviewResponse = {
       updatedAt: 20,
     },
   ],
-  attentionCount: 0,
 };
 
 function createTestHarness(initialScanStatus: ScanStatusEvent | null = null) {
@@ -78,6 +76,10 @@ function createTestHarness(initialScanStatus: ScanStatusEvent | null = null) {
   return { client, wrapper };
 }
 
+function unmatchedCount(state: ReturnType<typeof useModelPricing>): number | null {
+  return state.unmatched.status === "ready" ? state.unmatched.models.length : null;
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -88,7 +90,7 @@ describe("useModelPricing", () => {
     const requestedUrls: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       requestedUrls.push(String(input));
-      return Response.json(initialOverview);
+      return Response.json(noOverrides);
     });
 
     const { wrapper } = createTestHarness(SAMPLE_SCAN_STATUS_EVENT);
@@ -98,15 +100,35 @@ describe("useModelPricing", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.overview).toBeUndefined();
+    expect(result.current.overrides).toBeUndefined();
+    expect(result.current.unmatched.status).toBe("pending");
     expect(requestedUrls).toHaveLength(0);
   });
 
-  it("includes time window parameters cleanly across days=0 and bounded ranges", async () => {
+  it("shows overrides while unmatched models are still counting", async () => {
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      if (pathname === "/api/pricing/overrides") {
+        return Promise.resolve(Response.json(overridesAfterSave));
+      }
+      return new Promise<Response>(() => {});
+    });
+
+    const { wrapper } = createTestHarness(SAMPLE_SCAN_STATUS_EVENT);
+    const { result } = renderHook(() => useModelPricing({ days: 30 }, true), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.overrides).toEqual(overridesAfterSave.overrides);
+    });
+    expect(result.current.unmatched.status).toBe("pending");
+  });
+
+  it("requests unmatched models for the selected window", async () => {
     const requestedUrls: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
-      requestedUrls.push(String(input));
-      return Response.json(initialOverview);
+      const url = String(input);
+      requestedUrls.push(url);
+      return Response.json(url.startsWith("/api/pricing/unmatched") ? emptyUnmatched : noOverrides);
     });
 
     const { wrapper } = createTestHarness(SAMPLE_SCAN_STATUS_EVENT);
@@ -121,34 +143,35 @@ describe("useModelPricing", () => {
     );
 
     await waitFor(() => {
-      expect(requestedUrls).toEqual(["/api/pricing/overview?days=0"]);
+      expect(requestedUrls).toContain("/api/pricing/unmatched?days=0");
     });
 
     rerender({ window: { from: 1_700_000_000_000, to: 1_700_086_400_000, days: 1 } });
 
     await waitFor(() => {
-      expect(requestedUrls[1]).toBe(
-        "/api/pricing/overview?from=2023-11-14T22%3A13%3A20.000Z&to=2023-11-15T22%3A13%3A20.000Z",
+      expect(requestedUrls).toContain(
+        "/api/pricing/unmatched?from=2023-11-14T22%3A13%3A20.000Z&to=2023-11-15T22%3A13%3A20.000Z",
       );
     });
+    expect(requestedUrls.filter((url) => url === "/api/pricing/overrides")).toHaveLength(1);
   });
 
-  it("updates pricing cache and invalidates derived caches on save/delete, without invalidating dashboard on acknowledge", async () => {
+  it("recounts unmatched models after save/delete, without invalidating dashboard on acknowledge", async () => {
+    let unmatchedResponse = initialUnmatched;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const parsed = new URL(String(input), "http://localhost");
-      if (parsed.pathname === "/api/pricing/overview") {
-        return Response.json(initialOverview);
+      const { pathname } = new URL(String(input), "http://localhost");
+      if (pathname === "/api/pricing/unmatched") return Response.json(unmatchedResponse);
+      if (pathname === "/api/pricing/overrides" && init?.method === "PUT") {
+        unmatchedResponse = emptyUnmatched;
+        return Response.json(overridesAfterSave);
       }
-      if (parsed.pathname === "/api/pricing/overrides" && init?.method === "PUT") {
-        const body: PricingMutationResponse = { overview: updatedAfterSave };
-        return Response.json(body);
+      if (pathname === "/api/pricing/overrides") return Response.json(noOverrides);
+      if (pathname === "/api/pricing/overrides/acknowledge") {
+        return Response.json(overridesAfterAcknowledge);
       }
-      if (parsed.pathname === "/api/pricing/overrides/acknowledge") {
-        return Response.json(updatedAfterAcknowledge);
-      }
-      if (parsed.pathname === "/api/pricing/overrides/delete") {
-        const body: PricingMutationResponse = { overview: initialOverview };
-        return Response.json(body);
+      if (pathname === "/api/pricing/overrides/delete") {
+        unmatchedResponse = initialUnmatched;
+        return Response.json(noOverrides);
       }
       return Response.json({});
     });
@@ -162,7 +185,7 @@ describe("useModelPricing", () => {
     const { result } = renderHook(() => useModelPricing({ days: 30 }, true), { wrapper });
 
     await waitFor(() => {
-      expect(result.current.overview?.attentionCount).toBe(1);
+      expect(unmatchedCount(result.current)).toBe(1);
     });
 
     const request: UpsertPricingOverrideRequest = {
@@ -175,7 +198,8 @@ describe("useModelPricing", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.overview).toEqual(updatedAfterSave);
+      expect(result.current.overrides).toEqual(overridesAfterSave.overrides);
+      expect(unmatchedCount(result.current)).toBe(0);
     });
     expect(client.getQueryState(dashboardKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(projectionKey)?.isInvalidated).toBe(true);
@@ -188,7 +212,7 @@ describe("useModelPricing", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.overview).toEqual(updatedAfterAcknowledge);
+      expect(result.current.overrides).toEqual(overridesAfterAcknowledge.overrides);
     });
     expect(client.getQueryState(dashboardKey)?.isInvalidated).toBe(false);
     expect(client.getQueryState(projectionKey)?.isInvalidated).toBe(false);
@@ -198,17 +222,20 @@ describe("useModelPricing", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.overview).toEqual(initialOverview);
+      expect(result.current.overrides).toEqual([]);
+      expect(unmatchedCount(result.current)).toBe(1);
     });
     expect(client.getQueryState(dashboardKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(projectionKey)?.isInvalidated).toBe(true);
   });
 
-  it("refreshes pricing overview when local scan finishes", async () => {
-    let fetchCount = 0;
-    vi.stubGlobal("fetch", async () => {
-      fetchCount += 1;
-      return Response.json(fetchCount === 1 ? initialOverview : updatedAfterSave);
+  it("recounts unmatched models when local scan finishes", async () => {
+    let unmatchedFetches = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const { pathname } = new URL(String(input), "http://localhost");
+      if (pathname === "/api/pricing/overrides") return Response.json(noOverrides);
+      unmatchedFetches += 1;
+      return Response.json(unmatchedFetches === 1 ? initialUnmatched : emptyUnmatched);
     });
 
     const activeScan: ScanStatusEvent = {
@@ -227,7 +254,7 @@ describe("useModelPricing", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.pricing.overview?.attentionCount).toBe(1);
+      expect(unmatchedCount(result.current.pricing)).toBe(1);
     });
 
     act(() => {
@@ -239,8 +266,8 @@ describe("useModelPricing", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.pricing.overview?.attentionCount).toBe(0);
-      expect(fetchCount).toBe(2);
+      expect(unmatchedCount(result.current.pricing)).toBe(0);
+      expect(unmatchedFetches).toBe(2);
     });
   });
 });

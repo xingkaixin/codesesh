@@ -47,8 +47,10 @@ export const queryKeys = {
   sessionProjections: ["session-projection"] as const,
   sessionProjection: (window: TimeWindow) =>
     ["session-projection", normalizeWindow(window)] as const,
-  pricingOverviews: ["pricing-overview"] as const,
-  pricingOverview: (from?: number, to?: number, days?: number) =>
-    ["pricing-overview", from ?? null, to ?? null, days ?? null] as const,
+  pricing: ["pricing"] as const,
+  pricingOverrides: ["pricing", "overrides"] as const,
+  pricingUnmatcheds: ["pricing", "unmatched"] as const,
+  pricingUnmatched: (from?: number, to?: number, days?: number) =>
+    ["pricing", "unmatched", from ?? null, to ?? null, days ?? null] as const,
   pricingModels: (q: string, limit: number) => ["pricing-models", q, limit] as const,
 } as const;

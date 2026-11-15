@@ -142,7 +142,8 @@ export interface AppSidebarViewModel {
   shortcutHelpOpen: boolean;
   hubEnabled: boolean;
   sessionCount: number;
-  pricingAttentionCount?: number;
+  /** `null` while unmatched models are still being counted. */
+  pricingAttentionCount?: number | null;
   theme: Theme;
 }
 

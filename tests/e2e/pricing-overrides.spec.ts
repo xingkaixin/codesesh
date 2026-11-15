@@ -149,7 +149,7 @@ async function waitForUnmatchedSeed(origin: string): Promise<void> {
   const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${origin}/api/pricing/overview?days=0`);
+      const response = await fetch(`${origin}/api/pricing/unmatched?days=0`);
       if (response.ok) {
         const body = (await response.json()) as {
           unmatchedModels?: Array<{ modelKey?: string }>;

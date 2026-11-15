@@ -43,7 +43,7 @@ function invalidateSessionCollections(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricing }),
   ];
 }
 
@@ -52,7 +52,7 @@ export async function invalidateLiveSessionCollections(queryClient: QueryClient)
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricing }),
   ]);
 }
 
@@ -72,7 +72,7 @@ export async function invalidateQueriesOutsideReload(queryClient: QueryClient): 
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
     queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails }),
     queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricing }),
   ]);
 }
 

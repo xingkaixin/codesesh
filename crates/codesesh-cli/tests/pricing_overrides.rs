@@ -135,22 +135,22 @@ async fn cli_persists_overrides_across_clear_cache_json_and_hub_restart() {
     let client = reqwest::Client::new();
 
     let (first_server, origin) = spawn_server(home.path(), &["--agent", "codex", "--days", "0"]);
-    let mut overview = Value::Null;
+    let mut unmatched = Value::Null;
     for _ in 0..100 {
-        let body = wait_for_json(&client, &format!("{origin}/api/pricing/overview?days=0")).await;
+        let body = wait_for_json(&client, &format!("{origin}/api/pricing/unmatched?days=0")).await;
         if !body["unmatchedModels"].as_array().unwrap().is_empty() {
-            overview = body;
+            unmatched = body;
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert_eq!(
-        overview["unmatchedModels"][0]["modelKey"],
+        unmatched["unmatchedModels"][0]["modelKey"],
         "acme/cli-persist-v1"
     );
 
     let put_response = client
-        .put(format!("{origin}/api/pricing/overrides?days=0"))
+        .put(format!("{origin}/api/pricing/overrides"))
         .json(&serde_json::json!({
             "model": "acme/cli-persist-v1",
             "kind": "manual",
@@ -179,18 +179,23 @@ async fn cli_persists_overrides_across_clear_cache_json_and_hub_restart() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert!((rebuilt_dashboard["totals"]["cost"].as_f64().unwrap() - 7.0).abs() < 1e-6);
-    let rebuilt_overview = wait_for_json(
+    let rebuilt_unmatched = wait_for_json(
         &client,
-        &format!("{restarted_origin}/api/pricing/overview?days=0"),
+        &format!("{restarted_origin}/api/pricing/unmatched?days=0"),
     )
     .await;
     assert!(
-        rebuilt_overview["unmatchedModels"]
+        rebuilt_unmatched["unmatchedModels"]
             .as_array()
             .unwrap()
             .is_empty()
     );
-    assert_eq!(rebuilt_overview["overrides"].as_array().unwrap().len(), 1);
+    let rebuilt_overrides = wait_for_json(
+        &client,
+        &format!("{restarted_origin}/api/pricing/overrides"),
+    )
+    .await;
+    assert_eq!(rebuilt_overrides["overrides"].as_array().unwrap().len(), 1);
     drop(restarted_server);
 
     let output = base_command(home.path())
@@ -211,11 +216,11 @@ async fn cli_persists_overrides_across_clear_cache_json_and_hub_restart() {
     let hub_home = tempfile::tempdir().unwrap();
     let (hub_server, hub_origin) = spawn_server(hub_home.path(), &["hub"]);
     assert_eq!(
-        wait_for_status(&client, &format!("{hub_origin}/api/pricing/overview")).await,
+        wait_for_status(&client, &format!("{hub_origin}/api/pricing/overrides")).await,
         reqwest::StatusCode::OK
     );
     let hub_put = client
-        .put(format!("{hub_origin}/api/pricing/overrides?days=0"))
+        .put(format!("{hub_origin}/api/pricing/overrides"))
         .json(&serde_json::json!({
             "model": "acme/hub-persist-v1",
             "kind": "manual",
@@ -226,33 +231,30 @@ async fn cli_persists_overrides_across_clear_cache_json_and_hub_restart() {
         .unwrap();
     assert_eq!(hub_put.status(), reqwest::StatusCode::OK);
     let hub_put_body: Value = hub_put.json().await.unwrap();
+    assert_eq!(hub_put_body["overrides"].as_array().unwrap().len(), 1);
     assert_eq!(
-        hub_put_body["overview"]["overrides"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        hub_put_body["overview"]["overrides"][0]["modelKey"],
+        hub_put_body["overrides"][0]["modelKey"],
         "acme/hub-persist-v1"
     );
     drop(hub_server);
 
     let (restarted_hub, restarted_hub_origin) = spawn_server(hub_home.path(), &["hub"]);
-    let hub_overview = wait_for_json(
+    let hub_overrides = wait_for_json(
         &client,
-        &format!("{restarted_hub_origin}/api/pricing/overview?days=0"),
+        &format!("{restarted_hub_origin}/api/pricing/overrides"),
     )
     .await;
-    assert_eq!(hub_overview["overrides"].as_array().unwrap().len(), 1);
+    assert_eq!(hub_overrides["overrides"].as_array().unwrap().len(), 1);
     assert_eq!(
-        hub_overview["overrides"][0]["modelKey"],
+        hub_overrides["overrides"][0]["modelKey"],
         "acme/hub-persist-v1"
     );
-    assert_eq!(hub_overview["overrides"][0]["effectiveRates"]["input"], 3.0);
     assert_eq!(
-        hub_overview["overrides"][0]["effectiveRates"]["output"],
+        hub_overrides["overrides"][0]["effectiveRates"]["input"],
+        3.0
+    );
+    assert_eq!(
+        hub_overrides["overrides"][0]["effectiveRates"]["output"],
         12.0
     );
     drop(restarted_hub);

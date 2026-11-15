@@ -13,6 +13,7 @@ export interface PricingUnmatchedTabProps {
   unmatchedModels: readonly UnmatchedModelStat[];
   agentCatalog: AgentCatalog;
   savingModel: string | null;
+  emptySummary: string;
   onSave: (request: UpsertPricingOverrideRequest) => Promise<void>;
 }
 
@@ -20,6 +21,7 @@ export function PricingUnmatchedTab({
   unmatchedModels,
   agentCatalog,
   savingModel,
+  emptySummary,
   onSave,
 }: PricingUnmatchedTabProps) {
   useLocale();
@@ -31,7 +33,9 @@ export function PricingUnmatchedTab({
       <EmptyState
         icon={<CheckCircle2 className="size-5" aria-hidden="true" />}
         title={t("All models in range are priced")}
-      />
+      >
+        <p className="text-[11px]">{emptySummary}</p>
+      </EmptyState>
     );
   }
 

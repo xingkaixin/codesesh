@@ -986,7 +986,26 @@ export const messages = {
   "Cache W": ["缓存写", "キャッシュ書込"],
   "Cache read (USD / 1M)": ["缓存读取（USD / 1M）", "キャッシュ読込（USD / 1M）"],
   "Cache write (USD / 1M)": ["缓存写入（USD / 1M）", "キャッシュ書込（USD / 1M）"],
-  "Could not load model pricing": ["无法加载模型定价", "モデル料金を読み込めませんでした"],
+  "Could not count unmatched models": ["未匹配模型统计失败", "未一致モデルを集計できませんでした"],
+  "Could not load pricing rules": ["无法加载定价规则", "料金ルールを読み込めませんでした"],
+  "Count failed": ["统计失败", "集計失敗"],
+  Counting: ["统计中", "集計中"],
+  "Counting unmatched models": ["正在统计未匹配模型", "未一致モデルを集計中"],
+  "Counted at {0}": ["统计于 {0}", "{0} に集計"],
+  "Pricing rules are unaffected; session costs still use them.": [
+    "已配置规则不受影响，会话花费仍按规则计算。",
+    "料金ルールは影響を受けず、セッション費用は引き続きルールで計算されます。",
+  ],
+  "Updating · showing results from {0}": [
+    "正在更新 · 下方为 {0} 的统计结果",
+    "更新中 · {0} 時点の結果を表示",
+  ],
+  "View rules": ["查看规则", "ルールを表示"],
+  "Waited {0}s": ["已等待 {0} 秒", "{0} 秒経過"],
+  "{0} pricing rules are active and unaffected.": [
+    "{0} 条已配置规则已生效，不受统计影响。",
+    "{0} 件の料金ルールは適用済みで、集計の影響を受けません。",
+  ],
   "Could not load official models.": [
     "无法加载官方模型列表。",
     "公式モデル一覧を読み込めませんでした。",

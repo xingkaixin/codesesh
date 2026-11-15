@@ -44,7 +44,7 @@ function PricingTriggerButton({
   pricingAttentionCount = 0,
   onOpenPricing,
 }: {
-  pricingAttentionCount?: number;
+  pricingAttentionCount?: number | null;
   onOpenPricing: () => void;
 }) {
   return (
@@ -52,10 +52,17 @@ function PricingTriggerButton({
       type="button"
       onClick={onOpenPricing}
       aria-haspopup="dialog"
+      title={pricingAttentionCount === null ? t("Counting unmatched models") : undefined}
       className="motion-hover inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--ember-glass)] px-2.5 py-0.5 text-xs font-medium hover:bg-[var(--ember-glass-hover)] focus-visible:ring-2 focus-visible:ring-[var(--ember-fg)] focus-visible:outline-none"
     >
       <span>{t("Pricing")}</span>
-      {pricingAttentionCount > 0 ? (
+      {pricingAttentionCount === null ? (
+        <span
+          role="img"
+          aria-label={t("Counting unmatched models")}
+          className="size-2 animate-pulse rounded-full border-[1.5px] border-[var(--ember-fg)] motion-reduce:animate-none"
+        />
+      ) : pricingAttentionCount > 0 ? (
         <span className="console-mono inline-flex items-center gap-1 rounded-full bg-[var(--ember-fg)] px-1.5 text-[10px] font-semibold text-[var(--console-accent)]">
           <span aria-hidden="true" className="size-1.5 rounded-full bg-[var(--brand)]" />
           {formatInt(pricingAttentionCount)}
@@ -73,7 +80,7 @@ export function NodeSummary({
 }: {
   onManage: () => void;
   sessionCount?: number;
-  pricingAttentionCount?: number;
+  pricingAttentionCount?: number | null;
   onOpenPricing?: () => void;
 }) {
   useLocale();
@@ -141,7 +148,7 @@ function LocalSummary({
   onOpenPricing,
 }: {
   sessionCount: number;
-  pricingAttentionCount?: number;
+  pricingAttentionCount?: number | null;
   onOpenPricing?: () => void;
 }) {
   useLocale();
@@ -296,7 +303,7 @@ export function SidebarFooter({
 }: {
   hubEnabled: boolean;
   sessionCount: number;
-  pricingAttentionCount?: number;
+  pricingAttentionCount?: number | null;
   onOpenPricing?: () => void;
   theme: Theme;
   onChangeTheme: (theme: Theme) => void;

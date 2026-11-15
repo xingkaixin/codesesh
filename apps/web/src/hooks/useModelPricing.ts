@@ -1,55 +1,49 @@
 import type {
   AppConfig,
-  PricingMutationResponse,
-  PricingOverviewResponse,
+  ModelPriceOverrideView,
+  PricingOverridesResponse,
+  UnmatchedModelStat,
   UpsertPricingOverrideRequest,
 } from "@codesesh/contract";
-import {
-  hashKey,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
   acknowledgeOfficialPricing,
   deletePricingOverride,
-  fetchPricingOverview,
+  fetchPricingOverrides,
+  fetchUnmatchedModels,
   savePricingOverride,
 } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import { useScanStatus } from "./useScanStatus";
 
+/** Unmatched counts are only known once the window has been counted; until then there is no number. */
+export type UnmatchedPricing =
+  | { status: "pending" }
+  | { status: "error" }
+  | {
+      status: "ready";
+      models: readonly UnmatchedModelStat[];
+      updatedAt: number;
+      refreshing: boolean;
+    };
+
 export interface ModelPricingState {
-  overview: PricingOverviewResponse | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-  saveOverride: (request: UpsertPricingOverrideRequest) => Promise<PricingMutationResponse>;
-  acknowledgeOfficial: (model: string) => Promise<PricingOverviewResponse>;
-  deleteOverride: (model: string) => Promise<PricingMutationResponse>;
+  overrides: readonly ModelPriceOverrideView[] | undefined;
+  overridesError: boolean;
+  unmatched: UnmatchedPricing;
+  retryOverrides: () => void;
+  retryUnmatched: () => void;
+  saveOverride: (request: UpsertPricingOverrideRequest) => Promise<PricingOverridesResponse>;
+  acknowledgeOfficial: (model: string) => Promise<PricingOverridesResponse>;
+  deleteOverride: (model: string) => Promise<PricingOverridesResponse>;
   isMutating: boolean;
   pendingModel: string | null;
 }
 
-async function syncOverviewCache(
-  queryClient: QueryClient,
-  activeKey: readonly unknown[],
-  overview: PricingOverviewResponse,
-): Promise<void> {
-  queryClient.setQueryData(activeKey, overview);
-  const activeHash = hashKey(activeKey);
-  await queryClient.invalidateQueries({
-    queryKey: queryKeys.pricingOverviews,
-    refetchType: "none",
-    predicate: (query) => query.queryHash !== activeHash,
-  });
-}
-
 async function invalidateRepricedQueries(queryClient: QueryClient): Promise<void> {
   await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricingUnmatcheds }),
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.sessionProjections }),
     queryClient.invalidateQueries({ queryKey: queryKeys.sessionDetails }),
@@ -70,11 +64,17 @@ export function useModelPricing(
   const from = window?.from;
   const to = window?.to;
   const days = window?.days;
-  const overviewKey = queryKeys.pricingOverview(from, to, days);
 
-  const overviewQuery = useQuery<PricingOverviewResponse>({
-    queryKey: overviewKey,
-    queryFn: () => fetchPricingOverview(from, to, days),
+  const overridesQuery = useQuery<PricingOverridesResponse>({
+    queryKey: queryKeys.pricingOverrides,
+    queryFn: fetchPricingOverrides,
+    enabled,
+    staleTime: 60_000,
+  });
+
+  const unmatchedQuery = useQuery({
+    queryKey: queryKeys.pricingUnmatched(from, to, days),
+    queryFn: () => fetchUnmatchedModels(from, to, days),
     enabled: active,
     staleTime: 60_000,
   });
@@ -86,36 +86,30 @@ export function useModelPricing(
     const wasActive = wasScanActiveRef.current;
     wasScanActiveRef.current = scanActive;
     if (active && wasActive && !scanActive) {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pricingUnmatcheds });
     }
   }, [active, queryClient, scanActive]);
 
+  const applyRepricedOverrides = async (response: PricingOverridesResponse) => {
+    queryClient.setQueryData(queryKeys.pricingOverrides, response);
+    await invalidateRepricedQueries(queryClient);
+  };
+
   const saveMutation = useMutation({
-    mutationFn: (request: UpsertPricingOverrideRequest) =>
-      savePricingOverride(request, from, to, days),
-    onSuccess: async (response) => {
-      await Promise.all([
-        syncOverviewCache(queryClient, overviewKey, response.overview),
-        invalidateRepricedQueries(queryClient),
-      ]);
-    },
+    mutationFn: savePricingOverride,
+    onSuccess: applyRepricedOverrides,
   });
 
   const acknowledgeMutation = useMutation({
-    mutationFn: (model: string) => acknowledgeOfficialPricing(model, from, to, days),
-    onSuccess: async (overview) => {
-      await syncOverviewCache(queryClient, overviewKey, overview);
+    mutationFn: acknowledgeOfficialPricing,
+    onSuccess: (response) => {
+      queryClient.setQueryData(queryKeys.pricingOverrides, response);
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (model: string) => deletePricingOverride(model, from, to, days),
-    onSuccess: async (response) => {
-      await Promise.all([
-        syncOverviewCache(queryClient, overviewKey, response.overview),
-        invalidateRepricedQueries(queryClient),
-      ]);
-    },
+    mutationFn: deletePricingOverride,
+    onSuccess: applyRepricedOverrides,
   });
 
   const pendingModel = saveMutation.isPending
@@ -126,14 +120,23 @@ export function useModelPricing(
         ? deleteMutation.variables
         : null;
 
+  const unmatched: UnmatchedPricing = unmatchedQuery.data
+    ? {
+        status: "ready",
+        models: unmatchedQuery.data.unmatchedModels,
+        updatedAt: unmatchedQuery.dataUpdatedAt,
+        refreshing: unmatchedQuery.isFetching,
+      }
+    : unmatchedQuery.isError
+      ? { status: "error" }
+      : { status: "pending" };
+
   return {
-    overview: overviewQuery.data,
-    isLoading: overviewQuery.isLoading,
-    isError: overviewQuery.isError,
-    error: overviewQuery.error,
-    refetch: async () => {
-      await overviewQuery.refetch();
-    },
+    overrides: overridesQuery.data?.overrides,
+    overridesError: overridesQuery.isError && !overridesQuery.data,
+    unmatched,
+    retryOverrides: () => void overridesQuery.refetch(),
+    retryUnmatched: () => void unmatchedQuery.refetch(),
     saveOverride: saveMutation.mutateAsync,
     acknowledgeOfficial: acknowledgeMutation.mutateAsync,
     deleteOverride: deleteMutation.mutateAsync,

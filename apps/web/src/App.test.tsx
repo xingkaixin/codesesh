@@ -103,7 +103,8 @@ beforeEach(() => {
   responses["/api/sessions"] = { sessions: [] };
   responses["/api/dashboard"] = emptyDashboard;
   responses["/api/bookmarks"] = { bookmarks: [] };
-  responses["/api/pricing/overview"] = { unmatchedModels: [], overrides: [], attentionCount: 0 };
+  responses["/api/pricing/overrides"] = { overrides: [] };
+  responses["/api/pricing/unmatched"] = { unmatchedModels: [] };
   vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -296,7 +297,7 @@ it("offers a remote resume command with its source machine clearly identified", 
 
 describe("App model pricing entries", () => {
   it("exposes sidebar, inline notice, and overview KPI entry points in standalone mode and opens drawer", async () => {
-    responses["/api/pricing/overview"] = {
+    responses["/api/pricing/unmatched"] = {
       unmatchedModels: [
         {
           modelKey: "ollama/qwen3",
@@ -310,6 +311,8 @@ describe("App model pricing entries", () => {
           totalTokens: 1500,
         },
       ],
+    };
+    responses["/api/pricing/overrides"] = {
       overrides: [
         {
           modelKey: "custom/model",
@@ -323,7 +326,6 @@ describe("App model pricing entries", () => {
           updatedAt: 100,
         },
       ],
-      attentionCount: 2,
     };
     responses["/api/pricing/models"] = { models: [], total: 0 };
 
@@ -383,7 +385,7 @@ describe("App model pricing entries", () => {
       version: "1.1.1",
       minimumWorkerVersion: "1.1.1",
     };
-    responses["/api/pricing/overview"] = {
+    responses["/api/pricing/unmatched"] = {
       unmatchedModels: [
         {
           modelKey: "ollama/qwen3",
@@ -397,8 +399,9 @@ describe("App model pricing entries", () => {
           totalTokens: 1500,
         },
       ],
+    };
+    responses["/api/pricing/overrides"] = {
       overrides: [],
-      attentionCount: 1,
     };
     responses["/api/pricing/models"] = { models: [], total: 0 };
 

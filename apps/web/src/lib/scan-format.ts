@@ -35,8 +35,12 @@ export function formatIsoDate(ts: number): string {
 }
 
 export function formatWindowLabel(config: AppConfig | null): string | null {
-  if (!config) return null;
-  const { from, to, days } = config.window;
+  return formatTimeWindowLabel(config?.window ?? null);
+}
+
+export function formatTimeWindowLabel(window: AppConfig["window"] | null): string | null {
+  if (!window) return null;
+  const { from, to, days } = window;
   if (days === 0 || from == null) return t("All time");
   const fromStr = formatIsoDate(from);
   const toStr = formatIsoDate(to ?? Date.now());
