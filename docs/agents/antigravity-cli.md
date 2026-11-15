@@ -66,7 +66,12 @@ ACP workspace and model fallbacks were checked against one local conversation on
   conversation store uses its own summary database. Candidate local workspace
   paths come from `conversation_summaries.workspace_uris`, or
   `trajectory_metadata_blob.data` repeated field 7 when summary workspaces are
-  empty. When multiple local workspaces are present, the adapter selects the
+  empty. For T3 ACP stores, the shared `<T3 home>/userdata/attachments` directory
+  is excluded when another local workspace is present, including for conversations
+  without tool calls. Its identity comes from its location relative to the native
+  store, so other directories named `attachments` remain valid workspaces. If it
+  is the only local workspace, it is retained.
+  When multiple local workspaces remain, the adapter selects the
   candidate matching `history.jsonl` for that conversation, then explicit user
   context URIs and tool-call path/command inputs in `steps`, then the parent
   conversation's workspace, falling back to the first local URI.
