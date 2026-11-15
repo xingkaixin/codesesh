@@ -118,7 +118,7 @@ fn parse(
     let summary = load_summary(ctx.summaries, &id)?;
     let mut candidates = serde_json::from_str::<Vec<String>>(&summary.workspaces)
         .ok()
-        .map(workspace_paths)
+        .map(|uris| workspace_paths(uris, path))
         .unwrap_or_default();
     let time = chrono::DateTime::parse_from_str(&summary.modified, "%Y-%m-%d %H:%M:%S%.f%:z")
         .ok()
@@ -450,7 +450,7 @@ fn record_user_context(
     }
 }
 
-fn workspace_paths(uris: impl IntoIterator<Item = String>) -> Vec<String> {
+fn workspace_paths(uris: impl IntoIterator<Item = String>, conversation: &Path) -> Vec<String> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
     for uri in uris {
@@ -468,7 +468,23 @@ fn workspace_paths(uris: impl IntoIterator<Item = String>) -> Vec<String> {
             paths.push(value);
         }
     }
+    if paths.len() > 1 {
+        paths.retain(|workspace| !is_t3_shared_attachments(conversation, workspace));
+    }
     paths
+}
+
+fn is_t3_shared_attachments(conversation: &Path, workspace: &str) -> bool {
+    let workspace = Path::new(workspace);
+    let Some(store) = conversation.parent().and_then(Path::parent) else {
+        return false;
+    };
+    workspace.ends_with("userdata/attachments")
+        && store.ends_with("antigravity-acp")
+        && workspace.parent().is_some_and(|userdata| {
+            store.parent().and_then(Path::parent)
+                == Some(userdata.join("providers/antigravity").as_path())
+        })
 }
 
 fn is_windows_root(path: &str) -> bool {
@@ -497,7 +513,7 @@ fn trajectory_workspaces(db: &Connection, path: &Path) -> Result<Vec<String>> {
                 path.display()
             )
         })?;
-        let directories = workspace_paths(metadata.workspaces);
+        let directories = workspace_paths(metadata.workspaces, path);
         if !directories.is_empty() {
             return Ok(directories);
         }
@@ -750,7 +766,7 @@ fn resolve_uncached_directory(
     let summary = load_summary(ctx.summaries, parent_id)?;
     let mut candidates = serde_json::from_str::<Vec<String>>(&summary.workspaces)
         .ok()
-        .map(workspace_paths)
+        .map(|uris| workspace_paths(uris, &path))
         .unwrap_or_default();
     let db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     db.execute_batch("BEGIN")?;

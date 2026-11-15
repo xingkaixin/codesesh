@@ -488,6 +488,79 @@ fn scanner_observes_wal_updates_and_preserves_cache_on_corruption() {
 }
 
 #[test]
+fn t3_shared_attachments_do_not_override_project_workspaces() {
+    let temp = tempfile::tempdir().unwrap();
+    let userdata = temp.path().join("custom-t3/userdata");
+    let attachments = userdata.join("attachments");
+    let project = temp.path().join("project");
+    let project_attachments = project.join("attachments");
+    for (store, shared_is_auxiliary) in [
+        (
+            userdata.join("providers/antigravity/account/antigravity-acp"),
+            true,
+        ),
+        (temp.path().join("cli"), false),
+    ] {
+        let path = fixture(&store);
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("DELETE FROM steps; CREATE TABLE trajectory_metadata_blob (id TEXT PRIMARY KEY, data BLOB);")
+            .unwrap();
+        db.execute(
+            "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (0,14,3,?1)",
+            [bytes(19, bytes(2, "Hello"))],
+        )
+        .unwrap();
+        let summaries = Connection::open(store.join("conversation_summaries.db")).unwrap();
+        for from_summary in [true, false] {
+            for (workspaces, expected) in [
+                (
+                    vec![&attachments, &project],
+                    if shared_is_auxiliary {
+                        &project
+                    } else {
+                        &attachments
+                    },
+                ),
+                (vec![&project_attachments, &project], &project_attachments),
+                (vec![&attachments], &attachments),
+            ] {
+                let uris: Vec<_> = workspaces
+                    .iter()
+                    .map(|path| url::Url::from_file_path(path).unwrap().to_string())
+                    .collect();
+                summaries
+                    .execute(
+                        "UPDATE conversation_summaries SET workspace_uris=?1",
+                        [if from_summary {
+                            json!(uris).to_string()
+                        } else {
+                            "[]".into()
+                        }],
+                    )
+                    .unwrap();
+                db.execute(
+                    "INSERT OR REPLACE INTO trajectory_metadata_blob VALUES ('main',?1)",
+                    [uris
+                        .iter()
+                        .flat_map(|uri| bytes(7, uri))
+                        .collect::<Vec<_>>()],
+                )
+                .unwrap();
+                let sessions =
+                    scan_paths(&Pricing::bundled(), std::slice::from_ref(&path)).unwrap();
+                assert_eq!(sessions.len(), 1);
+                assert_eq!(
+                    Path::new(&sessions[0].head.directory),
+                    expected,
+                    "store={}, from_summary={from_summary}",
+                    store.display()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
     let temp = tempfile::tempdir().unwrap();
     let conversations = temp.path().join("conversations");
