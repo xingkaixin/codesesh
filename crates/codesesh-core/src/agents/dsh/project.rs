@@ -281,6 +281,7 @@ struct Projector<'a> {
     provider: Option<String>,
     model: Option<String>,
     stats: SessionStats,
+    estimated: bool,
     usage: BTreeMap<String, f64>,
     own_title: Option<String>,
     inherited_title: Option<String>,
@@ -335,7 +336,8 @@ impl Projector<'_> {
             m.cost =
                 self.pricing
                     .estimate_tracked(m.model.as_deref(), &tokens, 0.0, &mut m.cost_inputs);
-            m.cost_source = m.cost.filter(|n| *n > 0.0).map(|_| CostSource::Estimated);
+            m.cost_source = m.cost.map(|_| CostSource::Estimated);
+            self.estimated |= m.cost_source.is_some();
             m.tokens = Some(tokens);
             self.stats.total_input_tokens += input;
             self.stats.total_output_tokens += output;
@@ -650,6 +652,7 @@ pub fn project(
         provider: None,
         model: None,
         stats: SessionStats::default(),
+        estimated: false,
         usage: BTreeMap::new(),
         own_title: None,
         inherited_title: None,
@@ -676,7 +679,7 @@ pub fn project(
     }
     p.flush();
     p.stats.message_count = p.messages.len();
-    p.stats.cost_source = (p.stats.total_cost > 0.0).then_some(CostSource::Estimated);
+    p.stats.cost_source = p.estimated.then_some(CostSource::Estimated);
     p.stats.total_cache_read_tokens = p.stats.total_cache_read_tokens.filter(|n| *n > 0.0);
     p.stats.total_cache_create_tokens = p.stats.total_cache_create_tokens.filter(|n| *n > 0.0);
     Ok(Projection {

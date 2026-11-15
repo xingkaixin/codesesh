@@ -252,15 +252,18 @@ pub(super) fn detail_stats(
         .iter()
         .flat_map(|m| m.cost_inputs.iter().cloned())
         .collect();
-    if cost == 0.0 {
-        cost = pricing
-            .estimate_aggregate_tracked(
-                model(composer),
-                &tokens(input, output),
-                0.0,
-                &mut cost_inputs,
-            )
-            .unwrap_or(0.0);
+    let mut estimated = messages
+        .iter()
+        .any(|m| m.cost_source == Some(CostSource::Estimated));
+    if !estimated && cost == 0.0 {
+        let aggregate = pricing.estimate_aggregate_tracked(
+            model(composer),
+            &tokens(input, output),
+            0.0,
+            &mut cost_inputs,
+        );
+        cost = aggregate.unwrap_or(0.0);
+        estimated |= aggregate.is_some();
     }
     SessionStats {
         message_count: messages.len(),
@@ -268,7 +271,7 @@ pub(super) fn detail_stats(
         total_output_tokens: output,
         total_cost: cost,
         cost_inputs,
-        cost_source: (cost > 0.0).then_some(CostSource::Estimated),
+        cost_source: estimated.then_some(CostSource::Estimated),
         ..Default::default()
     }
 }

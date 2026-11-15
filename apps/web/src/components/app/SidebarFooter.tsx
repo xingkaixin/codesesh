@@ -40,7 +40,42 @@ const THEME_OPTIONS: { value: Theme; label: string }[] = [
 const MENU_ITEM_CLASS =
   "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-[var(--console-text)] outline-none data-[highlighted]:bg-[var(--brand-soft)]";
 
-export function NodeSummary({ onManage }: { onManage: () => void }) {
+function PricingTriggerButton({
+  pricingAttentionCount = 0,
+  onOpenPricing,
+}: {
+  pricingAttentionCount?: number;
+  onOpenPricing: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpenPricing}
+      aria-haspopup="dialog"
+      className="motion-hover inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--ember-glass)] px-2.5 py-0.5 text-xs font-medium hover:bg-[var(--ember-glass-hover)] focus-visible:ring-2 focus-visible:ring-[var(--ember-fg)] focus-visible:outline-none"
+    >
+      <span>{t("Pricing")}</span>
+      {pricingAttentionCount > 0 ? (
+        <span className="console-mono inline-flex items-center gap-1 rounded-full bg-[var(--ember-fg)] px-1.5 text-[10px] font-semibold text-[var(--console-accent)]">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-[var(--brand)]" />
+          {formatInt(pricingAttentionCount)}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+export function NodeSummary({
+  onManage,
+  sessionCount,
+  pricingAttentionCount = 0,
+  onOpenPricing,
+}: {
+  onManage: () => void;
+  sessionCount?: number;
+  pricingAttentionCount?: number;
+  onOpenPricing?: () => void;
+}) {
   useLocale();
   const nodes = useNodes();
   const now = useNodeClock();
@@ -50,6 +85,12 @@ export function NodeSummary({ onManage }: { onManage: () => void }) {
   const title = nodes.isError
     ? t("Node status unavailable")
     : t("Source nodes {0}/{1} online", [online, active.length]);
+  const subtitle =
+    attention > 0
+      ? t("{0} need attention", [attention])
+      : sessionCount !== undefined
+        ? t("{0} sessions in range", [formatInt(sessionCount)])
+        : null;
   return (
     <>
       <div className="flex items-center gap-2">
@@ -64,10 +105,22 @@ export function NodeSummary({ onManage }: { onManage: () => void }) {
           {t("Manage")}
         </button>
       </div>
-      {attention > 0 ? (
-        <p className="text-[11px] leading-snug text-[var(--ember-muted)]">
-          {t("{0} need attention", [attention])}
-        </p>
+      {subtitle !== null || onOpenPricing ? (
+        <div className="flex items-center justify-between gap-2">
+          {subtitle !== null ? (
+            <p className="min-w-0 truncate text-[11px] leading-snug text-[var(--ember-muted)]">
+              {subtitle}
+            </p>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {onOpenPricing ? (
+            <PricingTriggerButton
+              pricingAttentionCount={pricingAttentionCount}
+              onOpenPricing={onOpenPricing}
+            />
+          ) : null}
+        </div>
       ) : null}
     </>
   );
@@ -82,7 +135,15 @@ function LiveDot() {
   );
 }
 
-function LocalSummary({ sessionCount }: { sessionCount: number }) {
+function LocalSummary({
+  sessionCount,
+  pricingAttentionCount = 0,
+  onOpenPricing,
+}: {
+  sessionCount: number;
+  pricingAttentionCount?: number;
+  onOpenPricing?: () => void;
+}) {
   useLocale();
   const scanStatus = useScanStatus();
   return (
@@ -92,6 +153,12 @@ function LocalSummary({ sessionCount }: { sessionCount: number }) {
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
           {t("Local source")}
         </span>
+        {onOpenPricing ? (
+          <PricingTriggerButton
+            pricingAttentionCount={pricingAttentionCount}
+            onOpenPricing={onOpenPricing}
+          />
+        ) : null}
       </div>
       <p className="text-[11px] leading-snug text-[var(--ember-muted)]">
         {scanStatus?.active
@@ -221,12 +288,16 @@ function RadioMark({ checked }: { checked: boolean }) {
 export function SidebarFooter({
   hubEnabled,
   sessionCount,
+  pricingAttentionCount,
+  onOpenPricing,
   theme,
   onChangeTheme,
   onShowShortcuts,
 }: {
   hubEnabled: boolean;
   sessionCount: number;
+  pricingAttentionCount?: number;
+  onOpenPricing?: () => void;
   theme: Theme;
   onChangeTheme: (theme: Theme) => void;
   onShowShortcuts: () => void;
@@ -237,9 +308,18 @@ export function SidebarFooter({
       <div className="relative overflow-hidden rounded-2xl bg-[linear-gradient(90deg,var(--ember-from),var(--ember-to))] text-[var(--ember-fg)] shadow-[var(--shadow-overlay)]">
         <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
           {hubEnabled ? (
-            <NodeSummary onManage={() => setNodesOpen(true)} />
+            <NodeSummary
+              onManage={() => setNodesOpen(true)}
+              sessionCount={sessionCount}
+              pricingAttentionCount={pricingAttentionCount}
+              onOpenPricing={onOpenPricing}
+            />
           ) : (
-            <LocalSummary sessionCount={sessionCount} />
+            <LocalSummary
+              sessionCount={sessionCount}
+              pricingAttentionCount={pricingAttentionCount}
+              onOpenPricing={onOpenPricing}
+            />
           )}
           <PreferencesMenu
             theme={theme}

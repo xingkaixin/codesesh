@@ -80,6 +80,22 @@ fn prepare(
     Ok((parsed, options))
 }
 
+pub(crate) fn scope_where(
+    connection: &Connection,
+    scope: &QueryScope,
+) -> Result<(String, Vec<Value>)> {
+    let (_, options) = prepare(
+        connection,
+        "",
+        &SearchOptions {
+            query_scope: Some(scope.clone()),
+            ..Default::default()
+        },
+    )?;
+    let filters = sql::build(&options);
+    Ok((filters.where_sql(), filters.params))
+}
+
 pub(crate) fn execute(
     connection: &Connection,
     query: &str,

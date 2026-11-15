@@ -47,7 +47,7 @@ impl Pricing {
         let mut source = None;
         for message in messages {
             self.apply_message_cost(message);
-            if message.cost.unwrap_or(0.0) <= 0.0 {
+            if message.cost_source.is_none() {
                 continue;
             }
             total += message.cost.unwrap_or(0.0);

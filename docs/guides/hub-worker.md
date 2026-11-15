@@ -161,7 +161,7 @@ Worker 产品版本必须在 Hub 声明的最低版本与 Hub 当前版本之间
 | `hub-control.db` | 独立保存配对节点、凭据摘要与撤销状态 |
 | `hub-identity` | Hub 安装身份 |
 | `local-worker-key` | 同机来源证明的私钥，不通过网络发送 |
-| `state.db` | 收藏、自定义标题等，沿用当前单机布局 |
+| `state.db` | 收藏、自定义标题、模型价格覆盖规则等，沿用当前单机布局 |
 | `worker.db` | 仅 Worker 使用的绑定、扫描基线和未确认内容 |
 
 备份时先停止 CodeSesh，再备份完整 `~/.codesesh`，包括仍存在的 SQLite WAL/SHM 文件；不要复制一部分活跃 SQLite 文件当作一致备份。源日志不包含在 CodeSesh 备份中。

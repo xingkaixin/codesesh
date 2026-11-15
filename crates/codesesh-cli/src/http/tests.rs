@@ -542,3 +542,747 @@ async fn fingerprinted_assets_are_cached_and_compressed() {
     }
     runtime.shutdown().await.unwrap();
 }
+
+fn codex_fixture_session(
+    dir: &std::path::Path,
+    id_suffix: &str,
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    base: i64,
+    pricing: &codesesh_core::pricing::Pricing,
+) -> codesesh_core::agents::ParsedSession {
+    let source = dir.join(format!(
+        "rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-{id_suffix}.jsonl"
+    ));
+    let lines = [
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": base,
+            "payload": { "cwd": "/work", "model": model }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": base + 1000,
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "Compute pricing" }]
+            }
+        }),
+        serde_json::json!({
+            "type": "event_msg",
+            "timestamp": base + 2000,
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "last_token_usage": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens
+                    },
+                    "total_token_usage": {
+                        "total_tokens": input_tokens + output_tokens,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens
+                    }
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": base + 3000,
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "Done" }]
+            }
+        }),
+    ];
+    let content = lines
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
+    std::fs::write(&source, content).unwrap();
+    let detail = codesesh_core::agents::parse_codex(&source, &Default::default(), pricing)
+        .unwrap()
+        .expect("fixture session should parse");
+    codesesh_core::agents::ParsedSession {
+        head: detail.head.clone(),
+        source,
+        detail,
+    }
+}
+
+async fn pair_test_worker(
+    app: &Router,
+    worker_dir: &std::path::Path,
+    name: &str,
+) -> (
+    codesesh_core::sync::WorkerStore,
+    codesesh_core::sync::PairingGrant,
+) {
+    let admin = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+    let worker = codesesh_core::sync::WorkerStore::open(&worker_dir.join("worker.db")).unwrap();
+    let (status, token) =
+        request(app, Method::POST, "/api/nodes/pairing-token", &admin, "{}").await;
+    assert_eq!(status, StatusCode::OK);
+    let hello = json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "protocolVersion": 1,
+        "payloadVersion": 1,
+        "streamId": worker.stream_id().unwrap(),
+        "queue": { "batches": 0, "bytes": 0, "oldestAt": null }
+    });
+    let pair = json!({ "token": token["token"], "name": name, "hello": hello });
+    let (status, grant_json) = request(
+        app,
+        Method::POST,
+        "/api/worker/pair",
+        &[("content-type", "application/json")],
+        &pair.to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{grant_json}");
+    let grant: codesesh_core::sync::PairingGrant = serde_json::from_value(grant_json).unwrap();
+    (worker, grant)
+}
+
+async fn pricing_app(
+    sessions: &[(&str, &str, u64, u64)],
+    saved: Option<StateStore>,
+    hub: bool,
+) -> (
+    Router,
+    codesesh_core::runtime::Runtime,
+    codesesh_core::pricing::PricingController,
+    tempfile::TempDir,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let pricing = codesesh_core::pricing::PricingController::load(dir.path());
+    let cache_path = dir.path().join("cache.db");
+    if !sessions.is_empty() {
+        let current_pricing = pricing.snapshot().unwrap().pricing;
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut parsed = Vec::with_capacity(sessions.len());
+        for (index, (id_suffix, model, input_tokens, output_tokens)) in sessions.iter().enumerate()
+        {
+            let base = now - ((index as i64) + 1) * 10_000;
+            parsed.push(codex_fixture_session(
+                dir.path(),
+                id_suffix,
+                model,
+                *input_tokens,
+                *output_tokens,
+                base,
+                &current_pricing,
+            ));
+        }
+        let mut cache = codesesh_core::storage::Cache::open(Some(&cache_path)).unwrap();
+        cache.publish(&mut parsed).unwrap();
+    }
+    let runtime = if hub {
+        let runtime = codesesh_core::runtime::Runtime::start_hub(cache_path, vec![], 1)
+            .await
+            .unwrap();
+        runtime
+            .hub_control(|cache| cache.initialize_hub("fixture-hub"))
+            .await
+            .unwrap();
+        runtime
+    } else {
+        codesesh_core::runtime::Runtime::start(cache_path, vec![], 1)
+            .await
+            .unwrap()
+    };
+    let options = Options {
+        token: Some("secret".into()),
+        hostname: "127.0.0.1".into(),
+        port: 4521,
+        tls: false,
+        trust_proxy: false,
+        public_origin: None,
+        loopback_authority: true,
+        default_from: None,
+        default_to: None,
+        default_days: Some(0),
+        enabled_agents: vec!["codex".into()],
+        cwd: None,
+    };
+    let mut state = State::new(runtime.clone(), pricing.clone(), saved, options);
+    if hub {
+        state = state.with_hub();
+    }
+    (router(Arc::new(state)), runtime, pricing, dir)
+}
+
+#[tokio::test]
+async fn pricing_routes_enforce_mode_storage_and_validation() {
+    let auth = [("authorization", "Bearer secret")];
+    let json_auth = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+
+    let (hub_app, hub_runtime, hub_pricing, _hub_dir) =
+        pricing_app(&[], Some(StateStore::memory().unwrap()), true).await;
+    for (method, path, body) in [
+        (Method::GET, "/api/pricing/overview", ""),
+        (Method::GET, "/api/pricing/models", ""),
+        (
+            Method::PUT,
+            "/api/pricing/overrides",
+            r#"{"model":"acme/test","kind":"manual","rates":{"input":1.0,"output":2.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+        ),
+        (
+            Method::POST,
+            "/api/pricing/overrides/acknowledge",
+            r#"{"model":"gpt-5"}"#,
+        ),
+        (
+            Method::POST,
+            "/api/pricing/overrides/delete",
+            r#"{"model":"acme/test"}"#,
+        ),
+    ] {
+        let headers: &[(&str, &str)] = if method == Method::GET {
+            &[]
+        } else {
+            &[("content-type", "application/json")]
+        };
+        let (status, _) = request(&hub_app, method, path, headers, body).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
+    }
+
+    let (status, _) = request(&hub_app, Method::GET, "/api/pricing/overview", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, hub_models) = request(
+        &hub_app,
+        Method::GET,
+        "/api/pricing/models?q=gpt-5",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!hub_models["models"].as_array().unwrap().is_empty());
+
+    let worker_a_dir = tempfile::tempdir().unwrap();
+    let (mut worker_a, grant_a) = pair_test_worker(&hub_app, worker_a_dir.path(), "Worker A").await;
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut batch_a = codesesh_core::runtime::ScanBatch {
+        source_presence: None,
+        sessions: vec![codex_fixture_session(
+            worker_a_dir.path(),
+            "000000000011",
+            "acme/hub-worker-v1",
+            1_000_000,
+            500_000,
+            now - 20_000,
+            &codesesh_core::pricing::Pricing::bundled(),
+        )],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker_a.save_batch("codex", &mut batch_a).unwrap();
+    while let Some(pending) = worker_a.next_upload().unwrap() {
+        let upload = codesesh_core::sync::Upload {
+            epoch: grant_a.epoch.clone(),
+            stream_id: worker_a.stream_id().unwrap(),
+            sequence: pending.sequence,
+            payload_version: pending.payload_version,
+            digest: pending.digest,
+            operation: pending.operation,
+        };
+        let worker_auth = format!("Bearer {}", grant_a.credential);
+        let (status, receipt_json) = request(
+            &hub_app,
+            Method::POST,
+            "/api/worker/upload",
+            &[
+                ("authorization", worker_auth.as_str()),
+                (
+                    "x-codesesh-worker-instance",
+                    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                ),
+                ("content-type", "application/json"),
+                ("x-codesesh-worker-version", env!("CARGO_PKG_VERSION")),
+                ("x-codesesh-protocol-version", "1"),
+            ],
+            &serde_json::to_string(&upload).unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{receipt_json}");
+        let receipt: codesesh_core::sync::Receipt = serde_json::from_value(receipt_json).unwrap();
+        worker_a
+            .acknowledge(&receipt.stream_id, receipt.sequence, &receipt.digest)
+            .unwrap();
+    }
+
+    let (status, hub_overview) = request(
+        &hub_app,
+        Method::GET,
+        "/api/pricing/overview?days=0",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        hub_overview["unmatchedModels"][0]["modelKey"],
+        "acme/hub-worker-v1"
+    );
+
+    let stale_pricing = hub_pricing.snapshot().unwrap();
+    let (status, put_resp) = request(
+        &hub_app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"acme/hub-worker-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        put_resp["overview"]["unmatchedModels"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_ne!(stale_pricing.generation(), hub_pricing.generation());
+
+    let (status, sessions_json) =
+        request(&hub_app, Method::GET, "/api/sessions?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        sessions_json["sessions"][0]["reference"]["sourceNodeId"],
+        grant_a.node_id
+    );
+    assert!(
+        (sessions_json["sessions"][0]["stats"]["total_cost"]
+            .as_f64()
+            .unwrap()
+            - 7.0)
+            .abs()
+            < 1e-6
+    );
+    assert_eq!(
+        sessions_json["sessions"][0]["stats"]["cost_source"],
+        "estimated"
+    );
+
+    let worker_b_dir = tempfile::tempdir().unwrap();
+    let (mut worker_b, grant_b) = pair_test_worker(&hub_app, worker_b_dir.path(), "Worker B").await;
+    let mut batch_b = codesesh_core::runtime::ScanBatch {
+        source_presence: None,
+        sessions: vec![codex_fixture_session(
+            worker_b_dir.path(),
+            "000000000012",
+            "acme/hub-worker-v1",
+            2_000_000,
+            0,
+            now - 10_000,
+            &codesesh_core::pricing::Pricing::bundled(),
+        )],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker_b.save_batch("codex", &mut batch_b).unwrap();
+    while let Some(pending) = worker_b.next_upload().unwrap() {
+        let upload = codesesh_core::sync::Upload {
+            epoch: grant_b.epoch.clone(),
+            stream_id: worker_b.stream_id().unwrap(),
+            sequence: pending.sequence,
+            payload_version: pending.payload_version,
+            digest: pending.digest,
+            operation: pending.operation,
+        };
+        let receipt = hub_runtime
+            .receive_upload(grant_b.credential.clone(), upload, stale_pricing.clone())
+            .await
+            .expect("stale pricing snapshot upload must not fail with generation conflict");
+        worker_b
+            .acknowledge(&receipt.stream_id, receipt.sequence, &receipt.digest)
+            .unwrap();
+    }
+
+    let (status, dashboard) =
+        request(&hub_app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 11.0).abs() < 1e-6);
+
+    let (status, _) = request(
+        &hub_app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"acme/hub-worker-v1","kind":"manual","rates":{"input":3.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, sessions_json) =
+        request(&hub_app, Method::GET, "/api/sessions?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let sessions = sessions_json["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2);
+    for (node_id, expected_cost) in [
+        (grant_a.node_id.as_str(), 8.0),
+        (grant_b.node_id.as_str(), 6.0),
+    ] {
+        let session = sessions
+            .iter()
+            .find(|entry| entry["reference"]["sourceNodeId"] == node_id)
+            .expect("uploaded worker session present");
+        assert!((session["stats"]["total_cost"].as_f64().unwrap() - expected_cost).abs() < 1e-6);
+    }
+
+    hub_runtime.shutdown().await.unwrap();
+
+    let (no_saved_app, no_saved_runtime, _, _no_saved_dir) = pricing_app(&[], None, false).await;
+    let (status, _) = request(
+        &no_saved_app,
+        Method::GET,
+        "/api/pricing/overview",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for (method, path, body) in [
+        (
+            Method::PUT,
+            "/api/pricing/overrides",
+            r#"{"model":"acme/test","kind":"manual","rates":{"input":1.0,"output":2.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+        ),
+        (
+            Method::POST,
+            "/api/pricing/overrides/acknowledge",
+            r#"{"model":"gpt-5"}"#,
+        ),
+        (
+            Method::POST,
+            "/api/pricing/overrides/delete",
+            r#"{"model":"acme/test"}"#,
+        ),
+    ] {
+        let (status, _) = request(&no_saved_app, method, path, &json_auth, body).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{path}");
+    }
+    no_saved_runtime.shutdown().await.unwrap();
+
+    let (app, runtime, _, _dir) =
+        pricing_app(&[], Some(StateStore::memory().unwrap()), false).await;
+    let (status, _) = request(&app, Method::GET, "/api/pricing/models?limit=0", &auth, "").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, models) = request(
+        &app,
+        Method::GET,
+        "/api/pricing/models?q=gpt-5&limit=500",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let model_entries = models["models"].as_array().unwrap();
+    assert!(!model_entries.is_empty() && model_entries.len() <= 200);
+
+    for invalid_payload in [
+        r#"{"model":"   ","kind":"manual","rates":{"input":1.0,"output":2.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+        r#"{"model":"acme/test","kind":"remap","targetModel":"no-such-official-model"}"#,
+        r#"{"model":"acme/test","kind":"remap","targetModel":"acme/test"}"#,
+        r#"{"model":"acme/test","kind":"manual"}"#,
+        r#"{"model":"acme/test","kind":"manual","rates":{"input":-0.1,"output":2.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+        r#"{"model":"acme/test","kind":"manual","rates":{"input":1000000.1,"output":2.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    ] {
+        let (status, _) = request(
+            &app,
+            Method::PUT,
+            "/api/pricing/overrides",
+            &json_auth,
+            invalid_payload,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid_payload}");
+    }
+
+    let (status, _) = request(
+        &app,
+        Method::POST,
+        "/api/pricing/overrides/acknowledge",
+        &json_auth,
+        r#"{"model":"acme/no-official"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = request(
+        &app,
+        Method::POST,
+        "/api/pricing/overrides/acknowledge",
+        &json_auth,
+        r#"{"model":"gpt-5"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = request(
+        &app,
+        Method::POST,
+        "/api/pricing/overrides/delete",
+        &json_auth,
+        r#"{"model":"acme/missing"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_release() {
+    let auth = [("authorization", "Bearer secret")];
+    let json_auth = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+    let (app, runtime, pricing, _dir) = pricing_app(
+        &[("000000000001", "acme/unmatched-v1", 1_000_000, 500_000)],
+        Some(StateStore::memory().unwrap()),
+        false,
+    )
+    .await;
+
+    let (status, overview) =
+        request(&app, Method::GET, "/api/pricing/overview?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(overview["attentionCount"], 1);
+    assert_eq!(overview["overrides"].as_array().unwrap().len(), 0);
+    let unmatched = overview["unmatchedModels"].as_array().unwrap();
+    assert_eq!(unmatched.len(), 1);
+    assert_eq!(unmatched[0]["modelKey"], "acme/unmatched-v1");
+    assert_eq!(unmatched[0]["displayModel"], "acme/unmatched-v1");
+    assert_eq!(unmatched[0]["sessionCount"], 1);
+    assert_eq!(unmatched[0]["inputTokens"], 1_000_000.0);
+    assert_eq!(unmatched[0]["outputTokens"], 500_000.0);
+
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(dashboard["totals"]["cost"], 0.0);
+
+    let (status, zero_resp) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"acme/unmatched-v1","kind":"manual","rates":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(zero_resp["overview"]["attentionCount"], 0);
+    assert_eq!(
+        zero_resp["overview"]["unmatchedModels"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        zero_resp["overview"]["overrides"].as_array().unwrap().len(),
+        1
+    );
+    let (status, sessions_json) =
+        request(&app, Method::GET, "/api/sessions?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sessions_json["sessions"][0]["stats"]["total_cost"], 0.0);
+    assert_eq!(
+        sessions_json["sessions"][0]["stats"]["cost_source"],
+        "estimated"
+    );
+
+    let (status, _) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"acme/unmatched-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 7.0).abs() < 1e-6);
+
+    let (status, models) = request(
+        &app,
+        Method::GET,
+        "/api/pricing/models?q=gpt-5&limit=50",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let gpt5 = models["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["model"] == "gpt-5")
+        .expect("gpt-5 bundled official rate")
+        .clone();
+    let expected_gpt5_cost = gpt5["rates"]["input"].as_f64().unwrap() * 1.0
+        + gpt5["rates"]["output"].as_f64().unwrap() * 0.5;
+    let (status, _) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"acme/unmatched-v1","kind":"remap","targetModel":"gpt-5"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!((dashboard["totals"]["cost"].as_f64().unwrap() - expected_gpt5_cost).abs() < 1e-6);
+
+    let (status, official_override) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"gpt-5","kind":"manual","rates":{"input":3.0,"output":6.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let gpt5_entry = official_override["overview"]["overrides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["modelKey"] == "gpt-5")
+        .unwrap();
+    assert_eq!(gpt5_entry["officialPriceAvailable"], false);
+
+    let (status, official_edit) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"gpt-5","kind":"manual","rates":{"input":4.0,"output":8.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let gpt5_edited = official_edit["overview"]["overrides"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["modelKey"] == "gpt-5")
+        .unwrap();
+    assert_eq!(gpt5_edited["officialPriceAvailable"], false);
+
+    let (status, _) = request(
+        &app,
+        Method::POST,
+        "/api/pricing/overrides/delete?days=0",
+        &json_auth,
+        r#"{"model":"gpt-5"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides?days=0",
+        &json_auth,
+        r#"{"model":"acme/unmatched-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    assert!(
+        pricing
+            .stage_remote(&serde_json::json!({
+                "openai": {
+                    "models": {
+                        "gpt-5": { "cost": { "input": 1.25, "output": 10.0 } },
+                        "acme/unmatched-v1": { "cost": { "input": 5.0, "output": 20.0 } }
+                    }
+                }
+            }))
+            .unwrap()
+    );
+    pricing.publish_pending().unwrap();
+
+    let (status, overview) =
+        request(&app, Method::GET, "/api/pricing/overview?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(overview["attentionCount"], 1);
+    assert_eq!(overview["overrides"][0]["officialPriceAvailable"], true);
+    assert_eq!(overview["overrides"][0]["effectiveRates"]["input"], 2.0);
+    assert_eq!(overview["overrides"][0]["effectiveRates"]["output"], 10.0);
+
+    let (status, acked) = request(
+        &app,
+        Method::POST,
+        "/api/pricing/overrides/acknowledge?days=0",
+        &json_auth,
+        r#"{"model":"acme/unmatched-v1"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(acked["attentionCount"], 0);
+    assert_eq!(acked["overrides"][0]["officialPriceAvailable"], false);
+    assert_eq!(acked["overrides"][0]["effectiveRates"]["input"], 2.0);
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 7.0).abs() < 1e-6);
+
+    assert!(
+        pricing
+            .stage_remote(&serde_json::json!({
+                "openai": {
+                    "models": {
+                        "gpt-5": { "cost": { "input": 1.25, "output": 10.0 } },
+                        "acme/unmatched-v1": { "cost": { "input": 6.0, "output": 24.0 } }
+                    }
+                }
+            }))
+            .unwrap()
+    );
+    pricing.publish_pending().unwrap();
+
+    let (status, deleted) = request(
+        &app,
+        Method::POST,
+        "/api/pricing/overrides/delete?days=0",
+        &json_auth,
+        r#"{"model":"acme/unmatched-v1"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(deleted["overview"]["attentionCount"], 0);
+    assert_eq!(
+        deleted["overview"]["overrides"].as_array().unwrap().len(),
+        0
+    );
+    assert_eq!(
+        deleted["overview"]["unmatchedModels"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 18.0).abs() < 1e-6);
+
+    runtime.shutdown().await.unwrap();
+}

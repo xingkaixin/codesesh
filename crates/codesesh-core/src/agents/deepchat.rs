@@ -134,6 +134,7 @@ struct Usage {
     provider: Option<String>,
     tokens: MessageTokens,
     cost: f64,
+    cost_source: Option<CostSource>,
     cost_inputs: Vec<crate::pricing::CostInput>,
 }
 struct Projection {
@@ -157,12 +158,11 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
         .unwrap_or(input + output)
         .max(0.0);
     let mut cost_inputs = Vec::new();
-    let cost = tokens
-        .as_ref()
-        .and_then(|t| {
-            pricing.estimate_aggregate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs)
-        })
-        .unwrap_or(0.0);
+    let estimated = tokens.as_ref().and_then(|t| {
+        pricing.estimate_aggregate_tracked(model.as_deref(), t, 0.0, &mut cost_inputs)
+    });
+    let cost = estimated.unwrap_or(0.0);
+    let source = estimated.map(|_| CostSource::Estimated);
     let tokens = tokens.unwrap_or(MessageTokens {
         input: Some(0.0),
         output: Some(0.0),
@@ -171,13 +171,7 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
         cache_create: Some(0.0),
         cache_create_1h: None,
     });
-    add_stats(
-        &mut projection.stats,
-        &tokens,
-        total,
-        cost,
-        (cost > 0.0).then_some(CostSource::Estimated),
-    );
+    add_stats(&mut projection.stats, &tokens, total, cost, source.clone());
     projection
         .stats
         .cost_inputs
@@ -191,11 +185,15 @@ fn accumulate(projection: &mut Projection, row: &Value, pricing: &Pricing) {
             provider: None,
             tokens: empty_tokens(),
             cost: 0.0,
+            cost_source: None,
             cost_inputs: Vec::new(),
         });
         entry.model = model;
         entry.provider = provider;
         entry.cost += cost;
+        if source == Some(CostSource::Estimated) || entry.cost_source.is_none() {
+            entry.cost_source = source;
+        }
         entry.cost_inputs.extend(cost_inputs);
         add_tokens(&mut entry.tokens, &tokens);
     }
@@ -375,9 +373,7 @@ fn scan_connection(
             m.tokens = usage.map(|u| u.tokens.clone());
             m.cost = usage.map(|u| u.cost);
             m.cost_inputs = usage.map(|u| u.cost_inputs.clone()).unwrap_or_default();
-            m.cost_source = usage
-                .filter(|u| u.cost > 0.0)
-                .map(|_| CostSource::Estimated);
+            m.cost_source = usage.and_then(|u| u.cost_source.clone());
             messages.push(m);
         }
         result.push(finish(

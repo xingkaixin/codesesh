@@ -274,7 +274,7 @@ fn transcript(
     if stats.total_cache_create_tokens == Some(0.0) {
         stats.total_cache_create_tokens = None;
     }
-    if stats.total_cost <= 0.0 {
+    if stats.total_cost <= 0.0 && stats.cost_source != Some(CostSource::Estimated) {
         stats.cost_source = None;
     }
     Ok((messages, stats, usage))

@@ -49,7 +49,7 @@ fn log_query(
     }
 }
 
-const ANALYTICS_REVISION_QUERY: &str = concat!(
+pub(super) const ANALYTICS_REVISION_QUERY: &str = concat!(
     "SELECT CAST(COALESCE((SELECT value FROM cache_meta ",
     "WHERE key='analytics_revision'), '0') AS INTEGER)"
 );
@@ -100,7 +100,7 @@ impl<T: Clone> CatalogCache<T> {
     }
 }
 
-fn cached_catalog<T: Clone>(
+pub(super) fn cached_catalog<T: Clone>(
     cache: &std::sync::Mutex<CatalogCache<T>>,
     revision: i64,
     key: Value,
@@ -301,28 +301,24 @@ fn paginated_projects(
     }
 }
 
-pub async fn dashboard(
-    AxumState(state): AxumState<Arc<State>>,
-    RawQuery(raw): RawQuery,
-    Extension(context): Extension<crate::logging::LogContext>,
-) -> Response {
-    let query = Params::new(raw.as_deref());
+pub(super) struct DashboardWindow {
+    pub(super) from: Option<f64>,
+    pub(super) to: f64,
+    pub(super) base_to: Option<f64>,
+    pub(super) days: i64,
+    pub(super) zone: analytics::DashboardTimeZone,
+}
+
+pub(super) fn resolve_dashboard_window(
+    query: &Params,
+    options: &super::Options,
+) -> Result<DashboardWindow, String> {
     let zone = query
         .optional("timeZone")
         .map(str::to_owned)
         .unwrap_or_else(|| iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into()));
-    let project = match query.project() {
-        Ok(v) => v,
-        Err(e) => return error(StatusCode::BAD_REQUEST, &e),
-    };
-    let (base_from, base_to) = match query.window(&state.options) {
-        Ok(v) => v,
-        Err(e) => return error(StatusCode::BAD_REQUEST, &e),
-    };
-    let zone: analytics::DashboardTimeZone = match zone.parse() {
-        Ok(v) => v,
-        Err(e) => return error(StatusCode::BAD_REQUEST, e),
-    };
+    let (base_from, base_to) = query.window(options)?;
+    let zone: analytics::DashboardTimeZone = zone.parse().map_err(str::to_owned)?;
     let to = base_to.unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as f64);
     let parsed_days = query
         .optional("days")
@@ -336,7 +332,7 @@ pub async fn dashboard(
             v.checked_mul(86_400_000)
                 .is_some_and(|x| x.unsigned_abs() <= 9_007_199_254_740_991)
         });
-    let request_days = parsed_days.or(state.options.default_days.map(i64::from));
+    let request_days = parsed_days.or(options.default_days.map(i64::from));
     let (from, days) = if query.optional("from").is_some() {
         (base_from, count_days(&zone, base_from.unwrap(), to))
     } else if request_days == Some(0) {
@@ -347,6 +343,35 @@ pub async fn dashboard(
         (Some(from), count_days(&zone, from, to))
     } else {
         (zone.add_days(zone.start_of_day(to), -29), 30)
+    };
+    Ok(DashboardWindow {
+        from,
+        to,
+        base_to,
+        days,
+        zone,
+    })
+}
+
+pub async fn dashboard(
+    AxumState(state): AxumState<Arc<State>>,
+    RawQuery(raw): RawQuery,
+    Extension(context): Extension<crate::logging::LogContext>,
+) -> Response {
+    let query = Params::new(raw.as_deref());
+    let project = match query.project() {
+        Ok(v) => v,
+        Err(e) => return error(StatusCode::BAD_REQUEST, &e),
+    };
+    let DashboardWindow {
+        from,
+        to,
+        base_to,
+        days,
+        zone,
+    } = match resolve_dashboard_window(&query, &state.options) {
+        Ok(v) => v,
+        Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
     let compare = from.and_then(|from| {
         zone.add_days(from, -days)

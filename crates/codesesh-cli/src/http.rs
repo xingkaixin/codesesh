@@ -4,6 +4,7 @@ mod event_buffer;
 mod events;
 mod logs;
 mod params;
+mod pricing;
 mod saved;
 mod search;
 mod security;
@@ -24,14 +25,14 @@ use codesesh_core::{
     runtime::Runtime,
     session_list::SnapshotPaginator,
     state::StateStore,
-    wire::{DashboardData, WireSessionHead},
+    wire::{DashboardData, PricingOverviewResponse, WireSessionHead},
 };
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicU64},
 };
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 #[derive(Clone)]
 pub struct Options {
@@ -63,6 +64,9 @@ pub struct State {
     details: Arc<Semaphore>,
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
     dashboard_cache: Arc<Mutex<catalog::CatalogCache<DashboardData>>>,
+    pricing_overview_cache: Arc<Mutex<catalog::CatalogCache<PricingOverviewResponse>>>,
+    pricing_write_lock: Arc<AsyncMutex<()>>,
+    pricing_state_revision: Arc<AtomicU64>,
     query_scope: codesesh_core::search::QueryScope,
 }
 
@@ -101,6 +105,9 @@ impl State {
             details: Arc::new(Semaphore::new(2)),
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             dashboard_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
+            pricing_overview_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
+            pricing_write_lock: Arc::new(AsyncMutex::new(())),
+            pricing_state_revision: Arc::new(AtomicU64::new(0)),
         }
     }
     fn snapshot(&self) -> Arc<Vec<SessionHead>> {
@@ -194,6 +201,17 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/search", get(search::search))
         .route("/api/file-activity", get(search::file_activity))
         .route("/api/dashboard", get(catalog::dashboard))
+        .route("/api/pricing/overview", get(pricing::overview))
+        .route("/api/pricing/models", get(pricing::models))
+        .route("/api/pricing/overrides", put(pricing::put_override))
+        .route(
+            "/api/pricing/overrides/acknowledge",
+            post(pricing::acknowledge_override),
+        )
+        .route(
+            "/api/pricing/overrides/delete",
+            post(pricing::delete_override),
+        )
         .route("/api/bookmarks", get(saved::list).put(saved::put))
         .route("/api/bookmarks/import", post(saved::import))
         .route("/api/bookmarks/{agent}/{id}", delete(saved::delete))

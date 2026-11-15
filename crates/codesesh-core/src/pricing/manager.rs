@@ -9,6 +9,8 @@ use std::{
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+use crate::state::ModelPriceOverrideRecord;
+
 use super::{
     Pricing, normalize,
     registry::{Price, parse_models_dev, snapshot},
@@ -20,20 +22,40 @@ pub const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 #[derive(Debug)]
 pub struct PricingManager {
     published: Pricing,
-    pending: Option<Pricing>,
+    pending: Option<HashMap<String, Price>>,
+    overrides: Vec<ModelPriceOverrideRecord>,
     path: PathBuf,
 }
 
 impl PricingManager {
+    #[cfg(test)]
     pub fn load(home: &Path) -> Self {
+        Self::load_with_overrides(home, Vec::new())
+    }
+
+    pub fn load_with_overrides(home: &Path, overrides: Vec<ModelPriceOverrideRecord>) -> Self {
         Self {
-            published: Pricing::load(home),
+            published: Pricing::load_with_overrides(home, &overrides),
             pending: None,
+            overrides,
             path: crate::app_paths::root(home).join("models-dev-pricing.json"),
         }
     }
 
     pub(crate) fn current(&self) -> Pricing {
+        self.published.clone()
+    }
+
+    pub(crate) fn current_ref(&self) -> &Pricing {
+        &self.published
+    }
+
+    pub(crate) fn replace_overrides(
+        &mut self,
+        overrides: Vec<ModelPriceOverrideRecord>,
+    ) -> Pricing {
+        self.overrides = overrides;
+        self.published = self.published.with_overrides(&self.overrides);
         self.published.clone()
     }
 
@@ -43,7 +65,7 @@ impl PricingManager {
     }
 
     pub(super) fn needs_refresh(&self) -> bool {
-        self.pending.is_none() && read_cache(&self.path, true).is_none()
+        self.pending.is_none() && read_cache_prices(&self.path, true).is_none()
     }
 
     pub(crate) fn stage_remote(&mut self, data: &Value) -> bool {
@@ -56,7 +78,7 @@ impl PricingManager {
         }
         let mut prices = snapshot();
         prices.extend(remote);
-        self.pending = Some(Pricing::from_prices(prices));
+        self.pending = Some(prices);
         true
     }
 
@@ -64,8 +86,9 @@ impl PricingManager {
         let Some(pending) = &self.pending else {
             return Ok(false);
         };
-        write_cache(&self.path, &pending.prices)?;
-        self.published = self.pending.take().expect("pending pricing generation");
+        write_cache(&self.path, pending)?;
+        let official = self.pending.take().expect("pending pricing generation");
+        self.published = Pricing::from_official_and_overrides(official, &self.overrides);
         Ok(true)
     }
 }
@@ -89,7 +112,7 @@ fn now_ms() -> f64 {
         .as_millis() as f64
 }
 
-pub(super) fn read_cache(path: &Path, fresh: bool) -> Option<Pricing> {
+pub(super) fn read_cache_prices(path: &Path, fresh: bool) -> Option<HashMap<String, Price>> {
     let cache: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
     let timestamp = cache.get("timestamp")?.as_f64()?;
     let now = now_ms();
@@ -108,7 +131,12 @@ pub(super) fn read_cache(path: &Path, fresh: bool) -> Option<Pricing> {
             valid += 1;
         }
     }
-    (valid > 0).then(|| Pricing::from_prices(prices))
+    (valid > 0).then_some(prices)
+}
+
+#[cfg(test)]
+pub(super) fn read_cache(path: &Path, fresh: bool) -> Option<Pricing> {
+    read_cache_prices(path, fresh).map(Pricing::from_prices)
 }
 
 fn write_cache(path: &Path, prices: &HashMap<String, Price>) -> Result<()> {

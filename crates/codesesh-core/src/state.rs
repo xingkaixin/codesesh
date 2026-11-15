@@ -1,7 +1,7 @@
 mod bookmarks;
 mod database;
 use crate::model::SessionReference;
-pub use crate::wire::BookmarkRecord;
+pub use crate::wire::{BookmarkRecord, PricingOverrideKind, PricingRatePerMillion};
 use anyhow::{Result, bail};
 pub use bookmarks::materialize_bookmarks;
 pub(crate) use database::state_directory;
@@ -18,6 +18,32 @@ pub struct SessionAlias {
     pub alias: String,
     #[ts(type = "number")]
     pub updated_at: i64,
+}
+
+const MAX_RATE_PER_MILLION: f64 = 1_000_000.0;
+
+pub type PricingOverrideRuleKind = PricingOverrideKind;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ModelPriceOverrideRecord {
+    pub model_key: String,
+    pub display_model: String,
+    pub kind: PricingOverrideRuleKind,
+    pub target_model: Option<String>,
+    pub rates: Option<PricingRatePerMillion>,
+    pub acknowledged_official_hash: Option<String>,
+    pub acknowledged_official_json: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UpsertModelPriceOverride {
+    pub model_key: String,
+    pub display_model: String,
+    pub kind: PricingOverrideRuleKind,
+    pub target_model: Option<String>,
+    pub rates: Option<PricingRatePerMillion>,
 }
 
 pub struct StateStore {
@@ -206,6 +232,147 @@ impl StateStore {
         )?;
         Ok(())
     }
+
+    pub fn list_model_price_overrides(&self) -> Result<Vec<ModelPriceOverrideRecord>> {
+        Ok(self
+            .db
+            .prepare(
+                "SELECT model_key,display_model,rule_kind,target_model,input_per_1m,output_per_1m,cache_read_per_1m,cache_write_per_1m,acknowledged_official_hash,acknowledged_official_json,created_at,updated_at FROM model_price_overrides ORDER BY updated_at DESC, model_key ASC",
+            )?
+            .query_map([], model_price_override_row)?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn upsert_model_price_override(
+        &self,
+        input: UpsertModelPriceOverride,
+    ) -> Result<ModelPriceOverrideRecord> {
+        let Some(model_key) = crate::pricing::normalize_override_model_key(&input.model_key) else {
+            bail!("Invalid override model key");
+        };
+        let display_trimmed = js_trim(&input.display_model);
+        let display_model = if display_trimmed.is_empty() {
+            model_key.clone()
+        } else {
+            display_trimmed.to_owned()
+        };
+        let (rule_kind_str, target_model, rates) = match input.kind {
+            PricingOverrideRuleKind::Remap => {
+                let Some(target) = input
+                    .target_model
+                    .as_deref()
+                    .and_then(crate::pricing::normalize_override_model_key)
+                else {
+                    bail!("Remap pricing override requires a valid target model");
+                };
+                ("remap", Some(target), None)
+            }
+            PricingOverrideRuleKind::Manual => {
+                let Some(rates) = input.rates else {
+                    bail!("Manual pricing override requires rates");
+                };
+                validate_rates(&rates)?;
+                ("manual", None, Some(rates))
+            }
+        };
+        let now = chrono::Utc::now().timestamp_millis();
+        Ok(self.db.query_row(
+            "INSERT INTO model_price_overrides(model_key,display_model,rule_kind,target_model,input_per_1m,output_per_1m,cache_read_per_1m,cache_write_per_1m,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(model_key) DO UPDATE SET display_model=excluded.display_model,rule_kind=excluded.rule_kind,target_model=excluded.target_model,input_per_1m=excluded.input_per_1m,output_per_1m=excluded.output_per_1m,cache_read_per_1m=excluded.cache_read_per_1m,cache_write_per_1m=excluded.cache_write_per_1m,updated_at=excluded.updated_at RETURNING model_key,display_model,rule_kind,target_model,input_per_1m,output_per_1m,cache_read_per_1m,cache_write_per_1m,acknowledged_official_hash,acknowledged_official_json,created_at,updated_at",
+            params![
+                model_key,
+                display_model,
+                rule_kind_str,
+                target_model,
+                rates.as_ref().map(|r| r.input),
+                rates.as_ref().map(|r| r.output),
+                rates.as_ref().map(|r| r.cache_read),
+                rates.as_ref().map(|r| r.cache_write),
+                now,
+                now,
+            ],
+            model_price_override_row,
+        )?)
+    }
+
+    pub fn acknowledge_official_price(
+        &self,
+        model_key: &str,
+        official_hash: &str,
+        official_json: &str,
+        now: i64,
+    ) -> Result<bool> {
+        let Some(model_key) = crate::pricing::normalize_override_model_key(model_key) else {
+            return Ok(false);
+        };
+        if official_hash.is_empty() {
+            bail!("Missing official pricing hash");
+        }
+        let updated = self.db.execute(
+            "UPDATE model_price_overrides SET acknowledged_official_hash=?, acknowledged_official_json=?, updated_at=? WHERE model_key=?",
+            params![official_hash, official_json, now, model_key],
+        )?;
+        Ok(updated > 0)
+    }
+
+    pub fn delete_model_price_override(&self, model_key: &str) -> Result<bool> {
+        let Some(model_key) = crate::pricing::normalize_override_model_key(model_key) else {
+            return Ok(false);
+        };
+        let deleted = self.db.execute(
+            "DELETE FROM model_price_overrides WHERE model_key=?",
+            params![model_key],
+        )?;
+        Ok(deleted > 0)
+    }
+}
+
+fn validate_rates(rates: &PricingRatePerMillion) -> Result<()> {
+    for value in [
+        rates.input,
+        rates.output,
+        rates.cache_read,
+        rates.cache_write,
+    ] {
+        if !value.is_finite() || !(0.0..=MAX_RATE_PER_MILLION).contains(&value) {
+            bail!("Pricing rate must be finite, non-negative, and at most {MAX_RATE_PER_MILLION}");
+        }
+    }
+    Ok(())
+}
+
+fn model_price_override_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelPriceOverrideRecord> {
+    let kind_str: String = row.get(2)?;
+    let kind = match kind_str.as_str() {
+        "remap" => PricingOverrideRuleKind::Remap,
+        "manual" => PricingOverrideRuleKind::Manual,
+        other => {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                format!("Unknown override rule kind: {other}").into(),
+            ));
+        }
+    };
+    let rates = match kind {
+        PricingOverrideRuleKind::Manual => Some(PricingRatePerMillion {
+            input: row.get(4)?,
+            output: row.get(5)?,
+            cache_read: row.get(6)?,
+            cache_write: row.get(7)?,
+        }),
+        PricingOverrideRuleKind::Remap => None,
+    };
+    Ok(ModelPriceOverrideRecord {
+        model_key: row.get(0)?,
+        display_model: row.get(1)?,
+        kind,
+        target_model: row.get(3)?,
+        rates,
+        acknowledged_official_hash: row.get(8)?,
+        acknowledged_official_json: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
 }
 fn bookmark_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookmarkRecord> {
     Ok(BookmarkRecord {

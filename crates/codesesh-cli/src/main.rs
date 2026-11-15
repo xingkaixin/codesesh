@@ -115,7 +115,12 @@ async fn run() -> Result<()> {
                 .exists()))
     .then(|| node_identity::lock(&environment.home, "collector.lock"))
     .transpose()?;
-    let (pricing_controller, pricing) = load_pricing(&environment.home, logger)?;
+    let saved = open_user_state(&environment.home, logger).await?;
+    let overrides = saved
+        .as_ref()
+        .map(|store| store.list_model_price_overrides().unwrap_or_default())
+        .unwrap_or_default();
+    let (pricing_controller, pricing) = load_pricing(&environment.home, overrides, logger)?;
     let (cache_path, _temporary) =
         prepare_cache(&args, &environment.home, hub_enabled, logger).await?;
     let local_source = if scan_local {
@@ -132,6 +137,7 @@ async fn run() -> Result<()> {
         Vec::new()
     };
     if args.json {
+        drop(saved);
         return run_json(
             args,
             plan,
@@ -165,7 +171,6 @@ async fn run() -> Result<()> {
     let listener = bind(&args.host, plan.port).await?;
     let address = listener.local_addr()?;
     let token = (args.auth || args.remote_access).then(access_token);
-    let saved = open_user_state(&environment.home, logger).await?;
     let options = http_options(&args, &plan, address.port(), token.clone(), enabled_agents);
     let router = router(&runtime, &pricing_controller, saved, options, hub_enabled);
     let (origin, startup) = startup_url(plan, address, args.tls_cert.is_some(), token.as_deref())?;
@@ -228,9 +233,13 @@ fn start_logging(
     Ok(logger)
 }
 
-fn load_pricing(home: &Path, logger: &AppLogger) -> Result<(PricingController, Arc<Pricing>)> {
+fn load_pricing(
+    home: &Path,
+    overrides: Vec<codesesh_core::state::ModelPriceOverrideRecord>,
+    logger: &AppLogger,
+) -> Result<(PricingController, Arc<Pricing>)> {
     let pricing_started = Instant::now();
-    let pricing_controller = PricingController::load(home);
+    let pricing_controller = PricingController::load_with_overrides(home, overrides);
     let pricing = Arc::new(pricing_controller.snapshot()?.pricing);
     logger.info(
         "perf.startup.pricing",

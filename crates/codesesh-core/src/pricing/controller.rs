@@ -7,11 +7,12 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
 use super::{Pricing, PricingManager, manager::fetch_remote};
+use crate::state::ModelPriceOverrideRecord;
 
 #[derive(Clone, Debug)]
 pub struct PricingController {
@@ -33,7 +34,11 @@ pub struct PricingSnapshot {
 
 impl PricingController {
     pub fn load(home: &Path) -> Self {
-        let manager = PricingManager::load(home);
+        Self::load_with_overrides(home, Vec::new())
+    }
+
+    pub fn load_with_overrides(home: &Path, overrides: Vec<ModelPriceOverrideRecord>) -> Self {
+        let manager = PricingManager::load_with_overrides(home, overrides);
         Self {
             inner: Arc::new(Inner {
                 generation: AtomicU64::new(manager.current().generation()),
@@ -41,6 +46,25 @@ impl PricingController {
                 refresh: Mutex::new(()),
             }),
         }
+    }
+
+    pub fn replace_overrides(
+        &self,
+        overrides: Vec<ModelPriceOverrideRecord>,
+    ) -> Result<PricingSnapshot> {
+        let mut manager = self
+            .inner
+            .manager
+            .write()
+            .map_err(|_| anyhow!("pricing lock poisoned"))?;
+        let pricing = manager.replace_overrides(overrides);
+        self.inner
+            .generation
+            .store(pricing.generation(), Ordering::Release);
+        Ok(PricingSnapshot {
+            pricing,
+            controller: self.clone(),
+        })
     }
 
     pub fn snapshot(&self) -> Result<PricingSnapshot> {
@@ -127,11 +151,12 @@ impl PricingSnapshot {
     #[cfg(test)]
     pub(crate) fn check(&self) -> Result<()> {
         if !self.is_current() {
-            bail!("pricing generation cancelled");
+            anyhow::bail!("pricing generation cancelled");
         }
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn with_current<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
         // Hold the read lock through SQLite commit and snapshot publication, not just the check.
         let manager = self
@@ -141,9 +166,20 @@ impl PricingSnapshot {
             .read()
             .map_err(|_| anyhow!("pricing lock poisoned"))?;
         if manager.current().generation() != self.generation() {
-            bail!("pricing generation cancelled");
+            anyhow::bail!("pricing generation cancelled");
         }
         commit()
+    }
+
+    pub(crate) fn with_latest<T>(&self, commit: impl FnOnce(&Pricing) -> Result<T>) -> Result<T> {
+        // Hold the read lock through SQLite commit and snapshot publication using the latest pricing.
+        let manager = self
+            .controller
+            .inner
+            .manager
+            .read()
+            .map_err(|_| anyhow!("pricing lock poisoned"))?;
+        commit(manager.current_ref())
     }
 }
 
@@ -182,5 +218,38 @@ mod tests {
         assert!(current.is_current());
         assert!(current.pricing.resolve("controller-new-model").is_some());
         assert!(before.pricing.resolve("controller-new-model").is_none());
+    }
+
+    #[test]
+    fn with_latest_reads_replaced_overrides_without_cancelling() {
+        let home = tempfile::tempdir().unwrap();
+        let controller = PricingController::load(home.path());
+        let before = controller.snapshot().unwrap();
+        let updated = controller
+            .replace_overrides(vec![ModelPriceOverrideRecord {
+                model_key: "local-test".into(),
+                display_model: "local-test".into(),
+                kind: crate::wire::PricingOverrideKind::Manual,
+                target_model: None,
+                rates: Some(crate::wire::PricingRatePerMillion {
+                    input: 1.0,
+                    output: 2.0,
+                    cache_read: 0.0,
+                    cache_write: 0.0,
+                }),
+                acknowledged_official_hash: None,
+                acknowledged_official_json: None,
+                created_at: 1,
+                updated_at: 1,
+            }])
+            .unwrap();
+        assert!(!before.is_current());
+        let seen_gen = before
+            .with_latest(|latest| {
+                assert!(latest.resolve("local-test").is_some());
+                Ok(latest.generation())
+            })
+            .unwrap();
+        assert_eq!(seen_gen, updated.generation());
     }
 }

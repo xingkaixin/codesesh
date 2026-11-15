@@ -6,6 +6,7 @@ mod projects;
 mod read;
 mod response;
 mod time_zone;
+mod unmatched;
 pub use facts::*;
 pub use projects::{attach_project_metrics, summarize_projects};
 #[cfg(test)]
@@ -13,6 +14,7 @@ pub(crate) use read::load_cost_facts;
 pub use read::load_scoped_cost_facts;
 pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_response};
 pub use time_zone::DashboardTimeZone;
+pub use unmatched::query_unmatched_models;
 
 use crate::{
     model::{CostSource, SessionHead},

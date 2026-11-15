@@ -326,11 +326,13 @@ pub(super) fn v1_message(
         tokens,
         cost: Some(cost),
         cost_inputs,
-        cost_source: (cost > 0.0).then_some(if recorded > 0.0 {
-            CostSource::Recorded
+        cost_source: if recorded > 0.0 {
+            Some(CostSource::Recorded)
+        } else if recorded == 0.0 {
+            estimated.map(|_| CostSource::Estimated)
         } else {
-            CostSource::Estimated
-        }),
+            None
+        },
         parts,
         ..empty_message(row)
     }
@@ -351,11 +353,13 @@ pub(super) fn stats(messages: &[Message]) -> SessionStats {
         }
         estimated |= m.cost_source == Some(CostSource::Estimated);
     }
-    stats.cost_source = (stats.total_cost > 0.0).then_some(if estimated {
-        CostSource::Estimated
+    stats.cost_source = if estimated {
+        Some(CostSource::Estimated)
+    } else if stats.total_cost > 0.0 {
+        Some(CostSource::Recorded)
     } else {
-        CostSource::Recorded
-    });
+        None
+    };
     stats
 }
 pub(super) fn add_cache_tokens(stats: &mut SessionStats, read: Option<f64>, create: Option<f64>) {

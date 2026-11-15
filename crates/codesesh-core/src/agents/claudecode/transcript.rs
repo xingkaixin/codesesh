@@ -237,12 +237,14 @@ impl Transcript {
                     m.model = model.map(str::to_owned);
                     m.cost_inputs.clear();
                     let priced = priced_model(model, raw["usage"]["speed"].as_str());
-                    m.cost = Some(
-                        pricing
-                            .estimate_tracked(priced.as_deref(), &tokens, 0.0, &mut m.cost_inputs)
-                            .unwrap_or(0.0),
+                    let estimate = pricing.estimate_tracked(
+                        priced.as_deref(),
+                        &tokens,
+                        0.0,
+                        &mut m.cost_inputs,
                     );
-                    m.cost_source = (m.cost.unwrap_or(0.0) > 0.0).then_some(CostSource::Estimated);
+                    m.cost = Some(estimate.unwrap_or(0.0));
+                    m.cost_source = estimate.map(|_| CostSource::Estimated);
                     m.tokens = Some(tokens);
                     m.time_completed = Some(time);
                 }

@@ -199,6 +199,7 @@ async function refreshLiveSnapshotAggregates(
     ),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverviews }),
   ]);
 }
 
@@ -221,6 +222,10 @@ function liveAggregateRefreshDelay(queryClient: QueryClient, window: AppConfig["
     ...queryClient
       .getQueryCache()
       .findAll({ queryKey: queryKeys.dashboards, type: "active" })
+      .map((query) => query.state),
+    ...queryClient
+      .getQueryCache()
+      .findAll({ queryKey: queryKeys.pricingOverviews, type: "active" })
       .map((query) => query.state),
   ];
   if (states.some((state) => !state || state.data === undefined || state.isInvalidated)) return 0;
@@ -302,6 +307,10 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
         { queryKey: queryKeys.dashboards, refetchType: "active" },
         { throwOnError: true, cancelRefetch: true },
       ),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.pricingOverviews,
+        refetchType: "active",
+      }),
       refreshProjectQueries(queryClient, window),
     ]);
     const failure = agentsResult.error ?? projectionResult.error;
