@@ -98,7 +98,7 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。schema 36 不支持
-再由 schema 35 的旧版本打开；用户状态使用 schema 4。
+再由 schema 35 的旧版本打开；用户状态使用 schema 5。
 
 旧表删除后的空间进入 SQLite freelist，后续写入可以复用；空闲页达到第 7 步的阈值时，
 打开数据库会自动压缩。需要立即压缩时，应先停止 CodeSesh，再运行：
@@ -109,9 +109,11 @@ sqlite3 ~/.codesesh/codesesh.db 'VACUUM'
 
 ## 用户状态
 
-书签和别名由 `crates/codesesh-core/src/state/` 保存到独立状态库，使用 schema 4。
+书签、别名和模型价格覆盖规则由 `crates/codesesh-core/src/state/` 保存到独立状态库 `state.db`，使用 schema 5。
 状态目录支持 `CODESESH_STATE_DIR` 覆盖；默认位于 `~/.codesesh/state.db`（Windows 为 `%USERPROFILE%\.codesesh\state.db`）。清空会话缓存不应清除
 用户状态。书签物化逻辑在 `crates/codesesh-core/src/state/bookmarks.rs`。
+
+`model_price_overrides` 按归一化模型键 `model_key` 保存单机覆盖规则（`remap` 记录目标官方模型 `target_model`，`manual` 记录 `input_per_1m`、`output_per_1m`、`cache_read_per_1m`、`cache_write_per_1m`），并记录用户确认过的官方价快照 `acknowledged_official_hash` 与 `acknowledged_official_json`。旧库升级前对非空 `bookmarks`、`session_aliases` 和 `model_price_overrides` 创建时间戳备份，并将版本号升级到 schema 5。
 
 ## 验证
 
@@ -156,4 +158,4 @@ SHA-256。目标正式发布并持久化迁移记录后，才删除已验证的�
 
 schema 36 在会话及关联表的复合键中加入 `source_node_id`。旧数据归属保留的本地来源 `local`，远程来源使用独立身份。同一 Agent 的相同会话 ID 可存在于不同来源中。
 
-schema 35 及更早版本升级前保留数据库备份，事务重建关联键并检查外键完整性。已经存在的 `head_meta_json` 不重新生成。用户状态 schema 4 同样扩展收藏和自定义标题的键，不改变原有本地映射。升级后的库不支持用旧版本直接打开。
+schema 35 及更早版本升级前保留数据库备份，事务重建关联键并检查外键完整性。已经存在的 `head_meta_json` 不重新生成。用户状态 schema 4 同样扩展收藏和自定义标题的键，不改变原有本地映射；schema 5 的 `model_price_overrides` 仅在单机模式使用，不随 Hub/Worker 同步。升级后的库不支持用旧版本直接打开。
