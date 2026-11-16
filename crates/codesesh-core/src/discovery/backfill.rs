@@ -241,7 +241,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     let mut items = Vec::new();
     let mut context_stamps = Vec::new();
     let context_names: &[&str] = match source.agent.as_str() {
-        "antigravity-cli" => &[
+        "antigravity" | "antigravity-cli" => &[
             "conversation_summaries.db",
             "conversation_summaries.db-wal",
             "conversation_summaries.db-journal",
@@ -301,7 +301,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             fingerprint.push(':');
             fingerprint.push_str(&crate::agents::pi::parent_fingerprint(entry.path(), &root)?);
         }
-        if source.agent == "antigravity-cli" {
+        if matches!(source.agent.as_str(), "antigravity" | "antigravity-cli") {
             for suffix in ["-wal", "-journal"] {
                 let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
                 if related.try_exists()? {

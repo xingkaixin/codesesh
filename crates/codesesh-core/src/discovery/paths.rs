@@ -85,6 +85,10 @@ impl PathEnvironment {
             "qoder" => self.home_path("QODER_CONFIG_DIR", ".qoder"),
             "qoder-cn" => self.home_path("QODERCN_CONFIG_DIR", ".qoder-cn"),
             "codex" => self.home_path("CODEX_HOME", ".codex"),
+            "antigravity" => self
+                .read_env_path("ANTIGRAVITY_CONVERSATIONS_DIR")
+                .and_then(|path| path.parent().map(Path::to_owned))
+                .unwrap_or_else(|| self.home.join(".gemini/antigravity")),
             "antigravity-cli" => self
                 .read_env_path("AGY_CONVERSATIONS_DIR")
                 .and_then(|path| path.parent().map(Path::to_owned))
@@ -147,6 +151,9 @@ impl PathEnvironment {
         let data_root = self.data_root(agent)?;
         let fallback = self.cwd.join("data").join(agent);
         let primary = match agent {
+            "antigravity" => self
+                .read_env_path("ANTIGRAVITY_CONVERSATIONS_DIR")
+                .unwrap_or_else(|| data_root.join("conversations")),
             "antigravity-cli" => self
                 .read_env_path("AGY_CONVERSATIONS_DIR")
                 .unwrap_or_else(|| data_root.join("conversations")),
@@ -245,7 +252,10 @@ impl AgentSource {
     }
 
     pub(crate) fn retains_missing_source(&self, path: &Path) -> std::io::Result<bool> {
-        let Some(directory) = path.parent().filter(|_| self.agent == "antigravity-cli") else {
+        let Some(directory) = path
+            .parent()
+            .filter(|_| matches!(self.agent.as_str(), "antigravity" | "antigravity-cli"))
+        else {
             return Ok(false);
         };
         Ok(!directory.try_exists()?)

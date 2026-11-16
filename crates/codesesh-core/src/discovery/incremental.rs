@@ -24,7 +24,7 @@ impl AgentSource {
     pub fn watch_roots(&self) -> Vec<PathBuf> {
         let root = &self.scan_path;
         let mut roots = match self.agent.as_str() {
-            "antigravity-cli" => vec![
+            "antigravity" | "antigravity-cli" => vec![
                 root.clone(),
                 self.data_root.join("conversation_summaries.db"),
                 self.data_root.join("history.jsonl"),
@@ -1089,9 +1089,9 @@ impl AgentScanner {
                     sources.contains(&session.source)
                 }))
             }
-            "antigravity-cli" if paths.is_some() => {
+            "antigravity" | "antigravity-cli" if paths.is_some() => {
                 let paths = paths.unwrap();
-                let upserts = agents::antigravity_cli::scan_paths(pricing, paths)?;
+                let upserts = agents::antigravity::scan_paths(pricing, paths, &self.source.agent)?;
                 Ok(selected_delta(upserts, &self.previous, |session| {
                     paths.contains(&session.source)
                 }))

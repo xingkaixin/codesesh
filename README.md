@@ -71,6 +71,7 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | DSH             | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | DeepChat        | Supported       | ✓     | —             | ✓            | ✓         | ✓            | —      |
 | Cherry Studio   | Supported       | ✓     | ✓             | ✓            | ✓         | —            | —      |
+| Antigravity Desktop | Partial support | ✓     | —             | ✓            | —         | ✓            | —      |
 | Antigravity CLI | Partial support | ✓     | —             | ✓            | —         | ✓            | —      |
 | Gemini CLI      | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
 
@@ -79,6 +80,8 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 ✓ available · ◐ partial (for example, input and output tokens only) · — not available. When an agent records no cost or a cost of 0, CodeSesh estimates cost from model prices.
 
 oh-my-pi reads the default profile from `~/.omp/agent/sessions`, or from `$XDG_DATA_HOME/omp/sessions` on macOS and Linux when `$XDG_DATA_HOME/omp` exists. Subagent and advisor transcripts appear as child sessions. Named profiles and `model_usage` records (model calls outside the transcript, such as title generation) are not included yet.
+
+Antigravity Desktop automatically reads `~/.gemini/antigravity/conversations/*.db`; `ANTIGRAVITY_CONVERSATIONS_DIR` selects another conversation directory. Desktop and CLI appear as separate agents and share the SQLite parser. Only the new format is supported; legacy `.pb` histories are not imported.
 
 Antigravity CLI supports local SQLite conversations, titles, workspace metadata, tool calls, step times, and per-request token usage with model names; cost is estimated from model prices. It also discovers Antigravity ACP profiles under `~/.t3/userdata/providers/antigravity` (`T3CODE_HOME` selects another T3 home), using the same Antigravity agent entry. `AGY_CONVERSATIONS_DIR` selects a single conversation directory instead. Confirmed result text and explicit errors are preserved; numeric tool statuses remain unknown. IDE `.pb` histories are not supported. See the [compatibility notes](docs/agents/antigravity-cli.md).
 

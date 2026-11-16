@@ -1,9 +1,23 @@
-# Antigravity CLI compatibility
+# Antigravity Desktop and CLI compatibility
 
 The `antigravity-cli` adapter reads `.gemini/antigravity-cli/conversations/*.db`
 under the home directory. `AGY_CONVERSATIONS_DIR` overrides the conversation directory;
-its parent is used for the optional `conversation_summaries.db`. Antigravity IDE
-`.gemini/antigravity/conversations/*.pb` files are a separate unsupported format.
+its parent is used for the optional `conversation_summaries.db`.
+
+The `antigravity` adapter reads Desktop SQLite conversations from
+`~/.gemini/antigravity/conversations/*.db`. `ANTIGRAVITY_CONVERSATIONS_DIR`
+overrides that directory independently of the CLI override; its parent supplies
+Desktop summaries. Desktop and CLI use separate Agent identities and the shared
+`crates/codesesh-core/src/agents/antigravity.rs` parser. The scanner imports only
+existing conversation databases, because Desktop summaries can also contain CLI
+entries. Legacy `.pb` histories are ignored. An IDE SQLite store in a different
+location can be selected explicitly with the Desktop override.
+
+Desktop 2.32.1 was checked locally on 2026-11-16 against five conversation databases
+(one root and four children). Their schema and parsed fields match the supported
+CLI subset: prompts, assistant text, tool calls and results, usage, model names,
+workspace metadata, and explicit parent relationships. Unrecognized steps and
+numeric tool statuses retain the same partial-support limits as the CLI.
 
 Automatic discovery also includes Antigravity ACP profiles hosted by T3 Code:
 

@@ -87,6 +87,7 @@ CodeSesh currently supports these AI coding agents:
 - DeepChat
 - Cherry Studio
 - MiniMax Code
+- Antigravity Desktop
 - Antigravity CLI
 - Gemini CLI
 <!-- repo-fact:agents:end -->

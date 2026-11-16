@@ -277,6 +277,23 @@ export const AGENT_CATALOG = [
     },
   },
   {
+    name: "antigravity",
+    displayName: "Antigravity Desktop",
+    icon: "/icon/agent/antigravity.svg",
+    iconColored: true,
+    sourceKind: "sqlite",
+    resumeCommandPrefix: null,
+    toolStrategy: "custom",
+    support: {
+      tier: "partial",
+      usage: "full",
+      recordedCost: false,
+      toolResults: true,
+      reasoning: false,
+      sessionTree: true,
+    },
+  },
+  {
     name: "antigravity-cli",
     displayName: "Antigravity CLI",
     icon: "/icon/agent/antigravity-cli.svg",
