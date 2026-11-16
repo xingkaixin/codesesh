@@ -150,6 +150,23 @@ describe("buildSessionTreeModel path allocation", () => {
 
     expect(groupOrderOf(paths)).toEqual(["shared", "shared (2)", "shared (3)"]);
   });
+
+  it("prefers ProjectGroup displayName for grouped session paths", () => {
+    const fallback = makeSession({
+      sessionId: "a",
+      project_identity: {
+        kind: "git_remote",
+        key: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh",
+      },
+    });
+    const model = buildSessionTreeModel([fallback], {
+      projectDisplayNames: new Map([
+        ["git_remote:github.com/xingkaixin/codesesh", "codesesh-monorepo"],
+      ]),
+    });
+    expect(groupOrderOf(model.paths)).toEqual(["codesesh-monorepo"]);
+  });
 });
 
 function renderSessionTreeSidebar(sessions: SessionHead[]) {

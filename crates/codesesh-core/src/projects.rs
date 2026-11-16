@@ -2,6 +2,7 @@ mod groups;
 mod path;
 mod scope;
 
+pub(crate) use groups::preferred_project_display_names;
 pub use groups::{ProjectGroup, build_project_groups};
 pub(crate) use path::fallback_display_name;
 pub use scope::*;

@@ -331,6 +331,7 @@ pub(crate) fn build_dashboard(
     sessions: &[SessionHead],
     options: &DashboardOptions<'_>,
 ) -> anyhow::Result<DashboardAggregate> {
+    let project_names = crate::projects::preferred_project_display_names(sessions);
     let tree = SessionTree::new(sessions);
     let mut acc = accumulate(&tree, options, options.from, options.to, true);
     let latest = acc.recent.first().map(|&i| tree.sessions[i]);
@@ -351,7 +352,12 @@ pub(crate) fn build_dashboard(
         cache_read_tokens: acc.cache_read,
         cost_source: (acc.metrics.cost > 0.0).then(|| source(acc.estimated > 0.0)),
         latest_activity: latest.map(|s| s.time_updated).filter(|&time| time != 0.0),
-        latest_activity_project: latest.map(|s| s.project_identity.display_name.clone()),
+        latest_activity_project: latest.map(|s| {
+            project_names
+                .get(&project_key(s))
+                .cloned()
+                .unwrap_or_else(|| s.project_identity.display_name.clone())
+        }),
         latest_activity_agent: latest.map(|s| s.reference.agent_name.to_lowercase()),
         previous: options.compare.map(|(from, to)| {
             let m = accumulate(&tree, options, Some(from), to, false).metrics;
@@ -443,7 +449,10 @@ pub(crate) fn build_dashboard(
                 cost: p.metrics.cost,
                 identity_kind: closed(p.kind.clone())?,
                 identity_key: p.key.clone(),
-                display_name: p.name.clone(),
+                display_name: project_names
+                    .get(&format!("{}:{}", p.kind, p.key))
+                    .cloned()
+                    .unwrap_or_else(|| p.name.clone()),
                 agents: p.agents.iter().map(|(name, _)| name.clone()).collect(),
                 sparkline: p.sparkline.clone(),
                 cost_source: (p.metrics.cost > 0.0).then(|| source(p.estimated)),

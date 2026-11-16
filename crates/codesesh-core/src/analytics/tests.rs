@@ -417,3 +417,38 @@ fn bucketed_facts_match_message_facts_on_aligned_windows() {
         );
     }
 }
+
+#[test]
+fn dashboard_prefers_non_fallback_project_name_outside_requested_window() {
+    let mut older_named = head("older", None, 100);
+    older_named.project_identity = ProjectIdentity {
+        kind: "git_remote".into(),
+        key: "github.com/xingkaixin/codesesh".into(),
+        display_name: "codesesh-monorepo".into(),
+    };
+    let mut newer_fallback = head("newer", None, 500);
+    newer_fallback.project_identity = ProjectIdentity {
+        kind: "git_remote".into(),
+        key: "github.com/xingkaixin/codesesh".into(),
+        display_name: "codesesh".into(),
+    };
+
+    let scope = DashboardScope::default();
+    let utc = "UTC".parse().unwrap();
+    let options = DashboardOptions {
+        by_agent_names: &["codex".into()],
+        scope: &scope,
+        from: Some(400.0),
+        to: 600.0,
+        agent_info: None,
+        compare: None,
+        cost_facts: None,
+        time_zone: &utc,
+    };
+    let result = dashboard(&[older_named, newer_fallback], &options);
+    assert_eq!(
+        result["totals"]["latestActivityProject"],
+        "codesesh-monorepo"
+    );
+    assert_eq!(result["perProject"][0]["displayName"], "codesesh-monorepo");
+}

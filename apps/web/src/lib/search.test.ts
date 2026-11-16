@@ -200,4 +200,28 @@ describe("buildSearchProjectOptions", () => {
       { key: "git_remote:github.com/acme/other", count: 1 },
     ]);
   });
+
+  it("prefers ProjectGroup displayName and upgrades tail fallbacks in search facets", () => {
+    const options = buildSearchProjectOptions({
+      usesServerSearch: true,
+      isLoading: false,
+      results: [
+        makeResult("r1", "github.com/xingkaixin/codesesh", "codesesh"),
+        makeResult("r2", "github.com/other/repo", "repo"),
+        makeResult("r3", "github.com/other/repo", "repo-monorepo"),
+      ],
+      selectedProject: undefined,
+      recentProjectOptions,
+      projectDisplayNames: new Map([
+        ["git_remote:github.com/xingkaixin/codesesh", "codesesh-monorepo"],
+      ]),
+    });
+
+    expect(
+      options.find((option) => option.identityKey === "github.com/xingkaixin/codesesh")?.label,
+    ).toBe("codesesh-monorepo");
+    expect(options.find((option) => option.identityKey === "github.com/other/repo")?.label).toBe(
+      "repo-monorepo",
+    );
+  });
 });

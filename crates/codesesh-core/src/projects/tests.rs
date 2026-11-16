@@ -290,6 +290,33 @@ fn groups_count_roots_orphans_and_cycles_but_not_mounted_children() {
     assert_eq!(groups[0].last_activity, Some(400.0));
     assert_eq!(groups[0].sources, vec!["codex"]);
 }
+
+#[test]
+fn groups_prefer_non_fallback_name_including_children_over_newer_tail_fallback() {
+    let mut newer_fallback = session("newer", None, 900);
+    newer_fallback.project_identity = identity(
+        "git_remote",
+        "github.com/xingkaixin/codesesh",
+        "codesesh".into(),
+    );
+    let mut older_root = session("older", None, 100);
+    older_root.project_identity = identity(
+        "git_remote",
+        "github.com/xingkaixin/codesesh",
+        "codesesh".into(),
+    );
+    let mut child_named = session("child", Some("older"), 200);
+    child_named.project_identity = identity(
+        "git_remote",
+        "github.com/xingkaixin/codesesh",
+        "codesesh-monorepo".into(),
+    );
+
+    let groups = build_project_groups(&[newer_fallback, older_root, child_named]);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].display_name, "codesesh-monorepo");
+    assert_eq!(groups[0].session_count, 2);
+}
 #[test]
 fn scopes_match_identity_or_path_ancestors_with_boundaries() {
     let scope = create_project_scope_matcher_from_identity(

@@ -153,9 +153,26 @@ export default function App() {
     });
   }, [location.pathname, viewState.mode, viewState.activeAgentKey, viewState.activeSessionId]);
 
+  const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
+  const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
+
+  const activeProjectIdentityKey =
+    activeProjectKind && activeProjectKey
+      ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
+      : null;
+  const activeProjectIdentity =
+    activeProjectKind && activeProjectKey
+      ? { kind: activeProjectKind, key: activeProjectKey }
+      : null;
+  const projectLookup = useProjectLookup(loadedWindow, activeProjectIdentity, projects);
+  const resolvedProjects = useMemo(() => {
+    if (!projectLookup.project || projects.includes(projectLookup.project)) return projects;
+    return [...projects, projectLookup.project];
+  }, [projectLookup.project, projects]);
+
   const sessionIndexes = useMemo(
-    () => buildSessionIndexes(sessions, activeAgents),
-    [sessions, activeAgents],
+    () => buildSessionIndexes(sessions, activeAgents, resolvedProjects),
+    [sessions, activeAgents, resolvedProjects],
   );
 
   const search = useSessionSearch(sessionIndexes, loadedWindow);
@@ -211,23 +228,6 @@ export default function App() {
     agentCount: sessionStore.agents.length,
     sessionCount: sessionStore.sessions.length,
   });
-
-  const activeProjectKind = viewState.mode === "project" ? viewState.activeProjectKind : null;
-  const activeProjectKey = viewState.mode === "project" ? viewState.activeProjectKey : null;
-
-  const activeProjectIdentityKey =
-    activeProjectKind && activeProjectKey
-      ? getProjectIdentityKey({ kind: activeProjectKind, key: activeProjectKey })
-      : null;
-  const activeProjectIdentity =
-    activeProjectKind && activeProjectKey
-      ? { kind: activeProjectKind, key: activeProjectKey }
-      : null;
-  const projectLookup = useProjectLookup(loadedWindow, activeProjectIdentity, projects);
-  const resolvedProjects = useMemo(() => {
-    if (!projectLookup.project || projects.includes(projectLookup.project)) return projects;
-    return [...projects, projectLookup.project];
-  }, [projectLookup.project, projects]);
 
   const [projectAgentFilter, setProjectAgentFilter] = useState<{
     identityKey: string;
@@ -411,6 +411,7 @@ export default function App() {
         agentNameMap,
         agents: activeAgents,
         projectOptions: search.projectOptions,
+        projectDisplayNames: search.projectDisplayNames,
         filters: search.searchFilters,
         onChangeFilters: search.setSearchFilters,
         onClose: search.closeSearch,

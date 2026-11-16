@@ -14,7 +14,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
 } from "react";
-import { getProjectIdentityKey } from "../lib/projects";
+import {
+  getProjectIdentityKey,
+  isGitRemoteFallbackDisplayName,
+  resolveProjectDisplayName,
+} from "../lib/projects";
 import { getSessionReferenceKey } from "../lib/session-indexes";
 import { getSessionDisplayTitle } from "../lib/session-title";
 import { isRenderProfilerEnabled, recordRenderProfileEntry } from "./RenderProfiler";
@@ -37,6 +41,7 @@ interface SessionTreeSidebarProps {
   onRenameSession: (session: SessionHead) => void;
   /** False when the listing already covers one project. */
   groupByProject?: boolean;
+  projectDisplayNames?: ReadonlyMap<string, string>;
   sourceLabel?: (session: SessionHead) => string | undefined;
 }
 
@@ -67,12 +72,14 @@ function getDirectoryLabel(directory: string) {
   return directory.replace(/\/+$/, "").split("/").at(-1)?.trim() || "(unknown)";
 }
 
-function getProjectGroup(session: SessionHead) {
+function getProjectGroup(session: SessionHead, projectDisplayNames?: ReadonlyMap<string, string>) {
   const identity = session.project_identity;
   if (identity) {
     return {
       key: getProjectIdentityKey(identity),
-      label: identity.displayName || getDirectoryLabel(session.directory),
+      label:
+        resolveProjectDisplayName(identity, projectDisplayNames) ||
+        getDirectoryLabel(session.directory),
     };
   }
   const label = getDirectoryLabel(session.directory);
@@ -140,9 +147,11 @@ export function buildSessionTreeModel(
   sessions: SessionHead[],
   {
     groupByProject = true,
+    projectDisplayNames,
     sourceLabel,
   }: {
     groupByProject?: boolean;
+    projectDisplayNames?: ReadonlyMap<string, string>;
     sourceLabel?: (session: SessionHead) => string | undefined;
   } = {},
 ): SessionTreeModel {
@@ -158,11 +167,23 @@ export function buildSessionTreeModel(
 
   for (const node of tree.roots) {
     const session = node.session;
-    const { key, label } = getProjectGroup(session);
+    const { key, label } = getProjectGroup(session, projectDisplayNames);
     const time = getSessionTime(session);
     const group = groups.get(key);
     if (group) {
       group.nodes.push(node);
+      if (
+        !projectDisplayNames?.has(key) &&
+        session.project_identity?.displayName &&
+        isGitRemoteFallbackDisplayName({
+          kind: session.project_identity.kind,
+          key: session.project_identity.key,
+          displayName: group.label,
+        }) &&
+        !isGitRemoteFallbackDisplayName(session.project_identity)
+      ) {
+        group.label = session.project_identity.displayName;
+      }
       if (time > group.maxTime) group.maxTime = time;
     } else {
       groups.set(key, { label, nodes: [node], maxTime: time });
@@ -327,6 +348,7 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   onToggleBookmark,
   onRenameSession,
   groupByProject = true,
+  projectDisplayNames,
   sourceLabel,
 }: SessionTreeSidebarProps) {
   const locale = useLocale();
@@ -338,11 +360,11 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const modelData = useMemo(
     () =>
       measureSessionTreeWork("SessionTreeSidebar:buildTreeModel", () =>
-        buildSessionTreeModel(sessions, { groupByProject, sourceLabel }),
+        buildSessionTreeModel(sessions, { groupByProject, projectDisplayNames, sourceLabel }),
       ),
 
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, sessions, groupByProject, sourceLabel],
+    [locale, sessions, groupByProject, projectDisplayNames, sourceLabel],
   );
   const sortOrderRef = useRef(modelData.sortOrderByPath);
   const countByPathRef = useRef(modelData.countByPath);

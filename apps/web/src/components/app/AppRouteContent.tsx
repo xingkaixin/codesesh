@@ -95,6 +95,7 @@ interface SearchContentModel {
   agentNameMap: ReadonlyMap<string, string>;
   agents: AgentInfo[];
   projectOptions: SearchProjectOption[];
+  projectDisplayNames?: ReadonlyMap<string, string>;
   filters: SearchFilterState;
   onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
   onClose: () => void;
@@ -225,6 +226,7 @@ function SearchRouteContent({
           agentNameMap={search.agentNameMap}
           agents={search.agents}
           projects={search.projectOptions}
+          projectDisplayNames={search.projectDisplayNames}
           filters={search.filters}
           onChangeFilters={search.onChangeFilters}
           onOpenResult={search.onClose}
