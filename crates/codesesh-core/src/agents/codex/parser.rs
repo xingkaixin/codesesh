@@ -14,6 +14,7 @@ use std::{collections::HashMap, path::Path, sync::LazyLock};
 pub(super) struct Parser {
     id: String,
     directory: String,
+    recorded_git_remotes: Vec<String>,
     created: f64,
     parent: Option<String>,
     updated: f64,
@@ -49,9 +50,21 @@ impl Parser {
         } else {
             crate::time::file_mtime_ms(physical)?
         };
+        let recorded_git_remotes = if first["type"] == "session_meta" {
+            // Forked rollouts replay parent session_meta later, and projected_record strips payload.git.
+            first["payload"]["git"]["repository_url"]
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| vec![value.to_owned()])
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         Ok(Some(Self {
             id,
             directory: first["payload"]["cwd"].as_str().unwrap_or("").to_owned(),
+            recorded_git_remotes,
             created,
             parent: (first["payload"]["thread_source"] == "subagent")
                 .then(|| first["payload"]["parent_thread_id"].as_str())
@@ -520,6 +533,7 @@ impl Parser {
         let Self {
             id,
             directory,
+            recorded_git_remotes,
             created,
             parent,
             updated,
@@ -575,6 +589,7 @@ impl Parser {
                 session_id: id,
             }),
             project_identity,
+            recorded_git_remotes,
             project_identity_resolver_revision: Some("project-identity-v2".into()),
             project_identity_input_signature: Some(signature),
             time_created: created,

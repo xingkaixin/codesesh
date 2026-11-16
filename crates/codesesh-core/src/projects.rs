@@ -42,6 +42,9 @@ pub(crate) trait IdentityFs {
     fn exists(&self, path: &str) -> bool;
     fn read_text(&self, path: &str) -> Option<String>;
     fn git(&self, args: &[&str], cwd: &str) -> Option<String>;
+    fn timed_out(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Default)]
@@ -90,14 +93,32 @@ impl IdentityFs for RealFs {
             }
         }
     }
+    fn timed_out(&self) -> bool {
+        self.timed_out.get()
+    }
+}
+
+#[derive(Clone)]
+struct DirectoryProbe {
+    exists: bool,
+    timed_out: bool,
+    git_origin: Option<String>,
+    git_manifest_name: Option<String>,
+    default: ProjectIdentityProjection,
+    default_has_manifest: bool,
 }
 
 struct CacheEntry {
     directory: String,
-    projection: ProjectIdentityProjection,
+    probe: DirectoryProbe,
     time: Instant,
 }
 static CACHE: Mutex<VecDeque<CacheEntry>> = Mutex::new(VecDeque::new());
+
+#[cfg(test)]
+pub(crate) fn clear_identity_cache() {
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
 
 pub(crate) fn normalize_project_directory(directory: &str) -> String {
     path::normalize(directory)
@@ -115,7 +136,7 @@ pub(crate) fn matches_project_identity(
 pub(crate) fn normalize_git_remote(input: &str) -> Option<String> {
     static SCHEME: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?i)^[a-z][a-z\d+.-]*://").unwrap());
-    static SSH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[^@]+@([^:]+):(.+)$").unwrap());
+    static SSH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[^@/]+@([^:]+):(.+)$").unwrap());
     let raw = input.trim();
     let value = if SCHEME.is_match(raw) {
         let parsed = url::Url::parse(raw).ok()?;
@@ -127,6 +148,18 @@ pub(crate) fn normalize_git_remote(input: &str) -> Option<String> {
     };
     let value = value.strip_suffix(".git").unwrap_or(&value);
     value.contains('/').then(|| value.to_lowercase())
+}
+
+pub(crate) fn normalize_git_remotes(inputs: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for input in inputs {
+        if let Some(remote) = normalize_git_remote(input)
+            && !normalized.contains(&remote)
+        {
+            normalized.push(remote);
+        }
+    }
+    normalized
 }
 
 fn projection(
@@ -147,6 +180,14 @@ fn identity(kind: &str, key: &str, display_name: String) -> ProjectIdentity {
         display_name,
     }
 }
+fn remote_tail(remote: &str) -> String {
+    remote
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(remote)
+        .into()
+}
 pub(crate) fn path_identity(directory: &str) -> (ProjectIdentity, String) {
     let result = projection(
         identity("path", directory, fallback_display_name(directory)),
@@ -160,55 +201,106 @@ pub(crate) fn compute_identity(directory: &str) -> ProjectIdentity {
     compute_identity_projection(directory).identity
 }
 pub(crate) fn compute_identity_projection(directory: &str) -> ProjectIdentityProjection {
+    compute_identity_projection_with_context(directory, &[], None)
+}
+pub(crate) fn compute_identity_projection_with_context(
+    directory: &str,
+    recorded_git_remotes: &[String],
+    previous: Option<(&ProjectIdentity, Option<&str>)>,
+) -> ProjectIdentityProjection {
     let key = path::normalize(directory);
-    let mut previous = None;
-    {
+    let mut cached_probe = None;
+    let probe = {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(index) = cache.iter().position(|entry| entry.directory == key) {
             let entry = cache.remove(index).unwrap();
             if entry.time.elapsed() < Duration::from_secs(600) {
-                let result = entry.projection.clone();
+                let probe = entry.probe.clone();
                 cache.push_back(entry);
-                return result;
+                Some(probe)
+            } else {
+                cached_probe = Some(entry.probe);
+                None
             }
-            previous = Some(entry.projection);
+        } else {
+            None
         }
-    }
-    let home = if cfg!(windows) {
-        std::env::var("USERPROFILE")
-    } else {
-        std::env::var("HOME")
-    }
-    .unwrap_or_default();
-    let fs = RealFs::default();
-    let resolved =
-        resolve_identity_projection(directory, &fs, &home, PROJECT_IDENTITY_RESOLVER_REVISION);
-    // A timed-out git lookup is no evidence of a new identity; switching would re-parse the whole project.
-    let result = match previous {
-        Some(previous) if fs.timed_out.get() => previous,
-        _ => resolved,
     };
-    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    cache.push_back(CacheEntry {
-        directory: key,
-        projection: result.clone(),
-        time: Instant::now(),
-    });
-    while cache.len() > IDENTITY_CACHE_MAX_ENTRIES {
-        cache.pop_front();
-    }
-    result
+    let probe = match probe {
+        Some(probe) => probe,
+        None => {
+            let home = if cfg!(windows) {
+                std::env::var("USERPROFILE")
+            } else {
+                std::env::var("HOME")
+            }
+            .unwrap_or_default();
+            let fs = RealFs::default();
+            let probed = probe_directory(directory, &fs, &home, PROJECT_IDENTITY_RESOLVER_REVISION);
+            // A timed-out git lookup is no evidence of a new identity; switching would re-parse the whole project.
+            let probe = match cached_probe {
+                Some(previous) if fs.timed_out.get() => previous,
+                _ => probed,
+            };
+            let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+            cache.push_back(CacheEntry {
+                directory: key,
+                probe: probe.clone(),
+                time: Instant::now(),
+            });
+            while cache.len() > IDENTITY_CACHE_MAX_ENTRIES {
+                cache.pop_front();
+            }
+            probe
+        }
+    };
+    apply_identity_context(
+        &probe,
+        recorded_git_remotes,
+        previous,
+        PROJECT_IDENTITY_RESOLVER_REVISION,
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_identity_projection(
     directory: &str,
     fs: &impl IdentityFs,
     home: &str,
     revision: &str,
 ) -> ProjectIdentityProjection {
+    resolve_identity_projection_with_context(directory, fs, home, revision, &[], None)
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_identity_projection_with_context(
+    directory: &str,
+    fs: &impl IdentityFs,
+    home: &str,
+    revision: &str,
+    recorded_git_remotes: &[String],
+    previous: Option<(&ProjectIdentity, Option<&str>)>,
+) -> ProjectIdentityProjection {
+    let probe = probe_directory(directory, fs, home, revision);
+    apply_identity_context(&probe, recorded_git_remotes, previous, revision)
+}
+
+fn probe_directory(
+    directory: &str,
+    fs: &impl IdentityFs,
+    home: &str,
+    revision: &str,
+) -> DirectoryProbe {
     let loose = || identity("loose", "loose", "Loose".into());
     if directory.is_empty() {
-        return projection(loose(), revision, &["loose", "missing"]);
+        return DirectoryProbe {
+            exists: false,
+            timed_out: false,
+            git_origin: None,
+            git_manifest_name: None,
+            default: projection(loose(), revision, &["loose", "missing"]),
+            default_has_manifest: false,
+        };
     }
     let absolute = path::normalize(directory);
     let same_style = path::windows(&absolute) == path::windows(home);
@@ -224,19 +316,37 @@ pub(crate) fn resolve_identity_projection(
                 .iter()
                 .any(|name| absolute == path::join(&home, name)))
     {
-        return projection(loose(), revision, &["loose", &absolute]);
+        return DirectoryProbe {
+            exists: fs.exists(&absolute),
+            timed_out: false,
+            git_origin: None,
+            git_manifest_name: None,
+            default: projection(loose(), revision, &["loose", &absolute]),
+            default_has_manifest: false,
+        };
     }
+    let exists = fs.exists(&absolute);
     if let Some(root) = find_ancestor(&absolute, fs, &[".git"]) {
-        if let Some(remote) = fs
+        let git_origin = fs
             .git(&["config", "--get", "remote.origin.url"], &root)
-            .and_then(|value| normalize_git_remote(&value))
-        {
-            let display = display_name("git_remote", &remote, Some(&root), fs);
-            return projection(
-                identity("git_remote", &remote, display.clone()),
-                revision,
-                &["git_remote", &root, &remote, &display],
-            );
+            .and_then(|value| normalize_git_remote(&value));
+        let git_manifest_name = manifest_name(&root, fs);
+        if let Some(remote) = &git_origin {
+            let display = git_manifest_name
+                .clone()
+                .unwrap_or_else(|| remote_tail(remote));
+            return DirectoryProbe {
+                exists,
+                timed_out: fs.timed_out(),
+                git_origin: Some(remote.clone()),
+                git_manifest_name: git_manifest_name.clone(),
+                default: projection(
+                    identity("git_remote", remote, display.clone()),
+                    revision,
+                    &["git_remote", &root, remote, &display],
+                ),
+                default_has_manifest: git_manifest_name.is_some(),
+            };
         }
         if let Some(common) = fs
             .git(&["rev-parse", "--git-common-dir"], &root)
@@ -248,21 +358,40 @@ pub(crate) fn resolve_identity_projection(
             } else {
                 path::join(&root, common)
             };
-            let display = display_name("git_common_dir", &key, Some(&root), fs);
-            return projection(
-                identity("git_common_dir", &key, display.clone()),
-                revision,
-                &["git_common_dir", &root, &key, &display],
-            );
+            let display = git_manifest_name
+                .clone()
+                .unwrap_or_else(|| fallback_display_name(&root));
+            return DirectoryProbe {
+                exists,
+                timed_out: fs.timed_out(),
+                git_origin: None,
+                git_manifest_name: git_manifest_name.clone(),
+                default: projection(
+                    identity("git_common_dir", &key, display.clone()),
+                    revision,
+                    &["git_common_dir", &root, &key, &display],
+                ),
+                default_has_manifest: git_manifest_name.is_some(),
+            };
         }
     }
     if let Some(root) = find_ancestor(&absolute, fs, &MANIFESTS) {
-        let display = display_name("manifest_path", &root, None, fs);
-        return projection(
-            identity("manifest_path", &root, display.clone()),
-            revision,
-            &["manifest_path", &root, &display],
-        );
+        let manifest = manifest_name(&root, fs);
+        let display = manifest
+            .clone()
+            .unwrap_or_else(|| fallback_display_name(&root));
+        return DirectoryProbe {
+            exists,
+            timed_out: fs.timed_out(),
+            git_origin: None,
+            git_manifest_name: None,
+            default: projection(
+                identity("manifest_path", &root, display.clone()),
+                revision,
+                &["manifest_path", &root, &display],
+            ),
+            default_has_manifest: manifest.is_some(),
+        };
     }
     let scratch = path::join(&home, "Documents/Codex");
     if same_style
@@ -271,16 +400,117 @@ pub(crate) fn resolve_identity_projection(
             if path::windows(&scratch) { "\\" } else { "/" }
         ))
     {
-        return projection(
-            identity("synthetic", "codex:scratch", "Chats".into()),
+        return DirectoryProbe {
+            exists,
+            timed_out: fs.timed_out(),
+            git_origin: None,
+            git_manifest_name: None,
+            default: projection(
+                identity("synthetic", "codex:scratch", "Chats".into()),
+                revision,
+                &["synthetic", "codex:scratch"],
+            ),
+            default_has_manifest: false,
+        };
+    }
+    DirectoryProbe {
+        exists,
+        timed_out: fs.timed_out(),
+        git_origin: None,
+        git_manifest_name: None,
+        default: projection(
+            identity("path", &absolute, fallback_display_name(&absolute)),
             revision,
-            &["synthetic", "codex:scratch"],
+            &["path", &absolute],
+        ),
+        default_has_manifest: false,
+    }
+}
+
+fn apply_identity_context(
+    probe: &DirectoryProbe,
+    recorded_git_remotes: &[String],
+    previous: Option<(&ProjectIdentity, Option<&str>)>,
+    revision: &str,
+) -> ProjectIdentityProjection {
+    if probe.default.identity.kind == "loose" {
+        return probe.default.clone();
+    }
+    let remotes = normalize_git_remotes(recorded_git_remotes);
+    if remotes.len() == 1 {
+        let remote = &remotes[0];
+        let display = if probe.git_origin.as_deref() == Some(remote.as_str())
+            && let Some(manifest) = &probe.git_manifest_name
+        {
+            manifest.clone()
+        } else if let Some((prev, _)) = previous
+            && prev.kind == "git_remote"
+            && prev.key == *remote
+            && !prev.display_name.is_empty()
+        {
+            prev.display_name.clone()
+        } else {
+            remote_tail(remote)
+        };
+        // Omit worktree root so deleting a worktree does not alter input_signature.
+        return projection(
+            identity("git_remote", remote, display.clone()),
+            revision,
+            &["recorded_git_remote", remote, &display],
         );
     }
-    projection(
-        identity("path", &absolute, fallback_display_name(&absolute)),
+    if probe.default.identity.kind == "path"
+        && (!probe.exists || probe.timed_out)
+        && let Some((prev, prev_sig)) = previous
+        && matches!(prev.kind.as_str(), "git_remote" | "git_common_dir")
+    {
+        return match prev_sig {
+            Some(signature) => ProjectIdentityProjection {
+                identity: prev.clone(),
+                resolver_revision: revision.into(),
+                input_signature: signature.to_owned(),
+            },
+            None => projection(
+                prev.clone(),
+                revision,
+                &["retained", &prev.kind, &prev.key, &prev.display_name],
+            ),
+        };
+    }
+    retain_display_name(
+        probe.default.clone(),
+        probe.default_has_manifest,
+        previous,
         revision,
-        &["path", &absolute],
+    )
+}
+
+fn retain_display_name(
+    default: ProjectIdentityProjection,
+    has_manifest: bool,
+    previous: Option<(&ProjectIdentity, Option<&str>)>,
+    revision: &str,
+) -> ProjectIdentityProjection {
+    let Some((prev, _)) = previous else {
+        return default;
+    };
+    if has_manifest
+        || prev.kind != default.identity.kind
+        || prev.key != default.identity.key
+        || prev.display_name.is_empty()
+        || prev.display_name == default.identity.display_name
+    {
+        return default;
+    }
+    let mut identity = default.identity;
+    identity.display_name = prev.display_name.clone();
+    let kind = identity.kind.clone();
+    let key = identity.key.clone();
+    let display = identity.display_name.clone();
+    projection(
+        identity,
+        revision,
+        &["retained_name", &kind, &key, &display],
     )
 }
 
@@ -300,35 +530,26 @@ fn find_ancestor(start: &str, fs: &impl IdentityFs, names: &[&str]) -> Option<St
         current = parent;
     }
 }
-fn display_name(kind: &str, key: &str, root: Option<&str>, fs: &impl IdentityFs) -> String {
+
+fn manifest_name(dir: &str, fs: &impl IdentityFs) -> Option<String> {
     static JSON_NAME: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#""name"\s*:\s*"([^"]+)""#).unwrap());
     static TOML_NAME: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(?m)^\s*name\s*=\s*"([^"]+)""#).unwrap());
-    if let Some(dir) = root.or_else(|| (kind == "manifest_path").then_some(key)) {
-        for manifest in &MANIFESTS[..3] {
-            let file = path::join(dir, manifest);
-            if !fs.exists(&file) {
-                continue;
-            }
-            if let Some(text) = fs.read_text(&file)
-                && let Some(captures) = JSON_NAME
-                    .captures(&text)
-                    .or_else(|| TOML_NAME.captures(&text))
-            {
-                return captures[1].into();
-            }
+    for manifest in &MANIFESTS[..3] {
+        let file = path::join(dir, manifest);
+        if !fs.exists(&file) {
+            continue;
+        }
+        if let Some(text) = fs.read_text(&file)
+            && let Some(captures) = JSON_NAME
+                .captures(&text)
+                .or_else(|| TOML_NAME.captures(&text))
+        {
+            return Some(captures[1].into());
         }
     }
-    if kind == "git_remote" {
-        key.rsplit('/')
-            .next()
-            .filter(|name| !name.is_empty())
-            .unwrap_or(key)
-            .into()
-    } else {
-        fallback_display_name(root.unwrap_or(key))
-    }
+    None
 }
 
 #[cfg(test)]

@@ -250,6 +250,7 @@ fn scan_selected(
                     session_id: id.into(),
                 }),
             project_identity: identity,
+            recorded_git_remotes: Vec::new(),
             project_identity_resolver_revision: Some("project-identity-v2".into()),
             project_identity_input_signature: Some(signature),
             time_created: header["createdAt"].as_f64().unwrap_or(0.0),

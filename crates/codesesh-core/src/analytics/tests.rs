@@ -23,6 +23,7 @@ fn head(id: &str, parent: Option<&str>, time: i64) -> SessionHead {
             key: "/project".into(),
             display_name: "project".into(),
         },
+        recorded_git_remotes: Vec::new(),
         project_identity_resolver_revision: None,
         project_identity_input_signature: None,
         time_created: time as f64,

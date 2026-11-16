@@ -3,7 +3,10 @@ use crate::{
     agents,
     model::{SessionHead, SessionIndex},
     pricing::Pricing,
-    projects::{compute_identity_projection, create_project_scope_matcher, matches_project_scope},
+    projects::{
+        compute_identity_projection_with_context, create_project_scope_matcher,
+        matches_project_scope,
+    },
     session_list::filter_activity_window,
     storage::Cache,
 };
@@ -26,14 +29,18 @@ fn signature(source: &AgentSource) -> Result<String> {
     ))?)
 }
 fn project_identities_current(heads: &[SessionHead]) -> bool {
-    let mut projections = HashMap::new();
     heads.iter().all(|head| {
         let mut local = head.clone();
         local.set_source_node("local");
         let head = &local;
-        let projection = projections
-            .entry(head.directory.clone())
-            .or_insert_with(|| compute_identity_projection(&head.directory));
+        let projection = compute_identity_projection_with_context(
+            &head.directory,
+            &head.recorded_git_remotes,
+            Some((
+                &head.project_identity,
+                head.project_identity_input_signature.as_deref(),
+            )),
+        );
         projection.identity == head.project_identity
             && head.project_identity_resolver_revision.as_deref()
                 == Some(&projection.resolver_revision)
@@ -58,6 +65,9 @@ fn output(mut heads: Vec<SessionHead>, options: &ScanOptions) -> SessionIndex {
     }
     heads = filter_activity_window(&heads, options.from, options.to);
     heads.sort_by(|left, right| right.time_updated.total_cmp(&left.time_updated));
+    for head in &mut heads {
+        head.recorded_git_remotes.clear();
+    }
     let mut counts = HashMap::new();
     for head in &heads {
         *counts.entry(head.reference.agent_name.clone()).or_default() += 1;
@@ -116,13 +126,31 @@ pub fn run(
                     return Ok(());
                 }
                 let scan_started = Instant::now();
-                let scanned = super::scan_source(source, pricing);
+                let scanned = super::scan_source_raw(source, pricing);
                 record(
                     format!("agent:{}:scan", source.agent),
                     scan_started.elapsed(),
                 );
                 let mut scanned = scanned?;
+                let previous_identities: HashMap<_, _> = old
+                    .iter()
+                    .map(|head| {
+                        let mut local = head.clone();
+                        local.set_source_node("local");
+                        (
+                            local.reference,
+                            (
+                                local.project_identity,
+                                local.project_identity_input_signature,
+                            ),
+                        )
+                    })
+                    .collect();
                 for session in &mut scanned.sessions {
+                    let previous = previous_identities
+                        .get(&session.head.reference)
+                        .map(|(identity, signature)| (identity, signature.as_deref()));
+                    agents::complete_projections_with_previous(session, previous);
                     session.set_source_node(node);
                 }
                 let mut references: HashSet<_> = scanned

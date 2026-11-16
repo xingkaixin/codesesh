@@ -168,6 +168,18 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
                 .and_then(title)
         })
         .unwrap_or("Untitled Session".into());
+    let recorded_git_remotes = summary["git_remotes"]
+        .as_array()
+        .map(|remotes| {
+            remotes
+                .iter()
+                .filter_map(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
     let (project_identity, signature) = path_identity(&directory);
     let parent = string(&summary["parent_session_id"])
         .filter(|p| p != &id)
@@ -189,6 +201,7 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
         display_title: None,
         parent_reference: parent,
         project_identity,
+        recorded_git_remotes,
         project_identity_resolver_revision: Some("project-identity-v2".into()),
         project_identity_input_signature: Some(signature),
         time_created: created,
@@ -443,6 +456,46 @@ mod tests {
         );
         assert!(
             matches!(&m.parts[2],MessagePart::Plan{approval_status,..} if *approval_status==crate::model::PlanApprovalStatus::Pending)
+        );
+    }
+
+    #[test]
+    fn extracts_git_remotes_from_summary_json() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("sessions/g1");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("summary.json"),
+            json!({
+                "info": {"id": "g1", "cwd": "/deleted/worktree"},
+                "git_remotes": [
+                    "git@github.com:xingkaixin/codesesh.git",
+                    "https://github.com/other/repo.git"
+                ],
+                "created_at": "2026-09-01T00:00:00Z"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("updates.jsonl"),
+            update(
+                1,
+                "p",
+                "user_message_chunk",
+                json!({"content": {"type": "text", "text": "Check remote"}}),
+            )
+            .to_string(),
+        )
+        .unwrap();
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(
+            sessions[0].head.recorded_git_remotes,
+            vec![
+                "git@github.com:xingkaixin/codesesh.git",
+                "https://github.com/other/repo.git"
+            ]
         );
     }
 }

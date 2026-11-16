@@ -1,7 +1,7 @@
 use super::{
     AgentSource,
     backfill::{BATCH_SIZE, Backfill, Item, ItemScope, database_stamp, inventory},
-    has_sources, scan_source,
+    has_sources, scan_source_raw,
 };
 use crate::{
     agents::{self, ParsedSession, ScanDelta, SessionRecord, opencode::DatabaseSnapshot},
@@ -68,6 +68,8 @@ pub struct AgentScanner {
     pricing: Arc<Pricing>,
     controller: Option<PricingController>,
     previous: Vec<SessionRecord>,
+    previous_identities:
+        HashMap<crate::model::SessionReference, (crate::model::ProjectIdentity, Option<String>)>,
     durable_references: HashSet<crate::model::SessionReference>,
     initialized: bool,
     history_complete: bool,
@@ -101,6 +103,7 @@ impl AgentScanner {
             pricing,
             controller: None,
             previous: Vec::new(),
+            previous_identities: HashMap::new(),
             durable_references: HashSet::new(),
             initialized: false,
             history_complete: false,
@@ -240,7 +243,11 @@ impl AgentScanner {
             previous.extend(dependencies);
         }
         for session in &mut delta.upserts {
-            agents::complete_projections(session);
+            let previous = self
+                .previous_identities
+                .get(&session.head.reference)
+                .map(|(identity, signature)| (identity, signature.as_deref()));
+            agents::complete_projections_with_previous(session, previous);
         }
         if delta.complete {
             let refs: HashSet<_> = delta
@@ -276,8 +283,16 @@ impl AgentScanner {
             .extend(delta.upserts.iter().map(SessionRecord::from));
         for reference in &removed {
             self.baseline.remove(reference);
+            self.previous_identities.remove(reference);
         }
         for session in &delta.upserts {
+            self.previous_identities.insert(
+                session.head.reference.clone(),
+                (
+                    session.head.project_identity.clone(),
+                    session.head.project_identity_input_signature.clone(),
+                ),
+            );
             self.baseline.insert(
                 session.head.reference.clone(),
                 (
@@ -312,6 +327,7 @@ impl AgentScanner {
             // Release headers interleaved with parsed bodies; the next refresh reloads durable metadata.
             self.previous = Vec::new();
             self.baseline = HashMap::new();
+            self.previous_identities.clear();
         }
         if let Some(checkpoint) = &mut next_checkpoint {
             checkpoint["sourceNodeId"] = self.source_node_id.clone().into();
@@ -382,13 +398,18 @@ impl AgentScanner {
             if self.source_available == Some(false) && !self.durable_references.is_empty() {
                 return Ok((ScanDelta::default(), None, true));
             }
+            let restart = self.source.agent != "cursor"
+                && saved.is_some_and(|saved| {
+                    saved["sourceState"]["parserVersion"].as_str()
+                        != Some(agents::parser_version(&self.source.agent))
+                });
             self.backfill = Some(Backfill::new(
                 items,
                 self.startup_from,
                 self.startup_to,
                 self.pricing.generation(),
                 saved,
-                false,
+                restart,
             ));
         }
         if hints {
@@ -678,7 +699,6 @@ impl AgentScanner {
         let mut changed = Vec::new();
         let mut bytes = 0_u64;
         let mut consumed = 0;
-        let mut projections = HashMap::new();
         let mut by_source: HashMap<_, Vec<_>> = HashMap::new();
         for record in &self.previous {
             by_source.entry(&record.source).or_default().push(record);
@@ -712,11 +732,14 @@ impl AgentScanner {
                 && self.source.agent != "cursor"
                 && self.file_fingerprints.get(&item.key) == Some(&item.fingerprint)
                 && records.into_iter().flatten().all(|record| {
-                    let projection = projections
-                        .entry(record.head.directory.clone())
-                        .or_insert_with(|| {
-                            crate::projects::compute_identity_projection(&record.head.directory)
-                        });
+                    let projection = crate::projects::compute_identity_projection_with_context(
+                        &record.head.directory,
+                        &record.head.recorded_git_remotes,
+                        Some((
+                            &record.head.project_identity,
+                            record.head.project_identity_input_signature.as_deref(),
+                        )),
+                    );
                     projection.identity == record.head.project_identity
                         && record.head.project_identity_input_signature.as_ref()
                             == Some(&projection.input_signature)
@@ -809,6 +832,7 @@ impl AgentScanner {
     }
     fn restore(&mut self) -> Result<()> {
         self.previous.clear();
+        self.previous_identities.clear();
         self.durable_references.clear();
         self.baseline.clear();
         self.file_fingerprints.clear();
@@ -825,6 +849,13 @@ impl AgentScanner {
             for record in baseline.sessions {
                 self.durable_references
                     .insert(record.head.reference.clone());
+                self.previous_identities.insert(
+                    record.head.reference.clone(),
+                    (
+                        record.head.project_identity.clone(),
+                        record.head.project_identity_input_signature.clone(),
+                    ),
+                );
                 self.baseline.insert(
                     record.head.reference.clone(),
                     (
@@ -876,6 +907,13 @@ impl AgentScanner {
             };
             head.set_source_node(crate::model::LOCAL_SOURCE_NODE_ID);
             self.durable_references.insert(head.reference.clone());
+            self.previous_identities.insert(
+                head.reference.clone(),
+                (
+                    head.project_identity.clone(),
+                    head.project_identity_input_signature.clone(),
+                ),
+            );
             if pricing_changed && !has_cost_inputs {
                 self.file_fingerprints.remove(&head.reference.session_id);
                 self.fingerprints.remove(&head.reference.session_id);
@@ -929,7 +967,7 @@ impl AgentScanner {
     }
 
     fn full(&self) -> Result<ScanDelta> {
-        let result = scan_source(&self.source, &self.pricing)?;
+        let result = scan_source_raw(&self.source, &self.pricing)?;
         if !result.available && (!self.previous.is_empty() || !self.durable_references.is_empty()) {
             return Ok(ScanDelta::default());
         }

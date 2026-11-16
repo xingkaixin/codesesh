@@ -7,7 +7,7 @@ use serde_json::Value;
 pub(super) const HEAD_COLUMNS: &str = "source_node_id,agent_name,session_id,title,directory,parent_agent_name,parent_session_id,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,message_count,total_input_tokens,total_output_tokens,total_cost,total_cache_read_tokens,total_cache_create_tokens,total_tokens,cost_source,model_usage_json,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision,head_meta_json";
 
 #[derive(Default, Deserialize, Serialize)]
-pub(super) struct HeadMetadata {
+pub(crate) struct HeadMetadata {
     #[serde(rename = "rustHeadVersion", skip_serializing_if = "Option::is_none")]
     version: Option<Value>,
     #[serde(
@@ -17,6 +17,23 @@ pub(super) struct HeadMetadata {
         deserialize_with = "present_summary"
     )]
     summary_files: Option<Value>,
+    #[serde(
+        rename = "recordedGitRemotes",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    recorded_git_remotes: Vec<String>,
+}
+
+impl HeadMetadata {
+    pub(crate) fn encode(head: &SessionHead) -> Result<String> {
+        let value = Self {
+            version: head.version.clone().map(Value::String),
+            summary_files: head.summary_files.clone(),
+            recorded_git_remotes: head.recorded_git_remotes.clone(),
+        };
+        Ok(super::json::stringify(&value)?)
+    }
 }
 
 fn present_summary<'de, D: serde::Deserializer<'de>>(
@@ -62,7 +79,9 @@ pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             .and_then(|meta| meta.version.as_ref())
             .and_then(Value::as_str)
             .map(str::to_owned),
-        summary_files: metadata.and_then(|meta| meta.summary_files),
+        summary_files: metadata
+            .as_ref()
+            .and_then(|meta| meta.summary_files.clone()),
         reference: SessionReference {
             source_node_id: row.get("source_node_id")?,
             agent_name: row.get("agent_name")?,
@@ -83,6 +102,9 @@ pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             key: row.get("project_identity_key")?,
             display_name: row.get("project_display_name")?,
         },
+        recorded_git_remotes: metadata
+            .map(|meta| meta.recorded_git_remotes)
+            .unwrap_or_default(),
         project_identity_resolver_revision: row.get("project_identity_resolver_revision")?,
         project_identity_input_signature: row.get("project_identity_input_signature")?,
         time_created: row.get("time_created")?,

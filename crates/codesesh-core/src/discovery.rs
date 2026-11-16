@@ -118,7 +118,7 @@ pub(crate) fn scan_sources(
     ScanResult { sessions, failures }
 }
 
-pub(crate) fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
+pub(crate) fn scan_source_raw(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
     let mut sessions = Vec::new();
     for root in source.scan_roots()? {
         if !(exists(&root)?
@@ -131,14 +131,20 @@ pub(crate) fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<Age
                 .with_context(|| format!("scanning {} at {}", source.agent, root.display()))?,
         );
     }
-    for session in &mut sessions {
-        agents::complete_projections(session);
-    }
     let available = !sessions.is_empty() || has_sources(source)?;
     Ok(AgentScan {
         available,
         sessions,
     })
+}
+
+#[cfg(test)]
+pub(crate) fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
+    let mut scan = scan_source_raw(source, pricing)?;
+    for session in &mut scan.sessions {
+        agents::complete_projections(session);
+    }
+    Ok(scan)
 }
 
 fn exists(path: &Path) -> std::io::Result<bool> {

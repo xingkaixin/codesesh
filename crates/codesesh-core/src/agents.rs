@@ -1,5 +1,7 @@
 pub(crate) fn parser_version(agent: &str) -> &'static str {
-    if matches!(agent, "codex" | "antigravity-cli") {
+    if matches!(agent, "codex" | "grok") {
+        "rust-parser-v11"
+    } else if agent == "antigravity-cli" {
         "rust-parser-v10"
     } else if agent == "pi" {
         "rust-parser-v8"
@@ -204,14 +206,27 @@ pub(crate) fn is_session_file(
 
 // The only place smart tags are derived; parsers leave them empty for this pass to fill.
 pub(crate) fn complete_projections(session: &mut ParsedSession) {
+    complete_projections_with_previous(session, None);
+}
+
+pub(crate) fn complete_projections_with_previous(
+    session: &mut ParsedSession,
+    previous: Option<(&crate::model::ProjectIdentity, Option<&str>)>,
+) {
     let source_updated_at = session.head.time_updated;
     tool_calls::settle_interrupted(&mut session.detail.messages);
     let smart_tags = smart_tags::classify(&session.detail.messages);
+    let remotes = crate::projects::normalize_git_remotes(&session.head.recorded_git_remotes);
+    let projection = crate::projects::compute_identity_projection_with_context(
+        &session.head.directory,
+        &remotes,
+        previous,
+    );
     for head in [&mut session.head, &mut session.detail.head] {
-        let projection = crate::projects::compute_identity_projection(&head.directory);
-        head.project_identity = projection.identity;
-        head.project_identity_resolver_revision = Some(projection.resolver_revision);
-        head.project_identity_input_signature = Some(projection.input_signature);
+        head.recorded_git_remotes = remotes.clone();
+        head.project_identity = projection.identity.clone();
+        head.project_identity_resolver_revision = Some(projection.resolver_revision.clone());
+        head.project_identity_input_signature = Some(projection.input_signature.clone());
         head.smart_tags = smart_tags.clone();
         head.smart_tags_source_updated_at = Some(source_updated_at);
         head.smart_tags_classifier_revision = Some("smart-tags-v1".into());

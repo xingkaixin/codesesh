@@ -418,6 +418,7 @@ mod tests {
                 key: format!("repo:{directory}"),
                 display_name: directory.into(),
             },
+            recorded_git_remotes: Vec::new(),
             project_identity_resolver_revision: None,
             project_identity_input_signature: None,
             time_created: time,

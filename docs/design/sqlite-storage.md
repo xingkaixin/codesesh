@@ -42,7 +42,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 
 schema 34 保存 `automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
 
-schema 35 将展示版本和文件摘要保存在 `head_meta_json`，快照不再读取包含定价明细的
+schema 35 将展示版本、文件摘要和原始仓库证据保存在 `head_meta_json`，快照不再读取包含定价明细的
 `meta_json`。展示元数据与会话在同一事务发布；定价元数据由定价路径校验。
 
 schema 37 将 `messages.parts_json` 存为 zstd 压缩的 BLOB，压缩后不更小的短内容仍存为文本，

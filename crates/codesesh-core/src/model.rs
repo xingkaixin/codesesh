@@ -158,6 +158,9 @@ pub struct SessionHead {
     #[ts(optional)]
     pub parent_reference: Option<SessionReference>,
     pub project_identity: ProjectIdentity,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub recorded_git_remotes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub project_identity_resolver_revision: Option<String>,
@@ -210,6 +213,7 @@ impl SessionHead {
     pub fn public(&self) -> Self {
         Self {
             model_usage: None,
+            recorded_git_remotes: Vec::new(),
             project_identity_resolver_revision: None,
             project_identity_input_signature: None,
             smart_tags_source_updated_at: None,
