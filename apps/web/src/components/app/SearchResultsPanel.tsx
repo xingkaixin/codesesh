@@ -11,6 +11,7 @@ import { t } from "../../i18n/translate";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import { formatCompact, formatInt, formatRelativeTime, formatUsd } from "../../lib/format";
+import { resolveProjectDisplayName } from "../../lib/projects";
 import { SEARCH_RESULT_LIMIT, searchResultPath } from "../../lib/search";
 import { getSessionDisplayTitle } from "../../lib/session-title";
 import { AgentIcon } from "../AgentIcon";
@@ -72,6 +73,7 @@ function SearchResultPreview({
   query,
   agent,
   agentLabel,
+  projectDisplayNames,
   nodes,
   onOpenResult,
 }: {
@@ -79,6 +81,7 @@ function SearchResultPreview({
   query: string;
   agent?: AgentInfo;
   agentLabel: string;
+  projectDisplayNames?: ReadonlyMap<string, string>;
   nodes?: SourceNode[];
   onOpenResult: () => void;
 }) {
@@ -136,7 +139,8 @@ function SearchResultPreview({
         <dl className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-[var(--console-border)] pt-4 text-xs">
           <dt className="text-[var(--console-muted)]">{t("Project")}</dt>
           <dd className="console-mono truncate text-[var(--console-text)]">
-            {session.project_identity?.displayName ?? session.directory}
+            {resolveProjectDisplayName(session.project_identity, projectDisplayNames) ??
+              session.directory}
           </dd>
           <dt className="text-[var(--console-muted)]">{t("Tokens")}</dt>
           <dd className="console-mono text-[var(--console-text)]">{formatCompact(tokens)}</dd>
@@ -171,6 +175,7 @@ export function SearchResultsPanel({
   agentNameMap,
   agents,
   projects,
+  projectDisplayNames,
   filters,
   filtersOpen = false,
   filtersId,
@@ -185,6 +190,7 @@ export function SearchResultsPanel({
   agentNameMap: ReadonlyMap<string, string>;
   agents: AgentInfo[];
   projects: SearchProjectOption[];
+  projectDisplayNames?: ReadonlyMap<string, string>;
   filters: SearchFilterState;
   filtersOpen?: boolean;
   filtersId?: string;
@@ -400,7 +406,10 @@ export function SearchResultsPanel({
                       className="console-mono max-w-full truncate"
                       title={result.session.directory}
                     >
-                      {result.session.project_identity?.displayName ?? result.session.directory}
+                      {resolveProjectDisplayName(
+                        result.session.project_identity,
+                        projectDisplayNames,
+                      ) ?? result.session.directory}
                     </span>
                     <span aria-hidden="true">·</span>
                     <span className="console-mono">
@@ -432,6 +441,7 @@ export function SearchResultsPanel({
         query={query}
         agent={agentByKey.get(selectedAgentKey)}
         agentLabel={agentNameMap.get(selectedAgentKey) ?? selected.reference.agentName}
+        projectDisplayNames={projectDisplayNames}
         nodes={nodes.data?.nodes}
         onOpenResult={onOpenResult}
       />

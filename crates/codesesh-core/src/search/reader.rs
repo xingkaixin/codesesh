@@ -35,6 +35,7 @@ pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             key: row.get("project_identity_key")?,
             display_name: row.get("project_display_name")?,
         },
+        recorded_git_remotes: Vec::new(),
         project_identity_resolver_revision: None,
         project_identity_input_signature: None,
         time_created: row.get("time_created")?,

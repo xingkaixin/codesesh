@@ -149,4 +149,36 @@ describe("session indexes", () => {
     expect(lookup.byReference.get(getSessionReferenceKey(next))).toBe(next);
     expect(lookup.indexByReference.get(getSessionReferenceKey(next))).toBe(2);
   });
+
+  it("prefers ProjectGroup displayName and upgrades tail fallbacks for project options", () => {
+    const fallbackSession = createSession({
+      reference: { agentName: "codex", sessionId: "fallback" },
+      title: "Fallback",
+      project_identity: {
+        kind: "git_remote",
+        key: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh",
+      },
+    });
+    const indexedWithGroups = buildSessionIndexes([fallbackSession], agents, [
+      {
+        identityKind: "git_remote",
+        identityKey: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh-monorepo",
+      },
+    ]);
+    expect(indexedWithGroups.projectOptions[0]?.label).toBe("codesesh-monorepo");
+
+    const namedSession = createSession({
+      reference: { agentName: "codex", sessionId: "named" },
+      title: "Named",
+      project_identity: {
+        kind: "git_remote",
+        key: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh-monorepo",
+      },
+    });
+    const indexedWithoutGroups = buildSessionIndexes([fallbackSession, namedSession], agents);
+    expect(indexedWithoutGroups.projectOptions[0]?.label).toBe("codesesh-monorepo");
+  });
 });

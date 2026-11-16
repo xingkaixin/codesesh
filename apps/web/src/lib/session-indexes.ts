@@ -8,10 +8,16 @@ import {
   getSessionRouteKey,
   sessionRoutePath,
   type AgentInfo,
+  type ApiProjectGroup,
   type ProjectIdentityKind,
   type SessionHead,
 } from "@codesesh/contract";
-import { getProjectIdentityKey } from "./projects";
+import {
+  buildProjectDisplayNameMap,
+  getProjectIdentityKey,
+  isGitRemoteFallbackDisplayName,
+  resolveProjectDisplayName,
+} from "./projects";
 
 export type IndexedSession = SessionHead;
 
@@ -34,6 +40,7 @@ export interface SessionIndexes {
   landingSessions: IndexedSession[];
   sessionsByActivity: SessionHead[];
   projectOptions: SessionProjectOption[];
+  projectDisplayNames: ReadonlyMap<string, string>;
 }
 
 export interface SidebarSessionLookup {
@@ -63,8 +70,13 @@ function pushMapValue<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   map.set(key, [value]);
 }
 
-export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]): SessionIndexes {
+export function buildSessionIndexes(
+  sessions: SessionHead[],
+  agents: AgentInfo[],
+  projects: readonly Pick<ApiProjectGroup, "identityKind" | "identityKey" | "displayName">[] = [],
+): SessionIndexes {
   const canonical = createSessionIndex(sessions);
+  const projectDisplayNames = buildProjectDisplayNameMap(projects);
   const byAgent = new Map<string, SessionHead[]>();
   const byLandingAgent = new Map<string, IndexedSession[]>();
   const byLandingProjectIdentityKey = new Map<string, IndexedSession[]>();
@@ -93,12 +105,24 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     const option = projectOptionsByKey.get(projectIdentityKey);
     if (option) {
       option.count += 1;
+      if (
+        !projectDisplayNames.has(projectIdentityKey) &&
+        identity.displayName &&
+        isGitRemoteFallbackDisplayName({
+          kind: identity.kind,
+          key: identity.key,
+          displayName: option.label,
+        }) &&
+        !isGitRemoteFallbackDisplayName(identity)
+      ) {
+        option.label = identity.displayName;
+      }
     } else {
       projectOptionsByKey.set(projectIdentityKey, {
         key: projectIdentityKey,
         identityKind: identity.kind,
         identityKey: identity.key,
-        label: identity.displayName || session.directory,
+        label: resolveProjectDisplayName(identity, projectDisplayNames) || session.directory,
         count: 1,
       });
     }
@@ -121,6 +145,7 @@ export function buildSessionIndexes(sessions: SessionHead[], agents: AgentInfo[]
     projectOptions: [...projectOptionsByKey.values()]
       .toSorted((a, b) => b.count - a.count)
       .slice(0, 8),
+    projectDisplayNames,
   };
 }
 

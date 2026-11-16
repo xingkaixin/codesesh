@@ -203,6 +203,7 @@ fn detail(
         display_title: None,
         parent_reference: parent.map(|id| reference(agent, id)),
         project_identity,
+        recorded_git_remotes: Vec::new(),
         project_identity_resolver_revision: Some("project-identity-v2".into()),
         project_identity_input_signature: Some(signature),
         time_created: created,

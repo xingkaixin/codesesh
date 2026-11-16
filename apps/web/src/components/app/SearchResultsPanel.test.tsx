@@ -167,3 +167,28 @@ it("keeps matching session IDs on different sources distinct", () => {
   expect(props.registerResultRef).toHaveBeenCalledWith("codex/same", local);
   expect(props.registerResultRef).toHaveBeenCalledWith("@worker-one/codex/same", remote);
 });
+
+it("prefers ProjectGroup displayName in result cards and preview", () => {
+  const result: SearchResult = {
+    reference: { agentName: "codex", sessionId: "s1" },
+    session: makeSession("s1", {
+      project_identity: {
+        kind: "git_remote",
+        key: "github.com/xingkaixin/codesesh",
+        displayName: "codesesh",
+      },
+    }),
+    snippet: "match",
+    snippetHighlights: [],
+    matchType: "title",
+  };
+  renderPanel(
+    { status: "loaded", results: [result] },
+    {
+      projectDisplayNames: new Map([
+        ["git_remote:github.com/xingkaixin/codesesh", "codesesh-monorepo"],
+      ]),
+    },
+  );
+  expect(screen.getAllByText("codesesh-monorepo")).toHaveLength(2);
+});

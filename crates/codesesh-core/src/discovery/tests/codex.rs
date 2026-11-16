@@ -261,3 +261,369 @@ fn codex_compression_during_backfill_does_not_remove_prior_batches() {
     }
     panic!("Codex backfill did not complete");
 }
+
+#[test]
+fn parser_version_upgrade_restarts_nonzero_checkpoint_and_recovers_deleted_worktree_sessions() {
+    assert_eq!(
+        crate::agents::parser_version("codex"),
+        crate::agents::parser_version("grok")
+    );
+    assert_eq!(
+        crate::agents::parser_version("antigravity-cli"),
+        "rust-parser-v10"
+    );
+    assert_eq!(
+        crate::agents::parser_version("claudecode"),
+        "rust-parser-v6"
+    );
+
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("codex");
+    let sessions = root.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let deleted_dir = temporary.path().join("deleted/.t3/worktrees/codesesh/t3-1");
+    for id in 0..33 {
+        let uuid = format!("00000000-0000-0000-0000-{id:012}");
+        let path = sessions.join(format!("rollout-2026-09-01T00-00-00-{uuid}.jsonl"));
+        let records = [
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-09-01T00:00:00Z",
+                "payload": {
+                    "id": uuid,
+                    "cwd": deleted_dir,
+                    "git": {"repository_url": "git@github.com:xingkaixin/codesesh.git"}
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": format!("Work {id}")}]}
+            }),
+        ];
+        std::fs::write(
+            &path,
+            records
+                .iter()
+                .map(|r| format!("{r}\n"))
+                .collect::<Vec<_>>()
+                .join(""),
+        )
+        .unwrap();
+    }
+
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "codex".into(),
+        data_root: root.clone(),
+        scan_path: sessions,
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut page1 = scanner.refresh(None).unwrap();
+    assert_eq!(page1.sessions.len(), 32);
+    assert!(!page1.complete);
+    let mut stale_checkpoint = page1.checkpoint.clone().unwrap();
+    cache
+        .apply_checkpoint(
+            &mut page1.sessions,
+            &page1.removed,
+            "codex",
+            &page1.checkpoint,
+            page1.complete,
+        )
+        .unwrap();
+    page1.on_reject.take();
+    let mut page2 = scanner
+        .refresh_with_checkpoint(None, Some(&stale_checkpoint))
+        .unwrap();
+    assert_eq!(page2.sessions.len(), 1);
+    assert!(page2.complete);
+    cache
+        .apply_checkpoint(
+            &mut page2.sessions,
+            &page2.removed,
+            "codex",
+            &page2.checkpoint,
+            page2.complete,
+        )
+        .unwrap();
+    page2.on_reject.take();
+
+    // Simulate pre-fix cache: path identity, old parserVersion, and a mid-backfill non-zero offset.
+    cache
+        .connection()
+        .execute(
+            "UPDATE sessions SET project_identity_kind='path',project_identity_key=?1,project_display_name='t3-1',head_meta_json='{}'",
+            [deleted_dir.to_string_lossy().as_ref()],
+        )
+        .unwrap();
+    cache
+        .connection()
+        .execute(
+            "UPDATE cache_meta SET value=json_set(value,'$.parserVersion','rust-parser-v10') WHERE key='rust_source_state:codex'",
+            [],
+        )
+        .unwrap();
+    stale_checkpoint["sourceState"]["parserVersion"] = serde_json::json!("rust-parser-v10");
+    assert_eq!(stale_checkpoint["offset"], 32);
+
+    let mut upgraded = AgentScanner::new(source, db, pricing);
+    let mut checkpoint = Some(stale_checkpoint);
+    let mut repaired = 0;
+    loop {
+        let mut batch = upgraded
+            .refresh_with_checkpoint(None, checkpoint.as_ref())
+            .unwrap();
+        repaired += batch.sessions.len();
+        checkpoint = batch.checkpoint.clone();
+        cache
+            .apply_checkpoint(
+                &mut batch.sessions,
+                &batch.removed,
+                "codex",
+                &batch.checkpoint,
+                batch.complete,
+            )
+            .unwrap();
+        batch.on_reject.take();
+        if batch.complete {
+            break;
+        }
+    }
+    assert_eq!(repaired, 33);
+    let snapshot = cache.snapshot().unwrap();
+    assert_eq!(snapshot.len(), 33);
+    assert!(snapshot.iter().all(|head| {
+        head.project_identity.kind == "git_remote"
+            && head.project_identity.key == "github.com/xingkaixin/codesesh"
+            && head.recorded_git_remotes == ["github.com/xingkaixin/codesesh"]
+    }));
+}
+
+#[test]
+fn worktree_lifecycle_keeps_identity_and_display_name_after_deletion_without_cache_illusion() {
+    let temporary = tempfile::tempdir().unwrap();
+    let canonical = temporary.path().canonicalize().unwrap();
+    #[cfg(windows)]
+    let canonical = {
+        let path = canonical.to_str().unwrap();
+        if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
+            std::path::PathBuf::from(format!(r"\\{path}"))
+        } else {
+            std::path::PathBuf::from(path.strip_prefix(r"\\?\").unwrap_or(path))
+        }
+    };
+    let repo = canonical.join("repo");
+    let worktree = canonical.join("worktree");
+    std::fs::create_dir(&repo).unwrap();
+    let run_git = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+    };
+    run_git(&["init"]);
+    run_git(&[
+        "remote",
+        "add",
+        "origin",
+        "git@github.com:xingkaixin/codesesh.git",
+    ]);
+    run_git(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Initial",
+    ]);
+    run_git(&["worktree", "add", "-b", "wt", worktree.to_str().unwrap()]);
+    std::fs::write(
+        worktree.join("package.json"),
+        r#"{"name":"codesesh-monorepo"}"#,
+    )
+    .unwrap();
+
+    let codex_root = canonical.join("codex");
+    let codex_sessions = codex_root.join("sessions");
+    std::fs::create_dir_all(&codex_sessions).unwrap();
+    let codex_file =
+        codex_sessions.join("rollout-2026-09-01-00000000-0000-0000-0000-000000000055.jsonl");
+    std::fs::write(
+        &codex_file,
+        format!(
+            "{}\n{}\n",
+            serde_json::json!({
+                "type": "session_meta",
+                "timestamp": "2026-09-01T00:00:00Z",
+                "payload": {
+                    "id": "00000000-0000-0000-0000-000000000055",
+                    "cwd": worktree,
+                    "git": {"repository_url": "git@github.com:xingkaixin/codesesh.git"}
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Codex initial"}]}
+            }),
+        ),
+    )
+    .unwrap();
+
+    let pi_source = pi_source(&canonical.join("pi"));
+    std::fs::create_dir_all(&pi_source.scan_path).unwrap();
+    let pi_file = pi_source.scan_path.join("session.jsonl");
+    std::fs::write(
+        &pi_file,
+        format!(
+            "{}\n{}\n",
+            serde_json::json!({"type": "session", "cwd": worktree, "timestamp": 1000}),
+            serde_json::json!({"type": "message", "id": "u1", "parentId": null, "message": {"role": "user", "content": "Pi initial"}}),
+        ),
+    )
+    .unwrap();
+
+    let codex_source = AgentSource {
+        antigravity_profiles: None,
+        agent: "codex".into(),
+        data_root: codex_root,
+        scan_path: codex_sessions,
+    };
+    let db = canonical.join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+
+    crate::projects::clear_identity_cache();
+    for (agent_name, source) in [("codex", &codex_source), ("pi", &pi_source)] {
+        let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+        let mut batch = scanner.refresh(None).unwrap();
+        assert_eq!(batch.sessions.len(), 1);
+        assert_eq!(batch.sessions[0].head.project_identity.kind, "git_remote");
+        assert_eq!(
+            batch.sessions[0].head.project_identity.key,
+            "github.com/xingkaixin/codesesh"
+        );
+        assert_eq!(
+            batch.sessions[0].head.project_identity.display_name,
+            "codesesh-monorepo"
+        );
+        cache
+            .apply_checkpoint(
+                &mut batch.sessions,
+                &batch.removed,
+                agent_name,
+                &batch.checkpoint,
+                batch.complete,
+            )
+            .unwrap();
+        batch.on_reject.take();
+    }
+
+    let json_db = canonical.join("json-cache.db");
+    let initial_json = crate::discovery::json_scan::run(
+        &[codex_source.clone(), pi_source.clone()],
+        &ScanOptions::default(),
+        &pricing,
+        &json_db,
+        "local",
+        |_, _| {},
+    )
+    .unwrap();
+    assert_eq!(initial_json.sessions.len(), 2);
+    assert!(initial_json.sessions.iter().all(|head| {
+        head.project_identity.display_name == "codesesh-monorepo"
+            && head.recorded_git_remotes.is_empty()
+    }));
+
+    // Delete the worktree and clear the in-process directory cache to rule out stale cache hits.
+    std::fs::remove_dir_all(&worktree).unwrap();
+    crate::projects::clear_identity_cache();
+
+    for source in [&codex_source, &pi_source] {
+        let mut cold_scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+        let mut cold = cold_scanner.refresh(None).unwrap();
+        assert!(cold.sessions.is_empty());
+        assert!(cold.removed.is_empty());
+        cold.on_reject.take();
+    }
+
+    let warm_json_db = crate::storage::Cache::open(Some(&json_db)).unwrap();
+    warm_json_db.connection().execute_batch("CREATE TRIGGER reject_json_reparse BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'deleted worktree invalidated json scan'); END").unwrap();
+    drop(warm_json_db);
+    crate::projects::clear_identity_cache();
+    let warm_json = crate::discovery::json_scan::run(
+        &[codex_source.clone(), pi_source.clone()],
+        &ScanOptions::default(),
+        &pricing,
+        &json_db,
+        "local",
+        |_, _| {},
+    )
+    .unwrap();
+    assert!(warm_json.sessions.iter().all(|head| {
+        head.project_identity.kind == "git_remote"
+            && head.project_identity.key == "github.com/xingkaixin/codesesh"
+            && head.project_identity.display_name == "codesesh-monorepo"
+    }));
+
+    // Appending after worktree deletion triggers incremental re-parse without losing identity or name.
+    use std::io::Write;
+    writeln!(
+        std::fs::OpenOptions::new().append(true).open(&codex_file).unwrap(),
+        "{}",
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": "2026-09-01T00:00:02Z",
+            "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Codex reply"}]}
+        })
+    )
+    .unwrap();
+    writeln!(
+        std::fs::OpenOptions::new().append(true).open(&pi_file).unwrap(),
+        "{}",
+        serde_json::json!({"type": "message", "id": "a1", "parentId": "u1", "message": {"role": "assistant", "content": "Pi reply"}})
+    )
+    .unwrap();
+    crate::projects::clear_identity_cache();
+
+    for (agent_name, source, changed_path) in [
+        ("codex", &codex_source, &codex_file),
+        ("pi", &pi_source, &pi_file),
+    ] {
+        let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+        let mut updated = scanner
+            .refresh(Some(std::slice::from_ref(changed_path)))
+            .unwrap();
+        assert_eq!(updated.sessions.len(), 1);
+        assert_eq!(updated.sessions[0].head.project_identity.kind, "git_remote");
+        assert_eq!(
+            updated.sessions[0].head.project_identity.key,
+            "github.com/xingkaixin/codesesh"
+        );
+        assert_eq!(
+            updated.sessions[0].head.project_identity.display_name,
+            "codesesh-monorepo"
+        );
+        cache
+            .apply_checkpoint(
+                &mut updated.sessions,
+                &updated.removed,
+                agent_name,
+                &updated.checkpoint,
+                updated.complete,
+            )
+            .unwrap();
+        updated.on_reject.take();
+    }
+}

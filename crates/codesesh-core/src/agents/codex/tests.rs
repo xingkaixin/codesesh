@@ -499,3 +499,95 @@ fn plans_keep_their_turn_and_stay_pending_without_approval() {
     );
     assert!(plans[1].0 < reply);
 }
+
+#[test]
+fn extracts_own_recorded_git_remote_across_checkpoints_without_parent_replay_pollution() {
+    let root = tempfile::tempdir().unwrap();
+    let pricing = Pricing::bundled();
+
+    let own = root
+        .path()
+        .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000021.jsonl");
+    let first_records = [
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": 1000,
+            "payload": {
+                "id": "00000000-0000-0000-0000-000000000021",
+                "cwd": "/deleted/worktree",
+                "git": {"repository_url": "git@github.com:xingkaixin/codesesh.git"}
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": 2000,
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Hello"}]}
+        }),
+    ];
+    let mut file = File::create(&own).unwrap();
+    for record in &first_records {
+        writeln!(file, "{record}").unwrap();
+    }
+    let mut checkpoints = Checkpoints::default();
+    let initial = checkpoints
+        .parse(&own, &HashMap::new(), &pricing)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        initial.head.recorded_git_remotes,
+        vec!["git@github.com:xingkaixin/codesesh.git"]
+    );
+    writeln!(
+        file,
+        "{}",
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": 3000,
+            "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "World"}]}
+        })
+    )
+    .unwrap();
+    let resumed = checkpoints
+        .parse(&own, &HashMap::new(), &pricing)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        resumed.head.recorded_git_remotes,
+        vec!["git@github.com:xingkaixin/codesesh.git"]
+    );
+
+    let forked = root
+        .path()
+        .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000022.jsonl");
+    let forked_records = [
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": 1000,
+            "payload": {"id": "00000000-0000-0000-0000-000000000022", "cwd": "/plain"}
+        }),
+        serde_json::json!({
+            "type": "session_meta",
+            "timestamp": 900,
+            "payload": {
+                "id": "parent",
+                "cwd": "/parent",
+                "git": {"repository_url": "git@github.com:other/parent.git"}
+            }
+        }),
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": 2000,
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Forked"}]}
+        }),
+    ];
+    std::fs::write(
+        &forked,
+        forked_records
+            .iter()
+            .map(|r| format!("{r}\n"))
+            .collect::<String>(),
+    )
+    .unwrap();
+    let parsed_fork = parse(&forked, &HashMap::new(), &pricing).unwrap().unwrap();
+    assert!(parsed_fork.head.recorded_git_remotes.is_empty());
+}

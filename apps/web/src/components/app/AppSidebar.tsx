@@ -14,7 +14,12 @@ import {
   type SidebarSessionLookup,
 } from "../../lib/session-indexes";
 import { getSessionDisplayTitle } from "../../lib/session-title";
-import { getProjectGroupIdentity, getProjectIdentityKey, getProjectPath } from "../../lib/projects";
+import {
+  buildProjectDisplayNameMap,
+  getProjectGroupIdentity,
+  getProjectIdentityKey,
+  getProjectPath,
+} from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
 import { AgentIcon } from "../AgentIcon";
 import { DrawerDialog } from "../DrawerDialog";
@@ -280,6 +285,7 @@ export function AppSidebar({
         : undefined,
     [multipleSources, sourceNodes],
   );
+  const projectDisplayNames = useMemo(() => buildProjectDisplayNameMap(projects), [projects]);
   const { selectedSessionReference, selectSession } = useSidebarKeyboardNavigation({
     viewState,
     sessions: sidebarSessions,
@@ -544,6 +550,7 @@ export function AppSidebar({
                     onToggleBookmark={onToggleSidebarSessionBookmark}
                     onRenameSession={onRenameSession}
                     groupByProject={false}
+                    projectDisplayNames={projectDisplayNames}
                     sourceLabel={sessionSourceLabel}
                   />
                 </Suspense>

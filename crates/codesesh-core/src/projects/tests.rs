@@ -33,7 +33,110 @@ fn normalizes_remote_transports() {
             Some("github.com/acme/app")
         );
     }
+    let normalized = normalize_git_remote("git@GitHub.com:Acme/user@app:v1.git").unwrap();
+    assert_eq!(normalized, "github.com/acme/user@app:v1");
+    assert_eq!(normalize_git_remote(&normalized), Some(normalized));
     assert_eq!(normalize_git_remote("invalid"), None);
+}
+
+#[test]
+fn resolves_recorded_git_remotes_conflicts_loose_and_retained_names() {
+    let mut fs = Fs::default();
+    let remote = vec!["git@github.com:xingkaixin/codesesh.git".into()];
+    let w1 = resolve_identity_projection_with_context(
+        "/Users/test/.t3/worktrees/codesesh/t3-1",
+        &fs,
+        "/Users/test",
+        "v2",
+        &remote,
+        None,
+    );
+    let w2 = resolve_identity_projection_with_context(
+        "/Users/test/.t3/worktrees/codesesh/t3-2",
+        &fs,
+        "/Users/test",
+        "v2",
+        &remote,
+        None,
+    );
+    assert_eq!(w1.identity.kind, "git_remote");
+    assert_eq!(w1.identity.key, "github.com/xingkaixin/codesesh");
+    assert_eq!(w1.identity.display_name, "codesesh");
+    assert_eq!(w1.identity, w2.identity);
+    assert_eq!(w1.input_signature, w2.input_signature);
+
+    // Loose directories keep loose even when recorded_git_remotes is present.
+    let loose =
+        resolve_identity_projection_with_context("/tmp", &fs, "/Users/test", "v2", &remote, None);
+    assert_eq!(loose.identity.kind, "loose");
+
+    // Existing directory with matching origin reads manifest; conflicting origin does not borrow it.
+    let live = "/repo/worktree";
+    fs.files.insert(live.into(), String::new());
+    fs.files.insert(path::join(live, ".git"), String::new());
+    fs.files.insert(
+        path::join(live, "package.json"),
+        r#"{"name":"codesesh-monorepo"}"#.into(),
+    );
+    fs.remotes
+        .insert(live.into(), "git@github.com:xingkaixin/codesesh.git".into());
+    let matched =
+        resolve_identity_projection_with_context(live, &fs, "/Users/test", "v2", &remote, None);
+    assert_eq!(matched.identity.display_name, "codesesh-monorepo");
+
+    fs.remotes
+        .insert(live.into(), "git@github.com:other/foreign.git".into());
+    fs.files.insert(
+        path::join(live, "package.json"),
+        r#"{"name":"foreign-app"}"#.into(),
+    );
+    let conflicted =
+        resolve_identity_projection_with_context(live, &fs, "/Users/test", "v2", &remote, None);
+    assert_eq!(conflicted.identity.key, "github.com/xingkaixin/codesesh");
+    assert_eq!(conflicted.identity.display_name, "codesesh");
+
+    // Multiple distinct recorded remotes fall back to directory git origin instead of picking first.
+    let multi = resolve_identity_projection_with_context(
+        live,
+        &fs,
+        "/Users/test",
+        "v2",
+        &[
+            "git@github.com:xingkaixin/codesesh.git".into(),
+            "https://github.com/other/second.git".into(),
+        ],
+        None,
+    );
+    assert_eq!(multi.identity.key, "github.com/other/foreign");
+    assert_eq!(multi.identity.display_name, "foreign-app");
+
+    // Missing manifest retains previous non-fallback name; explicit tail-named manifest updates it.
+    let retained = resolve_identity_projection_with_context(
+        "/repo/deleted",
+        &fs,
+        "/Users/test",
+        "v2",
+        &remote,
+        Some((&matched.identity, Some(&matched.input_signature))),
+    );
+    assert_eq!(retained.identity.display_name, "codesesh-monorepo");
+    assert_eq!(retained.input_signature, matched.input_signature);
+
+    fs.remotes
+        .insert(live.into(), "git@github.com:xingkaixin/codesesh.git".into());
+    fs.files.insert(
+        path::join(live, "package.json"),
+        r#"{"name":"codesesh"}"#.into(),
+    );
+    let renamed = resolve_identity_projection_with_context(
+        live,
+        &fs,
+        "/Users/test",
+        "v2",
+        &remote,
+        Some((&matched.identity, Some(&matched.input_signature))),
+    );
+    assert_eq!(renamed.identity.display_name, "codesesh");
 }
 #[test]
 fn resolves_cross_platform_paths_and_signatures() {
@@ -186,6 +289,33 @@ fn groups_count_roots_orphans_and_cycles_but_not_mounted_children() {
     assert_eq!(groups[0].session_count, 4);
     assert_eq!(groups[0].last_activity, Some(400.0));
     assert_eq!(groups[0].sources, vec!["codex"]);
+}
+
+#[test]
+fn groups_prefer_non_fallback_name_including_children_over_newer_tail_fallback() {
+    let mut newer_fallback = session("newer", None, 900);
+    newer_fallback.project_identity = identity(
+        "git_remote",
+        "github.com/xingkaixin/codesesh",
+        "codesesh".into(),
+    );
+    let mut older_root = session("older", None, 100);
+    older_root.project_identity = identity(
+        "git_remote",
+        "github.com/xingkaixin/codesesh",
+        "codesesh".into(),
+    );
+    let mut child_named = session("child", Some("older"), 200);
+    child_named.project_identity = identity(
+        "git_remote",
+        "github.com/xingkaixin/codesesh",
+        "codesesh-monorepo".into(),
+    );
+
+    let groups = build_project_groups(&[newer_fallback, older_root, child_named]);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].display_name, "codesesh-monorepo");
+    assert_eq!(groups[0].session_count, 2);
 }
 #[test]
 fn scopes_match_identity_or_path_ancestors_with_boundaries() {

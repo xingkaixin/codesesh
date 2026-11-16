@@ -234,6 +234,7 @@ fn schema35_history_migrates_to_local_without_losing_messages() {
         assert_eq!(head.reference.source_node_id, "local");
         assert_eq!(head.reference.session_id, "old");
         assert_eq!(head.version.as_deref(), Some("preserved"));
+        assert!(head.recorded_git_remotes.is_empty());
         assert_eq!(cache.messages(&head.reference).unwrap(), 1);
         assert_eq!(
             crate::search::search_sessions(cache.connection(), "Archived", &Default::default())

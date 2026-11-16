@@ -2,7 +2,11 @@ import { t } from "../i18n/translate";
 import { buildSessionTree, sessionRoutePath, type SearchResult } from "@codesesh/contract";
 import type { SearchRequestOptions } from "./api";
 import { type SessionIndexes, getSessionAgentKey, getSessionRouteKey } from "./session-indexes";
-import { getProjectIdentityKey } from "./projects";
+import {
+  getProjectIdentityKey,
+  isGitRemoteFallbackDisplayName,
+  resolveProjectDisplayName,
+} from "./projects";
 import type { CostRangeId, SearchFilterState, SearchProjectOption } from "../components/app/types";
 
 export const SEARCH_RESULT_LIMIT = 50;
@@ -30,6 +34,7 @@ interface SearchProjectOptionsInput {
   results: SearchResult[];
   selectedProject: SearchFilterState["project"];
   recentProjectOptions: SearchProjectOption[];
+  projectDisplayNames?: ReadonlyMap<string, string>;
 }
 
 export function buildSearchRequestOptions(
@@ -115,6 +120,7 @@ export function buildSearchProjectOptions({
   results,
   selectedProject,
   recentProjectOptions,
+  projectDisplayNames,
 }: SearchProjectOptionsInput): SearchProjectOption[] {
   if (!usesServerSearch) return recentProjectOptions;
 
@@ -127,13 +133,25 @@ export function buildSearchProjectOptions({
     const current = optionsByKey.get(key);
     if (current) {
       current.count += 1;
+      if (
+        !projectDisplayNames?.has(key) &&
+        identity.displayName &&
+        isGitRemoteFallbackDisplayName({
+          kind: identity.kind,
+          key: identity.key,
+          displayName: current.label,
+        }) &&
+        !isGitRemoteFallbackDisplayName(identity)
+      ) {
+        current.label = identity.displayName;
+      }
       continue;
     }
     optionsByKey.set(key, {
       key,
       identityKind: identity.kind,
       identityKey: identity.key,
-      label: identity.displayName || result.session.directory,
+      label: resolveProjectDisplayName(identity, projectDisplayNames) || result.session.directory,
       count: 1,
       showCount: false,
     });

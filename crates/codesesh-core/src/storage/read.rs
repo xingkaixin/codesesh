@@ -239,6 +239,7 @@ pub fn visit_detail_message_page(
             head: SessionHead {
                 version: None,
                 summary_files: None,
+                recorded_git_remotes: Vec::new(),
                 ..head
             },
             messages: Vec::new(),

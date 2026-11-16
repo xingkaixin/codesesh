@@ -436,3 +436,136 @@ fn deltas_rebuild_the_full_session_and_fall_back_to_a_rescan() {
     transfer(&mut delta_hub, &mut worker, &delta_grant);
     assert_eq!(delta_hub.nodes().unwrap()[0].incomplete_sessions, 0);
 }
+
+#[test]
+fn identity_recovery_moves_file_activity_and_stats_and_metadata_preserves_recorded_remotes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(Some(&dir.path().join("hub.db"))).unwrap();
+    cache.initialize_hub("hub-fixture").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
+        .unwrap();
+
+    let mut session = crate::storage::tests::source(dir.path(), "recovery");
+    session.detail.messages.push(crate::model::Message {
+        cost_inputs: Vec::new(),
+        id: "tool-1".into(),
+        role: crate::model::Role::Assistant,
+        time_created: 2000.0,
+        time_completed: Some(2100.0),
+        agent: None,
+        mode: None,
+        model: Some("gpt-5".into()),
+        provider: Some("openai".into()),
+        tokens: None,
+        cost: Some(0.25),
+        cost_source: Some(crate::model::CostSource::Recorded),
+        cost_breakdown: None,
+        parts: vec![crate::model::MessagePart::Tool {
+            tool: "read".into(),
+            call_id: Some("call-read".into()),
+            time_created: Some(2000.0),
+            state: Box::new(crate::model::ToolState {
+                status: crate::model::ToolPartStatus::Completed,
+                input: Some(serde_json::json!({"file_path": "/fixture/src/main.rs"})),
+                output: None,
+                error: None,
+                metadata: None,
+            }),
+            title: None,
+        }],
+        subagent_id: None,
+        nickname: None,
+        automated: None,
+    });
+    session.head.stats.message_count = session.detail.messages.len();
+    session.head.stats.total_cost = 0.25;
+    session.head.stats.cost_source = Some(crate::model::CostSource::Recorded);
+    session.detail.head = session.head.clone();
+    crate::agents::complete_projections(&mut session);
+    assert_eq!(session.detail.file_activity.len(), 1);
+
+    let mut batch = ScanBatch {
+        source_presence: None,
+        sessions: vec![session.clone()],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+
+    let mut recovered = session;
+    recovered.head.recorded_git_remotes = vec!["git@github.com:acme/app.git".into()];
+    crate::agents::complete_projections(&mut recovered);
+    batch.sessions = vec![recovered];
+    worker.save_batch("codex", &mut batch).unwrap();
+    transfer(&mut cache, &mut worker, &grant);
+
+    let snapshot = cache.snapshot().unwrap();
+    assert_eq!(snapshot.len(), 1);
+    let hub_head = &snapshot[0];
+    assert_eq!(hub_head.project_identity.kind, "git_remote");
+    assert_eq!(
+        hub_head.project_identity.key,
+        format!("@{}/github.com/acme/app", grant.node_id)
+    );
+    assert_eq!(hub_head.recorded_git_remotes, vec!["github.com/acme/app"]);
+
+    let activity_key: String = cache
+        .connection
+        .query_row(
+            "SELECT project_identity_key FROM session_file_activity",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(activity_key, hub_head.project_identity.key);
+
+    let facts = crate::analytics::CostFactsIndex::from(
+        crate::analytics::load_cost_facts(cache.connection(), None, None, true).unwrap(),
+    );
+    let scope = crate::analytics::DashboardScope::default();
+    let time_zone = "UTC".parse().unwrap();
+    let dashboard = crate::analytics::build_dashboard(
+        &snapshot,
+        &crate::analytics::DashboardOptions {
+            from: None,
+            to: 9_999_999_999_999.0,
+            compare: None,
+            scope: &scope,
+            time_zone: &time_zone,
+            cost_facts: Some(&facts),
+            by_agent_names: &[],
+            agent_info: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(dashboard.totals.sessions, 1);
+    assert!((dashboard.totals.cost - 0.25).abs() < 1e-9);
+    assert_eq!(dashboard.per_project.len(), 1);
+    assert_eq!(
+        dashboard.per_project[0].identity_kind,
+        crate::model::ProjectIdentityKind::GitRemote
+    );
+    assert_eq!(
+        dashboard.per_project[0].identity_key,
+        hub_head.project_identity.key
+    );
+
+    batch.sessions[0].head.title = "Metadata Only".into();
+    batch.sessions[0].detail.head = batch.sessions[0].head.clone();
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert!(matches!(
+        worker.next_upload().unwrap().unwrap().operation,
+        Operation::Metadata { .. }
+    ));
+    transfer(&mut cache, &mut worker, &grant);
+    let updated = cache.head(&hub_head.reference).unwrap().unwrap();
+    assert_eq!(updated.title, "Metadata Only");
+    assert_eq!(updated.recorded_git_remotes, vec!["github.com/acme/app"]);
+}

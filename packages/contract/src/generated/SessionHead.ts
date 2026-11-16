@@ -12,6 +12,7 @@ export type SessionHead = {
   display_title?: string;
   parent_reference?: SessionReference;
   project_identity: ProjectIdentity;
+  recorded_git_remotes?: Array<string>;
   project_identity_resolver_revision?: string;
   project_identity_input_signature?: string;
   time_created: number;

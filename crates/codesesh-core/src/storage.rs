@@ -300,13 +300,7 @@ impl Cache {
                 file_meta.as_ref().map(|meta| meta.len())
             ]))?;
             let mut metadata = serde_json::json!({"sourcePath":session.source.to_string_lossy(),"sourceFingerprint":fingerprint,"parserVersion":crate::agents::parser_version(&reference.agent_name)});
-            let mut head_metadata = serde_json::json!({});
-            if let Some(version) = &head.version {
-                head_metadata["rustHeadVersion"] = serde_json::Value::String(version.clone());
-            }
-            if let Some(files) = &head.summary_files {
-                head_metadata["rustHeadSummaryFiles"] = files.clone();
-            }
+            let head_metadata = snapshot::HeadMetadata::encode(head)?;
             metadata["rustPricing"] = reprice::state(session)?;
             let detail_version = json::stringify(&serde_json::json!([
                 "session-detail-v1",
@@ -406,7 +400,7 @@ impl Cache {
                 "UPDATE sessions SET meta_json=?,head_meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
                 params![
                     json::stringify(&metadata)?,
-                    json::stringify(&head_metadata)?,
+                    head_metadata,
                     reference.source_node_id,
                     reference.agent_name,
                     reference.session_id
