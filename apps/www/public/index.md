@@ -72,6 +72,7 @@ Read messages, tool calls, and file changes in sequence. Filter by message type 
 - DeepChat
 - Cherry Studio
 - MiniMax Code
+- Antigravity Desktop
 - Antigravity CLI
 - Gemini CLI
 <!-- repo-fact:agents:end -->

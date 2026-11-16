@@ -71,6 +71,7 @@ CodeSesh 做三件事：
 | DSH             | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | —        |
 | DeepChat        | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | —        |
 | Cherry Studio   | 已支持   | ✓    | ✓        | ✓        | ✓    | —      | —        |
+| Antigravity Desktop | 部分支持 | ✓    | —        | ✓        | —    | ✓      | —        |
 | Antigravity CLI | 部分支持 | ✓    | —        | ✓        | —    | ✓      | —        |
 | Gemini CLI      | 已支持   | ✓    | —        | ✓        | ✓    | ✓      | ✓        |
 
@@ -79,6 +80,8 @@ CodeSesh 做三件事：
 ✓ 可用 · ◐ 部分可用（例如只有输入和输出 Token）· — 不可用。没有记录费用或记录为 0 时，CodeSesh 按模型价格估算。
 
 oh-my-pi 读取默认 profile 的 `~/.omp/agent/sessions`；在 macOS 和 Linux 上，若 `$XDG_DATA_HOME/omp` 存在，则读取 `$XDG_DATA_HOME/omp/sessions`。子 Agent 和 advisor 会话显示为子会话。暂不包含命名 profile 和 `model_usage` 记录（标题生成等对话之外的模型调用）。
+
+Antigravity Desktop 自动读取 `~/.gemini/antigravity/conversations/*.db`，可用 `ANTIGRAVITY_CONVERSATIONS_DIR` 指定其他对话目录。Desktop 与 CLI 独立展示，复用相同的 SQLite 解析能力。仅支持新格式，旧 `.pb` 历史不导入。
 
 Antigravity CLI 支持本地 SQLite 对话、标题、工作区信息、工具调用、步骤时间，以及按请求记录的用量与模型名称；费用按模型价格估算。同时发现 `~/.t3/userdata/providers/antigravity` 下的 Antigravity ACP profile（可用 `T3CODE_HOME` 指定其他 T3 目录），统一归入 Antigravity Agent。设置 `AGY_CONVERSATIONS_DIR` 则只读取指定的单个对话目录。保留已确认的文本结果和明确错误，数值工具状态仍为未知。暂不支持 IDE `.pb` 历史。详情见[兼容说明](docs/agents/antigravity-cli.md)。
 

@@ -51,7 +51,7 @@ Hub 不采集，Worker 不提供查询界面。同一数据目录的单机模式
 
 | 模块 | 职责 |
 |------|------|
-| `crates/codesesh-core/src/agents/` | 19 个 Agent 的源格式解析及增量读取 |
+| `crates/codesesh-core/src/agents/` | 20 个 Agent 的源格式解析及增量读取 |
 | `crates/codesesh-core/src/discovery/` | 路径发现、扫描状态、窗口优先回填和 checkpoint |
 | `crates/codesesh-core/src/runtime.rs` | 并发限制、任务取消、状态与刷新调度 |
 | `crates/codesesh-core/src/runtime/writer.rs` | 单写者事务、提交后快照与 SSE 发布 |
@@ -69,7 +69,7 @@ Hub 不采集，Worker 不提供查询界面。同一数据目录的单机模式
 
 <!-- repo-fact:agent-source-kinds:start -->
 - 文件系统: Claude Code · Qoder · Qoder CN · Codex · Droid · DSH · Gemini CLI · Grok · Kimi-Cli · Kimi-Code · Pi · oh-my-pi
-- SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code · Antigravity CLI
+- SQLite: OpenCode · Cursor · ZCode · DeepChat · Cherry Studio · MiniMax Code · Antigravity Desktop · Antigravity CLI
 <!-- repo-fact:agent-source-kinds:end -->
 
 ## 设计原则

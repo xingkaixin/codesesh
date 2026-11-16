@@ -32,7 +32,7 @@ CI 产出的二进制不发布，因此关闭 LTO 以缩短构建。发布用的
 `pnpm test:rust:platform` 使用 libtest 的多个过滤条件，执行以下现有测试：
 
 - Core：discovery（含 JSON 扫描）、data_migration、runtime、state、storage schema、pricing manager、
-  worker store，以及 Antigravity CLI、Cursor、DSH、Kimi 的文件系统适配器测试和项目路径 / Git worktree 测试。
+  worker store，以及 Antigravity Desktop/CLI、Cursor、DSH、Kimi 的文件系统适配器测试和项目路径 / Git worktree 测试。
 - CLI：日志、价格刷新、原生服务和 Worker 连接。
 - 独立进程：data_migration、hub_worker 和 worker_scheduling（包括上传中的信号退出）。
 
