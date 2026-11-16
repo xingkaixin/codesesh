@@ -270,7 +270,7 @@ fn parser_version_upgrade_restarts_nonzero_checkpoint_and_recovers_deleted_workt
     );
     assert_eq!(
         crate::agents::parser_version("antigravity-cli"),
-        "rust-parser-v10"
+        "rust-parser-v11"
     );
     assert_eq!(
         crate::agents::parser_version("claudecode"),

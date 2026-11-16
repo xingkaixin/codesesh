@@ -90,7 +90,7 @@ fn native_tool_results_keep_new_and_legacy_evidence_without_guessing_success() {
         )
         .unwrap();
     }
-    let sessions = scan_paths(&Pricing::bundled(), &[path]).unwrap();
+    let sessions = scan_paths(&Pricing::bundled(), &[path], "antigravity-cli").unwrap();
     let messages = &sessions[0].detail.messages;
     assert_eq!(messages.len(), cases.len());
     for (message, (_, name, _, expected)) in messages.iter().zip(cases) {
@@ -147,7 +147,7 @@ fn explicit_tool_errors_survive_column_and_payload_forms() {
             rusqlite::params![index, payload, (index == 0).then_some(&error)],
         ).unwrap();
     }
-    let sessions = scan_paths(&Pricing::bundled(), &[path]).unwrap();
+    let sessions = scan_paths(&Pricing::bundled(), &[path], "antigravity-cli").unwrap();
     for message in &sessions[0].detail.messages {
         let MessagePart::Tool { state, .. } = &message.parts[0] else {
             panic!("missing tool")
@@ -181,9 +181,13 @@ fn child_names_fall_back_without_replacing_titles_or_session_identity() {
         .execute("UPDATE conversation_summaries SET agent_name='worker'", [])
         .unwrap();
     let title = || {
-        scan_paths(&Pricing::bundled(), std::slice::from_ref(&path))
-            .unwrap()
-            .remove(0)
+        scan_paths(
+            &Pricing::bundled(),
+            std::slice::from_ref(&path),
+            "antigravity-cli",
+        )
+        .unwrap()
+        .remove(0)
     };
     let root = title();
     assert_eq!(root.head.title, "Untitled Session");
@@ -280,7 +284,12 @@ fn acp_reads_native_workspace_and_model_without_a_summary_store() {
     .unwrap();
     drop(db);
 
-    let sessions = scan(&temp.path().join("conversations"), &Pricing::bundled()).unwrap();
+    let sessions = scan(
+        &temp.path().join("conversations"),
+        &Pricing::bundled(),
+        "antigravity-cli",
+    )
+    .unwrap();
     let session = &sessions[0];
     assert_eq!(session.head.directory, workspace.to_string_lossy());
     assert_eq!(session.head.title, "Find ACP history");
@@ -298,7 +307,14 @@ fn acp_reads_native_workspace_and_model_without_a_summary_store() {
     let db = Connection::open(&path).unwrap();
     db.execute("UPDATE trajectory_metadata_blob SET data=X'3aff'", [])
         .unwrap();
-    assert!(scan(&temp.path().join("conversations"), &Pricing::bundled()).is_err());
+    assert!(
+        scan(
+            &temp.path().join("conversations"),
+            &Pricing::bundled(),
+            "antigravity-cli"
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -357,7 +373,7 @@ fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
     )
     .unwrap();
     let scan_root = temp.path().join("conversations");
-    let sessions = scan(&scan_root, &Pricing::bundled()).unwrap();
+    let sessions = scan(&scan_root, &Pricing::bundled(), "antigravity-cli").unwrap();
     let session = &sessions[0];
     let message = session.detail.messages.last().unwrap();
     assert_eq!(message.id, "session:7");
@@ -387,14 +403,21 @@ fn usage_metadata_deduplicates_retries_and_prices_the_next_visible_message() {
         session.head.model_usage,
         Some(BTreeMap::from([("gemini-2.5-flash".into(), 225.0)]))
     );
-    crate::pricing::assert_cached_repricing(|pricing| scan(&scan_root, pricing).unwrap());
+    crate::pricing::assert_cached_repricing(|pricing| {
+        scan(&scan_root, pricing, "antigravity-cli").unwrap()
+    });
 }
 
 #[test]
 fn native_steps_preserve_order_tools_and_unknown_usage() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path());
-    let sessions = scan(&temp.path().join("conversations"), &Pricing::bundled()).unwrap();
+    let sessions = scan(
+        &temp.path().join("conversations"),
+        &Pricing::bundled(),
+        "antigravity-cli",
+    )
+    .unwrap();
     assert_eq!(sessions.len(), 1);
     let session = &sessions[0];
     assert_eq!(session.head.reference.agent_name, "antigravity-cli");
@@ -445,7 +468,12 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
         )
         .unwrap();
     assert!(stored.contains("unknown"));
-    assert_eq!(scan_paths(&Pricing::bundled(), &[path]).unwrap().len(), 1);
+    assert_eq!(
+        scan_paths(&Pricing::bundled(), &[path], "antigravity-cli")
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -546,8 +574,12 @@ fn t3_shared_attachments_do_not_override_project_workspaces() {
                         .collect::<Vec<_>>()],
                 )
                 .unwrap();
-                let sessions =
-                    scan_paths(&Pricing::bundled(), std::slice::from_ref(&path)).unwrap();
+                let sessions = scan_paths(
+                    &Pricing::bundled(),
+                    std::slice::from_ref(&path),
+                    "antigravity-cli",
+                )
+                .unwrap();
                 assert_eq!(sessions.len(), 1);
                 assert_eq!(
                     Path::new(&sessions[0].head.directory),
@@ -697,7 +729,7 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
     create_session("greeting", "", vec![(0, bytes(19, bytes(2, "Hello")))]);
     drop(summaries);
 
-    let scanned = scan(&conversations, &Pricing::bundled()).unwrap();
+    let scanned = scan(&conversations, &Pricing::bundled(), "antigravity-cli").unwrap();
     let dir_of = |sessions: &[ParsedSession], id: &str| {
         sessions
             .iter()
@@ -725,7 +757,7 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
     assert_eq!(dir_of(&scanned, "child-a"), project_str);
     assert_eq!(dir_of(&scanned, "greeting"), aux_str);
 
-    let standalone_child = scan_paths(&Pricing::bundled(), &[child_db]).unwrap();
+    let standalone_child = scan_paths(&Pricing::bundled(), &[child_db], "antigravity-cli").unwrap();
     assert_eq!(standalone_child.len(), 1);
     assert_eq!(standalone_child[0].head.directory, project_str);
 

@@ -1,8 +1,6 @@
 pub(crate) fn parser_version(agent: &str) -> &'static str {
-    if matches!(agent, "codex" | "grok") {
+    if matches!(agent, "codex" | "grok" | "antigravity" | "antigravity-cli") {
         "rust-parser-v11"
-    } else if agent == "antigravity-cli" {
-        "rust-parser-v10"
     } else if agent == "pi" {
         "rust-parser-v8"
     } else if matches!(agent, "kimi-code" | "opencode" | "omp") {
@@ -12,7 +10,7 @@ pub(crate) fn parser_version(agent: &str) -> &'static str {
     }
 }
 
-pub(crate) mod antigravity_cli;
+pub(crate) mod antigravity;
 pub(crate) mod cherrystudio;
 pub(crate) mod claudecode;
 pub(crate) mod codex;
@@ -122,7 +120,7 @@ pub(crate) fn scan_agent(
     pricing: &Pricing,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match agent {
-        "antigravity-cli" => antigravity_cli::scan(scan_path, pricing),
+        "antigravity" | "antigravity-cli" => antigravity::scan(scan_path, pricing, agent),
         "gemini-cli" => gemini_cli::scan(scan_path, pricing),
         "claudecode" | "qoder" | "qoder-cn" => claudecode::scan_as(scan_path, agent, pricing),
         "codex" => codex::scan(data_root, pricing),
@@ -179,7 +177,7 @@ pub(crate) fn is_session_file(
                 && (entry.depth() == 2 || claudecode::subagents_dir(path).is_some())
         }
         "pi" | "omp" => name.ends_with(".jsonl"),
-        "antigravity-cli" => name.ends_with(".db"),
+        "antigravity" | "antigravity-cli" => name.ends_with(".db"),
         "gemini-cli" => gemini_cli::is_source(root, path),
         "grok" => name == "summary.json",
         "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),

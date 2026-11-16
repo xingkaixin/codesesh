@@ -12,7 +12,7 @@ use std::{
 
 mod proto;
 
-pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
+pub fn scan(root: &Path, pricing: &Pricing, agent: &str) -> Result<Vec<ParsedSession>> {
     let mut paths = Vec::new();
     if root.try_exists()? {
         for entry in walkdir::WalkDir::new(root).follow_links(false) {
@@ -24,10 +24,10 @@ pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
             }
         }
     }
-    scan_paths(pricing, &paths)
+    scan_paths(pricing, &paths, agent)
 }
 
-pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf]) -> Result<Vec<ParsedSession>> {
+pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<Vec<ParsedSession>> {
     let mut stores = BTreeMap::<_, std::collections::BTreeSet<_>>::new();
     for path in paths {
         let root = path
@@ -48,6 +48,7 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf]) -> Result<Vec<ParsedSess
         };
         let history = history_workspaces(root)?;
         let mut ctx = StoreContext {
+            agent,
             root,
             summaries: summaries.as_ref(),
             history: &history,
@@ -66,6 +67,7 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf]) -> Result<Vec<ParsedSess
 }
 
 struct StoreContext<'a> {
+    agent: &'a str,
     root: &'a Path,
     summaries: Option<&'a Connection>,
     history: &'a HashMap<String, String>,
@@ -138,7 +140,7 @@ fn parse(
     let models = model_names(&db, path)?;
     let mut statement = db
         .prepare("SELECT idx,step_type,status,step_payload,error_details FROM steps ORDER BY idx")
-        .with_context(|| format!("unsupported Antigravity CLI database {}", path.display()))?;
+        .with_context(|| format!("unsupported Antigravity database {}", path.display()))?;
     let mut rows = statement.query([])?;
     let mut messages = Vec::new();
     let mut title = summary.title;
@@ -156,9 +158,8 @@ fn parse(
             unsupported += 1;
             continue;
         };
-        let step = proto::Step::decode(payload.as_slice()).with_context(|| {
-            format!("invalid Antigravity CLI step {index} in {}", path.display())
-        })?;
+        let step = proto::Step::decode(payload.as_slice())
+            .with_context(|| format!("invalid Antigravity step {index} in {}", path.display()))?;
         let output = tool_output(&step, kind);
         let error_details: Option<Vec<u8>> = row.get(4)?;
         let error = error_details
@@ -166,7 +167,7 @@ fn parse(
             .transpose()
             .with_context(|| {
                 format!(
-                    "invalid Antigravity CLI error at step {index} in {}",
+                    "invalid Antigravity error at step {index} in {}",
                     path.display()
                 )
             })?
@@ -293,7 +294,7 @@ fn parse(
             let mut message = common::message(format!("{id}:{index}"), role, created, vec![part]);
             message.subagent_id = subagent_id;
             if message.role == Role::Assistant {
-                message.agent = Some("antigravity-cli".into());
+                message.agent = Some(ctx.agent.into());
                 attach(
                     &mut message,
                     &mut pending,
@@ -314,7 +315,7 @@ fn parse(
             created,
             Vec::new(),
         );
-        message.agent = Some("antigravity-cli".into());
+        message.agent = Some(ctx.agent.into());
         attach(
             &mut message,
             &mut pending,
@@ -357,7 +358,7 @@ fn parse(
     let updated = times.fold(time, f64::max);
     let mut session = common::finish(
         path,
-        "antigravity-cli",
+        ctx.agent,
         id.clone(),
         title,
         directory,
@@ -369,7 +370,7 @@ fn parse(
         messages,
     );
     let notice = format!(
-        "Partial Antigravity CLI import: {unsupported} unsupported steps. Numeric tool statuses remain unknown; explicit results and errors are retained."
+        "Partial Antigravity import: {unsupported} unsupported steps. Numeric tool statuses remain unknown; explicit results and errors are retained."
     );
     session.head.summary_files = Some(Value::String(notice));
     session.detail.head = session.head.clone();
@@ -791,7 +792,7 @@ fn resolve_uncached_directory(
     let mut command_hits = vec![0usize; candidates.len()];
     let mut statement = db
         .prepare("SELECT idx,step_type,step_payload FROM steps ORDER BY idx")
-        .with_context(|| format!("unsupported Antigravity CLI database {}", path.display()))?;
+        .with_context(|| format!("unsupported Antigravity database {}", path.display()))?;
     let mut rows = statement.query([])?;
     while let Some(row) = rows.next()? {
         let index: i64 = row.get(0)?;
@@ -800,9 +801,8 @@ fn resolve_uncached_directory(
         let Some(payload) = payload else {
             continue;
         };
-        let step = proto::Step::decode(payload.as_slice()).with_context(|| {
-            format!("invalid Antigravity CLI step {index} in {}", path.display())
-        })?;
+        let step = proto::Step::decode(payload.as_slice())
+            .with_context(|| format!("invalid Antigravity step {index} in {}", path.display()))?;
         if kind == 23 {
             continue;
         }
@@ -855,7 +855,7 @@ fn resolve_uncached_directory(
 fn model_names(db: &Connection, path: &Path) -> Result<HashMap<u64, String>> {
     let mut statement = db
         .prepare("SELECT data FROM gen_metadata WHERE data IS NOT NULL")
-        .with_context(|| format!("unsupported Antigravity CLI database {}", path.display()))?;
+        .with_context(|| format!("unsupported Antigravity database {}", path.display()))?;
     let mut rows = statement.query([])?;
     let mut models = HashMap::new();
     while let Some(row) = rows.next()? {
@@ -863,7 +863,7 @@ fn model_names(db: &Connection, path: &Path) -> Result<HashMap<u64, String>> {
         let chat = proto::Generation::decode(data.as_slice())
             .with_context(|| {
                 format!(
-                    "invalid Antigravity CLI generation metadata in {}",
+                    "invalid Antigravity generation metadata in {}",
                     path.display()
                 )
             })?

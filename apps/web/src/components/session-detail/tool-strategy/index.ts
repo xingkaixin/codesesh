@@ -68,6 +68,7 @@ const TOOL_STRATEGY_BUILDERS: Record<string, ToolStrategyBuilder> = {
   zcode: buildZCodeToolStrategy,
   dsh: buildDshToolStrategy,
   deepchat: buildDeepChatToolStrategy,
+  antigravity: buildAntigravityToolStrategy,
   "antigravity-cli": buildAntigravityToolStrategy,
 };
 
