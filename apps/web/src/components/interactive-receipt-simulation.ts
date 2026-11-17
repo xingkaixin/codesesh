@@ -1,5 +1,6 @@
 import { getLocale } from "../i18n/language";
 import { t } from "../i18n/translate";
+import { formatMessageDateTime } from "../lib/format";
 import {
   isReceiptSettled,
   nextReceiptReleaseFrame,
@@ -100,15 +101,6 @@ function formatCount(value?: number) {
 function formatMoney(value?: number) {
   if (value == null) return "—";
   return value > 0 && value < 0.0001 ? "<$0.0001" : `$${value.toFixed(4)}`;
-}
-
-function formatDate(value: number) {
-  return new Date(value).toLocaleString(getLocale(), {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function hashString(value: string) {
@@ -243,7 +235,13 @@ function drawTexture(
   ctx.fillStyle = palette.ink;
   ctx.font = font("11px");
   drawMonoLine(ctx, t("Agent"), payload.agent, 88, RECEIPT_WIDTH);
-  drawMonoLine(ctx, t("Updated"), formatDate(payload.updatedAt), 104, RECEIPT_WIDTH);
+  drawMonoLine(
+    ctx,
+    t("Updated"),
+    formatMessageDateTime(payload.updatedAt) ?? t("unknown"),
+    104,
+    RECEIPT_WIDTH,
+  );
   drawMonoLine(ctx, t("Session"), `#${payload.id.slice(0, 8)}`, 120, RECEIPT_WIDTH);
 
   ctx.setLineDash([2, 3]);

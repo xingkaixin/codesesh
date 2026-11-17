@@ -1,7 +1,12 @@
 import { t } from "../i18n/translate";
 import type { ReactNode } from "react";
 import type { AgentInfo, ApiProjectGroup, SessionDetail } from "@codesesh/contract";
-import { formatInt, formatRelativeTime } from "../lib/format";
+import {
+  formatInt,
+  formatMessageDateTime,
+  formatMessageIsoTime,
+  formatRelativeTime,
+} from "../lib/format";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import { getSessionDisplayTitle } from "./session-title";
 import type { ViewState } from "../lib/view-state";
@@ -139,6 +144,7 @@ function sessionHeader(input: RouteHeaderInput, dashboard: BreadcrumbItem): Rout
   if (!session) return { title: sessionLabel, count: null, breadcrumbs, hero: null };
 
   const updated = session.time_updated ?? session.time_created;
+  const updatedAt = formatMessageDateTime(updated);
   return {
     title: sessionLabel,
     count: null,
@@ -152,6 +158,13 @@ function sessionHeader(input: RouteHeaderInput, dashboard: BreadcrumbItem): Rout
           <span>·</span>
           <span>
             {t("Updated")} {formatRelativeTime(updated)}
+            {updatedAt ? (
+              <>
+                {" ("}
+                <time dateTime={formatMessageIsoTime(updated)}>{updatedAt}</time>
+                {")"}
+              </>
+            ) : null}
           </span>
           {session.directory ? (
             <>
