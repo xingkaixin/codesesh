@@ -12,7 +12,7 @@ catalog:
   tailwindcss: ^4.3.5
   tsup: ^9.0.0
   typescript: npm:@typescript/typescript6@^6.0.2
-  vite: ^8.3.6
+  vite: ^8.3.8
 
 allowBuilds:
   esbuild: true
