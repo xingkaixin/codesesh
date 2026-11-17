@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.4.7] - 2026-11-17
+
+This release adds model pricing rules for aliases and unlisted models, imports Antigravity Desktop SQLite history, and keeps sessions grouped by their recorded project when a worktree disappears. Pricing rules load independently of unmatched-model counts, large-history pricing queries do less repeated work, and session timestamps show the full date and time. (#911–#920)
+
+### Features
+
+- Add model pricing rules in standalone and Hub modes: map an alias to a catalog model or set manual USD rates per million tokens, including zero rates. Recalculate cached local and Worker-uploaded estimates without rescanning source history; retain rules across cache clears and notify users when catalog pricing becomes available. (#911, #914)
+- Discover Antigravity Desktop conversations from `~/.gemini/antigravity/conversations/*.db`, with `ANTIGRAVITY_CONVERSATIONS_DIR` support in foreground and background services. Desktop and CLI keep separate identities and share SQLite parsing and tool views. (#917)
+- Show the full local date and time on message headers, session update times, thread-read turns, and exported receipts, while preserving relative update labels and unknown source times. (#920)
+
+### Bug Fixes
+
+- Preserve remap targets when applying fast/flex multipliers, apply manual one-hour cache-write rates, and distinguish absent usage from measured zero costs. Correct cached estimates from stored pricing inputs and reconcile unmatched usage by recorded message time and model, including merged Grok messages. (#912)
+- Keep configured pricing rules available while unmatched models are counted in the background. Show pending, updating, failed, and confirmed-zero states with their time window and count context instead of presenting an unfinished count as zero. (#914)
+- Keep T3 Antigravity sessions in their project when T3's shared attachment directory appears first in the workspace list. (#915)
+- Recover Codex and Grok project identities from recorded Git remotes when working directories disappear, retain confirmed repository identities and names, and use consistent project names across Dashboard, session trees, and search. (#916)
+
+### Performance
+
+- Avoid repeated session-metadata scans in unmatched-pricing queries, group usage buckets before validation, and skip metadata that cannot affect the result. Read snapshot fields by their fixed projection to reduce repeated column lookups. (#913, #918)
+
+### Build
+
+- Refresh npm and Cargo dependencies, update pnpm to 12.21.0, `@pierre/trees` to 1.0.0, `reqwest` to 0.13.5, and `rusqlite` to 0.43.0, while retaining Rust 1.90 and Node 22 support. (#919)
+
+### Documentation
+
+- Document model pricing rules, Antigravity Desktop support, project identity recovery, and the API measurement workflow. (#911, #912, #916–#919)
+
+### Compatibility
+
+- Cached Pi, oh-my-pi, Antigravity CLI, Codex, and Grok sessions are reparsed as needed to apply corrected pricing inputs and project metadata. The first refresh can take longer on large histories. Antigravity Desktop supports the new SQLite format; legacy `.pb` history and resume remain unsupported, and missing evidence remains unknown. (#912, #915–#917)
+
 ## [1.4.6] - 2026-11-14
 
 This patch preserves more of the recorded tool inputs, results, errors, and task context when replaying AI coding sessions. It also collects T3 Code's isolated Antigravity ACP history and fixes Antigravity project selection and Pi session lineage. (#898–#903, #905–#908)

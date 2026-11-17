@@ -34,6 +34,7 @@ CodeSesh does three jobs:
 
 - **Dashboard.** Daily activity, agent distribution, model token shares, smart tags, and latest activity for the selected range
 - **Tokens and cost.** Token totals, cache tokens, recorded costs, and model-based estimates, always labeled as recorded or estimated
+- **Model pricing rules.** Map model aliases to catalog prices or set USD rates per million tokens, including free models. Recalculate cached estimates in standalone or Hub mode without rescanning source history
 - **Smart tags.** Sessions labeled as bugfix, refactoring, feature work, testing, docs, planning, git, build/deploy, or exploration
 - **Session receipts.** Usage by model and token category, exportable as a PNG
 
