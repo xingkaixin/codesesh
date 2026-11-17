@@ -23,15 +23,14 @@ const TIMED_USAGE_SQL: &str = "
     AND c.untimed_cache_create_tokens = 0
     AND NOT EXISTS (
         SELECT 1
-        FROM json_each(s.meta_json, '$.rustPricing.messages') pricing_message
-        -- CROSS JOIN pins json_each as the outer loop; otherwise SQLite rescans meta_json per message.
+        FROM jsonb_each(s.meta_json, '$.rustPricing.messages') pricing_message
+        -- CROSS JOIN pins the JSON iterator as the outer loop; otherwise SQLite rescans meta_json per message.
         CROSS JOIN messages m ON m.source_node_id = s.source_node_id
                              AND m.agent_name = s.agent_name
                              AND m.session_id = s.session_id
                              AND m.message_index = CAST(pricing_message.key AS INTEGER)
-        JOIN json_each(pricing_message.value, '$.inputs') cost_input
-        WHERE codesesh_pricing_model_key(json_extract(cost_input.value, '$.model'))
-              IS NOT codesesh_pricing_model_key(m.model)
+        JOIN jsonb_each(pricing_message.value, '$.inputs') cost_input
+        WHERE NOT codesesh_pricing_models_match(json_extract(cost_input.value, '$.model'), m.model)
     )
 ";
 
@@ -55,12 +54,15 @@ pub fn query_unmatched_models(
     pricing: &Pricing,
 ) -> Result<Vec<UnmatchedModelStat>> {
     connection.create_scalar_function(
-        "codesesh_pricing_model_key",
-        1,
+        "codesesh_pricing_models_match",
+        2,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |context| {
-            let model: Option<String> = context.get(0)?;
-            Ok(model.as_deref().and_then(normalize_override_model_key))
+            let input: Option<String> = context.get(0)?;
+            let message: Option<String> = context.get(1)?;
+            Ok(input == message
+                || input.as_deref().and_then(normalize_override_model_key)
+                    == message.as_deref().and_then(normalize_override_model_key))
         },
     )?;
     let (scope_sql, scope_params) = scope_where(connection, scope)?;
@@ -127,11 +129,13 @@ fn collect_bucket_unmatched(
         window.push_str(" AND b.bucket_start <= ?");
         params.push(Value::Real(to));
     }
+    // Materializing keeps JSON validation from repeating for every usage bucket.
     let sql = format!(
-        "SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
-                SUM(b.input_tokens), SUM(b.output_tokens),
-                SUM(CASE WHEN c.output_tokens = s.total_output_tokens THEN 0 ELSE b.reasoning_tokens END),
-                SUM(b.cache_read_tokens), SUM(b.cache_create_tokens)
+        "WITH usage AS MATERIALIZED (
+         SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
+                SUM(b.input_tokens) AS input_tokens, SUM(b.output_tokens) AS output_tokens,
+                SUM(CASE WHEN c.output_tokens = s.total_output_tokens THEN 0 ELSE b.reasoning_tokens END) AS reasoning_tokens,
+                SUM(b.cache_read_tokens) AS cache_read_tokens, SUM(b.cache_create_tokens) AS cache_create_tokens
          FROM session_usage_bucket b
          JOIN sessions s ON s.source_node_id = b.source_node_id
                         AND s.agent_name = b.agent_name
@@ -140,14 +144,25 @@ fn collect_bucket_unmatched(
                                     AND c.agent_name = s.agent_name
                                     AND c.session_id = s.session_id
          WHERE s.publication_id IS NULL
-           AND ({TIMED_USAGE_SQL})
-           AND (s.cost_source IS NOT 'recorded' OR json_array_length(s.meta_json, '$.rustPricing.head.inputs') > 0)
            AND b.cost_source = ''
            AND b.model <> ''
            AND (b.input_tokens > 0 OR b.output_tokens > 0 OR b.reasoning_tokens > 0 OR b.cache_read_tokens > 0 OR b.cache_create_tokens > 0)
            {scope_sql}
            {window}
-         GROUP BY b.source_node_id, b.agent_name, b.session_id, b.model"
+         GROUP BY b.source_node_id, b.agent_name, b.session_id, b.model
+         )
+         SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
+                b.input_tokens, b.output_tokens, b.reasoning_tokens,
+                b.cache_read_tokens, b.cache_create_tokens
+         FROM usage b
+         JOIN sessions s ON s.source_node_id = b.source_node_id
+                        AND s.agent_name = b.agent_name
+                        AND s.session_id = b.session_id
+         JOIN session_cost_summary c ON c.source_node_id = s.source_node_id
+                                    AND c.agent_name = s.agent_name
+                                    AND c.session_id = s.session_id
+         WHERE ({TIMED_USAGE_SQL})
+           AND (s.cost_source IS NOT 'recorded' OR json_array_length(s.meta_json, '$.rustPricing.head.inputs') > 0)"
     );
     let mut stmt = connection.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(params), |row| {
