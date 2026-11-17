@@ -36,4 +36,10 @@ test("shows local dates and times on session timestamps", async ({ page }) => {
     "datetime",
     "2026-04-20T10:05:02.000Z",
   );
+  await page.getByRole("button", { name: "Open session receipt" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Session Receipt" })
+      .locator("time", { hasText: "2026-04-20 19:05:03" }),
+  ).toHaveAttribute("datetime", "2026-04-20T10:05:03.000Z");
 });
