@@ -117,7 +117,7 @@ Published CLI runtime and source build toolchain:
 Source build package manager:
 
 <!-- repo-fact:pnpm-version:start -->
-- pnpm 12.4.2
+- pnpm 12.21.0
 <!-- repo-fact:pnpm-version:end -->
 
 ## Key Questions
@@ -143,7 +143,7 @@ The npm launcher supports Node.js 22+. Native executables do not require Node. S
 <!-- repo-fact:node-version:end -->
 
 <!-- repo-fact:pnpm-version:start -->
-Source development uses pnpm 12.4.2.
+Source development uses pnpm 12.21.0.
 <!-- repo-fact:pnpm-version:end -->
 
 ## Common CLI Usage

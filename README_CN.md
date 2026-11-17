@@ -121,7 +121,7 @@ Cherry Studio 支持 2.x 的 `Data/cherrystudio.sqlite`，包含 Agent 会话（
 
 <!-- repo-fact:pnpm-version:start -->
 
-- 源码构建需要 pnpm 12.4.2
+- 源码构建需要 pnpm 12.21.0
 
 <!-- repo-fact:pnpm-version:end -->
 
