@@ -101,6 +101,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.7",
+        date: "2026-11-17",
+        title: "Price custom models and find Antigravity Desktop history",
+        summary:
+          "CodeSesh 1.4.7 lets you set prices for model aliases and unlisted models, brings Antigravity Desktop into local AI coding history search, and preserves project context when a worktree disappears. Pricing rules stay available while unmatched usage is counted in the background.",
+        direction:
+          "Make cost estimates usable across model catalogs and custom gateways, while keeping session history connected to its recorded project and time.",
+        highlights: [
+          {
+            title: "Set prices for the models you use",
+            description:
+              "Map a model alias to a catalog model or enter your own token rates, including zero rates for free models. Recalculate saved estimates in standalone or Hub mode without rescanning source history, and keep your rules when clearing the cache.",
+          },
+          {
+            title: "Manage pricing without waiting for counts",
+            description:
+              "Saved rules load independently of unmatched-model statistics. Background counts show whether they are pending, updating, failed, or confirmed, and large-history queries avoid repeated metadata processing.",
+          },
+          {
+            title: "Search Antigravity Desktop conversations",
+            description:
+              "Discover the new SQLite conversation format alongside your other Agents, with Desktop and CLI history kept separate. Browse recorded tools, usage, and child sessions; legacy .pb history remains unsupported.",
+          },
+          {
+            title: "Keep project and date context",
+            description:
+              "Codex and Grok sessions can recover project identity from recorded Git remotes after a directory disappears. T3 Antigravity sessions stay in their project, and messages, session updates, thread turns, and receipts show full local dates and times.",
+          },
+        ],
+      },
+      {
         version: "1.4.6",
         date: "2026-11-14",
         title: "More complete tool results and task history",
@@ -1046,6 +1077,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.4.7",
+        date: "2026-11-17",
+        title: "自定义模型定价，汇总 Antigravity Desktop 历史",
+        summary:
+          "CodeSesh 1.4.7 支持为模型别名和未收录模型设置价格，将 Antigravity Desktop 纳入本地 AI 编码历史搜索，并在 worktree 消失后保留项目归属。后台统计未匹配用量时，仍可查看和管理定价规则。",
+        direction:
+          "让模型目录和自定义网关的用量都能用于费用估算，同时保留会话已记录的项目归属与时间。",
+        highlights: [
+          {
+            title: "为实际使用的模型设置价格",
+            description:
+              "将模型别名映射到目录模型，或自行填写 Token 单价，免费模型可设为零。单机与 Hub 模式均可直接重算已保存的估算，无需重新扫描来源历史，清理缓存也会保留规则。",
+          },
+          {
+            title: "管理定价不必等待统计",
+            description:
+              "已保存的规则独立于未匹配模型统计加载。后台统计明确区分待完成、更新中、失败和已确认结果，大历史查询也减少了重复的元数据处理。",
+          },
+          {
+            title: "搜索 Antigravity Desktop 对话",
+            description:
+              "自动发现新 SQLite 格式的对话，与其他 Agent 一起浏览已记录的工具、用量和子会话。Desktop 与 CLI 历史保持独立，旧 .pb 历史仍不支持。",
+          },
+          {
+            title: "保留项目和日期上下文",
+            description:
+              "目录消失后，Codex 与 Grok 会话可从已记录的 Git remote 恢复项目身份，T3 Antigravity 会话也能归入实际项目。消息、会话更新、线程轮次和收据均显示本地完整日期与时间。",
+          },
+        ],
+      },
+      {
         version: "1.4.6",
         date: "2026-11-14",
         title: "工具结果和任务过程更完整",
@@ -1966,6 +2028,37 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.4.7",
+        date: "2026-11-17",
+        title: "モデル料金を設定し、Antigravity Desktop の履歴も検索",
+        summary:
+          "CodeSesh 1.4.7 では、モデルの別名や未登録モデルに料金を設定できます。Antigravity Desktop の会話もローカルの AI コーディング履歴に加わり、worktree がなくなった後もプロジェクトの情報を保持します。未対応の使用量を集計している間も料金ルールを管理できます。",
+        direction:
+          "カタログのモデルと独自ゲートウェイの両方で費用を見積もれるようにし、セッションに記録されたプロジェクトと時刻の情報を保ちます。",
+        highlights: [
+          {
+            title: "使っているモデルに料金を設定",
+            description:
+              "モデルの別名をカタログのモデルに対応付けるか、トークン単価を入力できます。無料モデルはゼロに設定できます。単体モードでも Hub モードでも、元の履歴を再スキャンせずに保存済みの推定費用を再計算し、キャッシュを消去してもルールを保持します。",
+          },
+          {
+            title: "集計を待たずに料金ルールを管理",
+            description:
+              "保存済みのルールは、料金未対応モデルの統計とは別に読み込みます。バックグラウンド集計では待機中、更新中、失敗、確定した結果を区別し、大量の履歴に対するクエリでもメタデータの重複処理を減らしました。",
+          },
+          {
+            title: "Antigravity Desktop の会話を検索",
+            description:
+              "新しい SQLite 形式の会話を自動検出し、ほかの Agent と一緒に、記録されたツール、使用量、子セッションを閲覧できます。Desktop と CLI の履歴は分けて扱います。旧 .pb 形式は引き続き未対応です。",
+          },
+          {
+            title: "プロジェクトと日時を確認",
+            description:
+              "ディレクトリがなくなっても、Codex と Grok のセッションは記録済みの Git remote からプロジェクトを復元できます。T3 の Antigravity セッションも本来のプロジェクトに分類し、メッセージ、更新時刻、スレッドのターン、レシートにはローカルの年月日と時刻を表示します。",
+          },
+        ],
+      },
       {
         version: "1.4.6",
         date: "2026-11-14",
