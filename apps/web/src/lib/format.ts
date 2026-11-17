@@ -169,13 +169,14 @@ export function formatMessageDate(rawTime: number | string | null | undefined): 
   );
 }
 
-export function formatMessageTime(rawTime: number | string | null | undefined): string | null {
+export function formatMessageDateTime(rawTime: number | string | null | undefined): string | null {
   const date = parseMessageDate(rawTime);
   if (!date) return null;
-  return date.toLocaleTimeString(getLocale(), {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: getLocale() === "en",
-  });
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+
+export function formatMessageIsoTime(
+  rawTime: number | string | null | undefined,
+): string | undefined {
+  return parseMessageDate(rawTime)?.toISOString();
 }

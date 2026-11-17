@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import { formatMessageDate, formatMessageTime } from "../../lib/format";
+import { formatMessageDateTime, formatMessageIsoTime } from "../../lib/format";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 import { MarkdownContent } from "../MarkdownContent";
 import { ProgressiveText } from "../ProgressiveContent";
@@ -113,9 +113,8 @@ export function ThreadReadOutput({ content }: { content: ThreadReadToolOutputCon
           (item.type === "agentMessage" && item.phase === "final_answer");
         const replies = turn.items.filter(isReply);
         const activity = turn.items.filter((item) => !isReply(item));
-        const date = turn.startedAt
-          ? `${formatMessageDate(turn.startedAt * 1000)} ${formatMessageTime(turn.startedAt * 1000)}`
-          : t("Turn {0}", [index + 1]);
+        const startedAtMs = turn.startedAt ? turn.startedAt * 1000 : null;
+        const startedAt = formatMessageDateTime(startedAtMs);
         const status =
           turn.status === "completed"
             ? t("Done")
@@ -130,7 +129,13 @@ export function ThreadReadOutput({ content }: { content: ThreadReadToolOutputCon
             className="min-w-0 rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)]"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--console-border)] px-3 py-2 text-xs text-[var(--console-muted)]">
-              <span>{date}</span>
+              {startedAt ? (
+                <time dateTime={formatMessageIsoTime(startedAtMs)} className="console-mono">
+                  {startedAt}
+                </time>
+              ) : (
+                <span>{t("Turn {0}", [index + 1])}</span>
+              )}
               <span className={turn.status === "failed" ? "text-[var(--console-error)]" : ""}>
                 {status}
               </span>

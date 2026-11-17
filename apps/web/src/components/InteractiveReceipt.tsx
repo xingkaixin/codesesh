@@ -2,6 +2,7 @@ import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SessionDetail } from "@codesesh/contract";
+import { formatMessageDateTime, formatMessageIsoTime } from "../lib/format";
 import { createReceiptPayload, receiptHeight } from "./receipt-data";
 import {
   createInteractiveReceiptSimulation,
@@ -82,6 +83,8 @@ export function InteractiveReceipt({
     }
   };
 
+  const updatedAt = formatMessageDateTime(payload.updatedAt);
+
   return (
     <>
       <div className="mb-2 flex justify-end">
@@ -108,6 +111,16 @@ export function InteractiveReceipt({
         <div className="sr-only">
           <h2>{payload.title}</h2>
           <dl>
+            <div>
+              <dt>{t("Updated")}</dt>
+              <dd>
+                {updatedAt ? (
+                  <time dateTime={formatMessageIsoTime(payload.updatedAt)}>{updatedAt}</time>
+                ) : (
+                  t("unknown")
+                )}
+              </dd>
+            </div>
             {payload.items.map((item) => (
               <div key={item.label}>
                 <dt>{item.label}</dt>

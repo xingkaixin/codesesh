@@ -22,7 +22,7 @@ import type {
   ToolPart,
   SessionHead,
 } from "@codesesh/contract";
-import { formatMessageDate, formatMessageTime } from "../../lib/format";
+import { formatMessageDate, formatMessageDateTime, formatMessageIsoTime } from "../../lib/format";
 import { getSessionRoutePath } from "../../lib/session-indexes";
 import { buildHighlightPattern } from "../../lib/search-highlight";
 import { AgentIcon } from "../AgentIcon";
@@ -158,7 +158,8 @@ export const MessageItem = memo(function MessageItem({
   const modeLabel = msg.mode ? msg.mode.toUpperCase() : null;
   const modelLabel = msg.model || null;
   const roleLabel = getAssistantDisplayLabel(msg);
-  const time = formatMessageTime(msg.time_created);
+  const time = formatMessageDateTime(msg.time_created);
+  const timeIso = formatMessageIsoTime(msg.time_created);
   const date = formatMessageDate(msg.time_created);
   const startsDay = date !== null && date !== formatMessageDate(previousMessageTime);
   const childSession = msg.subagent_id ? childSessionById?.get(msg.subagent_id) : undefined;
@@ -190,7 +191,9 @@ export const MessageItem = memo(function MessageItem({
               {roleLabel}
             </span>
             {time ? (
-              <time className="console-mono whitespace-nowrap text-[11px]">{time}</time>
+              <time dateTime={timeIso} className="console-mono whitespace-nowrap text-[11px]">
+                {time}
+              </time>
             ) : null}
             {modeLabel && (
               <span className="inline-flex h-5 items-center rounded-md bg-[var(--console-surface-muted)] px-[7px] text-[10px] text-[var(--console-muted)] font-semibold tracking-[0.05em]">
