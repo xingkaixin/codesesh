@@ -23,6 +23,7 @@
     "test:backend": "node --test tests/backend-contract/backend.test.mjs",
     "prepare:reference": "node scripts/bench/prepare-backend-reference.mjs",
     "bench:backend": "node scripts/bench/benchmark-backend.mjs",
+    "bench:api": "node scripts/bench/benchmark-api.mjs",
     "typecheck": "turbo run typecheck && node --check crates/codesesh-cli/npm/bin/codesesh.cjs",
     "typecheck:e2e": "pnpm --filter @codesesh/contract build && tsc --noEmit -p tsconfig.e2e.json",
     "package:artifact": "node scripts/package-artifact.mjs",
