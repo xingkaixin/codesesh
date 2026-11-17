@@ -41,19 +41,19 @@
     "bench:rust": "node scripts/rust/benchmark.mjs"
   },
   "devDependencies": {
-    "@oxlint/plugins": "1.92.0",
+    "@oxlint/plugins": "1.93.0",
     "@shadcn/lint": "0.2.5",
     "@types/node": "catalog:",
     "@typescript/native": "catalog:",
-    "oxfmt": "^0.77.0",
-    "oxlint": "^1.92.0",
-    "playwright": "^1.65.0",
-    "turbo": "^2.11.10",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "playwright": "^1.65.1",
+    "turbo": "^2.11.11",
     "typescript": "catalog:",
     "vitest": "^5.1.0",
     "@codesesh/contract": "workspace:*"
   },
-  "packageManager": "pnpm@12.4.2",
+  "packageManager": "pnpm@12.21.0",
   "engines": {
     "node": ">=22.0.0"
   }

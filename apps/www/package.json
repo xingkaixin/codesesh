@@ -17,23 +17,23 @@
     "deploy:cf": "pnpm build:cf && cf deploy --prebuilt"
   },
   "dependencies": {
-    "astro": "^7.4.7"
+    "astro": "^7.4.12"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
-    "@astrojs/markdown-satteri": "0.4.7",
+    "@astrojs/markdown-satteri": "0.4.10",
     "@codesesh/contract": "workspace:*",
     "@hugeicons/core-free-icons": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
-    "eslint": "10.14.0",
+    "eslint": "10.15.0",
     "eslint-plugin-astro": "3.2.1",
     "eslint-plugin-jsx-a11y": "6.10.2",
-    "prettier": "3.9.10",
+    "prettier": "3.10.1",
     "prettier-plugin-astro": "1.1.2",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "typescript-eslint": "8.72.1",
+    "typescript-eslint": "8.72.2",
     "vite": "catalog:"
   }
 }

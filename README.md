@@ -122,7 +122,7 @@ To add an agent, see the [extension checklist](#extending).
 
 <!-- repo-fact:pnpm-version:start -->
 
-- pnpm 12.4.2 for building from source
+- pnpm 12.21.0 for building from source
 
 <!-- repo-fact:pnpm-version:end -->
 
