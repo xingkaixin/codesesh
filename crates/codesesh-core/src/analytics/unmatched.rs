@@ -235,6 +235,7 @@ fn collect_meta_unmatched(
          FROM sessions s
          WHERE s.publication_id IS NULL
            AND s.meta_json LIKE '%\"rustPricing\"%'
+           AND (instr(s.meta_json, '\"cost\":null') > 0 OR instr(s.meta_json, '\"cost\": null') > 0)
            AND NOT EXISTS (
                SELECT 1 FROM session_cost_summary c
                WHERE c.source_node_id = s.source_node_id
@@ -256,9 +257,6 @@ fn collect_meta_unmatched(
     })?;
     for row in rows {
         let (node_id, agent_name, session_id, raw_meta) = row?;
-        if !raw_meta.contains("\"cost\":null") && !raw_meta.contains("\"cost\": null") {
-            continue;
-        }
         let Ok(stored) = serde_json::from_str::<StoredPricing>(&raw_meta) else {
             continue;
         };
