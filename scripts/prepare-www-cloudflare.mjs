@@ -2,12 +2,14 @@ import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 
 const site = new URL("../apps/www/", import.meta.url);
-const output = new URL(".cloudflare/output/v0/", site);
+const outputRoot = new URL(".cloudflare/output/", site);
+const output = new URL("v1/", outputRoot);
 const worker = new URL("workers/default/", output);
 const assets = new URL("assets/", worker);
 
 // Prebuilt output avoids cf's automatic setup installing Wrangler for a static site.
-await rm(output, { recursive: true, force: true });
+// cf rejects output trees containing multiple format versions.
+await rm(outputRoot, { recursive: true, force: true });
 await mkdir(worker, { recursive: true });
 await cp(new URL("dist/", site), assets, {
   recursive: true,
