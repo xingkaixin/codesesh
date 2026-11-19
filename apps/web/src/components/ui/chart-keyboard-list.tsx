@@ -15,12 +15,14 @@ export function ChartKeyboardList({
   itemLabels,
   activeIndex,
   onActiveIndexChange,
+  onActivate,
   layout,
 }: {
   label: string;
   itemLabels: readonly string[];
   activeIndex: number | null;
   onActiveIndexChange: (index: number | null) => void;
+  onActivate?: (index: number) => void;
   layout: "columns" | "surface";
 }) {
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -32,6 +34,11 @@ export function ChartKeyboardList({
     if (event.key === "Escape") {
       event.preventDefault();
       onActiveIndexChange(null);
+      return;
+    }
+    if (onActivate && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      onActivate(index);
       return;
     }
     const nextIndex = nextItemIndex(event.key, index, lastIndex);

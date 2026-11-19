@@ -8,10 +8,11 @@ mod response;
 mod time_zone;
 mod unmatched;
 pub use facts::*;
-pub use projects::{attach_project_metrics, summarize_projects};
+pub use projects::{ProjectSort, attach_project_metrics, sort_projects, summarize_projects};
 #[cfg(test)]
 pub(crate) use read::load_cost_facts;
 pub use read::load_scoped_cost_facts;
+pub(crate) use read::{model_entry_refs, reference_condition};
 pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_response};
 pub use time_zone::DashboardTimeZone;
 pub use unmatched::query_unmatched_models;

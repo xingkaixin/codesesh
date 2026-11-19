@@ -70,9 +70,9 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
 
   useEffect(() => {
     if (effectiveSearch !== search) {
-      setSearchParams(effectiveParams, { replace: true });
+      setSearchParams(effectiveParams, { replace: true, state: location.state });
     }
-  }, [effectiveParams, effectiveSearch, search, setSearchParams]);
+  }, [effectiveParams, effectiveSearch, location.state, search, setSearchParams]);
 
   const resolved = useMemo(
     () =>
@@ -106,13 +106,17 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   }, [nextPresetRefreshAt, resolved?.preset]);
   const selectPreset = useCallback(
     (preset: TimeWindowPreset) =>
-      setSearchParams(writeTimeWindowPreset(new URLSearchParams(search), preset)),
-    [search, setSearchParams],
+      setSearchParams(writeTimeWindowPreset(new URLSearchParams(search), preset), {
+        state: location.state,
+      }),
+    [location.state, search, setSearchParams],
   );
   const selectCustom = useCallback(
     (from: string, to: string) =>
-      setSearchParams(writeCustomTimeWindow(new URLSearchParams(search), from, to)),
-    [search, setSearchParams],
+      setSearchParams(writeCustomTimeWindow(new URLSearchParams(search), from, to), {
+        state: location.state,
+      }),
+    [location.state, search, setSearchParams],
   );
 
   return {

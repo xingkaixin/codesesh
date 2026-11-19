@@ -74,7 +74,7 @@ pub(super) fn search_prepared(
     let query = query.trim();
     let limit = options.limit.unwrap_or(50);
     if query.is_empty() {
-        let mut filters = sql::build(options);
+        let mut filters = sql::build(connection, options)?;
         filters.params.push((limit as i64).into());
         let mut statement = connection.prepare(&format!(
             "SELECT {HEAD_COLUMNS} FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
@@ -204,7 +204,7 @@ pub(super) fn search_files(
     if path.is_empty() {
         return Ok(Vec::new());
     }
-    let mut filters = sql::build(options);
+    let mut filters = sql::build(connection, options)?;
     sql::file_filter(&mut filters, path);
     if let Some(kind) = &options.file_kind {
         filters.text("fa.kind = ?", kind);

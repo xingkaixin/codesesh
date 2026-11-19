@@ -40,6 +40,9 @@ interface BreakdownRow {
   color: string;
   tokens: number;
   cost: number | null;
+  active?: boolean;
+  actionLabel?: string;
+  onSelect?: () => void;
 }
 
 function conicGradient(values: readonly number[], colors: readonly string[]): string {
@@ -186,53 +189,86 @@ function BreakdownCard({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.key}
-                  data-testid={rowTestId}
-                  className="border-t border-[var(--console-border)]"
-                >
-                  <th scope="row" className="py-2 text-left font-normal">
-                    <span className="flex min-w-0 items-center gap-2">
+              {rows.map((row) => {
+                const labelContent = (
+                  <>
+                    <span
+                      aria-hidden
+                      className="size-2 shrink-0 rounded-[2px]"
+                      style={{ background: row.color }}
+                    />
+                    {row.icon}
+                    <span className="min-w-0">
                       <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-[2px]"
-                        style={{ background: row.color }}
-                      />
-                      {row.icon}
-                      <span className="min-w-0">
-                        <span
-                          className={cn(
-                            "block truncate font-medium text-[var(--console-text)]",
-                            row.mono ? "console-mono" : null,
-                          )}
-                        >
-                          {row.label}
+                        className={cn(
+                          "block truncate font-medium text-[var(--console-text)]",
+                          row.mono ? "console-mono" : null,
+                        )}
+                      >
+                        {row.label}
+                      </span>
+                      {row.sub ? (
+                        <span className="block truncate text-[10px] text-[var(--console-muted)]">
+                          {row.sub}
                         </span>
-                        {row.sub ? (
-                          <span className="block truncate text-[10px] text-[var(--console-muted)]">
-                            {row.sub}
-                          </span>
-                        ) : null}
-                      </span>
+                      ) : null}
                     </span>
-                  </th>
-                  <td className="console-mono py-2 text-right text-[var(--console-text)]">
-                    {formatCompact(row.tokens)}
-                    <span className="block text-[10px] text-[var(--console-muted)]">
-                      {formatShare(row.tokens / totalTokens)}
-                    </span>
-                  </td>
-                  <td className="console-mono py-2 text-right text-[var(--console-text)]">
-                    {row.cost === null || !hasCost ? "—" : formatUsd(row.cost)}
-                    {row.cost === null || !hasCost ? null : (
-                      <span className="block text-[10px] text-[var(--console-muted)]">
-                        {formatShare(row.cost / totalCost)}
-                      </span>
+                  </>
+                );
+                return (
+                  <tr
+                    key={row.key}
+                    data-testid={rowTestId}
+                    className={cn(
+                      "border-t border-[var(--console-border)]",
+                      row.onSelect
+                        ? "cursor-pointer motion-hover hover:bg-[var(--console-surface-muted)]"
+                        : null,
+                      row.active ? "bg-[var(--brand-soft)]" : null,
                     )}
-                  </td>
-                </tr>
-              ))}
+                    onClick={
+                      row.onSelect
+                        ? (event) => {
+                            if (event.target instanceof Element && event.target.closest("button")) {
+                              return;
+                            }
+                            row.onSelect?.();
+                          }
+                        : undefined
+                    }
+                  >
+                    <th scope="row" className="py-2 text-left font-normal">
+                      {row.onSelect ? (
+                        <button
+                          type="button"
+                          aria-pressed={row.active}
+                          aria-label={row.actionLabel}
+                          onClick={row.onSelect}
+                          className="flex w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                        >
+                          {labelContent}
+                        </button>
+                      ) : (
+                        <span className="flex min-w-0 items-center gap-2">{labelContent}</span>
+                      )}
+                    </th>
+                    <td className="console-mono py-2 text-right text-[var(--console-text)]">
+                      {formatCompact(row.tokens)}
+                      <span className="block text-[10px] text-[var(--console-muted)]">
+                        {formatShare(row.tokens / totalTokens)}
+                      </span>
+                    </td>
+                    <td className="console-mono py-2 text-right text-[var(--console-text)]">
+                      {row.cost === null || !hasCost ? "—" : formatUsd(row.cost)}
+                      {row.cost === null || !hasCost ? null : (
+                        <span className="block text-[10px] text-[var(--console-muted)]">
+                          {formatShare(row.cost / totalCost)}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -245,10 +281,12 @@ export function OverviewModelBreakdown({
   models,
   modelCost,
   totals,
+  onSelectModel,
 }: {
   models: readonly ModelDistributionEntry[];
   modelCost: readonly ModelCostEntry[] | null;
   totals: DashboardTotals;
+  onSelectModel?: (model: string) => void;
 }) {
   useLocale();
 
@@ -262,6 +300,8 @@ export function OverviewModelBreakdown({
     color: modelColor(entry.model),
     tokens: entry.tokens,
     cost: modelCost ? (costByModel.get(entry.model) ?? 0) : null,
+    actionLabel: onSelectModel ? t("Search sessions using {0}", [entry.model]) : undefined,
+    onSelect: onSelectModel ? () => onSelectModel(entry.model) : undefined,
   }));
   const rest = ranked.slice(MODEL_LIMIT);
   const otherTokens = Math.max(totals.tokens - rows.reduce((sum, row) => sum + row.tokens, 0), 0);
@@ -288,6 +328,7 @@ export function OverviewModelBreakdown({
       rows={rows}
       centerValue={formatCompact(totals.tokens)}
       centerLabel={t("Tokens")}
+      rowTestId="overview-model-row"
       emptyText={t("No model data")}
     />
   );
@@ -296,30 +337,40 @@ export function OverviewModelBreakdown({
 export function OverviewAgentBreakdown({
   perAgent,
   totals,
+  activeAgent,
+  onSelectAgent,
 }: {
   perAgent: readonly DashboardAgentStat[];
   totals: DashboardTotals;
+  activeAgent?: string;
+  onSelectAgent?: (agent: string) => void;
 }) {
   useLocale();
 
   const hasCost = perAgent.some((agent) => agent.cost > 0);
   const ranked = perAgent.toSorted((a, b) => b.tokens - a.tokens || b.sessions - a.sessions);
-  const rows: BreakdownRow[] = ranked.slice(0, AGENT_LIMIT).map((agent, index) => ({
-    key: agent.name,
-    label: agent.displayName,
-    sub: t("{0} sessions", [formatInt(agent.sessions)]),
-    icon: (
-      <AgentIcon
-        icon={agent.icon}
-        iconColored={agent.iconColored}
-        alt={agent.displayName}
-        className="size-3.5 shrink-0 text-[var(--console-text)]"
-      />
-    ),
-    color: AGENT_COLORS[index] ?? OTHER_COLOR,
-    tokens: agent.tokens,
-    cost: hasCost ? agent.cost : null,
-  }));
+  const rows: BreakdownRow[] = ranked.slice(0, AGENT_LIMIT).map((agent, index) => {
+    const agentKey = agent.name.toLowerCase();
+    return {
+      key: agent.name,
+      label: agent.displayName,
+      sub: t("{0} sessions", [formatInt(agent.sessions)]),
+      icon: (
+        <AgentIcon
+          icon={agent.icon}
+          iconColored={agent.iconColored}
+          alt={agent.displayName}
+          className="size-3.5 shrink-0 text-[var(--console-text)]"
+        />
+      ),
+      color: AGENT_COLORS[index] ?? OTHER_COLOR,
+      tokens: agent.tokens,
+      cost: hasCost ? agent.cost : null,
+      active: onSelectAgent ? activeAgent === agentKey : undefined,
+      actionLabel: onSelectAgent ? t("Filter by {0}", [agent.displayName]) : undefined,
+      onSelect: onSelectAgent ? () => onSelectAgent(agentKey) : undefined,
+    };
+  });
   const rest = ranked.slice(AGENT_LIMIT);
   if (rest.length > 0) {
     rows.push({

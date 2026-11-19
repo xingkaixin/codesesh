@@ -11,7 +11,6 @@ import {
 } from "@codesesh/contract";
 import {
   hashKey,
-  keepPreviousData,
   queryOptions,
   replaceEqualDeep,
   useQuery,
@@ -275,7 +274,6 @@ export function useSessionStore(window: AppConfig["window"] | null, loadDashboar
   const projectsQuery = useQuery({
     ...projectsOptions(window ?? {}),
     enabled: window !== null,
-    placeholderData: keepPreviousData,
   });
   const refetchProjection = projectionQuery.refetch;
   const refetchAgents = agentsQuery.refetch;
