@@ -171,4 +171,35 @@ describe("AppRouteContent", () => {
     expect(screen.getByText("Session #30")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
   });
+
+  it("renders route-matched loading skeletons for overview and session routes", () => {
+    const overviewProps = makeProps();
+    overviewProps.load.loading = true;
+    const { rerender } = renderContent(overviewProps);
+    expect(screen.getByTestId("overview-skeleton")).toBeTruthy();
+
+    const sessionProps = makeProps();
+    sessionProps.load.loading = true;
+    sessionProps.route = {
+      mode: "session",
+      activeAgentKey: "claudecode",
+      activeSessionId: "s1",
+      agents: routeAgents,
+      agentCatalog: createAgentCatalog(routeAgents),
+      sessions: [],
+      bookmarks: makeBookmarks(),
+      detail: { phase: { kind: "loading" }, retry: vi.fn() },
+      detailHighlightQuery: "",
+      childSessionsByParentRouteKey: new Map(),
+    };
+    const { Wrapper } = createQueryWrapper();
+    rerender(
+      <Wrapper>
+        <MemoryRouter>
+          <AppRouteContent {...sessionProps} />
+        </MemoryRouter>
+      </Wrapper>,
+    );
+    expect(screen.queryByTestId("overview-skeleton")).toBeNull();
+  });
 });
