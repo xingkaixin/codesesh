@@ -6,6 +6,75 @@ use crate::{
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProjectSort {
+    #[default]
+    Latest,
+    Sessions,
+    Cost,
+}
+
+impl ProjectSort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Latest => "latest",
+            Self::Sessions => "sessions",
+            Self::Cost => "cost",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "latest" => Some(Self::Latest),
+            "sessions" => Some(Self::Sessions),
+            "cost" => Some(Self::Cost),
+            _ => None,
+        }
+    }
+}
+
+pub fn sort_projects(projects: &mut [Value], sort: ProjectSort) {
+    projects.sort_by(|a, b| {
+        let a_loose = a["identityKind"].as_str() == Some("loose");
+        let b_loose = b["identityKind"].as_str() == Some("loose");
+        let a_latest = a["lastActivity"].as_f64().unwrap_or(0.0);
+        let b_latest = b["lastActivity"].as_f64().unwrap_or(0.0);
+        let a_sessions = a["sessionCount"].as_u64().unwrap_or(0);
+        let b_sessions = b["sessionCount"].as_u64().unwrap_or(0);
+        let a_cost = a["cost"].as_f64().unwrap_or(0.0);
+        let b_cost = b["cost"].as_f64().unwrap_or(0.0);
+        let tie_break = || {
+            (
+                a["identityKind"].as_str().unwrap_or(""),
+                a["identityKey"].as_str().unwrap_or(""),
+            )
+                .cmp(&(
+                    b["identityKind"].as_str().unwrap_or(""),
+                    b["identityKey"].as_str().unwrap_or(""),
+                ))
+        };
+
+        match sort {
+            ProjectSort::Latest => a_loose
+                .cmp(&b_loose)
+                .then_with(|| b_latest.total_cmp(&a_latest))
+                .then_with(|| b_sessions.cmp(&a_sessions))
+                .then_with(|| b_cost.total_cmp(&a_cost))
+                .then_with(tie_break),
+            ProjectSort::Sessions => b_sessions
+                .cmp(&a_sessions)
+                .then_with(|| b_latest.total_cmp(&a_latest))
+                .then_with(|| b_cost.total_cmp(&a_cost))
+                .then_with(tie_break),
+            ProjectSort::Cost => b_cost
+                .total_cmp(&a_cost)
+                .then_with(|| b_latest.total_cmp(&a_latest))
+                .then_with(|| b_sessions.cmp(&a_sessions))
+                .then_with(tie_break),
+        }
+    });
+}
+
 #[derive(Default)]
 struct ProjectMetrics {
     total: Metrics,
