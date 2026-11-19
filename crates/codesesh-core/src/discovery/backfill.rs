@@ -283,16 +283,18 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     let mut items = Vec::new();
     let mut context_stamps = Vec::new();
     let context_names: &[&str] = match source.agent.as_str() {
-        "antigravity" | "antigravity-cli" => &[
-            "conversation_summaries.db",
-            "conversation_summaries.db-wal",
-            "conversation_summaries.db-journal",
-            "history.jsonl",
-        ],
         "kimi-code" => &["session_index.jsonl"],
         "droid" => &["settings.json"],
         "kimi" => &["kimi.json", "config.toml"],
         _ => &[],
+    };
+    let antigravity_context = if matches!(source.agent.as_str(), "antigravity" | "antigravity-cli")
+    {
+        Some(crate::agents::antigravity::ContextFingerprints::load(
+            &source.data_root,
+        )?)
+    } else {
+        None
     };
     for name in context_names {
         let path = source.data_root.join(name);
@@ -343,13 +345,20 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             fingerprint.push(':');
             fingerprint.push_str(&crate::agents::pi::parent_fingerprint(entry.path(), &root)?);
         }
-        if matches!(source.agent.as_str(), "antigravity" | "antigravity-cli") {
+        if let Some(antigravity_context) = &antigravity_context {
             for suffix in ["-wal", "-journal"] {
                 let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
                 if related.try_exists()? {
                     fingerprint.push_str(&stamp(&related)?.1);
                 }
             }
+            let id = entry
+                .path()
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            fingerprint.push(':');
+            fingerprint.push_str(&antigravity_context.fingerprint(&id));
         }
         if claude_layout {
             let project = match crate::agents::claudecode::subagents_dir(entry.path()) {

@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     io::BufRead,
@@ -84,24 +85,131 @@ struct Summary {
     agent_name: String,
 }
 
+pub(crate) struct ContextFingerprints {
+    summaries: HashMap<String, Summary>,
+    history: HashMap<String, String>,
+}
+
+impl ContextFingerprints {
+    pub(crate) fn load(root: &Path) -> Result<Self> {
+        let mut summaries = HashMap::new();
+        let summary_path = root.join("conversation_summaries.db");
+        if summary_path.try_exists()? {
+            let db = open_readonly_sqlite(summary_path)?;
+            db.execute_batch("BEGIN")?;
+            let has_table: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
+                [],
+                |row| row.get(0),
+            )?;
+            if has_table {
+                let mut query = db.prepare(
+                    "SELECT conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries",
+                )?;
+                let mut rows = query.query([])?;
+                while let Some(row) = rows.next()? {
+                    let id: String = row.get(0)?;
+                    summaries.insert(
+                        id,
+                        Summary {
+                            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                            workspaces: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                            modified: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                            parent: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                            agent_name: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                        },
+                    );
+                }
+            }
+        }
+        let history = history_workspaces(root)?;
+        Ok(Self { summaries, history })
+    }
+
+    pub(crate) fn fingerprint(&self, id: &str) -> String {
+        hash_conversation_context(id, |key| self.summaries.get(key), &self.history)
+    }
+}
+
+fn hash_str(hash: &mut Sha256, value: &str) {
+    hash.update((value.len() as u64).to_le_bytes());
+    hash.update(value.as_bytes());
+}
+
+fn hash_opt_str(hash: &mut Sha256, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            hash.update([1]);
+            hash_str(hash, value);
+        }
+        None => hash.update([0]),
+    }
+}
+
+fn hash_conversation_context<'a>(
+    id: &str,
+    summary_for: impl Fn(&str) -> Option<&'a Summary>,
+    history: &HashMap<String, String>,
+) -> String {
+    let mut hash = Sha256::new();
+    let own = summary_for(id);
+    match own {
+        Some(summary) => {
+            hash.update([1]);
+            hash_str(&mut hash, &summary.title);
+            hash_str(&mut hash, &summary.workspaces);
+            hash_str(&mut hash, &summary.modified);
+            hash_str(&mut hash, &summary.parent);
+            hash_str(&mut hash, &summary.agent_name);
+        }
+        None => hash.update([0]),
+    }
+    hash_opt_str(&mut hash, history.get(id).map(String::as_str));
+    let mut visited = HashSet::new();
+    visited.insert(id);
+    let mut parent = own
+        .map(|summary| summary.parent.as_str())
+        .filter(|parent| !parent.is_empty());
+    while let Some(ancestor) = parent {
+        if !visited.insert(ancestor) {
+            break;
+        }
+        hash_str(&mut hash, ancestor);
+        hash_opt_str(&mut hash, history.get(ancestor).map(String::as_str));
+        if let Some(summary) = summary_for(ancestor) {
+            hash.update([1]);
+            hash_str(&mut hash, &summary.workspaces);
+            hash_str(&mut hash, &summary.parent);
+            parent = (!summary.parent.is_empty()).then_some(summary.parent.as_str());
+        } else {
+            hash.update([0]);
+            break;
+        }
+    }
+    crate::hash::hex(&hash.finalize())
+}
+
+fn query_summary(db: &Connection, id: &str) -> Result<Option<Summary>> {
+    Ok(db
+        .query_row(
+            "SELECT title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries WHERE conversation_id=?1",
+            [id],
+            |row| {
+                Ok(Summary {
+                    title: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    workspaces: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    modified: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    parent: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    agent_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                })
+            },
+        )
+        .optional()?)
+}
+
 fn load_summary(summaries: Option<&Connection>, id: &str) -> Result<Summary> {
     Ok(summaries
-        .map(|db| {
-            db.query_row(
-                "SELECT title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries WHERE conversation_id=?1",
-                [id],
-                |row| {
-                    Ok(Summary {
-                        title: row.get(0)?,
-                        workspaces: row.get(1)?,
-                        modified: row.get(2)?,
-                        parent: row.get(3)?,
-                        agent_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    })
-                },
-            )
-            .optional()
-        })
+        .map(|db| query_summary(db, id))
         .transpose()?
         .flatten()
         .unwrap_or_default())

@@ -302,3 +302,67 @@ fn desktop_override_reads_its_own_metadata_and_retains_failed_refreshes() {
     assert!(run().is_err());
     assert_eq!(cache.snapshot().unwrap().len(), 1);
 }
+
+#[test]
+fn updating_one_conversation_summary_does_not_invalidate_other_conversations() {
+    let temp = tempfile::tempdir().unwrap();
+    let env = environment(temp.path());
+    let source = env.source("antigravity").unwrap();
+    let desktop = env.home.join(".gemini/antigravity/conversations");
+    let first = write_session(&desktop, "conv-a");
+    let second = write_session(&desktop, "conv-b");
+    write_summary(&desktop, "conv-a", "Title A");
+    write_summary(&desktop, "conv-b", "Title B");
+    fs::write(
+        source.data_root.join("history.jsonl"),
+        format!(
+            "{}\n{}\n",
+            serde_json::json!({"conversationId":"conv-a","workspace":"/work/a"}),
+            serde_json::json!({"conversationId":"conv-b","workspace":"/work/b"}),
+        ),
+    )
+    .unwrap();
+
+    let before: std::collections::HashMap<_, _> = super::super::backfill::inventory(&source)
+        .unwrap()
+        .into_iter()
+        .map(|item| (item.key, item.fingerprint))
+        .collect();
+    let first_key = first.to_string_lossy().into_owned();
+    let second_key = second.to_string_lossy().into_owned();
+
+    let path = temp.path().join("cache.db");
+    let pricing = Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&path)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), path, pricing);
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 2);
+    commit(&mut cache, &mut initial, "antigravity");
+
+    // Update conversation B's summary row and history entry, leaving conversation A untouched.
+    write_summary(&desktop, "conv-b", "Title B Updated");
+    fs::write(
+        source.data_root.join("history.jsonl"),
+        format!(
+            "{}\n{}\n",
+            serde_json::json!({"conversationId":"conv-a","workspace":"/work/a"}),
+            serde_json::json!({"conversationId":"conv-b","workspace":"/work/b2"}),
+        ),
+    )
+    .unwrap();
+
+    let after: std::collections::HashMap<_, _> = super::super::backfill::inventory(&source)
+        .unwrap()
+        .into_iter()
+        .map(|item| (item.key, item.fingerprint))
+        .collect();
+    assert_eq!(after[&first_key], before[&first_key]);
+    assert_ne!(after[&second_key], before[&second_key]);
+
+    let summary_db = source.data_root.join("conversation_summaries.db");
+    let mut refreshed = scanner.refresh(Some(&[summary_db])).unwrap();
+    assert_eq!(refreshed.sessions.len(), 1);
+    assert_eq!(refreshed.sessions[0].head.reference.session_id, "conv-b");
+    assert_eq!(refreshed.sessions[0].head.title, "Title B Updated");
+    commit(&mut cache, &mut refreshed, "antigravity");
+}
