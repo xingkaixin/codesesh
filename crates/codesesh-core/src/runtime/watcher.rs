@@ -42,6 +42,7 @@ pub fn watch_paths(
 ) -> Result<(Duration, Duration)> {
     let started = Instant::now();
     let roots: Vec<_> = sources.iter().flatten().cloned().collect();
+    let event_roots = roots.clone();
     let (reconcile, mut changes) = watch::channel(0_u64);
     let reset_watches = Arc::new(AtomicBool::new(false));
     let reset_requested = reset_watches.clone();
@@ -57,12 +58,7 @@ pub fn watch_paths(
             {
                 created.extend(event.paths.iter().cloned());
             }
-            if matches!(
-                event.kind,
-                EventKind::Remove(
-                    notify::event::RemoveKind::Folder | notify::event::RemoveKind::Any
-                ) | EventKind::Modify(notify::event::ModifyKind::Name(_))
-            ) {
+            if needs_watch_reset(&event_roots, &event) {
                 reset_requested.store(true, Ordering::Release);
             }
             if !matches!(
@@ -140,6 +136,33 @@ pub fn watch_paths(
         }
     });
     Ok((registration, snapshot))
+}
+
+fn needs_watch_reset(roots: &[PathBuf], event: &notify::Event) -> bool {
+    if !matches!(
+        event.kind,
+        EventKind::Remove(notify::event::RemoveKind::Folder | notify::event::RemoveKind::Any)
+            | EventKind::Modify(notify::event::ModifyKind::Name(_))
+    ) {
+        return false;
+    }
+    if event.paths.is_empty()
+        || matches!(
+            event.kind,
+            EventKind::Remove(notify::event::RemoveKind::Folder)
+        )
+    {
+        return true;
+    }
+    event.paths.iter().any(|path| {
+        if path.is_dir() {
+            return true;
+        }
+        let normalized = normalize_watch_path(path);
+        roots
+            .iter()
+            .any(|root| normalize_watch_path(root).starts_with(&normalized))
+    })
 }
 
 fn dispatch(
@@ -415,5 +438,47 @@ mod tests {
         assert_eq!(take(&dropped), [(1, true)]);
         let overflow = notify::Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan);
         assert_eq!(take(&overflow), [(0, true), (1, true)]);
+    }
+
+    #[test]
+    fn file_renames_and_journal_removals_do_not_reset_all_watches() {
+        let temp = tempfile::tempdir().unwrap();
+        let sessions = temp.path().join("sessions");
+        let db = temp.path().join("globalStorage/state.vscdb");
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let transcript = sessions.join("session.jsonl");
+        let tmp_file = sessions.join("session.jsonl.tmp");
+        std::fs::write(&transcript, "{}\n").unwrap();
+        let subdir = sessions.join("nested");
+        std::fs::create_dir(&subdir).unwrap();
+        let roots = vec![sessions.clone(), db.clone()];
+
+        let atomic_rename = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Name(
+            notify::event::RenameMode::Both,
+        )))
+        .add_path(tmp_file)
+        .add_path(transcript);
+        assert!(!needs_watch_reset(&roots, &atomic_rename));
+
+        let journal_removed = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::Any))
+            .add_path(PathBuf::from(format!("{}-journal", db.display())));
+        assert!(!needs_watch_reset(&roots, &journal_removed));
+
+        let dir_rename = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Name(
+            notify::event::RenameMode::To,
+        )))
+        .add_path(subdir);
+        assert!(needs_watch_reset(&roots, &dir_rename));
+
+        let root_removed = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::Any))
+            .add_path(sessions);
+        assert!(needs_watch_reset(&roots, &root_removed));
+
+        let ancestor_renamed = notify::Event::new(EventKind::Modify(
+            notify::event::ModifyKind::Name(notify::event::RenameMode::Any),
+        ))
+        .add_path(db.parent().unwrap().to_path_buf());
+        assert!(needs_watch_reset(&roots, &ancestor_renamed));
     }
 }

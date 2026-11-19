@@ -45,10 +45,10 @@ import {
   SessionDetailAuxOverlay,
 } from "./session-detail/SessionDetailAux";
 import { SessionMessageTimeline } from "./session-detail/SessionMessageTimeline";
+import { MessagePagingControls } from "./session-detail/MessagePagingControls";
 import { SessionFindBar } from "./session-detail/SessionFindBar";
 import type { LoadedSessionFindMatch } from "./session-detail/session-find";
 import { useSessionFind, useSessionFindState } from "./session-detail/useSessionFind";
-import { MessagePagingControls } from "./session-detail/MessagePagingControls";
 import { SessionStats } from "./session-detail/SessionStats";
 import { SessionSubSessions } from "./session-detail/SessionSubSessions";
 import {

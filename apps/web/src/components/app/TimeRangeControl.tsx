@@ -1,9 +1,14 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import type { TimeWindow, TimeWindowPreset } from "../../lib/time-window";
 import { cn } from "../../lib/utils";
-import { CustomTimeWindowDialog } from "../CustomTimeWindowDialog";
+
+const CustomTimeWindowDialog = lazy(() =>
+  import("../CustomTimeWindowDialog").then((module) => ({
+    default: module.CustomTimeWindowDialog,
+  })),
+);
 
 const PRESETS: readonly { value: TimeWindowPreset; label: string }[] = [
   { value: "7d", label: "7d" },
@@ -74,14 +79,18 @@ export function TimeRangeControl({
           );
         })}
       </div>
-      <CustomTimeWindowDialog
-        open={customOpen}
-        onOpenChange={setCustomOpen}
-        window={window}
-        customFrom={customFrom}
-        customTo={customTo}
-        onSelectCustom={onSelectCustom}
-      />
+      {customOpen ? (
+        <Suspense fallback={null}>
+          <CustomTimeWindowDialog
+            open={customOpen}
+            onOpenChange={setCustomOpen}
+            window={window}
+            customFrom={customFrom}
+            customTo={customTo}
+            onSelectCustom={onSelectCustom}
+          />
+        </Suspense>
+      ) : null}
     </>
   );
 }

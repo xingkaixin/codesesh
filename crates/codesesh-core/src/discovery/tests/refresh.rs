@@ -221,3 +221,152 @@ fn persisted_file_state_skips_bodies_and_rechecks_changes_after_restart() {
     commit_page(&mut cache, &mut removed);
     assert!(cache.snapshot().unwrap().is_empty());
 }
+
+#[test]
+fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_companions_and_deletions()
+{
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("claude");
+    let project = root.join("projects/-work-demo");
+    std::fs::create_dir_all(&project).unwrap();
+    let first = project.join("11111111-1111-4111-8111-000000000001.jsonl");
+    let second = project.join("11111111-1111-4111-8111-000000000002.jsonl");
+    let index = project.join("sessions-index.json");
+    let write_claude = |path: &Path, id: &str, text: &str| {
+        std::fs::write(
+            path,
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "type": "user",
+                    "uuid": "u1",
+                    "timestamp": "2026-10-01T00:00:00.000Z",
+                    "cwd": "/work/demo",
+                    "sessionId": id,
+                    "message": { "role": "user", "content": text }
+                })
+            ),
+        )
+        .unwrap();
+    };
+    write_claude(&first, "11111111-1111-4111-8111-000000000001", "First");
+    write_claude(&second, "11111111-1111-4111-8111-000000000002", "Second");
+    std::fs::write(&index, r#"{"entries":[]}"#).unwrap();
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "claudecode".into(),
+        data_root: root.clone(),
+        scan_path: root.join("projects"),
+    };
+
+    // Targeted items produce the exact same fingerprint as full inventory.
+    let full: std::collections::HashMap<_, _> = super::super::backfill::inventory(&source)
+        .unwrap()
+        .into_iter()
+        .map(|item| (item.key, item.fingerprint))
+        .collect();
+    let targeted = super::super::backfill::targeted_items(
+        &source,
+        std::slice::from_ref(&first),
+        &std::collections::HashSet::new(),
+    )
+    .unwrap()
+    .expect("regular Claude transcript should take targeted fast path");
+    assert_eq!(targeted.len(), 1);
+    assert_eq!(targeted[0].fingerprint, full[&targeted[0].key]);
+
+    // Companion files, directories, and missing paths fall back to full inventory.
+    assert!(
+        super::super::backfill::targeted_items(
+            &source,
+            std::slice::from_ref(&index),
+            &std::collections::HashSet::new(),
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert!(
+        super::super::backfill::targeted_items(
+            &source,
+            std::slice::from_ref(&project),
+            &std::collections::HashSet::new(),
+        )
+        .unwrap()
+        .is_none()
+    );
+
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 2);
+    cache
+        .apply_checkpoint(
+            &mut initial.sessions,
+            &initial.removed,
+            "claudecode",
+            &initial.checkpoint,
+            initial.complete,
+        )
+        .unwrap();
+    initial.on_reject.take();
+
+    // Targeted live update refreshes only the modified file and retains untouched siblings.
+    write_claude(
+        &first,
+        "11111111-1111-4111-8111-000000000001",
+        "First updated",
+    );
+    let mut updated = scanner.refresh(Some(std::slice::from_ref(&first))).unwrap();
+    assert_eq!(updated.sessions.len(), 1);
+    assert_eq!(updated.sessions[0].head.title, "First updated");
+    assert!(updated.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut updated.sessions,
+            &updated.removed,
+            "claudecode",
+            &updated.checkpoint,
+            updated.complete,
+        )
+        .unwrap();
+    updated.on_reject.take();
+
+    // Warm restart sees matching fingerprints for both sessions and parses nothing.
+    let mut warm_scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut warm = warm_scanner.refresh(None).unwrap();
+    assert!(warm.sessions.is_empty());
+    assert!(warm.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut warm.sessions,
+            &warm.removed,
+            "claudecode",
+            &warm.checkpoint,
+            warm.complete,
+        )
+        .unwrap();
+    warm.on_reject.take();
+
+    // Deleting the file falls back to full inventory and removes only the deleted session.
+    std::fs::remove_file(&first).unwrap();
+    let mut deleted = warm_scanner.refresh(Some(&[first])).unwrap();
+    assert!(deleted.sessions.is_empty());
+    assert_eq!(deleted.removed.len(), 1);
+    assert_eq!(
+        deleted.removed[0].session_id,
+        "11111111-1111-4111-8111-000000000001"
+    );
+    cache
+        .apply_checkpoint(
+            &mut deleted.sessions,
+            &deleted.removed,
+            "claudecode",
+            &deleted.checkpoint,
+            deleted.complete,
+        )
+        .unwrap();
+    deleted.on_reject.take();
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+}

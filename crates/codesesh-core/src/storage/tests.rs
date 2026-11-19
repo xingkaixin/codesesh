@@ -31,7 +31,12 @@ fn source_nodes_isolate_content_search_and_updates() {
     let mut cache = Cache::open(None).unwrap();
     cache.publish(std::slice::from_mut(&mut local)).unwrap();
     cache.publish(std::slice::from_mut(&mut remote)).unwrap();
-    let snapshot = cache.snapshot().unwrap();
+    let snapshot: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(Arc::new)
+        .collect();
     assert_eq!(snapshot.len(), 2);
     assert_eq!(cache.agent_snapshot("codex").unwrap().len(), 1);
     assert_eq!(cache.json_baseline().unwrap().heads.len(), 1);
@@ -369,18 +374,35 @@ fn refreshed_snapshot_matches_durable_order_updates_and_removals() {
     ];
     let mut cache = Cache::open(None).unwrap();
     cache.publish(&mut sessions).unwrap();
-    let previous = cache.snapshot().unwrap();
+    let previous: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(Arc::new)
+        .collect();
+    let unchanged_ref = sessions[2].head.reference.clone();
+    let unchanged_prev = previous
+        .iter()
+        .find(|head| head.reference == unchanged_ref)
+        .unwrap()
+        .clone();
     let removed = sessions[1].head.reference.clone();
     sessions[0].head.title = "Changed".into();
     sessions[0].head.time_updated += 1000.0;
     let changed = sessions[0].head.reference.clone();
     cache.apply(&mut sessions[..1], &[removed]).unwrap();
     let refreshed = cache.refresh_snapshot(&previous, &[changed]).unwrap();
+    let refreshed_values: Vec<_> = refreshed.iter().map(|head| (**head).clone()).collect();
     assert_eq!(
-        serde_json::to_value(&refreshed).unwrap(),
+        serde_json::to_value(&refreshed_values).unwrap(),
         serde_json::to_value(cache.snapshot().unwrap()).unwrap()
     );
     assert_eq!(refreshed[0].title, "Changed");
+    let unchanged_after = refreshed
+        .iter()
+        .find(|head| head.reference == unchanged_ref)
+        .unwrap();
+    assert!(Arc::ptr_eq(&unchanged_prev, unchanged_after));
     cache
         .apply(
             &mut [],
@@ -391,6 +413,70 @@ fn refreshed_snapshot_matches_durable_order_updates_and_removals() {
         )
         .unwrap();
     assert!(cache.refresh_snapshot(&refreshed, &[]).unwrap().is_empty());
+}
+
+#[test]
+fn batched_refresh_snapshot_matches_full_snapshot_across_chunks_and_reuses_unchanged_arcs() {
+    let root = tempfile::tempdir().unwrap();
+    let template = source(root.path(), "batch");
+    let total = 300usize;
+    let mut sessions: Vec<_> = (0..total)
+        .map(|index| {
+            let mut session = template.clone();
+            session.head.reference.session_id = format!("batch-{index:04}");
+            session.detail.head.reference = session.head.reference.clone();
+            session.head.title = format!("Initial {index}");
+            session.detail.head.title = session.head.title.clone();
+            session.head.time_created = 1_700_000_000_000.0 + (index as f64) * 1000.0;
+            session.head.time_updated = session.head.time_created;
+            session.detail.head.time_created = session.head.time_created;
+            session.detail.head.time_updated = session.head.time_updated;
+            session
+        })
+        .collect();
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(&mut sessions).unwrap();
+    let previous: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(Arc::new)
+        .collect();
+    let previous_by_ref: HashMap<_, _> = previous
+        .iter()
+        .map(|head| (head.reference.clone(), head.clone()))
+        .collect();
+
+    // Update 270 sessions (> HEAD_BATCH_SIZE=250) and leave 30 untouched.
+    let changed_count = 270usize;
+    for session in &mut sessions[..changed_count] {
+        session.head.title.push_str(" updated");
+        session.detail.head.title = session.head.title.clone();
+        session.head.time_updated += 500_000.0;
+        session.detail.head.time_updated = session.head.time_updated;
+    }
+    let changed_refs: Vec<_> = sessions[..changed_count]
+        .iter()
+        .map(|session| session.head.reference.clone())
+        .collect();
+    cache.publish(&mut sessions[..changed_count]).unwrap();
+
+    let refreshed = cache.refresh_snapshot(&previous, &changed_refs).unwrap();
+    let durable = cache.snapshot().unwrap();
+    let refreshed_values: Vec<_> = refreshed.iter().map(|head| (**head).clone()).collect();
+    assert_eq!(
+        serde_json::to_value(&refreshed_values).unwrap(),
+        serde_json::to_value(&durable).unwrap()
+    );
+    let changed_set: std::collections::HashSet<_> = changed_refs.iter().collect();
+    for head in &refreshed {
+        let prev = &previous_by_ref[&head.reference];
+        if changed_set.contains(&head.reference) {
+            assert!(!Arc::ptr_eq(prev, head));
+        } else {
+            assert!(Arc::ptr_eq(prev, head));
+        }
+    }
 }
 
 #[test]
@@ -678,4 +764,85 @@ fn schema38_migrates_in_place_to_schema39_and_rebuilds_fts() {
             assert_eq!(results.len(), 1, "query={query}");
         }
     }
+}
+
+#[test]
+fn single_upsert_persists_and_updates_all_session_columns() {
+    let root = tempfile::tempdir().unwrap();
+    let parent = source(root.path(), "parent");
+    let mut child = source(root.path(), "child");
+    child.head.parent_reference = Some(parent.head.reference.clone());
+    child.head.stats.total_cache_read_tokens = Some(120.0);
+    child.head.stats.total_cache_create_tokens = Some(45.0);
+    child.head.stats.total_tokens = Some(500.0);
+    child.head.stats.cost_source = Some(CostSource::Estimated);
+    child.head.model_usage = Some(std::collections::BTreeMap::from([(
+        "gpt-5.4".into(),
+        120.0,
+    )]));
+    child.head.smart_tags = vec!["bugfix".into(), "testing".into()];
+    child.head.version = Some("v1".into());
+    child.head.summary_files = Some(serde_json::json!([{"path":"src/lib.rs"}]));
+    child.head.recorded_git_remotes = vec!["https://github.com/example/repo.git".into()];
+    child.detail.head = child.head.clone();
+
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(&mut [parent.clone(), child.clone()]).unwrap();
+    let inserted = cache.head(&child.head.reference).unwrap().unwrap();
+    assert_eq!(
+        inserted.parent_reference,
+        Some(parent.head.reference.clone())
+    );
+    assert_eq!(inserted.stats.total_cache_read_tokens, Some(120.0));
+    assert_eq!(inserted.stats.total_cache_create_tokens, Some(45.0));
+    assert_eq!(inserted.stats.total_tokens, Some(500.0));
+    assert_eq!(inserted.stats.cost_source, Some(CostSource::Estimated));
+    assert_eq!(inserted.model_usage, child.head.model_usage);
+    assert_eq!(inserted.smart_tags, vec!["bugfix", "testing"]);
+    assert_eq!(inserted.version.as_deref(), Some("v1"));
+    assert_eq!(inserted.summary_files, child.head.summary_files);
+    assert_eq!(
+        inserted.recorded_git_remotes,
+        vec!["https://github.com/example/repo.git"]
+    );
+    let meta_present: bool = cache
+        .connection()
+        .query_row(
+            "SELECT meta_json IS NOT NULL AND head_meta_json IS NOT NULL FROM sessions WHERE session_id=?",
+            [&child.head.reference.session_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(meta_present);
+
+    // Trigger ON CONFLICT DO UPDATE (retaining existing messages path) and verify all columns update cleanly.
+    child.head.title = "Updated child title".into();
+    child.head.parent_reference = None;
+    child.head.stats.total_cache_read_tokens = Some(240.0);
+    child.head.stats.total_cache_create_tokens = None;
+    child.head.stats.total_tokens = Some(900.0);
+    child.head.stats.cost_source = Some(CostSource::Recorded);
+    child.head.model_usage = Some(std::collections::BTreeMap::from([(
+        "gpt-5.4".into(),
+        360.0,
+    )]));
+    child.head.smart_tags = vec!["refactoring".into()];
+    child.head.version = Some("v2".into());
+    child.head.summary_files = None;
+    child.head.recorded_git_remotes.clear();
+    child.detail.head = child.head.clone();
+
+    cache.publish(std::slice::from_mut(&mut child)).unwrap();
+    let updated = cache.head(&child.head.reference).unwrap().unwrap();
+    assert_eq!(updated.title, "Updated child title");
+    assert_eq!(updated.parent_reference, None);
+    assert_eq!(updated.stats.total_cache_read_tokens, Some(240.0));
+    assert_eq!(updated.stats.total_cache_create_tokens, None);
+    assert_eq!(updated.stats.total_tokens, Some(900.0));
+    assert_eq!(updated.stats.cost_source, Some(CostSource::Recorded));
+    assert_eq!(updated.model_usage, child.head.model_usage);
+    assert_eq!(updated.smart_tags, vec!["refactoring"]);
+    assert_eq!(updated.version.as_deref(), Some("v2"));
+    assert_eq!(updated.summary_files, None);
+    assert!(updated.recorded_git_remotes.is_empty());
 }

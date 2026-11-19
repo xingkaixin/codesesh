@@ -444,6 +444,7 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+ "winapi-util",
  "zstd",
 ]
 

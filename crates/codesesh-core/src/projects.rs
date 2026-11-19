@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     cell::Cell,
-    collections::VecDeque,
+    collections::HashMap,
     process::{Command, Stdio},
     sync::{LazyLock, Mutex},
     time::{Duration, Instant},
 };
 
 pub(crate) const PROJECT_IDENTITY_RESOLVER_REVISION: &str = "project-identity-v2";
-pub(crate) const IDENTITY_CACHE_MAX_ENTRIES: usize = 512;
+pub(crate) const IDENTITY_CACHE_MAX_ENTRIES: usize = 4096;
 const MANIFESTS: [&str; 7] = [
     "package.json",
     "Cargo.toml",
@@ -110,15 +110,23 @@ struct DirectoryProbe {
 }
 
 struct CacheEntry {
-    directory: String,
     probe: DirectoryProbe,
     time: Instant,
+    used: u64,
 }
-static CACHE: Mutex<VecDeque<CacheEntry>> = Mutex::new(VecDeque::new());
+#[derive(Default)]
+struct IdentityCache {
+    entries: HashMap<String, CacheEntry>,
+    clock: u64,
+}
+static CACHE: LazyLock<Mutex<IdentityCache>> =
+    LazyLock::new(|| Mutex::new(IdentityCache::default()));
 
 #[cfg(test)]
 pub(crate) fn clear_identity_cache() {
-    CACHE.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    cache.entries.clear();
+    cache.clock = 0;
 }
 
 pub(crate) fn normalize_project_directory(directory: &str) -> String {
@@ -213,17 +221,20 @@ pub(crate) fn compute_identity_projection_with_context(
     let mut cached_probe = None;
     let probe = {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(index) = cache.iter().position(|entry| entry.directory == key) {
-            let entry = cache.remove(index).unwrap();
-            if entry.time.elapsed() < Duration::from_secs(600) {
-                let probe = entry.probe.clone();
-                cache.push_back(entry);
-                Some(probe)
-            } else {
-                cached_probe = Some(entry.probe);
-                None
-            }
+        let fresh = cache
+            .entries
+            .get(&key)
+            .is_some_and(|entry| entry.time.elapsed() < Duration::from_secs(600));
+        if fresh {
+            cache.clock = cache.clock.wrapping_add(1);
+            let tick = cache.clock;
+            let entry = cache.entries.get_mut(&key).unwrap();
+            entry.used = tick;
+            Some(entry.probe.clone())
         } else {
+            if let Some(entry) = cache.entries.remove(&key) {
+                cached_probe = Some(entry.probe);
+            }
             None
         }
     };
@@ -244,13 +255,27 @@ pub(crate) fn compute_identity_projection_with_context(
                 _ => probed,
             };
             let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-            cache.push_back(CacheEntry {
-                directory: key,
-                probe: probe.clone(),
-                time: Instant::now(),
-            });
-            while cache.len() > IDENTITY_CACHE_MAX_ENTRIES {
-                cache.pop_front();
+            cache.clock = cache.clock.wrapping_add(1);
+            let tick = cache.clock;
+            cache.entries.insert(
+                key,
+                CacheEntry {
+                    probe: probe.clone(),
+                    time: Instant::now(),
+                    used: tick,
+                },
+            );
+            while cache.entries.len() > IDENTITY_CACHE_MAX_ENTRIES {
+                if let Some(oldest) = cache
+                    .entries
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.used)
+                    .map(|(directory, _)| directory.clone())
+                {
+                    cache.entries.remove(&oldest);
+                } else {
+                    break;
+                }
             }
             probe
         }

@@ -62,6 +62,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some(query.into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -72,6 +73,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some(query.into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -90,6 +92,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some(query.into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -104,6 +107,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
             dashboard(
                 AxumState(state.clone()),
                 RawQuery(Some(format!("{query}{filter}"))),
+                HeaderMap::new(),
                 Extension(Default::default()),
             )
             .await,
@@ -115,6 +119,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some("from=2026-09-03&to=2026-09-04&timeZone=UTC".into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -125,6 +130,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some(query.replace("UTC", "Asia/Shanghai"))),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -138,6 +144,7 @@ async fn cached_dashboard_keeps_scopes_windows_zones_aliases_and_publications_di
         dashboard(
             AxumState(state.clone()),
             RawQuery(Some(query.into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -197,6 +204,7 @@ async fn dashboard_days_follow_the_request_time_zone() {
         dashboard(
             AxumState(state),
             RawQuery(Some(shanghai_day.into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -292,6 +300,7 @@ async fn projects_sort_globally_before_pagination_and_scope_cursors() {
                     projects(
                         AxumState(state.clone()),
                         RawQuery(Some(q)),
+                        HeaderMap::new(),
                         Extension(Default::default()),
                     )
                     .await,
@@ -348,6 +357,7 @@ async fn projects_sort_globally_before_pagination_and_scope_cursors() {
         projects(
             AxumState(state.clone()),
             RawQuery(Some("limit=2".into())),
+            HeaderMap::new(),
             Extension(Default::default()),
         )
         .await,
@@ -357,6 +367,7 @@ async fn projects_sort_globally_before_pagination_and_scope_cursors() {
     let explicit_latest = projects(
         AxumState(state.clone()),
         RawQuery(Some(format!("limit=2&sort=latest&cursor={cursor}"))),
+        HeaderMap::new(),
         Extension(Default::default()),
     )
     .await;
@@ -365,6 +376,7 @@ async fn projects_sort_globally_before_pagination_and_scope_cursors() {
     let mismatched = projects(
         AxumState(state.clone()),
         RawQuery(Some(format!("limit=2&sort=cost&cursor={cursor}"))),
+        HeaderMap::new(),
         Extension(Default::default()),
     )
     .await;
@@ -374,10 +386,61 @@ async fn projects_sort_globally_before_pagination_and_scope_cursors() {
     let invalid = projects(
         AxumState(state),
         RawQuery(Some("limit=2&sort=invalid".into())),
+        HeaderMap::new(),
         Extension(Default::default()),
     )
     .await;
     assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
 
     runtime.shutdown().await.unwrap();
+}
+
+#[test]
+fn cached_catalog_coalesces_concurrent_misses_per_revision_and_key() {
+    use std::sync::{
+        Barrier,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let cache = Arc::new(Mutex::new(CatalogCache::<u64>::default()));
+    let builds = Arc::new(AtomicUsize::new(0));
+    let start = Arc::new(Barrier::new(8));
+    let mut handles = Vec::new();
+    for _ in 0..8 {
+        let cache = cache.clone();
+        let builds = builds.clone();
+        let start = start.clone();
+        handles.push(std::thread::spawn(move || {
+            start.wait();
+            cached_catalog(&cache, 7, json!(["dashboard", "same"]), || {
+                builds.fetch_add(1, Ordering::AcqRel);
+                std::thread::sleep(std::time::Duration::from_millis(40));
+                Ok(42)
+            })
+            .unwrap()
+        }));
+    }
+    for handle in handles {
+        assert_eq!(handle.join().unwrap(), 42);
+    }
+    assert_eq!(builds.load(Ordering::Acquire), 1);
+
+    // Failed leader clears in-flight entry and wakes waiters so subsequent callers can retry.
+    let fail_start = Arc::new(Barrier::new(2));
+    let mut fail_handles = Vec::new();
+    for _ in 0..2 {
+        let cache = cache.clone();
+        let fail_start = fail_start.clone();
+        fail_handles.push(std::thread::spawn(move || {
+            fail_start.wait();
+            cached_catalog(&cache, 8, json!(["dashboard", "err"]), || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                anyhow::bail!("transient failure")
+            })
+        }));
+    }
+    for handle in fail_handles {
+        assert!(handle.join().unwrap().is_err());
+    }
+    let recovered = cached_catalog(&cache, 8, json!(["dashboard", "err"]), || Ok(99)).unwrap();
+    assert_eq!(recovered, 99);
 }

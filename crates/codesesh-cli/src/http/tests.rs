@@ -1461,6 +1461,376 @@ async fn pricing_override_save_and_delete_reprice_in_background_without_blocking
 }
 
 #[tokio::test]
+async fn search_reuses_published_in_memory_snapshot() {
+    use codesesh_core::{
+        agents::{ParsedSession, parse_codex},
+        pricing::Pricing,
+        storage::Cache,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("rollout-search.jsonl");
+    std::fs::write(
+        &source,
+        concat!(
+            "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
+            "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Needle in transcript\"}]}}\n"
+        ),
+    )
+    .unwrap();
+    let data = parse_codex(&source, &Default::default(), &Pricing::bundled())
+        .unwrap()
+        .unwrap();
+    let reference = data.head.reference.clone();
+    let mut sessions = [ParsedSession {
+        head: data.head.clone(),
+        detail: data,
+        source,
+    }];
+    let db_path = dir.path().join("cache.db");
+    let mut external = Cache::open(Some(&db_path)).unwrap();
+    external.publish(&mut sessions).unwrap();
+
+    let runtime = Runtime::start(db_path.clone(), vec![], 1).await.unwrap();
+    let published = runtime.snapshot();
+    assert_eq!(published.len(), 1);
+
+    // Mutate the SQLite title directly outside the runtime writer: read_snapshot must
+    // still hand back the exact published in-memory Arc<SessionHead> without re-querying SQLite.
+    external
+        .connection()
+        .execute("UPDATE sessions SET title='Mutated outside runtime'", [])
+        .unwrap();
+    let ptr_matches = runtime
+        .read_snapshot({
+            let expected = published[0].clone();
+            move |_conn, heads| {
+                Ok(heads.len() == 1
+                    && Arc::ptr_eq(&heads[0], &expected)
+                    && heads[0].title == expected.title)
+            }
+        })
+        .await
+        .unwrap();
+    assert!(ptr_matches);
+
+    let saved = StateStore::memory().unwrap();
+    saved
+        .upsert_alias(&reference, "Custom Alias Match")
+        .unwrap();
+    let state = Arc::new(State::new(
+        runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(saved),
+        Options {
+            token: Some("secret".into()),
+            hostname: "127.0.0.1".into(),
+            port: 4521,
+            tls: false,
+            trust_proxy: false,
+            public_origin: None,
+            loopback_authority: true,
+            default_from: None,
+            default_to: None,
+            default_days: Some(0),
+            enabled_agents: vec!["codex".into()],
+            cwd: None,
+        },
+    ));
+    let app = router(state);
+    let auth = [("authorization", "Bearer secret")];
+
+    // Empty-query browse uses the in-memory snapshot title (not the out-of-band SQLite mutation).
+    let (status, recent) = request(&app, Method::GET, "/api/search?q=", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let results = recent["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["session"]["title"], published[0].title);
+    assert_eq!(results[0]["session"]["display_title"], "Custom Alias Match");
+
+    // Text FTS search still queries SQLite FTS and resolves alias matches in the same transaction.
+    let (status, fts) = request(&app, Method::GET, "/api/search?q=Needle", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fts["results"].as_array().unwrap().len(), 1);
+
+    let (status, alias_hit) =
+        request(&app, Method::GET, "/api/search?q=Custom%20Alias", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let alias_results = alias_hit["results"].as_array().unwrap();
+    assert_eq!(alias_results.len(), 1);
+    assert_eq!(
+        alias_results[0]["session"]["title"],
+        "Mutated outside runtime"
+    );
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn read_only_endpoints_support_weak_etag_304_and_invalidate_on_updates() {
+    use axum::http::header;
+    use codesesh_core::{
+        agents::{ParsedSession, parse_codex},
+        pricing::Pricing,
+        runtime::{AgentSource, ScanBatch},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    async fn raw_request(
+        app: &Router,
+        method: Method,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut req = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("host", "localhost:4521");
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let response = app
+            .clone()
+            .oneshot(req.body(Body::from(body.to_owned())).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap()
+            .to_vec();
+        (status, headers, bytes)
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let first_path = dir.path().join("rollout-etag-1.jsonl");
+    let second_path = dir.path().join("rollout-etag-2.jsonl");
+    std::fs::write(
+        &first_path,
+        concat!(
+            "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
+            "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"First session\"}]}}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &second_path,
+        concat!(
+            "{\"timestamp\":\"2026-09-01T11:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture-two\"}}\n",
+            "{\"timestamp\":\"2026-09-01T11:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Second session\"}]}}\n"
+        ),
+    )
+    .unwrap();
+
+    let scan_stage = Arc::new(AtomicUsize::new(1));
+    let stage = scan_stage.clone();
+    let p1 = first_path.clone();
+    let p2 = second_path.clone();
+    let source = AgentSource {
+        name: "codex".into(),
+        roots: vec![],
+        release_idle: None,
+        scan: Arc::new(move |_| {
+            let mut sessions = Vec::new();
+            let parsed1 = parse_codex(&p1, &Default::default(), &Pricing::bundled())?.unwrap();
+            sessions.push(ParsedSession {
+                head: parsed1.head.clone(),
+                detail: parsed1,
+                source: p1.clone(),
+            });
+            if stage.load(Ordering::Acquire) >= 2 {
+                let parsed2 = parse_codex(&p2, &Default::default(), &Pricing::bundled())?.unwrap();
+                sessions.push(ParsedSession {
+                    head: parsed2.head.clone(),
+                    detail: parsed2,
+                    source: p2.clone(),
+                });
+            }
+            Ok(ScanBatch {
+                source_presence: None,
+                sessions,
+                removed: vec![],
+                checkpoint: None,
+                complete: true,
+                completion: None,
+                on_reject: None,
+                pricing: None,
+            })
+        }),
+    };
+    let runtime = Runtime::start(dir.path().join("cache.db"), vec![source], 2)
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while runtime.snapshot().len() != 1 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let state = Arc::new(State::new(
+        runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(StateStore::memory().unwrap()),
+        Options {
+            token: Some("secret".into()),
+            hostname: "127.0.0.1".into(),
+            port: 4521,
+            tls: false,
+            trust_proxy: false,
+            public_origin: None,
+            loopback_authority: true,
+            default_from: None,
+            default_to: None,
+            default_days: Some(0),
+            enabled_agents: vec!["codex".into()],
+            cwd: None,
+        },
+    ));
+    let app = router(state);
+    let auth = [("authorization", "Bearer secret")];
+
+    let routes = [
+        "/api/dashboard?from=2026-09-01&to=2026-09-02&timeZone=UTC",
+        "/api/projects?from=2026-09-01&to=2026-09-02",
+        "/api/sessions?from=2026-09-01&to=2026-09-02",
+        "/api/agents?from=2026-09-01&to=2026-09-02",
+    ];
+    let mut initial_etags = Vec::new();
+    for path in routes {
+        let (status, headers, bytes) = raw_request(&app, Method::GET, path, &auth, "").await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert!(!bytes.is_empty(), "{path}");
+        assert_eq!(
+            headers
+                .get(header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-cache"),
+            "{path}"
+        );
+        let etag = headers
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .expect("weak ETag header")
+            .to_owned();
+        assert!(etag.starts_with("W/\""), "{path}: {etag}");
+
+        let (status_304, headers_304, body_304) = raw_request(
+            &app,
+            Method::GET,
+            path,
+            &[("authorization", "Bearer secret"), ("if-none-match", &etag)],
+            "",
+        )
+        .await;
+        assert_eq!(status_304, StatusCode::NOT_MODIFIED, "{path}");
+        assert!(body_304.is_empty(), "{path}");
+        assert_eq!(
+            headers_304.get(header::ETAG).and_then(|v| v.to_str().ok()),
+            Some(etag.as_str()),
+            "{path}"
+        );
+        assert_eq!(
+            headers_304
+                .get(header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-cache"),
+            "{path}"
+        );
+        initial_etags.push(etag);
+    }
+
+    // Alias update must invalidate /api/dashboard and /api/sessions ETags.
+    let session_id = runtime.snapshot()[0].reference.session_id.clone();
+    let (status, _, _) = raw_request(
+        &app,
+        Method::PUT,
+        &format!("/api/session-aliases/codex/{session_id}"),
+        &[
+            ("authorization", "Bearer secret"),
+            ("content-type", "application/json"),
+        ],
+        r#"{"alias":"Renamed via API"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for idx in [0usize, 2usize] {
+        let path = routes[idx];
+        let (status, headers, body) = raw_request(
+            &app,
+            Method::GET,
+            path,
+            &[
+                ("authorization", "Bearer secret"),
+                ("if-none-match", &initial_etags[idx]),
+            ],
+            "",
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "alias update should invalidate {path}"
+        );
+        let next_etag = headers
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .unwrap()
+            .to_owned();
+        assert_ne!(next_etag, initial_etags[idx], "{path}");
+        assert!(String::from_utf8_lossy(&body).contains("Renamed via API"));
+        initial_etags[idx] = next_etag;
+    }
+
+    // Publishing a second session bumps snapshot & analytics revisions, invalidating all 4 routes.
+    scan_stage.store(2, Ordering::Release);
+    runtime.refresh_all();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while runtime.snapshot().len() != 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    for (path, old_etag) in routes.iter().zip(&initial_etags) {
+        let (status, headers, _) = raw_request(
+            &app,
+            Method::GET,
+            path,
+            &[
+                ("authorization", "Bearer secret"),
+                ("if-none-match", old_etag),
+            ],
+            "",
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "revision bump should invalidate {path}"
+        );
+        let new_etag = headers
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .unwrap();
+        assert_ne!(new_etag, old_etag.as_str(), "{path}");
+    }
+
+    // Paginated response with an ephemeral nextCursor must omit ETag to avoid stale-cursor loops.
+    let (status, headers, body) =
+        raw_request(&app, Method::GET, "/api/sessions?limit=1", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let page: Value = serde_json::from_slice(&body).unwrap();
+    assert!(page["nextCursor"].as_str().is_some());
+    assert!(headers.get(header::ETAG).is_none());
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn session_matches_endpoint_returns_ordered_indices_and_isolates_nodes() {
     let (app, runtime, _dir) = app().await;
     let auth = [("authorization", "Bearer secret")];

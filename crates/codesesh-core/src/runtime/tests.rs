@@ -593,3 +593,41 @@ async fn failed_scan_retries_automatically_and_recovers() {
     assert!(runtime.status().agent_statuses["codex"].error.is_none());
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn standalone_and_hub_configure_expected_sqlite_pragmas() {
+    let dir = tempfile::tempdir().unwrap();
+    let standalone = Runtime::start(dir.path().join("standalone.db"), vec![], 1)
+        .await
+        .unwrap();
+    let standalone_sync: i64 = standalone
+        .hub_control(|cache| {
+            Ok(cache
+                .connection()
+                .pragma_query_value(None, "synchronous", |row| row.get(0))?)
+        })
+        .await
+        .unwrap();
+    // SQLite PRAGMA synchronous: 1 = NORMAL, 2 = FULL.
+    assert_eq!(standalone_sync, 1);
+    let reader_cache_size: i64 = standalone
+        .read(|conn| Ok(conn.pragma_query_value(None, "cache_size", |row| row.get(0))?))
+        .await
+        .unwrap();
+    assert_eq!(reader_cache_size, -16384);
+    standalone.shutdown().await.unwrap();
+
+    let hub = Runtime::start_hub(dir.path().join("hub.db"), vec![], 1)
+        .await
+        .unwrap();
+    let hub_sync: i64 = hub
+        .hub_control(|cache| {
+            Ok(cache
+                .connection()
+                .pragma_query_value(None, "synchronous", |row| row.get(0))?)
+        })
+        .await
+        .unwrap();
+    assert_eq!(hub_sync, 2);
+    hub.shutdown().await.unwrap();
+}

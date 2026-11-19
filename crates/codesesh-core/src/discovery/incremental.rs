@@ -72,6 +72,7 @@ pub struct AgentScanner {
         HashMap<crate::model::SessionReference, (crate::model::ProjectIdentity, Option<String>)>,
     durable_references: HashSet<crate::model::SessionReference>,
     initialized: bool,
+    retry_live_inventory: bool,
     history_complete: bool,
     backfill: Option<Backfill>,
     startup_from: Option<f64>,
@@ -82,7 +83,6 @@ pub struct AgentScanner {
         (Option<crate::model::SessionReference>, Option<PathBuf>),
     >,
     rejected: Arc<AtomicBool>,
-    cursor: agents::cursor::CursorSync,
     codex: agents::codex::Checkpoints,
     claude: agents::claudecode::Checkpoints,
     opencode: Option<DatabaseSnapshot>,
@@ -106,6 +106,7 @@ impl AgentScanner {
             previous_identities: HashMap::new(),
             durable_references: HashSet::new(),
             initialized: false,
+            retry_live_inventory: false,
             history_complete: false,
             backfill: None,
             startup_from: None,
@@ -113,7 +114,6 @@ impl AgentScanner {
             target: None,
             baseline: HashMap::new(),
             rejected: Arc::new(AtomicBool::new(false)),
-            cursor: Default::default(),
             codex: Default::default(),
             claude: Default::default(),
             opencode: None,
@@ -222,7 +222,6 @@ impl AgentScanner {
         if self.rejected.swap(false, Ordering::AcqRel) {
             self.initialized = false;
             self.backfill = None;
-            self.cursor = Default::default();
             self.opencode = None;
             self.fingerprints.clear();
         }
@@ -238,7 +237,13 @@ impl AgentScanner {
             if page_mode {
                 self.page(paths, checkpoint)
             } else {
-                self.read_live(paths)
+                let result = self.read_live(if self.retry_live_inventory {
+                    None
+                } else {
+                    paths
+                });
+                self.retry_live_inventory = result.is_err();
+                result
             }
         });
         let (mut delta, mut next_checkpoint, complete) = result?;
@@ -308,23 +313,21 @@ impl AgentScanner {
         self.initialized = true;
         self.empty_sources
             .retain(|key| self.file_fingerprints.contains_key(key));
-        if !matches!(self.source.agent.as_str(), "cursor") {
-            let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
-            checkpoint["incremental"] = self.history_complete.into();
-            checkpoint["sourceState"] = serde_json::json!({
-                "version": 1,
-                "sourceNodeId": self.source_node_id,
-                "historyComplete": self.history_complete || complete,
-                "parserVersion": agents::parser_version(&self.source.agent),
-                "generation": self.pricing.generation(),
-                "priceDependencies": self.price_dependencies,
-                "root": self.source.scan_path,
-                "antigravityProfiles": self.source.antigravity_profiles,
-                "files": self.file_fingerprints,
-                "databaseSessions": self.fingerprints,
-                "emptySources": self.empty_sources,
-            });
-        }
+        let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
+        checkpoint["incremental"] = self.history_complete.into();
+        checkpoint["sourceState"] = serde_json::json!({
+            "version": 1,
+            "sourceNodeId": self.source_node_id,
+            "historyComplete": self.history_complete || complete,
+            "parserVersion": agents::parser_version(&self.source.agent),
+            "generation": self.pricing.generation(),
+            "priceDependencies": self.price_dependencies,
+            "root": self.source.scan_path,
+            "antigravityProfiles": self.source.antigravity_profiles,
+            "files": self.file_fingerprints,
+            "databaseSessions": self.fingerprints,
+            "emptySources": self.empty_sources,
+        });
         // Workers poll in page mode every round, so reloading their baseline would repeat each time.
         if page_mode && complete && !self.worker && self.cache_path.is_file() {
             // Release headers interleaved with parsed bodies; the next refresh reloads durable metadata.
@@ -402,11 +405,10 @@ impl AgentScanner {
             if self.source_available == Some(false) && !self.durable_references.is_empty() {
                 return Ok((ScanDelta::default(), None, true));
             }
-            let restart = self.source.agent != "cursor"
-                && saved.is_some_and(|saved| {
-                    saved["sourceState"]["parserVersion"].as_str()
-                        != Some(agents::parser_version(&self.source.agent))
-                });
+            let restart = saved.is_some_and(|saved| {
+                saved["sourceState"]["parserVersion"].as_str()
+                    != Some(agents::parser_version(&self.source.agent))
+            });
             self.backfill = Some(Backfill::new(
                 items,
                 self.startup_from,
@@ -543,11 +545,11 @@ impl AgentScanner {
     fn read_dirty(&mut self) -> Result<ScanDelta> {
         let current = self.inventory()?;
         let plan = self.backfill.as_ref().unwrap();
-        let original: HashSet<_> = plan.items.iter().map(|item| item.key.as_str()).collect();
-        let added: Vec<_> = current
+        let original: HashMap<_, _> = plan
+            .items
             .iter()
-            .filter(|item| !original.contains(item.key.as_str()))
-            .cloned()
+            .enumerate()
+            .map(|(index, item)| (item.key.clone(), index))
             .collect();
         if current.iter().all(|item| item.path.is_none())
             && !has_sources(&self.source)?
@@ -555,28 +557,24 @@ impl AgentScanner {
         {
             return Ok(ScanDelta::default());
         }
+        let mut missing: HashSet<_> = plan.items[plan.offset..]
+            .iter()
+            .map(|item| item.key.clone())
+            .collect();
+        for item in &current {
+            missing.remove(&item.key);
+        }
         let eligible: HashSet<_> = plan.items[..plan.offset]
             .iter()
             .chain(
                 current
                     .iter()
-                    .filter(|item| !original.contains(item.key.as_str())),
+                    .filter(|item| !original.contains_key(&item.key)),
             )
             .map(|item| item.key.clone())
+            .chain(missing.iter().cloned())
             .collect();
         let result = match self.source.agent.as_str() {
-            "cursor" => {
-                let delta = self.cursor.refresh_selected(
-                    &self.source.scan_path,
-                    &self.pricing,
-                    &eligible,
-                )?;
-                Ok(ScanDelta {
-                    upserts: delta.upserts,
-                    removed: delta.removed,
-                    complete: false,
-                })
-            }
             "opencode" | "zcode" => {
                 let path = if self.source.agent == "opencode" {
                     self.source.scan_path.clone()
@@ -591,16 +589,28 @@ impl AgentScanner {
                     &eligible,
                     self.opencode.as_ref(),
                 )?;
-                let delta = ScanDelta {
+                let mut delta = ScanDelta {
                     upserts: std::mem::take(&mut snapshot.upserts),
                     removed: std::mem::take(&mut snapshot.removed),
                     complete: false,
                 };
+                let mut absent = missing.clone();
+                for session in &snapshot.sessions {
+                    absent.remove(&session.head.reference.session_id);
+                }
+                delta.removed.extend(
+                    self.durable_references
+                        .iter()
+                        .filter(|reference| absent.contains(&reference.session_id))
+                        .cloned(),
+                );
                 snapshot.release_bodies();
                 self.opencode = Some(snapshot);
                 Ok(delta)
             }
-            "deepchat" | "cherrystudio" | "minimax-code" => self.desktop_selected(Some(&eligible)),
+            "cursor" | "deepchat" | "cherrystudio" | "minimax-code" => {
+                self.desktop_selected(Some(&eligible))
+            }
             _ => {
                 let pending: Vec<_> = current
                     .iter()
@@ -644,13 +654,19 @@ impl AgentScanner {
             .iter()
             .map(|session| &session.source)
             .collect();
-        for item in &current {
+        let plan = self.backfill.as_mut().unwrap();
+        for item in current {
             if item.path.as_ref().is_some_and(|path| parsed.contains(path)) {
                 self.file_fingerprints
                     .insert(item.key.clone(), item.fingerprint.clone());
             }
+            match original.get(&item.key) {
+                Some(&index) if index >= plan.offset => plan.items[index] = item,
+                None => plan.items.push(item),
+                _ => {}
+            }
         }
-        self.backfill.as_mut().unwrap().items.extend(added);
+        plan.items.retain(|item| !missing.contains(&item.key));
         Ok(delta)
     }
     fn read_live(
@@ -660,6 +676,42 @@ impl AgentScanner {
         if agents::database_path(&self.source.agent, &self.source.scan_path).is_some() {
             self.source_available = Some(has_sources(&self.source)?);
             return Ok((self.read(paths)?, None, true));
+        }
+        if let Some(paths) = paths
+            && !paths.is_empty()
+        {
+            let known: HashSet<&str> = self.file_fingerprints.keys().map(String::as_str).collect();
+            if let Some(targeted) = super::backfill::targeted_items(&self.source, paths, &known)? {
+                self.source_available = Some(true);
+                let changed: Vec<_> = targeted
+                    .iter()
+                    .filter(|item| self.file_fingerprints.get(&item.key) != Some(&item.fingerprint))
+                    .collect();
+                if changed.len() > BATCH_SIZE
+                    || (changed.len() > 1
+                        && changed.iter().map(|item| item.bytes).sum::<u64>() > 16 * 1024 * 1024)
+                {
+                    return self.page(None, None);
+                }
+                let (mut delta, mut retained, _) = self.read_page(&targeted, false)?;
+                retained.extend(
+                    delta
+                        .upserts
+                        .iter()
+                        .map(|session| session.head.reference.clone()),
+                );
+                let scope = ItemScope::new(&targeted);
+                delta.removed.extend(
+                    self.baseline
+                        .iter()
+                        .filter(|(reference, _)| {
+                            !retained.contains(*reference) && self.matches_scope(reference, &scope)
+                        })
+                        .map(|(reference, _)| reference.clone()),
+                );
+                delta.complete = false;
+                return Ok((delta, None, true));
+            }
         }
         let current = self.inventory()?;
         self.source_available = Some(!current.is_empty() || has_sources(&self.source)?);
@@ -708,7 +760,7 @@ impl AgentScanner {
             by_source.entry(&record.source).or_default().push(record);
         }
         let mut by_key: HashMap<_, Vec<_>> = HashMap::new();
-        if self.source.agent != "cursor" && selected.iter().any(|item| item.path.is_none()) {
+        if selected.iter().any(|item| item.path.is_none()) {
             for record in &self.previous {
                 let mut reference = &record.head.reference;
                 let mut seen = HashSet::new();
@@ -733,7 +785,6 @@ impl AgentScanner {
                 None => by_key.get(&item.key),
             };
             let current = (records.is_some() || self.empty_sources.contains(&item.key))
-                && self.source.agent != "cursor"
                 && self.file_fingerprints.get(&item.key) == Some(&item.fingerprint)
                 && records.into_iter().flatten().all(|record| {
                     let projection = crate::projects::compute_identity_projection_with_context(
@@ -771,7 +822,7 @@ impl AgentScanner {
             consumed += 1;
         }
         let delta = self.read_selected(&changed)?;
-        for item in changed.iter().filter(|_| self.source.agent != "cursor") {
+        for item in &changed {
             if delta.upserts.iter().any(|session| match &item.path {
                 Some(path) => path == &session.source,
                 None => session.head.reference.session_id == item.key,
@@ -780,8 +831,15 @@ impl AgentScanner {
             } else {
                 self.empty_sources.insert(item.key.clone());
             }
-            self.file_fingerprints
-                .insert(item.key.clone(), item.fingerprint.clone());
+            let fingerprint = if item.path.is_none() {
+                self.fingerprints
+                    .get(&item.key)
+                    .cloned()
+                    .unwrap_or_else(|| item.fingerprint.clone())
+            } else {
+                item.fingerprint.clone()
+            };
+            self.file_fingerprints.insert(item.key.clone(), fingerprint);
         }
         Ok((delta, reused, consumed))
     }
@@ -792,7 +850,6 @@ impl AgentScanner {
         let ids: HashSet<_> = selected.iter().map(|item| item.key.clone()).collect();
         let root = &self.source.scan_path;
         let upserts = match self.source.agent.as_str() {
-            "cursor" => self.cursor.scan_selected(root, &self.pricing, &ids)?,
             "opencode" | "zcode" => {
                 let path = if self.source.agent == "opencode" {
                     root.clone()
@@ -812,8 +869,22 @@ impl AgentScanner {
                 self.opencode = Some(snapshot);
                 upserts
             }
-            "deepchat" | "cherrystudio" | "minimax-code" => {
+            "cursor" | "deepchat" | "cherrystudio" | "minimax-code" => {
                 let (upserts, fingerprints) = match self.source.agent.as_str() {
+                    "cursor" => {
+                        let keys = selected
+                            .iter()
+                            .map(|item| {
+                                (
+                                    item.key.clone(),
+                                    item.cursor_composer_key
+                                        .clone()
+                                        .expect("Cursor inventory lookup key"),
+                                )
+                            })
+                            .collect();
+                        agents::cursor::scan_page(root, &self.pricing, &keys)?
+                    }
                     "deepchat" => agents::deepchat::scan_page(root, &self.pricing, &ids)?,
                     "cherrystudio" => agents::cherrystudio::scan_page(root, &self.pricing, &ids)?,
                     _ => agents::minimax_code::scan_page(root, &self.pricing, &ids)?,
@@ -893,12 +964,9 @@ impl AgentScanner {
         )?;
         self.restore_source_state(state.as_ref(), complete);
 
-        for mut head in cache.source_agent_snapshot(&self.source_node_id, &self.source.agent)? {
-            let (source, has_cost_inputs): (Option<String>, bool) = cache.connection().query_row(
-                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE source_node_id=?1 AND agent_name=?2 AND session_id=?3",
-                [&self.source_node_id, &head.reference.agent_name, &head.reference.session_id],
-                |row| Ok((row.get(0)?,row.get(1)?)),
-            )?;
+        for (mut head, source, has_cost_inputs) in
+            cache.source_agent_restore_rows(&self.source_node_id, &self.source.agent)?
+        {
             let attachments = if head.reference.agent_name == "dsh" {
                 cache
                     .detail(head.clone())?
@@ -993,19 +1061,6 @@ impl AgentScanner {
         let root = &self.source.scan_path;
         let pricing = &self.pricing;
         match self.source.agent.as_str() {
-            "cursor" => {
-                if !has_sources(&self.source)?
-                    && (!self.previous.is_empty() || !self.durable_references.is_empty())
-                {
-                    return Ok(ScanDelta::default());
-                }
-                let delta = self.cursor.refresh(root, pricing)?;
-                Ok(ScanDelta {
-                    upserts: delta.upserts,
-                    removed: delta.removed,
-                    complete: false,
-                })
-            }
             "droid" if paths.is_some() => {
                 let paths = paths.unwrap();
                 let upserts = agents::droid::scan_paths(&self.source.data_root, pricing, paths)?;
@@ -1040,7 +1095,7 @@ impl AgentScanner {
                 self.opencode = Some(snapshot);
                 Ok(delta)
             }
-            "deepchat" | "cherrystudio" | "minimax-code" => self.desktop(),
+            "cursor" | "deepchat" | "cherrystudio" | "minimax-code" => self.desktop(),
             "kimi" if paths.is_some() => agents::kimi::scan_changed(
                 root,
                 &self.source.data_root,
@@ -1107,7 +1162,15 @@ impl AgentScanner {
             return Ok(ScanDelta::default());
         }
         let root = &self.source.scan_path;
+        let mut cursor_keys = HashMap::new();
         let current = match self.source.agent.as_str() {
+            "cursor" => agents::cursor::enumerate_session_keys(root)?
+                .into_iter()
+                .map(|key| {
+                    cursor_keys.insert(key.id.clone(), key.composer_key);
+                    (key.id, key.fingerprint)
+                })
+                .collect(),
             "deepchat" => agents::deepchat::fingerprints(root)?,
             "cherrystudio" => agents::cherrystudio::fingerprints(root)?,
             _ => agents::minimax_code::fingerprints(root)?,
@@ -1134,6 +1197,10 @@ impl AgentScanner {
             Vec::new()
         } else {
             match self.source.agent.as_str() {
+                "cursor" => {
+                    cursor_keys.retain(|id, _| changed.contains(id));
+                    agents::cursor::scan_page(root, &self.pricing, &cursor_keys)?.0
+                }
                 "deepchat" => agents::deepchat::scan_selected(root, &self.pricing, &changed)?,
                 "cherrystudio" => {
                     agents::cherrystudio::scan_selected(root, &self.pricing, &changed)?
@@ -1154,16 +1221,32 @@ impl AgentScanner {
                 })
                 .map(|session| session.head.reference.clone()),
         );
+        for id in &changed {
+            if upserts
+                .iter()
+                .any(|session| session.head.reference.session_id == *id)
+            {
+                self.empty_sources.remove(id);
+            } else {
+                self.empty_sources.insert(id.clone());
+            }
+        }
         if let Some(eligible) = eligible {
             for id in eligible {
                 if let Some(hash) = current.get(id) {
                     self.fingerprints.insert(id.clone(), hash.clone());
+                    self.file_fingerprints.insert(id.clone(), hash.clone());
                 } else {
                     self.fingerprints.remove(id);
+                    self.file_fingerprints.remove(id);
+                    self.empty_sources.remove(id);
                 }
             }
         } else {
+            self.file_fingerprints = current.clone();
             self.fingerprints = current;
+            self.empty_sources
+                .retain(|id| self.file_fingerprints.contains_key(id));
         }
         Ok(ScanDelta {
             upserts,

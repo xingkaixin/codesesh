@@ -16,7 +16,6 @@ import { useLocation, useMatches, useNavigate } from "react-router-dom";
 import type { SessionHead } from "@codesesh/contract";
 import { logClientEvent } from "./lib/api";
 import { getSessionRoutePath } from "./lib/session-indexes";
-import { SessionAliasDialog } from "./components/SessionAliasDialog";
 import { viewStateFromRouteMatches } from "./lib/view-state";
 import { useHasScanStatusIssue, useScanStatusPublisher } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
@@ -37,7 +36,6 @@ import { ResolvedThemeContext, useTheme } from "./hooks/useTheme";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { SearchControlsHandle } from "./components/app/SearchControls";
-import { ShortcutHelpDialog } from "./components/app/ShortcutHelpDialog";
 import { AppRouteContent, type AppRouteModel } from "./components/app/AppRouteContent";
 import { AppPageHeader, AppPageHero } from "./components/app/AppPageHeader";
 import { AppToasts } from "./components/app/AppToasts";
@@ -81,6 +79,16 @@ const ScanStatusNotice = lazy(() =>
 const SessionSourceDetails = lazy(() =>
   import("./components/nodes/SessionSourceDetails").then((module) => ({
     default: module.SessionSourceDetails,
+  })),
+);
+const SessionAliasDialog = lazy(() =>
+  import("./components/SessionAliasDialog").then((module) => ({
+    default: module.SessionAliasDialog,
+  })),
+);
+const ShortcutHelpDialog = lazy(() =>
+  import("./components/app/ShortcutHelpDialog").then((module) => ({
+    default: module.ShortcutHelpDialog,
   })),
 );
 
@@ -771,13 +779,24 @@ export default function App() {
             />
           </Suspense>
         ) : null}
-        <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
-        <SessionAliasDialog
-          target={sessionAliases.target}
-          onClose={sessionAliases.close}
-          onSave={sessionAliases.save}
-          onRemove={sessionAliases.remove}
-        />
+        {shortcutHelpOpen ? (
+          <Suspense fallback={null}>
+            <ShortcutHelpDialog
+              open={shortcutHelpOpen}
+              onClose={() => setShortcutHelpOpen(false)}
+            />
+          </Suspense>
+        ) : null}
+        {sessionAliases.target ? (
+          <Suspense fallback={null}>
+            <SessionAliasDialog
+              target={sessionAliases.target}
+              onClose={sessionAliases.close}
+              onSave={sessionAliases.save}
+              onRemove={sessionAliases.remove}
+            />
+          </Suspense>
+        ) : null}
       </div>
     </ResolvedThemeContext.Provider>
   );
