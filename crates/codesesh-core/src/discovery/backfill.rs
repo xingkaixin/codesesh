@@ -493,6 +493,20 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
     Ok(items)
 }
 
+fn path_under_root(root: &Path, path: &Path) -> Option<PathBuf> {
+    let relative = path.strip_prefix(root).ok()?;
+    let mut joined = root.to_path_buf();
+    let mut pushed = false;
+    for component in relative.components() {
+        let std::path::Component::Normal(part) = component else {
+            return None;
+        };
+        joined.push(part);
+        pushed = true;
+    }
+    pushed.then_some(joined)
+}
+
 /// Builds inventory items for a small batch of modified regular session files without walking the
 /// full source tree. Returns `Ok(None)` when any path requires a full inventory scan (deletions,
 /// directories, companion/index files, or agents with cross-file dependencies).
@@ -512,7 +526,10 @@ pub fn targeted_items(
             let root = crate::agents::session_root(&source.agent, &source.scan_path);
             let mut index_stamps = HashMap::new();
             for path in paths {
-                let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                let Some(path) = path_under_root(&root, path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
                     return Ok(None);
                 };
                 if !metadata.file_type().is_file() {
@@ -520,8 +537,7 @@ pub fn targeted_items(
                 }
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 let direct = path.parent().and_then(Path::parent) == Some(root.as_path());
-                let subagent = path.starts_with(&root)
-                    && crate::agents::claudecode::subagents_dir(path).is_some();
+                let subagent = crate::agents::claudecode::subagents_dir(&path).is_some();
                 if !name.ends_with(".jsonl") || !(direct || subagent) {
                     return Ok(None);
                 }
@@ -530,7 +546,7 @@ pub fn targeted_items(
                     continue;
                 }
                 let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
-                let project = match crate::agents::claudecode::subagents_dir(path) {
+                let project = match crate::agents::claudecode::subagents_dir(&path) {
                     Some(subagents) => subagents
                         .parent()
                         .and_then(Path::parent)
@@ -551,7 +567,7 @@ pub fn targeted_items(
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
                     key,
-                    path: Some(path.clone()),
+                    path: Some(path),
                     activity,
                     fingerprint,
                     target: false,
@@ -563,11 +579,14 @@ pub fn targeted_items(
         "gemini-cli" => {
             let root = crate::agents::session_root(&source.agent, &source.scan_path);
             for path in paths {
-                let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                let Some(path) = path_under_root(&root, path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
                     return Ok(None);
                 };
                 if !metadata.file_type().is_file()
-                    || !crate::agents::gemini_cli::is_source(&root, path)
+                    || !crate::agents::gemini_cli::is_source(&root, &path)
                 {
                     return Ok(None);
                 }
@@ -579,7 +598,7 @@ pub fn targeted_items(
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
                     key,
-                    path: Some(path.clone()),
+                    path: Some(path),
                     activity,
                     fingerprint,
                     target: false,
@@ -591,14 +610,14 @@ pub fn targeted_items(
         "omp" => {
             let root = crate::agents::session_root(&source.agent, &source.scan_path);
             for path in paths {
-                let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                let Some(path) = path_under_root(&root, path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
                     return Ok(None);
                 };
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if !metadata.file_type().is_file()
-                    || !path.starts_with(&root)
-                    || !name.ends_with(".jsonl")
-                {
+                if !metadata.file_type().is_file() || !name.ends_with(".jsonl") {
                     return Ok(None);
                 }
                 let key = path.to_string_lossy().into_owned();
@@ -609,7 +628,7 @@ pub fn targeted_items(
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
                     key,
-                    path: Some(path.clone()),
+                    path: Some(path),
                     activity,
                     fingerprint,
                     target: false,
@@ -629,10 +648,16 @@ pub fn targeted_items(
                 }
                 let in_sessions = path.starts_with(&sessions_dir);
                 let in_archived = path.starts_with(&archived_dir);
-                if !in_sessions && !in_archived {
+                let base = if in_sessions {
+                    &sessions_dir
+                } else if in_archived {
+                    &archived_dir
+                } else {
                     return Ok(None);
-                }
-                let logical = rollout::logical_path(path);
+                };
+                let Some(logical) = path_under_root(base, &rollout::logical_path(path)) else {
+                    return Ok(None);
+                };
                 let key = logical.to_string_lossy().into_owned();
                 if in_archived && !known_keys.contains(key.as_str()) {
                     return Ok(None);
@@ -666,12 +691,18 @@ pub fn targeted_items(
                     .map(PathBuf::from)
                     .unwrap_or_else(|| path.to_owned());
                 let name = db_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                let in_root = db_path
+                let Some(scan_root) = db_path
                     .parent()
-                    .is_some_and(|parent| scan_roots.iter().any(|root| root == parent));
-                if !name.ends_with(".db") || !in_root {
+                    .and_then(|parent| scan_roots.iter().find(|root| root.as_path() == parent))
+                else {
+                    return Ok(None);
+                };
+                if !name.ends_with(".db") {
                     return Ok(None);
                 }
+                let Some(db_path) = path_under_root(scan_root, &db_path) else {
+                    return Ok(None);
+                };
                 let Ok(metadata) = std::fs::symlink_metadata(&db_path) else {
                     return Ok(None);
                 };

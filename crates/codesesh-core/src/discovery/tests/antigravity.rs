@@ -308,7 +308,7 @@ fn updating_one_conversation_summary_does_not_invalidate_other_conversations() {
     let temp = tempfile::tempdir().unwrap();
     let env = environment(temp.path());
     let source = env.source("antigravity").unwrap();
-    let desktop = env.home.join(".gemini/antigravity/conversations");
+    let desktop = source.scan_path.clone();
     let first = write_session(&desktop, "conv-a");
     let second = write_session(&desktop, "conv-b");
     write_summary(&desktop, "conv-a", "Title A");
