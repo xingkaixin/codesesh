@@ -108,10 +108,7 @@ export function buildPiEditDiffBlocks(state: NormalizedToolState, filePath: stri
   return [
     {
       label,
-      lines: patch.split("\n").map((line) => ({
-        type: line.startsWith("+") ? "add" : line.startsWith("-") ? "remove" : "context",
-        text: line,
-      })),
+      lines: splitDiffChunkLines(patch).map(parsePatchLine),
     },
   ];
 }
@@ -143,8 +140,10 @@ export function buildDshEditDiffBlocks(state: NormalizedToolState, filePath: str
   );
 }
 
-function parseZCodePatchLine(line: string): DiffLineItem {
-  if (line.startsWith("@@")) return { type: "context", text: line };
+function parsePatchLine(line: string): DiffLineItem {
+  if (line.startsWith("@@") || line.startsWith("+++ ") || line.startsWith("--- ")) {
+    return { type: "context", text: line };
+  }
   if (line.startsWith("+")) return { type: "add", text: line.slice(1) };
   if (line.startsWith("-")) return { type: "remove", text: line.slice(1) };
   if (line.startsWith(" ")) return { type: "context", text: line.slice(1) };
@@ -165,7 +164,7 @@ export function buildZCodeEditDiffBlocks(
       const patch = toRecord(entry);
       const lines = Array.isArray(patch.lines) ? patch.lines : [];
       const parsedLines = lines
-        .map((line) => (typeof line === "string" ? parseZCodePatchLine(line) : null))
+        .map((line) => (typeof line === "string" ? parsePatchLine(line) : null))
         .filter((line): line is DiffLineItem => line != null);
       if (parsedLines.length === 0) return null;
       return {
