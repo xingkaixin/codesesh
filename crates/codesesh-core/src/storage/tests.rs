@@ -765,3 +765,84 @@ fn schema38_migrates_in_place_to_schema39_and_rebuilds_fts() {
         }
     }
 }
+
+#[test]
+fn single_upsert_persists_and_updates_all_session_columns() {
+    let root = tempfile::tempdir().unwrap();
+    let parent = source(root.path(), "parent");
+    let mut child = source(root.path(), "child");
+    child.head.parent_reference = Some(parent.head.reference.clone());
+    child.head.stats.total_cache_read_tokens = Some(120.0);
+    child.head.stats.total_cache_create_tokens = Some(45.0);
+    child.head.stats.total_tokens = Some(500.0);
+    child.head.stats.cost_source = Some(CostSource::Estimated);
+    child.head.model_usage = Some(std::collections::BTreeMap::from([(
+        "gpt-5.4".into(),
+        120.0,
+    )]));
+    child.head.smart_tags = vec!["bugfix".into(), "testing".into()];
+    child.head.version = Some("v1".into());
+    child.head.summary_files = Some(serde_json::json!([{"path":"src/lib.rs"}]));
+    child.head.recorded_git_remotes = vec!["https://github.com/example/repo.git".into()];
+    child.detail.head = child.head.clone();
+
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(&mut [parent.clone(), child.clone()]).unwrap();
+    let inserted = cache.head(&child.head.reference).unwrap().unwrap();
+    assert_eq!(
+        inserted.parent_reference,
+        Some(parent.head.reference.clone())
+    );
+    assert_eq!(inserted.stats.total_cache_read_tokens, Some(120.0));
+    assert_eq!(inserted.stats.total_cache_create_tokens, Some(45.0));
+    assert_eq!(inserted.stats.total_tokens, Some(500.0));
+    assert_eq!(inserted.stats.cost_source, Some(CostSource::Estimated));
+    assert_eq!(inserted.model_usage, child.head.model_usage);
+    assert_eq!(inserted.smart_tags, vec!["bugfix", "testing"]);
+    assert_eq!(inserted.version.as_deref(), Some("v1"));
+    assert_eq!(inserted.summary_files, child.head.summary_files);
+    assert_eq!(
+        inserted.recorded_git_remotes,
+        vec!["https://github.com/example/repo.git"]
+    );
+    let meta_present: bool = cache
+        .connection()
+        .query_row(
+            "SELECT meta_json IS NOT NULL AND head_meta_json IS NOT NULL FROM sessions WHERE session_id=?",
+            [&child.head.reference.session_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(meta_present);
+
+    // Trigger ON CONFLICT DO UPDATE (retaining existing messages path) and verify all columns update cleanly.
+    child.head.title = "Updated child title".into();
+    child.head.parent_reference = None;
+    child.head.stats.total_cache_read_tokens = Some(240.0);
+    child.head.stats.total_cache_create_tokens = None;
+    child.head.stats.total_tokens = Some(900.0);
+    child.head.stats.cost_source = Some(CostSource::Recorded);
+    child.head.model_usage = Some(std::collections::BTreeMap::from([(
+        "gpt-5.4".into(),
+        360.0,
+    )]));
+    child.head.smart_tags = vec!["refactoring".into()];
+    child.head.version = Some("v2".into());
+    child.head.summary_files = None;
+    child.head.recorded_git_remotes.clear();
+    child.detail.head = child.head.clone();
+
+    cache.publish(std::slice::from_mut(&mut child)).unwrap();
+    let updated = cache.head(&child.head.reference).unwrap().unwrap();
+    assert_eq!(updated.title, "Updated child title");
+    assert_eq!(updated.parent_reference, None);
+    assert_eq!(updated.stats.total_cache_read_tokens, Some(240.0));
+    assert_eq!(updated.stats.total_cache_create_tokens, None);
+    assert_eq!(updated.stats.total_tokens, Some(900.0));
+    assert_eq!(updated.stats.cost_source, Some(CostSource::Recorded));
+    assert_eq!(updated.model_usage, child.head.model_usage);
+    assert_eq!(updated.smart_tags, vec!["refactoring"]);
+    assert_eq!(updated.version.as_deref(), Some("v2"));
+    assert_eq!(updated.summary_files, None);
+    assert!(updated.recorded_git_remotes.is_empty());
+}

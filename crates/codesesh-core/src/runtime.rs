@@ -414,7 +414,7 @@ impl Runtime {
                         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
                     )?;
                     connection.busy_timeout(Duration::from_secs(5))?;
-                    connection.execute_batch("PRAGMA query_only=ON")?;
+                    connection.execute_batch("PRAGMA query_only=ON; PRAGMA cache_size=-16384")?;
                     connection
                 }
             };

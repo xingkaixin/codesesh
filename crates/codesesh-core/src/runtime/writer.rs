@@ -52,6 +52,12 @@ pub(super) fn run(
             return;
         }
     };
+    // Hub mode accepts durable worker uploads (synchronous=FULL per docs/design/hub-worker.md);
+    // standalone mode uses SQLite as a rebuildable cache of local agent logs.
+    if !retain_history && let Err(error) = cache.set_synchronous_normal() {
+        let _ = ready.send(Err(error));
+        return;
+    }
     let cache_open = started.elapsed();
     let started = Instant::now();
     match cache.snapshot() {
