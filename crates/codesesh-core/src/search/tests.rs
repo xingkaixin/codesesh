@@ -627,7 +627,12 @@ fn prefix_and_code_token_recall_preserve_exact_quotes_and_highlights() {
     db.execute_batch(include_str!("../storage/schema.sql"))
         .unwrap();
     for (id, title, body, time) in [
-        ("prefix", "Auth guide", "Implement authentication flow", 100),
+        (
+            "prefix",
+            "Auth guide",
+            "修复authentication后重试 setTtl",
+            100,
+        ),
         (
             "camel",
             "Refactor useAuth hook",
@@ -680,9 +685,17 @@ fn prefix_and_code_token_recall_preserve_exact_quotes_and_highlights() {
     assert_eq!(prefix_results[0].reference.session_id, "prefix");
     assert_eq!(
         prefix_results[0].snippet_highlights,
-        vec![HighlightRange { start: 10, end: 21 }]
+        vec![HighlightRange { start: 2, end: 13 }]
     );
     assert!(ids("\"authenticat\"").is_empty());
+    for (query, start, end) in [("\"authentication\"", 2, 16), ("tt", 23, 25)] {
+        let hits = execute(&db, query, &SearchOptions::default()).unwrap();
+        assert_eq!(hits[0].message_index, Some(0));
+        assert_eq!(
+            hits[0].snippet_highlights,
+            vec![HighlightRange { start, end }]
+        );
+    }
 
     // Unquoted `auth` finds camelCase title (`useAuth`), snake_case (`auth_token`),
     // prefix (`authentication`), and standalone word (`use auth`).

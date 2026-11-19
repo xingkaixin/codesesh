@@ -1,5 +1,5 @@
 use super::HighlightRange;
-use super::cjk::{contains_han, is_camel_boundary};
+use super::cjk::{contains_han, is_camel_boundary, is_han_char};
 use super::parser::{QueryTerm, parse_terms};
 use regex::{Match, Regex, RegexBuilder};
 use std::collections::HashMap;
@@ -39,6 +39,7 @@ impl TermMatcher {
         if self.starts_alnum
             && let Some(prev) = text[..hit.start()].chars().next_back()
             && prev.is_alphanumeric()
+            && !is_han_char(prev)
         {
             if self.quoted {
                 return false;
@@ -61,20 +62,29 @@ impl TermMatcher {
             && self.ends_alnum
             && let Some(next) = text[hit.end()..].chars().next()
             && next.is_alphanumeric()
+            && !is_han_char(next)
         {
             return false;
         }
         true
     }
 
-    fn find_first<'a>(&self, text: &'a str) -> Option<Match<'a>> {
-        self.pattern
-            .find_iter(text)
-            .find(|hit| self.accepts_match(text, *hit))
+    fn matches_in<'a>(&self, text: &'a str) -> impl Iterator<Item = Match<'a>> {
+        let mut offset = 0;
+        std::iter::from_fn(move || {
+            loop {
+                let hit = self.pattern.find_at(text, offset)?;
+                if self.accepts_match(text, hit) {
+                    offset = hit.end();
+                    return Some(hit);
+                }
+                offset = hit.start() + hit.as_str().chars().next()?.len_utf8();
+            }
+        })
     }
 
     fn is_match(&self, text: &str) -> bool {
-        self.find_first(text).is_some()
+        self.matches_in(text).next().is_some()
     }
 }
 
@@ -126,7 +136,7 @@ impl Terms {
             let mut earliest: Option<Match<'a>> = None;
             let mut all_matched = true;
             for &idx in group {
-                match self.matchers[idx].find_first(text) {
+                match self.matchers[idx].matches_in(text).next() {
                     Some(hit) => {
                         if earliest.is_none_or(|best| hit.start() < best.start()) {
                             earliest = Some(hit);
@@ -157,7 +167,7 @@ impl Terms {
         self.satisfied_match(text).or_else(|| {
             self.matchers
                 .iter()
-                .filter_map(|matcher| matcher.find_first(text))
+                .filter_map(|matcher| matcher.matches_in(text).next())
                 .min_by_key(|hit| hit.start())
         })
     }
@@ -166,10 +176,7 @@ impl Terms {
 pub fn highlights(text: &str, terms: &Terms) -> Vec<HighlightRange> {
     let mut ranges = Vec::new();
     for matcher in &terms.matchers {
-        for hit in matcher.pattern.find_iter(text) {
-            if !matcher.accepts_match(text, hit) {
-                continue;
-            }
+        for hit in matcher.matches_in(text) {
             ranges.push(HighlightRange {
                 start: text[..hit.start()].encode_utf16().count(),
                 end: text[..hit.end()].encode_utf16().count(),
