@@ -2,12 +2,26 @@ import { t } from "../i18n/translate";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ApiProjectGroup, ApiProjectPage, AppConfig } from "@codesesh/contract";
-import { ApiRequestError, fetchProject, fetchProjects } from "../lib/api";
+import { ApiRequestError, fetchProject, fetchProjects, type ProjectSort } from "../lib/api";
 import { getProjectIdentityKey, type ProjectRouteIdentity } from "../lib/projects";
 import { queryKeys } from "../lib/query-keys";
 
 const PROJECT_QUERY_STALE_TIME_MS = 2_000;
 const EMPTY_CURSORS: string[] = [];
+
+export interface ProjectPaginationControl {
+  cursor?: string;
+  pageNumber?: number;
+  onNavigate: (
+    next: { cursor?: string; pageNumber: number },
+    options?: { replace?: boolean },
+  ) => void;
+}
+
+interface PageBackEntry {
+  cursor?: string;
+  pageNumber: number;
+}
 
 function windowKey(window: AppConfig["window"] | null): string {
   if (!window) return "unavailable";
@@ -18,51 +32,105 @@ export function useProjectPagination(
   window: AppConfig["window"] | null,
   initialPage: ApiProjectPage,
   sourceNodeId?: string,
+  sort: ProjectSort = "latest",
+  control?: ProjectPaginationControl,
 ) {
-  const key = `${windowKey(window)}:${sourceNodeId ?? ""}`;
+  const key = `${windowKey(window)}:${sourceNodeId ?? ""}:${sort}`;
   const [navigation, setNavigation] = useState<{ key: string; cursors: string[] }>({
     key,
     cursors: [],
   });
+  const [backStack, setBackStack] = useState<{ key: string; entries: PageBackEntry[] }>({
+    key,
+    entries: [],
+  });
   const cursors = navigation.key === key ? navigation.cursors : EMPTY_CURSORS;
-  const cursor = cursors.at(-1);
+  const cursor = control ? control.cursor : cursors.at(-1);
+  const pageNumber = control
+    ? cursor
+      ? Math.max(2, control.pageNumber ?? 2)
+      : 1
+    : cursors.length + 1;
+  const isDefaultFirstPage = !cursor && !sourceNodeId && sort === "latest";
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: queryKeys.projectPage(window ?? {}, cursor, sourceNodeId),
-    queryFn: ({ signal }) => fetchProjects(window ?? undefined, { cursor, signal, sourceNodeId }),
+    queryKey: queryKeys.projectPage(window ?? {}, cursor, sourceNodeId, sort),
+    queryFn: ({ signal }) =>
+      fetchProjects(window ?? undefined, { cursor, signal, sourceNodeId, sort }),
     enabled: window != null,
-    initialData: cursor || sourceNodeId ? undefined : initialPage,
-    placeholderData: cursor || sourceNodeId ? keepPreviousData : undefined,
+    initialData: isDefaultFirstPage ? initialPage : undefined,
+    placeholderData: isDefaultFirstPage ? undefined : keepPreviousData,
     staleTime: PROJECT_QUERY_STALE_TIME_MS,
     retry: false,
   });
-  const page = query.data ?? (cursor || sourceNodeId ? null : initialPage);
+  const page = query.data ?? (isDefaultFirstPage ? initialPage : null);
   const staleCursor =
-    Boolean(cursor) && query.error instanceof ApiRequestError && query.error.status === 409;
+    Boolean(cursor) &&
+    query.error instanceof ApiRequestError &&
+    (query.error.status === 409 || query.error.status === 400);
+  const onNavigate = control?.onNavigate;
 
   useEffect(() => {
     if (!staleCursor) return;
+    let cancelled = false;
     void queryClient
       .invalidateQueries(
-        { queryKey: queryKeys.projectPage(window ?? {}, undefined, sourceNodeId), exact: true },
+        {
+          queryKey: queryKeys.projectPage(window ?? {}, undefined, sourceNodeId, sort),
+          exact: true,
+        },
         { cancelRefetch: true },
       )
-      .then(() =>
-        setNavigation((current) =>
-          current.key === key && current.cursors.at(-1) === cursor ? { key, cursors: [] } : current,
-        ),
-      );
-  }, [cursor, key, queryClient, sourceNodeId, staleCursor, window]);
+      .then(() => {
+        if (cancelled) return;
+        if (onNavigate) {
+          setBackStack({ key, entries: [] });
+          onNavigate({ cursor: undefined, pageNumber: 1 }, { replace: true });
+        } else {
+          setNavigation((current) =>
+            current.key === key && current.cursors.at(-1) === cursor
+              ? { key, cursors: [] }
+              : current,
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cursor, key, onNavigate, queryClient, sort, sourceNodeId, staleCursor, window]);
 
   const next = useCallback(() => {
     const nextCursor = query.data?.nextCursor;
     if (!nextCursor || query.isPlaceholderData) return;
-    setNavigation({ key, cursors: [...cursors, nextCursor] });
-  }, [cursors, key, query.data?.nextCursor, query.isPlaceholderData]);
+    if (onNavigate) {
+      setBackStack((current) => ({
+        key,
+        entries: [...(current.key === key ? current.entries : []), { cursor, pageNumber }],
+      }));
+      onNavigate({ cursor: nextCursor, pageNumber: pageNumber + 1 });
+    } else {
+      setNavigation({ key, cursors: [...cursors, nextCursor] });
+    }
+  }, [
+    cursor,
+    cursors,
+    key,
+    onNavigate,
+    pageNumber,
+    query.data?.nextCursor,
+    query.isPlaceholderData,
+  ]);
 
   const previous = useCallback(() => {
-    setNavigation({ key, cursors: cursors.slice(0, -1) });
-  }, [cursors, key]);
+    if (onNavigate) {
+      const entries = backStack.key === key ? backStack.entries : [];
+      const target = entries.at(-1) ?? { cursor: undefined, pageNumber: 1 };
+      setBackStack({ key, entries: entries.slice(0, -1) });
+      onNavigate(target);
+    } else {
+      setNavigation({ key, cursors: cursors.slice(0, -1) });
+    }
+  }, [backStack, cursors, key, onNavigate]);
 
   const retry = useCallback(async () => {
     await query.refetch();
@@ -70,7 +138,7 @@ export function useProjectPagination(
 
   return {
     page,
-    pageNumber: cursors.length + 1,
+    pageNumber,
     loading: staleCursor || query.isPending || query.isPlaceholderData,
     error: staleCursor
       ? null
@@ -79,7 +147,7 @@ export function useProjectPagination(
         : query.isError
           ? t("Unable to load projects.")
           : null,
-    canPrevious: cursors.length > 0 && !staleCursor && !query.isPlaceholderData,
+    canPrevious: pageNumber > 1 && !staleCursor && !query.isPlaceholderData,
     canNext: Boolean(query.data?.nextCursor) && !staleCursor && !query.isPlaceholderData,
     next,
     previous,

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type {
   ApiProjectAgentStat,
   ApiProjectGroup,
@@ -10,6 +10,7 @@ import type {
 } from "@codesesh/contract";
 import { useProjectPagination } from "../hooks/useProjects";
 import { findAgent, type AgentCatalog } from "../lib/agents";
+import type { DashboardFilters, ProjectSort } from "../lib/api";
 import { formatCompact, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
 import { getProjectPath } from "../lib/projects";
 import { sessionRoutePath, type IndexedSession } from "../lib/session-indexes";
@@ -23,7 +24,14 @@ import { SegmentedControl } from "./ui/segmented-control";
 import { cn } from "../lib/utils";
 import { SourceFilter } from "./nodes/SourceFilter";
 
-type ProjectSort = "activity" | "sessions" | "cost";
+function parseProjectSort(raw: string | null): ProjectSort {
+  return raw === "sessions" || raw === "cost" ? raw : "latest";
+}
+
+function windowParamKey(window: AppConfig["window"] | null): string | null {
+  if (!window) return null;
+  return `${window.days ?? ""}:${window.from ?? ""}:${window.to ?? ""}`;
+}
 
 const PAGER_BUTTON_CLASS =
   "rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-1 text-[var(--console-text)] motion-hover hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40";
@@ -102,17 +110,101 @@ export function ProjectsOverview({
 }) {
   useLocale();
 
-  const [sourceNodeId, setSourceNodeId] = useState<string>();
-  const pagination = useProjectPagination(window, initialPage, sourceNodeId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sort = parseProjectSort(searchParams.get("sort"));
+  const sourceNodeId = searchParams.get("sourceNodeId") || undefined;
+  const cursor = searchParams.get("cursor") || undefined;
+  const parsedPage = Number.parseInt(searchParams.get("page") ?? "", 10);
+  const urlPageNumber =
+    cursor && Number.isInteger(parsedPage) && parsedPage > 1 ? parsedPage : undefined;
+
+  const handleSortChange = useCallback(
+    (nextSort: ProjectSort) => {
+      setSearchParams((current) => {
+        const updated = new URLSearchParams(current);
+        if (nextSort === "latest") updated.delete("sort");
+        else updated.set("sort", nextSort);
+        updated.delete("page");
+        updated.delete("cursor");
+        return updated;
+      });
+    },
+    [setSearchParams],
+  );
+
+  const handleSourceNodeChange = useCallback(
+    (nextSourceNodeId?: string) => {
+      setSearchParams((current) => {
+        const updated = new URLSearchParams(current);
+        if (nextSourceNodeId) updated.set("sourceNodeId", nextSourceNodeId);
+        else updated.delete("sourceNodeId");
+        updated.delete("page");
+        updated.delete("cursor");
+        return updated;
+      });
+    },
+    [setSearchParams],
+  );
+
+  const handleNavigatePage = useCallback(
+    (next: { cursor?: string; pageNumber: number }, options?: { replace?: boolean }) => {
+      setSearchParams(
+        (current) => {
+          const updated = new URLSearchParams(current);
+          if (next.cursor) {
+            updated.set("page", String(next.pageNumber));
+            updated.set("cursor", next.cursor);
+          } else {
+            updated.delete("page");
+            updated.delete("cursor");
+          }
+          return updated;
+        },
+        options?.replace ? { replace: true } : undefined,
+      );
+    },
+    [setSearchParams],
+  );
+
+  const currentWindowKey = windowParamKey(window);
+  const previousWindowKeyRef = useRef<string | null>(currentWindowKey);
+  useEffect(() => {
+    if (currentWindowKey === null) return;
+    if (
+      previousWindowKeyRef.current !== null &&
+      previousWindowKeyRef.current !== currentWindowKey &&
+      (searchParams.has("cursor") || searchParams.has("page"))
+    ) {
+      setSearchParams(
+        (current) => {
+          const updated = new URLSearchParams(current);
+          updated.delete("page");
+          updated.delete("cursor");
+          return updated;
+        },
+        { replace: true },
+      );
+    }
+    previousWindowKeyRef.current = currentWindowKey;
+  }, [currentWindowKey, searchParams, setSearchParams]);
+
+  const paginationControl = useMemo(
+    () => ({
+      cursor,
+      pageNumber: urlPageNumber,
+      onNavigate: handleNavigatePage,
+    }),
+    [cursor, handleNavigatePage, urlPageNumber],
+  );
+  const pagination = useProjectPagination(
+    window,
+    initialPage,
+    sourceNodeId,
+    sort,
+    paginationControl,
+  );
   const page = pagination.page ?? initialPage;
   const projects = page.projects.slice(0, 250);
-  const [sort, setSort] = useState<ProjectSort>("activity");
-  const sorted =
-    sort === "sessions"
-      ? projects.toSorted((a, b) => b.sessionCount - a.sessionCount)
-      : sort === "cost"
-        ? projects.toSorted((a, b) => b.cost - a.cost)
-        : projects;
   const currentError = pagination.error ?? error;
   const retry = pagination.error ? () => void pagination.retry() : onRetry;
 
@@ -144,7 +236,7 @@ export function ProjectsOverview({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <SourceFilter value={sourceNodeId} onChange={setSourceNodeId} />
+      <SourceFilter value={sourceNodeId} onChange={handleSourceNodeChange} />
       {currentError ? (
         <ResourceLoadFailure
           title={t("Couldn't refresh projects.")}
@@ -152,17 +244,17 @@ export function ProjectsOverview({
           onRetry={retry}
         />
       ) : null}
-      <Panel className="grid grid-cols-3 overflow-hidden">
+      <Panel className="grid grid-cols-1 overflow-hidden sm:grid-cols-3">
         <SummaryMetric label={t("Sessions")} value={formatNumber(page.summary.sessions)} />
         <SummaryMetric
           label={t("Tokens")}
           value={formatCompact(page.summary.tokens)}
-          className="border-l"
+          className="border-t sm:border-t-0 sm:border-l"
         />
         <SummaryMetric
           label={t("Total Cost")}
           value={formatMoney(page.summary.cost)}
-          className="border-l"
+          className="border-t sm:border-t-0 sm:border-l"
         />
       </Panel>
 
@@ -171,9 +263,9 @@ export function ProjectsOverview({
           size="sm"
           ariaLabel={t("Sort projects")}
           value={sort}
-          onChange={setSort}
+          onChange={handleSortChange}
           options={[
-            { value: "activity", label: t("Latest Activity") },
+            { value: "latest", label: t("Latest Activity") },
             { value: "sessions", label: t("Sessions") },
             { value: "cost", label: t("Cost") },
           ]}
@@ -206,39 +298,48 @@ export function ProjectsOverview({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((project) => (
-              <tr
-                key={`${project.identityKind}:${project.identityKey}`}
-                className="border-b border-[var(--console-border)] last:border-b-0 hover:bg-[var(--console-surface-muted)]"
-              >
-                <th scope="row" className="max-w-0 px-4 py-2.5 font-normal">
-                  <Link
-                    to={getProjectPath({ kind: project.identityKind, key: project.identityKey })}
-                    className="block truncate text-[13px] font-medium text-[var(--console-text)] hover:text-[var(--brand-ink)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-                  >
-                    {project.displayName}
-                  </Link>
-                  <span className="console-mono block truncate text-[11px] text-[var(--console-muted)]">
-                    {project.identityKey}
-                  </span>
-                </th>
-                <td className="px-3 py-2.5">
-                  <ProjectAgents agents={project.agentStats} agentCatalog={agentCatalog} />
-                </td>
-                <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
-                  {formatNumber(project.sessionCount)}
-                </td>
-                <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
-                  {formatCompact(project.tokens)}
-                </td>
-                <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
-                  {formatMoney(project.cost)}
-                </td>
-                <td className="px-4 py-2.5 whitespace-nowrap text-[var(--console-muted)]">
-                  {formatRelativeTime(project.lastActivity)}
-                </td>
-              </tr>
-            ))}
+            {projects.map((project) => {
+              const basePath = getProjectPath({
+                kind: project.identityKind,
+                key: project.identityKey,
+              });
+              const projectTo = sourceNodeId
+                ? `${basePath}?sourceNodeId=${encodeURIComponent(sourceNodeId)}`
+                : basePath;
+              return (
+                <tr
+                  key={`${project.identityKind}:${project.identityKey}`}
+                  className="border-b border-[var(--console-border)] last:border-b-0 hover:bg-[var(--console-surface-muted)]"
+                >
+                  <th scope="row" className="max-w-0 px-4 py-2.5 font-normal">
+                    <Link
+                      to={projectTo}
+                      className="block truncate text-[13px] font-medium text-[var(--console-text)] hover:text-[var(--brand-ink)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                    >
+                      {project.displayName}
+                    </Link>
+                    <span className="console-mono block truncate text-[11px] text-[var(--console-muted)]">
+                      {project.identityKey}
+                    </span>
+                  </th>
+                  <td className="px-3 py-2.5">
+                    <ProjectAgents agents={project.agentStats} agentCatalog={agentCatalog} />
+                  </td>
+                  <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
+                    {formatNumber(project.sessionCount)}
+                  </td>
+                  <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
+                    {formatCompact(project.tokens)}
+                  </td>
+                  <td className="console-mono px-3 py-2.5 text-right text-[var(--console-text)]">
+                    {formatMoney(project.cost)}
+                  </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-[var(--console-muted)]">
+                    {formatRelativeTime(project.lastActivity)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Panel>
@@ -275,11 +376,15 @@ function ProjectHero({
   agentCatalog,
   activeAgent,
   onChangeAgent,
+  sourceNodeId,
+  onChangeSourceNode,
 }: {
   project: ApiProjectGroup;
   agentCatalog: AgentCatalog;
   activeAgent?: string;
   onChangeAgent: (agent?: string) => void;
+  sourceNodeId?: string;
+  onChangeSourceNode: (sourceNodeId?: string) => void;
 }) {
   useLocale();
 
@@ -301,39 +406,42 @@ function ProjectHero({
           {project.identityKey}
         </p>
       </div>
-      <div role="group" aria-label={t("Filter by agent")} className="flex flex-wrap gap-1.5">
-        <button
-          type="button"
-          aria-pressed={!activeAgent}
-          onClick={() => onChangeAgent(undefined)}
-          className={chipClass(!activeAgent)}
-        >
-          {t("All agents")}
-        </button>
-        {project.agentStats.map((agent) => {
-          const agentInfo = findAgent(agentCatalog, agent.name);
-          const active = activeAgent === agent.name;
-          return (
-            <button
-              key={agent.name}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChangeAgent(active ? undefined : agent.name)}
-              className={chipClass(active)}
-            >
-              {agentInfo?.icon ? (
-                <AgentIcon
-                  icon={agentInfo.icon}
-                  iconColored={agentInfo.iconColored}
-                  alt=""
-                  className="size-3.5 object-contain"
-                />
-              ) : null}
-              {agentInfo?.displayName ?? agent.name}
-              <span className="console-mono text-[var(--console-muted)]">{agent.sessions}</span>
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center gap-2">
+        <SourceFilter value={sourceNodeId} onChange={onChangeSourceNode} />
+        <div role="group" aria-label={t("Filter by agent")} className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            aria-pressed={!activeAgent}
+            onClick={() => onChangeAgent(undefined)}
+            className={chipClass(!activeAgent)}
+          >
+            {t("All agents")}
+          </button>
+          {project.agentStats.map((agent) => {
+            const agentInfo = findAgent(agentCatalog, agent.name);
+            const active = activeAgent === agent.name;
+            return (
+              <button
+                key={agent.name}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onChangeAgent(active ? undefined : agent.name)}
+                className={chipClass(active)}
+              >
+                {agentInfo?.icon ? (
+                  <AgentIcon
+                    icon={agentInfo.icon}
+                    iconColored={agentInfo.iconColored}
+                    alt=""
+                    className="size-3.5 object-contain"
+                  />
+                ) : null}
+                {agentInfo?.displayName ?? agent.name}
+                <span className="console-mono text-[var(--console-muted)]">{agent.sessions}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -349,6 +457,7 @@ export function ProjectDashboardView({
   sessions,
   activeAgent,
   onChangeAgent,
+  onSelectModel,
   timeWindow,
   rangePreset,
 }: {
@@ -361,12 +470,29 @@ export function ProjectDashboardView({
   sessions: IndexedSession[];
   activeAgent?: string;
   onChangeAgent: (agent?: string) => void;
+  onSelectModel?: (model: string, scope: DashboardFilters) => void;
   timeWindow: AppConfig["window"] | null;
   rangePreset: TimeWindowPreset;
 }) {
   useLocale();
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sourceNodeId = searchParams.get("sourceNodeId") || undefined;
+  const handleSourceNodeChange = useCallback(
+    (nextSourceNodeId?: string) => {
+      setSearchParams(
+        (current) => {
+          const updated = new URLSearchParams(current);
+          if (nextSourceNodeId) updated.set("sourceNodeId", nextSourceNodeId);
+          else updated.delete("sourceNodeId");
+          return updated;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   if (loading) {
     return (
@@ -407,9 +533,13 @@ export function ProjectDashboardView({
     );
   }
 
-  const scopedSessions = activeAgent
-    ? sessions.filter((session) => session.reference.agentName === activeAgent)
-    : sessions;
+  const scopedSessions = sessions.filter((session) => {
+    if (activeAgent && session.reference.agentName !== activeAgent) return false;
+    if (sourceNodeId && (session.reference.sourceNodeId ?? "local") !== sourceNodeId) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -418,6 +548,8 @@ export function ProjectDashboardView({
         agentCatalog={agentCatalog}
         activeAgent={activeAgent}
         onChangeAgent={onChangeAgent}
+        sourceNodeId={sourceNodeId}
+        onChangeSourceNode={handleSourceNodeChange}
       />
 
       <OverviewScreen
@@ -425,12 +557,15 @@ export function ProjectDashboardView({
         project={{ kind: project.identityKind, key: project.identityKey }}
         agent={activeAgent}
         onAgentChange={onChangeAgent}
+        sourceNodeId={sourceNodeId}
+        onSourceNodeChange={handleSourceNodeChange}
+        onSelectModel={onSelectModel}
         window={timeWindow}
         agentCatalog={agentCatalog}
         rangePreset={rangePreset}
       >
         <ProjectTimeline
-          key={`${project.identityKind}:${project.identityKey}:${activeAgent ?? "all"}`}
+          key={`${project.identityKind}:${project.identityKey}:${activeAgent ?? "all"}:${sourceNodeId ?? "all"}`}
           sessions={scopedSessions}
           projectName={project.displayName}
           agentCatalog={agentCatalog}
