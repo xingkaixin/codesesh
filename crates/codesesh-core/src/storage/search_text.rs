@@ -8,21 +8,13 @@ const REVISION_KEY: &str = "search_text_v2";
 const CURSOR_KEY: &str = "search_text_v2_cursor";
 const TOOL_TEXT_EDGE_BYTES: usize = 64 * 1024;
 const BLOB_MIN_BYTES: usize = 256;
-const INDEX_KEY: &str = "message_fts_v1";
-const INDEX_CURSOR_KEY: &str = "message_fts_v1_cursor";
+const INDEX_KEY: &str = "message_fts_v2";
+const INDEX_CURSOR_KEY: &str = "message_fts_v2_cursor";
+const LEGACY_INDEX_KEY: &str = "message_fts_v1";
+const LEGACY_INDEX_CURSOR_KEY: &str = "message_fts_v1_cursor";
 const BATCH: usize = 500;
-const INDEX_SCHEMA: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(content_text, content='', contentless_delete=1);
-    CREATE VIRTUAL TABLE IF NOT EXISTS session_title_fts USING fts5(title, content='sessions', content_rowid='rowid');
-    CREATE TRIGGER IF NOT EXISTS session_title_ai AFTER INSERT ON sessions BEGIN
-      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
-    END;
-    CREATE TRIGGER IF NOT EXISTS session_title_ad AFTER DELETE ON sessions BEGIN
-      INSERT INTO session_title_fts(session_title_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
-    END;
-    CREATE TRIGGER IF NOT EXISTS session_title_au AFTER UPDATE OF title ON sessions BEGIN
-      INSERT INTO session_title_fts(session_title_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
-      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
-    END;";
+const INDEX_SCHEMA: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(content_text, code_tokens, content='', contentless_delete=1);
+    CREATE VIRTUAL TABLE IF NOT EXISTS session_title_fts USING fts5(title, code_tokens, content='', contentless_delete=1);";
 
 pub(super) fn message_text(message: &Message) -> String {
     text(
@@ -184,12 +176,16 @@ pub(super) fn ensure_index(
     let legacy = db
         .prepare("SELECT 1 FROM pragma_table_info('session_documents') WHERE name='content_text'")?
         .exists([])?;
-    let missing = db
-        .prepare("SELECT 1 FROM sqlite_master WHERE name IN ('message_fts','session_title_fts')")?
-        .query_map([], |_| Ok(()))?
-        .count()
-        != 2;
-    if legacy || missing {
+    let has_message_code_tokens = db
+        .prepare("SELECT 1 FROM pragma_table_info('message_fts') WHERE name='code_tokens'")?
+        .exists([])?;
+    let has_title_code_tokens = db
+        .prepare("SELECT 1 FROM pragma_table_info('session_title_fts') WHERE name='code_tokens'")?
+        .exists([])?;
+    let has_title_triggers = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name IN ('session_title_ai','session_title_ad','session_title_au')")?
+        .exists([])?;
+    if legacy || !has_message_code_tokens || !has_title_code_tokens || has_title_triggers {
         progress(StorageProgress {
             phase: "Preparing message search index".into(),
             done: 0,
@@ -200,10 +196,19 @@ pub(super) fn ensure_index(
                 "DROP TRIGGER IF EXISTS session_documents_ai;
                  DROP TRIGGER IF EXISTS session_documents_ad;
                  DROP TRIGGER IF EXISTS session_documents_au;
-                 DROP TABLE IF EXISTS session_documents_fts;",
+                 DROP TABLE IF EXISTS session_documents_fts;
+                 DROP TRIGGER IF EXISTS session_title_ai;
+                 DROP TRIGGER IF EXISTS session_title_ad;
+                 DROP TRIGGER IF EXISTS session_title_au;",
             )?;
             if legacy {
                 db.execute_batch("ALTER TABLE session_documents DROP COLUMN content_text")?;
+            }
+            if !has_message_code_tokens {
+                db.execute_batch("DROP TABLE IF EXISTS message_fts")?;
+            }
+            if !has_title_code_tokens {
+                db.execute_batch("DROP TABLE IF EXISTS session_title_fts")?;
             }
             db.execute_batch(INDEX_SCHEMA)?;
             reset_index(db)
@@ -247,25 +252,90 @@ pub(super) fn ensure_index(
     }
     batch(db, |db| {
         db.execute(
-            "INSERT INTO session_title_fts(session_title_fts) VALUES('rebuild')",
+            "INSERT INTO session_title_fts(session_title_fts) VALUES('delete-all')",
             [],
         )?;
-        db.execute("DELETE FROM cache_meta WHERE key=?", [INDEX_CURSOR_KEY])?;
+        let mut query = db.prepare_cached("SELECT rowid,title FROM sessions ORDER BY rowid")?;
+        let mut rows = query.query([])?;
+        while let Some(row) = rows.next()? {
+            let rowid: i64 = row.get(0)?;
+            let title = row.get_ref(1)?.as_str()?;
+            let (indexed, code_tokens) = crate::search::index_parts(title);
+            db.prepare_cached(
+                "INSERT INTO session_title_fts(rowid,title,code_tokens) VALUES(?,?,?)",
+            )?
+            .execute(params![rowid, indexed, code_tokens])?;
+        }
+        db.execute(
+            "DELETE FROM cache_meta WHERE key IN (?,?,?)",
+            [INDEX_CURSOR_KEY, LEGACY_INDEX_KEY, LEGACY_INDEX_CURSOR_KEY],
+        )?;
         set_meta(db, INDEX_KEY, "1")
     })
 }
 
 pub(super) fn reset_index(db: &Connection) -> Result<()> {
     db.execute(
-        "DELETE FROM cache_meta WHERE key IN (?,?)",
-        [INDEX_KEY, INDEX_CURSOR_KEY],
+        "DELETE FROM cache_meta WHERE key IN (?,?,?,?)",
+        [
+            INDEX_KEY,
+            INDEX_CURSOR_KEY,
+            LEGACY_INDEX_KEY,
+            LEGACY_INDEX_CURSOR_KEY,
+        ],
     )?;
     Ok(())
 }
 
 pub(super) fn index(db: &Connection, rowid: i64, text: &str) -> Result<()> {
-    db.prepare_cached("INSERT INTO message_fts(rowid,content_text) VALUES(?,?)")?
-        .execute(params![rowid, crate::search::index_text(text)])?;
+    let (indexed, code_tokens) = crate::search::index_parts(text);
+    db.prepare_cached("INSERT INTO message_fts(rowid,content_text,code_tokens) VALUES(?,?,?)")?
+        .execute(params![rowid, indexed, code_tokens])?;
+    Ok(())
+}
+
+pub(super) fn index_title(db: &Connection, rowid: i64, title: &str) -> Result<()> {
+    db.prepare_cached("DELETE FROM session_title_fts WHERE rowid=?")?
+        .execute([rowid])?;
+    let (indexed, code_tokens) = crate::search::index_parts(title);
+    db.prepare_cached("INSERT INTO session_title_fts(rowid,title,code_tokens) VALUES(?,?,?)")?
+        .execute(params![rowid, indexed, code_tokens])?;
+    Ok(())
+}
+
+pub(super) fn index_title_for_reference(
+    db: &Connection,
+    reference: &SessionReference,
+    title: &str,
+) -> Result<()> {
+    if let Some(rowid) = db
+        .prepare_cached(
+            "SELECT rowid FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
+        )?
+        .query_row(
+            params![
+                reference.source_node_id,
+                reference.agent_name,
+                reference.session_id
+            ],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+    {
+        index_title(db, rowid, title)?;
+    }
+    Ok(())
+}
+
+pub(super) fn forget_title(db: &Connection, reference: &SessionReference) -> Result<()> {
+    db.prepare_cached(
+        "DELETE FROM session_title_fts WHERE rowid IN (SELECT rowid FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?)",
+    )?
+    .execute(params![
+        reference.source_node_id,
+        reference.agent_name,
+        reference.session_id
+    ])?;
     Ok(())
 }
 

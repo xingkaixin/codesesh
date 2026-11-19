@@ -260,30 +260,17 @@ CREATE INDEX idx_session_documents_state
 
 CREATE VIRTUAL TABLE message_fts USING fts5(
       content_text,
+      code_tokens,
       content='',
       contentless_delete=1
     );
 
 CREATE VIRTUAL TABLE session_title_fts USING fts5(
       title,
-      content='sessions',
-      content_rowid='rowid'
+      code_tokens,
+      content='',
+      contentless_delete=1
     );
-
-CREATE TRIGGER session_title_ai AFTER INSERT ON sessions BEGIN
-      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
-    END;
-
-CREATE TRIGGER session_title_ad AFTER DELETE ON sessions BEGIN
-      INSERT INTO session_title_fts(session_title_fts, rowid, title)
-      VALUES ('delete', old.rowid, old.title);
-    END;
-
-CREATE TRIGGER session_title_au AFTER UPDATE OF title ON sessions BEGIN
-      INSERT INTO session_title_fts(session_title_fts, rowid, title)
-      VALUES ('delete', old.rowid, old.title);
-      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
-    END;
 
 CREATE VIEW project_groups_v AS
       SELECT
