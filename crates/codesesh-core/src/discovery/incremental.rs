@@ -358,6 +358,7 @@ impl AgentScanner {
             checkpoint: next_checkpoint,
             pricing: ticket,
             complete,
+            completion: None,
             on_reject: Some(Box::new(move || {
                 rejected.store(true, Ordering::Release);
             })),

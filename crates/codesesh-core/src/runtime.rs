@@ -88,6 +88,7 @@ pub struct ScanBatch {
     pub removed: Vec<SessionReference>,
     pub checkpoint: Option<Value>,
     pub complete: bool,
+    pub completion: Option<crate::wire::ScanCompletion>,
     pub on_reject: Option<Box<dyn FnOnce() + Send>>,
     pub pricing: Option<crate::pricing::PricingSnapshot>,
 }

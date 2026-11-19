@@ -17,6 +17,7 @@ fn receiver_deduplicates_and_metadata_does_not_rewrite_messages() {
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -120,6 +121,7 @@ fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -230,6 +232,7 @@ fn failed_commit_rolls_back_content_and_receipt_and_retries() {
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -309,6 +312,7 @@ fn local_worker_resume_drains_pending_content_without_changing_source_identity()
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -347,6 +351,7 @@ fn deltas_rebuild_the_full_session_and_fall_back_to_a_rescan() {
             removed: Vec::new(),
             checkpoint: None,
             complete: true,
+            completion: None,
             on_reject: None,
             pricing: None,
         };
@@ -493,6 +498,7 @@ fn identity_recovery_moves_file_activity_and_stats_and_metadata_preserves_record
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };

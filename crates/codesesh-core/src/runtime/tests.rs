@@ -18,6 +18,7 @@ fn batch(path: &Path) -> Result<ScanBatch> {
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     })
@@ -68,6 +69,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                     }],
                     checkpoint: None,
                     complete: true,
+                    completion: None,
                     on_reject: None,
                     pricing: None,
                 })
@@ -139,6 +141,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                     }],
                     checkpoint: None,
                     complete: true,
+                    completion: None,
                     on_reject: None,
                     pricing: None,
                 })
@@ -200,6 +203,7 @@ async fn writer_reprices_old_scan_inputs_before_committing_and_publishing() {
                 removed: vec![],
                 checkpoint: None,
                 complete: true,
+                completion: None,
                 on_reject: None,
                 pricing: Some(old.clone()),
             })

@@ -830,6 +830,7 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -946,6 +947,7 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };

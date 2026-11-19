@@ -236,6 +236,7 @@ pub async fn run(
                             removed: Vec::new(),
                             checkpoint: None,
                             complete: false,
+                            completion: None,
                             on_reject: None,
                             pricing: None,
                         };
