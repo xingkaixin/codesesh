@@ -624,10 +624,8 @@ export const messages = {
     ],
   "Request Error": ["请求错误", "リクエストエラー"],
   "Unable to load this session.": ["无法加载此会话。", "セッションを読み込めませんでした。"],
-  "Select a session from the left to view details": [
-    "从左侧选择一个会话查看详情",
-    "左側からセッションを選択して詳細を表示",
-  ],
+  "Select a session to view details": ["选择一个会话查看详情", "セッションを選択して詳細を表示"],
+  "Show more ({0} remaining)": ["显示更多（剩余 {0} 条）", "さらに表示（残り {0} 件）"],
   "Session Not Found": ["未找到会话", "セッションが見つかりません"],
   "Session Load Failed": ["会话加载失败", "セッションの読み込みに失敗しました"],
   "Agent Not Found": ["未找到智能体", "エージェントが見つかりません"],
@@ -1094,5 +1092,11 @@ export const messages = {
   "{0} unmatched · {1} official updates": [
     "{0} 个未匹配 · {1} 个官方单价更新",
     "{0} 件未一致・{1} 件の公式料金更新",
+  ],
+  "Pricing status unavailable": ["暂时无法获取定价状态", "料金ステータスを取得できません"],
+  "Couldn't load model pricing.": ["无法加载模型定价。", "モデル料金を読み込めませんでした。"],
+  "Couldn't load pricing overrides.": [
+    "无法加载自定义定价规则。",
+    "カスタム料金ルールを読み込めませんでした。",
   ],
 } as const;

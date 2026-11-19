@@ -114,4 +114,18 @@ describe("useSidebarModel", () => {
     expect(result.current.sidebarSessionLookup.byReference.get(codexReference)).toBe(codexSession);
     expect(result.current.sidebarSessionLookup.byReference.get(claudeReference)).toBe(sameIdClaude);
   });
+
+  it("populates sidebarSessions with the active agent's sessions on agent routes", () => {
+    const agentView = {
+      mode: "agent",
+      activeAgentKey: "codex",
+      activeSessionId: null,
+    } satisfies ViewState;
+
+    const { result } = renderModel(agentView);
+
+    expect(result.current.sidebarSessions).toEqual([codexSession]);
+    const codexReference = getSessionReferenceKey(codexSession);
+    expect(result.current.sidebarSessionLookup.byReference.get(codexReference)).toBe(codexSession);
+  });
 });

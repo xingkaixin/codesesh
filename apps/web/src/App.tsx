@@ -1,3 +1,4 @@
+import { ScanStatusAnnouncement } from "./components/app/ScanStatusAnnouncement";
 import { useLocale } from "./hooks/useLocale";
 import { t } from "./i18n/translate";
 import {
@@ -17,7 +18,7 @@ import { logClientEvent } from "./lib/api";
 import { getSessionRoutePath } from "./lib/session-indexes";
 import { SessionAliasDialog } from "./components/SessionAliasDialog";
 import { viewStateFromRouteMatches } from "./lib/view-state";
-import { useScanStatusPublisher } from "./hooks/useScanStatus";
+import { useHasScanStatusIssue, useScanStatusPublisher } from "./hooks/useScanStatus";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useSessionSearch } from "./hooks/useSessionSearch";
 import { useBookmarks } from "./hooks/useBookmarks";
@@ -42,6 +43,7 @@ import { AppPageHeader, AppPageHero } from "./components/app/AppPageHeader";
 import { AppToasts } from "./components/app/AppToasts";
 import { SessionHeaderActions } from "./components/app/SessionHeaderActions";
 import { TimeRangeControl } from "./components/app/TimeRangeControl";
+import { HubStatusNotice } from "./components/nodes/HubStatusNotice";
 import { sourceName } from "./components/nodes/SourceBadge";
 import { AppMainContent } from "./components/app/AppMainContent";
 import { PricingNotice } from "./components/app/PricingNotice";
@@ -55,6 +57,11 @@ import { APP_ROUTE_IDS } from "./lib/app-routes";
 import { formatTimeWindowLabel } from "./lib/scan-format";
 import { cn } from "./lib/utils";
 
+const NodePanel = lazy(() =>
+  import("./components/nodes/NodePanel").then((module) => ({
+    default: module.NodePanel,
+  })),
+);
 const PricingDrawer = lazy(() =>
   import("./components/pricing/PricingDrawer").then((module) => ({
     default: module.PricingDrawer,
@@ -104,18 +111,27 @@ export default function App() {
 
   const location = useLocation();
   const setScanStatus = useScanStatusPublisher();
+  const hasScanIssue = useHasScanStatusIssue();
   const hubEnabled = Boolean(appConfig.config?.hubEnabled);
+  const [nodesPanelOpen, setNodesPanelOpen] = useState(false);
   const modelPricing = useModelPricing(timeWindow, appConfig.config != null);
   const pricingOverrides = modelPricing.overrides ?? [];
+  const pricingUnmatchedError = modelPricing.unmatched.status === "error";
+  const pricingOverridesError = modelPricing.overridesError;
+  const pricingError = pricingUnmatchedError || pricingOverridesError;
   const unmatchedModelCount =
-    modelPricing.unmatched.status === "ready" ? modelPricing.unmatched.models.length : 0;
+    modelPricing.unmatched.status === "ready" ? modelPricing.unmatched.models.length : undefined;
   const officialAvailableCount = pricingOverrides.filter(
     (item) => item.officialPriceAvailable,
   ).length;
   const pricingAttentionCount =
-    unmatchedModelCount +
+    (unmatchedModelCount ?? 0) +
     pricingOverrides.filter((item) => item.officialPriceAvailable || item.targetMissing).length;
-  const pricingPending = modelPricing.unmatched.status === "pending";
+  const pricingPending = modelPricing.unmatched.status === "pending" && !pricingError;
+  const retryPricing = useCallback(() => {
+    if (pricingUnmatchedError) modelPricing.retryUnmatched();
+    if (pricingOverridesError) modelPricing.retryOverrides();
+  }, [modelPricing, pricingOverridesError, pricingUnmatchedError]);
   const [pricingDrawerOpen, setPricingDrawerOpen] = useState(false);
   const [pricingDrawerMounted, setPricingDrawerMounted] = useState(false);
   const [pricingDrawerTab, setPricingDrawerTab] = useState<PricingDrawerTab>("unmatched");
@@ -523,14 +539,21 @@ export default function App() {
     );
   }
 
+  const isDashboardOrSearch = viewState.mode === "root" || isSearchMode;
   const scanStatusVisible =
-    appConfig.config != null && !hubEnabled && (viewState.mode === "root" || isSearchMode);
+    appConfig.config != null && !hubEnabled && (isDashboardOrSearch || hasScanIssue);
   const pricingNoticeVisible =
-    appConfig.config != null && !pricingNoticeDismissed && pricingAttentionCount > 0;
-  const sidebarPricingTab: PricingDrawerTab =
-    unmatchedModelCount === 0 && (officialAvailableCount > 0 || pricingOverrides.length > 0)
+    appConfig.config != null &&
+    !pricingNoticeDismissed &&
+    (pricingAttentionCount > 0 || pricingError);
+  const sidebarPricingTab: PricingDrawerTab = pricingUnmatchedError
+    ? "unmatched"
+    : pricingOverridesError
       ? "overrides"
-      : "unmatched";
+      : (unmatchedModelCount ?? 0) === 0 &&
+          (officialAvailableCount > 0 || pricingOverrides.length > 0)
+        ? "overrides"
+        : "unmatched";
   const intro = (
     <>
       {routeHeader.hero ? (
@@ -550,20 +573,29 @@ export default function App() {
         <div className="flex flex-wrap items-start gap-2">
           {scanStatusVisible ? (
             <Suspense fallback={null}>
-              <ScanStatusNotice visible />
+              <ScanStatusNotice visible issuesOnly={!isDashboardOrSearch} />
             </Suspense>
           ) : null}
           {pricingNoticeVisible ? (
             <PricingNotice
               visible
               attentionCount={pricingAttentionCount}
-              unmatchedCount={unmatchedModelCount}
+              unmatchedCount={unmatchedModelCount ?? 0}
               officialAvailableCount={officialAvailableCount}
+              unmatchedError={pricingUnmatchedError}
+              overridesError={pricingOverridesError}
+              onRetry={retryPricing}
               onOpenPricing={openPricingDrawer}
               onDismiss={() => setPricingNoticeDismissed(true)}
             />
           ) : null}
         </div>
+      ) : null}
+      {hubEnabled ? (
+        <HubStatusNotice
+          sidebarCollapsed={sidebarCollapsed}
+          onManage={() => setNodesPanelOpen(true)}
+        />
       ) : null}
       {sessionLoadNotice ? (
         <div
@@ -586,18 +618,23 @@ export default function App() {
     </>
   );
   const hasIntro = Boolean(
-    routeHeader.hero || scanStatusVisible || pricingNoticeVisible || sessionLoadNotice,
+    routeHeader.hero ||
+    scanStatusVisible ||
+    pricingNoticeVisible ||
+    sessionLoadNotice ||
+    hubEnabled,
   );
 
   return (
     <ResolvedThemeContext.Provider value={resolvedTheme}>
-      <div className="console-ui flex h-screen overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
+      <div className="console-ui flex h-dvh overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
         <a
           href="#main"
           className="sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"
         >
           {t("Skip to content")}
         </a>
+        <ScanStatusAnnouncement visible={scanStatusVisible} issuesOnly={!isDashboardOrSearch} />
         <AppSidebar
           model={{
             sidebarCollapsed,
@@ -621,6 +658,7 @@ export default function App() {
             hubEnabled,
             sessionCount: sessions.length,
             pricingAttentionCount: pricingPending ? null : pricingAttentionCount,
+            pricingError,
             theme,
           }}
           actions={{
@@ -641,6 +679,10 @@ export default function App() {
             onOpenPricing: () => {
               setMobileNavigationOpen(false);
               openPricingDrawer(sidebarPricingTab);
+            },
+            onManageNodes: () => {
+              setMobileNavigationOpen(false);
+              setNodesPanelOpen(true);
             },
             onChangeTheme: setTheme,
             onShowShortcuts: showShortcutHelp,
@@ -674,6 +716,11 @@ export default function App() {
           </AppMainContent>
         </main>
         <AppToasts messages={[sessionCopyNotice, liveNotice]} />
+        {nodesPanelOpen ? (
+          <Suspense fallback={null}>
+            <NodePanel onClose={() => setNodesPanelOpen(false)} />
+          </Suspense>
+        ) : null}
         {pricingDrawerMounted ? (
           <Suspense fallback={null}>
             <PricingDrawer

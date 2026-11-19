@@ -26,6 +26,32 @@ function hasSourceFailures(
   return (completion.sourceFailureCount ?? 0) > 0 || completion.sourceFailureSummary != null;
 }
 
+export function hasScanStatusIssue(status: ScanStatusEvent | null): boolean {
+  if (!status) return false;
+  if (status.backfill?.failedAgents.length) return true;
+  if (Object.values(status.agentStatuses ?? {}).some((agent) => agent.status === "failed")) {
+    return true;
+  }
+  if (
+    Object.values(status.backfill?.partialAgents ?? {}).some(
+      (completion) => completion.completeness === "partial" && hasSourceFailures(completion),
+    )
+  ) {
+    return true;
+  }
+  if (
+    Object.values(status.agentStatuses ?? {}).some(
+      (agent) =>
+        agent.status === "complete" && agent.completeness === "partial" && hasSourceFailures(agent),
+    )
+  ) {
+    return true;
+  }
+  return Object.values(status.sources ?? {}).some(
+    (source) => Boolean(source.error) || source.presence === "missing",
+  );
+}
+
 export function formatIsoDate(ts: number): string {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -53,9 +79,12 @@ export function formatSearchSubtitle(query: string, loading: boolean, count: num
   return query ? t('{0} matches for "{1}"', [count, query]) : t("{0} recent sessions", [count]);
 }
 
-export function formatScanStatusLabel(status: ScanStatusEvent | null): string | null {
+export function formatScanStatusLabel(
+  status: ScanStatusEvent | null,
+  issuesOnly = false,
+): string | null {
   if (!status) return null;
-  if (status.backfill?.active) {
+  if (!issuesOnly && status.backfill?.active) {
     const current = status.backfill.currentAgent;
     const pending = status.backfill.pendingAgents.filter((agent) => agent !== current).length;
     const progress = status.backfill.progress;
@@ -98,7 +127,7 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
       failedAgent.error ? ` · ${failedAgent.error}` : "",
     ]);
   }
-  if (status.active && status.phase === "initializing") {
+  if (!issuesOnly && status.active && status.phase === "initializing") {
     return t("Initializing recent sessions");
   }
 
