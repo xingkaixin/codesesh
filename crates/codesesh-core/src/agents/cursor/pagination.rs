@@ -1,17 +1,15 @@
-use super::{composer_id, string, workspace_paths};
+use super::{string, workspace_paths};
 use crate::agents::open_readonly_sqlite;
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::{collections::HashMap, path::Path};
 
 #[derive(Clone, Debug)]
 pub struct SessionKey {
     pub id: String,
+    pub composer_key: String,
     pub activity: f64,
     pub fingerprint: String,
 }
@@ -32,6 +30,7 @@ struct ComposerIndex {
     id: String,
     activity: f64,
     children: Vec<String>,
+    has_subagents: bool,
 }
 
 pub(super) fn subagent_ids(value: Option<&Value>) -> Vec<String> {
@@ -72,6 +71,11 @@ fn index_entry(raw: &str) -> Option<ComposerIndex> {
         id,
         activity,
         children,
+        has_subagents: fields
+            .subagent_infos
+            .as_ref()
+            .and_then(Value::as_array)
+            .is_some_and(|items| items.iter().any(Value::is_object)),
     })
 }
 
@@ -112,6 +116,20 @@ pub(super) fn session_fingerprint(
     crate::hash::hex(&hash.finalize())
 }
 
+fn has_own_messages(db: &rusqlite::Connection, id: &str) -> Result<bool> {
+    let mut query =
+        db.prepare_cached("SELECT value FROM cursorDiskKV WHERE key >= ?1 AND key < ?2")?;
+    let mut rows = query.query([format!("bubbleId:{id}:"), format!("bubbleId:{id};")])?;
+    while let Some(row) = rows.next()? {
+        if let Ok(bubble) = serde_json::from_str::<Value>(&row.get::<_, String>(0)?)
+            && super::messages::bubble_parts(&bubble, 0.0).is_some_and(|parts| !parts.is_empty())
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
     let path = root.join("globalStorage/state.vscdb");
     if !path.exists() {
@@ -123,7 +141,8 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
         "SELECT key, value, rowid FROM cursorDiskKV WHERE key LIKE 'composerData:%' OR key LIKE 'bubbleId:%' OR key LIKE 'bubble:%' ORDER BY rowid",
     )?;
     let mut rows = query.query([])?;
-    let mut composers = Vec::new();
+    let mut composers: HashMap<String, (String, [u8; 32], ComposerIndex)> = HashMap::new();
+    let mut duplicate_has_messages = HashMap::new();
     let mut bubble_hashers: HashMap<String, Sha256> = HashMap::new();
     let mut child_hashes: HashMap<String, [u8; 32]> = HashMap::new();
     while let Some(row) = rows.next()? {
@@ -132,7 +151,22 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
         let hash = super::sync::fingerprint(row.get(2)?, &raw);
         if key.starts_with("composerData:") {
             if let Some(entry) = index_entry(&raw) {
-                composers.push((key, hash, entry));
+                if !entry.has_subagents
+                    && composers
+                        .get(&entry.id)
+                        .is_some_and(|(_, _, previous)| previous.has_subagents)
+                {
+                    let has_messages = match duplicate_has_messages.entry(entry.id.clone()) {
+                        std::collections::hash_map::Entry::Occupied(previous) => *previous.get(),
+                        std::collections::hash_map::Entry::Vacant(slot) => {
+                            *slot.insert(has_own_messages(&db, &entry.id)?)
+                        }
+                    };
+                    if !has_messages {
+                        continue;
+                    }
+                }
+                composers.insert(entry.id.clone(), (key, hash, entry));
             }
         } else if key.starts_with("bubbleId:") {
             if let Some(id) = key.split(':').nth(1) {
@@ -149,7 +183,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
     let directories = workspace_paths(root);
     let empty_bubbles: [u8; 32] = Sha256::new().finalize().into();
     let mut keys = Vec::with_capacity(composers.len());
-    for (composer_key, composer_hash, entry) in composers {
+    for (composer_key, composer_hash, entry) in composers.into_values() {
         let bubbles_digest: [u8; 32] = bubble_hashers
             .remove(&entry.id)
             .map(|hasher| hasher.finalize().into())
@@ -163,27 +197,11 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
             directories.get(&entry.id).map(String::as_str),
         );
         keys.push(SessionKey {
+            composer_key,
             id: entry.id,
             activity: entry.activity,
             fingerprint,
         });
     }
     Ok(keys)
-}
-
-pub fn fingerprints(root: &Path) -> Result<HashMap<String, String>> {
-    Ok(enumerate_session_keys(root)?
-        .into_iter()
-        .map(|key| (key.id, key.fingerprint))
-        .collect())
-}
-
-pub(super) fn selected_composer(raw: &str, selected: &HashSet<String>) -> Option<Value> {
-    let index = index_entry(raw)?;
-    if !selected.contains(&index.id) {
-        return None;
-    }
-    let value = serde_json::from_str::<Value>(raw).ok()?;
-    composer_id(&value)?;
-    Some(value)
 }

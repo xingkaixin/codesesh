@@ -324,8 +324,9 @@ fn refresh_selected_defers_history_without_losing_its_changes() {
 #[test]
 fn scan_page_fingerprints_match_inventory_with_bubbles_subagents_and_workspaces() {
     let root = fixture(&[
+        ("composerData:a", json!({"composerId":"a", "name":"stale"})),
         (
-            "composerData:a",
+            "composerData:legacy-a",
             json!({"composerId":"a","subagentInfos":[{"id":"child"}]}),
         ),
         ("composerData:b", json!({"composerId":"b"})),
@@ -351,12 +352,14 @@ fn scan_page_fingerprints_match_inventory_with_bubbles_subagents_and_workspaces(
         )
         .unwrap();
 
-    let inventory = fingerprints(root.path()).unwrap();
-    let selected = std::collections::HashSet::from(["a".into()]);
+    let inventory = enumerate_session_keys(root.path()).unwrap();
+    let key = inventory.iter().find(|key| key.id == "a").unwrap();
+    assert_eq!(key.composer_key, "composerData:legacy-a");
+    let selected = HashMap::from([(key.id.clone(), key.composer_key.clone())]);
     let (sessions, page_fingerprints) =
         scan_page(root.path(), &Pricing::bundled(), &selected).unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].head.reference.session_id, "a");
-    assert_eq!(page_fingerprints.get("a"), inventory.get("a"));
+    assert_eq!(page_fingerprints.get("a"), Some(&key.fingerprint));
     assert!(!page_fingerprints.contains_key("b"));
 }

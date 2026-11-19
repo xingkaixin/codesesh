@@ -285,6 +285,81 @@ fn cursor_warm_restart_reuses_unchanged_sessions_and_tracks_updates_and_deletion
     assert_eq!(cache.snapshot().unwrap().len(), 1);
 }
 
+#[test]
+fn paged_cursor_backfill_uses_the_refreshed_storage_key() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("cursor");
+    std::fs::create_dir_all(root.join("globalStorage")).unwrap();
+    let path = root.join("globalStorage/state.vscdb");
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch("CREATE TABLE cursorDiskKV(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        .unwrap();
+    for index in 0..34 {
+        let id = format!("session-{index:02}");
+        for (key, value) in [
+            (
+                format!("composerData:{id}"),
+                serde_json::json!({"composerId":id, "lastSendTime":2000-index}),
+            ),
+            (
+                format!("bubbleId:{id}:1"),
+                serde_json::json!({"type":1,"text":id}),
+            ),
+        ] {
+            db.execute(
+                "INSERT INTO cursorDiskKV VALUES(?,?)",
+                [key, value.to_string()],
+            )
+            .unwrap();
+        }
+    }
+    db.execute(
+        "INSERT INTO cursorDiskKV VALUES('composerData:legacy',?)",
+        [serde_json::json!({"composerId":"session-32","lastSendTime":1968}).to_string()],
+    )
+    .unwrap();
+    let source = AgentSource {
+        agent: "cursor".into(),
+        data_root: root.clone(),
+        scan_path: root,
+        antigravity_profiles: None,
+    };
+    let (mut warm, mut cache) = database_scanner(temp.path(), source.clone());
+    assert_eq!(refreshed_ids(&mut warm, &mut cache, "cursor").len(), 32);
+    assert_eq!(refreshed_ids(&mut warm, &mut cache, "cursor").len(), 2);
+    drop(cache);
+    db.execute("UPDATE cursorDiskKV SET value=? WHERE key LIKE 'bubbleId:%' AND key <> 'bubbleId:session-33:1'",
+        [serde_json::json!({"type":1,"text":"Updated"}).to_string()]).unwrap();
+    let (mut scanner, mut cache) = database_scanner(temp.path(), source);
+    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "cursor").len(), 32);
+    db.execute(
+        "DELETE FROM cursorDiskKV WHERE key IN ('composerData:legacy','composerData:session-33')",
+        [],
+    )
+    .unwrap();
+    let mut dirty = scanner.refresh(Some(&[path])).unwrap();
+    assert!(!dirty.complete);
+    assert_eq!(dirty.removed.len(), 1);
+    assert_eq!(dirty.removed[0].session_id, "session-33");
+    cache
+        .apply_checkpoint(
+            &mut dirty.sessions,
+            &dirty.removed,
+            "cursor",
+            &dirty.checkpoint,
+            dirty.complete,
+        )
+        .unwrap();
+    dirty.on_reject.take();
+    let final_page = scanner.refresh(None).unwrap();
+    assert!(final_page.complete);
+    assert_eq!(final_page.sessions.len(), 1);
+    assert_eq!(
+        final_page.sessions[0].head.reference.session_id,
+        "session-32"
+    );
+}
+
 fn database_scanner(
     directory: &Path,
     source: AgentSource,

@@ -765,7 +765,7 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
         antigravity_profiles: None,
         agent: "antigravity-cli".into(),
         data_root: temp.path().into(),
-        scan_path: conversations,
+        scan_path: conversations.clone(),
     };
     let history_path = temp.path().join("history.jsonl");
     assert!(source.watch_roots().contains(&history_path));
@@ -778,6 +778,26 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
     let mut initial = scanner.refresh(None).unwrap();
     assert_eq!(dir_of(&initial.sessions, "greeting"), aux_str);
     initial.on_reject.take();
+
+    let parent = conversations.join("parent-z.db");
+    let backup = temp.path().join("previous-parent.db");
+    let original = parent.metadata().unwrap();
+    std::fs::rename(&parent, &backup).unwrap();
+    std::fs::copy(backup, &parent).unwrap();
+    Connection::open(&parent)
+        .unwrap()
+        .execute("DELETE FROM steps WHERE idx=1", [])
+        .unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&parent)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(original.modified().unwrap()))
+        .unwrap();
+    assert_eq!(parent.metadata().unwrap().len(), original.len());
+    let mut updated = scanner.refresh(Some(&[parent])).unwrap();
+    assert_eq!(dir_of(&updated.sessions, "child-a"), aux_str);
+    updated.on_reject.take();
 
     let history_lines = format!(
         "{{invalid-json\n{{\"workspace\":\"{}\"}}\n{}\n",

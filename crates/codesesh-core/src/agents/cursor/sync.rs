@@ -242,7 +242,7 @@ fn child_owners(composers: &HashMap<String, Arc<Value>>) -> HashMap<String, Hash
 }
 
 mod selected;
-pub use selected::{scan_page, scan_selected};
+pub use selected::scan_page;
 
 pub(super) fn fingerprint(row_id: i64, raw: &str) -> [u8; 32] {
     let mut hash = Sha256::new();

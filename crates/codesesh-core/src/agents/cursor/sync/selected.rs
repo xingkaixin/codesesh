@@ -10,24 +10,21 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-    sync::Arc,
-};
+#[cfg(test)]
+use std::collections::HashSet;
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 type SelectedComposer = (String, [u8; 32], Arc<Value>);
 
 fn load_selected_composers(
     tx: &Connection,
-    selected: &HashSet<String>,
+    selected: &HashMap<String, String>,
 ) -> Result<Vec<SelectedComposer>> {
     let mut query = tx.prepare("SELECT key,value,rowid FROM cursorDiskKV WHERE key=?1")?;
     let mut ordered = Vec::with_capacity(selected.len());
-    for id in selected {
-        let lookup = format!("composerData:{id}");
+    for (id, lookup) in selected {
         if let Some((key, raw, row_id)) = query
-            .query_row([&lookup], |row| {
+            .query_row([lookup], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -35,7 +32,8 @@ fn load_selected_composers(
                 ))
             })
             .optional()?
-            && let Some(composer) = pagination::selected_composer(&raw, selected)
+            && let Ok(composer) = serde_json::from_str::<Value>(&raw)
+            && composer_id(&composer) == Some(id.as_str())
         {
             ordered.push((row_id, key, fingerprint(row_id, &raw), Arc::new(composer)));
         }
@@ -47,18 +45,10 @@ fn load_selected_composers(
         .collect())
 }
 
-pub fn scan_selected(
-    root: &Path,
-    pricing: &Pricing,
-    selected: &HashSet<String>,
-) -> Result<Vec<ParsedSession>> {
-    Ok(scan_page(root, pricing, selected)?.0)
-}
-
 pub fn scan_page(
     root: &Path,
     pricing: &Pricing,
-    selected: &HashSet<String>,
+    selected: &HashMap<String, String>,
 ) -> Result<(Vec<ParsedSession>, HashMap<String, String>)> {
     if selected.is_empty() {
         return Ok((Vec::new(), HashMap::new()));
@@ -159,7 +149,12 @@ impl CursorSync {
         }
         let mut db = open_readonly_sqlite(&path)?;
         let tx = db.transaction()?;
-        let composers = load_selected_composers(&tx, selected)?;
+        let keys = pagination::enumerate_session_keys(root)?
+            .into_iter()
+            .filter(|key| selected.contains(&key.id))
+            .map(|key| (key.id, key.composer_key))
+            .collect();
+        let composers = load_selected_composers(&tx, &keys)?;
         let directories = workspace_paths(root);
         let owners = child_owners(&self.composers);
         let mut fingerprints = HashMap::new();

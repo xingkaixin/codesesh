@@ -1,16 +1,17 @@
 use super::AgentSource;
+use crate::hash::file_stamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 pub const BATCH_SIZE: usize = 32;
 #[derive(Clone, Debug)]
 pub struct Item {
+    pub cursor_composer_key: Option<String>,
     pub key: String,
     pub path: Option<PathBuf>,
     pub activity: f64,
@@ -105,40 +106,7 @@ impl Backfill {
     }
 }
 fn stamp(path: &Path) -> Result<(f64, String)> {
-    stamp_metadata(&std::fs::metadata(path)?)
-}
-fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
-    let time = metadata
-        .modified()?
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let mut stamp = format!(
-        "{}:{}:{}",
-        metadata.len(),
-        time.as_secs(),
-        time.subsec_nanos()
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        stamp.push_str(&format!(
-            ":{}:{}:{}:{}",
-            metadata.dev(),
-            metadata.ino(),
-            metadata.ctime(),
-            metadata.ctime_nsec()
-        ));
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        stamp.push_str(&format!(
-            ":{}:{}",
-            metadata.creation_time(),
-            metadata.file_attributes()
-        ));
-    }
-    Ok((time.as_secs_f64() * 1000.0, stamp))
+    Ok(file_stamp(&std::fs::metadata(path)?)?)
 }
 /// File state of a database-backed source; `None` for file-backed sources.
 pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
@@ -224,6 +192,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             crate::agents::cursor::enumerate_session_keys(&source.scan_path)?
                 .into_iter()
                 .map(|key| Item {
+                    cursor_composer_key: Some(key.composer_key),
                     key: key.id,
                     path: None,
                     activity: key.activity,
@@ -265,6 +234,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         return Ok(keys
             .into_iter()
             .map(|(key, activity)| Item {
+                cursor_composer_key: None,
                 fingerprint: sessions
                     .get(&key)
                     .cloned()
@@ -339,26 +309,23 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             continue;
         }
         let metadata = std::fs::metadata(entry.path())?;
-        let (mut activity, mut fingerprint) = stamp_metadata(&metadata)?;
+        let (mut activity, mut fingerprint) = file_stamp(&metadata)?;
         let mut bytes = metadata.len();
         if source.agent == "pi" {
             fingerprint.push(':');
             fingerprint.push_str(&crate::agents::pi::parent_fingerprint(entry.path(), &root)?);
         }
         if let Some(antigravity_context) = &antigravity_context {
-            for suffix in ["-wal", "-journal"] {
-                let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
-                if related.try_exists()? {
-                    fingerprint.push_str(&stamp(&related)?.1);
-                }
-            }
             let id = entry
                 .path()
                 .file_stem()
                 .unwrap_or_default()
                 .to_string_lossy();
             fingerprint.push(':');
-            fingerprint.push_str(&antigravity_context.fingerprint(&id));
+            fingerprint.push_str(
+                &antigravity_context
+                    .fingerprint(entry.path().parent().unwrap_or(&source.scan_path), &id)?,
+            );
         }
         if claude_layout {
             let project = match crate::agents::claudecode::subagents_dir(entry.path()) {
@@ -424,6 +391,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
         items.push(Item {
+            cursor_composer_key: None,
             key: path.to_string_lossy().into_owned(),
             path: Some(path),
             activity,
@@ -461,7 +429,7 @@ fn codex_item(
     metadata: &std::fs::Metadata,
     titles: &HashMap<String, String>,
 ) -> Result<Item> {
-    let (activity, mut fingerprint) = stamp_metadata(metadata)?;
+    let (activity, mut fingerprint) = file_stamp(metadata)?;
     let stem = logical.file_stem().unwrap_or_default().to_string_lossy();
     let pieces: Vec<_> = stem.split('-').collect();
     let id = pieces[pieces.len().saturating_sub(5)..].join("-");
@@ -469,6 +437,7 @@ fn codex_item(
         &titles.get(&id),
     )?)));
     Ok(Item {
+        cursor_composer_key: None,
         key: logical.to_string_lossy().into_owned(),
         path: Some(logical),
         activity,
@@ -545,7 +514,7 @@ pub fn targeted_items(
                 if !seen.insert(key.clone()) {
                     continue;
                 }
-                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
                 let project = match crate::agents::claudecode::subagents_dir(&path) {
                     Some(subagents) => subagents
                         .parent()
@@ -566,6 +535,7 @@ pub fn targeted_items(
                 }
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
+                    cursor_composer_key: None,
                     key,
                     path: Some(path),
                     activity,
@@ -594,9 +564,10 @@ pub fn targeted_items(
                 if !seen.insert(key.clone()) {
                     continue;
                 }
-                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
+                    cursor_composer_key: None,
                     key,
                     path: Some(path),
                     activity,
@@ -624,9 +595,10 @@ pub fn targeted_items(
                 if !seen.insert(key.clone()) {
                     continue;
                 }
-                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
+                    cursor_composer_key: None,
                     key,
                     path: Some(path),
                     activity,
@@ -713,23 +685,21 @@ pub fn targeted_items(
                 if !seen.insert(key.clone()) {
                     continue;
                 }
-                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
-                for suffix in ["-wal", "-journal"] {
-                    let related = PathBuf::from(format!("{}{suffix}", db_path.to_string_lossy()));
-                    if related.try_exists()? {
-                        fingerprint.push_str(&stamp(&related)?.1);
-                    }
-                }
-                let Some(store_root) = db_path.parent().and_then(Path::parent) else {
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
+                let Some(conversations) = db_path.parent() else {
                     return Ok(None);
                 };
                 let id = db_path.file_stem().unwrap_or_default().to_string_lossy();
                 fingerprint.push(':');
-                fingerprint.push_str(
-                    &crate::agents::antigravity::conversation_context_fingerprint(store_root, &id)?,
-                );
+                let Some(context) =
+                    crate::agents::antigravity::leaf_context_fingerprint(conversations, &id)?
+                else {
+                    return Ok(None);
+                };
+                fingerprint.push_str(&context);
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
+                    cursor_composer_key: None,
                     key,
                     path: Some(db_path),
                     activity,
