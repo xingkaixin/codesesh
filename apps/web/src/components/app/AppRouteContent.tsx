@@ -146,6 +146,7 @@ type SessionRouteModel = Extract<ViewState, { mode: "session" }> &
   LandingRouteModel & {
     detail: SessionDetailModel;
     detailHighlightQuery: string;
+    onClearDetailHighlight?: () => void;
     childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
   };
 
@@ -436,6 +437,7 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
           messagePaging={phase.messagePaging}
           agentCatalog={route.agentCatalog}
           highlightQuery={route.detailHighlightQuery}
+          onClearHighlight={route.onClearDetailHighlight}
           childSessions={childSessions}
         />
       </LazySurface>

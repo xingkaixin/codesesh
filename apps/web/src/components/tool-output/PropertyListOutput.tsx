@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
+import { renderHighlightedText } from "../HighlightedText";
 import { ProgressiveText } from "../ProgressiveContent";
 import { toDisplayText } from "../session-detail/tool-normalize";
 import type { PropertyItem } from "./types";
@@ -15,7 +16,15 @@ function displayScalar(value: unknown) {
   return null;
 }
 
-function NestedJson({ value, children }: { value: unknown; children: ReactNode }) {
+function NestedJson({
+  value,
+  highlightQuery,
+  children,
+}: {
+  value: unknown;
+  highlightQuery?: string;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <details
@@ -33,7 +42,7 @@ function NestedJson({ value, children }: { value: unknown; children: ReactNode }
         >
           {(text) => (
             <pre className="console-mono mt-1 max-h-[420px] overflow-auto whitespace-pre-wrap break-words">
-              {text}
+              {renderHighlightedText(text, highlightQuery)}
             </pre>
           )}
         </ProgressiveText>
@@ -42,18 +51,30 @@ function NestedJson({ value, children }: { value: unknown; children: ReactNode }
   );
 }
 
-function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
+function PropertyValue({
+  value,
+  depth = 0,
+  highlightQuery,
+}: {
+  value: unknown;
+  depth?: number;
+  highlightQuery?: string;
+}) {
   useLocale();
 
   const scalar = displayScalar(value);
   if (scalar != null) {
-    return <span className="whitespace-pre-wrap break-words">{scalar}</span>;
+    return (
+      <span className="whitespace-pre-wrap break-words">
+        {renderHighlightedText(scalar, highlightQuery)}
+      </span>
+    );
   }
 
   if (Array.isArray(value)) {
     if (depth >= 2)
       return (
-        <NestedJson value={value}>
+        <NestedJson value={value} highlightQuery={highlightQuery}>
           {value.length} {t("items")}
         </NestedJson>
       );
@@ -64,7 +85,7 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
             key={index}
             className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-1.5 py-0.5"
           >
-            <PropertyValue value={item} depth={depth + 1} />
+            <PropertyValue value={item} depth={depth + 1} highlightQuery={highlightQuery} />
           </span>
         ))}
       </div>
@@ -74,7 +95,7 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
   if (typeof value === "object") {
     if (depth >= 2)
       return (
-        <NestedJson value={value}>
+        <NestedJson value={value} highlightQuery={highlightQuery}>
           {Object.keys(value as object).length} {t("fields")}
         </NestedJson>
       );
@@ -82,9 +103,11 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
       <dl className="space-y-1.5">
         {Object.entries(value as Record<string, unknown>).map(([key, nested]) => (
           <div key={key} className="grid grid-cols-[minmax(80px,auto)_1fr] gap-2">
-            <dt className="text-[var(--console-muted)]">{key}</dt>
+            <dt className="text-[var(--console-muted)]">
+              {renderHighlightedText(key, highlightQuery)}
+            </dt>
             <dd className="min-w-0">
-              <PropertyValue value={nested} depth={depth + 1} />
+              <PropertyValue value={nested} depth={depth + 1} highlightQuery={highlightQuery} />
             </dd>
           </div>
         ))}
@@ -92,10 +115,16 @@ function PropertyValue({ value, depth = 0 }: { value: unknown; depth?: number })
     );
   }
 
-  return <span>{String(value)}</span>;
+  return <span>{renderHighlightedText(String(value), highlightQuery)}</span>;
 }
 
-export function PropertyListOutput({ items }: { items: PropertyItem[] }) {
+export function PropertyListOutput({
+  items,
+  highlightQuery,
+}: {
+  items: PropertyItem[];
+  highlightQuery?: string;
+}) {
   useLocale();
 
   return (
@@ -109,7 +138,7 @@ export function PropertyListOutput({ items }: { items: PropertyItem[] }) {
             {item.label}
           </dt>
           <dd className="console-mono min-w-0 text-xs leading-relaxed text-[var(--console-text)]">
-            <PropertyValue value={item.value} />
+            <PropertyValue value={item.value} highlightQuery={highlightQuery} />
           </dd>
         </div>
       ))}

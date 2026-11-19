@@ -24,8 +24,8 @@ import type {
 } from "@codesesh/contract";
 import { formatMessageDate, formatMessageDateTime, formatMessageIsoTime } from "../../lib/format";
 import { getSessionRoutePath } from "../../lib/session-indexes";
-import { buildHighlightPattern } from "../../lib/search-highlight";
 import { AgentIcon } from "../AgentIcon";
+import { renderHighlightedText } from "../HighlightedText";
 import { MarkdownContent } from "../MarkdownContent";
 import { ProgressiveText } from "../ProgressiveContent";
 import { ToolOutputRenderer } from "../tool-output/ToolOutputRenderer";
@@ -91,20 +91,6 @@ const PLAN_STATUS_META: Record<PlanPart["approval_status"], (typeof TOOL_STATUS_
     success: { ...TOOL_STATUS_META.completed, label: "Success" },
     fail: TOOL_STATUS_META.error,
   };
-
-function renderHighlightedText(text: string, query?: string) {
-  const pattern = buildHighlightPattern(query);
-  if (!pattern) return text;
-
-  const parts = text.split(pattern);
-  return parts.map((part, index) =>
-    part.match(pattern) ? (
-      <mark key={`${part}-${index}`}>{part}</mark>
-    ) : (
-      <span key={`${part}-${index}`}>{part}</span>
-    ),
-  );
-}
 
 function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuery?: string }) {
   useLocale();
@@ -669,7 +655,10 @@ const ToolItem = memo(function ToolItem({
                   </div>
                 </div>
               ) : null}
-              <ToolOutputRenderer outputContent={strategy.outputContent} />
+              <ToolOutputRenderer
+                outputContent={strategy.outputContent}
+                highlightQuery={highlightQuery}
+              />
               {strategy.rawOutput != null ? (
                 <details
                   onToggle={(event) => setRawOutputExpanded(event.currentTarget.open)}
@@ -686,6 +675,7 @@ const ToolItem = memo(function ToolItem({
                         language: "text",
                         isCode: false,
                       }}
+                      highlightQuery={highlightQuery}
                     />
                   ) : null}
                 </details>

@@ -168,3 +168,94 @@ it("toggles all collapsible blocks via Expand all / Collapse all and resets on s
   expect(view.container.textContent).not.toContain("Plan body session-b");
   expect(view.container.textContent).not.toContain("Tool output session-b");
 });
+
+it("auto-expands matched collapsed cards, highlights tool output, and clears highlights cleanly", () => {
+  const catalog = createAgentCatalog([]);
+  const onClearHighlight = vi.fn();
+  const session: Detail = {
+    reference: { agentName: "claudecode", sessionId: "search-expand" },
+    title: "Search expand",
+    directory: "/repo",
+    time_created: 1,
+    stats: {
+      message_count: 2,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cost: 0,
+    },
+    messages: [
+      {
+        id: "m0",
+        role: "assistant",
+        time_created: 1,
+        parts: [
+          { type: "reasoning", text: "Unrelated thinking block" },
+          {
+            type: "tool",
+            tool: "Read",
+            state: {
+              status: "completed",
+              input: { file_path: "/repo/src/other.ts" },
+              output: "nothing interesting here",
+            },
+          },
+        ],
+      },
+      {
+        id: "m1",
+        role: "assistant",
+        time_created: 2,
+        parts: [
+          { type: "reasoning", text: "Investigating needleToken in reasoning" },
+          {
+            type: "plan",
+            text: "Plan step referencing needleToken",
+            approval_status: "success",
+          },
+          {
+            type: "tool",
+            tool: "Bash",
+            state: {
+              status: "completed",
+              input: { command: "pnpm test" },
+              output: "FAIL: needleToken mismatch",
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const view = render(
+    <SessionDetail
+      session={session}
+      agentCatalog={catalog}
+      highlightQuery="needleToken"
+      onClearHighlight={onClearHighlight}
+      targetMessageIndex={1}
+    />,
+  );
+
+  // Matching collapsed cards auto-expand while non-matching cards stay collapsed.
+  expect(view.container.textContent).not.toContain("Unrelated thinking block");
+  expect(view.container.textContent).not.toContain("nothing interesting here");
+  expect(view.container.textContent).toContain("Investigating needleToken in reasoning");
+  expect(view.container.textContent).toContain("Plan step referencing needleToken");
+  expect(view.container.textContent).toContain("FAIL: needleToken mismatch");
+
+  const initialMarks = Array.from(view.container.querySelectorAll("mark"), (n) => n.textContent);
+  expect(initialMarks.length).toBeGreaterThanOrEqual(3);
+  expect(initialMarks.every((text) => text === "needleToken")).toBe(true);
+
+  // Manual collapse on an auto-expanded card stays collapsed.
+  const matchedToolButton = view.getByRole("button", { name: /bash.*pnpm test/i });
+  expect(matchedToolButton.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(matchedToolButton);
+  expect(matchedToolButton.getAttribute("aria-expanded")).toBe("false");
+
+  // Clear highlights removes <mark> elements and hides the highlight chip.
+  fireEvent.click(view.getByRole("button", { name: /Clear highlights/i }));
+  expect(onClearHighlight).toHaveBeenCalledOnce();
+  expect(view.queryByRole("button", { name: /Clear highlights/i })).toBeNull();
+  expect(view.container.querySelectorAll("mark")).toHaveLength(0);
+});

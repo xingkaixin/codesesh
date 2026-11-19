@@ -1,8 +1,17 @@
 import type { MediaItem } from "./types";
+import { renderHighlightedText } from "../HighlightedText";
 import { ProgressiveText } from "../ProgressiveContent";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 
-export function MediaOutput({ items, text }: { items: MediaItem[]; text?: string }) {
+export function MediaOutput({
+  items,
+  text,
+  highlightQuery,
+}: {
+  items: MediaItem[];
+  text?: string;
+  highlightQuery?: string;
+}) {
   return (
     <div className="space-y-3">
       <div className={`grid gap-3 ${items.length > 1 ? "sm:grid-cols-2" : ""}`}>
@@ -19,7 +28,7 @@ export function MediaOutput({ items, text }: { items: MediaItem[]; text?: string
             />
             {item.caption ? (
               <figcaption className="console-mono border-t border-[var(--console-border)] px-3 py-2 text-[11px] text-[var(--console-muted)]">
-                {item.caption}
+                {renderHighlightedText(item.caption, highlightQuery)}
               </figcaption>
             ) : null}
           </figure>
@@ -29,7 +38,7 @@ export function MediaOutput({ items, text }: { items: MediaItem[]; text?: string
         <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
           {(visibleText) => (
             <pre className="console-mono whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
-              {visibleText}
+              {renderHighlightedText(visibleText, highlightQuery)}
             </pre>
           )}
         </ProgressiveText>

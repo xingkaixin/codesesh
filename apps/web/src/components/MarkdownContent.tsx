@@ -68,8 +68,8 @@ interface HastNode {
   children?: HastNode[];
 }
 
-/** Elements whose text is shown verbatim, so search must not rewrite it. */
-const OPAQUE_TAG_NAMES = new Set(["code", "pre", "mark"]);
+/** Avoid nesting `<mark>` inside an existing highlight element. */
+const OPAQUE_TAG_NAMES = new Set(["mark"]);
 
 /** Splits a text node around matches, or returns null when nothing matched. */
 function splitHighlighted(value: string, pattern: RegExp): HastNode[] | null {

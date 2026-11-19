@@ -11,6 +11,13 @@ import { isCodexTurnAbortedMessage } from "./codex-abort";
 import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 import type { FilteredSessionMessage } from "./toc";
 import { buildBlockTimelineAnchorId } from "./timeline";
+import {
+  buildHighlightPattern,
+  matchesHighlightPattern,
+  valueMatchesHighlight,
+} from "../../lib/search-highlight";
+
+const MAX_NON_TARGET_AUTO_EXPAND = 20;
 
 export interface ExpandedItemsSnapshot {
   readonly defaultExpanded: boolean;
@@ -21,6 +28,7 @@ export interface ExpandedItemsRegistry {
   readonly sessionKey: string;
   isExpanded: (key: string) => boolean;
   toggle: (key: string) => void;
+  expandItems: (keys: Iterable<string>) => void;
   expandAll: () => void;
   collapseAll: () => void;
   getSnapshot: () => ExpandedItemsSnapshot;
@@ -48,6 +56,21 @@ export function createExpandedItemsRegistry(sessionKey: string): ExpandedItemsRe
       const nextOverrides = new Set(snapshot.overrides);
       if (nextOverrides.has(key)) nextOverrides.delete(key);
       else nextOverrides.add(key);
+      snapshot = { defaultExpanded: snapshot.defaultExpanded, overrides: nextOverrides };
+      notify();
+    },
+    expandItems: (keys) => {
+      const nextOverrides = new Set(snapshot.overrides);
+      let changed = false;
+      for (const key of keys) {
+        if (snapshot.defaultExpanded) {
+          if (nextOverrides.delete(key)) changed = true;
+        } else if (!nextOverrides.has(key)) {
+          nextOverrides.add(key);
+          changed = true;
+        }
+      }
+      if (!changed) return;
       snapshot = { defaultExpanded: snapshot.defaultExpanded, overrides: nextOverrides };
       notify();
     },
@@ -110,6 +133,62 @@ function* collapsibleKeys(messages: FilteredSessionMessage[], agent: string, dir
       }
     }
   }
+}
+
+export function collectMatchedCollapsibleKeys(
+  messages: FilteredSessionMessage[],
+  highlightQuery?: string,
+  targetDisplayMessageIndex?: number,
+): string[] {
+  const pattern = buildHighlightPattern(highlightQuery);
+  if (!pattern) return [];
+
+  const targetKeys: string[] = [];
+  const otherKeys: string[] = [];
+
+  for (const { blocks, index: messageIndex } of messages) {
+    const isTarget =
+      targetDisplayMessageIndex != null && messageIndex === targetDisplayMessageIndex;
+    if (!isTarget && otherKeys.length >= MAX_NON_TARGET_AUTO_EXPAND) continue;
+
+    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+      const block = blocks[blockIndex]!;
+      const destination = isTarget ? targetKeys : otherKeys;
+
+      if (block.type === "reasoning") {
+        if (block.parts.some((part) => matchesHighlightPattern(part.text, pattern))) {
+          destination.push(
+            buildReasoningItemKey(block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex)),
+          );
+        }
+      } else if (block.type === "plan") {
+        const anchorId = block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex);
+        for (let planIndex = 0; planIndex < block.parts.length; planIndex += 1) {
+          if (matchesHighlightPattern(block.parts[planIndex]!.text, pattern)) {
+            destination.push(buildPlanItemKey(anchorId, planIndex));
+          }
+        }
+      } else if (block.type === "tool") {
+        for (let partIndex = 0; partIndex < block.parts.length; partIndex += 1) {
+          const tool = block.parts[partIndex]!;
+          const matched =
+            valueMatchesHighlight(tool.state.output, pattern) ||
+            valueMatchesHighlight(tool.state.error, pattern) ||
+            valueMatchesHighlight(tool.state.input, pattern) ||
+            valueMatchesHighlight(tool.state.metadata, pattern);
+          if (matched) {
+            destination.push(
+              buildToolItemKey(block.anchorIds?.[partIndex], messageIndex, blockIndex, partIndex),
+            );
+          }
+        }
+      }
+
+      if (!isTarget && otherKeys.length >= MAX_NON_TARGET_AUTO_EXPAND) break;
+    }
+  }
+
+  return [...targetKeys, ...otherKeys.slice(0, MAX_NON_TARGET_AUTO_EXPAND)];
 }
 
 export function deriveExpandedSummary(
