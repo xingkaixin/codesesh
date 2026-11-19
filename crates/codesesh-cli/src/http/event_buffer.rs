@@ -45,7 +45,11 @@ impl Buffer {
             self.last_milestone = Some(milestone);
             self.append("scan-status", data, true);
         } else if self.replaceable {
-            self.frames.back_mut().unwrap().event = frame("scan-status", data);
+            if let Some(last) = self.frames.back_mut() {
+                last.event = frame("scan-status", data);
+            } else {
+                self.append("scan-status", data, false);
+            }
         } else {
             self.append("scan-status", data, false);
             self.replaceable = true;
@@ -71,8 +75,10 @@ impl Buffer {
                 self.fail();
                 return false;
             }
-            self.frames.back_mut().unwrap().critical = true;
-            self.critical += 1;
+            if let Some(last) = self.frames.back_mut() {
+                last.critical = true;
+                self.critical += 1;
+            }
             self.replaceable = false;
         }
         !self.closed

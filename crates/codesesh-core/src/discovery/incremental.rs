@@ -164,13 +164,16 @@ impl AgentScanner {
             roots,
             scan: Arc::new(move |request| {
                 request.cancellation.check()?;
-                let batch = scanner
+                let mut scanner = scanner
                     .lock()
-                    .map_err(|_| anyhow::anyhow!("agent scanner lock poisoned"))?
-                    .refresh_with_checkpoint(
-                        request.changed_paths.as_deref(),
-                        request.checkpoint.as_ref(),
-                    )?;
+                    .map_err(|_| anyhow::anyhow!("agent scanner lock poisoned"))?;
+                if request.retry {
+                    scanner.backfill = None;
+                }
+                let batch = scanner.refresh_with_checkpoint(
+                    request.changed_paths.as_deref(),
+                    request.checkpoint.as_ref(),
+                )?;
                 request.cancellation.check()?;
                 Ok(batch)
             }),
@@ -358,6 +361,7 @@ impl AgentScanner {
             checkpoint: next_checkpoint,
             pricing: ticket,
             complete,
+            completion: None,
             on_reject: Some(Box::new(move || {
                 rejected.store(true, Ordering::Release);
             })),

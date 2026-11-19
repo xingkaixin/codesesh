@@ -235,6 +235,7 @@ async fn worker_recovers_when_a_persisted_recovery_epoch_is_stale() {
                 removed: Vec::new(),
                 checkpoint: None,
                 complete: true,
+                completion: None,
                 on_reject: None,
                 pricing: None,
             },

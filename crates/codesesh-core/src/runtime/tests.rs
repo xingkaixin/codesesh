@@ -18,6 +18,7 @@ fn batch(path: &Path) -> Result<ScanBatch> {
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     })
@@ -68,6 +69,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                     }],
                     checkpoint: None,
                     complete: true,
+                    completion: None,
                     on_reject: None,
                     pricing: None,
                 })
@@ -139,6 +141,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
                     }],
                     checkpoint: None,
                     complete: true,
+                    completion: None,
                     on_reject: None,
                     pricing: None,
                 })
@@ -200,6 +203,7 @@ async fn writer_reprices_old_scan_inputs_before_committing_and_publishing() {
                 removed: vec![],
                 checkpoint: None,
                 complete: true,
+                completion: None,
                 on_reject: None,
                 pricing: Some(old.clone()),
             })
@@ -523,5 +527,69 @@ async fn collection_status_distinguishes_absent_empty_and_disappeared_sources() 
     fs::remove_file(file).unwrap();
     runtime.refresh("codex").unwrap();
     until(|| runtime.status().sources["codex"].presence == SourcePresence::Missing).await;
+    runtime.shutdown().await.unwrap();
+}
+
+#[test]
+fn retry_backoff_doubles_and_caps() {
+    let initial = Duration::from_secs(5);
+    let max = Duration::from_secs(60);
+    let mut current = None;
+    let mut sequence = Vec::new();
+    for _ in 0..6 {
+        let next = next_retry_delay(current, initial, max);
+        sequence.push(next);
+        current = Some(next);
+    }
+    assert_eq!(
+        sequence,
+        [
+            Duration::from_secs(5),
+            Duration::from_secs(10),
+            Duration::from_secs(20),
+            Duration::from_secs(40),
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn failed_scan_retries_automatically_and_recovers() {
+    use std::sync::atomic::AtomicUsize;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("rollout-transient.jsonl");
+    write_source(&path, "recovered after transient failure");
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let scan_attempts = attempts.clone();
+    let scan_path = path.clone();
+    let source = AgentSource {
+        name: "codex".into(),
+        roots: vec![],
+        scan: Arc::new(move |_| {
+            let attempt = scan_attempts.fetch_add(1, Ordering::AcqRel);
+            if attempt < 2 {
+                bail!("transient source failure #{attempt}");
+            }
+            batch(&scan_path)
+        }),
+        release_idle: None,
+    };
+    let runtime = Runtime::start(temporary.path().join("cache.db"), vec![source], 1)
+        .await
+        .unwrap();
+    until(|| {
+        runtime.status().completed_agents.len() == 1
+            && runtime.snapshot().len() == 1
+            && runtime.snapshot()[0].title == "recovered after transient failure"
+    })
+    .await;
+    assert_eq!(attempts.load(Ordering::Acquire), 3);
+    assert_eq!(
+        runtime.status().agent_statuses["codex"].status,
+        crate::wire::AgentScanPhase::Complete
+    );
+    assert!(runtime.status().agent_statuses["codex"].error.is_none());
     runtime.shutdown().await.unwrap();
 }

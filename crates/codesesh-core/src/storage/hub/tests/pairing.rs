@@ -144,6 +144,7 @@ fn local_pairing_requires_bound_proof_and_preserves_existing_history() {
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -224,6 +225,7 @@ fn replacement_preserves_identity_history_and_name_and_revokes_old_credentials()
                 removed: vec![],
                 checkpoint: None,
                 complete: true,
+                completion: None,
                 on_reject: None,
                 pricing: None,
             },
