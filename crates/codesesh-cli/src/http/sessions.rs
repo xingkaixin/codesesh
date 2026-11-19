@@ -1,10 +1,11 @@
 use super::{State, error, etag, params::Params, retry};
 use axum::{
+    Json,
     extract::{Path, RawQuery, State as AxumState},
     http::{HeaderMap, StatusCode},
-    response::Response,
+    response::{IntoResponse, Response},
 };
-use codesesh_core::wire::WireSessionListPage;
+use codesesh_core::wire::{SessionMessageMatches, WireSessionListPage};
 use codesesh_core::{
     projects,
     session_list::{PaginationError, SessionFilter, filter_sessions},
@@ -170,6 +171,63 @@ pub async fn detail(
         _permit,
     )
     .await
+}
+
+pub async fn matches(
+    AxumState(state): AxumState<Arc<State>>,
+    Path(path): Path<super::params::SessionPath>,
+    RawQuery(raw): RawQuery,
+) -> Response {
+    let reference = path.reference();
+    if !state.options.enabled_agents.contains(&reference.agent_name) {
+        return error(
+            StatusCode::NOT_FOUND,
+            &format!("Unknown agent: {}", reference.agent_name),
+        );
+    }
+    let query = Params::new(raw.as_deref());
+    let needle = query.get("q").unwrap_or("").trim().to_owned();
+    let scope = state.query_scope.clone();
+    match state
+        .runtime
+        .read(move |connection| {
+            let Some(head) = codesesh_core::storage::head_from_connection(connection, &reference)?
+            else {
+                return Ok(None);
+            };
+            if scope
+                .project_scope
+                .as_ref()
+                .is_some_and(|matcher| !projects::matches_project_scope(&head, matcher))
+            {
+                return Ok(None);
+            }
+            if needle.is_empty() {
+                return Ok(Some(Vec::new()));
+            }
+            let message_indices = codesesh_core::search::find_session_message_matches(
+                connection, &reference, &needle,
+            )?;
+            Ok(Some(message_indices))
+        })
+        .await
+    {
+        Ok(Some(message_indices)) => {
+            Json(SessionMessageMatches { message_indices }).into_response()
+        }
+        Ok(None) => error(StatusCode::NOT_FOUND, "Session not found"),
+        Err(err)
+            if err
+                .downcast_ref::<codesesh_core::runtime::ReadBusy>()
+                .is_some() =>
+        {
+            retry("Session search busy; retry later")
+        }
+        Err(_) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to search session messages",
+        ),
+    }
 }
 
 fn session_page(

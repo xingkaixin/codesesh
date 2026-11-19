@@ -1068,3 +1068,10 @@ pub struct UpsertPricingOverrideRequest {
 pub struct PricingModelActionRequest {
     pub model: String,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMessageMatches {
+    #[ts(type = "number[]")]
+    pub message_indices: Vec<usize>,
+}

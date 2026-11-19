@@ -26,6 +26,7 @@ export const {
   fetchProject,
   fetchSessions,
   fetchSessionData,
+  fetchSessionMatches,
   fetchDashboard,
   fetchSearchResults,
   fetchBookmarks,

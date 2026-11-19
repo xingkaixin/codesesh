@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { AgentInfo } from "@codesesh/contract";
+import type { AgentInfo, SessionDetail, SessionHead } from "@codesesh/contract";
 import { createAgentCatalog } from "../../lib/agents";
-import type { IndexedSession } from "../../lib/session-indexes";
+import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import { createQueryWrapper } from "../../test/query-wrapper";
 import { AppRouteContent } from "./AppRouteContent";
 
@@ -89,7 +89,7 @@ function makeLandingSession(agentKey: string, sessionId: string, title: string):
 
 beforeAll(async () => {
   // Keep cold module transforms out of the first landing test's timeout on CI.
-  await import("../DetailLanding");
+  await Promise.all([import("../DetailLanding"), import("../SessionDetail")]);
 });
 
 afterEach(cleanup);
@@ -201,5 +201,108 @@ describe("AppRouteContent", () => {
       </Wrapper>,
     );
     expect(screen.queryByTestId("overview-skeleton")).toBeNull();
+  });
+
+  it("lists unlinked child sessions on a parent session and updates them when sourceNodeId changes", async () => {
+    const bookmarks = makeBookmarks();
+    const agentCatalog = createAgentCatalog(routeAgents);
+    const localChild: SessionHead = {
+      reference: { agentName: "codex", sessionId: "child-local" },
+      parent_reference: { agentName: "codex", sessionId: "shared-parent" },
+      title: "Local background sub-session",
+      directory: "/repo",
+      time_created: 10,
+      time_updated: 20,
+      stats: { message_count: 4, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
+    };
+    const remoteChild: SessionHead = {
+      reference: { sourceNodeId: "worker-a", agentName: "codex", sessionId: "child-remote" },
+      parent_reference: {
+        sourceNodeId: "worker-a",
+        agentName: "codex",
+        sessionId: "shared-parent",
+      },
+      title: "Remote background sub-session",
+      directory: "/repo",
+      time_created: 10,
+      time_updated: 30,
+      stats: { message_count: 7, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
+    };
+
+    const childSessionsByParentRouteKey = new Map<string, SessionHead[]>([
+      [getSessionRouteKey("codex", "shared-parent"), [localChild]],
+      [getSessionRouteKey("codex", "shared-parent", "worker-a"), [remoteChild]],
+    ]);
+
+    const makeParentDetail = (sourceNodeId?: string): SessionDetail => ({
+      reference: { agentName: "codex", sessionId: "shared-parent", sourceNodeId },
+      title: "Parent session",
+      directory: "/repo",
+      time_created: 1,
+      time_updated: 5,
+      stats: { message_count: 1, total_input_tokens: 0, total_output_tokens: 0, total_cost: 0 },
+      messages: [
+        {
+          id: "m0",
+          role: "user",
+          time_created: 1,
+          // No subagent_id on the message: child session must still be discoverable from the summary list.
+          parts: [{ type: "text", text: "Kick off work" }],
+        },
+      ],
+    });
+
+    const buildSessionProps = (sourceNodeId?: string): Parameters<typeof AppRouteContent>[0] => ({
+      ...makeProps(),
+      route: {
+        mode: "session",
+        activeAgentKey: "codex",
+        activeSessionId: "shared-parent",
+        sourceNodeId,
+        agents: routeAgents,
+        agentCatalog,
+        sessions: [],
+        bookmarks,
+        detail: {
+          phase: { kind: "ready", session: makeParentDetail(sourceNodeId) },
+          retry: vi.fn(),
+        },
+        detailHighlightQuery: "",
+        childSessionsByParentRouteKey,
+      },
+    });
+
+    const { Wrapper } = createQueryWrapper();
+    const view = render(
+      <Wrapper>
+        <MemoryRouter>
+          <AppRouteContent {...buildSessionProps(undefined)} />
+        </MemoryRouter>
+      </Wrapper>,
+    );
+
+    const localLink = await screen.findByRole(
+      "link",
+      { name: /Local background sub-session/ },
+      { timeout: LAZY_SURFACE_TIMEOUT_MS },
+    );
+    expect(localLink.getAttribute("href")).toBe("/codex/child-local");
+    expect(screen.queryByRole("link", { name: /Remote background sub-session/ })).toBeNull();
+
+    view.rerender(
+      <Wrapper>
+        <MemoryRouter>
+          <AppRouteContent {...buildSessionProps("worker-a")} />
+        </MemoryRouter>
+      </Wrapper>,
+    );
+
+    const remoteLink = await screen.findByRole(
+      "link",
+      { name: /Remote background sub-session/ },
+      { timeout: LAZY_SURFACE_TIMEOUT_MS },
+    );
+    expect(remoteLink.getAttribute("href")).toBe("/nodes/worker-a/codex/child-remote");
+    expect(screen.queryByRole("link", { name: /Local background sub-session/ })).toBeNull();
   });
 });

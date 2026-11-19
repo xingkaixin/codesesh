@@ -20,6 +20,7 @@ import type {
   SessionDetail,
   SessionHead,
   SessionListPage,
+  SessionMessageMatches,
   SessionReference,
   SmartTag,
   UnmatchedModelsResponse,
@@ -314,6 +315,17 @@ export function createApiClient(access: RemoteAccess) {
     return fetchJson(params.size ? `${path}?${params}` : path, fetchOptions);
   }
 
+  async function fetchSessionMatches(
+    agent: string,
+    sessionId: string,
+    query: string,
+    options?: FetchOptions & { sourceNodeId?: string },
+  ): Promise<SessionMessageMatches> {
+    const path = `/api/sessions${sessionRoutePath({ agentName: agent, sessionId, sourceNodeId: options?.sourceNodeId })}/matches`;
+    const params = new URLSearchParams({ q: query });
+    return fetchJson(`${path}?${params}`, options?.signal ? { signal: options.signal } : undefined);
+  }
+
   async function fetchDashboard(
     window: AppConfig["window"] | undefined,
     filters: DashboardFilters,
@@ -489,6 +501,7 @@ export function createApiClient(access: RemoteAccess) {
     fetchProject,
     fetchSessions,
     fetchSessionData,
+    fetchSessionMatches,
     fetchDashboard,
     fetchSearchResults,
     fetchBookmarks,

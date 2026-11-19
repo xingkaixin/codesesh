@@ -1118,4 +1118,10 @@ export const messages = {
     "无法加载自定义定价规则。",
     "カスタム料金ルールを読み込めませんでした。",
   ],
+  "Find in session": ["在会话中查找", "セッション内を検索"],
+  "Find in session…": ["在会话中查找…", "セッション内を検索…"],
+  "Previous match": ["上一个匹配", "前の一致"],
+  "Next match": ["下一个匹配", "次の一致"],
+  "Close find": ["关闭查找", "検索を閉じる"],
+  "Parent session": ["父会话", "親セッション"],
 } as const;

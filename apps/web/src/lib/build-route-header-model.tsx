@@ -1,6 +1,7 @@
 import { t } from "../i18n/translate";
 import type { ReactNode } from "react";
-import type { AgentInfo, ApiProjectGroup, SessionDetail } from "@codesesh/contract";
+import type { AgentInfo, ApiProjectGroup, SessionDetail, SessionHead } from "@codesesh/contract";
+import { sessionRoutePath } from "../lib/session-indexes";
 import {
   formatInt,
   formatMessageDateTime,
@@ -27,6 +28,7 @@ interface RouteHeaderInput {
   activeAgent: AgentInfo | null;
   sidebarSessionCount: number;
   session: SessionDetail | null;
+  parentSession?: SessionHead | null;
   sessionError: "missing" | "load-failed" | null;
   sessionSourceLabel: string | null;
   selectedProjectIdentity: ProjectRouteIdentity | null;
@@ -131,7 +133,17 @@ function sessionHeader(input: RouteHeaderInput, dashboard: BreadcrumbItem): Rout
         label: input.activeAgent?.displayName ?? viewState.activeAgentKey,
         to: `/${viewState.activeAgentKey}`,
       };
-  const breadcrumbs = [dashboard, parent, { label: sessionLabel }];
+  const parentSessionCrumb: BreadcrumbItem | null = session?.parent_reference
+    ? {
+        label: input.parentSession
+          ? getSessionDisplayTitle(input.parentSession)
+          : t("Parent session"),
+        to: sessionRoutePath(session.parent_reference),
+      }
+    : null;
+  const breadcrumbs = parentSessionCrumb
+    ? [dashboard, parent, parentSessionCrumb, { label: sessionLabel }]
+    : [dashboard, parent, { label: sessionLabel }];
   const eyebrow = [t("Session"), input.activeAgent?.displayName, input.sessionSourceLabel]
     .filter(Boolean)
     .join(" · ");

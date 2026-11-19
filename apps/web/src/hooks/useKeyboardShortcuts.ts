@@ -11,6 +11,7 @@ interface KeyboardShortcutsDeps {
   viewState: ViewState;
   navigate: NavigateFunction;
   selectedProjectNavigationIdentity: ProjectRouteIdentity | null;
+  parentSessionPath?: string | null;
   shortcutHelpOpen: boolean;
   setShortcutHelpOpen: (open: boolean) => void;
   isSearchMode: boolean;
@@ -34,6 +35,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
     viewState,
     navigate,
     selectedProjectNavigationIdentity,
+    parentSessionPath,
     shortcutHelpOpen,
     setShortcutHelpOpen,
     isSearchMode,
@@ -97,6 +99,10 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         return;
       }
       if (viewState.mode === "session" && viewState.activeAgentKey) {
+        if (parentSessionPath) {
+          navigate(parentSessionPath);
+          return;
+        }
         if (selectedProjectNavigationIdentity) {
           navigate(getProjectPath(selectedProjectNavigationIdentity));
           return;

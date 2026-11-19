@@ -46,6 +46,17 @@ fn decompress(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
     })
 }
 
+pub(crate) fn decode_parts(
+    raw: &str,
+    version: i64,
+) -> rusqlite::Result<Vec<crate::model::MessagePart>> {
+    if version < 1 {
+        return Ok(super::legacy_parts::normalize(raw));
+    }
+    serde_json::from_str(raw)
+        .map_err(|error| rusqlite::Error::FromSqlConversionFailure(0, Type::Text, error.into()))
+}
+
 pub(crate) fn unpack(value: ValueRef<'_>) -> rusqlite::Result<Cow<'_, str>> {
     match value {
         ValueRef::Text(bytes) => std::str::from_utf8(bytes)

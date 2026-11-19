@@ -75,6 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wire::OfficialModelListResponse::export_all(&config)?;
     wire::UpsertPricingOverrideRequest::export_all(&config)?;
     wire::PricingModelActionRequest::export_all(&config)?;
+    wire::SessionMessageMatches::export_all(&config)?;
     // ts-rs has no readonly attribute; preserve the browser identity constraints after export.
     let reference = generated.join("SessionReference.ts");
     let source = std::fs::read_to_string(&reference)?;

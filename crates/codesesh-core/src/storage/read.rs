@@ -155,17 +155,7 @@ pub fn visit_detail_message_page(
                     Some("estimated") => Some(CostSource::Estimated),
                     _ => None,
                 },
-                parts: if parts_format_version >= 1 {
-                    serde_json::from_str(&raw_parts).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            12,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })?
-                } else {
-                    super::legacy_parts::normalize(&raw_parts)
-                },
+                parts: super::body::decode_parts(&raw_parts, parts_format_version)?,
                 subagent_id: row.get(15)?,
                 nickname: row.get(16)?,
                 automated: row.get::<_, bool>(17)?.then_some(true),

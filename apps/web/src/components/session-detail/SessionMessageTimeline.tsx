@@ -148,7 +148,7 @@ export function SessionMessageTimeline({
   }, [handleTooltipScroll, updateViewport]);
 
   return (
-    <div className="sticky top-0 z-20 -mx-2 bg-[var(--console-bg)] px-2 py-3">
+    <>
       <div
         ref={rootRef}
         className="session-message-timeline relative rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-2.5 shadow-[var(--shadow-raised)]"
@@ -228,6 +228,6 @@ export function SessionMessageTimeline({
         )}
         <SessionMessageTimelineTooltip tooltip={tooltip} tooltipRef={tooltipRef} />
       </div>
-    </div>
+    </>
   );
 }

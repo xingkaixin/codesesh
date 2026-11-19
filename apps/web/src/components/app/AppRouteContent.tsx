@@ -370,29 +370,27 @@ function AgentRouteContent({ route }: { route: AgentRouteModel }) {
 }
 
 function SessionRouteContent({ route }: { route: SessionRouteModel }) {
-  const locale = useLocale();
+  useLocale();
 
   const agentItems = useMemo(() => landingAgentItems(route.agents), [route.agents]);
   const { phase } = route.detail;
   const currentSession = phase.kind === "ready" ? phase.session : null;
   const currentSessionAgentName = currentSession?.reference.agentName;
   const currentSessionId = currentSession?.reference.sessionId;
-  const childSessions = useMemo(
-    () => {
-      if (!currentSessionAgentName || !currentSessionId) return [];
-      return (
-        route.childSessionsByParentRouteKey.get(
-          getSessionRouteKey(
-            currentSessionAgentName,
-            currentSessionId,
-            currentSession?.reference.sourceNodeId,
-          ),
-        ) ?? []
-      );
-    },
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, route.childSessionsByParentRouteKey, currentSessionAgentName, currentSessionId],
-  );
+  const currentSessionSourceNodeId = currentSession?.reference.sourceNodeId;
+  const childSessions = useMemo(() => {
+    if (!currentSessionAgentName || !currentSessionId) return [];
+    return (
+      route.childSessionsByParentRouteKey.get(
+        getSessionRouteKey(currentSessionAgentName, currentSessionId, currentSessionSourceNodeId),
+      ) ?? []
+    );
+  }, [
+    route.childSessionsByParentRouteKey,
+    currentSessionAgentName,
+    currentSessionId,
+    currentSessionSourceNodeId,
+  ]);
   const toggleSessionBookmark = route.bookmarks.toggleSessionBookmark;
   const toggleBookmark = useCallback(
     (session: IndexedSession) => toggleSessionBookmark(session, session.reference.agentName),

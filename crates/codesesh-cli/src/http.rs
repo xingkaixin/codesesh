@@ -196,6 +196,11 @@ pub fn router(state: Arc<State>) -> Router {
             "/api/sessions/nodes/{source}/{agent}/{id}",
             get(sessions::detail),
         )
+        .route("/api/sessions/{agent}/{id}/matches", get(sessions::matches))
+        .route(
+            "/api/sessions/nodes/{source}/{agent}/{id}/matches",
+            get(sessions::matches),
+        )
         .route("/api/search", get(search::search))
         .route("/api/file-activity", get(search::file_activity))
         .route("/api/dashboard", get(catalog::dashboard))

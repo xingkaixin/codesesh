@@ -48,7 +48,13 @@ import { PricingNotice } from "./components/app/PricingNotice";
 import type { PricingDrawerTab } from "./components/pricing/PricingDrawer";
 import { findAgent } from "./lib/agents";
 import { getProjectIdentityKey, getProjectPath } from "./lib/projects";
-import { agentRoutePath, buildSessionIndexes, getSessionAgentKey } from "./lib/session-indexes";
+import {
+  agentRoutePath,
+  buildSessionIndexes,
+  getSessionAgentKey,
+  getSessionRouteKey,
+  sessionRoutePath,
+} from "./lib/session-indexes";
 import { useCopySessionAsMarkdown } from "./hooks/useCopySessionAsMarkdown";
 import { useSessionAliasDialog } from "./hooks/useSessionAliasDialog";
 import { APP_ROUTE_IDS } from "./lib/app-routes";
@@ -328,6 +334,18 @@ export default function App() {
 
   const sessionSourceNodeId =
     viewState.mode === "session" && session ? (session.reference.sourceNodeId ?? "local") : null;
+  const parentSessionReference =
+    viewState.mode === "session" ? (session?.parent_reference ?? null) : null;
+  const parentSession = parentSessionReference
+    ? (sessionIndexes.byRouteKey.get(
+        getSessionRouteKey(
+          parentSessionReference.agentName,
+          parentSessionReference.sessionId,
+          parentSessionReference.sourceNodeId,
+        ),
+      ) ?? null)
+    : null;
+  const parentSessionPath = parentSession ? sessionRoutePath(parentSession.reference) : null;
   const routeHeader = buildRouteHeaderModel({
     viewState,
     isSearchMode,
@@ -338,6 +356,7 @@ export default function App() {
     activeAgent,
     sidebarSessionCount: sidebarSessions.length,
     session,
+    parentSession,
     sessionError:
       sessionPhase.kind === "missing" || sessionPhase.kind === "load-failed"
         ? sessionPhase.kind
@@ -467,6 +486,7 @@ export default function App() {
     viewState,
     navigate,
     selectedProjectNavigationIdentity,
+    parentSessionPath,
     shortcutHelpOpen,
     setShortcutHelpOpen,
     isSearchMode,
@@ -492,9 +512,11 @@ export default function App() {
       : null;
   const sessionBack =
     sessionRouteActive && viewState.activeAgentKey
-      ? selectedProjectNavigationIdentity
-        ? { to: getProjectPath(selectedProjectNavigationIdentity), label: t("Back to project") }
-        : { to: agentRoutePath(viewState.activeAgentKey), label: t("Back to sessions") }
+      ? parentSessionPath
+        ? { to: parentSessionPath, label: t("Parent session") }
+        : selectedProjectNavigationIdentity
+          ? { to: getProjectPath(selectedProjectNavigationIdentity), label: t("Back to project") }
+          : { to: agentRoutePath(viewState.activeAgentKey), label: t("Back to sessions") }
       : null;
   const sessionLoadNotice =
     !loading && !error && sessionListLoad.status !== "complete" ? sessionListLoad : null;

@@ -822,3 +822,86 @@ fn or_precedence_and_large_snippet_window_preserve_semantics() {
     assert!(!results[1].snippet.contains('\u{FFFD}'));
     assert!(results[1].snippet.len() < 300);
 }
+
+#[test]
+fn find_session_message_matches_isolates_reference_and_supports_ascii_and_cjk() {
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(include_str!("../storage/schema.sql"))
+        .unwrap();
+    for (node, agent, id) in [
+        ("local", "codex", "shared"),
+        ("worker-a", "codex", "shared"),
+        ("local", "claudecode", "shared"),
+        ("local", "codex", "other"),
+    ] {
+        db.execute(
+            "INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES(?,?,?,'title','/repo','path','/repo','repo',1,2,2,4,0,0,0)",
+            params![node, agent, id],
+        )
+        .unwrap();
+    }
+    for (index, body) in [
+        (0, "initial prompt without hit"),
+        (1, "tool output with NeedleToken and 数据库连接"),
+        (2, "middle message"),
+        (3, "follow-up mentioning needletoken and 数据库"),
+    ] {
+        db.execute(
+            "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','shared',?,?,'assistant',1,json_array(json_object('type','text','text',?)), 'assistant text')",
+            params![index, format!("m{index}"), body],
+        )
+        .unwrap();
+    }
+    for (node, agent, id) in [
+        ("worker-a", "codex", "shared"),
+        ("local", "claudecode", "shared"),
+        ("local", "codex", "other"),
+    ] {
+        db.execute(
+            "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES(?,?,?,0,'m0','assistant',1,json_array(json_object('type','text','text','NeedleToken 数据库连接')),'assistant text')",
+            params![node, agent, id],
+        )
+        .unwrap();
+    }
+
+    let local_codex = SessionReference {
+        source_node_id: "local".into(),
+        agent_name: "codex".into(),
+        session_id: "shared".into(),
+    };
+    let remote_codex = SessionReference {
+        source_node_id: "worker-a".into(),
+        agent_name: "codex".into(),
+        session_id: "shared".into(),
+    };
+
+    assert!(
+        find_session_message_matches(&db, &local_codex, "text")
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        find_session_message_matches(&db, &local_codex, "needletoken").unwrap(),
+        vec![1, 3]
+    );
+    assert_eq!(
+        find_session_message_matches(&db, &local_codex, "数据库").unwrap(),
+        vec![1, 3]
+    );
+    assert_eq!(
+        find_session_message_matches(&db, &local_codex, "数据库连接").unwrap(),
+        vec![1]
+    );
+    assert_eq!(
+        find_session_message_matches(&db, &local_codex, "needletoken 数据库连接").unwrap(),
+        vec![1]
+    );
+    assert_eq!(
+        find_session_message_matches(&db, &local_codex, "   ").unwrap(),
+        Vec::<usize>::new()
+    );
+    assert_eq!(
+        find_session_message_matches(&db, &remote_codex, "needletoken").unwrap(),
+        vec![0]
+    );
+}
