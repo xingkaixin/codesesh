@@ -70,7 +70,7 @@ pub(super) fn refresh_scoped(
             ..Default::default()
         });
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    let db = open_readonly_sqlite(path)
         .with_context(|| format!("opening {agent} database {}", path.display()))?;
     db.execute_batch("BEGIN")?;
     let layout = layout(&db, supports_v2)?;
@@ -277,7 +277,7 @@ pub fn root_fingerprints(
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    let db = open_readonly_sqlite(path)
         .with_context(|| format!("fingerprinting {agent} database {}", path.display()))?;
     db.execute_batch("BEGIN")?;
     let layout = layout(&db, supports_v2)?;

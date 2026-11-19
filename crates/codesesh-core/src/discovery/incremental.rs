@@ -967,7 +967,15 @@ impl AgentScanner {
     }
 
     fn full(&self) -> Result<ScanDelta> {
-        let result = scan_source_raw(&self.source, &self.pricing)?;
+        let cached_sources = agents::jsonl::CachedSources {
+            paths: self
+                .previous
+                .iter()
+                .map(|record| record.source.as_path())
+                .collect(),
+            damaged: None,
+        };
+        let result = scan_source_raw(&self.source, &self.pricing, &cached_sources)?;
         if !result.available && (!self.previous.is_empty() || !self.durable_references.is_empty()) {
             return Ok(ScanDelta::default());
         }
@@ -1029,65 +1037,18 @@ impl AgentScanner {
                 Ok(delta)
             }
             "deepchat" | "cherrystudio" | "minimax-code" => self.desktop(),
-            "kimi" | "kimi-code" if paths.is_some() => {
-                let paths = paths.unwrap();
-                let dirs = if self.source.agent == "kimi" {
-                    agents::kimi::affected_session_dirs(root, &self.source.data_root, paths)?
-                } else {
-                    agents::kimi_code::affected_session_dirs(root, paths)?
-                };
-                let Some(dirs) = dirs else {
-                    return self.full();
-                };
-                let upserts = if self.source.agent == "kimi" {
-                    agents::kimi::scan_paths_with_data_root(
-                        root,
-                        &self.source.data_root,
-                        pricing,
-                        paths,
-                    )?
-                } else {
-                    agents::kimi_code::scan_paths(root, pricing, paths)?
-                };
-                Ok(selected_delta(upserts, &self.previous, |session| {
-                    dirs.iter().any(|dir| session.source.starts_with(dir))
-                }))
+            "kimi" if paths.is_some() => agents::kimi::scan_changed(
+                root,
+                &self.source.data_root,
+                pricing,
+                paths.unwrap(),
+                &self.previous,
+            ),
+            "kimi-code" if paths.is_some() => {
+                agents::kimi_code::scan_changed(root, pricing, paths.unwrap(), &self.previous)
             }
             "grok" if paths.is_some() => {
-                let paths = paths.unwrap();
-                if paths.iter().any(|path| root.starts_with(path)) {
-                    return self.full();
-                }
-                let mut sources = HashSet::new();
-                for path in paths {
-                    for session in &self.previous {
-                        if path.starts_with(session.source.parent().unwrap_or(&session.source))
-                            || session.source.starts_with(path)
-                        {
-                            sources.insert(session.source.clone());
-                        }
-                    }
-                    if path.is_dir() {
-                        for entry in walkdir::WalkDir::new(path) {
-                            let entry = entry?;
-                            if entry.file_type().is_file() && entry.file_name() == "summary.json" {
-                                sources.insert(entry.into_path());
-                            }
-                        }
-                    } else if let Some(parent) = path.parent() {
-                        let source = parent.join("summary.json");
-                        if source.exists()
-                            || path.file_name().is_some_and(|name| name == "summary.json")
-                        {
-                            sources.insert(source);
-                        }
-                    }
-                }
-                let paths: Vec<_> = sources.iter().cloned().collect();
-                let upserts = agents::grok::scan_paths(root, pricing, &paths)?;
-                Ok(selected_delta(upserts, &self.previous, |session| {
-                    sources.contains(&session.source)
-                }))
+                agents::grok::scan_changed(root, pricing, paths.unwrap(), &self.previous)
             }
             "antigravity" | "antigravity-cli" if paths.is_some() => {
                 let paths = paths.unwrap();

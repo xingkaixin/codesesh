@@ -331,7 +331,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
-            entry.path().parent().unwrap().to_owned()
+            crate::agents::kimi::helpers::session_directory(&root, entry.path()).unwrap()
         } else {
             entry.path().to_owned()
         };
@@ -455,8 +455,7 @@ pub fn target_key(source: &AgentSource, target: &str) -> Result<String> {
     if !path.try_exists()? {
         return Ok(target.into());
     }
-    let db =
-        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = crate::agents::open_readonly_sqlite(path)?;
     let v2 = source.agent == "opencode"
         && db.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_v2')",

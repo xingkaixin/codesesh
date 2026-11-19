@@ -118,7 +118,11 @@ pub(crate) fn scan_sources(
     ScanResult { sessions, failures }
 }
 
-pub(crate) fn scan_source_raw(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
+pub(crate) fn scan_source_raw(
+    source: &AgentSource,
+    pricing: &Pricing,
+    cached_sources: &agents::jsonl::CachedSources<'_>,
+) -> Result<AgentScan> {
     let mut sessions = Vec::new();
     for root in source.scan_roots()? {
         if !(exists(&root)?
@@ -127,8 +131,14 @@ pub(crate) fn scan_source_raw(source: &AgentSource, pricing: &Pricing) -> Result
             continue;
         }
         sessions.extend(
-            agents::scan_agent(&source.agent, &root, &source.data_root, pricing)
-                .with_context(|| format!("scanning {} at {}", source.agent, root.display()))?,
+            agents::scan_agent(
+                &source.agent,
+                &root,
+                &source.data_root,
+                pricing,
+                cached_sources,
+            )
+            .with_context(|| format!("scanning {} at {}", source.agent, root.display()))?,
         );
     }
     let available = !sessions.is_empty() || has_sources(source)?;
@@ -140,7 +150,7 @@ pub(crate) fn scan_source_raw(source: &AgentSource, pricing: &Pricing) -> Result
 
 #[cfg(test)]
 pub(crate) fn scan_source(source: &AgentSource, pricing: &Pricing) -> Result<AgentScan> {
-    let mut scan = scan_source_raw(source, pricing)?;
+    let mut scan = scan_source_raw(source, pricing, &Default::default())?;
     for session in &mut scan.sessions {
         agents::complete_projections(session);
     }

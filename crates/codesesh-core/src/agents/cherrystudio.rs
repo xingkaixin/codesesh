@@ -1,7 +1,7 @@
-use super::{ParsedSession, deepchat::common::*};
+use super::{ParsedSession, deepchat::common::*, open_readonly_sqlite};
 use crate::{model::*, pricing::Pricing};
 use anyhow::{Result, bail};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::Connection;
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -298,7 +298,7 @@ fn scan_impl(
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(&path)?;
     db.execute_batch("BEGIN")?;
     scan_connection(root, &path, &db, pricing, selected)
 }
@@ -404,7 +404,7 @@ pub fn fingerprints(root: &Path) -> Result<HashMap<String, String>> {
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(path)?;
     db.execute_batch("BEGIN")?;
     fingerprint_connection(&db, None)
 }
@@ -458,7 +458,7 @@ pub fn scan_page(
     if !path.exists() {
         return Ok((Vec::new(), HashMap::new()));
     }
-    let db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(&path)?;
     db.execute_batch("BEGIN")?;
     let fingerprints = fingerprint_connection(&db, Some(selected))?;
     let sessions = scan_connection(root, &path, &db, pricing, Some(selected))?;
@@ -470,7 +470,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<(String, f64)>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(path)?;
     db.execute_batch("BEGIN")?;
     let mut keys = Vec::new();
     for (kind, table, message_table, key) in [

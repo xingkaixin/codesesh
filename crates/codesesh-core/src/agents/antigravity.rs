@@ -1,8 +1,8 @@
-use super::{ParsedSession, deepchat::common};
+use super::{ParsedSession, deepchat::common, open_readonly_sqlite};
 use crate::{model::*, pricing::Pricing};
 use anyhow::{Context, Result};
 use prost::Message as _;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -40,7 +40,7 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<V
     for (root, paths) in stores {
         let summary_path = root.join("conversation_summaries.db");
         let summaries = if summary_path.try_exists()? {
-            let db = Connection::open_with_flags(summary_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            let db = open_readonly_sqlite(summary_path)?;
             db.execute_batch("BEGIN")?;
             Some(db)
         } else {
@@ -126,7 +126,7 @@ fn parse(
         .ok()
         .map(|time| time.timestamp_millis() as f64)
         .unwrap_or(crate::time::file_mtime_ms(path)?);
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(path)?;
     db.execute_batch("BEGIN")?;
     if candidates.is_empty() {
         candidates = trajectory_workspaces(&db, path)?;
@@ -769,7 +769,7 @@ fn resolve_uncached_directory(
         .ok()
         .map(|uris| workspace_paths(uris, &path))
         .unwrap_or_default();
-    let db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(&path)?;
     db.execute_batch("BEGIN")?;
     if candidates.is_empty() {
         candidates = trajectory_workspaces(&db, &path)?;

@@ -126,12 +126,22 @@ pub fn run(
                     return Ok(());
                 }
                 let scan_started = Instant::now();
-                let scanned = super::scan_source_raw(source, pricing);
+                let cached_sources = agents::jsonl::CachedSources {
+                    paths: old
+                        .iter()
+                        .filter_map(|head| {
+                            baseline.source_paths.get(&head.reference).map(Path::new)
+                        })
+                        .collect(),
+                    damaged: Some(Default::default()),
+                };
+                let scanned = super::scan_source_raw(source, pricing, &cached_sources);
                 record(
                     format!("agent:{}:scan", source.agent),
                     scan_started.elapsed(),
                 );
                 let mut scanned = scanned?;
+                let damaged = cached_sources.damaged.unwrap().into_inner();
                 let previous_identities: HashMap<_, _> = old
                     .iter()
                     .map(|head| {
@@ -158,6 +168,40 @@ pub fn run(
                     .iter()
                     .map(|session| session.head.reference.clone())
                     .collect();
+                if !damaged.is_empty() {
+                    let scanned_by_id: HashMap<_, _> = scanned
+                        .sessions
+                        .iter()
+                        .map(|session| (session.head.reference.session_id.as_str(), session))
+                        .collect();
+                    for head in old
+                        .iter()
+                        .filter(|head| damaged.contains(&head.reference.session_id))
+                    {
+                        let id = &head.reference.session_id;
+                        let Some(session) = scanned_by_id.get(id.as_str()) else {
+                            bail!("Malformed JSONL in session {id}; retaining cached messages");
+                        };
+                        let previous = cache
+                            .detail(head.clone())?
+                            .ok_or_else(|| anyhow::anyhow!("Cached session body is unavailable"))?;
+                        // Cold scans accept good records around a bad line. Compare published
+                        // messages after the same normalization used to create the cached body.
+                        let next = &session.detail.messages;
+                        anyhow::ensure!(
+                            next.len() >= previous.messages.len()
+                                && previous
+                                    .messages
+                                    .iter()
+                                    .zip(next)
+                                    .all(|(old, new)| old.id == new.id
+                                        && old.role == new.role
+                                        && old.parts == new.parts),
+                            "Malformed JSONL in {}; retaining cached messages",
+                            session.source.display()
+                        );
+                    }
+                }
                 if agents::database_path(&source.agent, &source.scan_path).is_none() {
                     for head in &old {
                         if references.contains(&head.reference) {

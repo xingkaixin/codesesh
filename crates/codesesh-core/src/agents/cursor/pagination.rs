@@ -1,6 +1,6 @@
 use super::composer_id;
+use crate::agents::open_readonly_sqlite;
 use anyhow::Result;
-use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{collections::HashSet, path::Path};
@@ -50,7 +50,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let db = open_readonly_sqlite(path)?;
     let mut query = db
         .prepare("SELECT value FROM cursorDiskKV WHERE key LIKE 'composerData:%' ORDER BY rowid")?;
     let mut rows = query.query([])?;
