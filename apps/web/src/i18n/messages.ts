@@ -1097,4 +1097,9 @@ export const messages = {
     "{0} 个未匹配 · {1} 个官方单价更新",
     "{0} 件未一致・{1} 件の公式料金更新",
   ],
+  "Find in session": ["在会话中查找", "セッション内を検索"],
+  "Find in session…": ["在会话中查找…", "セッション内を検索…"],
+  "Previous match": ["上一个匹配", "前の一致"],
+  "Next match": ["下一个匹配", "次の一致"],
+  "Close find": ["关闭查找", "検索を閉じる"],
 } as const;

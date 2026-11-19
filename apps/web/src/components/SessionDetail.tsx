@@ -2,6 +2,7 @@ import type { SessionMessagePaging } from "../hooks/useSessionDetail";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
 import { ChevronDown, ChevronUp, ChevronsUpDown, FileText, Search, X } from "./ui/icons";
+import { Kbd } from "./ui/kbd";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   formatSessionReference,
@@ -18,7 +19,7 @@ import {
 } from "./RenderProfiler";
 import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
 import { SessionFilterAside } from "./session-detail/FilterPanel";
-import { countActiveFilterChips, SessionFilterChips } from "./session-detail/FilterChips";
+import { SessionFilterChips } from "./session-detail/FilterChips";
 import {
   collectMatchedCollapsibleKeys,
   createExpandedItemsRegistry,
@@ -44,6 +45,9 @@ import {
   SessionDetailAuxOverlay,
 } from "./session-detail/SessionDetailAux";
 import { SessionMessageTimeline } from "./session-detail/SessionMessageTimeline";
+import { SessionFindBar } from "./session-detail/SessionFindBar";
+import type { LoadedSessionFindMatch } from "./session-detail/session-find";
+import { useSessionFind } from "./session-detail/useSessionFind";
 import { MessagePagingControls } from "./session-detail/MessagePagingControls";
 import { SessionStats } from "./session-detail/SessionStats";
 import {
@@ -218,56 +222,9 @@ export function SessionDetail({
       deriveExpandedSummary(filteredMessages, expandedSnapshot, sessionAgentKey, session.directory),
     [filteredMessages, expandedSnapshot, sessionAgentKey, session.directory],
   );
-  const showTranscriptToolbar =
-    countActiveFilterChips(toc, filterState) > 0 ||
-    hasCollapsible ||
-    Boolean(effectiveHighlightQuery);
   const detailRef = useRef<HTMLDivElement>(null);
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
-  const targetDisplayMessageIndex = useMemo(
-    () =>
-      targetMessageIndex == null
-        ? undefined
-        : displayModel.resolveSourceMessageAnchor(targetMessageIndex)?.messageIndex,
-    [displayModel, targetMessageIndex],
-  );
-  const matchedCollapsibleKeys = useMemo(
-    () =>
-      collectMatchedCollapsibleKeys(
-        filteredMessages,
-        effectiveHighlightQuery,
-        targetDisplayMessageIndex,
-      ),
-    [effectiveHighlightQuery, filteredMessages, targetDisplayMessageIndex],
-  );
-  const autoExpandedRef = useRef<{ scope: string; keys: Set<string> }>({
-    scope: "",
-    keys: new Set(),
-  });
-  useEffect(() => {
-    const scope = `${sessionReference}\0${effectiveHighlightQuery}\0${targetMessageIndex ?? ""}`;
-    if (autoExpandedRef.current.scope !== scope) {
-      autoExpandedRef.current = { scope, keys: new Set() };
-    }
-    if (matchedCollapsibleKeys.length === 0) return;
-    const newlyMatched: string[] = [];
-    for (const key of matchedCollapsibleKeys) {
-      if (!autoExpandedRef.current.keys.has(key)) {
-        autoExpandedRef.current.keys.add(key);
-        newlyMatched.push(key);
-      }
-    }
-    if (newlyMatched.length > 0) {
-      expandedItems.expandItems(newlyMatched);
-    }
-  }, [
-    effectiveHighlightQuery,
-    expandedItems,
-    matchedCollapsibleKeys,
-    sessionReference,
-    targetMessageIndex,
-  ]);
   const handleJumpToMessageAnchor = useCallback(
     (anchorId: string, messageIndex: number | undefined, behavior: SessionAnchorScrollBehavior) => {
       const requestId = scrollRequestRef.current + 1;
@@ -285,6 +242,66 @@ export function SessionDetail({
     },
     [anchorRegistry, selection],
   );
+  const handleJumpToFindMatch = useCallback(
+    (match: LoadedSessionFindMatch, behavior: SessionAnchorScrollBehavior) => {
+      handleJumpToMessageAnchor(match.anchorId, match.displayMessageIndex, behavior);
+    },
+    [handleJumpToMessageAnchor],
+  );
+  const sessionFind = useSessionFind({
+    session,
+    sessionReference,
+    displayModel,
+    filteredMessages,
+    effectiveHighlightQuery,
+    onJumpToLoadedMatch: handleJumpToFindMatch,
+  });
+  const activeHighlightQuery = sessionFind.trimmedQuery || effectiveHighlightQuery;
+  const targetDisplayMessageIndex = useMemo(
+    () =>
+      targetMessageIndex == null
+        ? undefined
+        : displayModel.resolveSourceMessageAnchor(targetMessageIndex)?.messageIndex,
+    [displayModel, targetMessageIndex],
+  );
+  const activeTargetDisplayMessageIndex =
+    sessionFind.activeDisplayMessageIndex ?? targetDisplayMessageIndex;
+  const matchedCollapsibleKeys = useMemo(
+    () =>
+      collectMatchedCollapsibleKeys(
+        filteredMessages,
+        activeHighlightQuery,
+        activeTargetDisplayMessageIndex,
+      ),
+    [activeHighlightQuery, activeTargetDisplayMessageIndex, filteredMessages],
+  );
+  const autoExpandedRef = useRef<{ scope: string; keys: Set<string> }>({
+    scope: "",
+    keys: new Set(),
+  });
+  useEffect(() => {
+    const scope = `${sessionReference}\0${activeHighlightQuery}\0${activeTargetDisplayMessageIndex ?? ""}`;
+    if (autoExpandedRef.current.scope !== scope) {
+      autoExpandedRef.current = { scope, keys: new Set() };
+    }
+    if (matchedCollapsibleKeys.length === 0) return;
+    const newlyMatched: string[] = [];
+    for (const key of matchedCollapsibleKeys) {
+      if (!autoExpandedRef.current.keys.has(key)) {
+        autoExpandedRef.current.keys.add(key);
+        newlyMatched.push(key);
+      }
+    }
+    if (newlyMatched.length > 0) {
+      expandedItems.expandItems(newlyMatched);
+    }
+  }, [
+    activeHighlightQuery,
+    activeTargetDisplayMessageIndex,
+    expandedItems,
+    matchedCollapsibleKeys,
+    sessionReference,
+  ]);
   const handleJumpToAnchor = useCallback(
     (anchorId: string, behavior: SessionAnchorScrollBehavior) => {
       handleJumpToMessageAnchor(anchorId, displayModel.resolveMessageIndex(anchorId), behavior);
@@ -325,11 +342,12 @@ export function SessionDetail({
     () => jumpToSearchMessage(),
     [sessionReference, targetMessageIndex, targetMessageLoaded],
   );
+  const pendingSourceTarget = sessionFind.pendingSourceMessageIndex ?? targetMessageIndex;
   const targetMessagePending =
-    targetMessageIndex != null &&
-    Number.isSafeInteger(targetMessageIndex) &&
-    !targetMessageLoaded &&
-    targetMessageIndex < (session.message_total ?? 0);
+    pendingSourceTarget != null &&
+    Number.isSafeInteger(pendingSourceTarget) &&
+    pendingSourceTarget >= session.messages.length &&
+    pendingSourceTarget < (session.message_total ?? 0);
   const loadMore = messagePaging?.loadMore;
   const pageLoading = messagePaging?.loading ?? false;
   const pageFailed = messagePaging?.failed ?? false;
@@ -448,7 +466,7 @@ export function SessionDetail({
           onJumpToAnchor={handleJumpToAnchor}
         />
         <div className="flex min-w-0 flex-col gap-6 min-[1280px]:col-start-1 min-[1280px]:row-start-1">
-          {showTranscriptToolbar ? (
+          <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <SessionFilterChips toc={toc} state={filterState} actions={filterActions} />
               {effectiveHighlightQuery ? (
@@ -467,21 +485,48 @@ export function SessionDetail({
                   </button>
                 </span>
               ) : null}
-              {hasCollapsible ? (
+              <div className="ml-auto flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  aria-pressed={allExpanded}
-                  onClick={() =>
-                    allExpanded ? expandedItems.collapseAll() : expandedItems.expandAll()
-                  }
-                  className="motion-hover ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 text-xs font-medium text-[var(--console-text-secondary)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                  aria-expanded={sessionFind.open}
+                  onClick={sessionFind.open ? sessionFind.closeFind : sessionFind.openFind}
+                  className="motion-hover inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 text-xs font-medium text-[var(--console-text-secondary)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
                 >
-                  <ChevronsUpDown className="size-3.5 text-[var(--console-muted)]" />
-                  {allExpanded ? t("Collapse all") : t("Expand all")}
+                  <Search aria-hidden="true" className="size-3.5 text-[var(--console-muted)]" />
+                  {t("Find in session")}
+                  <span className="hidden sm:inline-flex">
+                    <Kbd>F</Kbd>
+                  </span>
                 </button>
-              ) : null}
+                {hasCollapsible ? (
+                  <button
+                    type="button"
+                    aria-pressed={allExpanded}
+                    onClick={() =>
+                      allExpanded ? expandedItems.collapseAll() : expandedItems.expandAll()
+                    }
+                    className="motion-hover inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 text-xs font-medium text-[var(--console-text-secondary)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                  >
+                    <ChevronsUpDown className="size-3.5 text-[var(--console-muted)]" />
+                    {allExpanded ? t("Collapse all") : t("Expand all")}
+                  </button>
+                ) : null}
+              </div>
             </div>
-          ) : null}
+            {sessionFind.open ? (
+              <SessionFindBar
+                query={sessionFind.query}
+                inputRef={sessionFind.inputRef}
+                activeIndex={sessionFind.activeIndex}
+                matchCount={sessionFind.matchCount}
+                searching={sessionFind.searching}
+                onChangeQuery={sessionFind.updateQuery}
+                onPrev={sessionFind.goPrev}
+                onNext={sessionFind.goNext}
+                onClose={sessionFind.closeFind}
+              />
+            ) : null}
+          </div>
           {filteredMessages.length > 0 ? (
             <>
               <SessionMessageTimeline
@@ -505,7 +550,7 @@ export function SessionDetail({
                     sessionAgentKey={sessionAgentKey}
                     agent={sessionAgent}
                     baseDirectory={session.directory}
-                    highlightQuery={effectiveHighlightQuery || undefined}
+                    highlightQuery={activeHighlightQuery || undefined}
                     childSessionById={childSessionById}
                     apiRef={virtualListRef}
                     anchorRegistry={anchorRegistry}

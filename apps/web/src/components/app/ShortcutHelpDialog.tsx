@@ -25,6 +25,7 @@ const SHORTCUT_GROUPS = [
     items: [
       { keys: ["⌘ K"], description: "Open global search" },
       { keys: ["/"], description: "Focus the search box" },
+      { keys: ["F"], description: "Find in session" },
       { keys: ["Esc"], description: "Exit search or close the current detail view" },
       { keys: ["?"], description: "Open this shortcuts panel" },
     ],
