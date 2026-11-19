@@ -148,17 +148,7 @@ pub fn visit_detail_message_page(
                     Some("estimated") => Some(CostSource::Estimated),
                     _ => None,
                 },
-                parts: if row.get::<_, i64>("parts_format_version")? >= 1 {
-                    serde_json::from_str(&raw_parts).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            row.as_ref().column_index("parts_json").unwrap_or(0),
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })?
-                } else {
-                    super::legacy_parts::normalize(&raw_parts)
-                },
+                parts: super::body::decode_parts(&raw_parts, row.get("parts_format_version")?)?,
                 subagent_id: row.get("subagent_id")?,
                 nickname: row.get("nickname")?,
                 automated: row.get::<_, bool>("automated")?.then_some(true),

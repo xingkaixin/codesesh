@@ -12,6 +12,8 @@ interface SessionFindBarProps {
   activeIndex: number;
   matchCount: number;
   searching: boolean;
+  failed: boolean;
+  onRetry: () => void;
   onChangeQuery: (query: string) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -24,6 +26,8 @@ export function SessionFindBar({
   activeIndex,
   matchCount,
   searching,
+  failed,
+  onRetry,
   onChangeQuery,
   onPrev,
   onNext,
@@ -67,7 +71,16 @@ export function SessionFindBar({
           className="console-mono inline-flex items-center gap-1.5 px-1 text-[11px] tabular-nums text-[var(--console-muted)]"
         >
           {searching ? <LoaderCircle aria-hidden="true" className="size-3 animate-spin" /> : null}
-          {counterText}
+          {failed ? (
+            <>
+              <span>{t('Search failed for "{0}"', [query])}</span>
+              <button type="button" className="underline" onClick={onRetry}>
+                {t("Retry")}
+              </button>
+            </>
+          ) : (
+            counterText
+          )}
         </span>
       ) : null}
       <div className="flex items-center gap-0.5 border-l border-[var(--console-border)] pl-1.5">

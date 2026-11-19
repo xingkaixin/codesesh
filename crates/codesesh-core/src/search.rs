@@ -376,6 +376,64 @@ pub(crate) fn filter_indexed_references(
     Ok(found)
 }
 
+fn append_find_value(value: &serde_json::Value, fields: &mut Vec<String>, depth: u8) {
+    use serde_json::Value;
+    if depth > 8 {
+        return;
+    }
+    match value {
+        Value::String(text) if !text.is_empty() => fields.push(text.clone()),
+        Value::Number(_) | Value::Bool(_) => fields.push(value.to_string()),
+        Value::Array(values) => values
+            .iter()
+            .for_each(|value| append_find_value(value, fields, depth + 1)),
+        Value::Object(values)
+            if values.get("type").and_then(Value::as_str) == Some("text")
+                && values.get("text").is_some_and(Value::is_string) =>
+        {
+            if let Some(text) = values["text"].as_str().filter(|text| !text.is_empty()) {
+                fields.push(text.to_owned());
+            }
+        }
+        Value::Object(values) => values
+            .values()
+            .for_each(|value| append_find_value(value, fields, depth + 1)),
+        _ => {}
+    }
+}
+
+fn find_message_text(parts: Vec<crate::model::MessagePart>) -> String {
+    use crate::model::MessagePart;
+    let mut fields = Vec::new();
+    for part in parts {
+        match part {
+            MessagePart::Text { text, .. }
+            | MessagePart::Reasoning { text, .. }
+            | MessagePart::Plan { text, .. } => {
+                if !text.is_empty() {
+                    fields.push(text);
+                }
+            }
+            MessagePart::Tool {
+                tool, title, state, ..
+            } => {
+                if !tool.is_empty() {
+                    fields.push(tool);
+                }
+                fields.extend(title.filter(|value| !value.is_empty()));
+                for value in [&state.input, &state.output, &state.error, &state.metadata]
+                    .into_iter()
+                    .flatten()
+                {
+                    append_find_value(value, &mut fields, 0);
+                }
+            }
+            MessagePart::Image { .. } => {}
+        }
+    }
+    fields.join("\n")
+}
+
 pub fn find_session_message_matches(
     connection: &Connection,
     reference: &SessionReference,
@@ -386,7 +444,7 @@ pub fn find_session_message_matches(
         return Ok(Vec::new());
     }
     let mut statement = connection.prepare_cached(
-        "SELECT message_index, content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? ORDER BY message_index",
+        "SELECT message_index, parts_json, parts_format_version FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? ORDER BY message_index",
     )?;
     let mut rows = statement.query(rusqlite::params![
         reference.source_node_id,
@@ -396,7 +454,9 @@ pub fn find_session_message_matches(
     let mut indices = Vec::new();
     while let Some(row) = rows.next()? {
         let index: i64 = row.get(0)?;
-        let content_text: String = row.get(1)?;
+        let raw = crate::storage::body::unpack(row.get_ref(1)?)?;
+        let content_text =
+            find_message_text(crate::storage::body::decode_parts(&raw, row.get(2)?)?);
         if index >= 0 && terms.matches(&content_text) {
             indices.push(index as usize);
         }

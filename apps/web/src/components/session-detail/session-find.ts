@@ -1,4 +1,8 @@
-import { buildHighlightPattern, matchesHighlightPattern } from "../../lib/search-highlight";
+import {
+  buildHighlightPattern,
+  isTextContentBlock,
+  matchesHighlightPattern,
+} from "../../lib/search-highlight";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
 import type { FilteredSessionMessage } from "./toc";
 
@@ -58,6 +62,10 @@ function appendValueText(value: unknown, out: string[], depth = 0): void {
     return;
   }
   if (typeof value === "object") {
+    if (isTextContentBlock(value)) {
+      if (value.text) out.push(value.text);
+      return;
+    }
     for (const nested of Object.values(value)) appendValueText(nested, out, depth + 1);
   }
 }

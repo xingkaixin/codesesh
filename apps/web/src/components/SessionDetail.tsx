@@ -47,7 +47,7 @@ import {
 import { SessionMessageTimeline } from "./session-detail/SessionMessageTimeline";
 import { SessionFindBar } from "./session-detail/SessionFindBar";
 import type { LoadedSessionFindMatch } from "./session-detail/session-find";
-import { useSessionFind } from "./session-detail/useSessionFind";
+import { useSessionFind, useSessionFindState } from "./session-detail/useSessionFind";
 import { MessagePagingControls } from "./session-detail/MessagePagingControls";
 import { SessionStats } from "./session-detail/SessionStats";
 import { SessionSubSessions } from "./session-detail/SessionSubSessions";
@@ -183,14 +183,18 @@ export function SessionDetail({
   const sessionReference = formatSessionReference(session.reference);
   const { state: filterState, actions: filterActions } = useSessionFilters(toc, sessionReference);
   const [openAuxPanel, setOpenAuxPanel] = useState<"toc" | "files" | null>(null);
+  const findState = useSessionFindState(sessionReference);
+  const searchingAll = findState.state.open && Boolean(findState.state.query.trim());
   const selection = useMemo(
     () =>
       measureSessionDetailWork("SessionDetail:selectDisplayModel", () =>
-        displayModel.select(deriveSelectedFilters(toc, filterState.excluded)),
+        displayModel.select(
+          searchingAll ? toc.filterIds : deriveSelectedFilters(toc, filterState.excluded),
+        ),
       ),
 
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, displayModel, toc, filterState.excluded],
+    [locale, displayModel, toc, filterState.excluded, searchingAll],
   );
   const { messages: filteredMessages, timelineEntries, visibleUnitCount } = selection;
   const childSessionById = useMemo(
@@ -250,6 +254,7 @@ export function SessionDetail({
     [handleJumpToMessageAnchor],
   );
   const sessionFind = useSessionFind({
+    findState,
     session,
     sessionReference,
     displayModel,
@@ -515,29 +520,37 @@ export function SessionDetail({
                 ) : null}
               </div>
             </div>
-            {sessionFind.open ? (
-              <SessionFindBar
-                query={sessionFind.query}
-                inputRef={sessionFind.inputRef}
-                activeIndex={sessionFind.activeIndex}
-                matchCount={sessionFind.matchCount}
-                searching={sessionFind.searching}
-                onChangeQuery={sessionFind.updateQuery}
-                onPrev={sessionFind.goPrev}
-                onNext={sessionFind.goNext}
-                onClose={sessionFind.closeFind}
-              />
-            ) : null}
           </div>
+          {sessionFind.open || filteredMessages.length > 0 ? (
+            <div className="sticky top-0 z-20 -mx-2 flex flex-col gap-2 bg-[var(--console-bg)] px-2 py-3">
+              {sessionFind.open ? (
+                <SessionFindBar
+                  query={sessionFind.query}
+                  inputRef={sessionFind.inputRef}
+                  activeIndex={sessionFind.activeIndex}
+                  matchCount={sessionFind.matchCount}
+                  searching={sessionFind.searching}
+                  failed={sessionFind.failed}
+                  onRetry={sessionFind.retry}
+                  onChangeQuery={sessionFind.updateQuery}
+                  onPrev={sessionFind.goPrev}
+                  onNext={sessionFind.goNext}
+                  onClose={sessionFind.closeFind}
+                />
+              ) : null}
+              {filteredMessages.length > 0 && (
+                <SessionMessageTimeline
+                  entries={timelineEntries}
+                  anchorRegistry={anchorRegistry}
+                  onNavigate={(entry, behavior) =>
+                    handleJumpToMessageAnchor(entry.anchorId, entry.messageIndex, behavior)
+                  }
+                />
+              )}
+            </div>
+          ) : null}
           {filteredMessages.length > 0 ? (
             <>
-              <SessionMessageTimeline
-                entries={timelineEntries}
-                anchorRegistry={anchorRegistry}
-                onNavigate={(entry, behavior) =>
-                  handleJumpToMessageAnchor(entry.anchorId, entry.messageIndex, behavior)
-                }
-              />
               <ExpandedItemsProvider registry={expandedItems}>
                 <RenderProfiler
                   id="MessageList"
@@ -566,11 +579,13 @@ export function SessionDetail({
               {t("No messages match the current filters.")}
             </div>
           )}
-          <HiddenToolsFooter
-            hiddenCount={deriveHiddenCount(toc, filterState)}
-            hiddenTools={deriveHiddenTools(toc, filterState)}
-            onShowAll={filterActions.resetAll}
-          />
+          {!searchingAll && (
+            <HiddenToolsFooter
+              hiddenCount={deriveHiddenCount(toc, filterState)}
+              hiddenTools={deriveHiddenTools(toc, filterState)}
+              onShowAll={filterActions.resetAll}
+            />
+          )}
           {pagingFooter}
         </div>
       </div>

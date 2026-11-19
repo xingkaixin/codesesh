@@ -321,9 +321,7 @@ export default function App() {
         ),
       ) ?? null)
     : null;
-  const parentSessionPath = parentSessionReference
-    ? sessionRoutePath(parentSessionReference)
-    : null;
+  const parentSessionPath = parentSession ? sessionRoutePath(parentSession.reference) : null;
   const routeHeader = buildRouteHeaderModel({
     viewState,
     isSearchMode,

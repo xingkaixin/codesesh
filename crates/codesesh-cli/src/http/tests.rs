@@ -1362,12 +1362,12 @@ async fn session_matches_endpoint_returns_ordered_indices_and_isolates_nodes() {
                 (2_i64, "third with 数据库 needleToken"),
             ] {
                 connection.execute(
-                    "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','s1',?,?,'assistant',1,'[]',?)",
+                    "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','s1',?,?,'assistant',1,json_array(json_object('type','text','text',?3)),?3)",
                     (index, format!("m{index}"), body),
                 )?;
             }
             connection.execute(
-                "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('worker-a','codex','s1',0,'r0','assistant',1,'[]','needleToken remote')",
+                "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('worker-a','codex','s1',0,'r0','assistant',1,json_array(json_object('type','text','text','needleToken remote')),'needleToken remote')",
                 [],
             )?;
             Ok(())

@@ -621,7 +621,7 @@ fn find_session_message_matches_isolates_reference_and_supports_ascii_and_cjk() 
         (3, "follow-up mentioning needletoken and 数据库"),
     ] {
         db.execute(
-            "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','shared',?,?,'assistant',1,'[]',?)",
+            "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','shared',?,?,'assistant',1,json_array(json_object('type','text','text',?)), 'assistant text')",
             params![index, format!("m{index}"), body],
         )
         .unwrap();
@@ -632,7 +632,7 @@ fn find_session_message_matches_isolates_reference_and_supports_ascii_and_cjk() 
         ("local", "codex", "other"),
     ] {
         db.execute(
-            "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES(?,?,?,0,'m0','assistant',1,'[]','NeedleToken 数据库连接')",
+            "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES(?,?,?,0,'m0','assistant',1,json_array(json_object('type','text','text','NeedleToken 数据库连接')),'assistant text')",
             params![node, agent, id],
         )
         .unwrap();
@@ -649,6 +649,11 @@ fn find_session_message_matches_isolates_reference_and_supports_ascii_and_cjk() 
         session_id: "shared".into(),
     };
 
+    assert!(
+        find_session_message_matches(&db, &local_codex, "text")
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         find_session_message_matches(&db, &local_codex, "needletoken").unwrap(),
         vec![1, 3]

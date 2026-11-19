@@ -22,6 +22,7 @@ interface SessionFindState {
 }
 
 interface UseSessionFindParams {
+  findState: ReturnType<typeof useSessionFindState>;
   session: SessionDetailData;
   sessionReference: string;
   displayModel: SessionDetailDisplayModel;
@@ -43,7 +44,17 @@ function emptyFindState(sessionReference: string): SessionFindState {
   };
 }
 
+export function useSessionFindState(sessionReference: string) {
+  const [rawState, setRawState] = useState<SessionFindState>(() =>
+    emptyFindState(sessionReference),
+  );
+  const state =
+    rawState.sessionReference === sessionReference ? rawState : emptyFindState(sessionReference);
+  return { state, setRawState };
+}
+
 export function useSessionFind({
+  findState,
   session,
   sessionReference,
   displayModel,
@@ -51,15 +62,12 @@ export function useSessionFind({
   effectiveHighlightQuery,
   onJumpToLoadedMatch,
 }: UseSessionFindParams) {
-  const [rawState, setRawState] = useState<SessionFindState>(() =>
-    emptyFindState(sessionReference),
-  );
-  const state =
-    rawState.sessionReference === sessionReference ? rawState : emptyFindState(sessionReference);
-  const [remoteState, setRemoteState] = useState<{ scope: string; indices: number[] }>({
+  const { state, setRawState } = findState;
+  const [remoteState, setRemoteState] = useState<{ scope: string; indices: number[] | null }>({
     scope: "",
     indices: [],
   });
+  const [attempt, setAttempt] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastAutoScrolledScopeRef = useRef("");
   const lastScrolledPendingRef = useRef("");
@@ -93,7 +101,7 @@ export function useSessionFind({
         })
         .catch(() => {
           if (controller.signal.aborted) return;
-          setRemoteState({ scope: queryScope, indices: [] });
+          setRemoteState({ scope: queryScope, indices: null });
         });
     }, REMOTE_MATCH_DEBOUNCE_MS);
 
@@ -101,13 +109,13 @@ export function useSessionFind({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [agentName, isPaged, queryScope, sessionId, sourceNodeId, trimmedQuery]);
+  }, [attempt, agentName, isPaged, queryScope, sessionId, sourceNodeId, trimmedQuery]);
 
   const unpagedMatches = useMemo<SessionFindMatch[]>(() => {
     if (!queryScope || !isPaged || remoteState.scope !== queryScope) return [];
     const loadedCount = session.messages.length;
     const result: SessionFindMatch[] = [];
-    for (const index of remoteState.indices) {
+    for (const index of remoteState.indices ?? []) {
       if (index >= loadedCount) {
         result.push({ kind: "unpaged", sourceMessageIndex: index });
       }
@@ -194,13 +202,13 @@ export function useSessionFind({
       return { ...current, open: true };
     });
     focusInput();
-  }, [effectiveHighlightQuery, focusInput, sessionReference]);
+  }, [effectiveHighlightQuery, focusInput, sessionReference, setRawState]);
 
   const closeFind = useCallback(() => {
     setRawState(emptyFindState(sessionReference));
     lastAutoScrolledScopeRef.current = "";
     lastScrolledPendingRef.current = "";
-  }, [sessionReference]);
+  }, [sessionReference, setRawState]);
 
   const updateQuery = useCallback(
     (nextQuery: string) => {
@@ -213,7 +221,7 @@ export function useSessionFind({
       });
       lastScrolledPendingRef.current = "";
     },
-    [sessionReference],
+    [sessionReference, setRawState],
   );
 
   const jumpToMatch = useCallback(
@@ -242,7 +250,7 @@ export function useSessionFind({
         }));
       }
     },
-    [matches, onJumpToLoadedMatch, sessionReference],
+    [matches, onJumpToLoadedMatch, sessionReference, setRawState],
   );
 
   const goNext = useCallback(() => {
@@ -311,6 +319,13 @@ export function useSessionFind({
   }, []);
 
   return {
+    failed: Boolean(
+      queryScope && isPaged && remoteState.scope === queryScope && remoteState.indices === null,
+    ),
+    retry: () => {
+      setRemoteState({ scope: "", indices: [] });
+      setAttempt((previous) => previous + 1);
+    },
     open: state.open,
     query: state.query,
     trimmedQuery,
