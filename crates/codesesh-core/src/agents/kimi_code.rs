@@ -1,4 +1,4 @@
-use super::{ParsedSession, kimi::helpers::*};
+use super::{ParsedSession, claudecode::common::InvalidSession, kimi::helpers::*};
 use crate::{model::*, pricing::Pricing};
 use serde_json::Value;
 use std::{
@@ -12,9 +12,57 @@ pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>
     } else {
         root.to_owned()
     };
-    scan_directories(&sessions, directories(&sessions)?, pricing)
+    scan_directories(&sessions, directories(&sessions)?, pricing, None)
 }
 
+pub fn scan_changed(
+    root: &Path,
+    pricing: &Pricing,
+    changed_paths: &[PathBuf],
+    previous: &[crate::agents::SessionRecord],
+) -> anyhow::Result<super::ScanDelta> {
+    let sessions = if root.join("sessions").is_dir() {
+        root.join("sessions")
+    } else {
+        root.to_owned()
+    };
+    match affected_session_dirs(&sessions, changed_paths)? {
+        Some(dirs) => {
+            let upserts = scan_directories(&sessions, dirs.clone(), pricing, Some(previous))?;
+            let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
+            let removed = previous
+                .iter()
+                .filter(|session| {
+                    dirs.iter().any(|dir| session.source.starts_with(dir))
+                        && !retained.contains(&session.head.reference)
+                })
+                .map(|session| session.head.reference.clone())
+                .collect();
+            Ok(super::ScanDelta {
+                upserts,
+                removed,
+                complete: false,
+            })
+        }
+        None => {
+            let upserts =
+                scan_directories(&sessions, directories(&sessions)?, pricing, Some(previous))?;
+            let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
+            let removed = previous
+                .iter()
+                .filter(|session| !retained.contains(&session.head.reference))
+                .map(|session| session.head.reference.clone())
+                .collect();
+            Ok(super::ScanDelta {
+                upserts,
+                removed,
+                complete: false,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
 pub fn scan_paths(
     root: &Path,
     pricing: &Pricing,
@@ -26,7 +74,7 @@ pub fn scan_paths(
         root.to_owned()
     };
     match affected_session_dirs(&sessions, changed_paths)? {
-        Some(paths) => scan_directories(&sessions, paths, pricing),
+        Some(paths) => scan_directories(&sessions, paths, pricing, None),
         None => scan(root, pricing),
     }
 }
@@ -35,6 +83,7 @@ fn scan_directories(
     sessions: &Path,
     paths: Vec<PathBuf>,
     pricing: &Pricing,
+    previous: Option<&[crate::agents::SessionRecord]>,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let mut workdirs = HashMap::new();
     for record in records(
@@ -52,18 +101,28 @@ fn scan_directories(
     }
     let mut result = vec![];
     for path in paths {
+        let cached =
+            previous.is_some_and(|sessions| sessions.iter().any(|session| session.source == path));
         let state_path = path.join("state.json");
         let wire_path = path.join("agents/main/wire.jsonl");
-        if !state_path.exists() || !wire_path.exists() {
+        let state_exists = state_path.try_exists()?;
+        let wire_exists = wire_path.try_exists()?;
+        if !state_exists || !wire_exists {
+            if cached && (state_exists || wire_exists) {
+                return Err(InvalidSession("incomplete Kimi-Code session").into());
+            }
             continue;
         }
         let content = std::fs::read(&state_path)?;
-        let Ok(state) = serde_json::from_slice::<Value>(&content) else {
-            continue;
+        let state = match serde_json::from_slice::<Value>(&content) {
+            Ok(value) if value.is_object() => value,
+            Ok(_) | Err(_) if !cached => continue,
+            Ok(_) => return Err(InvalidSession("invalid Kimi-Code session state").into()),
+            Err(error) => {
+                return Err(anyhow::Error::new(error)
+                    .context(InvalidSession("malformed Kimi-Code session state")));
+            }
         };
-        if !state.is_object() {
-            continue;
-        }
         let created = timestamp(&state["createdAt"])
             .or_else(|| timestamp(&state["created_at"]))
             .unwrap_or(mtime(&state_path)?);
@@ -285,6 +344,9 @@ fn scan_directories(
             }
         }
         if builder.messages.is_empty() {
+            if cached {
+                return Err(InvalidSession("incomplete Kimi-Code session").into());
+            }
             continue;
         }
         stats.total_tokens = Some(stats.total_input_tokens + stats.total_output_tokens);
@@ -592,5 +654,57 @@ mod tests {
             .unwrap();
         }
         assert!(scan(root.path(), &Pricing::bundled()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn corrupt_or_in_flight_cached_session_errors_instead_of_removing() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        let path = sessions_dir.join("hash/s1");
+        std::fs::create_dir_all(path.join("agents/main")).unwrap();
+        let state_path = path.join("state.json");
+        let wire_path = path.join("agents/main/wire.jsonl");
+        std::fs::write(&state_path, "{}").unwrap();
+        std::fs::write(
+            &wire_path,
+            r#"{"type":"context.append_message","message":{"role":"user","content":"hello"}}"#,
+        )
+        .unwrap();
+
+        let pricing = Pricing::bundled();
+        let previous: Vec<_> = scan(&sessions_dir, &pricing)
+            .unwrap()
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect();
+        assert_eq!(previous.len(), 1);
+
+        std::fs::write(&state_path, "{\"truncated\":").unwrap();
+        assert!(
+            scan_changed(
+                &sessions_dir,
+                &pricing,
+                std::slice::from_ref(&state_path),
+                &previous
+            )
+            .is_err()
+        );
+
+        std::fs::write(&state_path, "{}").unwrap();
+        std::fs::write(&wire_path, "{\"truncated\":").unwrap();
+        assert!(
+            scan_changed(
+                &sessions_dir,
+                &pricing,
+                std::slice::from_ref(&wire_path),
+                &previous
+            )
+            .is_err()
+        );
+
+        std::fs::remove_dir_all(&path).unwrap();
+        let deleted = scan_changed(&sessions_dir, &pricing, &[state_path], &previous).unwrap();
+        assert!(deleted.upserts.is_empty());
+        assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
     }
 }
