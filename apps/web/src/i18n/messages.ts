@@ -480,6 +480,7 @@ export const messages = {
   ],
   Collapsed: ["收起", "折りたたむ"],
   "Expand all": ["全部展开", "すべて展開"],
+  "Collapse all": ["全部收起", "すべて折りたたむ"],
   Hidden: ["隐藏", "非表示"],
   "Sub-sessions": ["子会话", "サブセッション"],
   "Sub-session display": ["子会话显示方式", "サブセッションの表示"],

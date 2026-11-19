@@ -1,7 +1,7 @@
 import type { SessionMessagePaging } from "../hooks/useSessionDetail";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { ChevronDown, ChevronUp, FileText } from "./ui/icons";
+import { ChevronDown, ChevronUp, ChevronsUpDown, FileText } from "./ui/icons";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   formatSessionReference,
@@ -18,7 +18,13 @@ import {
 } from "./RenderProfiler";
 import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
 import { SessionFilterAside } from "./session-detail/FilterPanel";
-import { SessionFilterChips } from "./session-detail/FilterChips";
+import { countActiveFilterChips, SessionFilterChips } from "./session-detail/FilterChips";
+import {
+  createExpandedItemsRegistry,
+  deriveExpandedSummary,
+  ExpandedItemsProvider,
+  useExpandedItemsSnapshot,
+} from "./session-detail/ExpandedItemsRegistry";
 import {
   deriveHiddenCount,
   deriveHiddenTools,
@@ -180,6 +186,16 @@ export function SessionDetail({
     [childSessions],
   );
   const [anchorRegistry] = useState(createTimelineAnchorRegistry);
+  const expandedItems = useMemo(
+    () => createExpandedItemsRegistry(sessionReference),
+    [sessionReference],
+  );
+  const expandedSnapshot = useExpandedItemsSnapshot(expandedItems);
+  const { hasCollapsible, allExpanded } = useMemo(
+    () => deriveExpandedSummary(filteredMessages, expandedSnapshot),
+    [filteredMessages, expandedSnapshot],
+  );
+  const showTranscriptToolbar = countActiveFilterChips(toc, filterState) > 0 || hasCollapsible;
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
   const handleJumpToMessageAnchor = useCallback(
@@ -342,7 +358,24 @@ export function SessionDetail({
           onJumpToAnchor={handleJumpToAnchor}
         />
         <div className="flex min-w-0 flex-col gap-6 min-[1280px]:col-start-1 min-[1280px]:row-start-1">
-          <SessionFilterChips toc={toc} state={filterState} actions={filterActions} />
+          {showTranscriptToolbar ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <SessionFilterChips toc={toc} state={filterState} actions={filterActions} />
+              {hasCollapsible ? (
+                <button
+                  type="button"
+                  aria-pressed={allExpanded}
+                  onClick={() =>
+                    allExpanded ? expandedItems.collapseAll() : expandedItems.expandAll()
+                  }
+                  className="motion-hover ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 text-xs font-medium text-[var(--console-text-secondary)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                >
+                  <ChevronsUpDown className="size-3.5 text-[var(--console-muted)]" />
+                  {allExpanded ? t("Collapse all") : t("Expand all")}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {filteredMessages.length > 0 ? (
             <>
               <SessionMessageTimeline
@@ -352,26 +385,28 @@ export function SessionDetail({
                   handleJumpToMessageAnchor(entry.anchorId, entry.messageIndex, behavior)
                 }
               />
-              <RenderProfiler
-                id="MessageList"
-                detail={{
-                  messages: filteredMessages.length,
-                  virtualized: filteredMessages.length > VIRTUALIZED_MESSAGE_THRESHOLD,
-                }}
-              >
-                <MessageList
-                  key={sessionReference}
-                  messages={filteredMessages}
-                  sessionAgentKey={sessionAgentKey}
-                  agent={sessionAgent}
-                  baseDirectory={session.directory}
-                  highlightQuery={highlightQuery}
-                  childSessionById={childSessionById}
-                  apiRef={virtualListRef}
-                  anchorRegistry={anchorRegistry}
-                  followTail={!messagePaging}
-                />
-              </RenderProfiler>
+              <ExpandedItemsProvider registry={expandedItems}>
+                <RenderProfiler
+                  id="MessageList"
+                  detail={{
+                    messages: filteredMessages.length,
+                    virtualized: filteredMessages.length > VIRTUALIZED_MESSAGE_THRESHOLD,
+                  }}
+                >
+                  <MessageList
+                    key={sessionReference}
+                    messages={filteredMessages}
+                    sessionAgentKey={sessionAgentKey}
+                    agent={sessionAgent}
+                    baseDirectory={session.directory}
+                    highlightQuery={highlightQuery}
+                    childSessionById={childSessionById}
+                    apiRef={virtualListRef}
+                    anchorRegistry={anchorRegistry}
+                    followTail={!messagePaging}
+                  />
+                </RenderProfiler>
+              </ExpandedItemsProvider>
             </>
           ) : (
             <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">

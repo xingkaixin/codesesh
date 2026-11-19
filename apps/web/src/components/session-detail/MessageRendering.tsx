@@ -38,6 +38,12 @@ import { toDisplayText } from "./tool-normalize";
 import { getDisplayTextWithRelativePaths } from "./path-extract";
 import { buildBlockTimelineAnchorId, buildMessageTimelineAnchorId } from "./timeline";
 import { useTimelineAnchorRef } from "./TimelineAnchorRegistry";
+import {
+  buildPlanItemKey,
+  buildReasoningItemKey,
+  buildToolItemKey,
+  useExpandedItem,
+} from "./ExpandedItemsRegistry";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 import {
   type ToolStatus,
@@ -244,6 +250,8 @@ export const MessageItem = memo(function MessageItem({
                 return (
                   <ToolsSection
                     key={index}
+                    messageIndex={messageIndex}
+                    blockIndex={index}
                     parts={block.parts}
                     anchorIds={block.anchorIds}
                     sessionAgentKey={sessionAgentKey}
@@ -361,7 +369,7 @@ const ReasoningSection = memo(function ReasoningSection({
 }) {
   useLocale();
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useExpandedItem(buildReasoningItemKey(anchorId));
   const anchorRef = useTimelineAnchorRef(anchorId);
   const fullText = useMemo(
     () =>
@@ -377,7 +385,7 @@ const ReasoningSection = memo(function ReasoningSection({
       <button
         type="button"
         className="motion-hover inline-flex h-8 items-center gap-2 rounded-lg border border-dashed border-[var(--console-border-strong)] px-3 text-xs text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-        onClick={() => setExpanded((isExpanded) => !isExpanded)}
+        onClick={toggleExpanded}
         aria-expanded={expanded}
       >
         <Lightbulb className="size-3.5" />
@@ -402,12 +410,16 @@ const ReasoningSection = memo(function ReasoningSection({
 });
 
 const ToolsSection = memo(function ToolsSection({
+  messageIndex,
+  blockIndex,
   parts,
   anchorIds,
   sessionAgentKey,
   baseDirectory,
   highlightQuery,
 }: {
+  messageIndex: number;
+  blockIndex: number;
   parts: ToolPart[];
   anchorIds?: string[];
   sessionAgentKey: string;
@@ -422,6 +434,7 @@ const ToolsSection = memo(function ToolsSection({
         {parts.map((tool, index) => (
           <ToolItem
             key={index}
+            itemKey={buildToolItemKey(anchorIds?.[index], messageIndex, blockIndex, index)}
             tool={tool}
             anchorId={anchorIds?.[index]}
             sessionAgentKey={sessionAgentKey}
@@ -450,22 +463,29 @@ const PlansSection = memo(function PlansSection({
   return (
     <div ref={anchorRef} id={anchorId} className="scroll-mt-20 space-y-2">
       {parts.map((plan, i) => (
-        <PlanItem key={i} part={plan} highlightQuery={highlightQuery} />
+        <PlanItem
+          key={i}
+          itemKey={buildPlanItemKey(anchorId, i)}
+          part={plan}
+          highlightQuery={highlightQuery}
+        />
       ))}
     </div>
   );
 });
 
 const PlanItem = memo(function PlanItem({
+  itemKey,
   part,
   highlightQuery,
 }: {
+  itemKey: string;
   part: PlanPart;
   highlightQuery?: string;
 }) {
   const locale = useLocale();
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useExpandedItem(itemKey);
   const display = useMemo(
     () => buildCodexPlanDisplay(part),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
@@ -491,7 +511,7 @@ const PlanItem = memo(function PlanItem({
           <button
             type="button"
             className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-            onClick={() => setExpanded((isExpanded) => !isExpanded)}
+            onClick={toggleExpanded}
             aria-expanded={expanded}
           >
             {title}
@@ -526,12 +546,14 @@ const PlanItem = memo(function PlanItem({
 });
 
 const ToolItem = memo(function ToolItem({
+  itemKey,
   tool,
   anchorId,
   sessionAgentKey,
   baseDirectory,
   highlightQuery,
 }: {
+  itemKey: string;
   tool: ToolPart;
   anchorId?: string;
   sessionAgentKey: string;
@@ -540,7 +562,7 @@ const ToolItem = memo(function ToolItem({
 }) {
   const locale = useLocale();
 
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, toggleExpanded] = useExpandedItem(itemKey);
   const anchorRef = useTimelineAnchorRef(anchorId);
   const state = useMemo(() => normalizeToolState(tool), [tool]);
   const [rawOutputExpanded, setRawOutputExpanded] = useState(false);
@@ -598,7 +620,7 @@ const ToolItem = memo(function ToolItem({
         <button
           type="button"
           className="motion-hover flex min-h-10 w-full items-center gap-2.5 py-2 pr-2.5 pl-3 text-left hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none focus-visible:ring-inset"
-          onClick={() => setExpanded(!expanded)}
+          onClick={toggleExpanded}
           aria-expanded={expanded}
         >
           {header}
