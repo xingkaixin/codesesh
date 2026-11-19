@@ -1,4 +1,5 @@
-use super::{ParsedSession, tool_calls};
+use super::jsonl::CachedSources;
+use super::{ParsedSession, claudecode::common::InvalidSession, tool_calls};
 use crate::{model::*, pricing::Pricing, projects::path_identity};
 use serde_json::{Value, json};
 use std::{
@@ -12,7 +13,16 @@ mod transcript;
 use helpers::*;
 use transcript::transcript;
 
+#[cfg(test)]
 pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {
+    scan_cached(root, pricing, &CachedSources::default())
+}
+
+pub(super) fn scan_cached(
+    root: &Path,
+    pricing: &Pricing,
+    cached_sources: &CachedSources<'_>,
+) -> anyhow::Result<Vec<ParsedSession>> {
     let sessions = root.join("sessions");
     let base = if sessions.is_dir() {
         sessions.as_path()
@@ -29,8 +39,15 @@ pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>
             continue;
         }
         let path = entry.path();
-        if let Some(session) = parse_source(path, pricing)? {
-            results.push(session);
+        let cached = cached_sources.paths.contains(path);
+        match parse_source(path, pricing, |id| {
+            cached_sources.reject_invalid(id, cached)
+        }) {
+            Ok(Some(session)) => results.push(session),
+            Ok(None) if cached => return Err(InvalidSession("incomplete Grok session").into()),
+            Ok(None) => {}
+            Err(error) if !cached && error.is::<InvalidSession>() => {}
+            Err(error) => return Err(error),
         }
     }
     results.sort_by(|a, b| {
@@ -49,6 +66,7 @@ pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>
     Ok(results)
 }
 
+#[cfg(test)]
 pub fn scan_paths(
     _root: &Path,
     pricing: &Pricing,
@@ -56,26 +74,114 @@ pub fn scan_paths(
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let mut results = Vec::new();
     for source in sources.iter().collect::<std::collections::BTreeSet<_>>() {
-        if let Some(session) = parse_source(source, pricing)? {
-            results.push(session);
+        match parse_source(source, pricing, |_| false) {
+            Ok(Some(session)) => results.push(session),
+            Ok(None) => {}
+            Err(error) if error.is::<InvalidSession>() => {}
+            Err(error) => return Err(error),
         }
     }
     Ok(results)
 }
 
-fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedSession>> {
-    let summary: Value = match fs::read(path)
-        .ok()
-        .and_then(|b| serde_json::from_str(&String::from_utf8_lossy(&b)).ok())
-    {
-        Some(v) => v,
-        None => return Ok(None),
+pub fn scan_changed(
+    root: &Path,
+    pricing: &Pricing,
+    changed_paths: &[PathBuf],
+    previous: &[crate::agents::SessionRecord],
+) -> anyhow::Result<super::ScanDelta> {
+    let sessions = root.join("sessions");
+    let base = if sessions.is_dir() {
+        sessions.as_path()
+    } else {
+        root
     };
+    let mut sources = std::collections::BTreeSet::new();
+    for path in changed_paths {
+        for session in previous {
+            if path.starts_with(session.source.parent().unwrap_or(&session.source))
+                || session.source.starts_with(path)
+            {
+                sources.insert(session.source.clone());
+            }
+        }
+        let walk_target = if base.starts_with(path) {
+            base.exists().then_some(base)
+        } else if path.is_dir() {
+            Some(path.as_path())
+        } else {
+            None
+        };
+        if let Some(dir) = walk_target {
+            for entry in walkdir::WalkDir::new(dir) {
+                let entry = entry?;
+                if entry.file_type().is_file() && entry.file_name() == "summary.json" {
+                    sources.insert(entry.into_path());
+                }
+            }
+        } else if let Some(parent) = path.parent() {
+            let source = parent.join("summary.json");
+            if source.try_exists()? || path.file_name().is_some_and(|name| name == "summary.json") {
+                sources.insert(source);
+            }
+        }
+    }
+    let mut upserts = Vec::new();
+    let mut removed = Vec::new();
+    for source in sources {
+        let old: Vec<_> = previous
+            .iter()
+            .filter(|session| session.source == source)
+            .collect();
+        let parsed = match parse_source(&source, pricing, |_| !old.is_empty()) {
+            Ok(Some(session)) => Some(session),
+            Ok(None) => {
+                if !old.is_empty() && source.try_exists()? {
+                    return Err(InvalidSession("incomplete Grok session").into());
+                }
+                None
+            }
+            Err(error) if error.is::<InvalidSession>() && old.is_empty() => None,
+            Err(error) => return Err(error),
+        };
+        for old in old {
+            if parsed
+                .as_ref()
+                .is_none_or(|session| session.head.reference != old.head.reference)
+            {
+                removed.push(old.head.reference.clone());
+            }
+        }
+        if let Some(session) = parsed {
+            upserts.push(session);
+        }
+    }
+    Ok(super::ScanDelta {
+        upserts,
+        removed,
+        complete: false,
+    })
+}
+
+fn parse_source(
+    path: &Path,
+    pricing: &Pricing,
+    reject_invalid: impl Fn(&str) -> bool,
+) -> anyhow::Result<Option<ParsedSession>> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let summary: Value =
+        serde_json::from_str(&String::from_utf8_lossy(&bytes)).map_err(|error| {
+            anyhow::Error::new(error).context(InvalidSession("malformed Grok summary.json"))
+        })?;
     let Some(id) = string(&summary["info"]["id"]) else {
-        return Ok(None);
+        return Err(InvalidSession("missing Grok session id").into());
     };
     let Some(directory) = string(&summary["info"]["cwd"]) else {
-        return Ok(None);
+        return Err(InvalidSession("missing Grok session cwd").into());
     };
     let mtime = crate::time::file_mtime_ms(path)?;
     let created = iso(&summary["created_at"]).unwrap_or(mtime);
@@ -83,15 +189,9 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
         .or_else(|| iso(&summary["updated_at"]))
         .unwrap_or(created);
     let updates = path.with_file_name("updates.jsonl");
-    let records = if updates.exists() {
-        String::from_utf8_lossy(&fs::read(updates)?)
-            .lines()
-            .filter_map(|s| serde_json::from_str::<Value>(s).ok())
-            .filter(Value::is_object)
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
+    let records = super::jsonl::records(&updates, || reject_invalid(&id))?
+        .filter(|record| record.as_ref().map_or(true, Value::is_object))
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let messages = transcript(
         &records,
         &id,
@@ -497,5 +597,62 @@ mod tests {
                 "https://github.com/other/repo.git"
             ]
         );
+    }
+
+    #[test]
+    fn corrupt_or_in_flight_cached_session_errors_instead_of_removing() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("sessions/g1");
+        fs::create_dir_all(&dir).unwrap();
+        let summary_path = dir.join("summary.json");
+        let updates_path = dir.join("updates.jsonl");
+        let summary =
+            json!({"info":{"id":"g1","cwd":"/tmp/project"},"created_at":"2026-09-01T00:00:00Z"})
+                .to_string();
+        let updates = update(
+            1,
+            "p",
+            "user_message_chunk",
+            json!({"content":{"type":"text","text":"Keep cached"}}),
+        )
+        .to_string();
+        fs::write(&summary_path, &summary).unwrap();
+        fs::write(&updates_path, &updates).unwrap();
+
+        let pricing = Pricing::bundled();
+        let previous: Vec<_> = scan(root.path(), &pricing)
+            .unwrap()
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect();
+        assert_eq!(previous.len(), 1);
+
+        fs::write(&summary_path, "{\"info\":").unwrap();
+        assert!(
+            scan_changed(
+                root.path(),
+                &pricing,
+                std::slice::from_ref(&summary_path),
+                &previous
+            )
+            .is_err()
+        );
+
+        fs::write(&summary_path, &summary).unwrap();
+        fs::write(&updates_path, format!("{updates}\n{{broken\n")).unwrap();
+        assert!(
+            scan_changed(
+                root.path(),
+                &pricing,
+                std::slice::from_ref(&updates_path),
+                &previous
+            )
+            .is_err()
+        );
+
+        fs::remove_file(&summary_path).unwrap();
+        let deleted = scan_changed(root.path(), &pricing, &[summary_path], &previous).unwrap();
+        assert!(deleted.upserts.is_empty());
+        assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
     }
 }

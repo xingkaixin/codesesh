@@ -1,5 +1,5 @@
 mod cjk;
-pub(crate) use cjk::index_text;
+pub(crate) use cjk::index_parts;
 mod file_activity;
 mod parser;
 mod reader;
@@ -12,8 +12,8 @@ use crate::model::{SessionHead, SessionReference};
 pub(crate) use crate::projects::ProjectScopeMatcher as ProjectScope;
 pub(crate) use crate::wire::SearchHighlightRange as HighlightRange;
 use anyhow::Result;
+pub(crate) use parser::ParsedQuery;
 pub use parser::parse_query;
-pub(crate) use parser::{ParsedQuery, split_tokens, to_fts_query};
 use rusqlite::{Connection, params_from_iter, types::Value};
 use std::collections::{HashMap, HashSet};
 

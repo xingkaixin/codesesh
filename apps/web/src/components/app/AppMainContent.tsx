@@ -19,7 +19,7 @@ export function AppMainContent({
 }) {
   return (
     <section className="console-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-7 md:px-6">
-      {intro ? <div className="mb-5 flex flex-col gap-4">{intro}</div> : null}
+      {intro ? <div className="mb-5 flex flex-col gap-4 empty:hidden">{intro}</div> : null}
       <ErrorBoundary key={locationPath}>
         <RenderProfiler
           id="MainContent"

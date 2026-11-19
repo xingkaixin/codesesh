@@ -149,6 +149,7 @@ export interface AppSidebarViewModel {
   sessionCount: number;
   /** `null` while unmatched models are still being counted. */
   pricingAttentionCount?: number | null;
+  pricingError?: boolean;
   theme: Theme;
 }
 
@@ -165,6 +166,7 @@ export interface AppSidebarActions {
   onRetryBookmarks: () => void;
   onOpenSearch: () => void;
   onOpenPricing?: () => void;
+  onManageNodes?: () => void;
   onChangeTheme: (theme: Theme) => void;
   onShowShortcuts: () => void;
 }
@@ -240,6 +242,7 @@ export function AppSidebar({
     hubEnabled,
     sessionCount,
     pricingAttentionCount,
+    pricingError,
     theme,
   },
   actions: {
@@ -255,6 +258,7 @@ export function AppSidebar({
     onRetryBookmarks,
     onOpenSearch,
     onOpenPricing,
+    onManageNodes,
     onChangeTheme,
     onShowShortcuts,
   },
@@ -515,8 +519,8 @@ export function AppSidebar({
           )}
         </section>
 
-        {/* Sessions belong to a project; without one there is nothing to list. */}
-        {selectedProjectNavigationId ? (
+        {/* Show sessions for the active project or agent route. */}
+        {selectedProjectNavigationId || viewState.mode === "agent" ? (
           <section aria-labelledby="sidebar-sessions">
             <NavLabel>
               <h3 id="sidebar-sessions" className="font-normal">
@@ -549,7 +553,7 @@ export function AppSidebar({
                     onCopySessionAsMarkdown={onCopySessionAsMarkdown}
                     onToggleBookmark={onToggleSidebarSessionBookmark}
                     onRenameSession={onRenameSession}
-                    groupByProject={false}
+                    groupByProject={viewState.mode === "agent"}
                     projectDisplayNames={projectDisplayNames}
                     sourceLabel={sessionSourceLabel}
                   />
@@ -563,7 +567,9 @@ export function AppSidebar({
         hubEnabled={hubEnabled}
         sessionCount={sessionCount}
         pricingAttentionCount={pricingAttentionCount}
+        pricingError={pricingError}
         onOpenPricing={onOpenPricing}
+        onManageNodes={onManageNodes}
         theme={theme}
         onChangeTheme={onChangeTheme}
         onShowShortcuts={onShowShortcuts}

@@ -194,35 +194,61 @@ fn parse_cost(value: &str, filters: &mut SearchOptions) {
     }
 }
 
-pub fn to_fts_query(input: &str) -> String {
-    let tokens: Vec<String> = split_tokens(input)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct QueryTerm {
+    pub text: String,
+    pub quoted: bool,
+}
+
+pub(crate) fn parse_terms(input: &str) -> Vec<Vec<QueryTerm>> {
+    enum RawToken {
+        Or,
+        Term(QueryTerm),
+    }
+
+    let raw: Vec<RawToken> = split_tokens(input)
         .into_iter()
-        .map(|token| {
+        .filter_map(|token| {
             if token.eq_ignore_ascii_case("OR") {
-                "OR".into()
+                Some(RawToken::Or)
             } else {
-                let text = if token.len() >= 2 && token.starts_with('"') && token.ends_with('"') {
-                    &token[1..token.len() - 1]
+                let quoted = token.len() >= 2 && token.starts_with('"') && token.ends_with('"');
+                let text = if quoted {
+                    token[1..token.len() - 1].trim()
                 } else {
-                    &token
+                    token.trim()
                 };
-                format!("\"{}\"", text.replace('"', "\"\""))
+                (!text.is_empty()).then(|| {
+                    RawToken::Term(QueryTerm {
+                        text: text.to_owned(),
+                        quoted,
+                    })
+                })
             }
         })
         .collect();
-    tokens
-        .iter()
-        .enumerate()
-        .filter(|(i, token)| {
-            token.as_str() != "OR"
-                || (*i > 0
-                    && *i + 1 < tokens.len()
-                    && tokens[*i - 1] != "OR"
-                    && tokens[*i + 1] != "OR")
-        })
-        .map(|(_, token)| token.as_str())
-        .collect::<Vec<_>>()
-        .join(" ")
+
+    let mut groups = Vec::new();
+    let mut group = Vec::new();
+    for (i, token) in raw.iter().enumerate() {
+        match token {
+            RawToken::Or => {
+                if i > 0
+                    && i + 1 < raw.len()
+                    && matches!(raw[i - 1], RawToken::Term(_))
+                    && matches!(raw[i + 1], RawToken::Term(_))
+                    && !group.is_empty()
+                {
+                    groups.push(std::mem::take(&mut group));
+                }
+            }
+            RawToken::Term(term) => group.push(term.clone()),
+        }
+    }
+    if !group.is_empty() {
+        groups.push(group);
+    }
+    groups
 }
 
 pub fn merge(query: &str, options: &SearchOptions) -> (ParsedQuery, SearchOptions) {

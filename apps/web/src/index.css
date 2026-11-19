@@ -169,6 +169,9 @@
     --ember-glass: rgb(255 255 255 / 0.2);
     --ember-glass-hover: rgb(255 255 255 / 0.3);
     --ember-live: #8be6cf;
+    --ember-warning: #f5c451;
+    --ember-error: #ff8a8e;
+    --ember-offline: rgb(255 255 255 / 0.45);
 
     /* Positive */
     --positive: #218c77;

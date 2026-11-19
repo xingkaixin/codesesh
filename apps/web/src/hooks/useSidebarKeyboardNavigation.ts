@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
 import type { SessionHead } from "@codesesh/contract";
-import { isEditableTarget } from "../lib/keyboard";
+import { isEditableTarget, isInteractiveTarget } from "../lib/keyboard";
 import {
   getSessionReferenceKey,
   getSessionRouteKey,
@@ -90,6 +90,7 @@ export function useSidebarKeyboardNavigation({
       return;
     }
     if (event.key !== "Enter" || selectedSessionReference == null) return;
+    if (isInteractiveTarget(event.target)) return;
 
     const selected = sessionLookup.byReference.get(selectedSessionReference);
     if (!selected) return;

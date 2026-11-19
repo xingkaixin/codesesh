@@ -103,6 +103,18 @@ beforeEach(() => {
   responses["/api/sessions"] = { sessions: [] };
   responses["/api/dashboard"] = emptyDashboard;
   responses["/api/bookmarks"] = { bookmarks: [] };
+  responses["/api/status"] = {
+    type: "scan-status",
+    active: false,
+    phase: "idle",
+    pendingAgents: [],
+    scanningAgents: [],
+    completedAgents: [],
+    agentStatuses: {},
+    totalAgents: 0,
+    updatedAt: 0,
+    backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+  };
   responses["/api/pricing/overrides"] = { overrides: [] };
   responses["/api/pricing/unmatched"] = { unmatchedModels: [] };
   vi.stubGlobal("__APP_VERSION__", "0.0.0-test");
@@ -438,5 +450,100 @@ describe("App model pricing entries", () => {
       ),
     ).toBeTruthy();
     expect(await screen.findByText("ollama/qwen3")).toBeTruthy();
+  });
+
+  it("surfaces pricing load failures instead of masking them as zero", async () => {
+    const defaultFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/pricing/unmatched") {
+        return new Response("pricing unavailable", { status: 503 });
+      }
+      return defaultFetch(input);
+    });
+
+    renderAppAt("/");
+
+    expect(
+      await screen.findByText(
+        "Could not count unmatched models",
+        {},
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
+    const sidebar = screen.getByRole("complementary", { name: "Primary navigation" });
+    expect(within(sidebar).getByRole("img", { name: "Pricing status unavailable" })).toBeTruthy();
+  });
+});
+
+describe("App degraded status surfacing", () => {
+  it("surfaces local scan errors on non-Dashboard routes while hiding routine status", async () => {
+    responses["/api/agents"] = [{ name: "claudecode", displayName: "Claude Code", count: 1 }];
+    responses["/api/status"] = {
+      type: "scan-status",
+      active: false,
+      phase: "idle",
+      pendingAgents: [],
+      scanningAgents: [],
+      completedAgents: [],
+      agentStatuses: {
+        claudecode: {
+          agentName: "claudecode",
+          status: "failed",
+          error: "permission denied",
+          completeness: "partial",
+        },
+      },
+      totalAgents: 1,
+      updatedAt: 10,
+      backfill: { active: false, pendingAgents: [], completedAgents: [], failedAgents: [] },
+    };
+
+    renderAppAt("/claudecode");
+
+    expect(
+      await screen.findByRole(
+        "button",
+        { name: /Session refresh failed · claudecode · permission denied/ },
+        { timeout: LAZY_SURFACE_TIMEOUT_MS },
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows offline Hub worker status in main content when sidebar is collapsed", async () => {
+    responses["/api/config"] = { hubEnabled: true, window: { days: 30 } };
+    responses["/api/nodes"] = {
+      nodes: [
+        {
+          id: "worker-one",
+          name: "Office worker",
+          version: "1.1.1",
+          pairedAt: 1,
+          lastSeen: 1,
+          lastConfirmedAt: null,
+          revoked: false,
+          incompleteSessions: 0,
+          collectionComplete: true,
+          queue: { batches: 0, bytes: 0, oldestAt: null },
+          error: null,
+          agents: {},
+          ignoredSources: [],
+        },
+      ],
+      tasks: [],
+      local: null,
+      version: "1.1.1",
+      minimumWorkerVersion: "1.1.1",
+    };
+
+    renderAppAt("/");
+
+    const collapseButton = await screen.findByRole("button", { name: "Collapse sidebar" });
+    fireEvent.click(collapseButton);
+
+    const main = screen.getByRole("main");
+    const alert = await within(main).findByRole("alert");
+    expect(alert.textContent).toContain("Source nodes 0/1 online");
+    expect(within(alert).getByRole("button", { name: "Manage" })).toBeTruthy();
   });
 });

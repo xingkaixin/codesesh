@@ -64,33 +64,63 @@ fn project_scope(filters: &mut Filters, scope: &ProjectScope) {
     ]);
 }
 
-pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Result<Filters> {
-    let mut filters = Filters::default();
+#[derive(Default)]
+pub struct FilterParts {
+    pub impossible: bool,
+    pub session_cheap: Filters,
+    pub message_cheap: Filters,
+    pub extra: Filters,
+}
+
+pub fn build_parts(
+    connection: &Connection,
+    options: &SearchOptions,
+) -> rusqlite::Result<FilterParts> {
+    let mut parts = FilterParts::default();
+    if let (Some(from), Some(to)) = (options.from, options.to)
+        && from > to
+    {
+        parts.impossible = true;
+    }
     if let Some(scope) = &options.query_scope {
         if let Some(source) = &scope.source_node_id {
-            filters.text("s.source_node_id = ?", source);
+            parts.session_cheap.text("s.source_node_id = ?", source);
+            parts.message_cheap.text("m.source_node_id = ?", source);
         }
         if !scope.agents.is_empty() {
-            filters.clauses.push(format!(
-                "s.agent_name IN ({})",
-                vec!["?"; scope.agents.len()].join(",")
-            ));
-            filters
+            let placeholders = vec!["?"; scope.agents.len()].join(",");
+            parts
+                .session_cheap
+                .clauses
+                .push(format!("s.agent_name IN ({placeholders})"));
+            parts
+                .session_cheap
+                .params
+                .extend(scope.agents.iter().map(|v| Value::Text(v.clone())));
+            parts
+                .message_cheap
+                .clauses
+                .push(format!("m.agent_name IN ({placeholders})"));
+            parts
+                .message_cheap
                 .params
                 .extend(scope.agents.iter().map(|v| Value::Text(v.clone())));
         }
         if let Some(project) = &scope.project_scope {
-            project_scope(&mut filters, project);
+            project_scope(&mut parts.extra, project);
         }
     }
     if let Some(model) = &options.model {
         let mut heads = connection.prepare(&format!(
             "SELECT {} FROM sessions s WHERE s.publication_id IS NULL {}",
             reader::HEAD_COLUMNS,
-            filters.where_sql()
+            parts.session_cheap.where_sql() + &parts.extra.where_sql()
         ))?;
         let sessions = heads
-            .query_map(params_from_iter(&filters.params), reader::head)?
+            .query_map(
+                params_from_iter(parts.session_cheap.params.iter().chain(&parts.extra.params)),
+                reader::head,
+            )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let scope = DashboardScope {
             agent: options.agent.clone(),
@@ -105,45 +135,56 @@ pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Resu
             options.from,
             options.to,
         )?;
-        filters.text(&analytics::reference_condition("s"), &references);
+        parts
+            .extra
+            .text(&analytics::reference_condition("s"), &references);
     } else {
         for (clause, value) in [
             ("s.activity_time >= ?", options.from),
             ("s.activity_time <= ?", options.to),
         ] {
             if let Some(value) = value {
-                filters.clauses.push(clause.into());
-                filters.params.push(value.into());
+                parts.session_cheap.clauses.push(clause.into());
+                parts.session_cheap.params.push(value.into());
             }
         }
     }
     if let Some(agent) = &options.agent {
-        filters.text("s.agent_name = ?", agent);
+        parts.session_cheap.text("s.agent_name = ?", agent);
+        parts.message_cheap.text("m.agent_name = ?", agent);
     }
     match (&options.project_kind, &options.project_key) {
         (Some(kind), Some(key)) => {
-            filters.text("s.project_identity_kind = ?", kind);
-            filters.text("s.project_identity_key = ?", key);
+            parts
+                .session_cheap
+                .text("s.project_identity_kind = ?", kind);
+            parts.session_cheap.text("s.project_identity_key = ?", key);
         }
         (None, None) => (),
-        _ => filters.clauses.push("0".into()),
+        _ => {
+            parts.impossible = true;
+            parts.session_cheap.clauses.push("0".into());
+        }
     }
     if let Some(scope) = &options.project_scope {
-        project_scope(&mut filters, scope);
+        project_scope(&mut parts.extra, scope);
     }
     if let Some(project) = &options.project {
-        filters.clauses.push("(LOWER(s.project_identity_key) LIKE ? ESCAPE '\\' OR LOWER(s.project_display_name) LIKE ? ESCAPE '\\' OR LOWER(s.directory) LIKE ? ESCAPE '\\')".into());
-        filters
+        parts.extra.clauses.push("(LOWER(s.project_identity_key) LIKE ? ESCAPE '\\' OR LOWER(s.project_display_name) LIKE ? ESCAPE '\\' OR LOWER(s.directory) LIKE ? ESCAPE '\\')".into());
+        parts
+            .extra
             .params
             .extend(std::iter::repeat_n(Value::Text(like_pattern(project)), 3));
     }
     for tag in &options.tags {
-        filters.text("s.smart_tags_json LIKE ?", &format!("%\"{tag}\"%"));
+        parts
+            .extra
+            .text("s.smart_tags_json LIKE ?", &format!("%\"{tag}\"%"));
     }
     for tool in &options.tools {
         let tool = tool.trim().to_lowercase();
         if !tool.is_empty() {
-            filters.text("EXISTS (SELECT 1 FROM message_tools mt WHERE mt.tool_name = ? AND mt.source_node_id = s.source_node_id AND mt.agent_name = s.agent_name AND mt.session_id = s.session_id)",&tool);
+            parts.extra.text("EXISTS (SELECT 1 FROM message_tools mt WHERE mt.tool_name = ? AND mt.source_node_id = s.source_node_id AND mt.agent_name = s.agent_name AND mt.session_id = s.session_id)", &tool);
         }
     }
     if options.file.is_some() || options.file_kind.is_some() {
@@ -159,11 +200,11 @@ pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Resu
         if let Some(kind) = &options.file_kind {
             files.text("fa.kind = ?", kind);
         }
-        filters.clauses.push(format!(
+        parts.extra.clauses.push(format!(
             "EXISTS (SELECT 1 FROM session_file_activity fa WHERE {})",
             files.clauses.join(" AND ")
         ));
-        filters.params.extend(files.params);
+        parts.extra.params.extend(files.params);
     }
     let mut costs = Vec::new();
     if let Some(value) = options.cost_min {
@@ -172,7 +213,7 @@ pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Resu
         } else {
             "SUM(own_cost) >= ?"
         });
-        filters.params.push(value.into());
+        parts.extra.params.push(value.into());
     }
     if let Some(value) = options.cost_max {
         costs.push(if options.cost_max_exclusive {
@@ -180,10 +221,17 @@ pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Resu
         } else {
             "SUM(own_cost) <= ?"
         });
-        filters.params.push(value.into());
+        parts.extra.params.push(value.into());
     }
     if !costs.is_empty() {
-        filters.clauses.push(format!("EXISTS (WITH RECURSIVE session_subtree(source_node_id,agent_name,session_id,own_cost) AS (SELECT s.source_node_id,s.agent_name,s.session_id,s.total_cost UNION SELECT child.source_node_id,child.agent_name,child.session_id,child.total_cost FROM sessions child JOIN session_subtree parent ON child.source_node_id = parent.source_node_id AND child.parent_agent_name = parent.agent_name AND child.parent_session_id = parent.session_id WHERE child.publication_id IS NULL) SELECT SUM(own_cost) FROM session_subtree HAVING {})",costs.join(" AND ")));
+        parts.extra.clauses.push(format!("EXISTS (WITH RECURSIVE session_subtree(source_node_id,agent_name,session_id,own_cost) AS (SELECT s.source_node_id,s.agent_name,s.session_id,s.total_cost UNION SELECT child.source_node_id,child.agent_name,child.session_id,child.total_cost FROM sessions child JOIN session_subtree parent ON child.source_node_id = parent.source_node_id AND child.parent_agent_name = parent.agent_name AND child.parent_session_id = parent.session_id WHERE child.publication_id IS NULL) SELECT SUM(own_cost) FROM session_subtree HAVING {})", costs.join(" AND ")));
     }
-    Ok(filters)
+    Ok(parts)
+}
+
+pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Result<Filters> {
+    let mut parts = build_parts(connection, options)?;
+    parts.session_cheap.clauses.extend(parts.extra.clauses);
+    parts.session_cheap.params.extend(parts.extra.params);
+    Ok(parts.session_cheap)
 }

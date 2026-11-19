@@ -278,6 +278,7 @@ mod tests {
             removed: vec![],
             checkpoint: None,
             complete: true,
+            completion: None,
             on_reject: None,
             pricing: None,
         }

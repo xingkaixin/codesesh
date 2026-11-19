@@ -3,27 +3,35 @@ import type { SourceNode } from "@codesesh/contract";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConfig, fetchNodes } from "../lib/api";
 
-export function useNodes() {
+function useHubEnabled(): boolean {
   const { data: config } = useQuery({
     queryKey: ["config"],
     queryFn: () => fetchConfig(),
     enabled: false,
   });
+  return config?.hubEnabled === true;
+}
+
+export function useNodes(enabled = true) {
+  const hubEnabled = useHubEnabled();
   return useQuery({
     queryKey: ["source-nodes"],
     queryFn: ({ signal }) => fetchNodes({ signal }),
-    enabled: config?.hubEnabled === true,
+    enabled: enabled && hubEnabled,
     refetchInterval: 5000,
     retry: false,
   });
 }
 
-export function useNodeClock() {
+export function useNodeClock(enabled = true) {
+  const hubEnabled = useHubEnabled();
+  const active = enabled && hubEnabled;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
+    if (!active) return;
     const timer = window.setInterval(() => setNow(Date.now()), 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [active]);
   return now;
 }
 

@@ -190,16 +190,6 @@ fn replace_overrides(
     Ok((new_snapshot, response))
 }
 
-async fn reprice(state: &State, new_snapshot: PricingSnapshot) -> Result<(), ApiError> {
-    match crate::pricing_refresh::reprice_history(&state.runtime, new_snapshot).await {
-        Ok(Ok(())) => Ok(()),
-        _ => Err(ApiError::static_msg(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to reprice cached sessions",
-        )),
-    }
-}
-
 pub async fn refresh(AxumState(state): AxumState<Arc<State>>) -> Response {
     let result = tokio::spawn(async move {
         crate::pricing_refresh::refresh_once(
@@ -343,7 +333,7 @@ pub async fn put_override(AxumState(state): AxumState<Arc<State>>, bytes: Bytes)
                 Ok(Ok(replace_overrides(&pricing, store)?))
             })
             .await?;
-        reprice(&state, new_snapshot).await?;
+        crate::pricing_refresh::reprice_history(&state.runtime, new_snapshot);
         Ok::<_, ApiError>(Json(response))
     }
     .await
@@ -422,7 +412,7 @@ pub async fn delete_override(AxumState(state): AxumState<Arc<State>>, bytes: Byt
                 Ok(Ok(replace_overrides(&pricing, store)?))
             })
             .await?;
-        reprice(&state, new_snapshot).await?;
+        crate::pricing_refresh::reprice_history(&state.runtime, new_snapshot);
         Ok::<_, ApiError>(Json(response))
     }
     .await

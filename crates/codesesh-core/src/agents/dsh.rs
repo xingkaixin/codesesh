@@ -22,7 +22,7 @@ pub fn generation(name: &str) -> Option<(u64, bool)> {
 }
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
-    scan_selected(root, pricing, None)
+    scan_selected(root, pricing, None, None)
 }
 
 pub fn scan_changed(
@@ -44,7 +44,7 @@ pub fn scan_changed(
             affected.push(session.source.clone());
         }
     }
-    let upserts = scan_selected(root, pricing, Some(&affected))?;
+    let upserts = scan_selected(root, pricing, Some(&affected), Some(previous))?;
     let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
     let removed = previous
         .iter()
@@ -113,6 +113,7 @@ fn scan_selected(
     root: &Path,
     pricing: &Pricing,
     changed_paths: Option<&[PathBuf]>,
+    previous: Option<&[crate::agents::SessionRecord]>,
 ) -> Result<Vec<ParsedSession>> {
     let sessions = root.join("sessions");
     let projects = match fs::read_dir(&sessions) {
@@ -188,8 +189,14 @@ fn scan_selected(
         }) {
             continue;
         }
+        let cached = previous.is_some_and(|sessions| {
+            sessions.iter().any(|session| {
+                session.head.reference.agent_name == "dsh"
+                    && (session.source == source || session.source.parent() == source.parent())
+            })
+        });
         let (header, events) = match log::read(&source, compressed) {
-            Err(error) if error.is::<InvalidSession>() => continue,
+            Err(error) if error.is::<InvalidSession>() && !cached => continue,
             result => result?,
         };
         let id = project::text(&header["id"]).to_owned();
@@ -208,15 +215,25 @@ fn scan_selected(
                 (fs::canonicalize(&source), fs::canonicalize(&expected)),
                 (Ok(source), Ok(expected)) if source == expected
             );
-        if !identified || !seen.insert(id.clone()) {
+        if !identified {
+            if cached {
+                return Err(InvalidSession("mismatched DSH session identity").into());
+            }
             continue;
         }
-        let Ok(projection) =
-            project::project(&header, &events, &root.join("attachments/v1"), pricing)
-        else {
+        if !seen.insert(id.clone()) {
             continue;
-        };
+        }
+        let projection =
+            match project::project(&header, &events, &root.join("attachments/v1"), pricing) {
+                Ok(projection) => projection,
+                Err(_) if !cached => continue,
+                Err(error) => return Err(error),
+            };
         if projection.messages.is_empty() {
+            if cached {
+                return Err(InvalidSession("incomplete DSH session").into());
+            }
             continue;
         }
         let (identity, signature) = path_identity(&directory);

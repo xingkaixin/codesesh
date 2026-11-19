@@ -53,19 +53,10 @@ export function DeferredInteractiveReceipt({
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => setReady(true));
     });
-    const desktopQuery = window.matchMedia("(min-width: 1025px)");
-    const closeOnSmallViewport = () => {
-      if (!desktopQuery.matches) {
-        setOpen(false);
-        setReady(false);
-      }
-    };
-    desktopQuery.addEventListener("change", closeOnSmallViewport);
 
     return () => {
       cancelAnimationFrame(firstFrame);
       if (secondFrame) cancelAnimationFrame(secondFrame);
-      desktopQuery.removeEventListener("change", closeOnSmallViewport);
     };
   }, [open]);
 
@@ -79,7 +70,7 @@ export function DeferredInteractiveReceipt({
           setReady(false);
           setOpen(true);
         }}
-        className="console-mono fixed right-0 top-1/2 z-40 hidden h-32 w-10 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[var(--shadow-overlay)] motion-hover hover:bg-[var(--console-surface-muted)] min-[1025px]:flex"
+        className="console-mono fixed right-0 top-1/2 z-40 flex h-24 w-8 -translate-y-1/2 items-center justify-center rounded-l-sm border border-r-0 border-[var(--console-border)] bg-[var(--console-surface)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--console-text)] shadow-[var(--shadow-overlay)] motion-hover hover:bg-[var(--console-surface-muted)] min-[1025px]:h-32 min-[1025px]:w-10"
       >
         <span className="[writing-mode:vertical-rl]">{t("Receipt")}</span>
       </button>
@@ -115,6 +106,7 @@ export function DeferredInteractiveReceipt({
                 <InteractiveReceipt
                   key={formatSessionReference(session.reference)}
                   session={session}
+                  minWidthQuery="(min-width: 0px)"
                 />
               </Suspense>
             </ErrorBoundary>

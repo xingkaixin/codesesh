@@ -39,9 +39,15 @@ fn every_catalog_entry_has_a_source_resolver_and_scanner() {
             .source(&agent.name)
             .unwrap_or_else(|| panic!("missing resolver for {}", agent.name));
         assert!(
-            agents::scan_agent(&agent.name, &source.scan_path, &source.data_root, &pricing)
-                .unwrap()
-                .is_empty()
+            agents::scan_agent(
+                &agent.name,
+                &source.scan_path,
+                &source.data_root,
+                &pricing,
+                &Default::default()
+            )
+            .unwrap()
+            .is_empty()
         );
     }
 }

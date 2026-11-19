@@ -17,6 +17,7 @@ fn rescan_request_is_durable_and_finishes_only_after_upload_confirmation() {
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
