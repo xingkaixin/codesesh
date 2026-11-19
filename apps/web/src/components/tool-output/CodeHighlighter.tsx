@@ -28,7 +28,7 @@ function PlainCode({ text, highlightQuery }: { text: string; highlightQuery?: st
       className="console-mono m-0 overflow-x-auto whitespace-pre-wrap break-words p-3 text-[var(--code-fg)]"
       style={{ background: "transparent", ...CODE_METRICS }}
     >
-      {renderHighlightedText(text, highlightQuery)}
+      <code className="console-mono">{renderHighlightedText(text, highlightQuery)}</code>
     </pre>
   );
 }

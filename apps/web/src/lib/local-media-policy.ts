@@ -60,3 +60,22 @@ export function inlineImageSource(mimeType: string, base64Data: string): string 
   if (!mimeType.startsWith("image/") || !base64Data) return null;
   return resolveLocalMediaSource(`data:${mimeType};base64,${base64Data}`);
 }
+
+/**
+ * Returns a safe external `http:` or `https:` URL for user-initiated navigation
+ * in Markdown links, or null for any other scheme or relative target.
+ */
+export function resolveSafeExternalLink(value: string | null | undefined): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  return url.href;
+}

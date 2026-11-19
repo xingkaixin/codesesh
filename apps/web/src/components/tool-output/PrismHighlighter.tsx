@@ -47,9 +47,31 @@ SyntaxHighlighter.registerLanguage("yaml", yaml);
 
 import type { CodeHighlighterProps } from "./CodeHighlighter";
 
+const LANGUAGE_ALIASES: Record<string, string> = {
+  "c++": "cpp",
+  cc: "cpp",
+  cs: "csharp",
+  cxx: "cpp",
+  dockerfile: "docker",
+  h: "c",
+  hpp: "cpp",
+  html: "markup",
+  js: "javascript",
+  md: "markdown",
+  py: "python",
+  rs: "rust",
+  sh: "bash",
+  shell: "bash",
+  svg: "markup",
+  ts: "typescript",
+  xml: "markup",
+  yml: "yaml",
+  zsh: "bash",
+};
+
 function normalizeLanguage(language: string) {
-  if (language === "html" || language === "xml") return "markup";
-  return language;
+  const lower = language.trim().toLowerCase();
+  return LANGUAGE_ALIASES[lower] ?? lower;
 }
 
 export function PrismHighlighter({ language, text }: CodeHighlighterProps) {
