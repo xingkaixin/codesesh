@@ -1,13 +1,15 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Bot,
   CalendarRange,
+  Check,
   CheckCircle2,
   ChevronDown,
   CircleDashed,
   CircleHelp,
+  Copy,
   Lightbulb,
   LoaderCircle,
   MessageCircleX,
@@ -22,8 +24,10 @@ import type {
   ToolPart,
   SessionHead,
 } from "@codesesh/contract";
+import { writeToClipboard } from "../../lib/clipboard";
 import { formatMessageDate, formatMessageDateTime, formatMessageIsoTime } from "../../lib/format";
 import { getSessionRoutePath } from "../../lib/session-indexes";
+import { formatMessageAsMarkdown } from "../../lib/session-markdown";
 import { AgentIcon } from "../AgentIcon";
 import { renderHighlightedText } from "../HighlightedText";
 import { MarkdownContent } from "../MarkdownContent";
@@ -98,6 +102,47 @@ function MessageMarkdown({ text, highlightQuery }: { text: string; highlightQuer
   return <MarkdownContent text={text} highlightQuery={highlightQuery} />;
 }
 
+function CopyMessageButton({ msg }: { msg: Message }) {
+  useLocale();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1_500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const markdown = formatMessageAsMarkdown(msg);
+        if (!markdown) return;
+        void writeToClipboard(markdown).then((ok) => {
+          if (ok) setCopied(true);
+        });
+      }}
+      aria-label={copied ? t("Message copied") : t("Copy message")}
+      title={copied ? t("Message copied") : t("Copy message")}
+      className={`motion-hover motion-press inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] font-medium focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+        copied
+          ? "opacity-100 text-[var(--positive)]"
+          : "text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+      }`}
+    >
+      {copied ? (
+        <Check className="size-3" aria-hidden="true" />
+      ) : (
+        <Copy className="size-3" aria-hidden="true" />
+      )}
+      <span>{copied ? t("Copied") : t("Copy")}</span>
+      <span className="sr-only" aria-live="polite">
+        {copied ? t("Message copied") : ""}
+      </span>
+    </button>
+  );
+}
+
 export const MessageItem = memo(function MessageItem({
   messageIndex,
   previousMessageTime,
@@ -166,7 +211,7 @@ export const MessageItem = memo(function MessageItem({
       <article
         ref={messageAnchorRef}
         id={messageAnchorId}
-        className="relative grid w-full scroll-mt-20 grid-cols-[28px_minmax(0,1fr)] gap-x-3.5 pb-[22px] before:absolute before:top-[34px] before:bottom-1.5 before:left-[13.5px] before:w-px before:bg-[var(--console-border)]"
+        className="group relative grid w-full scroll-mt-20 grid-cols-[28px_minmax(0,1fr)] gap-x-3.5 pb-[22px] before:absolute before:top-[34px] before:bottom-1.5 before:left-[13.5px] before:w-px before:bg-[var(--console-border)]"
       >
         <span
           className={
@@ -197,14 +242,17 @@ export const MessageItem = memo(function MessageItem({
                 {modelLabel}
               </span>
             )}
-            {childSession ? (
-              <Link
-                to={getSessionRoutePath(childSession)}
-                className="ml-auto text-xs text-[var(--brand)] hover:text-[var(--brand-hover)] hover:underline"
-              >
-                {t("Open sub-session ↗")}
-              </Link>
-            ) : null}
+            <div className="ml-auto flex items-center gap-2">
+              {childSession ? (
+                <Link
+                  to={getSessionRoutePath(childSession)}
+                  className="text-xs text-[var(--brand)] hover:text-[var(--brand-hover)] hover:underline"
+                >
+                  {t("Open sub-session ↗")}
+                </Link>
+              ) : null}
+              {!isAbortMessage && msg.parts.length > 0 ? <CopyMessageButton msg={msg} /> : null}
+            </div>
           </div>
 
           {isAbortMessage ? (

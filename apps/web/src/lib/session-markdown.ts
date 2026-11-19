@@ -105,7 +105,7 @@ function formatMessagePart(part: MessagePart): string {
   }
 }
 
-function formatMessage(message: Message): string {
+export function formatMessageAsMarkdown(message: Message): string {
   const content = message.parts.map(formatMessagePart).filter(Boolean).join("\n\n");
   if (!content) return "";
   return `## ${messageRoleLabels[message.role]}\n\n${content}`;
@@ -118,7 +118,7 @@ export function formatSessionAsMarkdown(session: SessionDetail): string {
     `- Session ID: ${inlineCode(session.reference.sessionId)}`,
   ];
   if (session.directory.trim()) metadata.push(`- Directory: ${inlineCode(session.directory)}`);
-  const messages = session.messages.map(formatMessage).filter(Boolean);
+  const messages = session.messages.map(formatMessageAsMarkdown).filter(Boolean);
   const content = messages.length > 0 ? messages.join("\n\n") : "_No displayable messages._";
   return [`# ${title}`, metadata.join("\n"), content].join("\n\n") + "\n";
 }

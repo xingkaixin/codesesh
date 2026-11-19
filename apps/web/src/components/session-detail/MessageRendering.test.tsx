@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Message } from "@codesesh/contract";
 import * as diffHelpers from "./diff";
@@ -179,4 +179,37 @@ it("highlights search queries in tool output and raw output", () => {
 
   const rawMarks = Array.from(rawDetails.querySelectorAll("mark"), (node) => node.textContent);
   expect(rawMarks).toEqual(["needleHit"]);
+});
+
+it("copies a single message as Markdown from the message header", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+  });
+
+  const message: Message = {
+    id: "user-copy-1",
+    role: "user",
+    time_created: 1,
+    parts: [{ type: "text", text: "Explain the retry logic." }],
+  };
+
+  const view = render(
+    <MessageItem
+      messageIndex={0}
+      msg={message}
+      blocks={buildMessageBlocks(message.parts)}
+      formatTokens={String}
+      sessionAgentKey="codex"
+      baseDirectory="/repo"
+    />,
+  );
+
+  fireEvent.click(view.getByRole("button", { name: "Copy message" }));
+
+  await waitFor(() => {
+    expect(writeText).toHaveBeenCalledWith("## User\n\nExplain the retry logic.");
+    expect(view.getByRole("button", { name: "Message copied" })).toBeTruthy();
+  });
 });

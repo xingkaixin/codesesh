@@ -373,6 +373,8 @@ export const messages = {
   Copy: ["复制", "コピー"],
   "Copy code": ["复制代码", "コードをコピー"],
   "Code copied": ["已复制代码", "コードをコピーしました"],
+  "Copy message": ["复制消息", "メッセージをコピー"],
+  "Message copied": ["已复制消息", "メッセージをコピーしました"],
   Copied: ["已复制", "コピー済み"],
   "Copy resume": ["复制继续命令", "再開コマンドをコピー"],
   "Resume command copied": ["已复制继续会话命令", "再開コマンドをコピーしました"],

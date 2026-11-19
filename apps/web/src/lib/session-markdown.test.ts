@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message, SessionDetail } from "@codesesh/contract";
-import { formatSessionAsMarkdown } from "./session-markdown";
+import { formatMessageAsMarkdown, formatSessionAsMarkdown } from "./session-markdown";
 
 function session(messages: Message[], overrides: Partial<SessionDetail> = {}): SessionDetail {
   return {
@@ -40,5 +40,19 @@ describe("formatSessionAsMarkdown", () => {
     );
 
     expect(markdown).toContain("````text\nbefore\n```ts\nconst x = 1;\n```\nafter\n````");
+  });
+
+  it("formats a single message with its role heading and parts", () => {
+    const markdown = formatMessageAsMarkdown({
+      id: "assistant-2",
+      role: "assistant",
+      time_created: 1,
+      parts: [
+        { type: "reasoning", text: "Check edge cases." },
+        { type: "text", text: "Done." },
+      ],
+    });
+
+    expect(markdown).toBe("## Assistant\n\n### Reasoning\n\nCheck edge cases.\n\nDone.");
   });
 });
