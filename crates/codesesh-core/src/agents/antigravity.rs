@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use prost::Message as _;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     io::BufRead,
@@ -30,14 +31,19 @@ pub fn scan(root: &Path, pricing: &Pricing, agent: &str) -> Result<Vec<ParsedSes
 pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<Vec<ParsedSession>> {
     let mut stores = BTreeMap::<_, std::collections::BTreeSet<_>>::new();
     for path in paths {
-        let root = path
+        let conversations = path
             .parent()
-            .and_then(Path::parent)
+            .context("conversation has no parent directory")?;
+        let root = conversations
+            .parent()
             .context("Antigravity conversation has no store directory")?;
-        stores.entry(root).or_default().insert(path);
+        stores
+            .entry((root, conversations))
+            .or_default()
+            .insert(path);
     }
     let mut sessions = Vec::new();
-    for (root, paths) in stores {
+    for ((root, conversations), paths) in stores {
         let summary_path = root.join("conversation_summaries.db");
         let summaries = if summary_path.try_exists()? {
             let db = open_readonly_sqlite(summary_path)?;
@@ -49,7 +55,7 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<V
         let history = history_workspaces(root)?;
         let mut ctx = StoreContext {
             agent,
-            root,
+            conversations,
             summaries: summaries.as_ref(),
             history: &history,
             resolved: HashMap::new(),
@@ -68,7 +74,7 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<V
 
 struct StoreContext<'a> {
     agent: &'a str,
-    root: &'a Path,
+    conversations: &'a Path,
     summaries: Option<&'a Connection>,
     history: &'a HashMap<String, String>,
     resolved: HashMap<String, String>,
@@ -84,24 +90,192 @@ struct Summary {
     agent_name: String,
 }
 
+pub(crate) struct ContextFingerprints {
+    summaries: HashMap<String, Summary>,
+    history: HashMap<String, String>,
+}
+
+impl ContextFingerprints {
+    pub(crate) fn load(root: &Path) -> Result<Self> {
+        let mut summaries = HashMap::new();
+        let summary_path = root.join("conversation_summaries.db");
+        if summary_path.try_exists()? {
+            let db = open_readonly_sqlite(summary_path)?;
+            db.execute_batch("BEGIN")?;
+            let has_table: bool = db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
+                [],
+                |row| row.get(0),
+            )?;
+            if has_table {
+                let mut query = db.prepare(
+                    "SELECT conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries",
+                )?;
+                let mut rows = query.query([])?;
+                while let Some(row) = rows.next()? {
+                    let id: String = row.get(0)?;
+                    summaries.insert(
+                        id,
+                        Summary {
+                            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                            workspaces: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                            modified: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                            parent: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                            agent_name: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                        },
+                    );
+                }
+            }
+        }
+        let history = history_workspaces(root)?;
+        Ok(Self { summaries, history })
+    }
+
+    pub(crate) fn fingerprint(&self, root: &Path, id: &str) -> Result<String> {
+        hash_conversation_context(root, id, |key| self.summaries.get(key), &self.history)
+    }
+}
+
+pub(crate) fn leaf_context_fingerprint(conversations: &Path, id: &str) -> Result<Option<String>> {
+    let root = conversations
+        .parent()
+        .context("conversation directory has no store")?;
+    let mut summaries = HashMap::new();
+    let summary_path = root.join("conversation_summaries.db");
+    if summary_path.try_exists()? {
+        let db = open_readonly_sqlite(summary_path)?;
+        db.execute_batch("BEGIN")?;
+        let has_table: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_table {
+            if db.query_row("SELECT EXISTS(SELECT 1 FROM conversation_summaries WHERE parent_conversation_id=?1)", [id], |row| row.get::<_, bool>(0))? {
+                return Ok(None);
+            }
+            let mut current = Some(id.to_owned());
+            while let Some(key) = current.take() {
+                if summaries.contains_key(&key) {
+                    break;
+                }
+                if let Some(summary) = query_summary(&db, &key)? {
+                    let next = (!summary.parent.is_empty() && summary.parent != key)
+                        .then(|| summary.parent.clone());
+                    summaries.insert(key, summary);
+                    current = next;
+                }
+            }
+        }
+    }
+    let history = history_workspaces(root)?;
+    hash_conversation_context(conversations, id, |key| summaries.get(key), &history).map(Some)
+}
+
+fn hash_str(hash: &mut Sha256, value: &str) {
+    hash.update((value.len() as u64).to_le_bytes());
+    hash.update(value.as_bytes());
+}
+
+fn hash_opt_str(hash: &mut Sha256, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            hash.update([1]);
+            hash_str(hash, value);
+        }
+        None => hash.update([0]),
+    }
+}
+
+fn hash_conversation_files(hash: &mut Sha256, conversations: &Path, id: &str) -> Result<()> {
+    for suffix in [".db", ".db-wal", ".db-journal"] {
+        let path = conversations.join(format!("{id}{suffix}"));
+        let metadata = match path.metadata() {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        hash_str(hash, suffix);
+        hash_str(hash, &crate::hash::file_stamp(&metadata)?.1);
+        #[cfg(windows)]
+        {
+            // NTFS can preserve creation time when a different file takes the same name.
+            let handle = winapi_util::Handle::from_path(&path)?;
+            let info = winapi_util::file::information(&handle)?;
+            hash.update(info.volume_serial_number().to_le_bytes());
+            hash.update(info.file_index().to_le_bytes());
+        }
+    }
+    Ok(())
+}
+
+fn hash_conversation_context<'a>(
+    root: &Path,
+    id: &str,
+    summary_for: impl Fn(&str) -> Option<&'a Summary>,
+    history: &HashMap<String, String>,
+) -> Result<String> {
+    let mut hash = Sha256::new();
+    hash_conversation_files(&mut hash, root, id)?;
+    let own = summary_for(id);
+    match own {
+        Some(summary) => {
+            hash.update([1]);
+            hash_str(&mut hash, &summary.title);
+            hash_str(&mut hash, &summary.workspaces);
+            hash_str(&mut hash, &summary.modified);
+            hash_str(&mut hash, &summary.parent);
+            hash_str(&mut hash, &summary.agent_name);
+        }
+        None => hash.update([0]),
+    }
+    hash_opt_str(&mut hash, history.get(id).map(String::as_str));
+    let mut visited = HashSet::new();
+    visited.insert(id);
+    let mut parent = own
+        .map(|summary| summary.parent.as_str())
+        .filter(|parent| !parent.is_empty());
+    while let Some(ancestor) = parent {
+        if !visited.insert(ancestor) {
+            break;
+        }
+        hash_str(&mut hash, ancestor);
+        hash_conversation_files(&mut hash, root, ancestor)?;
+        hash_opt_str(&mut hash, history.get(ancestor).map(String::as_str));
+        if let Some(summary) = summary_for(ancestor) {
+            hash.update([1]);
+            hash_str(&mut hash, &summary.workspaces);
+            hash_str(&mut hash, &summary.parent);
+            parent = (!summary.parent.is_empty()).then_some(summary.parent.as_str());
+        } else {
+            hash.update([0]);
+            break;
+        }
+    }
+    Ok(crate::hash::hex(&hash.finalize()))
+}
+
+fn query_summary(db: &Connection, id: &str) -> Result<Option<Summary>> {
+    Ok(db
+        .query_row(
+            "SELECT title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries WHERE conversation_id=?1",
+            [id],
+            |row| {
+                Ok(Summary {
+                    title: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    workspaces: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    modified: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    parent: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    agent_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                })
+            },
+        )
+        .optional()?)
+}
+
 fn load_summary(summaries: Option<&Connection>, id: &str) -> Result<Summary> {
     Ok(summaries
-        .map(|db| {
-            db.query_row(
-                "SELECT title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries WHERE conversation_id=?1",
-                [id],
-                |row| {
-                    Ok(Summary {
-                        title: row.get(0)?,
-                        workspaces: row.get(1)?,
-                        modified: row.get(2)?,
-                        parent: row.get(3)?,
-                        agent_name: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    })
-                },
-            )
-            .optional()
-        })
+        .map(|db| query_summary(db, id))
         .transpose()?
         .flatten()
         .unwrap_or_default())
@@ -757,10 +931,7 @@ fn resolve_uncached_directory(
     parent_id: &str,
     ctx: &mut StoreContext<'_>,
 ) -> Result<Option<String>> {
-    let path = ctx
-        .root
-        .join("conversations")
-        .join(format!("{parent_id}.db"));
+    let path = ctx.conversations.join(format!("{parent_id}.db"));
     if !path.try_exists()? {
         return Ok(None);
     }

@@ -1,16 +1,17 @@
 use super::AgentSource;
+use crate::hash::file_stamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 pub const BATCH_SIZE: usize = 32;
 #[derive(Clone, Debug)]
 pub struct Item {
+    pub cursor_composer_key: Option<String>,
     pub key: String,
     pub path: Option<PathBuf>,
     pub activity: f64,
@@ -105,40 +106,7 @@ impl Backfill {
     }
 }
 fn stamp(path: &Path) -> Result<(f64, String)> {
-    stamp_metadata(&std::fs::metadata(path)?)
-}
-fn stamp_metadata(metadata: &std::fs::Metadata) -> Result<(f64, String)> {
-    let time = metadata
-        .modified()?
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let mut stamp = format!(
-        "{}:{}:{}",
-        metadata.len(),
-        time.as_secs(),
-        time.subsec_nanos()
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        stamp.push_str(&format!(
-            ":{}:{}:{}:{}",
-            metadata.dev(),
-            metadata.ino(),
-            metadata.ctime(),
-            metadata.ctime_nsec()
-        ));
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        stamp.push_str(&format!(
-            ":{}:{}",
-            metadata.creation_time(),
-            metadata.file_attributes()
-        ));
-    }
-    Ok((time.as_secs_f64() * 1000.0, stamp))
+    Ok(file_stamp(&std::fs::metadata(path)?)?)
 }
 /// File state of a database-backed source; `None` for file-backed sources.
 pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
@@ -152,10 +120,43 @@ pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
             database_stamp.push_str(&stamp(&path)?.1);
         }
     }
+    if source.agent == "cursor" {
+        append_cursor_workspace_stamps(&source.scan_path, &mut database_stamp)?;
+    }
     Ok(Some(database_stamp))
 }
+fn append_cursor_workspace_stamps(root: &Path, out: &mut String) -> Result<()> {
+    let storage = root.join("workspaceStorage");
+    if !storage.try_exists()? {
+        return Ok(());
+    }
+    let mut entries: Vec<_> = std::fs::read_dir(storage)?.collect::<std::io::Result<_>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let dir = entry.path();
+        for name in [
+            "workspace.json",
+            "state.vscdb",
+            "state.vscdb-wal",
+            "state.vscdb-journal",
+        ] {
+            let path = dir.join(name);
+            if path.try_exists()? {
+                out.push('|');
+                out.push_str(&entry.file_name().to_string_lossy());
+                out.push('/');
+                out.push_str(name);
+                out.push(':');
+                out.push_str(&stamp(&path)?.1);
+            }
+        }
+    }
+    Ok(())
+}
 /// Per-session content fingerprints, so writes that leave a session untouched do not invalidate it.
-/// Cursor pages never reuse items and keep the database stamp.
 fn session_fingerprints(source: &AgentSource) -> Result<HashMap<String, String>> {
     let root = &source.scan_path;
     match source.agent.as_str() {
@@ -186,14 +187,24 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     if source.agent == "codex" {
         return codex_inventory(source);
     }
-    let root = crate::agents::session_root(&source.agent, &source.scan_path);
-    let keys = match source.agent.as_str() {
-        "cursor" => Some(
+    if source.agent == "cursor" {
+        return Ok(
             crate::agents::cursor::enumerate_session_keys(&source.scan_path)?
                 .into_iter()
-                .map(|key| (key.id, key.activity))
-                .collect::<Vec<_>>(),
-        ),
+                .map(|key| Item {
+                    cursor_composer_key: Some(key.composer_key),
+                    key: key.id,
+                    path: None,
+                    activity: key.activity,
+                    fingerprint: key.fingerprint,
+                    target: false,
+                    bytes: 0,
+                })
+                .collect(),
+        );
+    }
+    let root = crate::agents::session_root(&source.agent, &source.scan_path);
+    let keys = match source.agent.as_str() {
         "opencode" | "zcode" => {
             let path = if source.agent == "opencode" {
                 source.scan_path.clone()
@@ -223,6 +234,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         return Ok(keys
             .into_iter()
             .map(|(key, activity)| Item {
+                cursor_composer_key: None,
                 fingerprint: sessions
                     .get(&key)
                     .cloned()
@@ -241,16 +253,18 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     let mut items = Vec::new();
     let mut context_stamps = Vec::new();
     let context_names: &[&str] = match source.agent.as_str() {
-        "antigravity" | "antigravity-cli" => &[
-            "conversation_summaries.db",
-            "conversation_summaries.db-wal",
-            "conversation_summaries.db-journal",
-            "history.jsonl",
-        ],
         "kimi-code" => &["session_index.jsonl"],
         "droid" => &["settings.json"],
         "kimi" => &["kimi.json", "config.toml"],
         _ => &[],
+    };
+    let antigravity_context = if matches!(source.agent.as_str(), "antigravity" | "antigravity-cli")
+    {
+        Some(crate::agents::antigravity::ContextFingerprints::load(
+            &source.data_root,
+        )?)
+    } else {
+        None
     };
     for name in context_names {
         let path = source.data_root.join(name);
@@ -295,19 +309,23 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             continue;
         }
         let metadata = std::fs::metadata(entry.path())?;
-        let (mut activity, mut fingerprint) = stamp_metadata(&metadata)?;
+        let (mut activity, mut fingerprint) = file_stamp(&metadata)?;
         let mut bytes = metadata.len();
         if source.agent == "pi" {
             fingerprint.push(':');
             fingerprint.push_str(&crate::agents::pi::parent_fingerprint(entry.path(), &root)?);
         }
-        if matches!(source.agent.as_str(), "antigravity" | "antigravity-cli") {
-            for suffix in ["-wal", "-journal"] {
-                let related = PathBuf::from(format!("{}{suffix}", entry.path().to_string_lossy()));
-                if related.try_exists()? {
-                    fingerprint.push_str(&stamp(&related)?.1);
-                }
-            }
+        if let Some(antigravity_context) = &antigravity_context {
+            let id = entry
+                .path()
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            fingerprint.push(':');
+            fingerprint.push_str(
+                &antigravity_context
+                    .fingerprint(entry.path().parent().unwrap_or(&source.scan_path), &id)?,
+            );
         }
         if claude_layout {
             let project = match crate::agents::claudecode::subagents_dir(entry.path()) {
@@ -373,6 +391,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
         items.push(Item {
+            cursor_composer_key: None,
             key: path.to_string_lossy().into_owned(),
             path: Some(path),
             activity,
@@ -389,11 +408,10 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     Ok(items)
 }
 
-fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
-    use crate::agents::codex::rollout;
+fn codex_titles(data_root: &Path) -> Result<HashMap<String, String>> {
     use std::io::BufRead;
-    let mut titles = std::collections::HashMap::new();
-    if let Ok(file) = std::fs::File::open(source.data_root.join("session_index.jsonl")) {
+    let mut titles = HashMap::new();
+    if let Ok(file) = std::fs::File::open(data_root.join("session_index.jsonl")) {
         for line in std::io::BufReader::new(file).lines() {
             if let Ok(record) = serde_json::from_str::<serde_json::Value>(&line?)
                 && let (Some(id), Some(title)) =
@@ -403,6 +421,35 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
     }
+    Ok(titles)
+}
+
+fn codex_item(
+    logical: PathBuf,
+    metadata: &std::fs::Metadata,
+    titles: &HashMap<String, String>,
+) -> Result<Item> {
+    let (activity, mut fingerprint) = file_stamp(metadata)?;
+    let stem = logical.file_stem().unwrap_or_default().to_string_lossy();
+    let pieces: Vec<_> = stem.split('-').collect();
+    let id = pieces[pieces.len().saturating_sub(5)..].join("-");
+    fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
+        &titles.get(&id),
+    )?)));
+    Ok(Item {
+        cursor_composer_key: None,
+        key: logical.to_string_lossy().into_owned(),
+        path: Some(logical),
+        activity,
+        fingerprint,
+        target: false,
+        bytes: metadata.len(),
+    })
+}
+
+fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
+    use crate::agents::codex::rollout;
+    let titles = codex_titles(&source.data_root)?;
     let mut items = Vec::new();
     for (path, physical) in rollout::files(&source.data_root)? {
         let metadata = match std::fs::metadata(&physical) {
@@ -410,23 +457,261 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
-        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-        let pieces: Vec<_> = stem.split('-').collect();
-        let id = pieces[pieces.len().saturating_sub(5)..].join("-");
-        fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
-            &titles.get(&id),
-        )?)));
-        items.push(Item {
-            key: path.to_string_lossy().into_owned(),
-            path: Some(path),
-            activity,
-            fingerprint,
-            target: false,
-            bytes: metadata.len(),
-        });
+        items.push(codex_item(path, &metadata, &titles)?);
     }
     Ok(items)
+}
+
+fn path_under_root(root: &Path, path: &Path) -> Option<PathBuf> {
+    let relative = path.strip_prefix(root).ok()?;
+    let mut joined = root.to_path_buf();
+    let mut pushed = false;
+    for component in relative.components() {
+        let std::path::Component::Normal(part) = component else {
+            return None;
+        };
+        joined.push(part);
+        pushed = true;
+    }
+    pushed.then_some(joined)
+}
+
+/// Builds inventory items for a small batch of modified regular session files without walking the
+/// full source tree. Returns `Ok(None)` when any path requires a full inventory scan (deletions,
+/// directories, companion/index files, or agents with cross-file dependencies).
+pub fn targeted_items(
+    source: &AgentSource,
+    paths: &[PathBuf],
+    known_keys: &std::collections::HashSet<&str>,
+) -> Result<Option<Vec<Item>>> {
+    if paths.is_empty() || paths.len() > BATCH_SIZE {
+        return Ok(None);
+    }
+    let empty_context = crate::hash::hex(&Sha256::digest(b"[]"));
+    let mut seen = std::collections::HashSet::new();
+    let mut items = Vec::with_capacity(paths.len());
+    match source.agent.as_str() {
+        "claudecode" | "qoder" | "qoder-cn" => {
+            let root = crate::agents::session_root(&source.agent, &source.scan_path);
+            let mut index_stamps = HashMap::new();
+            for path in paths {
+                let Some(path) = path_under_root(&root, path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file() {
+                    return Ok(None);
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let direct = path.parent().and_then(Path::parent) == Some(root.as_path());
+                let subagent = crate::agents::claudecode::subagents_dir(&path).is_some();
+                if !name.ends_with(".jsonl") || !(direct || subagent) {
+                    return Ok(None);
+                }
+                let key = path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
+                let project = match crate::agents::claudecode::subagents_dir(&path) {
+                    Some(subagents) => subagents
+                        .parent()
+                        .and_then(Path::parent)
+                        .unwrap_or(subagents),
+                    None => path.parent().unwrap(),
+                };
+                let index = project.join("sessions-index.json");
+                if index.try_exists()? {
+                    if !index_stamps.contains_key(&index) {
+                        index_stamps.insert(index.clone(), stamp(&index)?.1);
+                    }
+                    fingerprint.push_str(&index_stamps[&index]);
+                }
+                let meta = path.with_extension("meta.json");
+                if meta.try_exists()? {
+                    fingerprint.push_str(&stamp(&meta)?.1);
+                }
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    cursor_composer_key: None,
+                    key,
+                    path: Some(path),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        "gemini-cli" => {
+            let root = crate::agents::session_root(&source.agent, &source.scan_path);
+            for path in paths {
+                let Some(path) = path_under_root(&root, path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file()
+                    || !crate::agents::gemini_cli::is_source(&root, &path)
+                {
+                    return Ok(None);
+                }
+                let key = path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    cursor_composer_key: None,
+                    key,
+                    path: Some(path),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        "omp" => {
+            let root = crate::agents::session_root(&source.agent, &source.scan_path);
+            for path in paths {
+                let Some(path) = path_under_root(&root, path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                    return Ok(None);
+                };
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !metadata.file_type().is_file() || !name.ends_with(".jsonl") {
+                    return Ok(None);
+                }
+                let key = path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    cursor_composer_key: None,
+                    key,
+                    path: Some(path),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        "codex" => {
+            use crate::agents::codex::rollout;
+            let sessions_dir = source.data_root.join("sessions");
+            let archived_dir = source.data_root.join("archived_sessions");
+            let mut resolved = Vec::with_capacity(paths.len());
+            for path in paths {
+                if !rollout::is_rollout(path) {
+                    return Ok(None);
+                }
+                let in_sessions = path.starts_with(&sessions_dir);
+                let in_archived = path.starts_with(&archived_dir);
+                let base = if in_sessions {
+                    &sessions_dir
+                } else if in_archived {
+                    &archived_dir
+                } else {
+                    return Ok(None);
+                };
+                let Some(logical) = path_under_root(base, &rollout::logical_path(path)) else {
+                    return Ok(None);
+                };
+                let key = logical.to_string_lossy().into_owned();
+                if in_archived && !known_keys.contains(key.as_str()) {
+                    return Ok(None);
+                }
+                let Some(physical) = rollout::physical_path(&logical)? else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&physical) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file() {
+                    return Ok(None);
+                }
+                if seen.insert(key) {
+                    resolved.push((logical, metadata));
+                }
+            }
+            let titles = codex_titles(&source.data_root)?;
+            for (logical, metadata) in resolved {
+                items.push(codex_item(logical, &metadata, &titles)?);
+            }
+            Ok(Some(items))
+        }
+        "antigravity" | "antigravity-cli" => {
+            let scan_roots = source.scan_roots()?;
+            for path in paths {
+                let raw = path.to_string_lossy();
+                let db_path = raw
+                    .strip_suffix("-wal")
+                    .or_else(|| raw.strip_suffix("-journal"))
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| path.to_owned());
+                let name = db_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let Some(scan_root) = db_path
+                    .parent()
+                    .and_then(|parent| scan_roots.iter().find(|root| root.as_path() == parent))
+                else {
+                    return Ok(None);
+                };
+                if !name.ends_with(".db") {
+                    return Ok(None);
+                }
+                let Some(db_path) = path_under_root(scan_root, &db_path) else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&db_path) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file() {
+                    return Ok(None);
+                }
+                let key = db_path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = file_stamp(&metadata)?;
+                let Some(conversations) = db_path.parent() else {
+                    return Ok(None);
+                };
+                let id = db_path.file_stem().unwrap_or_default().to_string_lossy();
+                fingerprint.push(':');
+                let Some(context) =
+                    crate::agents::antigravity::leaf_context_fingerprint(conversations, &id)?
+                else {
+                    return Ok(None);
+                };
+                fingerprint.push_str(&context);
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    cursor_composer_key: None,
+                    key,
+                    path: Some(db_path),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        _ => Ok(None),
+    }
 }
 
 #[derive(Default)]

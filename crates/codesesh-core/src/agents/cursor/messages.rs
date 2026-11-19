@@ -53,6 +53,26 @@ fn base_message(id: String, role: Role, time: f64, parts: Vec<MessagePart>) -> M
         automated: None,
     }
 }
+pub(super) fn bubble_parts(bubble: &Value, time: f64) -> Option<Vec<MessagePart>> {
+    if ["eventType", "kind", "subtype", "name"]
+        .iter()
+        .any(|field| internal(&bubble[*field]))
+    {
+        return None;
+    }
+    let mut parts = Vec::new();
+    let text = clean(string(bubble, "text").unwrap_or(""));
+    if !text.is_empty() {
+        parts.push(MessagePart::Text {
+            text,
+            time_created: Some(time),
+        });
+    }
+    if let Some(part) = tool_former(&bubble["toolFormerData"], time) {
+        parts.push(part);
+    }
+    Some(parts)
+}
 pub(super) fn messages(
     bubbles: &[(String, Value)],
     initial_model: Option<&str>,
@@ -61,12 +81,6 @@ pub(super) fn messages(
     let mut active_model = initial_model.map(str::to_owned);
     let mut result = Vec::new();
     for (key, bubble) in bubbles {
-        if ["eventType", "kind", "subtype", "name"]
-            .iter()
-            .any(|field| internal(&bubble[*field]))
-        {
-            continue;
-        }
         let role = if number(bubble, "type") == Some(2.0) {
             Role::Assistant
         } else {
@@ -78,20 +92,12 @@ pub(super) fn messages(
             .or_else(|| number(bubble, "createdAt").filter(|v| *v != 0.0))
             .or_else(|| number(bubble, "timestamp").filter(|v| *v != 0.0))
             .unwrap_or(0.0);
+        let Some(parts) = bubble_parts(bubble, time) else {
+            continue;
+        };
         let bubble_model = string(&bubble["modelInfo"], "modelName");
         if let Some(name) = bubble_model.filter(|s| !s.is_empty()) {
             active_model = Some(name.into());
-        }
-        let mut parts = Vec::new();
-        let text = clean(string(bubble, "text").unwrap_or(""));
-        if !text.is_empty() {
-            parts.push(MessagePart::Text {
-                text,
-                time_created: Some(time),
-            });
-        }
-        if let Some(part) = tool_former(&bubble["toolFormerData"], time) {
-            parts.push(part);
         }
         if parts.is_empty() {
             continue;

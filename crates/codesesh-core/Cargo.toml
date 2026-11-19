@@ -35,5 +35,8 @@ walkdir.workspace = true
 tempfile = "3.27"
 prost = "0.14"
 
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"
+
 [dev-dependencies]
 rusqlite = { workspace = true, features = ["hooks"] }

@@ -320,3 +320,46 @@ fn refresh_selected_defers_history_without_losing_its_changes() {
         matches!(&completed.upserts[0].detail.messages[0].parts[0],MessagePart::Text{text,..} if text=="changed history")
     );
 }
+
+#[test]
+fn scan_page_fingerprints_match_inventory_with_bubbles_subagents_and_workspaces() {
+    let root = fixture(&[
+        ("composerData:a", json!({"composerId":"a", "name":"stale"})),
+        (
+            "composerData:legacy-a",
+            json!({"composerId":"a","subagentInfos":[{"id":"child"}]}),
+        ),
+        ("composerData:b", json!({"composerId":"b"})),
+        ("bubbleId:a:1", json!({"text":"first"})),
+        ("bubbleId:a:2", json!({"text":"second"})),
+        ("bubbleId:b:1", json!({"text":"other"})),
+        (
+            "bubble:child",
+            json!({"chatMessages":[{"role":"assistant","text":"sub"}]}),
+        ),
+    ]);
+    let workspace = root.path().join("workspaceStorage/w1");
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(
+        workspace.join("workspace.json"),
+        r#"{"folder":"file:///repo"}"#,
+    )
+    .unwrap();
+    let ws_db = Connection::open(workspace.join("state.vscdb")).unwrap();
+    ws_db
+        .execute_batch(
+            "CREATE TABLE ItemTable(key TEXT,value TEXT); INSERT INTO ItemTable VALUES ('composer.composerData','{\"allComposers\":[{\"composerId\":\"a\"}]}')",
+        )
+        .unwrap();
+
+    let inventory = enumerate_session_keys(root.path()).unwrap();
+    let key = inventory.iter().find(|key| key.id == "a").unwrap();
+    assert_eq!(key.composer_key, "composerData:legacy-a");
+    let selected = HashMap::from([(key.id.clone(), key.composer_key.clone())]);
+    let (sessions, page_fingerprints) =
+        scan_page(root.path(), &Pricing::bundled(), &selected).unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].head.reference.session_id, "a");
+    assert_eq!(page_fingerprints.get("a"), Some(&key.fingerprint));
+    assert!(!page_fingerprints.contains_key("b"));
+}
