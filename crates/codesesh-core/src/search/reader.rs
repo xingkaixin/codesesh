@@ -71,10 +71,10 @@ pub(super) fn search_prepared(
     query: &str,
     options: &SearchOptions,
 ) -> Result<Vec<SearchResult>> {
-    let mut filters = sql::build(options);
     let query = query.trim();
     let limit = options.limit.unwrap_or(50);
-    let (rows, any_message) = if query.is_empty() {
+    if query.is_empty() {
+        let mut filters = sql::build(connection, options)?;
         filters.params.push((limit as i64).into());
         let mut statement = connection.prepare(&format!(
             "SELECT {HEAD_COLUMNS} FROM sessions s WHERE s.publication_id IS NULL {} ORDER BY s.activity_time DESC LIMIT ?",
@@ -83,34 +83,42 @@ pub(super) fn search_prepared(
         let rows = statement
             .query_map(params_from_iter(filters.params), head)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        (rows, String::new())
-    } else {
-        match cjk::statement(connection, query, filters)? {
-            Some(statement) => (statement.rows(connection, limit)?, statement.any_message),
-            None => return Ok(Vec::new()),
-        }
-    };
+        return Ok(rows
+            .into_iter()
+            .map(|session| SearchResult {
+                reference: session.reference.clone(),
+                snippet: format!("Recent session · {}", session.directory),
+                session,
+                snippet_highlights: Vec::new(),
+                match_type: "recent".into(),
+                message_index: None,
+            })
+            .collect());
+    }
+
+    let matched = cjk::search_candidates(connection, query, options, limit)?;
     let terms = snippet::Terms::parse(query);
-    let mut message_matches = message_matches(connection, &rows, &any_message, &terms)?;
-    let mut result = Vec::with_capacity(rows.len());
-    for session in rows {
-        let (text, ranges, kind, message_index) = if terms.values.is_empty() {
-            (
-                format!("Recent session · {}", session.directory),
-                Vec::new(),
-                "recent",
-                None,
-            )
-        } else if terms.matches(&session.title) {
+    let mut message_stmt = connection.prepare_cached(
+        "SELECT message_index,role,mode,tool_metadata_json,content_text FROM messages WHERE rowid=?",
+    )?;
+    let mut result = Vec::with_capacity(matched.len());
+    for entry in matched {
+        let session = entry.session;
+        let (text, ranges, kind, message_index) = if entry.title_match {
             let (text, ranges) = snippet::build(&session.title, &terms);
             (text, ranges, "title", None)
         } else {
-            message_matches
-                .remove(&session.reference)
-                .unwrap_or_else(|| {
-                    let ranges = snippet::highlights(&session.title, &terms);
-                    (session.title.clone(), ranges, "assistant_reply", None)
-                })
+            resolve_message_match(
+                connection,
+                &mut message_stmt,
+                &session.reference,
+                &entry.message_hits,
+                &terms,
+            )?
+            .unwrap_or_else(|| {
+                let ranges = snippet::highlights(&session.title, &terms);
+                (session.title.clone(), ranges, "assistant_reply", None)
+            })
         };
         result.push(SearchResult {
             reference: session.reference.clone(),
@@ -128,113 +136,63 @@ type MessageMatch = (String, Vec<HighlightRange>, &'static str, Option<usize>);
 
 const MESSAGE_MATCH_SCAN_LIMIT: usize = 200;
 
-fn message_matches(
+fn resolve_message_match(
     connection: &Connection,
-    rows: &[SessionHead],
-    any_message: &str,
+    message_stmt: &mut rusqlite::CachedStatement<'_>,
+    reference: &SessionReference,
+    hits: &[(i64, i64)],
     terms: &snippet::Terms,
-) -> Result<HashMap<SessionReference, MessageMatch>> {
-    let candidates: Vec<_> = rows
-        .iter()
-        .filter(|head| !terms.matches(&head.title))
-        .map(|head| &head.reference)
-        .collect();
-    let mut matches = HashMap::new();
-    if candidates.is_empty() || terms.values.is_empty() {
-        return Ok(matches);
+) -> Result<Option<MessageMatch>> {
+    if terms.is_empty() {
+        return Ok(None);
     }
-    let values = vec!["(?, ?, ?)"; candidates.len()].join(",");
-    let mut params: Vec<Value> = vec![any_message.to_owned().into()];
-    params.extend(candidates.iter().flat_map(|r| {
-        [
-            r.source_node_id.clone().into(),
-            r.agent_name.clone().into(),
-            r.session_id.clone().into(),
-        ]
-    }));
-    let mut hits: HashMap<SessionReference, Vec<i64>> = HashMap::new();
-    let mut query = connection.prepare(&format!("SELECT m.rowid,m.source_node_id,m.agent_name,m.session_id FROM message_fts JOIN messages m ON m.rowid=message_fts.rowid WHERE message_fts MATCH ? AND (m.source_node_id,m.agent_name,m.session_id) IN (VALUES {values}) ORDER BY m.source_node_id,m.agent_name,m.session_id,m.message_index"))?;
-    let mut rows = query.query(params_from_iter(params))?;
-    while let Some(row) = rows.next()? {
-        hits.entry(SessionReference {
-            source_node_id: row.get(1)?,
-            agent_name: row.get(2)?,
-            session_id: row.get(3)?,
-        })
-        .or_default()
-        .push(row.get(0)?);
-    }
-    let mut message = connection.prepare_cached(
-        "SELECT message_index,role,mode,tool_metadata_json,content_text FROM messages WHERE rowid=?",
-    )?;
-    for reference in candidates {
-        let mut covered = HashSet::new();
-        let mut covering = Vec::new();
-        for rowid in hits
-            .get(reference)
-            .into_iter()
-            .flatten()
-            .take(MESSAGE_MATCH_SCAN_LIMIT)
-        {
-            let (index, role, mode, tools, text) = message.query_row([rowid], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, String>(4)?,
-                ))
-            })?;
-            if terms.matches(&text) {
-                let kind = if role == "user" {
-                    "user_message"
-                } else if role == "tool"
-                    || mode.as_deref() == Some("tool")
-                    || tools.is_some_and(|s| !s.is_empty())
-                {
-                    "tool_output"
-                } else {
-                    "assistant_reply"
-                };
-                let (text, ranges) = snippet::build(&text, terms);
-                matches.insert(
-                    reference.clone(),
-                    (text, ranges, kind, Some(index as usize)),
-                );
-                break;
-            }
-            let lower = text.to_lowercase();
-            let before = covered.len();
-            covered.extend(
-                terms
-                    .values
-                    .iter()
-                    .filter(|term| lower.contains(term.as_str())),
-            );
-            if covered.len() > before {
-                covering.push(text);
-            }
+    let mut covered = HashSet::new();
+    let mut covering = Vec::new();
+    for &(_, rowid) in hits.iter().take(MESSAGE_MATCH_SCAN_LIMIT) {
+        let (index, role, mode, tools, text) = message_stmt.query_row([rowid], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        if let Some(hit) = terms.satisfied_match(&text) {
+            let kind = if role == "user" {
+                "user_message"
+            } else if role == "tool"
+                || mode.as_deref() == Some("tool")
+                || tools.is_some_and(|s| !s.is_empty())
+            {
+                "tool_output"
+            } else {
+                "assistant_reply"
+            };
+            let (text, ranges) = snippet::build_around(&text, hit, terms);
+            return Ok(Some((text, ranges, kind, Some(index as usize))));
         }
-        if matches.contains_key(reference) {
-            continue;
-        }
-        let text = if covering.is_empty() {
-            connection
-                .query_row(
-                    "SELECT content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND content_text<>'' ORDER BY message_index LIMIT 1",
-                    params![reference.source_node_id, reference.agent_name, reference.session_id],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()?
-        } else {
-            Some(covering.join("\n"))
-        };
-        if let Some(text) = text {
-            let (text, ranges) = snippet::build(&text, terms);
-            matches.insert(reference.clone(), (text, ranges, "assistant_reply", None));
+        let before = covered.len();
+        covered.extend(terms.matched_indices(&text));
+        if covered.len() > before {
+            covering.push(text);
         }
     }
-    Ok(matches)
+    let text = if covering.is_empty() {
+        connection
+            .query_row(
+                "SELECT content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND content_text<>'' ORDER BY message_index LIMIT 1",
+                params![reference.source_node_id, reference.agent_name, reference.session_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+    } else {
+        Some(covering.join("\n"))
+    };
+    Ok(text.map(|text| {
+        let (text, ranges) = snippet::build(&text, terms);
+        (text, ranges, "assistant_reply", None)
+    }))
 }
 
 pub(super) fn search_files(
@@ -246,7 +204,7 @@ pub(super) fn search_files(
     if path.is_empty() {
         return Ok(Vec::new());
     }
-    let mut filters = sql::build(options);
+    let mut filters = sql::build(connection, options)?;
     sql::file_filter(&mut filters, path);
     if let Some(kind) = &options.file_kind {
         filters.text("fa.kind = ?", kind);

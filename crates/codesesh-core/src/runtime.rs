@@ -39,6 +39,22 @@ const IDLE_RELEASE_DELAY: Duration = crate::agents::jsonl::ACTIVE_WINDOW;
 #[cfg(test)]
 const IDLE_RELEASE_DELAY: Duration = Duration::from_millis(50);
 
+#[cfg(not(test))]
+const RETRY_INITIAL_DELAY: Duration = Duration::from_secs(5);
+#[cfg(not(test))]
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+#[cfg(test)]
+const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(50);
+#[cfg(test)]
+const RETRY_MAX_DELAY: Duration = Duration::from_millis(400);
+
+fn next_retry_delay(current: Option<Duration>, initial: Duration, max: Duration) -> Duration {
+    match current {
+        None => initial.min(max),
+        Some(delay) => delay.saturating_mul(2).min(max),
+    }
+}
+
 #[derive(Clone)]
 pub struct Cancellation {
     stopped: Arc<AtomicBool>,
@@ -61,6 +77,7 @@ impl Cancellation {
 }
 
 pub struct ScanRequest {
+    pub retry: bool,
     pub changed_paths: Option<Vec<PathBuf>>,
     pub checkpoint: Option<Value>,
     pub cancellation: Cancellation,
@@ -72,6 +89,7 @@ pub struct ScanBatch {
     pub removed: Vec<SessionReference>,
     pub checkpoint: Option<Value>,
     pub complete: bool,
+    pub completion: Option<crate::wire::ScanCompletion>,
     pub on_reject: Option<Box<dyn FnOnce() + Send>>,
     pub pricing: Option<crate::pricing::PricingSnapshot>,
 }
@@ -453,12 +471,22 @@ impl Runtime {
         let mut pending = control.pending.subscribe();
         let mut shutdown = self.inner.shutdown.subscribe();
         let mut first = true;
+        let mut retry_delay: Option<Duration> = None;
         loop {
+            if self.inner.stopped.load(Ordering::Acquire) {
+                return;
+            }
             if !first {
-                if !wait_for_change(&source, &mut pending, &mut shutdown).await {
-                    return;
+                match wait_for_change(&source, &mut pending, &mut shutdown, retry_delay).await {
+                    WaitOutcome::Shutdown => return,
+                    WaitOutcome::Changed => {
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_millis(150)) => (),
+                            _ = shutdown.changed() => return,
+                        }
+                    }
+                    WaitOutcome::Retry => {}
                 }
-                tokio::select! { _ = tokio::time::sleep(Duration::from_millis(150)) => (), _ = shutdown.changed() => return }
             }
             first = false;
             if self.inner.stopped.load(Ordering::Acquire) {
@@ -479,10 +507,20 @@ impl Runtime {
                         Some(error.to_string()),
                     )
                     .await;
+                    retry_delay = Some(next_retry_delay(
+                        retry_delay,
+                        RETRY_INITIAL_DELAY,
+                        RETRY_MAX_DELAY,
+                    ));
                     continue;
                 }
             };
-            let mut changed_paths = request.paths.map(|paths| paths.into_iter().collect());
+            let mut retry = retry_delay.is_some();
+            let mut changed_paths = if retry {
+                None
+            } else {
+                request.paths.map(|paths| paths.into_iter().collect())
+            };
             let mut prefetched = None;
             loop {
                 if cancellation.is_cancelled() {
@@ -497,6 +535,7 @@ impl Runtime {
                         spawn_scan(
                             source.scan.clone(),
                             ScanRequest {
+                                retry: std::mem::take(&mut retry),
                                 changed_paths: changed_paths.take(),
                                 checkpoint: checkpoint.clone(),
                                 cancellation: cancellation.clone(),
@@ -533,6 +572,11 @@ impl Runtime {
                                 }),
                             )
                             .await;
+                            retry_delay = Some(next_retry_delay(
+                                retry_delay,
+                                RETRY_INITIAL_DELAY,
+                                RETRY_MAX_DELAY,
+                            ));
                         }
                         break;
                     }
@@ -548,6 +592,11 @@ impl Runtime {
                         Some("incomplete scan did not advance its durable checkpoint".into()),
                     )
                     .await;
+                    retry_delay = Some(next_retry_delay(
+                        retry_delay,
+                        RETRY_INITIAL_DELAY,
+                        RETRY_MAX_DELAY,
+                    ));
                     break;
                 }
                 checkpoint = batch.checkpoint.clone();
@@ -577,6 +626,7 @@ impl Runtime {
                     prefetched = Some(spawn_scan(
                         source.scan.clone(),
                         ScanRequest {
+                            retry: false,
                             changed_paths: None,
                             checkpoint: checkpoint.clone(),
                             cancellation: cancellation.clone(),
@@ -588,11 +638,13 @@ impl Runtime {
                 drop(permit);
                 match publication {
                     Ok(Ok(())) if complete => {
+                        retry_delay = None;
                         self.report(&source.name, AgentScanPhase::Complete, None)
                             .await;
                         break;
                     }
                     Ok(Ok(())) => {
+                        retry_delay = None;
                         if prefetched.is_none() && pending.has_changed().unwrap_or(false) {
                             let pending_request = take_pending(control, &mut pending);
                             changed_paths = pending_request
@@ -608,6 +660,11 @@ impl Runtime {
                                 Some(format!("publication failed: {error:?}")),
                             )
                             .await;
+                            retry_delay = Some(next_retry_delay(
+                                retry_delay,
+                                RETRY_INITIAL_DELAY,
+                                RETRY_MAX_DELAY,
+                            ));
                         }
                         break;
                     }
@@ -651,25 +708,48 @@ impl Runtime {
     }
 }
 
-/// Returns false when the runtime shuts down or stops publishing changes.
+enum WaitOutcome {
+    Changed,
+    Retry,
+    Shutdown,
+}
+
 async fn wait_for_change(
     source: &AgentSource,
     pending: &mut watch::Receiver<Pending>,
     shutdown: &mut watch::Receiver<bool>,
-) -> bool {
+    retry_after: Option<Duration>,
+) -> WaitOutcome {
+    if *shutdown.borrow() {
+        return WaitOutcome::Shutdown;
+    }
     // A file that stops being written raises no change, so nothing else would re-check it.
     let idle = tokio::time::sleep(IDLE_RELEASE_DELAY);
     tokio::pin!(idle);
+    let retry = async {
+        match retry_after {
+            Some(delay) => tokio::time::sleep(delay).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::pin!(retry);
     let mut release = source.release_idle.clone();
     loop {
         tokio::select! {
-            result = pending.changed() => return result.is_ok(),
+            result = pending.changed() => {
+                return if result.is_ok() {
+                    WaitOutcome::Changed
+                } else {
+                    WaitOutcome::Shutdown
+                };
+            }
+            _ = &mut retry, if retry_after.is_some() => return WaitOutcome::Retry,
             _ = &mut idle, if release.is_some() => {
                 if let Some(release) = release.take() {
                     let _ = tokio::task::spawn_blocking(move || release()).await;
                 }
             }
-            _ = shutdown.changed() => return false,
+            _ = shutdown.changed() => return WaitOutcome::Shutdown,
         }
     }
 }

@@ -96,6 +96,34 @@ describe("Pi tool execution evidence", () => {
     },
   );
 
+  it("strips leading patch markers in metadata diffs so structured output does not double +/-", () => {
+    const strategy = display("StrReplace", {
+      status: "completed",
+      input: { path: "/repo/a.ts" },
+      output: [{ type: "text", text: "Replaced." }],
+      metadata: {
+        patch: "--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n keep\n--- old comment\n+++ increment\n",
+      },
+    });
+
+    expect(strategy.outputContent).toEqual({
+      kind: "structured-diff",
+      blocks: [
+        {
+          label: "a.ts",
+          lines: [
+            { type: "context", text: "--- a/a.ts" },
+            { type: "context", text: "+++ b/a.ts" },
+            { type: "context", text: "@@ -1,3 +1,3 @@" },
+            { type: "context", text: "keep" },
+            { type: "remove", text: "-- old comment" },
+            { type: "add", text: "++ increment" },
+          ],
+        },
+      ],
+    });
+  });
+
   it.each(["bash", "batch", "Shell"])("keeps %s execution and truncation evidence", (tool) => {
     const strategy = display(tool, {
       status: "error",

@@ -97,111 +97,115 @@ export function OverviewActiveHours({ activity }: { activity: DashboardActiveHou
       ) : (
         <div className="grid gap-8 p-[18px] md:grid-cols-[minmax(0,1fr)_200px]">
           <div className="min-w-0">
-            <div aria-hidden className="grid grid-cols-[40px_minmax(0,1fr)]">
-              <span className="self-end pb-1 text-[11px] text-[var(--console-muted)]">
-                {t("Total")}
-              </span>
-              <svg
-                viewBox={`0 0 ${SLOTS * 10} ${CURVE_HEIGHT}`}
-                preserveAspectRatio="none"
-                className="block h-12 w-full"
-              >
-                <defs>
-                  <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="var(--brand)" stopOpacity="0.26" />
-                    <stop offset="1" stopColor="var(--brand)" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {slotPeak > 0 ? (
-                  <>
-                    <path
-                      d={`${curve} L${SLOTS * 10 - 5} ${CURVE_HEIGHT} L5 ${CURVE_HEIGHT} Z`}
-                      fill={`url(#${gradient})`}
-                    />
-                    <path
-                      d={curve}
-                      fill="none"
-                      stroke="var(--brand)"
-                      strokeWidth="1.75"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </>
-                ) : null}
-              </svg>
+            <div className="overflow-x-auto pb-1">
+              <div className="min-w-[420px]">
+                <div aria-hidden className="grid grid-cols-[40px_minmax(0,1fr)]">
+                  <span className="self-end pb-1 text-[11px] text-[var(--console-muted)]">
+                    {t("Total")}
+                  </span>
+                  <svg
+                    viewBox={`0 0 ${SLOTS * 10} ${CURVE_HEIGHT}`}
+                    preserveAspectRatio="none"
+                    className="block h-12 w-full"
+                  >
+                    <defs>
+                      <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stopColor="var(--brand)" stopOpacity="0.26" />
+                        <stop offset="1" stopColor="var(--brand)" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    {slotPeak > 0 ? (
+                      <>
+                        <path
+                          d={`${curve} L${SLOTS * 10 - 5} ${CURVE_HEIGHT} L5 ${CURVE_HEIGHT} Z`}
+                          fill={`url(#${gradient})`}
+                        />
+                        <path
+                          d={curve}
+                          fill="none"
+                          stroke="var(--brand)"
+                          strokeWidth="1.75"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      </>
+                    ) : null}
+                  </svg>
+                </div>
+                <table className="mt-1 w-full table-fixed border-collapse">
+                  <caption className="sr-only">{t("Active hours")}</caption>
+                  <colgroup>
+                    <col className="w-10" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">
+                        <span className="sr-only">{t("Weekday")}</span>
+                      </th>
+                      {allSlots.map((slot) => (
+                        <th
+                          key={slot}
+                          scope="col"
+                          className="console-mono pb-1 text-left text-[10px] font-normal text-[var(--console-muted)]"
+                        >
+                          {slot % 2 === 0 ? String(slot * 2).padStart(2, "0") : null}
+                          <span className="sr-only">{slot % 2 === 0 ? null : hourRange(slot)}</span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weekdays.map((day, row) => (
+                      <tr key={day}>
+                        <th
+                          scope="row"
+                          className="text-left text-[11px] font-normal text-[var(--console-muted)]"
+                        >
+                          {labels[row]}
+                        </th>
+                        {allSlots.map((slot) => {
+                          const index = day * SLOTS + slot;
+                          const count = counts[index] ?? 0;
+                          const summary = `${labels[row]} · ${hourRange(slot)} · ${t("{0} user messages", [formatInt(count)])}`;
+                          return (
+                            <td key={slot} className="relative p-0">
+                              <button
+                                type="button"
+                                aria-label={summary}
+                                className="flex h-7 w-full items-center justify-center rounded-sm outline-none hover:bg-[var(--brand-soft)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
+                                onMouseEnter={() => setActive(index)}
+                                onMouseLeave={() => setActive(null)}
+                                onFocus={() => setActive(index)}
+                                onBlur={() => setActive(null)}
+                                onClick={() => setActive(index)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Escape") setActive(null);
+                                }}
+                              >
+                                <Dot count={count} peak={peak} isPeak={index === peakIndex} />
+                              </button>
+                              {active === index ? (
+                                <span
+                                  role="tooltip"
+                                  className={cn(
+                                    "pointer-events-none absolute bottom-full z-10 w-max max-w-[180px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-left text-[11px] text-[var(--console-text)] shadow-[var(--shadow-overlay)]",
+                                    slot < SLOTS / 2 ? "left-0" : "right-0",
+                                  )}
+                                >
+                                  {`${labels[row]} · ${hourRange(slot)} · `}
+                                  <span className="font-semibold text-[var(--brand-ink)]">
+                                    {t("{0} user messages", [formatInt(count)])}
+                                  </span>
+                                </span>
+                              ) : null}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <table className="mt-1 w-full table-fixed border-collapse">
-              <caption className="sr-only">{t("Active hours")}</caption>
-              <colgroup>
-                <col className="w-10" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="sr-only">{t("Weekday")}</span>
-                  </th>
-                  {allSlots.map((slot) => (
-                    <th
-                      key={slot}
-                      scope="col"
-                      className="console-mono pb-1 text-left text-[10px] font-normal text-[var(--console-muted)]"
-                    >
-                      {slot % 2 === 0 ? String(slot * 2).padStart(2, "0") : null}
-                      <span className="sr-only">{slot % 2 === 0 ? null : hourRange(slot)}</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {weekdays.map((day, row) => (
-                  <tr key={day}>
-                    <th
-                      scope="row"
-                      className="text-left text-[11px] font-normal text-[var(--console-muted)]"
-                    >
-                      {labels[row]}
-                    </th>
-                    {allSlots.map((slot) => {
-                      const index = day * SLOTS + slot;
-                      const count = counts[index] ?? 0;
-                      const summary = `${labels[row]} · ${hourRange(slot)} · ${t("{0} user messages", [formatInt(count)])}`;
-                      return (
-                        <td key={slot} className="relative p-0">
-                          <button
-                            type="button"
-                            aria-label={summary}
-                            className="flex h-7 w-full items-center justify-center rounded-sm outline-none hover:bg-[var(--brand-soft)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]"
-                            onMouseEnter={() => setActive(index)}
-                            onMouseLeave={() => setActive(null)}
-                            onFocus={() => setActive(index)}
-                            onBlur={() => setActive(null)}
-                            onClick={() => setActive(index)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Escape") setActive(null);
-                            }}
-                          >
-                            <Dot count={count} peak={peak} isPeak={index === peakIndex} />
-                          </button>
-                          {active === index ? (
-                            <span
-                              role="tooltip"
-                              className={cn(
-                                "pointer-events-none absolute bottom-full z-10 w-max max-w-[180px] rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] px-2.5 py-2 text-left text-[11px] text-[var(--console-text)] shadow-[var(--shadow-overlay)]",
-                                slot < SLOTS / 2 ? "left-0" : "right-0",
-                              )}
-                            >
-                              {`${labels[row]} · ${hourRange(slot)} · `}
-                              <span className="font-semibold text-[var(--brand-ink)]">
-                                {t("{0} user messages", [formatInt(count)])}
-                              </span>
-                            </span>
-                          ) : null}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
             <div className="mt-3 flex min-h-6 flex-wrap items-center justify-end gap-4 text-[11px] text-[var(--console-muted)]">
               {peak === 0 ? (
                 <span>{t("No user messages in this range.")}</span>

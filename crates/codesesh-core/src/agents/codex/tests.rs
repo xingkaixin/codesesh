@@ -591,3 +591,61 @@ fn extracts_own_recorded_git_remote_across_checkpoints_without_parent_replay_pol
     let parsed_fork = parse(&forked, &HashMap::new(), &pricing).unwrap().unwrap();
     assert!(parsed_fork.head.recorded_git_remotes.is_empty());
 }
+
+#[test]
+fn checkpoints_resume_lines_containing_invalid_utf8() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root
+        .path()
+        .join("rollout-2026-01-01T00-00-00-00000000-0000-0000-0000-000000000033.jsonl");
+    let pricing = Pricing::bundled();
+    let titles = HashMap::new();
+    let mut checkpoints = Checkpoints::default();
+
+    // 51 raw bytes (< 64-byte tail window), 101 bytes after U+FFFD replacement.
+    let mut first_line = b"{\"timestamp\":1000,\"x\":\"".to_vec();
+    first_line.extend([0xff; 25]);
+    first_line.extend_from_slice(b"\"}\n");
+    let mut file = File::create(&path).unwrap();
+    file.write_all(&first_line).unwrap();
+    file.flush().unwrap();
+    let initial = checkpoints.parse(&path, &titles, &pricing).unwrap();
+    assert!(initial.is_some());
+    assert_eq!(
+        serde_json::to_value(&initial).unwrap(),
+        serde_json::to_value(parse(&path, &titles, &pricing).unwrap()).unwrap()
+    );
+
+    let mut second_line =
+        b"{\"type\":\"response_item\",\"timestamp\":2000,\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"Hello "
+            .to_vec();
+    second_line.extend([0xff; 12]);
+    second_line.extend_from_slice(b"\"}]}}\n");
+    file.write_all(&second_line).unwrap();
+    file.flush().unwrap();
+
+    let resumed = checkpoints.parse(&path, &titles, &pricing).unwrap();
+    let full = parse(&path, &titles, &pricing).unwrap();
+    assert_eq!(
+        serde_json::to_value(&resumed).unwrap(),
+        serde_json::to_value(&full).unwrap()
+    );
+
+    writeln!(
+        file,
+        "{}",
+        serde_json::json!({
+            "type": "response_item",
+            "timestamp": 3000,
+            "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "World"}]}
+        })
+    )
+    .unwrap();
+    file.flush().unwrap();
+    let resumed_after_tail = checkpoints.parse(&path, &titles, &pricing).unwrap();
+    let full_after_tail = parse(&path, &titles, &pricing).unwrap();
+    assert_eq!(
+        serde_json::to_value(&resumed_after_tail).unwrap(),
+        serde_json::to_value(&full_after_tail).unwrap()
+    );
+}

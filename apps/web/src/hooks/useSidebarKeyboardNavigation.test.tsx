@@ -66,4 +66,34 @@ describe("useSidebarKeyboardNavigation", () => {
     dispatchKey("Enter");
     expect(deps.onOpenSession).toHaveBeenCalledWith(claude);
   });
+
+  it("does not hijack Enter when focus is on an interactive control", () => {
+    const deps = makeDeps({
+      viewState: {
+        mode: "session",
+        activeAgentKey: "codex",
+        activeSessionId: "s1",
+      } satisfies ViewState,
+    });
+    renderHook(() => useSidebarKeyboardNavigation(deps));
+
+    const button = document.createElement("button");
+    const link = document.createElement("a");
+    link.href = "/projects";
+    const menuItem = document.createElement("div");
+    menuItem.setAttribute("role", "menuitem");
+    document.body.append(button, link, menuItem);
+
+    for (const target of [button, link, menuItem]) {
+      const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+      act(() => target.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+    }
+
+    expect(deps.onOpenSession).not.toHaveBeenCalled();
+
+    button.remove();
+    link.remove();
+    menuItem.remove();
+  });
 });

@@ -3,7 +3,7 @@ import type { NavigateFunction } from "react-router-dom";
 import type { SearchResult } from "@codesesh/contract";
 import { agentRoutePath } from "../lib/session-indexes";
 import { searchResultPath } from "../lib/search";
-import { isEditableTarget } from "../lib/keyboard";
+import { isEditableTarget, isInteractiveTarget } from "../lib/keyboard";
 import { getProjectPath, type ProjectRouteIdentity } from "../lib/projects";
 import type { ViewState } from "../lib/view-state";
 
@@ -130,6 +130,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         return;
       }
       if (key === "Enter") {
+        if (isInteractiveTarget(target)) return;
         const result = searchResults[selectedSearchIndex];
         if (!result) return;
         event.preventDefault();

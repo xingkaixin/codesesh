@@ -114,13 +114,17 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   }, [nextPresetRefreshAt, resolved?.preset]);
   const selectPreset = useCallback(
     (preset: TimeWindowPreset) =>
-      setSearchParams(writeTimeWindowPreset(new URLSearchParams(search), preset)),
-    [search, setSearchParams],
+      setSearchParams(writeTimeWindowPreset(new URLSearchParams(search), preset), {
+        state: location.state,
+      }),
+    [location.state, search, setSearchParams],
   );
   const selectCustom = useCallback(
     (from: string, to: string) =>
-      setSearchParams(writeCustomTimeWindow(new URLSearchParams(search), from, to)),
-    [search, setSearchParams],
+      setSearchParams(writeCustomTimeWindow(new URLSearchParams(search), from, to), {
+        state: location.state,
+      }),
+    [location.state, search, setSearchParams],
   );
 
   return {

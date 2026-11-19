@@ -1,7 +1,10 @@
 use super::{composer_id, parse_composer, string, workspace_paths};
-use crate::{agents::ParsedSession, model::SessionReference, pricing::Pricing};
+use crate::{
+    agents::{ParsedSession, open_readonly_sqlite},
+    model::SessionReference,
+    pricing::Pricing,
+};
 use anyhow::Result;
-use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -56,7 +59,7 @@ impl CursorSync {
                 removed,
             });
         }
-        let mut db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let mut db = open_readonly_sqlite(&path)?;
         let transaction = db.transaction()?;
         let mut fingerprints = HashMap::new();
         let mut composers = self.composers.clone();

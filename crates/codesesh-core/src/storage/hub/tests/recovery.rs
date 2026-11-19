@@ -17,6 +17,7 @@ fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };
@@ -87,6 +88,7 @@ fn recovery_survives_another_epoch_change_before_acknowledgment() {
             removed: vec![],
             checkpoint: None,
             complete: true,
+            completion: None,
             on_reject: None,
             pricing: None,
         };
@@ -150,6 +152,7 @@ fn recovery_retains_orphaned_metadata_until_a_snapshot_repairs_it() {
         removed: vec![],
         checkpoint: None,
         complete: true,
+        completion: None,
         on_reject: None,
         pricing: None,
     };

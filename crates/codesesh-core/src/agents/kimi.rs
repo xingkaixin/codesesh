@@ -1,5 +1,7 @@
+use super::jsonl::CachedSources;
 pub(crate) mod helpers;
-use super::ParsedSession;
+use super::jsonl::records;
+use super::{ParsedSession, claudecode::common::InvalidSession};
 use crate::{model::*, pricing::Pricing};
 use helpers::*;
 use serde_json::Value;
@@ -19,14 +21,74 @@ pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>
     scan_with_data_root(&sessions, data, pricing)
 }
 
+#[cfg(test)]
 pub fn scan_with_data_root(
     sessions: &Path,
     data: &Path,
     pricing: &Pricing,
 ) -> anyhow::Result<Vec<ParsedSession>> {
-    scan_directories(directories(sessions)?, data, pricing)
+    scan_cached(sessions, data, pricing, &CachedSources::default())
 }
 
+pub(super) fn scan_cached(
+    sessions: &Path,
+    data: &Path,
+    pricing: &Pricing,
+    cached_sources: &CachedSources<'_>,
+) -> anyhow::Result<Vec<ParsedSession>> {
+    scan_directories(directories(sessions)?, data, pricing, cached_sources)
+}
+
+pub fn scan_changed(
+    sessions: &Path,
+    data: &Path,
+    pricing: &Pricing,
+    changed_paths: &[PathBuf],
+    previous: &[crate::agents::SessionRecord],
+) -> anyhow::Result<super::ScanDelta> {
+    let cached_sources = CachedSources {
+        paths: previous
+            .iter()
+            .map(|record| record.source.as_path())
+            .collect(),
+        damaged: None,
+    };
+    match affected_session_dirs(sessions, data, changed_paths)? {
+        Some(dirs) => {
+            let upserts = scan_directories(dirs.clone(), data, pricing, &cached_sources)?;
+            let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
+            let removed = previous
+                .iter()
+                .filter(|session| {
+                    dirs.iter().any(|dir| session.source.starts_with(dir))
+                        && !retained.contains(&session.head.reference)
+                })
+                .map(|session| session.head.reference.clone())
+                .collect();
+            Ok(super::ScanDelta {
+                upserts,
+                removed,
+                complete: false,
+            })
+        }
+        None => {
+            let upserts = scan_directories(directories(sessions)?, data, pricing, &cached_sources)?;
+            let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
+            let removed = previous
+                .iter()
+                .filter(|session| !retained.contains(&session.head.reference))
+                .map(|session| session.head.reference.clone())
+                .collect();
+            Ok(super::ScanDelta {
+                upserts,
+                removed,
+                complete: false,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
 pub fn scan_paths_with_data_root(
     sessions: &Path,
     data: &Path,
@@ -34,7 +96,7 @@ pub fn scan_paths_with_data_root(
     changed_paths: &[PathBuf],
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match affected_session_dirs(sessions, data, changed_paths)? {
-        Some(paths) => scan_directories(paths, data, pricing),
+        Some(paths) => scan_directories(paths, data, pricing, &CachedSources::default()),
         None => scan_with_data_root(sessions, data, pricing),
     }
 }
@@ -62,6 +124,7 @@ fn scan_directories(
     paths: Vec<PathBuf>,
     data: &Path,
     pricing: &Pricing,
+    cached_sources: &CachedSources<'_>,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let config_path = data.join("config.toml");
     let config = if config_path.exists() {
@@ -83,20 +146,32 @@ fn scan_directories(
     }
     let mut result = vec![];
     for path in paths {
+        let cached = cached_sources.paths.contains(path.as_path());
+        let id = path.file_name().unwrap().to_string_lossy().into_owned();
         let state = path.join("state.json");
-        let meta = if state.exists() {
+        let meta = if state.try_exists()? {
             state.clone()
         } else {
             path.join("metadata.json")
         };
-        if !meta.exists()
-            || (!path.join("context.jsonl").exists() && !path.join("wire.jsonl").exists())
-        {
+        let meta_exists = meta.try_exists()?;
+        let has_transcript =
+            path.join("context.jsonl").try_exists()? || path.join("wire.jsonl").try_exists()?;
+        if !meta_exists || !has_transcript {
+            if cached && (meta_exists || has_transcript) {
+                return Err(InvalidSession("incomplete Kimi session").into());
+            }
             continue;
         }
         let content = std::fs::read(&meta)?;
-        let Ok(meta_value) = serde_json::from_slice::<Value>(&content) else {
-            continue;
+        let meta_value = match serde_json::from_slice::<Value>(&content) {
+            Ok(value) if value.is_object() => value,
+            Ok(_) | Err(_) if !cached => continue,
+            Ok(_) => return Err(InvalidSession("invalid Kimi session metadata").into()),
+            Err(error) => {
+                return Err(anyhow::Error::new(error)
+                    .context(InvalidSession("malformed Kimi session metadata")));
+            }
         };
         let metadata = std::fs::metadata(&path)?;
         let fallback = source_created_ms(&metadata)?;
@@ -141,7 +216,9 @@ fn scan_directories(
         let mut builder = Builder::default();
         let mut ignored = HashSet::new();
         if context_path.exists() {
-            for (seq, r) in records(&context_path)?.enumerate() {
+            for (seq, r) in
+                records(&context_path, || cached_sources.reject_invalid(&id, cached))?.enumerate()
+            {
                 let r = r?;
                 if r["role"] == "_usage" {
                     if let Some(n) = r["token_count"].as_f64() {
@@ -258,7 +335,9 @@ fn scan_directories(
             create += tokens.cache_create.unwrap_or(0.);
             cost
         };
-        for (seq, r) in records(&wire_path)?.enumerate() {
+        for (seq, r) in
+            records(&wire_path, || cached_sources.reject_invalid(&id, cached))?.enumerate()
+        {
             let r = r?;
             if !context_path.exists() && r["role"] == "_usage" && r["token_count"].is_number() {
                 stats.total_tokens = r["token_count"].as_f64();
@@ -387,7 +466,7 @@ fn scan_directories(
             }
         }
         for wire in subagent_wires(&path)? {
-            for r in records(&wire)? {
+            for r in records(&wire, || cached_sources.reject_invalid(&id, cached))? {
                 let r = r?;
                 if let Some(tokens) = status_tokens(&r) {
                     count(
@@ -406,7 +485,6 @@ fn scan_directories(
             .unwrap_or_default()
             .to_string_lossy();
         let directory = projects.get(hash.as_ref()).cloned().unwrap_or_default();
-        let id = path.file_name().unwrap().to_string_lossy().into_owned();
         let detail = finish(
             "kimi",
             id,
@@ -513,7 +591,7 @@ fn configured_model(config: &str) -> Option<String> {
     Some(model.unwrap_or(key))
 }
 fn first_user_title(context: &Path, wire: &Path) -> anyhow::Result<Option<String>> {
-    for r in records(context)? {
+    for r in records(context, || false)? {
         let r = r?;
         if r["role"] == "user"
             && let Some(title) = title(&content_text(&r["content"], true))
@@ -521,7 +599,7 @@ fn first_user_title(context: &Path, wire: &Path) -> anyhow::Result<Option<String
             return Ok(Some(title));
         }
     }
-    for r in records(wire)? {
+    for r in records(wire, || false)? {
         let r = r?;
         if r["message"]["type"] == "TurnBegin"
             && r["message"]["payload"]["user_input"].is_array()
@@ -800,5 +878,52 @@ max_context_size = 262144
             priced.map(|i| i.model.as_deref()).collect::<Vec<_>>(),
             [Some("moonshotai/kimi-k2.5"), Some("moonshotai/kimi-k2.6")]
         );
+    }
+
+    #[test]
+    fn corrupt_cached_metadata_errors_instead_of_removing() {
+        let root = tempfile::tempdir().unwrap();
+        let sessions_dir = root.path().join("sessions");
+        let path = sessions_dir.join("hash/s1");
+        std::fs::create_dir_all(&path).unwrap();
+        let state_path = path.join("state.json");
+        std::fs::write(&state_path, "{}").unwrap();
+        std::fs::write(
+            path.join("wire.jsonl"),
+            r#"{"timestamp":1,"message":{"type":"TurnBegin","payload":{"user_input":[{"text":"hello"}]}}}"#,
+        )
+        .unwrap();
+
+        let pricing = Pricing::bundled();
+        let previous: Vec<_> = scan_with_data_root(&sessions_dir, root.path(), &pricing)
+            .unwrap()
+            .iter()
+            .map(crate::agents::SessionRecord::from)
+            .collect();
+        assert_eq!(previous.len(), 1);
+
+        std::fs::write(&state_path, "{\"truncated\":").unwrap();
+        assert!(
+            scan_changed(
+                &sessions_dir,
+                root.path(),
+                &pricing,
+                std::slice::from_ref(&state_path),
+                &previous
+            )
+            .is_err()
+        );
+
+        std::fs::remove_dir_all(&path).unwrap();
+        let deleted = scan_changed(
+            &sessions_dir,
+            root.path(),
+            &pricing,
+            &[state_path],
+            &previous,
+        )
+        .unwrap();
+        assert!(deleted.upserts.is_empty());
+        assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
     }
 }

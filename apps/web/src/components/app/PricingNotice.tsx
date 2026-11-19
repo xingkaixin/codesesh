@@ -9,6 +9,9 @@ export interface PricingNoticeProps {
   attentionCount: number;
   unmatchedCount: number;
   officialAvailableCount: number;
+  unmatchedError?: boolean;
+  overridesError?: boolean;
+  onRetry?: () => void;
   onOpenPricing: (tab: PricingDrawerTab) => void;
   onDismiss: () => void;
 }
@@ -18,15 +21,27 @@ export function PricingNotice({
   attentionCount,
   unmatchedCount,
   officialAvailableCount,
+  unmatchedError = false,
+  overridesError = false,
+  onRetry,
   onOpenPricing,
   onDismiss,
 }: PricingNoticeProps) {
   useLocale();
 
-  if (!visible || attentionCount <= 0) return null;
+  const hasError = unmatchedError || overridesError;
+  if (!visible || (attentionCount <= 0 && !hasError)) return null;
 
   let summary: string;
-  if (unmatchedCount > 0 && officialAvailableCount > 0) {
+  if (hasError) {
+    if (unmatchedError && overridesError) {
+      summary = t("Couldn't load model pricing.");
+    } else if (unmatchedError) {
+      summary = t("Could not count unmatched models");
+    } else {
+      summary = t("Couldn't load pricing overrides.");
+    }
+  } else if (unmatchedCount > 0 && officialAvailableCount > 0) {
     summary = t("{0} unmatched · {1} official updates", [
       formatInt(unmatchedCount),
       formatInt(officialAvailableCount),
@@ -39,14 +54,32 @@ export function PricingNotice({
     summary = t("{0} pricing rules need review", [formatInt(attentionCount)]);
   }
 
-  const primaryTab: PricingDrawerTab = unmatchedCount > 0 ? "unmatched" : "overrides";
+  const primaryTab: PricingDrawerTab =
+    overridesError && !unmatchedError
+      ? "overrides"
+      : unmatchedError || unmatchedCount > 0
+        ? "unmatched"
+        : "overrides";
 
   return (
     <div
-      role="status"
-      className="mt-2 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[10px] bg-[var(--console-warning-bg)] px-2.5 py-1.5 text-xs text-[var(--console-warning)] shadow-[inset_0_0_0_1px_var(--console-warning-border)]"
+      role={hasError ? "alert" : "status"}
+      className={
+        hasError
+          ? "mt-2 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[10px] bg-[var(--console-error-bg)] px-2.5 py-1.5 text-xs text-[var(--console-error)] shadow-[inset_0_0_0_1px_var(--console-error-border)]"
+          : "mt-2 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[10px] bg-[var(--console-warning-bg)] px-2.5 py-1.5 text-xs text-[var(--console-warning)] shadow-[inset_0_0_0_1px_var(--console-warning-border)]"
+      }
     >
       <span className="console-mono font-medium">{summary}</span>
+      {hasError && onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="font-medium underline underline-offset-2 hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        >
+          {t("Retry")}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={() => onOpenPricing(primaryTab)}
@@ -54,7 +87,7 @@ export function PricingNotice({
       >
         {t("Review pricing")}
       </button>
-      {unmatchedCount > 0 && officialAvailableCount > 0 ? (
+      {!hasError && unmatchedCount > 0 && officialAvailableCount > 0 ? (
         <button
           type="button"
           onClick={() => onOpenPricing("overrides")}
@@ -67,7 +100,11 @@ export function PricingNotice({
         type="button"
         onClick={onDismiss}
         aria-label={t("Dismiss pricing notice")}
-        className="rounded-sm p-0.5 text-[var(--console-warning)] hover:bg-[var(--console-surface)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        className={
+          hasError
+            ? "rounded-sm p-0.5 text-[var(--console-error)] hover:bg-[var(--console-surface)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+            : "rounded-sm p-0.5 text-[var(--console-warning)] hover:bg-[var(--console-surface)] hover:text-[var(--console-text)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        }
       >
         <X className="size-3.5" aria-hidden="true" />
       </button>
