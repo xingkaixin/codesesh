@@ -62,7 +62,16 @@ export function MessageList({
 }: MessageListProps) {
   useLocale();
 
-  const transcriptRef = useTranscriptScroll(messages, followTail);
+  const [measurementVersion, setMeasurementVersion] = useState(0);
+  const { containerRef: transcriptRef, captureAnchor } = useTranscriptScroll(
+    messages,
+    followTail,
+    measurementVersion,
+  );
+  const commitMeasurements = useCallback(() => {
+    captureAnchor();
+    setMeasurementVersion((version) => version + 1);
+  }, [captureAnchor]);
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
   useEffect(() => {
@@ -81,6 +90,8 @@ export function MessageList({
           childSessionById={childSessionById}
           apiRef={apiRef}
           anchorRegistry={anchorRegistry}
+          measurementVersion={measurementVersion}
+          onCommitMeasurements={commitMeasurements}
         />
       ) : (
         <TimelineAnchorRegistryProvider registry={anchorRegistry}>
@@ -116,12 +127,16 @@ function VirtualizedMessageList({
   childSessionById,
   apiRef,
   anchorRegistry,
-}: MessageListProps) {
+  measurementVersion,
+  onCommitMeasurements,
+}: MessageListProps & {
+  measurementVersion: number;
+  onCommitMeasurements: () => void;
+}) {
   const locale = useLocale();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<ScrollParent | null>(null);
-  const [measurementVersion, setMeasurementVersion] = useState(0);
   const pendingMeasureFrameRef = useRef(0);
   const [forcedItem, setForcedItem] = useState<{
     heightIndex: HeightIndex;
@@ -265,10 +280,10 @@ function VirtualizedMessageList({
       if (pendingMeasureFrameRef.current) return;
       pendingMeasureFrameRef.current = requestAnimationFrame(() => {
         pendingMeasureFrameRef.current = 0;
-        setMeasurementVersion((version) => version + 1);
+        onCommitMeasurements();
       });
     },
-    [heightIndex, messages, measuredHeights],
+    [heightIndex, messages, measuredHeights, onCommitMeasurements],
   );
 
   const virtualItems = useMemo(

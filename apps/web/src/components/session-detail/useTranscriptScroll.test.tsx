@@ -1,11 +1,25 @@
+import { useEffect } from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useTranscriptScroll } from "./useTranscriptScroll";
 
-function Transcript({ revision, followTail = true }: { revision: number; followTail?: boolean }) {
-  const ref = useTranscriptScroll(revision, followTail);
+function Transcript({
+  revision,
+  followTail = true,
+  layoutVersion = 0,
+  onCaptureReady,
+}: {
+  revision: number;
+  followTail?: boolean;
+  layoutVersion?: number;
+  onCaptureReady?: (capture: () => void) => void;
+}) {
+  const { containerRef, captureAnchor } = useTranscriptScroll(revision, followTail, layoutVersion);
+  useEffect(() => {
+    onCaptureReady?.(captureAnchor);
+  }, [captureAnchor, onCaptureReady]);
   return (
-    <div ref={ref}>
+    <div ref={containerRef}>
       <div data-message-id="first">First {revision}</div>
       <div data-message-id="second">Second {revision}</div>
     </div>
@@ -57,8 +71,7 @@ it("coalesces rapid scroll events into one animation-frame anchor capture", () =
   parent.remove();
 });
 
-it("does not fight active user scrolling when ResizeObserver fires", () => {
-  vi.useFakeTimers();
+it("does not fight user scrolling on ResizeObserver height changes, while compensating shifts above the anchor", () => {
   let resizeCallback: ResizeObserverCallback | null = null;
   class StubResizeObserver {
     constructor(callback: ResizeObserverCallback) {
@@ -93,35 +106,34 @@ it("does not fight active user scrolling when ResizeObserver fires", () => {
 
   const view = render(<Transcript revision={0} />, { container: parent });
   const firstRow = view.getByText("First 0");
-  let firstTop = 0;
+  let contentTop = 0;
+  // Simulate real browser geometry where viewport top = contentTop - parent.scrollTop.
   vi.spyOn(firstRow, "getBoundingClientRect").mockImplementation(
-    () => ({ top: firstTop, bottom: firstTop + 100 }) as DOMRect,
+    () =>
+      ({
+        top: contentTop - parent.scrollTop,
+        bottom: contentTop - parent.scrollTop + 400,
+      }) as DOMRect,
   );
 
-  // User scrolls down while virtualized rows mount and shift container height.
+  // User scrolls down while rows below grow container height (contentTop of firstRow unchanged).
   parent.scrollTop = 300;
   fireEvent.scroll(parent);
   height = 2400;
-  firstTop = 80;
   act(() => {
     resizeCallback?.([], {} as ResizeObserver);
   });
 
   expect(scrollTo).not.toHaveBeenCalled();
 
-  // Flush the coalesced rAF capture and let active scroll settle.
-  act(() => {
-    while (rafQueue.length > 0) rafQueue.shift()?.(16);
-    vi.advanceTimersByTime(200);
-  });
-
-  // After scrolling settles, an unexpected layout shift restores the anchored row.
-  firstTop = 140;
+  // When rows above the visible anchor shrink (e.g. virtualized row measurements after a hash jump),
+  // scrollTop adjusts by the exact delta so the anchor stays in the viewport.
+  contentTop = -140;
   act(() => {
     resizeCallback?.([], {} as ResizeObserver);
   });
 
-  expect(scrollTo).toHaveBeenCalledWith({ top: 360, behavior: "auto" });
+  expect(scrollTo).toHaveBeenCalledWith({ top: 160, behavior: "auto" });
   view.unmount();
   parent.remove();
 });
@@ -160,6 +172,74 @@ it("keeps history pages in place and follows live appends after reaching the end
   height = 2000;
   view.rerender(<Transcript revision={3} />);
   expect(scroll).toHaveBeenLastCalledWith({ top: 1800, behavior: "auto" });
+  view.unmount();
+  parent.remove();
+});
+
+it("keeps a jumped-to virtualized target in view when newly mounted rows above shrink", () => {
+  const rafQueue: FrameRequestCallback[] = [];
+  vi.stubGlobal(
+    "requestAnimationFrame",
+    vi.fn((callback: FrameRequestCallback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    }),
+  );
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+
+  const parent = document.createElement("div");
+  parent.style.overflowY = "auto";
+  document.body.append(parent);
+  let height = 140000;
+  Object.defineProperty(parent, "scrollHeight", { get: () => height });
+  Object.defineProperty(parent, "clientHeight", { value: 720 });
+  parent.scrollTo = (options?: ScrollToOptions | number) => {
+    if (typeof options === "object" && options.top != null) parent.scrollTop = options.top;
+  };
+
+  let flushCapture = () => {};
+  let targetContentTop = 131000;
+  const view = render(
+    <Transcript
+      revision={0}
+      layoutVersion={0}
+      onCaptureReady={(fn) => {
+        flushCapture = fn;
+      }}
+    />,
+    { container: parent },
+  );
+  const firstRow = view.getByText("First 0");
+  vi.spyOn(firstRow, "getBoundingClientRect").mockImplementation(
+    () =>
+      ({
+        top: targetContentTop - parent.scrollTop,
+        bottom: targetContentTop - parent.scrollTop + 90,
+      }) as DOMRect,
+  );
+
+  // Jump to distant row (simulating scrollToIndex + scrollIntoView) before rAF capture runs.
+  parent.scrollTop = 130700;
+  fireEvent.scroll(parent);
+  expect(targetContentTop - parent.scrollTop).toBe(300);
+
+  // Measurement commit flushes capture before updating row positions (-1140px shrink above).
+  flushCapture();
+  targetContentTop -= 1140;
+  height -= 1140;
+  view.rerender(
+    <Transcript
+      revision={0}
+      layoutVersion={1}
+      onCaptureReady={(fn) => {
+        flushCapture = fn;
+      }}
+    />,
+  );
+
+  // Target stays at the exact same viewport offset (300px) inside the 720px viewport.
+  expect(parent.scrollTop).toBe(129560);
+  expect(targetContentTop - parent.scrollTop).toBe(300);
   view.unmount();
   parent.remove();
 });
