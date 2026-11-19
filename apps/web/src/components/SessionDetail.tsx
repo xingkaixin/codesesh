@@ -50,6 +50,7 @@ import type { LoadedSessionFindMatch } from "./session-detail/session-find";
 import { useSessionFind } from "./session-detail/useSessionFind";
 import { MessagePagingControls } from "./session-detail/MessagePagingControls";
 import { SessionStats } from "./session-detail/SessionStats";
+import { SessionSubSessions } from "./session-detail/SessionSubSessions";
 import {
   findScrollParent,
   isWindowScrollParent,
@@ -414,12 +415,12 @@ export function SessionDetail({
 
   if (messageModels.length === 0) {
     return (
-      <div
-        data-testid="session-detail"
-        className="mx-auto max-w-4xl rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]"
-      >
-        {pageControls}
-        <div ref={pagingFooterRef}>{t("This session has no displayable messages.")}</div>
+      <div data-testid="session-detail" className="mx-auto max-w-4xl space-y-4">
+        <SessionSubSessions childSessions={childSessions} />
+        <div className="rounded-lg border border-[var(--console-border)] bg-[var(--console-surface)] p-6 text-sm text-[var(--console-muted)]">
+          {pageControls}
+          <div ref={pagingFooterRef}>{t("This session has no displayable messages.")}</div>
+        </div>
       </div>
     );
   }
@@ -432,6 +433,7 @@ export function SessionDetail({
     >
       <SessionStats session={session} toc={toc} />
       {pageControls}
+      <SessionSubSessions childSessions={childSessions} />
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}
       />
