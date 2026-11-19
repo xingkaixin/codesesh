@@ -2,6 +2,7 @@ import type {
   AppConfig,
   ModelPriceOverrideView,
   PricingOverridesResponse,
+  PricingHistoryPhase,
   UnmatchedModelStat,
   UpsertPricingOverrideRequest,
 } from "@codesesh/contract";
@@ -12,6 +13,7 @@ import {
   deletePricingOverride,
   fetchPricingOverrides,
   fetchUnmatchedModels,
+  refreshModelPricing,
   savePricingOverride,
 } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
@@ -37,6 +39,9 @@ export interface ModelPricingState {
   saveOverride: (request: UpsertPricingOverrideRequest) => Promise<PricingOverridesResponse>;
   acknowledgeOfficial: (model: string) => Promise<PricingOverridesResponse>;
   deleteOverride: (model: string) => Promise<PricingOverridesResponse>;
+  refreshModels: () => void;
+  refreshStatus: "idle" | "pending" | "changed" | "unchanged" | "error";
+  historyPhase?: PricingHistoryPhase;
   isMutating: boolean;
   pendingModel: string | null;
 }
@@ -52,6 +57,11 @@ async function invalidateRepricedQueries(queryClient: QueryClient): Promise<void
     queryClient.invalidateQueries({ queryKey: queryKeys.bookmarks }),
     queryClient.invalidateQueries({ queryKey: queryKeys.agentCatalogs }),
   ]);
+}
+
+function invalidateCatalog(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.pricingModelLists });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverrides });
 }
 
 export function useModelPricing(
@@ -90,10 +100,30 @@ export function useModelPricing(
     }
   }, [active, queryClient, scanActive]);
 
-  const applyRepricedOverrides = async (response: PricingOverridesResponse) => {
-    queryClient.setQueryData(queryKeys.pricingOverrides, response);
-    await invalidateRepricedQueries(queryClient);
-  };
+  const history = scanStatus?.pricingHistory;
+  const previousHistory = useRef(history);
+  useEffect(() => {
+    if (!enabled || !history) return;
+    const previous = previousHistory.current;
+    previousHistory.current = history;
+    const published = history.generation !== previous?.generation;
+    if (published) invalidateCatalog(queryClient);
+    if (history.phase === "current" && (published || previous?.phase !== "current")) {
+      void invalidateRepricedQueries(queryClient);
+    }
+  }, [enabled, history, queryClient]);
+
+  const refreshMutation = useMutation({
+    mutationFn: refreshModelPricing,
+    onSuccess: ({ changed }) => {
+      if (changed) invalidateCatalog(queryClient);
+    },
+  });
+
+  const reloadOverrides = () =>
+    queryClient.invalidateQueries({ queryKey: queryKeys.pricingOverrides });
+  const applyRepricedOverrides = () =>
+    Promise.all([reloadOverrides(), invalidateRepricedQueries(queryClient)]);
 
   const saveMutation = useMutation({
     mutationFn: savePricingOverride,
@@ -102,9 +132,7 @@ export function useModelPricing(
 
   const acknowledgeMutation = useMutation({
     mutationFn: acknowledgeOfficialPricing,
-    onSuccess: (response) => {
-      queryClient.setQueryData(queryKeys.pricingOverrides, response);
-    },
+    onSuccess: reloadOverrides,
   });
 
   const deleteMutation = useMutation({
@@ -140,6 +168,13 @@ export function useModelPricing(
     saveOverride: saveMutation.mutateAsync,
     acknowledgeOfficial: acknowledgeMutation.mutateAsync,
     deleteOverride: deleteMutation.mutateAsync,
+    refreshModels: () => refreshMutation.mutate(),
+    refreshStatus: refreshMutation.isSuccess
+      ? refreshMutation.data.changed
+        ? "changed"
+        : "unchanged"
+      : refreshMutation.status,
+    historyPhase: history?.phase,
     isMutating: saveMutation.isPending || acknowledgeMutation.isPending || deleteMutation.isPending,
     pendingModel,
   };

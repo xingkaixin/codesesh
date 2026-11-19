@@ -158,20 +158,32 @@ describe("useModelPricing", () => {
 
   it("recounts unmatched models after save/delete, without invalidating dashboard on acknowledge", async () => {
     let unmatchedResponse = initialUnmatched;
+    const updatedCatalogView = {
+      overrides: overridesAfterSave.overrides.map((rule) => ({
+        ...rule,
+        officialPriceAvailable: true,
+        officialRates: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+      })),
+    };
+    let overrides = noOverrides;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const { pathname } = new URL(String(input), "http://localhost");
       if (pathname === "/api/pricing/unmatched") return Response.json(unmatchedResponse);
       if (pathname === "/api/pricing/overrides" && init?.method === "PUT") {
         unmatchedResponse = emptyUnmatched;
+        // A catalog refresh can finish while the save response waits for historical repricing.
+        overrides = updatedCatalogView;
         return Response.json(overridesAfterSave);
       }
-      if (pathname === "/api/pricing/overrides") return Response.json(noOverrides);
+      if (pathname === "/api/pricing/overrides") return Response.json(overrides);
       if (pathname === "/api/pricing/overrides/acknowledge") {
-        return Response.json(overridesAfterAcknowledge);
+        overrides = overridesAfterAcknowledge;
+        return Response.json(overrides);
       }
       if (pathname === "/api/pricing/overrides/delete") {
         unmatchedResponse = initialUnmatched;
-        return Response.json(noOverrides);
+        overrides = noOverrides;
+        return Response.json(overrides);
       }
       return Response.json({});
     });
@@ -198,7 +210,7 @@ describe("useModelPricing", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.overrides).toEqual(overridesAfterSave.overrides);
+      expect(result.current.overrides).toEqual(updatedCatalogView.overrides);
       expect(unmatchedCount(result.current)).toBe(0);
     });
     expect(client.getQueryState(dashboardKey)?.isInvalidated).toBe(true);
@@ -229,7 +241,7 @@ describe("useModelPricing", () => {
     expect(client.getQueryState(projectionKey)?.isInvalidated).toBe(true);
   });
 
-  it("recounts unmatched models when local scan finishes", async () => {
+  it.each(["scan", "pricing"])("recounts unmatched models when %s finishes", async (task) => {
     let unmatchedFetches = 0;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const { pathname } = new URL(String(input), "http://localhost");
@@ -240,7 +252,8 @@ describe("useModelPricing", () => {
 
     const activeScan: ScanStatusEvent = {
       ...SAMPLE_SCAN_STATUS_EVENT,
-      active: true,
+      active: task === "scan",
+      pricingHistory: { generation: 1, phase: task === "pricing" ? "repricing" : "current" },
       updatedAt: 100,
     };
     const { wrapper } = createTestHarness(activeScan);
@@ -261,6 +274,7 @@ describe("useModelPricing", () => {
       result.current.publishScanStatus({
         ...activeScan,
         active: false,
+        pricingHistory: { generation: 1, phase: "current" },
         updatedAt: 200,
       });
     });

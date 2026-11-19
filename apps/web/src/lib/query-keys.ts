@@ -52,5 +52,6 @@ export const queryKeys = {
   pricingUnmatcheds: ["pricing", "unmatched"] as const,
   pricingUnmatched: (from?: number, to?: number, days?: number) =>
     ["pricing", "unmatched", from ?? null, to ?? null, days ?? null] as const,
+  pricingModelLists: ["pricing-models"] as const,
   pricingModels: (q: string, limit: number) => ["pricing-models", q, limit] as const,
 } as const;
