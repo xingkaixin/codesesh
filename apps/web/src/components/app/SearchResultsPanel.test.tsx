@@ -192,3 +192,46 @@ it("prefers ProjectGroup displayName in result cards and preview", () => {
   );
   expect(screen.getAllByText("codesesh-monorepo")).toHaveLength(2);
 });
+
+it("updates preview selection when hovering or focusing another result", () => {
+  const results: SearchResult[] = [
+    {
+      reference: { agentName: "codex", sessionId: "s1" },
+      session: makeSession("s1"),
+      snippet: "first snippet",
+      snippetHighlights: [],
+      matchType: "assistant_reply",
+    },
+    {
+      reference: { agentName: "codex", sessionId: "s2" },
+      session: makeSession("s2"),
+      snippet: "second snippet",
+      snippetHighlights: [],
+      matchType: "assistant_reply",
+    },
+  ];
+  const onSelectIndex = vi.fn();
+
+  const { rerender, props } = renderPanel(
+    { status: "loaded", results },
+    { selectedIndex: 0, onSelectIndex },
+  );
+
+  const preview = screen.getByRole("complementary", { name: "Result preview" });
+  expect(within(preview).getByRole("heading", { level: 3, name: "Session s1" })).toBeTruthy();
+
+  const secondLink = screen.getByRole("heading", { level: 2, name: "Session s2" }).closest("a")!;
+  fireEvent.mouseEnter(secondLink);
+  expect(onSelectIndex).toHaveBeenLastCalledWith(1);
+
+  const firstLink = screen.getByRole("heading", { level: 2, name: "Session s1" }).closest("a")!;
+  fireEvent.focus(firstLink);
+  expect(onSelectIndex).toHaveBeenLastCalledWith(0);
+
+  rerender(
+    <MemoryRouter>
+      <SearchResultsPanel {...props} selectedIndex={1} />
+    </MemoryRouter>,
+  );
+  expect(within(preview).getByRole("heading", { level: 3, name: "Session s2" })).toBeTruthy();
+});

@@ -42,7 +42,7 @@ test("searches indexed messages and opens a result", async ({ page }) => {
   await expect(searchResult).toContainText("needle");
   await searchResult.click();
   await expect(page).toHaveURL(/\/claudecode\/e2e-dashboard#message-1$/);
-  await expect(page.getByText("needle search target")).toBeVisible();
+  await expect(page.getByTestId("session-detail").getByText("needle search target")).toBeVisible();
   await expect(page.locator("#session-message-1-block-0")).toBeInViewport();
   await page.reload();
   await expect(page.locator("#session-message-1-block-0")).toBeInViewport();

@@ -1,12 +1,14 @@
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
+import { renderHighlightedText } from "../HighlightedText";
 import type { QuestionListItem } from "./types";
 
 interface QuestionListOutputProps {
   questions: QuestionListItem[];
+  highlightQuery?: string;
 }
 
-export function QuestionListOutput({ questions }: QuestionListOutputProps) {
+export function QuestionListOutput({ questions, highlightQuery }: QuestionListOutputProps) {
   useLocale();
 
   return (
@@ -34,7 +36,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
               )}
             </div>
             <p className="mt-2 text-sm leading-relaxed text-[var(--console-text)]">
-              {question.question}
+              {renderHighlightedText(question.question, highlightQuery)}
             </p>
           </div>
           <div className="space-y-2 p-3">
@@ -55,7 +57,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                         isSelected ? "text-[var(--console-success)]" : "text-[var(--console-text)]"
                       }`}
                     >
-                      {option.label}
+                      {renderHighlightedText(option.label, highlightQuery)}
                     </span>
                     {option.recommended ? (
                       <span className="console-mono rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-muted)] px-1.5 py-0.5 text-[10px] text-[var(--console-muted)]">
@@ -70,7 +72,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                   </div>
                   {option.description ? (
                     <p className="mt-1 text-xs leading-relaxed text-[var(--console-muted)]">
-                      {option.description}
+                      {renderHighlightedText(option.description, highlightQuery)}
                     </p>
                   ) : null}
                 </div>
@@ -87,7 +89,7 @@ export function QuestionListOutput({ questions }: QuestionListOutputProps) {
                     {t("User answer")}
                   </span>
                   <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--console-text)]">
-                    {answer}
+                    {renderHighlightedText(answer, highlightQuery)}
                   </p>
                 </div>
               ))}

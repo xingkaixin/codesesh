@@ -524,6 +524,7 @@ export const messages = {
   "Filter tools…": ["筛选工具…", "ツールを絞り込み…"],
   "Select all": ["全选", "すべて選択"],
   "Clear all": ["清除全部", "すべて解除"],
+  "Clear highlights": ["清除高亮", "ハイライトを解除"],
   "Writes only": ["仅写入操作", "書き込みのみ"],
   "hidden by filters": ["被筛选条件隐藏", "フィルターで非表示"],
   "Show all": ["显示全部", "すべて表示"],

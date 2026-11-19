@@ -1,9 +1,11 @@
 import { type DiffTone, diffToneClass } from "./diff-tone";
 import { ProgressiveText } from "../ProgressiveContent";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
+import { renderHighlightedText } from "../HighlightedText";
 
 interface UnifiedDiffOutputProps {
   text: string;
+  highlightQuery?: string;
 }
 
 function getLineKey(line: string, occurrence: number) {
@@ -19,7 +21,7 @@ function getUnifiedDiffLineTone(line: string): DiffTone {
   return "context";
 }
 
-export function UnifiedDiffOutput({ text }: UnifiedDiffOutputProps) {
+export function UnifiedDiffOutput({ text, highlightQuery }: UnifiedDiffOutputProps) {
   return (
     <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.diff}>
       {(visibleText) => {
@@ -35,7 +37,7 @@ export function UnifiedDiffOutput({ text }: UnifiedDiffOutputProps) {
                   key={getLineKey(line, occurrence)}
                   className={`block rounded-[2px] px-1 ${diffToneClass(getUnifiedDiffLineTone(line))}`}
                 >
-                  {line || " "}
+                  {line ? renderHighlightedText(line, highlightQuery) : " "}
                 </span>
               );
             })}

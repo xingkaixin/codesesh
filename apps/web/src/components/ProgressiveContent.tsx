@@ -1,7 +1,8 @@
+import { buildHighlightPattern } from "../lib/search-highlight";
 import { formatNumber } from "../lib/format";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Copy } from "./ui/icons";
 import { writeToClipboard } from "../lib/clipboard";
 import {
@@ -74,6 +75,7 @@ export function ContentRenderControls({
 interface ProgressiveTextProps {
   text: string;
   initialBudget: ContentRenderBudget;
+  highlightQuery?: string;
   children: (visibleText: string) => ReactNode;
 }
 
@@ -107,27 +109,94 @@ export function useProgressiveRenderBudget(
   };
 }
 
-export function ProgressiveText({ text, initialBudget, children }: ProgressiveTextProps) {
+function previewMatchPosition(root: HTMLDivElement | null) {
+  const mark = root?.querySelector("mark");
+  if (!root || !mark) return;
+  // The transcript owns its own search jump. Scroll only the bounded output pane.
+  for (
+    let pane = mark.parentElement;
+    pane && pane !== root.parentElement?.parentElement;
+    pane = pane.parentElement
+  ) {
+    if (
+      pane.scrollHeight > pane.clientHeight &&
+      /^(auto|scroll)$/.test(getComputedStyle(pane).overflowY)
+    ) {
+      const rect = mark.getBoundingClientRect();
+      return { pane, offset: rect.top - pane.getBoundingClientRect().top, height: rect.height };
+    }
+  }
+}
+
+export function ProgressiveText({
+  text,
+  initialBudget,
+  highlightQuery,
+  children,
+}: ProgressiveTextProps) {
   useLocale();
 
   const { budget, renderMore } = useProgressiveRenderBudget(text, initialBudget, {
     characters: text.length,
     lines: text.length + 1,
   });
-  const preview = useMemo(() => buildTextRenderPreview(text, budget), [budget, text]);
+  const match = useMemo(
+    () => buildHighlightPattern(highlightQuery)?.exec(text),
+    [text, highlightQuery],
+  );
+  const preview = useMemo(() => {
+    const prefix = buildTextRenderPreview(text, budget);
+    if (!match || !prefix.truncated || match.index + match[0].length <= prefix.renderedCharacters)
+      return prefix;
+    const earliest = Math.max(0, match.index - Math.floor(budget.maxCharacters / 2));
+    let start = match.index;
+    let lines = 0;
+    while (start > earliest) {
+      if (text.charAt(start - 1) === "\n" && ++lines >= Math.ceil(budget.maxLines / 2)) break;
+      start--;
+    }
+    if (start > 0 && text.charCodeAt(start) >= 0xdc00 && text.charCodeAt(start) <= 0xdfff) start++;
+    const excerpt = buildTextRenderPreview(text.slice(start), budget);
+    return {
+      ...excerpt,
+      text: (start > 0 ? "…" : "") + excerpt.text,
+      truncated: start > 0 || excerpt.truncated,
+    };
+  }, [budget, text, match]);
+
+  const previewRef = useRef<HTMLDivElement>(null);
+  const readingOffset = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (!match) return;
+    const position = previewMatchPosition(previewRef.current);
+    if (!position) return;
+    const { pane, offset, height } = position;
+    const previous = readingOffset.current;
+    readingOffset.current = null;
+    if (previous !== null) {
+      pane.scrollBy({ top: offset - previous });
+    } else if (offset < 0 || offset + height > pane.clientHeight) {
+      pane.scrollBy({ top: offset - pane.clientHeight / 2 });
+    }
+  }, [match, budget]);
 
   return (
-    <>
+    <div ref={previewRef} className="contents">
       {children(preview.text)}
       {preview.truncated ? (
         <ContentRenderControls
           copySource={text}
-          onRenderMore={renderMore}
+          onRenderMore={() => {
+            readingOffset.current = match
+              ? (previewMatchPosition(previewRef.current)?.offset ?? null)
+              : null;
+            renderMore();
+          }}
           rendered={preview.renderedCharacters}
           total={text.length}
           unit="characters"
         />
       ) : null}
-    </>
+    </div>
   );
 }

@@ -7,9 +7,11 @@ import {
   INITIAL_CONTENT_RENDER_BUDGETS,
   type ContentRenderBudget,
 } from "../../lib/content-render-budget";
+import { renderHighlightedText } from "../HighlightedText";
 
 interface StructuredDiffOutputProps {
   blocks: DiffBlock[];
+  highlightQuery?: string;
 }
 
 interface StructuredDiffPreview {
@@ -89,7 +91,7 @@ function serializeStructuredDiff(blocks: DiffBlock[]) {
   return lines.join("\n");
 }
 
-export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
+export function StructuredDiffOutput({ blocks, highlightQuery }: StructuredDiffOutputProps) {
   const locale = useLocale();
 
   const totalLines = useMemo(
@@ -115,7 +117,7 @@ export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
             >
               <div className="border-b border-[var(--console-border)] bg-[var(--console-surface-muted)] px-3 py-1.5">
                 <span className="console-mono text-[11px] font-semibold text-[var(--console-muted)]">
-                  {block.label}
+                  {renderHighlightedText(block.label, highlightQuery)}
                 </span>
               </div>
               <pre className="console-mono max-h-[280px] overflow-auto whitespace-pre p-3 text-xs leading-relaxed">
@@ -126,7 +128,7 @@ export function StructuredDiffOutput({ blocks }: StructuredDiffOutputProps) {
                       className={`block rounded-[2px] px-1 ${diffToneClass(line.type)}`}
                     >
                       {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
-                      {line.text || " "}
+                      {line.text ? renderHighlightedText(line.text, highlightQuery) : " "}
                     </span>
                   );
                 })}

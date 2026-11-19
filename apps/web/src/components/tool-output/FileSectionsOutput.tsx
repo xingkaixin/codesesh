@@ -5,20 +5,28 @@ import type { FileSectionItem } from "./types";
 import { UnifiedDiffOutput } from "./UnifiedDiffOutput";
 import { ProgressiveText } from "../ProgressiveContent";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
+import { renderHighlightedText } from "../HighlightedText";
 
 interface FileSectionsOutputProps {
   sections: FileSectionItem[];
+  highlightQuery?: string;
 }
 
-function renderSectionContent(section: FileSectionItem) {
+function renderSectionContent(section: FileSectionItem, highlightQuery?: string) {
+  const hasText = Boolean(section.text);
   const outputText = section.text || t("No output captured.");
+  const activeHighlight = hasText ? highlightQuery : undefined;
 
   if (!section.isCode || section.language === "text") {
     return (
-      <ProgressiveText text={outputText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+      <ProgressiveText
+        text={outputText}
+        highlightQuery={activeHighlight}
+        initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
+      >
         {(visibleText) => (
           <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-[var(--console-text)]">
-            {visibleText}
+            {renderHighlightedText(visibleText, activeHighlight)}
           </pre>
         )}
       </ProgressiveText>
@@ -26,17 +34,21 @@ function renderSectionContent(section: FileSectionItem) {
   }
 
   if (section.language === "diff") {
-    return <UnifiedDiffOutput text={outputText} />;
+    return <UnifiedDiffOutput text={outputText} highlightQuery={activeHighlight} />;
   }
 
   return (
     <div className="max-h-[420px] overflow-auto bg-[var(--console-surface-sunken)]">
-      <CodeHighlighter language={section.language} text={outputText} />
+      <CodeHighlighter
+        language={section.language}
+        text={outputText}
+        highlightQuery={activeHighlight}
+      />
     </div>
   );
 }
 
-export function FileSectionsOutput({ sections }: FileSectionsOutputProps) {
+export function FileSectionsOutput({ sections, highlightQuery }: FileSectionsOutputProps) {
   useLocale();
 
   return (
@@ -52,11 +64,11 @@ export function FileSectionsOutput({ sections }: FileSectionsOutputProps) {
                 {section.operation}
               </span>
               <span className="console-mono text-[11px] font-semibold text-[var(--console-muted)]">
-                {section.label}
+                {renderHighlightedText(section.label, highlightQuery)}
               </span>
             </div>
           </div>
-          {renderSectionContent(section)}
+          {renderSectionContent(section, highlightQuery)}
         </div>
       ))}
     </div>

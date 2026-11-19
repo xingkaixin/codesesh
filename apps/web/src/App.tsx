@@ -229,6 +229,20 @@ export default function App() {
         typeof location.state.searchQuery === "string"
       ? location.state.searchQuery
       : "";
+  const clearDetailHighlight = useCallback(() => {
+    if (
+      typeof location.state !== "object" ||
+      location.state === null ||
+      !("searchQuery" in location.state)
+    ) {
+      return;
+    }
+    const nextEntries = Object.entries(location.state).filter(([key]) => key !== "searchQuery");
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: nextEntries.length > 0 ? Object.fromEntries(nextEntries) : null },
+    );
+  }, [location.hash, location.pathname, location.search, location.state, navigate]);
 
   const bookmarks = useBookmarks();
   const {
@@ -406,6 +420,7 @@ export default function App() {
           retry: () => void sessionDetail.refresh(),
         },
         detailHighlightQuery,
+        onClearDetailHighlight: clearDetailHighlight,
         childSessionsByParentRouteKey: sessionIndexes.childrenByParentRouteKey,
       };
       break;
@@ -440,6 +455,7 @@ export default function App() {
         onClose: search.closeSearch,
         onRetry: search.retrySearch,
         selectedIndex: search.selectedSearchIndex,
+        onSelectIndex: search.selectSearchIndex,
         registerResultRef: search.registerResultRef,
         controls: searchControlsRef,
         onSubmit: submitSearch,

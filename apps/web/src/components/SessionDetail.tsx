@@ -1,7 +1,7 @@
 import type { SessionMessagePaging } from "../hooks/useSessionDetail";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { ChevronDown, ChevronUp, ChevronsUpDown, FileText } from "./ui/icons";
+import { ChevronDown, ChevronUp, ChevronsUpDown, FileText, Search, X } from "./ui/icons";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   formatSessionReference,
@@ -20,6 +20,7 @@ import { buildSessionDetailDisplayModel } from "./session-detail/display-model";
 import { SessionFilterAside } from "./session-detail/FilterPanel";
 import { countActiveFilterChips, SessionFilterChips } from "./session-detail/FilterChips";
 import {
+  collectMatchedCollapsibleKeys,
   createExpandedItemsRegistry,
   deriveExpandedSummary,
   ExpandedItemsProvider,
@@ -64,6 +65,7 @@ interface SessionDetailProps {
   session: SessionDetailData;
   agentCatalog: AgentCatalog;
   highlightQuery?: string;
+  onClearHighlight?: () => void;
   targetMessageIndex?: number;
   messagePaging?: SessionMessagePaging;
   childSessions?: SessionHead[];
@@ -78,12 +80,14 @@ function scrollToSessionAnchor({
   behavior,
   anchorRegistry,
   prepareAnchor,
+  onScrolled,
   isCurrent,
 }: {
   anchorId: string;
   behavior: SessionAnchorScrollBehavior;
   anchorRegistry: TimelineAnchorRegistry;
   prepareAnchor?: () => void;
+  onScrolled: () => void;
   isCurrent: () => boolean;
 }) {
   if (typeof document === "undefined") return;
@@ -100,6 +104,7 @@ function scrollToSessionAnchor({
       element = anchorRegistry.get(anchorId);
       if (element) {
         element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
+        if (scrollBehavior === "auto") onScrolled();
         return;
       }
       attempts += 1;
@@ -110,6 +115,7 @@ function scrollToSessionAnchor({
   }
   if (!element) return;
   element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
+  if (scrollBehavior === "auto") onScrolled();
 }
 
 function measureSessionDetailWork<T>(id: string, compute: () => T): T {
@@ -146,6 +152,7 @@ export function SessionDetail({
   session,
   agentCatalog,
   highlightQuery,
+  onClearHighlight,
   targetMessageIndex,
   messagePaging,
   childSessions = [],
@@ -186,6 +193,21 @@ export function SessionDetail({
     [childSessions],
   );
   const [anchorRegistry] = useState(createTimelineAnchorRegistry);
+  const trimmedHighlightQuery = highlightQuery?.trim() ?? "";
+  const [dismissedHighlight, setDismissedHighlight] = useState<{
+    sessionKey: string;
+    query: string;
+  } | null>(null);
+  const effectiveHighlightQuery =
+    dismissedHighlight?.sessionKey === sessionReference &&
+    dismissedHighlight.query === trimmedHighlightQuery
+      ? ""
+      : trimmedHighlightQuery;
+  const handleClearHighlight = useCallback(() => {
+    setDismissedHighlight({ sessionKey: sessionReference, query: trimmedHighlightQuery });
+    onClearHighlight?.();
+  }, [onClearHighlight, sessionReference, trimmedHighlightQuery]);
+
   const expandedItems = useMemo(
     () => createExpandedItemsRegistry(sessionReference),
     [sessionReference],
@@ -196,9 +218,56 @@ export function SessionDetail({
       deriveExpandedSummary(filteredMessages, expandedSnapshot, sessionAgentKey, session.directory),
     [filteredMessages, expandedSnapshot, sessionAgentKey, session.directory],
   );
-  const showTranscriptToolbar = countActiveFilterChips(toc, filterState) > 0 || hasCollapsible;
+  const showTranscriptToolbar =
+    countActiveFilterChips(toc, filterState) > 0 ||
+    hasCollapsible ||
+    Boolean(effectiveHighlightQuery);
+  const detailRef = useRef<HTMLDivElement>(null);
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
+  const targetDisplayMessageIndex = useMemo(
+    () =>
+      targetMessageIndex == null
+        ? undefined
+        : displayModel.resolveSourceMessageAnchor(targetMessageIndex)?.messageIndex,
+    [displayModel, targetMessageIndex],
+  );
+  const matchedCollapsibleKeys = useMemo(
+    () =>
+      collectMatchedCollapsibleKeys(
+        filteredMessages,
+        effectiveHighlightQuery,
+        targetDisplayMessageIndex,
+      ),
+    [effectiveHighlightQuery, filteredMessages, targetDisplayMessageIndex],
+  );
+  const autoExpandedRef = useRef<{ scope: string; keys: Set<string> }>({
+    scope: "",
+    keys: new Set(),
+  });
+  useEffect(() => {
+    const scope = `${sessionReference}\0${effectiveHighlightQuery}\0${targetMessageIndex ?? ""}`;
+    if (autoExpandedRef.current.scope !== scope) {
+      autoExpandedRef.current = { scope, keys: new Set() };
+    }
+    if (matchedCollapsibleKeys.length === 0) return;
+    const newlyMatched: string[] = [];
+    for (const key of matchedCollapsibleKeys) {
+      if (!autoExpandedRef.current.keys.has(key)) {
+        autoExpandedRef.current.keys.add(key);
+        newlyMatched.push(key);
+      }
+    }
+    if (newlyMatched.length > 0) {
+      expandedItems.expandItems(newlyMatched);
+    }
+  }, [
+    effectiveHighlightQuery,
+    expandedItems,
+    matchedCollapsibleKeys,
+    sessionReference,
+    targetMessageIndex,
+  ]);
   const handleJumpToMessageAnchor = useCallback(
     (anchorId: string, messageIndex: number | undefined, behavior: SessionAnchorScrollBehavior) => {
       const requestId = scrollRequestRef.current + 1;
@@ -210,6 +279,7 @@ export function SessionDetail({
         anchorRegistry,
         prepareAnchor:
           listIndex == null ? undefined : () => virtualListRef.current?.scrollToIndex(listIndex),
+        onScrolled: () => virtualListRef.current?.captureAnchor(),
         isCurrent: () => scrollRequestRef.current === requestId,
       });
     },
@@ -226,8 +296,26 @@ export function SessionDetail({
     if (targetMessageIndex == null) return;
     const target = displayModel.resolveSourceMessageAnchor(targetMessageIndex);
     if (!target) return;
-    handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto");
+    let cancelled = false;
+    let frame = requestAnimationFrame(async () => {
+      const animations =
+        detailRef.current
+          ?.getAnimations?.({ subtree: true })
+          .filter(
+            (animation) =>
+              animation.effect instanceof KeyframeEffect &&
+              animation.effect.target?.classList.contains("motion-collapsible"),
+          ) ?? [];
+      if (animations.length)
+        await Promise.allSettled(animations.map((animation) => animation.finished));
+      if (!cancelled)
+        frame = requestAnimationFrame(() =>
+          handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto"),
+        );
+    });
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
       scrollRequestRef.current += 1;
     };
   });
@@ -320,6 +408,7 @@ export function SessionDetail({
 
   return (
     <div
+      ref={detailRef}
       data-testid="session-detail"
       className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
@@ -362,6 +451,22 @@ export function SessionDetail({
           {showTranscriptToolbar ? (
             <div className="flex flex-wrap items-center gap-2">
               <SessionFilterChips toc={toc} state={filterState} actions={filterActions} />
+              {effectiveHighlightQuery ? (
+                <span className="inline-flex h-[26px] max-w-full items-center gap-1.5 rounded-full border border-[var(--brand)]/30 bg-[var(--brand-soft)] pr-1 pl-2.5 text-xs text-[var(--brand-ink)]">
+                  <Search aria-hidden="true" className="size-3 shrink-0" />
+                  <span className="console-mono max-w-[200px] truncate font-medium">
+                    {effectiveHighlightQuery}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearHighlight}
+                    className="motion-hover inline-flex h-[20px] items-center gap-1 rounded-full px-1.5 text-[11px] font-medium hover:bg-[var(--console-surface)]/60 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                    {t("Clear highlights")}
+                  </button>
+                </span>
+              ) : null}
               {hasCollapsible ? (
                 <button
                   type="button"
@@ -400,7 +505,7 @@ export function SessionDetail({
                     sessionAgentKey={sessionAgentKey}
                     agent={sessionAgent}
                     baseDirectory={session.directory}
-                    highlightQuery={highlightQuery}
+                    highlightQuery={effectiveHighlightQuery || undefined}
                     childSessionById={childSessionById}
                     apiRef={virtualListRef}
                     anchorRegistry={anchorRegistry}

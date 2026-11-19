@@ -3,6 +3,7 @@ import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { formatMessageDateTime, formatMessageIsoTime } from "../../lib/format";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
+import { renderHighlightedText } from "../HighlightedText";
 import { MarkdownContent } from "../MarkdownContent";
 import { ProgressiveText } from "../ProgressiveContent";
 import { toDisplayText, toPlainText, toRecord } from "../session-detail/tool-normalize";
@@ -33,22 +34,29 @@ function ExcerptDetails({
   );
 }
 
-function RawExcerpt({ value }: { value: unknown }) {
+function RawExcerpt({ value, highlightQuery }: { value: unknown; highlightQuery?: string }) {
   return (
     <ProgressiveText
       text={toDisplayText(value)}
+      highlightQuery={highlightQuery}
       initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
     >
       {(text) => (
         <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--console-text)]">
-          {text}
+          {renderHighlightedText(text, highlightQuery)}
         </pre>
       )}
     </ProgressiveText>
   );
 }
 
-function ExcerptItem({ item }: { item: Record<string, unknown> }) {
+function ExcerptItem({
+  item,
+  highlightQuery,
+}: {
+  item: Record<string, unknown>;
+  highlightQuery?: string;
+}) {
   const type = toPlainText(item.type);
   const isUser = type === "userMessage";
   const isAgent = type === "agentMessage";
@@ -79,16 +87,22 @@ function ExcerptItem({ item }: { item: Record<string, unknown> }) {
     >
       {text ? (
         <div className="console-markdown break-words pb-3 text-sm leading-relaxed text-[var(--console-text)]">
-          <MarkdownContent text={text} />
+          <MarkdownContent text={text} highlightQuery={highlightQuery} />
         </div>
       ) : (
-        <RawExcerpt value={item} />
+        <RawExcerpt value={item} highlightQuery={highlightQuery} />
       )}
     </ExcerptDetails>
   );
 }
 
-export function ThreadReadOutput({ content }: { content: ThreadReadToolOutputContent }) {
+export function ThreadReadOutput({
+  content,
+  highlightQuery,
+}: {
+  content: ThreadReadToolOutputContent;
+  highlightQuery?: string;
+}) {
   useLocale();
   const [expanded, setExpanded] = useState<{
     source: ThreadReadToolOutputContent;
@@ -147,18 +161,26 @@ export function ThreadReadOutput({ content }: { content: ThreadReadToolOutputCon
                 </p>
               ) : null}
               {replies.map((item, itemIndex) => (
-                <ExcerptItem key={toPlainText(item.id) || itemIndex} item={item} />
+                <ExcerptItem
+                  key={toPlainText(item.id) || itemIndex}
+                  item={item}
+                  highlightQuery={highlightQuery}
+                />
               ))}
               {activity.length > 0 ? (
                 <ExcerptDetails label={t("Other activity ({0})", [activity.length])}>
                   {activity.map((item, itemIndex) => (
-                    <ExcerptItem key={toPlainText(item.id) || itemIndex} item={item} />
+                    <ExcerptItem
+                      key={toPlainText(item.id) || itemIndex}
+                      item={item}
+                      highlightQuery={highlightQuery}
+                    />
                   ))}
                 </ExcerptDetails>
               ) : null}
               {turn.error ? (
                 <div className="py-3">
-                  <RawExcerpt value={turn.error} />
+                  <RawExcerpt value={turn.error} highlightQuery={highlightQuery} />
                 </div>
               ) : null}
             </div>
@@ -183,10 +205,11 @@ export function ThreadReadOutput({ content }: { content: ThreadReadToolOutputCon
         <ExcerptDetails label={t("Request details")}>
           <PropertyListOutput
             items={[{ label: t("Session"), value: content.threadId }, ...content.request]}
+            highlightQuery={highlightQuery}
           />
         </ExcerptDetails>
         <ExcerptDetails label={t("Raw output")}>
-          <RawExcerpt value={content.rawOutput} />
+          <RawExcerpt value={content.rawOutput} highlightQuery={highlightQuery} />
         </ExcerptDetails>
       </div>
     </div>

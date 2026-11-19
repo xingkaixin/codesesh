@@ -7,9 +7,8 @@ import {
   useId,
   useMemo,
   useState,
-  type Dispatch,
   type ReactNode,
-  type Ref,
+  type RefObject,
   type SetStateAction,
 } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -99,12 +98,13 @@ interface SearchContentModel {
   projectOptions: SearchProjectOption[];
   projectDisplayNames?: ReadonlyMap<string, string>;
   filters: SearchFilterState;
-  onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
+  onChangeFilters: (next: SetStateAction<SearchFilterState>, draftQuery?: string) => void;
   onClose: () => void;
   onRetry: () => void;
   selectedIndex: number;
+  onSelectIndex?: (index: number) => void;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
-  controls: Ref<SearchControlsHandle>;
+  controls: RefObject<SearchControlsHandle | null>;
   onSubmit: (query: string) => void;
 }
 
@@ -147,6 +147,7 @@ type SessionRouteModel = Extract<ViewState, { mode: "session" }> &
   LandingRouteModel & {
     detail: SessionDetailModel;
     detailHighlightQuery: string;
+    onClearDetailHighlight?: () => void;
     childSessionsByParentRouteKey: ReadonlyMap<string, SessionHead[]>;
   };
 
@@ -182,13 +183,28 @@ function SearchRouteContent({
   controlsRef,
 }: {
   search: SearchContentModel;
-  controlsRef: Ref<SearchControlsHandle>;
+  controlsRef: RefObject<SearchControlsHandle | null>;
 }) {
   useLocale();
 
   const filtersId = useId();
   const activeFilters = Object.values(search.filters).filter(Boolean).length;
   const [filtersOpen, setFiltersOpen] = useState(activeFilters > 0);
+  const [hadActiveFilters, setHadActiveFilters] = useState(activeFilters > 0);
+  if (activeFilters > 0 && !hadActiveFilters) {
+    setHadActiveFilters(true);
+    setFiltersOpen(true);
+  } else if (activeFilters === 0 && hadActiveFilters) {
+    setHadActiveFilters(false);
+  }
+  const onChangeFilters = search.onChangeFilters;
+  const handleChangeFilters = useCallback(
+    (next: SetStateAction<SearchFilterState>) => {
+      const draftQuery = controlsRef.current?.getValue();
+      onChangeFilters(next, draftQuery);
+    },
+    [controlsRef, onChangeFilters],
+  );
   const resultCount = search.state.status === "loaded" ? search.state.results.length : 0;
   return (
     <RenderProfiler
@@ -229,10 +245,10 @@ function SearchRouteContent({
           projects={search.projectOptions}
           projectDisplayNames={search.projectDisplayNames}
           filters={search.filters}
-          onChangeFilters={search.onChangeFilters}
-          onOpenResult={search.onClose}
+          onChangeFilters={handleChangeFilters}
           onRetry={search.onRetry}
           selectedIndex={search.selectedIndex}
+          onSelectIndex={search.onSelectIndex}
           registerResultRef={search.registerResultRef}
         />
       </LazySurface>
@@ -435,6 +451,7 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
           messagePaging={phase.messagePaging}
           agentCatalog={route.agentCatalog}
           highlightQuery={route.detailHighlightQuery}
+          onClearHighlight={route.onClearDetailHighlight}
           childSessions={childSessions}
         />
       </LazySurface>
@@ -517,17 +534,19 @@ function RouteContent({
 export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
   useLocale();
 
-  const { onChangeFilters, onSubmit } = search;
+  const { onChangeFilters } = search;
   const handleSelectModel = useCallback(
     (model: string, scope: DashboardFilters) => {
-      onChangeFilters({
-        ...(scope.project ? { project: scope.project } : {}),
-        ...(scope.agent ? { agent: scope.agent } : {}),
-        ...(scope.sourceNodeId ? { sourceNodeId: scope.sourceNodeId } : {}),
-      });
-      onSubmit(`model:"${model}"`);
+      onChangeFilters(
+        {
+          ...(scope.project ? { project: scope.project } : {}),
+          ...(scope.agent ? { agent: scope.agent } : {}),
+          ...(scope.sourceNodeId ? { sourceNodeId: scope.sourceNodeId } : {}),
+        },
+        `model:"${model}"`,
+      );
     },
-    [onChangeFilters, onSubmit],
+    [onChangeFilters],
   );
 
   if (load.loading) {

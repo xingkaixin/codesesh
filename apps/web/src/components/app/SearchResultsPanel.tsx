@@ -83,7 +83,7 @@ function SearchResultPreview({
   agentLabel: string;
   projectDisplayNames?: ReadonlyMap<string, string>;
   nodes?: SourceNode[];
-  onOpenResult: () => void;
+  onOpenResult?: () => void;
 }) {
   const { session } = result;
   const { stats } = session;
@@ -183,6 +183,7 @@ export function SearchResultsPanel({
   onOpenResult,
   onRetry,
   selectedIndex,
+  onSelectIndex,
   registerResultRef,
 }: {
   query: string;
@@ -195,9 +196,10 @@ export function SearchResultsPanel({
   filtersOpen?: boolean;
   filtersId?: string;
   onChangeFilters: Dispatch<SetStateAction<SearchFilterState>>;
-  onOpenResult: () => void;
+  onOpenResult?: () => void;
   onRetry: () => void;
   selectedIndex: number;
+  onSelectIndex?: (index: number) => void;
   registerResultRef: (key: string, node: HTMLAnchorElement | null) => void;
 }) {
   const locale = useLocale();
@@ -346,6 +348,8 @@ export function SearchResultsPanel({
                 to={searchResultPath(result)}
                 state={{ searchQuery: query }}
                 onClick={onOpenResult}
+                onMouseEnter={() => onSelectIndex?.(index)}
+                onFocus={() => onSelectIndex?.(index)}
                 data-selected={isSelected ? "true" : undefined}
                 className={cn(
                   "flex gap-3.5 border-b border-[var(--console-border)] px-[18px] py-3.5 last:border-b-0 motion-hover focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none focus-visible:ring-inset",

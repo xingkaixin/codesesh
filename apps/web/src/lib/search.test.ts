@@ -3,7 +3,13 @@ import { createSessionIdentity, type SearchResult, type SessionHead } from "@cod
 import type { SearchProjectOption } from "../components/app/types";
 import { buildSessionIndexes, getSessionAgentKey, type SessionIndexes } from "./session-indexes";
 import { getProjectIdentityKey } from "./projects";
-import { buildLocalRecentResults, buildSearchProjectOptions, usesServerSearch } from "./search";
+import {
+  buildLocalRecentResults,
+  buildSearchProjectOptions,
+  readSearchUrlState,
+  usesServerSearch,
+  writeSearchUrlState,
+} from "./search";
 
 describe("usesServerSearch", () => {
   it("becomes true once a tool filter is set, even with no query text", () => {
@@ -223,5 +229,119 @@ describe("buildSearchProjectOptions", () => {
     expect(options.find((option) => option.identityKey === "github.com/other/repo")?.label).toBe(
       "repo-monorepo",
     );
+  });
+
+  it("preserves project options while loading and when one project is selected", () => {
+    const projectOptions: SearchProjectOption[] = [
+      {
+        key: "git_remote:github.com/acme/app",
+        identityKind: "git_remote",
+        identityKey: "github.com/acme/app",
+        label: "acme/app",
+        count: 5,
+        showCount: false,
+      },
+      {
+        key: "git_remote:github.com/acme/other",
+        identityKind: "git_remote",
+        identityKey: "github.com/acme/other",
+        label: "acme/other",
+        count: 2,
+        showCount: false,
+      },
+    ];
+
+    const loadingOptions = buildSearchProjectOptions({
+      usesServerSearch: true,
+      isLoading: true,
+      results: [],
+      selectedProject: undefined,
+      recentProjectOptions,
+      preservedProjectOptions: projectOptions,
+    });
+    expect(loadingOptions.map((option) => option.key)).toEqual([
+      "git_remote:github.com/acme/app",
+      "git_remote:github.com/acme/other",
+    ]);
+
+    const filteredOptions = buildSearchProjectOptions({
+      usesServerSearch: true,
+      isLoading: false,
+      results: [makeResult("app-1", "github.com/acme/app", "acme/app")],
+      selectedProject: { kind: "git_remote", key: "github.com/acme/app" },
+      recentProjectOptions,
+      preservedProjectOptions: projectOptions,
+    });
+    expect(filteredOptions.map((option) => option.key)).toEqual([
+      "git_remote:github.com/acme/app",
+      "git_remote:github.com/acme/other",
+    ]);
+  });
+
+  it("falls back to recent project options when loading without a prior server facet set", () => {
+    const loadingOptions = buildSearchProjectOptions({
+      usesServerSearch: true,
+      isLoading: true,
+      results: [],
+      selectedProject: undefined,
+      recentProjectOptions,
+    });
+
+    expect(loadingOptions.map((option) => option.key)).toEqual(["git_remote:github.com/acme/app"]);
+    expect(loadingOptions[0]?.showCount).toBe(false);
+  });
+});
+
+describe("search URL state", () => {
+  it("round-trips search query and filters while preserving non-search params", () => {
+    const base = new URLSearchParams("range=14d");
+    const written = writeSearchUrlState(base, {
+      active: true,
+      query: "  panic handler  ",
+      filters: {
+        sourceNodeId: "worker-1",
+        agent: "codex",
+        project: { kind: "git_remote", key: "github.com/acme/app" },
+        tag: "bugfix",
+        tool: "bash",
+        fileKind: "edit",
+        costRange: "one_plus",
+      },
+    });
+
+    expect(written.get("range")).toBe("14d");
+    expect(written.get("search")).toBeNull();
+    expect(readSearchUrlState(written)).toEqual({
+      active: true,
+      query: "panic handler",
+      filters: {
+        sourceNodeId: "worker-1",
+        agent: "codex",
+        project: { kind: "git_remote", key: "github.com/acme/app" },
+        tag: "bugfix",
+        tool: "bash",
+        fileKind: "edit",
+        costRange: "one_plus",
+      },
+    });
+
+    const cleared = writeSearchUrlState(written, { active: false, query: "", filters: {} });
+    expect(cleared.toString()).toBe("range=14d");
+    expect(readSearchUrlState(cleared)).toEqual({ active: false, query: "", filters: {} });
+  });
+
+  it("uses search=1 for an open empty search and ignores invalid enum params", () => {
+    const emptyOpen = writeSearchUrlState(new URLSearchParams(), {
+      active: true,
+      query: "",
+      filters: {},
+    });
+    expect(emptyOpen.toString()).toBe("search=1");
+    expect(readSearchUrlState(emptyOpen)).toEqual({ active: true, query: "", filters: {} });
+
+    const invalid = new URLSearchParams(
+      "search=1&tag=not-a-tag&fileKind=rename&cost=free&projectKind=unknown&projectKey=abc",
+    );
+    expect(readSearchUrlState(invalid)).toEqual({ active: true, query: "", filters: {} });
   });
 });

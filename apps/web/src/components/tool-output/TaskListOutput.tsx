@@ -1,5 +1,6 @@
 import { t } from "../../i18n/translate";
 import { useLocale } from "../../hooks/useLocale";
+import { renderHighlightedText } from "../HighlightedText";
 import { Check, Circle, CircleDashed, X } from "../ui/icons";
 import type { TaskListItem } from "./types";
 
@@ -14,7 +15,13 @@ const STATUS_META = {
   pending: { Icon: Circle, label: "Pending", className: "text-[var(--console-muted)]" },
 } as const;
 
-export function TaskListOutput({ items }: { items: TaskListItem[] }) {
+export function TaskListOutput({
+  items,
+  highlightQuery,
+}: {
+  items: TaskListItem[];
+  highlightQuery?: string;
+}) {
   useLocale();
 
   return (
@@ -30,7 +37,7 @@ export function TaskListOutput({ items }: { items: TaskListItem[] }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="text-xs font-medium leading-relaxed text-[var(--console-text)]">
-                  {item.label}
+                  {renderHighlightedText(item.label, highlightQuery)}
                 </span>
                 <span
                   className={`console-mono text-[10px] uppercase tracking-wide ${meta.className}`}
@@ -40,7 +47,7 @@ export function TaskListOutput({ items }: { items: TaskListItem[] }) {
               </div>
               {item.detail ? (
                 <p className="mt-1 text-xs leading-relaxed text-[var(--console-muted)]">
-                  {item.detail}
+                  {renderHighlightedText(item.detail, highlightQuery)}
                 </p>
               ) : null}
             </div>

@@ -133,3 +133,50 @@ it("keeps collapsed headers identical while skipping diffs in summary-only mode"
     expandable: full.expandable,
   });
 });
+
+it("highlights search queries in tool output and raw output", () => {
+  const message: Message = {
+    id: "tool-highlight",
+    role: "assistant",
+    time_created: 1,
+    parts: [
+      {
+        type: "tool",
+        tool: "process",
+        state: {
+          status: "completed",
+          input: { action: "poll", sessionId: "proc-1" },
+          output: {
+            status: "completed",
+            exitCode: 0,
+            output: "stdout needleHit line",
+          },
+        },
+      },
+    ],
+  };
+
+  const view = render(
+    <MessageItem
+      messageIndex={0}
+      msg={message}
+      blocks={buildMessageBlocks(message.parts)}
+      formatTokens={String}
+      sessionAgentKey="deepchat"
+      baseDirectory="/repo"
+      highlightQuery="needleHit"
+    />,
+  );
+
+  fireEvent.click(view.getByRole("button", { expanded: false }));
+  expect(Array.from(view.container.querySelectorAll("mark"), (node) => node.textContent)).toEqual([
+    "needleHit",
+  ]);
+
+  const rawDetails = view.getByText("Raw output").closest("details")!;
+  rawDetails.open = true;
+  fireEvent(rawDetails, new Event("toggle"));
+
+  const rawMarks = Array.from(rawDetails.querySelectorAll("mark"), (node) => node.textContent);
+  expect(rawMarks).toEqual(["needleHit"]);
+});

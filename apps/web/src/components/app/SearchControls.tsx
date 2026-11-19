@@ -7,6 +7,7 @@ import { Search } from "../ui/icons";
 export interface SearchControlsHandle {
   clear(): void;
   focusAndSelect(): void;
+  getValue(): string;
 }
 
 export const SearchControls = forwardRef<
@@ -16,7 +17,13 @@ export const SearchControls = forwardRef<
   useLocale();
 
   const [query, setQuery] = useState(initialQuery);
+  const [syncedQuery, setSyncedQuery] = useState(initialQuery);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  if (syncedQuery !== initialQuery) {
+    setSyncedQuery(initialQuery);
+    setQuery(initialQuery);
+  }
 
   useImperativeHandle(
     ref,
@@ -27,6 +34,9 @@ export const SearchControls = forwardRef<
       focusAndSelect() {
         inputRef.current?.focus();
         inputRef.current?.select();
+      },
+      getValue() {
+        return inputRef.current?.value ?? "";
       },
     }),
     [],
