@@ -96,14 +96,14 @@ function formatImagePart(part: ImagePart): string {
 function formatMessagePart(part: MessagePart): string {
   switch (part.type) {
     case "text":
-      return part.text.trim();
+      return part.text.trim() ? part.text : "";
     case "reasoning": {
-      const text = part.text.trim();
-      return text ? `### Reasoning\n\n${text}` : "";
+      const text = part.text;
+      return text.trim() ? `### Reasoning\n\n${text}` : "";
     }
     case "plan": {
-      const text = part.text.trim();
-      if (!text) return "";
+      const text = part.text;
+      if (!text.trim()) return "";
       const heading = part.approval_status === "fail" ? "Rejected plan" : "Plan";
       return `### ${heading}\n\n${text}`;
     }

@@ -51,6 +51,19 @@ describe("MarkdownContent safe links", () => {
     expect(localLink.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  it.each(["2.7", "\u30002.7"])(
+    "resolves a reference link once its destination includes %s",
+    (suffix) => {
+      const url = new URL("https://example.com/releases/v" + suffix).href;
+      const partial = "\n[release]: https://example.com/releases/v";
+      const markdown = "[version][release]\n\n".padEnd(24_000 - partial.length) + partial + suffix;
+      const { queryByRole, getByRole } = render(<MarkdownContent text={markdown} />);
+      expect(queryByRole("link")).toBeNull();
+      fireEvent.click(getByRole("button", { name: "Render more content" }));
+      expect(getByRole("link", { name: "version" }).getAttribute("href")).toBe(url);
+    },
+  );
+
   it("downgrades unsafe link protocols to plain spans while keeping remote images blocked", () => {
     const markdown = [
       "[xss](javascript:alert(1))",
@@ -73,6 +86,17 @@ describe("MarkdownContent safe links", () => {
 });
 
 describe("MarkdownContent fenced code blocks", () => {
+  it("offers block copy only after the full block is visible", () => {
+    const markdown = ["\uFEFF> ```js", ...Array<string>(899).fill("> line"), "> ```"].join("\n");
+    const { getByRole, queryByRole } = render(<MarkdownContent text={markdown} />);
+    expect(queryByRole("button", { name: "Copy code" })).toBeNull();
+    fireEvent.click(getByRole("button", { name: "Render more content" }));
+    expect(queryByRole("button", { name: "Copy code" })).toBeNull();
+    expect(getByRole("button", { name: "Copy full content" })).toBeTruthy();
+    fireEvent.click(getByRole("button", { name: "Render more content" }));
+    expect(getByRole("button", { name: "Copy code" })).toBeTruthy();
+  });
+
   it("shows the language label and copies the raw code with feedback", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

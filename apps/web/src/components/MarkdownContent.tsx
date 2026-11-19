@@ -25,6 +25,27 @@ import { ArrowUpRight, Check, Copy } from "./ui/icons";
 const remarkPlugins = [remarkGfm];
 const PLAIN_CODE_LANGUAGES = new Set(["text", "plaintext", "txt"]);
 
+interface MarkdownNode {
+  type: string;
+  position?: { end: { offset?: number } };
+  children?: MarkdownNode[];
+}
+
+function omitIncompleteDefinition(lastLineStart: number) {
+  return (tree: MarkdownNode) => {
+    let parent = tree;
+    while (parent.children) {
+      const last = parent.children.at(-1);
+      if (!last) break;
+      if (last.type === "definition" && (last.position?.end.offset ?? 0) > lastLineStart) {
+        parent.children.pop();
+        return;
+      }
+      parent = last;
+    }
+  };
+}
+
 function extractTextContent(node: ReactNode): string | null {
   if (typeof node === "string") return node;
   if (typeof node === "number") return String(node);
@@ -56,10 +77,12 @@ function extractFencedCode(children: ReactNode): { code: string; language?: stri
 
 function MarkdownCodeBlock({
   code,
+  complete,
   language,
   highlightQuery,
 }: {
   code: string;
+  complete: boolean;
   language?: string;
   highlightQuery?: string;
 }) {
@@ -74,7 +97,9 @@ function MarkdownCodeBlock({
 
   const trimmedLanguage = language?.trim() || undefined;
   const useHighlighter =
-    trimmedLanguage !== undefined && !PLAIN_CODE_LANGUAGES.has(trimmedLanguage.toLowerCase());
+    complete &&
+    trimmedLanguage !== undefined &&
+    !PLAIN_CODE_LANGUAGES.has(trimmedLanguage.toLowerCase());
 
   return (
     <div className="console-markdown-codeblock overflow-hidden rounded-md border border-[var(--console-border)] bg-[var(--console-surface-sunken)]">
@@ -86,31 +111,33 @@ function MarkdownCodeBlock({
         ) : (
           <span aria-hidden="true" />
         )}
-        <button
-          type="button"
-          onClick={() => {
-            void writeToClipboard(code).then((ok) => {
-              if (ok) setCopied(true);
-            });
-          }}
-          aria-label={copied ? t("Code copied") : t("Copy code")}
-          title={copied ? t("Code copied") : t("Copy code")}
-          className={`motion-hover motion-press inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[11px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
-            copied
-              ? "text-[var(--positive)]"
-              : "text-[var(--console-muted)] hover:bg-[var(--console-surface)] hover:text-[var(--console-text)]"
-          }`}
-        >
-          {copied ? (
-            <Check className="size-3" aria-hidden="true" />
-          ) : (
-            <Copy className="size-3" aria-hidden="true" />
-          )}
-          <span>{copied ? t("Copied") : t("Copy")}</span>
-          <span className="sr-only" aria-live="polite">
-            {copied ? t("Code copied") : ""}
-          </span>
-        </button>
+        {complete && (
+          <button
+            type="button"
+            onClick={() => {
+              void writeToClipboard(code).then((ok) => {
+                if (ok) setCopied(true);
+              });
+            }}
+            aria-label={copied ? t("Code copied") : t("Copy code")}
+            title={copied ? t("Code copied") : t("Copy code")}
+            className={`motion-hover motion-press inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[11px] font-medium focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none ${
+              copied
+                ? "text-[var(--positive)]"
+                : "text-[var(--console-muted)] hover:bg-[var(--console-surface)] hover:text-[var(--console-text)]"
+            }`}
+          >
+            {copied ? (
+              <Check className="size-3" aria-hidden="true" />
+            ) : (
+              <Copy className="size-3" aria-hidden="true" />
+            )}
+            <span>{copied ? t("Copied") : t("Copy")}</span>
+            <span className="sr-only" aria-live="polite">
+              {copied ? t("Code copied") : ""}
+            </span>
+          </button>
+        )}
       </div>
       <div className="console-scrollbar overflow-x-auto">
         {useHighlighter ? (
@@ -139,27 +166,6 @@ const baseMarkdownComponents: Components = {
       <table>{children}</table>
     </div>
   ),
-  a: ({ href, children }) => {
-    const safeHref = resolveSafeExternalLink(typeof href === "string" ? href : undefined);
-    if (!safeHref) {
-      return <span className="console-markdown-link">{children}</span>;
-    }
-    return (
-      <a
-        href={safeHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={safeHref}
-        className="rounded-xs focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
-      >
-        {children}
-        <ArrowUpRight
-          aria-hidden="true"
-          className="ml-0.5 inline size-3 align-baseline opacity-70"
-        />
-      </a>
-    );
-  },
   img: ({ src, alt, title }) => {
     const safeSrc = resolveLocalMediaSource(typeof src === "string" ? src : undefined);
     if (!safeSrc) {
@@ -182,14 +188,48 @@ const baseMarkdownComponents: Components = {
   },
 };
 
-function createMarkdownComponents(highlightQuery?: string): Components {
+function createMarkdownComponents(highlightQuery?: string, preview?: string): Components {
+  const source = preview ?? "";
+  const lastTokenStart =
+    Math.max(...[" ", "\t", "\r", "\n"].map((char) => source.lastIndexOf(char))) + 1;
+  let lastContentEnd = source.length;
+  while (lastContentEnd > 0 && /[\s>]/u.test(source.charAt(lastContentEnd - 1))) {
+    lastContentEnd -= 1;
+  }
   return {
     ...baseMarkdownComponents,
-    pre: ({ children }) => {
+    a: ({ href, children, node }) => {
+      const safeHref = resolveSafeExternalLink(typeof href === "string" ? href : undefined);
+      if (
+        !safeHref ||
+        (preview !== undefined && (node?.position?.end.offset ?? Infinity) > lastTokenStart)
+      ) {
+        return <span className="console-markdown-link">{children}</span>;
+      }
+      return (
+        <a
+          href={safeHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={safeHref}
+          className="rounded-xs focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none"
+        >
+          {children}
+          <ArrowUpRight
+            aria-hidden="true"
+            className="ml-0.5 inline size-3 align-baseline opacity-70"
+          />
+        </a>
+      );
+    },
+    pre: ({ children, node }) => {
       const fenced = extractFencedCode(children);
       if (!fenced) return <pre>{children}</pre>;
       return (
         <MarkdownCodeBlock
+          complete={
+            preview === undefined || (node?.position?.end.offset ?? Infinity) < lastContentEnd
+          }
           code={fenced.code}
           language={fenced.language}
           highlightQuery={highlightQuery}
@@ -309,18 +349,39 @@ export const MarkdownContent = memo(function MarkdownContent({
 
   return (
     <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.markdown}>
-      {(visibleText) => (
-        <div>
-          <ReactMarkdown
-            components={components}
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={rehypePlugins}
-            urlTransform={transformMarkdownUrl}
-          >
-            {visibleText}
-          </ReactMarkdown>
-        </div>
-      )}
+      {(visibleText) => {
+        const truncated = visibleText.length < text.length;
+        // The Markdown parser excludes the leading BOM from node positions.
+        const preview = truncated ? visibleText.replace(/^\uFEFF/u, "") : undefined;
+        const partialLine =
+          preview !== undefined && !/[\r\n]/u.test(text.charAt(visibleText.length));
+        return (
+          <div>
+            <ReactMarkdown
+              components={
+                preview === undefined
+                  ? components
+                  : createMarkdownComponents(highlightQuery, preview)
+              }
+              remarkPlugins={
+                partialLine
+                  ? [
+                      ...remarkPlugins,
+                      [
+                        omitIncompleteDefinition,
+                        Math.max(preview.lastIndexOf("\n"), preview.lastIndexOf("\r")) + 1,
+                      ],
+                    ]
+                  : remarkPlugins
+              }
+              rehypePlugins={rehypePlugins}
+              urlTransform={transformMarkdownUrl}
+            >
+              {visibleText}
+            </ReactMarkdown>
+          </div>
+        );
+      }}
     </ProgressiveText>
   );
 });
