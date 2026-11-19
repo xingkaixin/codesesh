@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { lazy, Suspense, useContext, useRef, useState, useSyncExternalStore } from "react";
 import { useLocale } from "../../hooks/useLocale";
-import { isNodeOnline, useNodeClock, useNodes } from "../../hooks/useNodes";
+import { useNodeClock, useNodes } from "../../hooks/useNodes";
 import { useScanStatus } from "../../hooks/useScanStatus";
 import { ResolvedThemeContext } from "../../hooks/useTheme";
 import type { Theme } from "../../hooks/useUiPreferences";
@@ -13,8 +13,9 @@ import {
 } from "../../i18n/language";
 import { t } from "../../i18n/translate";
 import { formatInt } from "../../lib/format";
+import { hasScanStatusIssue } from "../../lib/scan-format";
 import { cn } from "../../lib/utils";
-import { nodeNeedsAttention } from "../nodes/node-status";
+import { summarizeHubNodes, type HubNodesHealth } from "../nodes/node-status";
 import { ChevronsUpDown, Globe } from "../ui/icons";
 import { Kbd } from "../ui/kbd";
 
@@ -42,9 +43,11 @@ const MENU_ITEM_CLASS =
 
 function PricingTriggerButton({
   pricingAttentionCount = 0,
+  pricingError = false,
   onOpenPricing,
 }: {
   pricingAttentionCount?: number | null;
+  pricingError?: boolean;
   onOpenPricing: () => void;
 }) {
   return (
@@ -52,11 +55,25 @@ function PricingTriggerButton({
       type="button"
       onClick={onOpenPricing}
       aria-haspopup="dialog"
-      title={pricingAttentionCount === null ? t("Counting unmatched models") : undefined}
+      title={
+        pricingError
+          ? t("Pricing status unavailable")
+          : pricingAttentionCount === null
+            ? t("Counting unmatched models")
+            : undefined
+      }
       className="motion-hover inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--ember-glass)] px-2.5 py-0.5 text-xs font-medium hover:bg-[var(--ember-glass-hover)] focus-visible:ring-2 focus-visible:ring-[var(--ember-fg)] focus-visible:outline-none"
     >
       <span>{t("Pricing")}</span>
-      {pricingAttentionCount === null ? (
+      {pricingError ? (
+        <span
+          role="img"
+          aria-label={t("Pricing status unavailable")}
+          className="console-mono inline-flex items-center justify-center rounded-full bg-[var(--ember-fg)] px-1.5 text-[10px] font-bold text-[var(--console-error)]"
+        >
+          !
+        </span>
+      ) : pricingAttentionCount === null ? (
         <span
           role="img"
           aria-label={t("Counting unmatched models")}
@@ -76,32 +93,33 @@ export function NodeSummary({
   onManage,
   sessionCount,
   pricingAttentionCount = 0,
+  pricingError = false,
   onOpenPricing,
 }: {
   onManage: () => void;
   sessionCount?: number;
   pricingAttentionCount?: number | null;
+  pricingError?: boolean;
   onOpenPricing?: () => void;
 }) {
   useLocale();
   const nodes = useNodes();
   const now = useNodeClock();
-  const active = nodes.data?.nodes.filter((node) => !node.revoked) ?? [];
-  const online = active.filter((node) => isNodeOnline(node, now)).length;
-  const attention = active.filter(nodeNeedsAttention).length;
-  const title = nodes.isError
-    ? t("Node status unavailable")
-    : t("Source nodes {0}/{1} online", [online, active.length]);
+  const summary = summarizeHubNodes(nodes.data?.nodes, now, nodes.isError);
+  const title =
+    summary.health === "error"
+      ? t("Node status unavailable")
+      : t("Source nodes {0}/{1} online", [summary.onlineCount, summary.activeCount]);
   const subtitle =
-    attention > 0
-      ? t("{0} need attention", [attention])
+    summary.attentionCount > 0
+      ? t("{0} need attention", [summary.attentionCount])
       : sessionCount !== undefined
         ? t("{0} sessions in range", [formatInt(sessionCount)])
         : null;
   return (
     <>
       <div className="flex items-center gap-2">
-        <LiveDot />
+        <StatusDot status={summary.health} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{title}</span>
         <button
           type="button"
@@ -124,6 +142,7 @@ export function NodeSummary({
           {onOpenPricing ? (
             <PricingTriggerButton
               pricingAttentionCount={pricingAttentionCount}
+              pricingError={pricingError}
               onOpenPricing={onOpenPricing}
             />
           ) : null}
@@ -133,11 +152,24 @@ export function NodeSummary({
   );
 }
 
-function LiveDot() {
+const STATUS_DOT_CLASS: Record<HubNodesHealth, string> = {
+  healthy:
+    "bg-[var(--ember-live)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--ember-live)_22%,transparent)]",
+  degraded:
+    "bg-[var(--ember-warning)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--ember-warning)_25%,transparent)]",
+  offline:
+    "bg-[var(--ember-error)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--ember-error)_25%,transparent)]",
+  error:
+    "bg-[var(--ember-error)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--ember-error)_25%,transparent)]",
+  loading: "bg-[var(--ember-offline)]",
+};
+
+function StatusDot({ status }: { status: HubNodesHealth }) {
   return (
     <span
       aria-hidden="true"
-      className="size-2 shrink-0 rounded-full bg-[var(--ember-live)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--ember-live)_22%,transparent)]"
+      data-status={status}
+      className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_CLASS[status])}
     />
   );
 }
@@ -145,24 +177,28 @@ function LiveDot() {
 function LocalSummary({
   sessionCount,
   pricingAttentionCount = 0,
+  pricingError = false,
   onOpenPricing,
 }: {
   sessionCount: number;
   pricingAttentionCount?: number | null;
+  pricingError?: boolean;
   onOpenPricing?: () => void;
 }) {
   useLocale();
   const scanStatus = useScanStatus();
+  const status: HubNodesHealth = hasScanStatusIssue(scanStatus) ? "degraded" : "healthy";
   return (
     <>
       <div className="flex items-center gap-2">
-        <LiveDot />
+        <StatusDot status={status} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
           {t("Local source")}
         </span>
         {onOpenPricing ? (
           <PricingTriggerButton
             pricingAttentionCount={pricingAttentionCount}
+            pricingError={pricingError}
             onOpenPricing={onOpenPricing}
           />
         ) : null}
@@ -296,7 +332,9 @@ export function SidebarFooter({
   hubEnabled,
   sessionCount,
   pricingAttentionCount,
+  pricingError,
   onOpenPricing,
+  onManageNodes,
   theme,
   onChangeTheme,
   onShowShortcuts,
@@ -304,27 +342,32 @@ export function SidebarFooter({
   hubEnabled: boolean;
   sessionCount: number;
   pricingAttentionCount?: number | null;
+  pricingError?: boolean;
   onOpenPricing?: () => void;
+  onManageNodes?: () => void;
   theme: Theme;
   onChangeTheme: (theme: Theme) => void;
   onShowShortcuts: () => void;
 }) {
   const [nodesOpen, setNodesOpen] = useState(false);
+  const handleManageNodes = onManageNodes ?? (() => setNodesOpen(true));
   return (
     <div className="mt-2 mr-2 shrink-0">
       <div className="relative overflow-hidden rounded-2xl bg-[linear-gradient(90deg,var(--ember-from),var(--ember-to))] text-[var(--ember-fg)] shadow-[var(--shadow-overlay)]">
         <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
           {hubEnabled ? (
             <NodeSummary
-              onManage={() => setNodesOpen(true)}
+              onManage={handleManageNodes}
               sessionCount={sessionCount}
               pricingAttentionCount={pricingAttentionCount}
+              pricingError={pricingError}
               onOpenPricing={onOpenPricing}
             />
           ) : (
             <LocalSummary
               sessionCount={sessionCount}
               pricingAttentionCount={pricingAttentionCount}
+              pricingError={pricingError}
               onOpenPricing={onOpenPricing}
             />
           )}
@@ -335,7 +378,7 @@ export function SidebarFooter({
           />
         </div>
       </div>
-      {nodesOpen ? (
+      {!onManageNodes && nodesOpen ? (
         <Suspense fallback={null}>
           <NodePanel onClose={() => setNodesOpen(false)} />
         </Suspense>

@@ -158,7 +158,9 @@ describe("AppRouteContent", () => {
 
     renderContent(props);
 
-    expect(await screen.findByText("Session #1", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS })).toBeTruthy();
+    expect(
+      await screen.findByText("Session #1", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS }),
+    ).toBeTruthy();
     expect(screen.getByText("Session #6")).toBeTruthy();
     expect(screen.getByText("Session #25")).toBeTruthy();
     expect(screen.queryByText("Session #26")).toBeNull();

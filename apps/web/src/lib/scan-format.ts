@@ -26,6 +26,32 @@ function hasSourceFailures(
   return (completion.sourceFailureCount ?? 0) > 0 || completion.sourceFailureSummary != null;
 }
 
+export function hasScanStatusIssue(status: ScanStatusEvent | null): boolean {
+  if (!status) return false;
+  if (status.backfill?.failedAgents.length) return true;
+  if (Object.values(status.agentStatuses ?? {}).some((agent) => agent.status === "failed")) {
+    return true;
+  }
+  if (
+    Object.values(status.backfill?.partialAgents ?? {}).some(
+      (completion) => completion.completeness === "partial" && hasSourceFailures(completion),
+    )
+  ) {
+    return true;
+  }
+  if (
+    Object.values(status.agentStatuses ?? {}).some(
+      (agent) =>
+        agent.status === "complete" && agent.completeness === "partial" && hasSourceFailures(agent),
+    )
+  ) {
+    return true;
+  }
+  return Object.values(status.sources ?? {}).some(
+    (source) => Boolean(source.error) || source.presence === "missing",
+  );
+}
+
 export function formatIsoDate(ts: number): string {
   const d = new Date(ts);
   const y = d.getFullYear();

@@ -5,20 +5,24 @@ import { X } from "../ui/icons";
 import { useLocale } from "../../hooks/useLocale";
 import { useState } from "react";
 import { useScanStatus } from "../../hooks/useScanStatus";
-import { formatScanStatusLabel } from "../../lib/scan-format";
+import { formatScanStatusLabel, hasScanStatusIssue } from "../../lib/scan-format";
 
-export function ScanStatusNotice({ visible }: { visible: boolean }) {
+export function ScanStatusNotice({
+  visible,
+  issuesOnly = false,
+}: {
+  visible: boolean;
+  issuesOnly?: boolean;
+}) {
   useLocale();
 
   const scanStatus = useScanStatus();
   const label = formatScanStatusLabel(scanStatus);
   const hasSources = scanStatus?.sources != null;
-  const sourceIssue = Object.values(scanStatus?.sources ?? {}).some(
-    (source) => source.error || source.presence === "missing",
-  );
+  const hasIssue = hasScanStatusIssue(scanStatus);
   const triggerLabel =
-    label ?? (sourceIssue ? t("Some sources need attention") : t("Local collection"));
-  const show = visible && (label != null || hasSources);
+    label ?? (hasIssue ? t("Some sources need attention") : t("Local collection"));
+  const show = visible && (issuesOnly ? hasIssue : label != null || hasSources);
   const progress = scanStatus?.backfill.active ? scanStatus.backfill.progress : undefined;
   const total = progress?.total;
   const processed = progress?.processed;
@@ -40,7 +44,7 @@ export function ScanStatusNotice({ visible }: { visible: boolean }) {
         {show ? (
           <Popover.Root>
             <Popover.Trigger
-              className={`mt-2 block w-fit max-w-full rounded-[10px] px-2.5 py-1.5 text-left text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${sourceIssue ? "bg-[var(--console-warning-bg)] text-[var(--console-warning)] shadow-[inset_0_0_0_1px_var(--console-warning-border)]" : "bg-[var(--console-surface-muted)] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)] hover:text-[var(--console-text)]"}`}
+              className={`mt-2 block w-fit max-w-full rounded-[10px] px-2.5 py-1.5 text-left text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${hasIssue ? "bg-[var(--console-warning-bg)] text-[var(--console-warning)] shadow-[inset_0_0_0_1px_var(--console-warning-border)]" : "bg-[var(--console-surface-muted)] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)] hover:text-[var(--console-text)]"}`}
             >
               <span>{triggerLabel}</span>
               <span className="ml-2 underline underline-offset-2">{t("View status")}</span>

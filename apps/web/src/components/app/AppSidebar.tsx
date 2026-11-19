@@ -149,6 +149,7 @@ export interface AppSidebarViewModel {
   sessionCount: number;
   /** `null` while unmatched models are still being counted. */
   pricingAttentionCount?: number | null;
+  pricingError?: boolean;
   theme: Theme;
 }
 
@@ -165,6 +166,7 @@ export interface AppSidebarActions {
   onRetryBookmarks: () => void;
   onOpenSearch: () => void;
   onOpenPricing?: () => void;
+  onManageNodes?: () => void;
   onChangeTheme: (theme: Theme) => void;
   onShowShortcuts: () => void;
 }
@@ -240,6 +242,7 @@ export function AppSidebar({
     hubEnabled,
     sessionCount,
     pricingAttentionCount,
+    pricingError,
     theme,
   },
   actions: {
@@ -255,6 +258,7 @@ export function AppSidebar({
     onRetryBookmarks,
     onOpenSearch,
     onOpenPricing,
+    onManageNodes,
     onChangeTheme,
     onShowShortcuts,
   },
@@ -563,7 +567,9 @@ export function AppSidebar({
         hubEnabled={hubEnabled}
         sessionCount={sessionCount}
         pricingAttentionCount={pricingAttentionCount}
+        pricingError={pricingError}
         onOpenPricing={onOpenPricing}
+        onManageNodes={onManageNodes}
         theme={theme}
         onChangeTheme={onChangeTheme}
         onShowShortcuts={onShowShortcuts}
