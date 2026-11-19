@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Message, SessionDetail } from "@codesesh/contract";
-import { formatMessageAsMarkdown, formatSessionAsMarkdown } from "./session-markdown";
+import {
+  buildSessionMarkdownFilename,
+  formatMessageAsMarkdown,
+  formatSessionAsMarkdown,
+} from "./session-markdown";
 
 function session(messages: Message[], overrides: Partial<SessionDetail> = {}): SessionDetail {
   return {
@@ -54,5 +58,23 @@ describe("formatSessionAsMarkdown", () => {
     });
 
     expect(markdown).toBe("## Assistant\n\n### Reasoning\n\nCheck edge cases.\n\nDone.");
+  });
+
+  it("builds a sanitized .md filename from the session title with sessionId fallback", () => {
+    expect(
+      buildSessionMarkdownFilename(session([], { display_title: "fix: auth / token? *bug*" })),
+    ).toBe("fix-auth-token-bug.md");
+    expect(buildSessionMarkdownFilename(session([], { display_title: "修复 登录问题" }))).toBe(
+      "修复-登录问题.md",
+    );
+    expect(
+      buildSessionMarkdownFilename(
+        session([], {
+          display_title: "///...",
+          title: "///...",
+          reference: { agentName: "codex", sessionId: "sess/42" },
+        }),
+      ),
+    ).toBe("sess-42.md");
   });
 });

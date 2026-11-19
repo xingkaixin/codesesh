@@ -1,5 +1,14 @@
-import type { ImagePart, Message, MessagePart, SessionDetail, ToolPart } from "@codesesh/contract";
+import type {
+  ImagePart,
+  Message,
+  MessagePart,
+  SessionDetail,
+  SessionHead,
+  ToolPart,
+} from "@codesesh/contract";
 import { getSessionDisplayTitle } from "./session-title";
+
+const MAX_FILENAME_STEM_LENGTH = 80;
 
 const messageRoleLabels = {
   user: "User",
@@ -121,4 +130,24 @@ export function formatSessionAsMarkdown(session: SessionDetail): string {
   const messages = session.messages.map(formatMessageAsMarkdown).filter(Boolean);
   const content = messages.length > 0 ? messages.join("\n\n") : "_No displayable messages._";
   return [`# ${title}`, metadata.join("\n"), content].join("\n\n") + "\n";
+}
+
+function sanitizeFilenameSegment(value: string): string {
+  const cleaned = Array.from(value, (char) => {
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) return " ";
+    return '<>:"/\\|?*'.includes(char) ? " " : char;
+  }).join("");
+  return cleaned
+    .trim()
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
+    .slice(0, MAX_FILENAME_STEM_LENGTH)
+    .replace(/-+$/g, "");
+}
+
+export function buildSessionMarkdownFilename(session: SessionHead): string {
+  const fromTitle = sanitizeFilenameSegment(getSessionDisplayTitle(session));
+  const stem = fromTitle || sanitizeFilenameSegment(session.reference.sessionId) || "session";
+  return `${stem}.md`;
 }

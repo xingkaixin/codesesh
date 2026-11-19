@@ -358,6 +358,8 @@ export const messages = {
   Edit: ["编辑", "編集"],
   Rename: ["重命名", "名前を変更"],
   "Copy as Markdown": ["复制为 Markdown", "Markdown としてコピー"],
+  "Download .md": ["下载 .md", ".md をダウンロード"],
+  "Downloading…": ["正在下载…", "ダウンロード中…"],
   "Session options": ["会话操作", "セッションの操作"],
   "Rename session": ["重命名会话", "セッション名を変更"],
   "Session title": ["会话标题", "セッション名"],
@@ -696,6 +698,14 @@ export const messages = {
   "Couldn’t copy session as Markdown.": [
     "无法将会话复制为 Markdown。",
     "セッションを Markdown としてコピーできませんでした。",
+  ],
+  "Session downloaded as Markdown.": [
+    "已将会话下载为 Markdown。",
+    "セッションを Markdown としてダウンロードしました。",
+  ],
+  "Couldn’t download session as Markdown.": [
+    "无法将会话下载为 Markdown。",
+    "セッションを Markdown としてダウンロードできませんでした。",
   ],
   "Unable to load dashboard.": ["无法加载概览。", "ダッシュボードを読み込めませんでした。"],
   "{0} new sessions found; the list refreshed automatically": [

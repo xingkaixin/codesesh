@@ -24,6 +24,7 @@ import {
   ComputerTerminal01Icon,
   CopyIcon,
   DashboardSquare01Icon,
+  Download01Icon,
   File01Icon,
   FileAddIcon,
   FileEditIcon,
@@ -86,6 +87,7 @@ export const CircleDashed = toIcon(CircleDashedIcon);
 export const CircleHelp = toIcon(HelpCircleIcon);
 export const Clock3 = toIcon(Clock01Icon);
 export const Copy = toIcon(CopyIcon);
+export const Download = toIcon(Download01Icon);
 export const LayoutDashboard = toIcon(DashboardSquare01Icon);
 export const FilePenLine = toIcon(FileEditIcon);
 export const FilePlus2 = toIcon(FileAddIcon);
