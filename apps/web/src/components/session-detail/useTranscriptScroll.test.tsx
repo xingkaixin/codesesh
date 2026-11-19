@@ -243,3 +243,42 @@ it("keeps a jumped-to virtualized target in view when newly mounted rows above s
   view.unmount();
   parent.remove();
 });
+
+it("restores viewport anchor if browser unclamps scrollTop when pagination grows scrollHeight", () => {
+  const parent = document.createElement("div");
+  parent.style.overflowY = "auto";
+  document.body.append(parent);
+  let height = 59355;
+  Object.defineProperty(parent, "scrollHeight", { get: () => height });
+  Object.defineProperty(parent, "clientHeight", { value: 659 });
+  parent.scrollTop = 58696;
+  parent.scrollTo = (options?: ScrollToOptions | number) => {
+    if (typeof options === "object" && options.top != null) parent.scrollTop = options.top;
+  };
+
+  const rowContentTop = 58957;
+  const view = render(<Transcript revision={0} followTail={false} />, { container: parent });
+  const firstRow = view.getByText("First 0");
+  vi.spyOn(firstRow, "getBoundingClientRect").mockImplementation(
+    () =>
+      ({
+        top: rowContentTop - parent.scrollTop,
+        bottom: rowContentTop - parent.scrollTop + 109,
+      }) as DOMRect,
+  );
+
+  // Establish initial anchor at clamped bottom (viewport top = 261).
+  view.rerender(<Transcript revision={1} followTail={false} />);
+  expect(rowContentTop - parent.scrollTop).toBe(261);
+
+  // Pagination appends rows and Chromium unclamps scrollTop back to a prior higher offset
+  // without firing a user scroll event.
+  height = 121755;
+  parent.scrollTop = 60406;
+  view.rerender(<Transcript revision={2} followTail={false} />);
+
+  expect(parent.scrollTop).toBe(58696);
+  expect(rowContentTop - parent.scrollTop).toBe(261);
+  view.unmount();
+  parent.remove();
+});
