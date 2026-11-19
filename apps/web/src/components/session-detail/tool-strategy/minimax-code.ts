@@ -10,8 +10,10 @@ import {
   toStringValue,
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
 } from "../tool-normalize";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -48,8 +50,10 @@ export function buildMiniMaxCodeToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   if (state.status === "error") return defaultStrategy;
   const key = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
@@ -58,27 +62,28 @@ export function buildMiniMaxCodeToolStrategy(
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (key === "read")
-    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   if (key === "write")
-    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   if (key === "edit") {
-    const edits = Array.isArray(input.edits)
-      ? input.edits
-      : [{ oldText: input.old_string, newText: input.new_string }];
-    const blocks = edits.flatMap((value) => {
-      const edit = toRecord(value);
-      return buildStructuredDiffFromTexts(
-        displayPath || filePath,
-        toStringValue(edit.oldText),
-        toStringValue(edit.newText),
-      );
-    });
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      outputContent: blocks.length
-        ? { kind: "structured-diff", blocks }
-        : defaultStrategy.outputContent,
+      includeOutput,
+      outputContent: () => {
+        const edits = Array.isArray(input.edits)
+          ? input.edits
+          : [{ oldText: input.old_string, newText: input.new_string }];
+        const blocks = edits.flatMap((value) => {
+          const edit = toRecord(value);
+          return buildStructuredDiffFromTexts(
+            displayPath || filePath,
+            toStringValue(edit.oldText),
+            toStringValue(edit.newText),
+          );
+        });
+        return blocks.length ? { kind: "structured-diff", blocks } : defaultStrategy.outputContent;
+      },
     });
   }
   if (key === "bash") {
@@ -88,6 +93,7 @@ export function buildMiniMaxCodeToolStrategy(
       title: tool.tool,
       command: toStringValue(input.command),
       baseDirectory,
+      includeOutput,
     });
     const taskId = toStringValue(metadata.task_id);
     if (taskId) strategy.details.push({ label: "Task ID", value: taskId });
@@ -101,6 +107,7 @@ export function buildMiniMaxCodeToolStrategy(
       path: toStringValue(input.path),
       pattern: toStringValue(input.pattern),
       baseDirectory,
+      includeOutput,
     });
   }
   if (key === "skill") return buildSkillToolStrategy(tool, state, defaultStrategy, baseDirectory);
@@ -131,9 +138,9 @@ export function buildMiniMaxCodeToolStrategy(
       ...defaultStrategy,
       Icon: CircleHelp,
       secondaryText: toStringValue(input.title) || undefined,
-      details: [{ label: t("Result"), value: getOutputOrErrorText(state) }],
+      details: includeOutput ? [{ label: t("Result"), value: getOutputOrErrorText(state) }] : [],
       showInputPreview: false,
-      outputContent: { kind: "question-list", questions },
+      outputContent: includeOutput ? { kind: "question-list", questions } : EMPTY_TOOL_OUTPUT,
     };
   }
   if (key === "task" || key.startsWith("task_")) {

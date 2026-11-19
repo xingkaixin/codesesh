@@ -24,6 +24,7 @@ import { getDisplayPath, getDisplayTextWithRelativePaths } from "../path-extract
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   buildSemanticOutputContent,
   compactText,
   getOutputOrErrorText,
@@ -34,7 +35,7 @@ import {
 } from "../tool-normalize";
 import { parseJsonText } from "../utils";
 import { buildCodexReadThreadDisplay } from "../codex-read-thread";
-import { buildDefaultToolStrategy, buildSkillToolStrategy } from "./shared";
+import { EMPTY_TOOL_OUTPUT, buildDefaultToolStrategy, buildSkillToolStrategy } from "./shared";
 import { buildCodeExecutionStrategy } from "./code-execution";
 import {
   Bot,
@@ -84,8 +85,10 @@ export function buildCodexToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = normalizeToolName(tool).replace(/^agents\./, "collaboration.");
   const metadata = toRecord(state.metadataValue);
   const namespace = toPlainText(metadata.namespace);
@@ -94,7 +97,7 @@ export function buildCodexToolStrategy(
     getDisplayTextWithRelativePaths(text, baseDirectory);
 
   if (toolKey === "exec" && !namespace) {
-    return buildCodeExecutionStrategy(tool, state, "javascript");
+    return buildCodeExecutionStrategy(tool, state, "javascript", options);
   }
 
   if (toolKey === "skill") {
@@ -114,22 +117,25 @@ export function buildCodexToolStrategy(
       secondaryText: title || undefined,
       details: [],
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: extractCodexNodeReplTextOutput(getOutputOrErrorText(state)),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: extractCodexNodeReplTextOutput(getOutputOrErrorText(state)),
+            language: "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
   if (toolKey === "exec_command" || toolKey === "bash") {
     const display = buildCodexExecCommandDisplay(
       state.inputValue,
-      getOutputOrErrorText(state),
+      includeOutput ? getOutputOrErrorText(state) : "",
       detectLanguageByFilePath,
       formatPathForDisplay,
       formatTextForDisplay,
+      includeOutput,
     );
     return {
       ...defaultStrategy,
@@ -138,20 +144,23 @@ export function buildCodexToolStrategy(
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: display.outputAnalysis.text,
-        language: display.outputAnalysis.language,
-        isCode: display.outputAnalysis.isCode,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: display.outputAnalysis.text,
+            language: display.outputAnalysis.language,
+            isCode: display.outputAnalysis.isCode,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
   if (toolKey === "write_stdin") {
     const display = buildCodexWriteStdinDisplay(
       state.inputValue,
-      getOutputOrErrorText(state),
+      includeOutput ? getOutputOrErrorText(state) : "",
       detectLanguageByFilePath,
+      includeOutput,
     );
     return {
       ...defaultStrategy,
@@ -160,12 +169,14 @@ export function buildCodexToolStrategy(
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: display.outputAnalysis.text,
-        language: display.outputAnalysis.language,
-        isCode: display.outputAnalysis.isCode,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: display.outputAnalysis.text,
+            language: display.outputAnalysis.language,
+            isCode: display.outputAnalysis.isCode,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -184,12 +195,14 @@ export function buildCodexToolStrategy(
       details: [],
       showInputPreview: !display,
       contentLabel: t("Conversation excerpt"),
-      outputContent: display ?? {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : (display ?? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "text",
+            isCode: false,
+          }),
     };
   }
 
@@ -222,8 +235,9 @@ export function buildCodexToolStrategy(
       secondaryText: summary || undefined,
       details: [],
       showInputPreview: false,
-      outputContent:
-        state.status === "error"
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : state.status === "error"
           ? { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false }
           : buildCodexPatchOutputContent(
               entries,
@@ -257,12 +271,14 @@ export function buildCodexToolStrategy(
       secondaryText: display.secondaryText,
       details: [],
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -297,12 +313,14 @@ export function buildCodexToolStrategy(
       secondaryText: display.secondaryText,
       details: display.details,
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -313,7 +331,7 @@ export function buildCodexToolStrategy(
     const reasoningEffort = compactText(input.reasoning_effort);
     const forkTurns = compactText(input.fork_turns);
     const isPriority = compactText(input.service_tier) === "priority";
-    const fallbackText = getOutputOrErrorText(state);
+    const fallbackText = includeOutput ? getOutputOrErrorText(state) : "";
     return {
       ...defaultStrategy,
       Icon: Bot,
@@ -325,12 +343,14 @@ export function buildCodexToolStrategy(
         forkTurns ? { label: t("Fork"), value: forkTurns } : null,
       ].filter((d): d is NonNullable<typeof d> => d !== null),
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: fallbackText,
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: fallbackText,
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -412,8 +432,10 @@ export function buildCodexToolStrategy(
   if (namespace.startsWith("mcp__") || toolKey.includes("._")) {
     const input = toRecord(state.inputValue);
     const [provider, operation = "tool"] = toolKey.split(".", 2);
-    const semanticInput = Object.entries(input).map(([label, value]) => ({ label, value }));
-    const semanticOutput = buildSemanticOutputContent(state.outputValue);
+    const semanticOutput = includeOutput ? buildSemanticOutputContent(state.outputValue) : null;
+    const semanticInput = includeOutput
+      ? Object.entries(input).map(([label, value]) => ({ label, value }))
+      : [];
     return {
       ...defaultStrategy,
       Icon: Plug,
@@ -422,11 +444,12 @@ export function buildCodexToolStrategy(
       details: [],
       showInputPreview: false,
       contentLabel: semanticOutput ? t("Result") : t("Request"),
-      outputContent:
-        semanticOutput ??
-        (semanticInput.length > 0
-          ? { kind: "property-list", items: semanticInput }
-          : defaultStrategy.outputContent),
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : (semanticOutput ??
+          (semanticInput.length > 0
+            ? { kind: "property-list", items: semanticInput }
+            : defaultStrategy.outputContent)),
     };
   }
 

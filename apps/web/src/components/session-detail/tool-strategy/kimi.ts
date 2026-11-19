@@ -11,6 +11,7 @@ import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   toPlainText,
   toRecord,
 } from "../tool-normalize";
@@ -28,8 +29,10 @@ export function buildKimiToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
@@ -42,6 +45,7 @@ export function buildKimiToolStrategy(
       title: tool.title || "glob",
       pattern: toPlainText(input.pattern),
       baseDirectory,
+      includeOutput,
     });
   }
 
@@ -53,6 +57,7 @@ export function buildKimiToolStrategy(
       path: toPlainText(input.path),
       pattern: toPlainText(input.pattern),
       baseDirectory,
+      includeOutput,
     });
   }
 
@@ -63,6 +68,7 @@ export function buildKimiToolStrategy(
       title: tool.title || "bash",
       command: toPlainText(input.command),
       baseDirectory,
+      includeOutput,
     });
   }
 
@@ -72,6 +78,7 @@ export function buildKimiToolStrategy(
       state,
       filePath,
       displayPath,
+      includeOutput,
       details: [
         typeof input.line_offset === "number"
           ? { label: t("Offset"), value: String(input.line_offset) }
@@ -84,19 +91,21 @@ export function buildKimiToolStrategy(
   }
 
   if (toolKey === "strreplacefile") {
-    const diffBlocks = buildKimiEditDiffBlocks(state, displayPath || filePath);
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      outputContent:
-        diffBlocks.length > 0
+      includeOutput,
+      outputContent: () => {
+        const diffBlocks = buildKimiEditDiffBlocks(state, displayPath || filePath);
+        return diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
-          : { kind: "plain", text: extractEditDiff(state), language: "diff", isCode: true },
+          : { kind: "plain", text: extractEditDiff(state), language: "diff", isCode: true };
+      },
     });
   }
 
   if (toolKey === "writefile") {
-    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   }
 
   if (toolKey === "agent" || toolKey === "searchweb") {
@@ -104,6 +113,7 @@ export function buildKimiToolStrategy(
       { ...tool, tool: toolKey === "searchweb" ? "websearch" : tool.tool, title: "" },
       state,
       baseDirectory,
+      options,
     );
     return { ...strategy, showInputPreview: toolKey === "agent" };
   }

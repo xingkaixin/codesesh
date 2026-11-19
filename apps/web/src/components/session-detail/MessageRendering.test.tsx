@@ -1,10 +1,15 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { Message } from "@codesesh/contract";
+import * as diffHelpers from "./diff";
 import { buildMessageBlocks } from "./blocks";
 import { MessageItem } from "./MessageRendering";
+import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it.each(["claudecode", "zcode"])(
   "opens the complete %s delegation input alongside its result",
@@ -44,3 +49,87 @@ it.each(["claudecode", "zcode"])(
     expect(view.container.textContent).toContain(result);
   },
 );
+
+it("defers edit diff computation until the tool card is expanded", () => {
+  const diffSpy = vi.spyOn(diffHelpers, "buildStructuredDiffFromTexts");
+  const message: Message = {
+    id: "edit-msg",
+    role: "assistant",
+    time_created: 1,
+    parts: [
+      {
+        type: "tool",
+        tool: "Edit",
+        state: {
+          status: "completed",
+          input: {
+            file_path: "/repo/src/app.ts",
+            old_string: "const before = 1;\n",
+            new_string: "const after = 2;\n",
+          },
+          output: "ok",
+        },
+      },
+    ],
+  };
+
+  const view = render(
+    <MessageItem
+      messageIndex={0}
+      msg={message}
+      blocks={buildMessageBlocks(message.parts)}
+      formatTokens={String}
+      sessionAgentKey="claudecode"
+      baseDirectory="/repo"
+    />,
+  );
+
+  // Collapsed header renders title, relative path, and status without computing diffs.
+  expect(view.container.textContent).toContain("edit");
+  expect(view.container.textContent).toContain("src/app.ts");
+  expect(view.container.textContent).toContain("Completed");
+  expect(diffSpy).not.toHaveBeenCalled();
+
+  fireEvent.click(view.getByRole("button", { expanded: false }));
+
+  expect(diffSpy).toHaveBeenCalledTimes(1);
+  expect(view.container.textContent).toContain("const before = 1;");
+  expect(view.container.textContent).toContain("const after = 2;");
+});
+
+it("keeps collapsed headers identical while skipping diffs in summary-only mode", () => {
+  const diffSpy = vi.spyOn(diffHelpers, "buildStructuredDiffFromTexts");
+  const tool = {
+    type: "tool" as const,
+    tool: "Edit",
+    state: {
+      status: "completed" as const,
+      input: {
+        file_path: "/repo/src/example.ts",
+        old_string: "old line",
+        new_string: "new line",
+      },
+      output: "updated",
+    },
+  };
+  const state = normalizeToolState(tool);
+
+  const summary = getToolDisplayStrategy("claudecode", tool, state, "/repo", {
+    includeOutput: false,
+  });
+  expect(diffSpy).not.toHaveBeenCalled();
+
+  const full = getToolDisplayStrategy("claudecode", tool, state, "/repo");
+  expect(diffSpy).toHaveBeenCalledTimes(1);
+  expect({
+    Icon: summary.Icon,
+    title: summary.title,
+    secondaryText: summary.secondaryText,
+    expandable: summary.expandable,
+  }).toEqual({
+    Icon: full.Icon,
+    title: full.title,
+    secondaryText: full.secondaryText,
+    expandable: full.expandable,
+  });
+});

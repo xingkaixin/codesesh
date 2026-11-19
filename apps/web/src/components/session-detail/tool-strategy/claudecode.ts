@@ -13,6 +13,7 @@ import {
   compactText,
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   getToolTitle,
   parseInputCandidate,
@@ -21,6 +22,7 @@ import {
 } from "../tool-normalize";
 import { getDisplayTextWithRelativePaths } from "../path-extract";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -121,8 +123,10 @@ export function buildClaudeToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = claudeToolKey(tool);
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
@@ -134,21 +138,28 @@ export function buildClaudeToolStrategy(
       state,
       filePath,
       displayPath,
-      outputContent: buildSemanticOutputContent(state.outputValue),
+      includeOutput,
+      outputContent: () => buildSemanticOutputContent(state.outputValue),
     });
   }
 
   if (toolKey === "edit") {
-    const oldValue = toStringValue(input.old_string);
-    const newValue = toStringValue(input.new_string);
-    const diffBlocks = buildStructuredDiffFromTexts(displayPath || filePath, oldValue, newValue);
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      outputContent:
-        state.status !== "error" && diffBlocks.length > 0
+      includeOutput,
+      outputContent: () => {
+        const oldValue = toStringValue(input.old_string);
+        const newValue = toStringValue(input.new_string);
+        const diffBlocks = buildStructuredDiffFromTexts(
+          displayPath || filePath,
+          oldValue,
+          newValue,
+        );
+        return state.status !== "error" && diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
-          : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
+          : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false };
+      },
     });
   }
 
@@ -159,6 +170,7 @@ export function buildClaudeToolStrategy(
       filePath,
       displayPath,
       isCode: true,
+      includeOutput,
     });
   }
 
@@ -176,12 +188,14 @@ export function buildClaudeToolStrategy(
         : [],
       showInputPreview: false,
       contentLabel: state.status === "error" ? t("Error") : t("Terminal output"),
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -202,9 +216,9 @@ export function buildClaudeToolStrategy(
   }
 
   if (toolKey === "taskupdate" || toolKey === "tasklist") {
-    const structured = buildSemanticOutputContent(
-      toolKey === "taskupdate" ? input : state.outputValue,
-    );
+    const structured = includeOutput
+      ? buildSemanticOutputContent(toolKey === "taskupdate" ? input : state.outputValue)
+      : null;
     return {
       ...defaultStrategy,
       Icon: ListTodo,
@@ -213,12 +227,14 @@ export function buildClaudeToolStrategy(
       details: [],
       showInputPreview: false,
       contentLabel: t("Task state"),
-      outputContent: structured ?? {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : (structured ?? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "text",
+            isCode: false,
+          }),
     };
   }
 
@@ -238,16 +254,33 @@ export function buildClaudeToolStrategy(
       ].filter((item): item is { label: string; value: string } => item != null),
       showInputPreview: true,
       contentLabel: t("Agent result"),
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
   if (toolKey === "askuserquestion") {
+    if (!includeOutput) {
+      const count = (Array.isArray(input.questions) ? input.questions : []).filter((value) =>
+        Boolean(toStringValue(toRecord(value).question)),
+      ).length;
+      return {
+        ...defaultStrategy,
+        Icon: CircleHelp,
+        title: "ask",
+        secondaryText: count ? t("{0} question{1}", [count, count === 1 ? "" : "s"]) : undefined,
+        details: [],
+        showInputPreview: false,
+        contentLabel: t("Questions"),
+        outputContent: EMPTY_TOOL_OUTPUT,
+      };
+    }
     const questions = buildQuestionOutput(input, getOutputOrErrorText(state));
     return {
       ...defaultStrategy,
@@ -276,12 +309,14 @@ export function buildClaudeToolStrategy(
       details: [],
       showInputPreview: false,
       contentLabel: t("Results"),
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -318,10 +353,12 @@ export function buildClaudeToolStrategy(
       details: [],
       showInputPreview: false,
       contentLabel: t("Submitted fields"),
-      outputContent: {
-        kind: "property-list",
-        items: Object.entries(input).map(([label, value]) => ({ label, value })),
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "property-list",
+            items: Object.entries(input).map(([label, value]) => ({ label, value })),
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -351,10 +388,12 @@ export function buildClaudeToolStrategy(
       details: [],
       showInputPreview: false,
       contentLabel: t("Message details"),
-      outputContent: {
-        kind: "property-list",
-        items: buildSendMessageOutput(input, state),
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "property-list",
+            items: buildSendMessageOutput(input, state),
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 

@@ -3,6 +3,7 @@ import type { ToolPart } from "@codesesh/contract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   toRecord,
   toStringValue,
 } from "../tool-normalize";
@@ -11,8 +12,14 @@ import { buildCodeExecutionStrategy } from "./code-execution";
 export function buildPiCodeExecutionStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const blocks = Array.isArray(state.outputValue) ? state.outputValue : [state.outputValue];
+  const includeOutput = options?.includeOutput ?? true;
+  const blocks = includeOutput
+    ? Array.isArray(state.outputValue)
+      ? state.outputValue
+      : [state.outputValue]
+    : [];
   const first = blocks[0];
   const text =
     typeof first === "string"
@@ -20,13 +27,16 @@ export function buildPiCodeExecutionStrategy(
       : toRecord(first).type === "text"
         ? toStringValue(toRecord(first).text)
         : "";
-  const header = text.match(
-    /^Script completed\r?\nWall time (\d+(?:\.\d+)?) seconds\r?\nOutput:\r?\n(?:\r?\n)?/,
-  );
+  const header = includeOutput
+    ? text.match(
+        /^Script completed\r?\nWall time (\d+(?:\.\d+)?) seconds\r?\nOutput:\r?\n(?:\r?\n)?/,
+      )
+    : null;
   const strategy = buildCodeExecutionStrategy(
     tool,
     header ? { ...state, outputValue: [text.slice(header[0].length), ...blocks.slice(1)] } : state,
     "javascript",
+    options,
   );
   const metadata = toRecord(state.metadataValue);
   const calls = Array.isArray(metadata.calls)

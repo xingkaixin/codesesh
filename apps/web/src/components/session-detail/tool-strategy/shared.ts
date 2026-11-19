@@ -13,6 +13,7 @@ import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
   type ToolStatus,
+  type ToolStrategyOptions,
   buildSemanticOutputContent,
   formatToolOutput,
   getOutputOrErrorText,
@@ -32,7 +33,14 @@ import {
   Wrench,
 } from "../../ui/icons";
 
-export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus };
+export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus, ToolStrategyOptions };
+
+export const EMPTY_TOOL_OUTPUT: ToolOutputContent = {
+  kind: "plain",
+  text: "",
+  language: "text",
+  isCode: false,
+};
 
 export function stripClaudeReadNoise(text: string) {
   return text.replace(/\n*<system-reminder>[\s\S]*$/i, "").trimEnd();
@@ -65,6 +73,7 @@ export function extractWriteContent(state: NormalizedToolState) {
 interface FileStrategyContext {
   defaultStrategy: ToolDisplayStrategy;
   displayPath: string;
+  includeOutput?: boolean;
 }
 
 interface FileToolStrategyOptions extends FileStrategyContext {
@@ -77,8 +86,8 @@ interface FileToolStrategyOptions extends FileStrategyContext {
 interface FileReadStrategyOptions extends FileStrategyContext {
   state: NormalizedToolState;
   filePath: string;
-  outputContent?: ToolOutputContent | null;
-  text?: string;
+  outputContent?: ToolOutputContent | (() => ToolOutputContent | null) | null;
+  text?: string | (() => string);
   isCode?: boolean;
   details?: ToolDetailItem[];
 }
@@ -91,7 +100,7 @@ interface FileWriteStrategyOptions extends FileStrategyContext {
 }
 
 interface FileEditStrategyOptions extends FileStrategyContext {
-  outputContent: ToolOutputContent;
+  outputContent: ToolOutputContent | (() => ToolOutputContent);
   details?: ToolDetailItem[];
 }
 
@@ -102,6 +111,7 @@ interface SearchToolStrategyOptions {
   path?: string;
   pattern?: string;
   baseDirectory?: string;
+  includeOutput?: boolean;
 }
 
 interface ShellToolStrategyOptions {
@@ -113,6 +123,7 @@ interface ShellToolStrategyOptions {
   baseDirectory?: string;
   includeCommandDetail?: boolean;
   emptyOutputMarker?: string;
+  includeOutput?: boolean;
 }
 
 function buildFileToolStrategy(options: FileToolStrategyOptions): ToolDisplayStrategy {
@@ -128,7 +139,18 @@ function buildFileToolStrategy(options: FileToolStrategyOptions): ToolDisplayStr
 }
 
 export function buildFileReadStrategy(options: FileReadStrategyOptions): ToolDisplayStrategy {
+  const includeOutput = options.includeOutput ?? true;
+  if (!includeOutput) {
+    return buildFileToolStrategy({
+      ...options,
+      Icon: BookOpenText,
+      title: "read",
+      outputContent: EMPTY_TOOL_OUTPUT,
+    });
+  }
   const failed = options.state.status === "error";
+  const resolvedOutput =
+    typeof options.outputContent === "function" ? options.outputContent() : options.outputContent;
   return buildFileToolStrategy({
     ...options,
     Icon: BookOpenText,
@@ -140,9 +162,12 @@ export function buildFileReadStrategy(options: FileReadStrategyOptions): ToolDis
           language: "text",
           isCode: false,
         }
-      : (options.outputContent ?? {
+      : (resolvedOutput ?? {
           kind: "plain",
-          text: options.text ?? extractReadContent(options.state.outputValue),
+          text:
+            typeof options.text === "function"
+              ? options.text()
+              : (options.text ?? extractReadContent(options.state.outputValue)),
           language: detectLanguageByFilePath(options.filePath),
           isCode: options.isCode ?? true,
         }),
@@ -150,28 +175,38 @@ export function buildFileReadStrategy(options: FileReadStrategyOptions): ToolDis
 }
 
 export function buildFileWriteStrategy(options: FileWriteStrategyOptions): ToolDisplayStrategy {
+  const includeOutput = options.includeOutput ?? true;
   return buildFileToolStrategy({
     ...options,
     Icon: options.Icon ?? NotebookPen,
     title: "write",
-    outputContent: {
-      kind: "plain",
-      text: extractWriteContent(options.state),
-      language: detectLanguageByFilePath(options.filePath),
-      isCode: options.isCode ?? options.state.status === "completed",
-    },
+    outputContent: includeOutput
+      ? {
+          kind: "plain",
+          text: extractWriteContent(options.state),
+          language: detectLanguageByFilePath(options.filePath),
+          isCode: options.isCode ?? options.state.status === "completed",
+        }
+      : EMPTY_TOOL_OUTPUT,
   });
 }
 
 export function buildFileEditStrategy(options: FileEditStrategyOptions): ToolDisplayStrategy {
+  const includeOutput = options.includeOutput ?? true;
   return buildFileToolStrategy({
     ...options,
     Icon: FilePenLine,
     title: "edit",
+    outputContent: !includeOutput
+      ? EMPTY_TOOL_OUTPUT
+      : typeof options.outputContent === "function"
+        ? options.outputContent()
+        : options.outputContent,
   });
 }
 
 export function buildSearchToolStrategy(options: SearchToolStrategyOptions): ToolDisplayStrategy {
+  const includeOutput = options.includeOutput ?? true;
   const secondaryText = [getDisplayPath(options.path ?? "", options.baseDirectory), options.pattern]
     .filter(Boolean)
     .join(" · ");
@@ -182,23 +217,26 @@ export function buildSearchToolStrategy(options: SearchToolStrategyOptions): Too
     title: options.title,
     secondaryText: secondaryText || undefined,
     showInputPreview: false,
-    outputContent: {
-      kind: "plain",
-      text: getOutputOrErrorText(options.state),
-      language: "text",
-      isCode: false,
-    },
+    outputContent: includeOutput
+      ? {
+          kind: "plain",
+          text: getOutputOrErrorText(options.state),
+          language: "text",
+          isCode: false,
+        }
+      : EMPTY_TOOL_OUTPUT,
   };
 }
 
 export function buildShellToolStrategy(options: ShellToolStrategyOptions): ToolDisplayStrategy {
+  const includeOutput = options.includeOutput ?? true;
   const displayCommand = getDisplayTextWithRelativePaths(options.command, options.baseDirectory);
   const secondaryText = options.description
     ? `${options.description}${displayCommand ? ` (${displayCommand})` : ""}`
     : displayCommand
       ? `(${displayCommand})`
       : undefined;
-  const outputText = getOutputOrErrorText(options.state);
+  const outputText = includeOutput ? getOutputOrErrorText(options.state) : "";
 
   return {
     ...options.defaultStrategy,
@@ -210,12 +248,14 @@ export function buildShellToolStrategy(options: ShellToolStrategyOptions): ToolD
         ? [{ label: t("Command"), value: displayCommand || options.command }]
         : options.defaultStrategy.details,
     showInputPreview: false,
-    outputContent: {
-      kind: "plain",
-      text: options.emptyOutputMarker === outputText ? t("No output captured.") : outputText,
-      language: "text",
-      isCode: false,
-    },
+    outputContent: includeOutput
+      ? {
+          kind: "plain",
+          text: options.emptyOutputMarker === outputText ? t("No output captured.") : outputText,
+          language: "text",
+          isCode: false,
+        }
+      : EMPTY_TOOL_OUTPUT,
   };
 }
 
@@ -227,7 +267,9 @@ export function buildDefaultToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
+  const includeOutput = options?.includeOutput ?? true;
   const preview = getDisplayTextWithRelativePaths(
     state.command || state.inputText || "{}",
     baseDirectory,
@@ -236,7 +278,7 @@ export function buildDefaultToolStrategy(
   const previewText =
     compactPreview.length > 72 ? `${compactPreview.slice(0, 72)}...` : compactPreview;
 
-  const semanticOutput = buildSemanticOutputContent(state.outputValue);
+  const semanticOutput = includeOutput ? buildSemanticOutputContent(state.outputValue) : null;
 
   return {
     Icon: SquareTerminal,
@@ -245,14 +287,15 @@ export function buildDefaultToolStrategy(
     details: [],
     expandable: true,
     showInputPreview: true,
-    outputContent:
-      semanticOutput ??
-      ({
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      } as const),
+    outputContent: !includeOutput
+      ? EMPTY_TOOL_OUTPUT
+      : (semanticOutput ??
+        ({
+          kind: "plain",
+          text: getOutputOrErrorText(state),
+          language: "text",
+          isCode: false,
+        } as const)),
   };
 }
 

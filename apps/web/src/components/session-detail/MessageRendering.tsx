@@ -545,14 +545,20 @@ const ToolItem = memo(function ToolItem({
   const state = useMemo(() => normalizeToolState(tool), [tool]);
   const [rawOutputExpanded, setRawOutputExpanded] = useState(false);
   const strategy = useMemo(
-    () => getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory),
+    () =>
+      getToolDisplayStrategy(sessionAgentKey, tool, state, baseDirectory, {
+        includeOutput: expanded,
+      }),
 
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, baseDirectory, sessionAgentKey, state, tool],
+    [locale, baseDirectory, expanded, sessionAgentKey, state, tool],
   );
   const inputPreviewText = useMemo(
-    () => getDisplayTextWithRelativePaths(state.inputText || "{}", baseDirectory),
-    [baseDirectory, state.inputText],
+    () =>
+      expanded && strategy.showInputPreview
+        ? getDisplayTextWithRelativePaths(state.inputText || "{}", baseDirectory)
+        : "",
+    [baseDirectory, expanded, state.inputText, strategy.showInputPreview],
   );
   const statusMeta = TOOL_STATUS_META[state.status];
   const StatusIcon = statusMeta.icon;
