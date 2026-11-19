@@ -138,11 +138,16 @@ function VirtualizedMessageList({
     viewportRef.current = viewport;
   }, [viewport]);
 
-  const updateViewport = useCallback(() => {
+  const updateViewport = useCallback((resolveScrollParent = false) => {
     if (typeof window === "undefined") return null;
 
     const node = containerRef.current;
-    const scrollParent = node ? findScrollParent(node) : window;
+    const cached = scrollParentRef.current;
+    const canReuseCached =
+      !resolveScrollParent &&
+      cached != null &&
+      (isWindowScrollParent(cached) || cached.isConnected);
+    const scrollParent = canReuseCached ? cached : node ? findScrollParent(node) : window;
     scrollParentRef.current = scrollParent;
     const listTop = node ? getElementTop(scrollParent, node) : 0;
     const next = {
@@ -167,6 +172,7 @@ function VirtualizedMessageList({
 
   useEffect(() => {
     let frame = 0;
+    let needsResolveParent = false;
     let scrollParent: ScrollParent | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
@@ -174,58 +180,54 @@ function VirtualizedMessageList({
       if (scrollParent === next) return;
 
       if (scrollParent) {
-        scrollParent.removeEventListener("scroll", scheduleUpdate);
+        scrollParent.removeEventListener("scroll", scheduleScrollUpdate);
         if (resizeObserver && !isWindowScrollParent(scrollParent)) {
           resizeObserver.unobserve(scrollParent);
         }
       }
 
       scrollParent = next;
-      scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
+      scrollParent.addEventListener("scroll", scheduleScrollUpdate, { passive: true });
       if (resizeObserver && !isWindowScrollParent(scrollParent)) {
         resizeObserver.observe(scrollParent);
       }
     };
 
-    const refreshViewport = () => {
-      const nextScrollParent = updateViewport();
+    const refreshViewport = (resolveScrollParent: boolean) => {
+      const nextScrollParent = updateViewport(resolveScrollParent);
       if (nextScrollParent) bindScrollParent(nextScrollParent);
     };
 
-    const scheduleUpdate = () => {
+    const scheduleUpdate = (resolveScrollParent: boolean) => {
+      if (resolveScrollParent) needsResolveParent = true;
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        refreshViewport();
+        const shouldResolve = needsResolveParent;
+        needsResolveParent = false;
+        refreshViewport(shouldResolve);
       });
     };
 
-    window.addEventListener("resize", scheduleUpdate);
+    const scheduleScrollUpdate = () => scheduleUpdate(false);
+    const scheduleLayoutUpdate = () => scheduleUpdate(true);
+
+    window.addEventListener("resize", scheduleLayoutUpdate);
     if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(scheduleUpdate);
+      resizeObserver = new ResizeObserver(scheduleLayoutUpdate);
       if (containerRef.current) resizeObserver.observe(containerRef.current);
       if (document.body) resizeObserver.observe(document.body);
     }
 
-    const layoutObserver = new MutationObserver(scheduleUpdate);
-    let ancestor = containerRef.current?.parentElement;
-    while (ancestor) {
-      layoutObserver.observe(ancestor, {
-        attributes: true,
-        attributeFilter: ["class", "style"],
-      });
-      ancestor = ancestor.parentElement;
-    }
-    document.fonts?.addEventListener("loadingdone", scheduleUpdate);
-    refreshViewport();
+    document.fonts?.addEventListener("loadingdone", scheduleLayoutUpdate);
+    refreshViewport(true);
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
       resizeObserver?.disconnect();
-      layoutObserver.disconnect();
-      document.fonts?.removeEventListener("loadingdone", scheduleUpdate);
-      scrollParent?.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
+      document.fonts?.removeEventListener("loadingdone", scheduleLayoutUpdate);
+      scrollParent?.removeEventListener("scroll", scheduleScrollUpdate);
+      window.removeEventListener("resize", scheduleLayoutUpdate);
     };
   }, [updateViewport]);
 
@@ -244,7 +246,7 @@ function VirtualizedMessageList({
   }, [messages, measuredHeights]);
 
   useEffect(() => {
-    updateViewport();
+    updateViewport(true);
   }, [messages, updateViewport]);
 
   useEffect(() => {
