@@ -38,6 +38,7 @@ function RawExcerpt({ value, highlightQuery }: { value: unknown; highlightQuery?
   return (
     <ProgressiveText
       text={toDisplayText(value)}
+      highlightQuery={highlightQuery}
       initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
     >
       {(text) => (

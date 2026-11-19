@@ -35,6 +35,7 @@ const VIRTUALIZED_MESSAGE_OVERSCAN = 6;
 
 export interface MessageListHandle {
   scrollToIndex: (index: number) => void;
+  captureAnchor: () => void;
 }
 
 interface MessageListProps {
@@ -76,8 +77,12 @@ export function MessageList({
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
   useEffect(() => {
-    if (!shouldVirtualize) apiRef.current = null;
-  }, [apiRef, shouldVirtualize]);
+    if (shouldVirtualize) return;
+    apiRef.current = { scrollToIndex: () => {}, captureAnchor };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, shouldVirtualize, captureAnchor]);
 
   return (
     <div ref={transcriptRef} className="[overflow-anchor:none]">
@@ -93,6 +98,7 @@ export function MessageList({
           anchorRegistry={anchorRegistry}
           measurementVersion={measurementVersion}
           onCommitMeasurements={commitMeasurements}
+          captureAnchor={captureAnchor}
         />
       ) : (
         <TimelineAnchorRegistryProvider registry={anchorRegistry}>
@@ -130,9 +136,11 @@ function VirtualizedMessageList({
   anchorRegistry,
   measurementVersion,
   onCommitMeasurements,
+  captureAnchor,
 }: MessageListProps & {
   measurementVersion: number;
   onCommitMeasurements: () => number | undefined;
+  captureAnchor: () => void;
 }) {
   const locale = useLocale();
 
@@ -363,11 +371,11 @@ function VirtualizedMessageList({
   );
 
   useEffect(() => {
-    apiRef.current = { scrollToIndex };
+    apiRef.current = { scrollToIndex, captureAnchor };
     return () => {
       if (apiRef.current?.scrollToIndex === scrollToIndex) apiRef.current = null;
     };
-  }, [apiRef, scrollToIndex]);
+  }, [apiRef, scrollToIndex, captureAnchor]);
 
   return (
     <TimelineAnchorRegistryProvider registry={anchorRegistry}>

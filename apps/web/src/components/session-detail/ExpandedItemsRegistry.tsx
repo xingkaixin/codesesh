@@ -158,11 +158,14 @@ export function collectMatchedCollapsibleKeys(
       if (block.type === "reasoning") {
         if (block.parts.some((part) => matchesHighlightPattern(part.text, pattern))) {
           destination.push(
-            buildReasoningItemKey(block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex)),
+            buildReasoningItemKey(
+              block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex),
+            ),
           );
         }
       } else if (block.type === "plan") {
-        const anchorId = block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex);
+        const anchorId =
+          block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex);
         for (let planIndex = 0; planIndex < block.parts.length; planIndex += 1) {
           if (matchesHighlightPattern(block.parts[planIndex]!.text, pattern)) {
             destination.push(buildPlanItemKey(anchorId, planIndex));

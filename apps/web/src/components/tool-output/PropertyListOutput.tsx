@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { t } from "../../i18n/translate";
 import { INITIAL_CONTENT_RENDER_BUDGETS } from "../../lib/content-render-budget";
 import { renderHighlightedText } from "../HighlightedText";
+import { buildHighlightPattern, valueMatchesHighlight } from "../../lib/search-highlight";
 import { ProgressiveText } from "../ProgressiveContent";
 import { toDisplayText } from "../session-detail/tool-normalize";
 import type { PropertyItem } from "./types";
@@ -25,11 +26,19 @@ function NestedJson({
   highlightQuery?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const matches = useMemo(
+    () => valueMatchesHighlight(value, buildHighlightPattern(highlightQuery)),
+    [value, highlightQuery],
+  );
+  const [toggle, setToggle] = useState<{ query?: string; open: boolean } | null>(null);
+  const open = toggle && toggle.query === highlightQuery ? toggle.open : matches;
   return (
     <details
       open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        if (event.currentTarget.open !== open)
+          setToggle({ query: highlightQuery, open: event.currentTarget.open });
+      }}
       className="min-w-0"
     >
       <summary className="cursor-pointer rounded-sm text-[var(--console-muted)] hover:text-[var(--console-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)]">
@@ -38,6 +47,7 @@ function NestedJson({
       {open ? (
         <ProgressiveText
           text={toDisplayText(value)}
+          highlightQuery={highlightQuery}
           initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
         >
           {(text) => (

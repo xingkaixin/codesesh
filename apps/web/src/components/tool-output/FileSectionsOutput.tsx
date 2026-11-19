@@ -19,7 +19,11 @@ function renderSectionContent(section: FileSectionItem, highlightQuery?: string)
 
   if (!section.isCode || section.language === "text") {
     return (
-      <ProgressiveText text={outputText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+      <ProgressiveText
+        text={outputText}
+        highlightQuery={activeHighlight}
+        initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
+      >
         {(visibleText) => (
           <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-all p-3 text-xs leading-relaxed text-[var(--console-text)]">
             {renderHighlightedText(visibleText, activeHighlight)}

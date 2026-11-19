@@ -286,8 +286,13 @@ export function buildSearchProjectOptions({
   projectDisplayNames,
 }: SearchProjectOptionsInput): SearchProjectOption[] {
   if (!usesServerSearch) {
+    const local = recentProjectOptions.slice(0, 8);
+    const retained =
+      selectedProject &&
+      preservedProjectOptions?.find((option) => !local.some((recent) => recent.key === option.key));
+    const options = retained ? [...local.slice(0, 7), retained] : local;
     return ensureSelectedProjectOption(
-      recentProjectOptions,
+      options,
       selectedProject,
       recentProjectOptions,
       projectDisplayNames,

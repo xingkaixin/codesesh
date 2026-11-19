@@ -80,12 +80,14 @@ function scrollToSessionAnchor({
   behavior,
   anchorRegistry,
   prepareAnchor,
+  onScrolled,
   isCurrent,
 }: {
   anchorId: string;
   behavior: SessionAnchorScrollBehavior;
   anchorRegistry: TimelineAnchorRegistry;
   prepareAnchor?: () => void;
+  onScrolled: () => void;
   isCurrent: () => boolean;
 }) {
   if (typeof document === "undefined") return;
@@ -102,6 +104,7 @@ function scrollToSessionAnchor({
       element = anchorRegistry.get(anchorId);
       if (element) {
         element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
+        if (scrollBehavior === "auto") onScrolled();
         return;
       }
       attempts += 1;
@@ -112,6 +115,7 @@ function scrollToSessionAnchor({
   }
   if (!element) return;
   element.scrollIntoView({ behavior: scrollBehavior, block: "center" });
+  if (scrollBehavior === "auto") onScrolled();
 }
 
 function measureSessionDetailWork<T>(id: string, compute: () => T): T {
@@ -218,6 +222,7 @@ export function SessionDetail({
     countActiveFilterChips(toc, filterState) > 0 ||
     hasCollapsible ||
     Boolean(effectiveHighlightQuery);
+  const detailRef = useRef<HTMLDivElement>(null);
   const virtualListRef = useRef<MessageListHandle | null>(null);
   const scrollRequestRef = useRef(0);
   const targetDisplayMessageIndex = useMemo(
@@ -274,6 +279,7 @@ export function SessionDetail({
         anchorRegistry,
         prepareAnchor:
           listIndex == null ? undefined : () => virtualListRef.current?.scrollToIndex(listIndex),
+        onScrolled: () => virtualListRef.current?.captureAnchor(),
         isCurrent: () => scrollRequestRef.current === requestId,
       });
     },
@@ -290,10 +296,25 @@ export function SessionDetail({
     if (targetMessageIndex == null) return;
     const target = displayModel.resolveSourceMessageAnchor(targetMessageIndex);
     if (!target) return;
-    const frame = requestAnimationFrame(() =>
-      handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto"),
-    );
+    let cancelled = false;
+    let frame = requestAnimationFrame(async () => {
+      const animations =
+        detailRef.current
+          ?.getAnimations?.({ subtree: true })
+          .filter(
+            (animation) =>
+              animation.effect instanceof KeyframeEffect &&
+              animation.effect.target?.classList.contains("motion-collapsible"),
+          ) ?? [];
+      if (animations.length)
+        await Promise.allSettled(animations.map((animation) => animation.finished));
+      if (!cancelled)
+        frame = requestAnimationFrame(() =>
+          handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto"),
+        );
+    });
     return () => {
+      cancelled = true;
       cancelAnimationFrame(frame);
       scrollRequestRef.current += 1;
     };
@@ -387,6 +408,7 @@ export function SessionDetail({
 
   return (
     <div
+      ref={detailRef}
       data-testid="session-detail"
       className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
