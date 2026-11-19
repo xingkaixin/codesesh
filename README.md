@@ -64,7 +64,7 @@ Run `codesesh hub` for a query-only Web UI and pair an independent `codesesh wor
 | Kimi-Code       | Supported       | ✓     | —             | ✓            | ✓         | —            | ✓      |
 | Codex           | Supported       | ✓     | —             | ✓            | ✓         | ✓            | ✓      |
 | Grok            | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
-| Pi              | Supported       | ✓     | ✓             | ✓            | ✓         | —            | ✓      |
+| Pi              | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
 | oh-my-pi        | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
 | OpenCode        | Supported       | ✓     | ✓             | ✓            | ✓         | ✓            | ✓      |
 | ZCode           | Supported       | ◐     | ✓             | ✓            | ✓         | ✓            | —      |
