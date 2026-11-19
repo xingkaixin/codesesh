@@ -52,6 +52,7 @@ pub struct Options {
 }
 
 pub struct State {
+    etag_namespace: uuid::Uuid,
     hub_enabled: bool,
     runtime: Runtime,
     pricing: codesesh_core::pricing::PricingController,
@@ -91,6 +92,7 @@ impl State {
                 .map(codesesh_core::projects::create_project_scope_matcher),
         };
         Self {
+            etag_namespace: uuid::Uuid::new_v4(),
             hub_enabled: false,
             runtime,
             pricing,

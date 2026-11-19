@@ -1547,7 +1547,7 @@ async fn search_reuses_published_in_memory_snapshot() {
     assert_eq!(results[0]["session"]["title"], published[0].title);
     assert_eq!(results[0]["session"]["display_title"], "Custom Alias Match");
 
-    // Text FTS search still queries SQLite FTS while matching aliases from the in-memory snapshot.
+    // Text FTS search still queries SQLite FTS and resolves alias matches in the same transaction.
     let (status, fts) = request(&app, Method::GET, "/api/search?q=Needle", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(fts["results"].as_array().unwrap().len(), 1);
@@ -1557,7 +1557,10 @@ async fn search_reuses_published_in_memory_snapshot() {
     assert_eq!(status, StatusCode::OK);
     let alias_results = alias_hit["results"].as_array().unwrap();
     assert_eq!(alias_results.len(), 1);
-    assert_eq!(alias_results[0]["session"]["title"], published[0].title);
+    assert_eq!(
+        alias_results[0]["session"]["title"],
+        "Mutated outside runtime"
+    );
 
     runtime.shutdown().await.unwrap();
 }

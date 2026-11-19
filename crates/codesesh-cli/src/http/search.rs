@@ -90,11 +90,6 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
     let result = state
         .runtime
         .read_snapshot(move |conn, heads| {
-            let scoped: Vec<_> = heads
-                .iter()
-                .map(Arc::as_ref)
-                .filter(|s| super::matches_scope(s, &query_scope))
-                .collect();
             let parsed = search::parse_query(&query);
             let uses_sql_search = !parsed.text.is_empty()
                 || options.file.is_some()
@@ -103,35 +98,43 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
                 || parsed.filters.file_kind.is_some()
                 || !options.tools.is_empty()
                 || !parsed.filters.tools.is_empty();
-            let mut owned_snapshot = None;
+            let scoped: Vec<_> = if uses_sql_search {
+                Vec::new()
+            } else {
+                heads
+                    .iter()
+                    .map(Arc::as_ref)
+                    .filter(|s| super::matches_scope(s, &query_scope))
+                    .collect()
+            };
             let ranked = if uses_sql_search {
                 search::execute_with_snapshot(conn, &query, &options, &[])?
             } else {
-                let snapshot = owned_snapshot
-                    .get_or_insert_with(|| scoped.iter().map(|s| (*s).clone()).collect::<Vec<_>>());
-                search::execute_with_snapshot(conn, &query, &options, snapshot)?
+                let snapshot = scoped.iter().map(|s| (*s).clone()).collect::<Vec<_>>();
+                search::execute_with_snapshot(conn, &query, &options, &snapshot)?
             };
             let needle = parsed.text.trim().to_lowercase();
-            let candidates: Vec<_> = if needle.is_empty() {
-                Vec::new()
-            } else {
-                scoped
-                    .iter()
-                    .filter(|s| {
-                        aliases
-                            .get(&s.reference)
-                            .is_some_and(|a| a.to_lowercase().contains(&needle))
-                    })
-                    .map(|s| SearchResult {
-                        reference: s.reference.clone(),
-                        session: (*s).clone(),
-                        snippet: format!("Alias · {}", s.directory),
-                        snippet_highlights: vec![],
-                        match_type: "title".into(),
-                        message_index: None,
-                    })
-                    .collect()
-            };
+            let mut candidates = Vec::new();
+            if !needle.is_empty() {
+                for (reference, alias) in &aliases {
+                    if !alias.to_lowercase().contains(&needle) {
+                        continue;
+                    }
+                    if let Some(session) =
+                        codesesh_core::storage::head_from_connection(conn, reference)?
+                        && super::matches_scope(&session, &query_scope)
+                    {
+                        candidates.push(SearchResult {
+                            reference: reference.clone(),
+                            snippet: format!("Alias · {}", session.directory),
+                            session,
+                            snippet_highlights: vec![],
+                            match_type: "title".into(),
+                            message_index: None,
+                        });
+                    }
+                }
+            }
             let mut alias_results = if candidates.is_empty() {
                 Vec::new()
             } else {
@@ -140,32 +143,53 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
                     || parsed.filters.cost_min.is_some()
                     || parsed.filters.cost_max.is_some();
                 if needs_inclusive_costs {
-                    let snapshot = owned_snapshot.get_or_insert_with(|| {
-                        scoped.iter().map(|s| (*s).clone()).collect::<Vec<_>>()
-                    });
-                    search::filter_candidates(conn, candidates, &query, &options, snapshot)?
+                    let snapshot = codesesh_core::storage::snapshot_from_connection(conn)?
+                        .into_iter()
+                        .filter(|s| super::matches_scope(s, &query_scope))
+                        .collect::<Vec<_>>();
+                    search::filter_candidates(conn, candidates, &query, &options, &snapshot)?
                 } else {
                     search::filter_candidates(conn, candidates, &query, &options, &[])?
                 }
             };
-            alias_results.sort_by(|a, b| b.session.time_updated.total_cmp(&a.session.time_updated));
+            alias_results.sort_by(|a, b| {
+                b.session
+                    .time_updated
+                    .total_cmp(&a.session.time_updated)
+                    .then_with(|| {
+                        (
+                            &a.reference.source_node_id,
+                            &a.reference.agent_name,
+                            &a.reference.session_id,
+                        )
+                            .cmp(&(
+                                &b.reference.source_node_id,
+                                &b.reference.agent_name,
+                                &b.reference.session_id,
+                            ))
+                    })
+            });
             let merged = merge(ranked, alias_results, limit);
             let mut values = Vec::with_capacity(merged.len());
             for mut result in merged {
                 decorate(&mut result.session, &aliases);
-                let parent = result
-                    .session
-                    .parent_reference
-                    .as_ref()
-                    .and_then(|parent_ref| {
-                        scoped
-                            .iter()
-                            .find(|s| s.reference == *parent_ref)
-                            .map(|parent| SearchResultParent {
-                                reference: parent_ref.clone(),
-                                title: aliases.get(parent_ref).unwrap_or(&parent.title).clone(),
-                            })
-                    });
+                let parent = if let Some(reference) = result.session.parent_reference.as_ref() {
+                    let stored;
+                    let head = if uses_sql_search {
+                        stored = codesesh_core::storage::head_from_connection(conn, reference)?;
+                        stored
+                            .as_ref()
+                            .filter(|head| super::matches_scope(head, &query_scope))
+                    } else {
+                        scoped.iter().copied().find(|s| s.reference == *reference)
+                    };
+                    head.map(|head| SearchResultParent {
+                        reference: reference.clone(),
+                        title: aliases.get(reference).unwrap_or(&head.title).clone(),
+                    })
+                } else {
+                    None
+                };
                 values.push(super::wire::search_result(result, parent)?);
             }
             Ok(values)

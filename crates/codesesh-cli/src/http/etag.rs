@@ -7,8 +7,8 @@ use codesesh_core::model::SessionReference;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, fmt::Write};
 
-pub fn weak_etag(key: &serde_json::Value) -> String {
-    let bytes = serde_json::to_vec(key).expect("serializable ETag key");
+pub fn weak_etag(namespace: uuid::Uuid, key: &serde_json::Value) -> String {
+    let bytes = serde_json::to_vec(&(namespace.as_bytes(), key)).expect("serializable ETag key");
     let digest = Sha256::digest(bytes);
     let mut tag = String::with_capacity(3 + 32 + 1);
     tag.push_str("W/\"");

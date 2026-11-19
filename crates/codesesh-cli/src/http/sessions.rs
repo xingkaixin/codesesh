@@ -42,21 +42,24 @@ pub async fn list(
         .filter(|_| project.is_none())
         .map(str::to_owned);
     let paginated = query.get("limit").is_some();
-    let tag = etag::weak_etag(&json!([
-        "sessions",
-        revision,
-        etag::aliases_fingerprint(&aliases),
-        paginated,
-        limit,
-        cwd,
-        source_node_id,
-        query.get("agent"),
-        project,
-        query.get("tag"),
-        query.get("q"),
-        from,
-        to
-    ]));
+    let tag = etag::weak_etag(
+        state.etag_namespace,
+        &json!([
+            "sessions",
+            revision,
+            etag::aliases_fingerprint(&aliases),
+            paginated,
+            limit,
+            cwd,
+            source_node_id,
+            query.get("agent"),
+            project,
+            query.get("tag"),
+            query.get("q"),
+            from,
+            to
+        ]),
+    );
     if etag::matches_if_none_match(&headers, &tag) {
         return etag::not_modified(&tag);
     }

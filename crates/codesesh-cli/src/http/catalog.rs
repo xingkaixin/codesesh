@@ -254,7 +254,10 @@ pub async fn agents(
     };
     let source_node_id = query.optional("sourceNodeId");
     let (revision, raw_snapshot) = state.runtime.snapshot_with_revision();
-    let tag = etag::weak_etag(&json!(["agents", revision, from, to, source_node_id]));
+    let tag = etag::weak_etag(
+        state.etag_namespace,
+        &json!(["agents", revision, from, to, source_node_id]),
+    );
     if etag::matches_if_none_match(&headers, &tag) {
         return etag::not_modified(&tag);
     }
@@ -303,6 +306,7 @@ pub async fn projects(
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
     let query_scope = state.scope(query.optional("sourceNodeId"));
+    let etag_namespace = state.etag_namespace;
     let cache = state.catalog_cache.clone();
     let started = Instant::now();
     if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
@@ -327,15 +331,18 @@ pub async fn projects(
             };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
-            let tag = etag::weak_etag(&json!([
-                "projects",
-                revision,
-                from,
-                to,
-                query_scope.source_node_id,
-                identity,
-                limit
-            ]));
+            let tag = etag::weak_etag(
+                etag_namespace,
+                &json!([
+                    "projects",
+                    revision,
+                    from,
+                    to,
+                    query_scope.source_node_id,
+                    identity,
+                    limit
+                ]),
+            );
             if etag::matches_if_none_match(&headers, &tag) {
                 return Ok(ProjectsLookup::NotModified { etag: tag, timings });
             }
@@ -575,6 +582,7 @@ pub async fn dashboard(
         zone.name()
     ]);
     let aliases = state.aliases().await;
+    let etag_namespace = state.etag_namespace;
     let aliases_fp = etag::aliases_fingerprint(&aliases);
     let started = Instant::now();
     let result = state
@@ -587,7 +595,7 @@ pub async fn dashboard(
             };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
-            let tag = etag::weak_etag(&json!([revision, &key, &aliases_fp]));
+            let tag = etag::weak_etag(etag_namespace, &json!([revision, &key, &aliases_fp]));
             if etag::matches_if_none_match(&headers, &tag) {
                 return Ok(DashboardLookup::NotModified { etag: tag, timings });
             }

@@ -80,16 +80,18 @@ pub async fn events(AxumState(state): AxumState<Arc<State>>) -> Response {
                         let aliases=state.aliases().await;
                         let latest=state.runtime.snapshot();
                         let snapshot:Vec<_>=latest.iter().map(Arc::as_ref).filter(|s|super::matches_scope(s,&state.query_scope)).collect();
-                        let visible:HashSet<_>=snapshot.iter().map(|s|s.reference.clone()).collect();
                         let mut changed_agents=Vec::new();let mut new=Vec::new();let mut heads=Vec::new();
-                        for head in changed.iter().filter(|h|visible.contains(&h.reference)) {
+                        let mut removed:Vec<_>=removed.iter().filter(|r|known.remove(*r)).cloned().collect();
+                        for head in changed.iter() {
+                            if !super::matches_scope(head, &state.query_scope) {
+                                if known.remove(&head.reference) { removed.push(head.reference.clone()); }
+                                continue;
+                            }
                             if !changed_agents.contains(&head.reference.agent_name) {changed_agents.push(head.reference.agent_name.clone());}
-                            if !known.contains(&head.reference) {new.push(head.reference.clone());}
+                            if known.insert(head.reference.clone()) {new.push(head.reference.clone());}
                             let mut head=head.public();decorate(&mut head,&aliases);heads.push(super::wire::referenced(head));
                         }
-                        let removed:Vec<_>=removed.iter().filter(|r|known.contains(r)).cloned().collect();
                         for reference in &removed {if !changed_agents.contains(&reference.agent_name) {changed_agents.push(reference.agent_name.clone());}}
-                        known=visible;
                         if heads.is_empty() && removed.is_empty() {continue;}
                         let changes:HashSet<_>=changed.iter().map(|s|s.reference.clone()).collect();
                         let time_key=|time:f64|if time==0.0 {0} else {time.to_bits()};
