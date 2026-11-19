@@ -501,6 +501,47 @@ async fn worker_credentials_are_separate_and_compatibility_blocks_upload() {
 }
 
 #[tokio::test]
+async fn worker_authentication_interrupted_by_hub_shutdown_can_retry() {
+    let (app, runtime, _dir) = app_mode(true).await;
+    let stream = uuid::Uuid::new_v4();
+    let credential = runtime
+        .hub_control(move |cache| {
+            let token = cache.create_pairing_token()?;
+            Ok(cache
+                .pair_worker(&token, "worker", "1.1.1", &stream.to_string())?
+                .credential)
+        })
+        .await
+        .unwrap();
+    let bearer = format!("Bearer {credential}");
+    let headers = [
+        ("authorization", bearer.as_str()),
+        (
+            "x-codesesh-worker-instance",
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        ),
+        ("content-type", "application/json"),
+    ];
+    let hello = json!({
+        "version": env!("CARGO_PKG_VERSION"), "protocolVersion": 1, "payloadVersion": 1,
+        "streamId": stream.to_string(), "queue": {"batches": 0, "bytes": 0, "oldestAt": null}
+    })
+    .to_string();
+    let (release, held) = std::sync::mpsc::channel();
+    // Hold the writer so the hello is accepted but loses its reply when shutdown runs.
+    let (write, shutdown, (status, _), ()) = tokio::join!(
+        biased;
+        runtime.hub_control(move |_| Ok(held.recv()?)),
+        runtime.shutdown(),
+        request(&app, Method::POST, "/api/worker/hello", &headers, &hello),
+        async { release.send(()).unwrap() },
+    );
+    write.unwrap();
+    shutdown.unwrap();
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
 async fn fingerprinted_assets_are_cached_and_compressed() {
     let Some((_, index)) = crate::assets::lookup("index.html") else {
         return;

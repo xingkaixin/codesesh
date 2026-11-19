@@ -5,7 +5,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use codesesh_core::sync::{PAYLOAD_VERSION, Upload, WorkerHello, check_compatibility};
+use codesesh_core::sync::{
+    PAYLOAD_VERSION, Upload, WorkerAuthRejection, WorkerHello, check_compatibility,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
@@ -54,22 +56,19 @@ async fn authenticate(
             Ok(AuthenticatedWorker { node, credential })
         })
         .await
-        .map_err(|failure| {
-            if failure.is::<codesesh_core::runtime::ReadBusy>() {
-                retry("Hub is busy")
-            } else if failure.to_string().starts_with("WORKER_INSTANCE_CONFLICT") {
-                (
+        .map_err(
+            |failure| match failure.downcast_ref::<WorkerAuthRejection>() {
+                Some(reason @ WorkerAuthRejection::InvalidCredentialOrInstance) => {
+                    error(StatusCode::UNAUTHORIZED, &reason.to_string())
+                }
+                Some(reason @ WorkerAuthRejection::InstanceConflict) => (
                     [(axum::http::header::RETRY_AFTER, "2")],
-                    error(StatusCode::CONFLICT, &failure.to_string()),
+                    error(StatusCode::CONFLICT, &reason.to_string()),
                 )
-                    .into_response()
-            } else {
-                error(
-                    StatusCode::UNAUTHORIZED,
-                    "Worker credential or instance is invalid or revoked",
-                )
-            }
-        })
+                    .into_response(),
+                None => retry("Worker authentication is temporarily unavailable"),
+            },
+        )
 }
 
 pub async fn goodbye(AxumState(state): AxumState<Arc<State>>, headers: HeaderMap) -> Response {

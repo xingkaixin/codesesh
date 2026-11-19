@@ -338,7 +338,7 @@ impl Runtime {
                 let _ = response.send(operation(cache));
             })))
             .map_err(|_| ReadBusy)?;
-        result.await?
+        result.await.map_err(|_| ReadBusy)?
     }
 
     pub async fn receive_upload(
@@ -357,7 +357,7 @@ impl Runtime {
                 response,
             })
             .map_err(|_| ReadBusy)?;
-        result.await?
+        result.await.map_err(|_| ReadBusy)?
     }
 
     pub async fn read<T: Send + 'static>(
