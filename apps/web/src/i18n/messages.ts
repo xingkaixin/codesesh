@@ -624,10 +624,11 @@ export const messages = {
     ],
   "Request Error": ["请求错误", "リクエストエラー"],
   "Unable to load this session.": ["无法加载此会话。", "セッションを読み込めませんでした。"],
-  "Select a session from the left to view details": [
-    "从左侧选择一个会话查看详情",
-    "左側からセッションを選択して詳細を表示",
+  "Select a session to view details": [
+    "选择一个会话查看详情",
+    "セッションを選択して詳細を表示",
   ],
+  "Show more ({0} remaining)": ["显示更多（剩余 {0} 条）", "さらに表示（残り {0} 件）"],
   "Session Not Found": ["未找到会话", "セッションが見つかりません"],
   "Session Load Failed": ["会话加载失败", "セッションの読み込みに失敗しました"],
   "Agent Not Found": ["未找到智能体", "エージェントが見つかりません"],

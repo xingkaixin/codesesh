@@ -1,7 +1,7 @@
 import { getLocale } from "../i18n/language";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { formatSessionReference, type SessionHead } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
@@ -135,26 +135,36 @@ function AgentsPanel({ agentItems }: { agentItems: LandingAgentItem[] }) {
   );
 }
 
-function RecentSessions({
+const AGENT_SESSION_PAGE_SIZE = 25;
+
+function SessionListPanel({
+  title,
   sessions,
+  totalCount = sessions.length,
+  onShowMore,
   isBookmarked,
   onToggleBookmark,
 }: {
+  title: string;
   sessions: IndexedSession[];
+  totalCount?: number;
+  onShowMore?: () => void;
   isBookmarked: (agentKey: string, sessionId: string, sourceNodeId?: string) => boolean;
   onToggleBookmark: (session: IndexedSession) => void;
 }) {
   useLocale();
 
-  if (sessions.length === 0) {
+  if (totalCount === 0) {
     return (
       <Panel className="p-4 text-sm text-[var(--console-muted)]">{t("No sessions yet")}</Panel>
     );
   }
 
+  const remaining = totalCount - sessions.length;
+
   return (
     <Panel className="p-4">
-      <PanelHeader title={t("Recent Sessions")} meta={t("{0} items", [sessions.length])} />
+      <PanelHeader title={title} meta={t("{0} items", [totalCount])} />
       <ul className="mt-3 space-y-2">
         {sessions.map((session) => {
           const bookmarked = isBookmarked(
@@ -181,7 +191,35 @@ function RecentSessions({
           );
         })}
       </ul>
+      {remaining > 0 && onShowMore ? (
+        <div className="mt-3 flex justify-center border-t border-[var(--console-border)] pt-3">
+          <button type="button" onClick={onShowMore} className={BUTTON_OUTLINE_CLASS}>
+            {t("Show more ({0} remaining)", [remaining])}
+          </button>
+        </div>
+      ) : null}
     </Panel>
+  );
+}
+
+function RecentSessions({
+  sessions,
+  isBookmarked,
+  onToggleBookmark,
+}: {
+  sessions: IndexedSession[];
+  isBookmarked: (agentKey: string, sessionId: string, sourceNodeId?: string) => boolean;
+  onToggleBookmark: (session: IndexedSession) => void;
+}) {
+  useLocale();
+
+  return (
+    <SessionListPanel
+      title={t("Recent Sessions")}
+      sessions={sessions}
+      isBookmarked={isBookmarked}
+      onToggleBookmark={onToggleBookmark}
+    />
   );
 }
 
@@ -200,35 +238,50 @@ export const DetailLanding = memo(function DetailLanding({
 }: DetailLandingProps) {
   useLocale();
 
-  const { recentSessions, totalMessages, totalTokens, totalCost, costSource, latestUpdatedAt } =
-    useMemo(() => {
-      const sortedSessions = sessions.toSorted(
-        (a, b) => (b.time_updated || b.time_created || 0) - (a.time_updated || a.time_created || 0),
-      );
-      let totalMessages = 0;
-      let totalTokens = 0;
-      let totalCost = 0;
-      let hasEstimatedCost = false;
-      for (const session of sessions) {
-        totalMessages += session.stats.message_count;
-        totalTokens += getSessionTotalTokens(session.stats);
-        totalCost += session.stats.total_cost;
-        hasEstimatedCost ||= session.stats.cost_source === "estimated";
-      }
-      return {
-        recentSessions: sortedSessions.slice(0, 5),
-        totalMessages,
-        totalTokens,
-        totalCost,
-        costSource:
-          totalCost > 0
-            ? hasEstimatedCost
-              ? ("estimated" as const)
-              : ("recorded" as const)
-            : undefined,
-        latestUpdatedAt: sortedSessions[0]?.time_updated || sortedSessions[0]?.time_created,
-      };
-    }, [sessions]);
+  const [agentPage, setAgentPage] = useState<{ agentKey?: string; count: number }>({
+    agentKey: activeAgentKey,
+    count: AGENT_SESSION_PAGE_SIZE,
+  });
+  const visibleAgentSessionCount =
+    agentPage.agentKey === activeAgentKey ? agentPage.count : AGENT_SESSION_PAGE_SIZE;
+
+  const {
+    sortedSessions,
+    recentSessions,
+    totalMessages,
+    totalTokens,
+    totalCost,
+    costSource,
+    latestUpdatedAt,
+  } = useMemo(() => {
+    const sortedSessions = sessions.toSorted(
+      (a, b) => (b.time_updated || b.time_created || 0) - (a.time_updated || a.time_created || 0),
+    );
+    let totalMessages = 0;
+    let totalTokens = 0;
+    let totalCost = 0;
+    let hasEstimatedCost = false;
+    for (const session of sessions) {
+      totalMessages += session.stats.message_count;
+      totalTokens += getSessionTotalTokens(session.stats);
+      totalCost += session.stats.total_cost;
+      hasEstimatedCost ||= session.stats.cost_source === "estimated";
+    }
+    return {
+      sortedSessions,
+      recentSessions: sortedSessions.slice(0, 5),
+      totalMessages,
+      totalTokens,
+      totalCost,
+      costSource:
+        totalCost > 0
+          ? hasEstimatedCost
+            ? ("estimated" as const)
+            : ("recorded" as const)
+          : undefined,
+      latestUpdatedAt: sortedSessions[0]?.time_updated || sortedSessions[0]?.time_created,
+    };
+  }, [sessions]);
 
   if (type === "missing-agent") {
     const requestedPath = `/${attemptedAgentKey || "unknown"}${attemptedSessionId ? `/${attemptedSessionId}` : ""}`;
@@ -375,13 +428,13 @@ export const DetailLanding = memo(function DetailLanding({
               {displayName}
             </h3>
             <p className="console-mono text-xs text-[var(--console-muted)]">
-              {t("Select a session from the left to view details")}
+              {t("Select a session to view details")}
             </p>
           </div>
         </div>
       </Panel>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
         <LandingCard label={t("Sessions")} value={formatNumber(sessions.length)} />
         <LandingCard label={t("Messages")} value={formatNumber(totalMessages)} />
         <LandingCard label={t("Tokens")} value={formatNumber(totalTokens)} />
@@ -392,8 +445,16 @@ export const DetailLanding = memo(function DetailLanding({
         />
       </div>
 
-      <RecentSessions
-        sessions={recentSessions}
+      <SessionListPanel
+        title={t("Sessions")}
+        sessions={sortedSessions.slice(0, visibleAgentSessionCount)}
+        totalCount={sortedSessions.length}
+        onShowMore={() =>
+          setAgentPage({
+            agentKey: activeAgentKey,
+            count: visibleAgentSessionCount + AGENT_SESSION_PAGE_SIZE,
+          })
+        }
         isBookmarked={isBookmarked}
         onToggleBookmark={onToggleBookmark}
       />

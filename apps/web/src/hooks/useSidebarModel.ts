@@ -126,11 +126,10 @@ export function useSidebarModel({
             };
     }
 
-    const sidebarSessions = getProjectSessions(
-      sessionIndexes,
-      selectedProjectIdentityKey,
-      selectedProjectAgent,
-    );
+    const sidebarSessions =
+      viewState.mode === "agent"
+        ? (sessionIndexes.byAgent.get(viewState.activeAgentKey) ?? [])
+        : getProjectSessions(sessionIndexes, selectedProjectIdentityKey, selectedProjectAgent);
     const sidebarSessionLookup = buildSidebarSessionLookup(sidebarSessions);
     return {
       activeAgentKey,

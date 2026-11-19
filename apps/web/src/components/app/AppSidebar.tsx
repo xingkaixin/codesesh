@@ -515,8 +515,8 @@ export function AppSidebar({
           )}
         </section>
 
-        {/* Sessions belong to a project; without one there is nothing to list. */}
-        {selectedProjectNavigationId ? (
+        {/* Show sessions for the active project or agent route. */}
+        {selectedProjectNavigationId || viewState.mode === "agent" ? (
           <section aria-labelledby="sidebar-sessions">
             <NavLabel>
               <h3 id="sidebar-sessions" className="font-normal">
@@ -549,7 +549,7 @@ export function AppSidebar({
                     onCopySessionAsMarkdown={onCopySessionAsMarkdown}
                     onToggleBookmark={onToggleSidebarSessionBookmark}
                     onRenameSession={onRenameSession}
-                    groupByProject={false}
+                    groupByProject={viewState.mode === "agent"}
                     projectDisplayNames={projectDisplayNames}
                     sourceLabel={sessionSourceLabel}
                   />
