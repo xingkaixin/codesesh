@@ -294,7 +294,7 @@ export function AppSidebar({
     [multipleSources, sourceNodes],
   );
   const projectDisplayNames = useMemo(() => buildProjectDisplayNameMap(projects), [projects]);
-  const { selectedSessionReference, selectSession } = useSidebarKeyboardNavigation({
+  const { selection, selectSession } = useSidebarKeyboardNavigation({
     viewState,
     sessions: sidebarSessions,
     sessionLookup: sidebarSessionLookup,
@@ -551,7 +551,7 @@ export function AppSidebar({
                   <SessionTreeSidebar
                     sessions={sidebarSessions}
                     activeSessionReference={activeSessionReference}
-                    selectedSessionReference={selectedSessionReference}
+                    selection={selection}
                     onSelectSession={handleSelectSession}
                     bookmarkedSessionReferences={bookmarkedSidebarSessionReferences}
                     onCopySessionAsMarkdown={onCopySessionAsMarkdown}

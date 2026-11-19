@@ -3,7 +3,7 @@ import { buildSessionTree, type SessionHead, type SessionTreeNode } from "@codes
 import {
   memo,
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,7 +26,7 @@ import { ChevronRight, MoreHorizontal } from "./ui/icons";
 interface SessionTreeSidebarProps {
   sessions: SessionHead[];
   activeSessionReference: string | null;
-  selectedSessionReference: string | null;
+  selection: { reference: string } | null;
   onSelectSession: (session: SessionHead) => void;
   bookmarkedSessionReferences: Set<string>;
   onCopySessionAsMarkdown: (session: SessionHead) => void;
@@ -67,6 +67,8 @@ interface VisibleTreeRow {
   item: SessionTreeItem;
   level: number;
   parentId: string | null;
+  position: number;
+  siblingCount: number;
   hasChildren: boolean;
   expanded: boolean;
 }
@@ -329,9 +331,15 @@ function collectVisibleRows(
   expandedIds: ReadonlySet<string>,
 ): VisibleTreeRow[] {
   const rows: VisibleTreeRow[] = [];
-  const stack: Array<{ item: SessionTreeItem; level: number; parentId: string | null }> = [];
+  const stack: Omit<VisibleTreeRow, "hasChildren" | "expanded">[] = [];
   for (let index = roots.length - 1; index >= 0; index -= 1) {
-    stack.push({ item: roots[index]!, level: 1, parentId: null });
+    stack.push({
+      item: roots[index]!,
+      level: 1,
+      parentId: null,
+      position: index + 1,
+      siblingCount: roots.length,
+    });
   }
 
   while (stack.length > 0) {
@@ -339,9 +347,7 @@ function collectVisibleRows(
     const hasChildren = current.item.children.length > 0;
     const expanded = hasChildren && expandedIds.has(current.item.id);
     rows.push({
-      item: current.item,
-      level: current.level,
-      parentId: current.parentId,
+      ...current,
       hasChildren,
       expanded,
     });
@@ -351,6 +357,8 @@ function collectVisibleRows(
           item: current.item.children[index]!,
           level: current.level + 1,
           parentId: current.item.id,
+          position: index + 1,
+          siblingCount: current.item.children.length,
         });
       }
     }
@@ -377,10 +385,14 @@ function measureSessionTreeWork<T>(id: string, compute: () => T): T {
   return value;
 }
 
+const TREE_ROW_STRIDE = 30;
+const TREE_OVERSCAN = 4;
+const TREE_MAX_HEIGHT = 560;
+
 export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   sessions,
   activeSessionReference,
-  selectedSessionReference,
+  selection,
   onSelectSession,
   bookmarkedSessionReferences,
   onCopySessionAsMarkdown,
@@ -401,7 +413,8 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     [locale, sessions, groupByProject, projectDisplayNames, sourceLabel],
   );
 
-  const targetReference = selectedSessionReference ?? activeSessionReference;
+  const selectedSessionReference = selection?.reference ?? activeSessionReference;
+  const targetReference = selectedSessionReference;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
     const initialAncestors = targetReference
       ? modelData.ancestorIdsBySessionReference.get(targetReference)
@@ -413,12 +426,38 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   const menuAnchorRef = useRef<HTMLElement | null>(null);
   const menuTriggerRef = useRef<HTMLElement | null>(null);
   const rowElementsRef = useRef(new Map<string, HTMLDivElement>());
-  const lastAutoExpandedTargetRef = useRef<string | null>(
-    targetReference && modelData.ancestorIdsBySessionReference.has(targetReference)
-      ? targetReference
-      : null,
+  const treeRef = useRef<HTMLDivElement | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const menuKeyboardOpen = useRef(false);
+  const [scrollRow, setScrollRow] = useState(0);
+  const ancestors = targetReference
+    ? modelData.ancestorIdsBySessionReference.get(targetReference)
+    : undefined;
+  const targetPath = ancestors ? JSON.stringify([targetReference, ...ancestors]) : null;
+  const target = useMemo(
+    () => (targetPath ? { path: targetPath, selection } : null),
+    [targetPath, selection],
   );
-  const lastScrolledTargetRef = useRef<string | null>(null);
+  const focusedAncestors = focusedItemId?.startsWith("session:")
+    ? modelData.ancestorIdsBySessionReference.get(focusedItemId.slice("session:".length))
+    : undefined;
+  const focusPath = focusedAncestors ? JSON.stringify([focusedItemId, ...focusedAncestors]) : null;
+  const [expandedPaths, setExpandedPaths] = useState({ target, focusPath });
+  if (expandedPaths.target !== target || expandedPaths.focusPath !== focusPath) {
+    const reveal = [
+      ...(expandedPaths.target !== target ? (ancestors ?? []) : []),
+      ...(expandedPaths.focusPath !== focusPath ? (focusedAncestors ?? []) : []),
+    ];
+    setExpandedPaths({ target, focusPath });
+    if (reveal.some((id) => !expandedIds.has(id)))
+      setExpandedIds(new Set([...expandedIds, ...reveal]));
+  }
+  // Each explicit selection is a new object; without one, the active reference
+  // is the request. Rebuilds that only move the target's path reuse the same
+  // request, so they scroll to it once but never take focus from another row.
+  const targetRequest = selection ?? targetReference;
+  const lastFocusedRequestRef = useRef<typeof targetRequest>(null);
+  const lastRevealedTargetRef = useRef<typeof target>(null);
 
   const visibleRows = useMemo(
     () => collectVisibleRows(modelData.roots, expandedIds),
@@ -445,12 +484,13 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   }, []);
 
   const openSessionMenu = useCallback(
-    (session: SessionHead, anchor: HTMLElement, trigger: HTMLElement) => {
+    (session: SessionHead, anchor: HTMLElement, trigger: HTMLElement, keyboard = false) => {
       const reference = getSessionReferenceKey(session);
       if (menuSession && getSessionReferenceKey(menuSession) === reference) {
         setMenuSession(null);
         return;
       }
+      menuKeyboardOpen.current = keyboard;
       menuAnchorRef.current = anchor;
       menuTriggerRef.current = trigger;
       setMenuSession(session);
@@ -458,44 +498,32 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     [menuSession],
   );
 
-  useEffect(() => {
-    if (!targetReference) {
-      lastAutoExpandedTargetRef.current = null;
-      lastScrolledTargetRef.current = null;
+  useLayoutEffect(() => {
+    if (!target || !targetReference) {
+      lastFocusedRequestRef.current = null;
       return;
     }
-
-    const ancestors = modelData.ancestorIdsBySessionReference.get(targetReference);
-    if (!ancestors) return;
-    if (lastAutoExpandedTargetRef.current === targetReference) return;
-
-    lastAutoExpandedTargetRef.current = targetReference;
-    if (ancestors.length === 0) return;
-
-    setExpandedIds((prev) => {
-      let needsUpdate = false;
-      for (const ancestorId of ancestors) {
-        if (!prev.has(ancestorId)) {
-          needsUpdate = true;
-          break;
-        }
-      }
-      if (!needsUpdate) return prev;
-      const next = new Set(prev);
-      for (const ancestorId of ancestors) next.add(ancestorId);
-      return next;
-    });
-  }, [modelData, targetReference]);
-
-  useEffect(() => {
-    if (!targetReference || lastScrolledTargetRef.current === targetReference) return;
-
-    const row = rowElementsRef.current.get(`session:${targetReference}`);
+    if (lastRevealedTargetRef.current === target) return;
+    const id = `session:${targetReference}`;
+    const row = rowElementsRef.current.get(id);
     if (!row) return;
-
-    lastScrolledTargetRef.current = targetReference;
+    lastRevealedTargetRef.current = target;
+    if (lastFocusedRequestRef.current === targetRequest) {
+      // Only a reader on another session row keeps its place; group rows,
+      // the target row and focus outside the tree still follow the target.
+      const focusedRow = document.activeElement?.closest<HTMLElement>('[role="treeitem"]');
+      const readingOtherSession =
+        focusedRow !== row &&
+        focusedRow?.dataset.sessionReference !== undefined &&
+        treeRef.current?.contains(focusedRow);
+      if (!readingOtherSession) row.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
+    lastFocusedRequestRef.current = targetRequest;
+    if (treeRef.current?.contains(document.activeElement)) row.focus({ preventScroll: true });
+    setFocusedItemId(id);
     row.scrollIntoView?.({ block: "nearest" });
-  }, [expandedIds, modelData, targetReference]);
+  }, [target, targetReference, targetRequest, visibleRows]);
 
   const registerRowRef = useCallback((id: string, element: HTMLDivElement | null) => {
     if (element) rowElementsRef.current.set(id, element);
@@ -503,11 +531,22 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   }, []);
 
   const focusItem = useCallback((id: string) => {
-    setFocusedItemId(id);
     const element = rowElementsRef.current.get(id);
-    element?.focus();
+    pendingFocus.current = element ? null : id;
+    setFocusedItemId(id);
+    element?.focus({ preventScroll: true });
     element?.scrollIntoView?.({ block: "nearest" });
   }, []);
+  useLayoutEffect(() => {
+    const id = pendingFocus.current;
+    if (!id) return;
+    const element = rowElementsRef.current.get(id);
+    if (element) {
+      pendingFocus.current = null;
+      element.focus({ preventScroll: true });
+      element.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [focusedItemId, visibleRows]);
 
   const visibleRowIndexById = useMemo(() => {
     const map = new Map<string, number>();
@@ -524,12 +563,40 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
     visibleRows[0]?.item.id ??
     null;
 
+  const first = Math.max(0, Math.min(scrollRow, visibleRows.length - 1) - TREE_OVERSCAN);
+  const end = Math.min(
+    visibleRows.length,
+    first + Math.ceil(TREE_MAX_HEIGHT / TREE_ROW_STRIDE) + 2 * TREE_OVERSCAN,
+  );
+  const mounted = new Set<number>();
+  for (let index = first; index < end; index++) mounted.add(index);
+  for (const id of [tabbableItemId, targetItemId]) {
+    const index = id == null ? undefined : visibleRowIndexById.get(id);
+    if (index !== undefined) mounted.add(index);
+  }
+
   const hasPendingSessionSelection =
     selectedSessionReference !== null && selectedSessionReference !== activeSessionReference;
   const openMenuSessionReference = menuSession ? getSessionReferenceKey(menuSession) : null;
 
   const handleRowKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>, row: VisibleTreeRow) => {
+      if (
+        (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) &&
+        row.item.session
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openSessionMenu(
+          row.item.session,
+          event.currentTarget,
+          event.target instanceof HTMLElement ? event.target : event.currentTarget,
+          true,
+        );
+        return;
+      }
+
+      if (event.target !== event.currentTarget) return;
       const index = visibleRowIndexById.get(row.item.id);
       if (index === undefined) return;
 
@@ -596,15 +663,6 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
         }
         return;
       }
-
-      if (
-        (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) &&
-        row.item.session
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        openSessionMenu(row.item.session, event.currentTarget, event.currentTarget);
-      }
     },
     [
       focusItem,
@@ -618,122 +676,150 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
   );
 
   return (
-    <div role="tree" aria-label={t("Sessions")} className="session-tree flex flex-col gap-0.5">
-      {visibleRows.map((row) => {
-        const { item, level, hasChildren, expanded } = row;
-        const isSession = item.kind === "session" && item.session !== undefined;
-        const reference = item.sessionReference;
-        const isActive = isSession && reference === activeSessionReference;
-        const isSelected = isSession && reference === selectedSessionReference;
-        const isHighlighted =
-          (isActive && !hasPendingSessionSelection) ||
-          (isSelected && (hasPendingSessionSelection || activeSessionReference === null));
-        const isMenuOpen = isSession && reference === openMenuSessionReference;
+    <div
+      role="tree"
+      ref={treeRef}
+      aria-label={t("Sessions")}
+      className="session-tree h-[min(560px,calc(100vh-410px))] min-h-56 overflow-y-auto"
+      onScroll={(event) =>
+        setScrollRow(Math.floor(event.currentTarget.scrollTop / TREE_ROW_STRIDE))
+      }
+    >
+      <div
+        role="presentation"
+        className="relative"
+        style={{ height: visibleRows.length * TREE_ROW_STRIDE }}
+      >
+        {[...mounted]
+          .sort((a, b) => a - b)
+          .map((index) => {
+            const row = visibleRows[index]!;
+            const { item, level, hasChildren, expanded } = row;
+            const isSession = item.kind === "session" && item.session !== undefined;
+            const reference = item.sessionReference;
+            const isActive = isSession && reference === activeSessionReference;
+            const isSelected = isSession && reference === selectedSessionReference;
+            const isHighlighted =
+              (isActive && !hasPendingSessionSelection) ||
+              (isSelected && (hasPendingSessionSelection || activeSessionReference === null));
+            const isMenuOpen = isSession && reference === openMenuSessionReference;
 
-        return (
-          <div
-            key={item.id}
-            ref={(element) => registerRowRef(item.id, element)}
-            role="treeitem"
-            tabIndex={item.id === tabbableItemId ? 0 : -1}
-            aria-level={level}
-            aria-expanded={hasChildren ? expanded : undefined}
-            aria-selected={isSession ? isActive || isSelected : undefined}
-            aria-label={item.label}
-            data-active={isActive ? "true" : undefined}
-            data-selected={isSelected ? "true" : undefined}
-            data-session-reference={reference}
-            style={level > 1 ? { paddingLeft: `${(level - 1) * 12 + 4}px` } : undefined}
-            onFocus={() => setFocusedItemId(item.id)}
-            onKeyDown={(event) => handleRowKeyDown(event, row)}
-            onClick={() => {
-              if (item.session) onSelectSession(item.session);
-              else if (hasChildren) toggleExpanded(item.id);
-            }}
-            className={cn(
-              "group/tree-row motion-hover relative flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs select-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
-              isHighlighted
-                ? "bg-[var(--console-sidebar-accent)] font-medium text-[var(--console-text)]"
-                : "text-[var(--console-text-secondary)] hover:bg-[var(--console-sidebar-accent)]/60 hover:text-[var(--console-text)]",
-              isSelected &&
-                hasPendingSessionSelection &&
-                "ring-1 ring-[var(--brand)]/50 ring-inset",
-            )}
-          >
-            {level > 1 ? (
-              <span
-                aria-hidden="true"
-                style={{ left: `${(level - 1) * 12 - 2}px` }}
-                className="pointer-events-none absolute top-0 bottom-0 w-px bg-[var(--console-border-strong)]"
-              />
-            ) : null}
-
-            {hasChildren ? (
-              isSession ? (
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label={t("Sub-sessions")}
-                  aria-expanded={expanded}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    toggleExpanded(item.id);
-                  }}
-                  className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
-                >
-                  <ChevronRight
-                    aria-hidden="true"
-                    className={cn(
-                      "size-3 transition-transform duration-150",
-                      expanded && "rotate-90",
-                    )}
-                  />
-                </button>
-              ) : (
-                <ChevronRight
-                  aria-hidden="true"
-                  className={cn(
-                    "size-3 shrink-0 text-[var(--console-muted)] transition-transform duration-150",
-                    expanded && "rotate-90",
-                  )}
-                />
-              )
-            ) : null}
-
-            <span className="min-w-0 flex-1 truncate" title={item.label}>
-              {item.label}
-            </span>
-
-            {item.count !== undefined ? (
-              <span className="console-mono shrink-0 text-[10.5px] text-[var(--console-muted)]">
-                {item.count}
-              </span>
-            ) : null}
-
-            {isSession && item.session ? (
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label={t("Session options")}
-                aria-haspopup="menu"
-                aria-expanded={isMenuOpen}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openSessionMenu(item.session!, event.currentTarget, event.currentTarget);
+            return (
+              <div
+                key={item.id}
+                ref={(element) => registerRowRef(item.id, element)}
+                role="treeitem"
+                tabIndex={item.id === tabbableItemId ? 0 : -1}
+                aria-level={level}
+                aria-posinset={row.position}
+                aria-setsize={row.siblingCount}
+                aria-expanded={hasChildren ? expanded : undefined}
+                aria-selected={isSession ? isHighlighted : undefined}
+                aria-label={item.label}
+                data-active={isActive ? "true" : undefined}
+                data-selected={isSelected ? "true" : undefined}
+                data-session-reference={reference}
+                style={{
+                  top: index * TREE_ROW_STRIDE,
+                  height: TREE_ROW_STRIDE - 2,
+                  paddingLeft: level > 1 ? (level - 1) * 12 + 4 : undefined,
+                }}
+                onFocus={() => setFocusedItemId(item.id)}
+                onKeyDown={(event) => handleRowKeyDown(event, row)}
+                onClick={() => {
+                  if (item.session) onSelectSession(item.session);
+                  else if (hasChildren) toggleExpanded(item.id);
                 }}
                 className={cn(
-                  "motion-hover motion-press inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
-                  isMenuOpen || isActive || isSelected
-                    ? "opacity-100"
-                    : "opacity-0 group-focus-within/tree-row:opacity-100 group-hover/tree-row:opacity-100",
+                  "group/tree-row motion-hover absolute inset-x-0 flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs select-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+                  isHighlighted
+                    ? "bg-[var(--console-sidebar-accent)] font-medium text-[var(--console-text)]"
+                    : "text-[var(--console-text-secondary)] hover:bg-[var(--console-sidebar-accent)]/60 hover:text-[var(--console-text)]",
+                  isSelected &&
+                    hasPendingSessionSelection &&
+                    "ring-1 ring-[var(--brand)]/50 ring-inset",
                 )}
               >
-                <MoreHorizontal className="size-3.5" aria-hidden="true" />
-              </button>
-            ) : null}
-          </div>
-        );
-      })}
+                {level > 1 ? (
+                  <span
+                    aria-hidden="true"
+                    style={{ left: `${(level - 1) * 12 - 2}px` }}
+                    className="pointer-events-none absolute top-0 bottom-0 w-px bg-[var(--console-border-strong)]"
+                  />
+                ) : null}
+
+                {hasChildren ? (
+                  isSession ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={t("Sub-sessions")}
+                      aria-expanded={expanded}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleExpanded(item.id);
+                      }}
+                      className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-[var(--console-muted)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)]"
+                    >
+                      <ChevronRight
+                        aria-hidden="true"
+                        className={cn(
+                          "size-3 transition-transform duration-150",
+                          expanded && "rotate-90",
+                        )}
+                      />
+                    </button>
+                  ) : (
+                    <ChevronRight
+                      aria-hidden="true"
+                      className={cn(
+                        "size-3 shrink-0 text-[var(--console-muted)] transition-transform duration-150",
+                        expanded && "rotate-90",
+                      )}
+                    />
+                  )
+                ) : null}
+
+                <span className="min-w-0 flex-1 truncate" title={item.label}>
+                  {item.label}
+                </span>
+
+                {item.count !== undefined ? (
+                  <span className="console-mono shrink-0 text-[10.5px] text-[var(--console-muted)]">
+                    {item.count}
+                  </span>
+                ) : null}
+
+                {isSession && item.session ? (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={t("Session options")}
+                    aria-haspopup="menu"
+                    aria-expanded={isMenuOpen}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openSessionMenu(
+                        item.session!,
+                        event.currentTarget,
+                        event.currentTarget,
+                        event.detail === 0,
+                      );
+                    }}
+                    className={cn(
+                      "motion-hover motion-press inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-transparent text-[var(--console-muted)] hover:border-[var(--console-border)] hover:bg-[var(--console-surface-muted)] hover:text-[var(--console-text)] focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:outline-none",
+                      isMenuOpen || isActive || isSelected
+                        ? "opacity-100"
+                        : "opacity-0 group-focus-within/tree-row:opacity-100 group-hover/tree-row:opacity-100",
+                    )}
+                  >
+                    <MoreHorizontal className="size-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+      </div>
 
       <Menu.Root
         open={menuSession !== null}
@@ -751,6 +837,11 @@ export const SessionTreeSidebar = memo(function SessionTreeSidebar({
             className="z-40"
           >
             <Menu.Popup
+              onFocus={(event) => {
+                if (menuKeyboardOpen.current && event.target === event.currentTarget) {
+                  event.currentTarget.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+                }
+              }}
               finalFocus={menuTriggerRef}
               className="motion-menu w-40 rounded-md border border-[var(--console-border)] bg-[var(--console-surface)] p-1 shadow-[var(--shadow-overlay)] focus-visible:outline-none"
             >

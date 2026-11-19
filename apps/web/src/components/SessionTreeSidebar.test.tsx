@@ -211,7 +211,7 @@ describe("SessionTreeSidebar interaction and live updates", () => {
       <SessionTreeSidebar
         sessions={[session]}
         activeSessionReference={reference}
-        selectedSessionReference={reference}
+        selection={{ reference }}
         onSelectSession={() => {}}
         bookmarkedSessionReferences={new Set()}
         onCopySessionAsMarkdown={() => {}}
@@ -245,7 +245,7 @@ describe("SessionTreeSidebar interaction and live updates", () => {
     const alphaRef = getSessionReferenceKey(alpha);
     const props = {
       activeSessionReference: alphaRef,
-      selectedSessionReference: alphaRef,
+      selection: { reference: alphaRef },
       onSelectSession: vi.fn(),
       bookmarkedSessionReferences: new Set<string>(),
       onCopySessionAsMarkdown: vi.fn(),
@@ -320,9 +320,7 @@ describe("SessionTreeSidebar interaction and live updates", () => {
       groupByProject: false,
     };
 
-    const { rerender } = render(
-      <SessionTreeSidebar {...baseProps} selectedSessionReference={null} />,
-    );
+    const { rerender } = render(<SessionTreeSidebar {...baseProps} selection={null} />);
 
     expect(screen.queryByRole("treeitem", { name: "Nested worker" })).toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
@@ -331,7 +329,7 @@ describe("SessionTreeSidebar interaction and live updates", () => {
     rerender(
       <SessionTreeSidebar
         {...baseProps}
-        selectedSessionReference={getSessionReferenceKey(child)}
+        selection={{ reference: getSessionReferenceKey(child) }}
       />,
     );
 
@@ -344,7 +342,7 @@ describe("SessionTreeSidebar interaction and live updates", () => {
     rerender(
       <SessionTreeSidebar
         {...baseProps}
-        selectedSessionReference={getSessionReferenceKey(second)}
+        selection={{ reference: getSessionReferenceKey(second) }}
       />,
     );
 
@@ -363,7 +361,7 @@ describe("SessionTreeSidebar interaction and live updates", () => {
       <SessionTreeSidebar
         sessions={[session]}
         activeSessionReference={null}
-        selectedSessionReference={null}
+        selection={null}
         onSelectSession={onSelectSession}
         bookmarkedSessionReferences={new Set()}
         onCopySessionAsMarkdown={vi.fn()}

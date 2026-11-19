@@ -103,5 +103,9 @@ export function useSidebarKeyboardNavigation({
     return () => window.removeEventListener("keydown", handleKeydown);
   }, []);
 
-  return { selectedSessionReference, selectSession };
+  return {
+    selectedSessionReference,
+    selection: selection?.scope === selectionScope ? selection : null,
+    selectSession,
+  };
 }
