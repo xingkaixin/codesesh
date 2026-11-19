@@ -1,20 +1,13 @@
 use super::cursor;
 use crate::model::*;
 use anyhow::Result;
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 #[cfg(test)]
 mod tests;
 
-fn json_column<T: serde::de::DeserializeOwned>(row: &Row<'_>, column: &str) -> rusqlite::Result<T> {
-    let text: String = row.get(column)?;
-    serde_json::from_str(&text).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            row.as_ref().column_index(column).unwrap_or(0),
-            rusqlite::types::Type::Text,
-            Box::new(error),
-        )
-    })
+pub fn cursor_message_count(encoded: &str) -> Option<usize> {
+    parse_cursor(encoded).map(|(count, _)| count)
 }
 
 pub fn detail(connection: &Connection, head: SessionHead) -> Result<Option<SessionDetail>> {
@@ -100,8 +93,11 @@ pub fn visit_detail_message_page(
     let end = start
         .saturating_add(limit.unwrap_or(count as usize))
         .min(count as usize);
-    let mut statement = connection.prepare(
-        "SELECT * FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? AND message_index<? ORDER BY message_index",
+    let mut statement = connection.prepare_cached(
+        "SELECT message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated \
+         FROM messages \
+         WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? AND message_index<? \
+         ORDER BY message_index",
     )?;
     let rows = statement.query_map(
         params![
@@ -112,46 +108,57 @@ pub fn visit_detail_message_page(
             end as i64
         ],
         |row| {
-            let role: String = row.get("role")?;
-            let tokens: Option<String> = row.get("tokens_json")?;
-            let raw_parts = super::body::unpack(row.get_ref("parts_json")?)?.into_owned();
-            let cost_source: Option<String> = row.get("cost_source")?;
+            let message_index: i64 = row.get(0)?;
+            let role: String = row.get(2)?;
+            let tokens_json: Option<String> = row.get(9)?;
+            let tokens = tokens_json
+                .as_deref()
+                .map(|text| {
+                    serde_json::from_str(text).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            9,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })
+                })
+                .transpose()?;
+            let cost_source: Option<String> = row.get(11)?;
+            let raw_parts = super::body::unpack(row.get_ref(12)?)?.into_owned();
+            let parts_format_version: i64 = row.get(13)?;
             let message = Message {
                 cost_inputs: Vec::new(),
                 cost_breakdown: None,
-                id: row.get("message_id")?,
+                id: row.get(1)?,
                 role: match role.as_str() {
                     "user" => Role::User,
                     "assistant" => Role::Assistant,
                     "tool" => Role::Tool,
                     _ => {
                         return Err(rusqlite::Error::InvalidColumnType(
-                            row.as_ref().column_index("role")?,
+                            2,
                             "role".into(),
                             rusqlite::types::Type::Text,
                         ));
                     }
                 },
-                agent: row.get("agent")?,
-                time_created: row.get("time_created")?,
-                time_completed: row.get("time_completed")?,
-                mode: row.get("mode")?,
-                model: row.get("model")?,
-                provider: row.get("provider")?,
-                tokens: tokens
-                    .as_ref()
-                    .map(|_| json_column(row, "tokens_json"))
-                    .transpose()?,
-                cost: row.get("cost")?,
+                agent: row.get(5)?,
+                time_created: row.get(3)?,
+                time_completed: row.get(4)?,
+                mode: row.get(6)?,
+                model: row.get(7)?,
+                provider: row.get(8)?,
+                tokens,
+                cost: row.get(10)?,
                 cost_source: match cost_source.as_deref() {
                     Some("recorded") => Some(CostSource::Recorded),
                     Some("estimated") => Some(CostSource::Estimated),
                     _ => None,
                 },
-                parts: if row.get::<_, i64>("parts_format_version")? >= 1 {
+                parts: if parts_format_version >= 1 {
                     serde_json::from_str(&raw_parts).map_err(|error| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            row.as_ref().column_index("parts_json").unwrap_or(0),
+                            12,
                             rusqlite::types::Type::Text,
                             Box::new(error),
                         )
@@ -159,17 +166,17 @@ pub fn visit_detail_message_page(
                 } else {
                     super::legacy_parts::normalize(&raw_parts)
                 },
-                subagent_id: row.get("subagent_id")?,
-                nickname: row.get("nickname")?,
-                automated: row.get::<_, bool>("automated")?.then_some(true),
+                subagent_id: row.get(15)?,
+                nickname: row.get(16)?,
+                automated: row.get::<_, bool>(17)?.then_some(true),
             };
             Ok((
                 message,
-                row.get::<_, Option<String>>("content_chain_digest")?,
+                row.get::<_, Option<String>>(14)?,
                 raw_parts,
-                row.get::<_, i64>("parts_format_version")?,
-                tokens,
-                row.get::<_, i64>("message_index")?,
+                parts_format_version,
+                tokens_json,
+                message_index,
             ))
         },
     )?;

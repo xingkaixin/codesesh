@@ -28,7 +28,14 @@ impl Cache {
             version == CACHE_SCHEMA_VERSION,
             "Cache schema changed during connection replacement"
         );
-        connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA temp_store=FILE; PRAGMA journal_mode=WAL; PRAGMA cache_size=-16384")?;
+        let synchronous = if self.synchronous_normal {
+            "NORMAL"
+        } else {
+            "FULL"
+        };
+        connection.execute_batch(&format!(
+            "PRAGMA foreign_keys=ON; PRAGMA temp_store=FILE; PRAGMA journal_mode=WAL; PRAGMA synchronous={synchronous}; PRAGMA cache_size=-16384"
+        ))?;
         let registry: Option<String> = self
             .connection
             .query_row(

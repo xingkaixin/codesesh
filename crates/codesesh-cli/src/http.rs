@@ -1,5 +1,6 @@
 mod catalog;
 mod compression;
+mod etag;
 mod event_buffer;
 mod events;
 mod logs;
@@ -51,6 +52,7 @@ pub struct Options {
 }
 
 pub struct State {
+    etag_namespace: uuid::Uuid,
     hub_enabled: bool,
     runtime: Runtime,
     pricing: codesesh_core::pricing::PricingController,
@@ -90,6 +92,7 @@ impl State {
                 .map(codesesh_core::projects::create_project_scope_matcher),
         };
         Self {
+            etag_namespace: uuid::Uuid::new_v4(),
             hub_enabled: false,
             runtime,
             pricing,
@@ -107,9 +110,6 @@ impl State {
             pricing_unmatched_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             pricing_write_lock: Arc::new(AsyncMutex::new(())),
         }
-    }
-    fn snapshot(&self) -> Arc<Vec<SessionHead>> {
-        Arc::new(scoped_heads(&self.runtime.snapshot(), &self.query_scope))
     }
     async fn aliases(&self) -> HashMap<SessionReference, String> {
         let saved = self.saved.clone();
@@ -264,23 +264,36 @@ fn decorate_wire(head: &mut WireSessionHead, aliases: &HashMap<SessionReference,
 #[cfg(test)]
 mod tests;
 
+fn matches_scope(head: &SessionHead, scope: &codesesh_core::search::QueryScope) -> bool {
+    scope
+        .source_node_id
+        .as_ref()
+        .is_none_or(|source| source == &head.reference.source_node_id)
+        && scope.agents.contains(&head.reference.agent_name)
+        && scope
+            .project_scope
+            .as_ref()
+            .is_none_or(|p| codesesh_core::projects::matches_project_scope(head, p))
+}
+
 fn scoped_heads(
     heads: &[SessionHead],
     scope: &codesesh_core::search::QueryScope,
 ) -> Vec<SessionHead> {
     heads
         .iter()
-        .filter(|s| {
-            scope
-                .source_node_id
-                .as_ref()
-                .is_none_or(|source| source == &s.reference.source_node_id)
-                && scope.agents.contains(&s.reference.agent_name)
-                && scope
-                    .project_scope
-                    .as_ref()
-                    .is_none_or(|p| codesesh_core::projects::matches_project_scope(s, p))
-        })
+        .filter(|s| matches_scope(s, scope))
         .cloned()
+        .collect()
+}
+
+fn scoped_shared_heads(
+    heads: &[Arc<SessionHead>],
+    scope: &codesesh_core::search::QueryScope,
+) -> Vec<SessionHead> {
+    heads
+        .iter()
+        .filter(|s| matches_scope(s, scope))
+        .map(|s| (**s).clone())
         .collect()
 }

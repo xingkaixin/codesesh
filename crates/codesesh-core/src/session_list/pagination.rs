@@ -68,8 +68,6 @@ impl<T: Clone, V: Clone> SnapshotPaginator<T, V> {
             .collect();
         query.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
         let cursor = cursor.filter(|c| !c.is_empty());
-        let (snapshot, offset, retain);
-        let fresh;
         if let Some(encoded) = cursor {
             if encoded.len() > 512
                 || !encoded
@@ -96,7 +94,7 @@ impl<T: Clone, V: Clone> SnapshotPaginator<T, V> {
             {
                 return Err(PaginationError::InvalidCursor);
             }
-            snapshot = self
+            let snapshot = self
                 .snapshots
                 .iter()
                 .find(|s| s.id == snapshot_id)
@@ -104,50 +102,56 @@ impl<T: Clone, V: Clone> SnapshotPaginator<T, V> {
             if snapshot.query != query || number >= snapshot.items.len() as f64 {
                 return Err(PaginationError::InvalidCursor);
             }
-            offset = number as usize;
-            retain = false;
-        } else {
-            let (items, view) = load();
-            fresh = Snapshot {
-                id: uuid::Uuid::new_v4().to_string(),
-                query,
-                expires: now.saturating_add(60_000),
+            let offset = number as usize;
+            let end = offset.saturating_add(limit).min(snapshot.items.len());
+            let next_cursor = (end < snapshot.items.len()).then(|| {
+                URL_SAFE_NO_PAD.encode(
+                    serde_json::to_vec(&Cursor {
+                        version: 1,
+                        snapshot: snapshot.id.clone(),
+                        offset: end as u64,
+                    })
+                    .expect("serializable cursor"),
+                )
+            });
+            return Ok(Page {
+                items: snapshot.items[offset..end].to_vec(),
+                view: snapshot.view.clone(),
+                next_cursor,
+            });
+        }
+        let (items, view) = load();
+        if items.len() <= limit {
+            return Ok(Page {
                 items,
                 view,
-            };
-            snapshot = &fresh;
-            offset = 0;
-            retain = true;
+                next_cursor: None,
+            });
         }
-        let end = offset.saturating_add(limit).min(snapshot.items.len());
-        let next_cursor = (end < snapshot.items.len()).then(|| {
-            URL_SAFE_NO_PAD.encode(
-                serde_json::to_vec(&Cursor {
-                    version: 1,
-                    snapshot: snapshot.id.clone(),
-                    offset: end as u64,
-                })
-                .expect("serializable cursor"),
-            )
-        });
+        let id = uuid::Uuid::new_v4().to_string();
+        let next_cursor = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&Cursor {
+                version: 1,
+                snapshot: id.clone(),
+                offset: limit as u64,
+            })
+            .expect("serializable cursor"),
+        );
         let page = Page {
-            items: snapshot.items[offset..end].to_vec(),
-            view: snapshot.view.clone(),
-            next_cursor,
+            items: items[..limit].to_vec(),
+            view: view.clone(),
+            next_cursor: Some(next_cursor),
         };
-        if retain && page.next_cursor.is_some() {
-            let retained = Snapshot {
-                id: snapshot.id.clone(),
-                query: snapshot.query.clone(),
-                expires: snapshot.expires,
-                items: snapshot.items.clone(),
-                view: snapshot.view.clone(),
-            };
-            if self.snapshots.len() >= 32 {
-                self.snapshots.pop_front();
-            }
-            self.snapshots.push_back(retained);
+        if self.snapshots.len() >= 32 {
+            self.snapshots.pop_front();
         }
+        self.snapshots.push_back(Snapshot {
+            id,
+            query,
+            expires: now.saturating_add(60_000),
+            items,
+            view,
+        });
         Ok(page)
     }
 }

@@ -20,7 +20,7 @@ use crate::{
 };
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 pub(crate) const CACHE_SCHEMA_VERSION: i64 = 39;
 
@@ -33,7 +33,7 @@ pub struct StorageProgress {
 pub(crate) use read::detail as detail_from_connection;
 #[cfg(test)]
 pub(crate) use read::detail_with_cursor;
-pub use read::visit_detail_message_page;
+pub use read::{cursor_message_count, visit_detail_message_page};
 pub use snapshot::load as snapshot_from_connection;
 pub fn head_from_connection(
     connection: &Connection,
@@ -52,11 +52,18 @@ pub struct Cache {
     connection: Connection,
     snapshot_data_version: std::cell::Cell<Option<i64>>,
     reclaim_connection: std::cell::Cell<bool>,
+    synchronous_normal: bool,
 }
 
 impl Cache {
     pub fn connection(&self) -> &Connection {
         &self.connection
+    }
+
+    pub(crate) fn set_synchronous_normal(&mut self) -> Result<()> {
+        self.connection.execute_batch("PRAGMA synchronous=NORMAL")?;
+        self.synchronous_normal = true;
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<Vec<SessionHead>> {
@@ -70,9 +77,9 @@ impl Cache {
 
     pub(crate) fn refresh_snapshot(
         &self,
-        previous: &[SessionHead],
+        previous: &[Arc<SessionHead>],
         changed: &[SessionReference],
-    ) -> Result<Vec<SessionHead>> {
+    ) -> Result<Vec<Arc<SessionHead>>> {
         let transaction = self.connection.unchecked_transaction()?;
         let references = {
             let mut query = transaction.prepare(
@@ -92,21 +99,32 @@ impl Cache {
         let heads = if self.snapshot_data_version.get() != Some(version) {
             // Another connection may have changed headers outside this publication.
             snapshot::load(&transaction)?
+                .into_iter()
+                .map(Arc::new)
+                .collect()
         } else {
             let previous: std::collections::HashMap<_, _> = previous
                 .iter()
                 .map(|head| (&head.reference, head))
                 .collect();
             let changed: std::collections::HashSet<_> = changed.iter().collect();
+            let to_load: Vec<_> = references
+                .iter()
+                .filter(|reference| {
+                    changed.contains(*reference) || !previous.contains_key(*reference)
+                })
+                .collect();
+            let mut loaded = snapshot::load_many(&transaction, &to_load)?;
             references
                 .into_iter()
                 .map(|reference| {
                     if !changed.contains(&reference)
                         && let Some(head) = previous.get(&reference)
                     {
-                        return Ok((*head).clone());
+                        return Ok(Arc::clone(head));
                     }
-                    self.head(&reference)?
+                    loaded
+                        .remove(&reference)
                         .ok_or_else(|| anyhow::anyhow!("published session is missing"))
                 })
                 .collect::<Result<Vec<_>>>()?
@@ -169,6 +187,7 @@ impl Cache {
             connection,
             snapshot_data_version: std::cell::Cell::new(None),
             reclaim_connection: std::cell::Cell::new(false),
+            synchronous_normal: false,
         })
     }
 
@@ -203,6 +222,7 @@ impl Cache {
             connection,
             snapshot_data_version: std::cell::Cell::new(None),
             reclaim_connection,
+            synchronous_normal: false,
         })
     }
 
@@ -368,15 +388,74 @@ impl Cache {
                     params![reference.source_node_id, reference.agent_name, reference.session_id, session.detail.messages.len() as i64],
                 )?;
             }
-            transaction.execute(
-                "INSERT INTO sessions(source_node_id,agent_name,session_id,sort_index,title,source_path,directory,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET sort_index=excluded.sort_index,title=excluded.title,source_path=excluded.source_path,directory=excluded.directory,project_identity_kind=excluded.project_identity_kind,project_identity_key=excluded.project_identity_key,project_display_name=excluded.project_display_name,project_identity_resolver_revision=excluded.project_identity_resolver_revision,project_identity_input_signature=excluded.project_identity_input_signature,time_created=excluded.time_created,time_updated=excluded.time_updated,activity_time=excluded.activity_time,message_count=excluded.message_count,total_input_tokens=excluded.total_input_tokens,total_output_tokens=excluded.total_output_tokens,total_cost=excluded.total_cost,smart_tags_json=excluded.smart_tags_json,smart_tags_source_updated_at=excluded.smart_tags_source_updated_at,smart_tags_classifier_revision=excluded.smart_tags_classifier_revision,publication_id=NULL",
-                params![reference.source_node_id,reference.agent_name,reference.session_id,order as i64,head.title,session.source.to_string_lossy(),head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.stats.message_count as i64,head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cost,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision],
-            )?;
+            // Upsert all session columns in one statement so the 29-column idx_sessions_heads index is updated once.
+            transaction
+                .prepare_cached(
+                    "INSERT INTO sessions(\
+                     source_node_id,agent_name,session_id,sort_index,title,source_path,directory,\
+                     parent_agent_name,parent_session_id,project_identity_kind,project_identity_key,\
+                     project_display_name,project_identity_resolver_revision,project_identity_input_signature,\
+                     time_created,time_updated,activity_time,message_count,total_input_tokens,\
+                     total_output_tokens,total_cache_read_tokens,total_cache_create_tokens,total_cost,\
+                     cost_source,total_tokens,model_usage_json,smart_tags_json,\
+                     smart_tags_source_updated_at,smart_tags_classifier_revision,meta_json,head_meta_json\
+                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+                     ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET \
+                     sort_index=excluded.sort_index,title=excluded.title,source_path=excluded.source_path,\
+                     directory=excluded.directory,parent_agent_name=excluded.parent_agent_name,\
+                     parent_session_id=excluded.parent_session_id,\
+                     project_identity_kind=excluded.project_identity_kind,\
+                     project_identity_key=excluded.project_identity_key,\
+                     project_display_name=excluded.project_display_name,\
+                     project_identity_resolver_revision=excluded.project_identity_resolver_revision,\
+                     project_identity_input_signature=excluded.project_identity_input_signature,\
+                     time_created=excluded.time_created,time_updated=excluded.time_updated,\
+                     activity_time=excluded.activity_time,message_count=excluded.message_count,\
+                     total_input_tokens=excluded.total_input_tokens,\
+                     total_output_tokens=excluded.total_output_tokens,\
+                     total_cache_read_tokens=excluded.total_cache_read_tokens,\
+                     total_cache_create_tokens=excluded.total_cache_create_tokens,\
+                     total_cost=excluded.total_cost,cost_source=excluded.cost_source,\
+                     total_tokens=excluded.total_tokens,model_usage_json=excluded.model_usage_json,\
+                     smart_tags_json=excluded.smart_tags_json,\
+                     smart_tags_source_updated_at=excluded.smart_tags_source_updated_at,\
+                     smart_tags_classifier_revision=excluded.smart_tags_classifier_revision,\
+                     meta_json=excluded.meta_json,head_meta_json=excluded.head_meta_json,publication_id=NULL",
+                )?
+                .execute(params![
+                    reference.source_node_id,
+                    reference.agent_name,
+                    reference.session_id,
+                    order as i64,
+                    head.title,
+                    session.source.to_string_lossy(),
+                    head.directory,
+                    head.parent_reference.as_ref().map(|parent| &parent.agent_name),
+                    head.parent_reference.as_ref().map(|parent| &parent.session_id),
+                    head.project_identity.kind,
+                    head.project_identity.key,
+                    head.project_identity.display_name,
+                    head.project_identity_resolver_revision,
+                    head.project_identity_input_signature,
+                    head.time_created,
+                    head.time_updated,
+                    head.time_updated,
+                    head.stats.message_count as i64,
+                    head.stats.total_input_tokens,
+                    head.stats.total_output_tokens,
+                    head.stats.total_cache_read_tokens,
+                    head.stats.total_cache_create_tokens,
+                    head.stats.total_cost,
+                    head.stats.cost_source.as_ref().map(CostSource::as_str),
+                    head.stats.total_tokens,
+                    head.model_usage.as_ref().map(json::stringify).transpose()?,
+                    serde_json::to_string(&head.smart_tags)?,
+                    head.smart_tags_source_updated_at,
+                    head.smart_tags_classifier_revision,
+                    json::stringify(&metadata)?,
+                    head_metadata,
+                ])?;
             search_text::index_title_for_reference(transaction, reference, &head.title)?;
-            transaction.execute(
-                "UPDATE sessions SET parent_agent_name=?, parent_session_id=?, total_cache_read_tokens=?, total_cache_create_tokens=?, cost_source=?, total_tokens=?, model_usage_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
-                params![head.parent_reference.as_ref().map(|parent| &parent.agent_name),head.parent_reference.as_ref().map(|parent| &parent.session_id),head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.cost_source.as_ref().map(CostSource::as_str),head.stats.total_tokens,head.model_usage.as_ref().map(json::stringify).transpose()?,reference.source_node_id,reference.agent_name,reference.session_id],
-            )?;
             let message_started = std::time::Instant::now();
             let mut digest = cursor::initial(reference);
             let mut indexed_bytes = 0;
@@ -422,16 +501,6 @@ impl Cache {
             for activity in &session.detail.file_activity {
                 transaction.execute("INSERT INTO session_file_activity(source_node_id,agent_name,session_id,project_identity_key,path,kind,count,latest_time) VALUES(?,?,?,?,?,?,?,?)",params![reference.source_node_id,reference.agent_name,reference.session_id,activity.project_identity_key,activity.path,activity.kind,activity.count as i64,activity.latest_time])?;
             }
-            transaction.execute(
-                "UPDATE sessions SET meta_json=?,head_meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
-                params![
-                    json::stringify(&metadata)?,
-                    head_metadata,
-                    reference.source_node_id,
-                    reference.agent_name,
-                    reference.session_id
-                ],
-            )?;
             facts::write(transaction, reference, &session.detail.messages)?;
             transaction.execute(
                 "DELETE FROM pending_reindex WHERE source_node_id=? AND agent_name=? AND session_id=?",
