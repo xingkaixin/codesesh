@@ -7,6 +7,7 @@ import { getDisplayPath } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   buildSemanticOutputContent,
   normalizeToolName,
   toDisplayText,
@@ -16,6 +17,7 @@ import {
 } from "../tool-normalize";
 import { buildCodeExecutionStrategy } from "./code-execution";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileReadStrategy,
   buildSearchToolStrategy,
@@ -35,15 +37,19 @@ export function buildDeepChatToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
+  const includeOutput = options?.includeOutput ?? true;
   const toolKey = normalizeToolName(tool);
-  if (toolKey === "run_code") return buildCodeExecutionStrategy(tool, state, "typescript");
+  if (toolKey === "run_code") return buildCodeExecutionStrategy(tool, state, "typescript", options);
 
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   if (state.status === "error") {
     return {
       ...defaultStrategy,
-      outputContent: textOutput(state.errorValue || state.outputValue),
+      outputContent: includeOutput
+        ? textOutput(state.errorValue || state.outputValue)
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -59,7 +65,8 @@ export function buildDeepChatToolStrategy(
         state,
         filePath,
         displayPath,
-        text: toStringValue(state.outputValue),
+        includeOutput,
+        text: () => toStringValue(state.outputValue),
         details: [
           ...(typeof input.offset === "number"
             ? [{ label: t("Offset"), value: String(input.offset) }]
@@ -80,20 +87,24 @@ export function buildDeepChatToolStrategy(
       title: "write",
       secondaryText: displayPath || undefined,
       contentLabel: t("Request"),
-      outputContent: {
-        kind: "plain",
-        text: input.content,
-        language: detectLanguageByFilePath(filePath),
-        isCode: true,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: input.content,
+            language: detectLanguageByFilePath(filePath),
+            isCode: true,
+          }
+        : EMPTY_TOOL_OUTPUT,
       rawOutput: state.outputValue,
     };
   }
 
   if (toolKey === "glob" || toolKey === "grep") {
-    const options = toolKey === "glob" ? toRecord(input.options) : input;
-    const scope = Array.isArray(options.pathScope)
-      ? options.pathScope.map((path) => getDisplayPath(toPlainText(path), baseDirectory)).join(", ")
+    const optionsObj = toolKey === "glob" ? toRecord(input.options) : input;
+    const scope = Array.isArray(optionsObj.pathScope)
+      ? optionsObj.pathScope
+          .map((path) => getDisplayPath(toPlainText(path), baseDirectory))
+          .join(", ")
       : "";
     const strategy = buildSearchToolStrategy({
       defaultStrategy,
@@ -102,7 +113,15 @@ export function buildDeepChatToolStrategy(
       path: scope,
       pattern: toPlainText(input.query),
       baseDirectory,
+      includeOutput,
     });
+    if (!includeOutput) {
+      return {
+        ...strategy,
+        showInputPreview: true,
+        outputContent: EMPTY_TOOL_OUTPUT,
+      };
+    }
     const matches = Array.isArray(state.outputValue)
       ? state.outputValue.map((value) => {
           const match = toRecord(value);
@@ -131,6 +150,7 @@ export function buildDeepChatToolStrategy(
         command: toStringValue(input.command),
         description: toPlainText(input.description),
         baseDirectory,
+        includeOutput,
       }),
       details: toPlainText(input.cwd)
         ? [
@@ -141,7 +161,9 @@ export function buildDeepChatToolStrategy(
           ]
         : [],
       showInputPreview: true,
-      outputContent: buildSemanticOutputContent(state.outputValue) ?? textOutput(state.outputValue),
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : (buildSemanticOutputContent(state.outputValue) ?? textOutput(state.outputValue)),
     };
   }
 

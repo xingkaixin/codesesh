@@ -8,6 +8,7 @@ import { getDisplayPath } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   parseInputCandidate,
   toPlainText,
@@ -15,6 +16,7 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -25,22 +27,25 @@ export function buildAntigravityToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const input = toRecord(state.inputValue);
   const filePath =
     toPlainText(input.Path) || toPlainText(input.AbsolutePath) || toPlainText(input.TargetFile);
   const displayPath = getDisplayPath(filePath, baseDirectory);
-  const resultText =
+  const getResultText = () =>
     [...new Set([toStringValue(state.errorValue), toStringValue(state.outputValue)])]
       .filter(Boolean)
       .join("\n\n") || getOutputOrErrorText(state);
-  const resultContent = {
-    kind: "plain",
-    text: resultText,
-    language: "text",
-    isCode: false,
-  } as const;
+  const getResultContent = () =>
+    ({
+      kind: "plain",
+      text: getResultText(),
+      language: "text",
+      isCode: false,
+    }) as const;
 
   switch (tool.tool) {
     case "read_file":
@@ -50,13 +55,18 @@ export function buildAntigravityToolStrategy(
         state,
         filePath,
         displayPath,
-        text: resultText,
+        text: getResultText,
         isCode: state.status !== "error",
+        includeOutput,
       });
       return {
         ...read,
         showInputPreview: true,
-        outputContent: state.status === "error" ? resultContent : read.outputContent,
+        outputContent: !includeOutput
+          ? EMPTY_TOOL_OUTPUT
+          : state.status === "error"
+            ? getResultContent()
+            : read.outputContent,
       };
     }
     case "run_command": {
@@ -67,13 +77,14 @@ export function buildAntigravityToolStrategy(
         command: toStringValue(input.CommandLine),
         baseDirectory,
         includeCommandDetail: true,
+        includeOutput,
       });
       const cwd = getDisplayPath(toPlainText(input.Cwd), baseDirectory);
       return {
         ...shell,
         details: [...shell.details, ...(cwd ? [{ label: t("Workdir"), value: cwd }] : [])],
         showInputPreview: true,
-        outputContent: resultContent,
+        outputContent: includeOutput ? getResultContent() : EMPTY_TOOL_OUTPUT,
       };
     }
     case "write_file":
@@ -82,33 +93,42 @@ export function buildAntigravityToolStrategy(
     case "replace_file_content": {
       const isWrite = tool.tool === "write_file" || tool.tool === "write_to_file";
       const operation = isWrite ? "write" : "edit";
-      const sections: FileSectionItem[] = [
-        { label: t("Result"), operation, language: "text", isCode: false, text: resultText },
-      ];
-      const content = input.Content ?? input.CodeContent;
-      const target = input.Target ?? input.TargetContent;
-      const replacement = input.Replacement ?? input.ReplacementContent;
-      if (isWrite && typeof content === "string") {
-        sections.push({
-          label: t("Requested content"),
-          operation,
-          language: detectLanguageByFilePath(filePath),
-          isCode: true,
-          text: content,
-        });
-      } else if (!isWrite && typeof target === "string" && typeof replacement === "string") {
-        sections.push({
-          label: t("Requested changes"),
-          operation,
-          language: "diff",
-          isCode: true,
-          text: createPatch(displayPath || filePath, target, replacement),
-        });
-      }
       const edit = buildFileEditStrategy({
         defaultStrategy,
         displayPath,
-        outputContent: { kind: "file-sections", sections },
+        includeOutput,
+        outputContent: () => {
+          const sections: FileSectionItem[] = [
+            {
+              label: t("Result"),
+              operation,
+              language: "text",
+              isCode: false,
+              text: getResultText(),
+            },
+          ];
+          const content = input.Content ?? input.CodeContent;
+          const target = input.Target ?? input.TargetContent;
+          const replacement = input.Replacement ?? input.ReplacementContent;
+          if (isWrite && typeof content === "string") {
+            sections.push({
+              label: t("Requested content"),
+              operation,
+              language: detectLanguageByFilePath(filePath),
+              isCode: true,
+              text: content,
+            });
+          } else if (!isWrite && typeof target === "string" && typeof replacement === "string") {
+            sections.push({
+              label: t("Requested changes"),
+              operation,
+              language: "diff",
+              isCode: true,
+              text: createPatch(displayPath || filePath, target, replacement),
+            });
+          }
+          return { kind: "file-sections", sections };
+        },
       });
       return {
         ...edit,
@@ -117,26 +137,33 @@ export function buildAntigravityToolStrategy(
       };
     }
     case "swarm": {
-      const body = toStringValue(state.outputValue).replace(
-        /^Created At: [^\n]*\nCompleted At: [^\n]*\n/,
-        "",
-      );
-      const result = toRecord(parseInputCandidate(body));
+      const outputContent = !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : (() => {
+            const body = toStringValue(state.outputValue).replace(
+              /^Created At: [^\n]*\nCompleted At: [^\n]*\n/,
+              "",
+            );
+            const result = toRecord(parseInputCandidate(body));
+            return state.status !== "error" && Object.keys(result).length > 0
+              ? {
+                  kind: "property-list" as const,
+                  items: Object.entries(result).map(([label, value]) => ({ label, value })),
+                }
+              : getResultContent();
+          })();
       return {
         ...defaultStrategy,
         Icon: Bot,
         title: [tool.tool, toPlainText(input.action)].filter(Boolean).join(" · "),
         secondaryText: toPlainText(input.name) || undefined,
-        outputContent:
-          state.status !== "error" && Object.keys(result).length > 0
-            ? {
-                kind: "property-list",
-                items: Object.entries(result).map(([label, value]) => ({ label, value })),
-              }
-            : resultContent,
+        outputContent,
       };
     }
     default:
-      return { ...defaultStrategy, outputContent: resultContent };
+      return {
+        ...defaultStrategy,
+        outputContent: includeOutput ? getResultContent() : EMPTY_TOOL_OUTPUT,
+      };
   }
 }

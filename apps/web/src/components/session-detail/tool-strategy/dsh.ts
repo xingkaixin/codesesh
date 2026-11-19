@@ -11,6 +11,7 @@ import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   toPlainText,
   toRecord,
@@ -28,8 +29,10 @@ export function buildDshToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const input = toRecord(state.inputValue);
   const metadata = toRecord(state.metadataValue);
   const filePath = getFilePathFromInput(state.inputValue);
@@ -44,6 +47,7 @@ export function buildDshToolStrategy(
         command: toPlainText(input.command),
         description: toPlainText(input.description),
         baseDirectory,
+        includeOutput,
       });
       const workdir = toPlainText(input.workdir);
       if (!workdir) return shell;
@@ -67,21 +71,36 @@ export function buildDshToolStrategy(
       if (typeof metadata.totalLines === "number") {
         details.push({ label: t("Total"), value: String(metadata.totalLines) });
       }
-      return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath, details });
+      return buildFileReadStrategy({
+        defaultStrategy,
+        state,
+        filePath,
+        displayPath,
+        details,
+        includeOutput,
+      });
     }
 
     case "write":
-      return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+      return buildFileWriteStrategy({
+        defaultStrategy,
+        state,
+        filePath,
+        displayPath,
+        includeOutput,
+      });
 
     case "edit": {
-      const blocks = buildDshEditDiffBlocks(state, displayPath || filePath);
       return buildFileEditStrategy({
         defaultStrategy,
         displayPath,
-        outputContent:
-          blocks.length > 0
+        includeOutput,
+        outputContent: () => {
+          const blocks = buildDshEditDiffBlocks(state, displayPath || filePath);
+          return blocks.length > 0
             ? { kind: "structured-diff", blocks }
-            : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
+            : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false };
+        },
       });
     }
 
@@ -93,6 +112,7 @@ export function buildDshToolStrategy(
         path: toPlainText(input.path),
         pattern: toPlainText(input.pattern),
         baseDirectory,
+        includeOutput,
       });
       if (metadata.truncated === true) {
         search.details.push({ label: t("Output"), value: t("Truncated") });
@@ -111,6 +131,7 @@ export function buildDshToolStrategy(
         path: toPlainText(input.path),
         pattern: toPlainText(input.pattern),
         baseDirectory,
+        includeOutput,
       });
 
     // A DSH plugin can register any tool; the default card keeps its input and

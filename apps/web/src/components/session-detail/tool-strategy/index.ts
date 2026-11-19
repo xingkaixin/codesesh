@@ -12,7 +12,11 @@
  * Pure logic — no React. Consumed by SessionDetail's ToolItem / MessageItem.
  */
 import type { ToolPart } from "@codesesh/contract";
-import type { NormalizedToolState, ToolDisplayStrategy } from "../tool-normalize";
+import type {
+  NormalizedToolState,
+  ToolDisplayStrategy,
+  ToolStrategyOptions,
+} from "../tool-normalize";
 import { buildClaudeToolStrategy } from "./claudecode";
 import { buildOpencodeToolStrategy } from "./opencode";
 import { buildKimiToolStrategy } from "./kimi";
@@ -29,7 +33,12 @@ import { buildDefaultToolStrategy } from "./shared";
 import { buildDeepChatToolStrategy } from "./deepchat";
 import { buildAntigravityToolStrategy } from "./antigravity";
 
-export type { NormalizedToolState, ToolDisplayStrategy, ToolStatus } from "../tool-normalize";
+export type {
+  NormalizedToolState,
+  ToolDisplayStrategy,
+  ToolStatus,
+  ToolStrategyOptions,
+} from "../tool-normalize";
 export {
   getAssistantDisplayLabel,
   normalizeMessagesForDisplay,
@@ -46,6 +55,7 @@ type ToolStrategyBuilder = (
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ) => ToolDisplayStrategy;
 
 // Registered agents declare custom/default explicitly; the cross-package completeness
@@ -81,7 +91,8 @@ export function getToolDisplayStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
   const builder = TOOL_STRATEGY_BUILDERS[sessionAgentKey.toLowerCase()] ?? buildDefaultToolStrategy;
-  return builder(tool, state, baseDirectory);
+  return builder(tool, state, baseDirectory, options);
 }

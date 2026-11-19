@@ -10,6 +10,7 @@ import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   toPlainText,
   toRecord,
@@ -29,30 +30,46 @@ export function buildDroidToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const input = toRecord(state.inputValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
   switch (tool.tool) {
     case "Read":
-      return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+      return buildFileReadStrategy({
+        defaultStrategy,
+        state,
+        filePath,
+        displayPath,
+        includeOutput,
+      });
     case "Create":
-      return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+      return buildFileWriteStrategy({
+        defaultStrategy,
+        state,
+        filePath,
+        displayPath,
+        includeOutput,
+      });
     case "Edit": {
-      const blocks = buildStructuredDiffFromTexts(
-        displayPath || filePath,
-        toStringValue(input.old_str),
-        toStringValue(input.new_str),
-      );
       return buildFileEditStrategy({
         defaultStrategy,
         displayPath,
-        outputContent:
-          blocks.length > 0 && state.status !== "error"
+        includeOutput,
+        outputContent: () => {
+          const blocks = buildStructuredDiffFromTexts(
+            displayPath || filePath,
+            toStringValue(input.old_str),
+            toStringValue(input.new_str),
+          );
+          return blocks.length > 0 && state.status !== "error"
             ? { kind: "structured-diff", blocks }
-            : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
+            : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false };
+        },
       });
     }
     case "ApplyPatch": {
@@ -63,7 +80,8 @@ export function buildDroidToolStrategy(
       return buildFileEditStrategy({
         defaultStrategy,
         displayPath: files.join(", "),
-        outputContent:
+        includeOutput,
+        outputContent: () =>
           patch && state.status !== "error"
             ? { kind: "plain", text: patch, language: "diff", isCode: true }
             : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
@@ -76,6 +94,7 @@ export function buildDroidToolStrategy(
         title: "bash",
         command: toPlainText(input.command),
         baseDirectory,
+        includeOutput,
       });
     case "Grep":
       return buildSearchToolStrategy({
@@ -85,6 +104,7 @@ export function buildDroidToolStrategy(
         path: toPlainText(input.path),
         pattern: toPlainText(input.pattern),
         baseDirectory,
+        includeOutput,
       });
     case "Glob":
       return buildSearchToolStrategy({
@@ -94,6 +114,7 @@ export function buildDroidToolStrategy(
         path: toPlainText(input.folder),
         pattern: Array.isArray(input.patterns) ? input.patterns.map(toPlainText).join(", ") : "",
         baseDirectory,
+        includeOutput,
       });
     case "LS":
       return buildSearchToolStrategy({
@@ -102,6 +123,7 @@ export function buildDroidToolStrategy(
         title: "ls",
         path: toPlainText(input.directory_path),
         baseDirectory,
+        includeOutput,
       });
     case "TodoWrite": {
       if (!Array.isArray(input.todos)) return defaultStrategy;

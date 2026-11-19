@@ -13,6 +13,7 @@ import {
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   formatToolOutput,
   getOutputOrErrorText,
   getToolTitle,
@@ -21,7 +22,12 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import { parseJsonText } from "../utils";
-import { buildDefaultToolStrategy, buildFileEditStrategy, buildFileReadStrategy } from "./shared";
+import {
+  EMPTY_TOOL_OUTPUT,
+  buildDefaultToolStrategy,
+  buildFileEditStrategy,
+  buildFileReadStrategy,
+} from "./shared";
 import { FileSearch, SquareTerminal } from "../../ui/icons";
 
 export function getCursorOutputRecord(rawOutput: unknown) {
@@ -66,8 +72,10 @@ export function buildCursorToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   if (state.status === "error") return defaultStrategy;
 
   const toolKey = tool.tool.toLowerCase();
@@ -76,14 +84,17 @@ export function buildCursorToolStrategy(
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
   if (toolKey === "read" || toolKey === "read_file_v2") {
-    const content = extractCursorReadContent(state.outputValue);
-    const totalLines = getCursorOutputRecord(state.outputValue).totalLinesInFile;
+    const content = includeOutput ? extractCursorReadContent(state.outputValue) : "";
+    const totalLines = includeOutput
+      ? getCursorOutputRecord(state.outputValue).totalLinesInFile
+      : null;
     const lineCount = typeof totalLines === "number" ? String(totalLines) : toPlainText(totalLines);
     const read = buildFileReadStrategy({
       defaultStrategy,
       state,
       filePath,
       displayPath,
+      includeOutput,
       text: content,
       details: lineCount ? [{ label: t("Lines"), value: lineCount }] : [],
       isCode: content !== t("No output captured."),
@@ -96,6 +107,7 @@ export function buildCursorToolStrategy(
     const edit = buildFileEditStrategy({
       defaultStrategy,
       displayPath,
+      includeOutput,
       outputContent: diffText
         ? { kind: "plain", text: diffText, language: "diff", isCode: true }
         : defaultStrategy.outputContent,
@@ -118,12 +130,14 @@ export function buildCursorToolStrategy(
       secondaryText: summary || undefined,
       details: [],
       showInputPreview: true,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -140,12 +154,14 @@ export function buildCursorToolStrategy(
       secondaryText: summary || undefined,
       details: [],
       showInputPreview: true,
-      outputContent: {
-        kind: "plain",
-        text: formatCursorSearchOutput(state.outputValue),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: formatCursorSearchOutput(state.outputValue),
+            language: "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -165,12 +181,14 @@ export function buildCursorToolStrategy(
       secondaryText,
       details: [],
       showInputPreview: true,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
