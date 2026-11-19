@@ -316,6 +316,10 @@ pub fn ensure_with_progress(
                 "DROP INDEX IF EXISTS idx_messages_usage_time",
             ),
             (
+                "redundant_indexes_retired_v1",
+                "DROP INDEX IF EXISTS idx_sessions_activity; DROP INDEX IF EXISTS idx_file_activity_project_latest;",
+            ),
+            (
                 "visible_sessions_index_v1",
                 "CREATE INDEX IF NOT EXISTS idx_sessions_visible ON sessions(source_node_id,agent_name,session_id,publication_id)",
             ),

@@ -61,9 +61,6 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions_agent_activity_order
       ON sessions(agent_name, activity_time DESC, session_id);
 
-CREATE INDEX idx_sessions_activity
-      ON sessions(activity_time DESC, agent_name, session_id);
-
 CREATE INDEX idx_sessions_project
       ON sessions(project_identity_kind, project_identity_key, activity_time);
 
@@ -189,9 +186,6 @@ CREATE TABLE session_file_activity (
         REFERENCES sessions(source_node_id, agent_name, session_id)
         ON DELETE CASCADE
     );
-
-CREATE INDEX idx_file_activity_project_latest
-      ON session_file_activity(project_identity_key, latest_time);
 
 CREATE INDEX idx_file_activity_latest
       ON session_file_activity(latest_time DESC, count DESC, path);
