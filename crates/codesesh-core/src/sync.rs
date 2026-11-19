@@ -17,6 +17,23 @@ pub(crate) use hub_types::{
     NodeHealth, NodeTask, RescanProgress, RescanRequest, RescanScanProgress, RescanStatus,
 };
 
+#[derive(Debug)]
+pub enum WorkerAuthRejection {
+    InvalidCredentialOrInstance,
+    InstanceConflict,
+}
+
+impl std::fmt::Display for WorkerAuthRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidCredentialOrInstance => "Worker credential or instance is invalid or revoked",
+            Self::InstanceConflict => "WORKER_INSTANCE_CONFLICT: another Worker instance still holds this node lease; waiting for release or expiry (up to 60 seconds)",
+        })
+    }
+}
+
+impl std::error::Error for WorkerAuthRejection {}
+
 fn local_worker_mac(
     key: &str,
     hub_id: &str,

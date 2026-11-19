@@ -1,4 +1,5 @@
 use super::*;
+use crate::sync::WorkerAuthRejection;
 
 fn secret() -> String {
     format!(
@@ -297,16 +298,17 @@ impl Cache {
                 |r| r.get(0),
             )
             .optional()?
-            .context("Worker credential is invalid or revoked")
+            .context(WorkerAuthRejection::InvalidCredentialOrInstance)
     }
 
     pub fn claim_worker_instance(&mut self, node: &str, instance: &str) -> Result<()> {
-        uuid::Uuid::parse_str(instance).context("Invalid Worker instance")?;
+        uuid::Uuid::parse_str(instance)
+            .context(WorkerAuthRejection::InvalidCredentialOrInstance)?;
         let now = chrono::Utc::now().timestamp_millis();
         ensure!(self.connection.execute(
             "UPDATE hub_nodes SET instance_id=?,lease_until=? WHERE id=? AND (instance_id IS NULL OR instance_id=? OR lease_until<=?)",
             params![instance, now + 60_000, node, instance, now],
-        )? == 1, "WORKER_INSTANCE_CONFLICT: another Worker instance still holds this node lease; waiting for release or expiry (up to 60 seconds)");
+        )? == 1, WorkerAuthRejection::InstanceConflict);
         Ok(())
     }
 
@@ -318,7 +320,8 @@ impl Cache {
     }
 
     pub fn release_worker_instance(&mut self, node: &str, instance: &str) -> Result<()> {
-        uuid::Uuid::parse_str(instance).context("Invalid Worker instance")?;
+        uuid::Uuid::parse_str(instance)
+            .context(WorkerAuthRejection::InvalidCredentialOrInstance)?;
         self.connection.execute(
             "UPDATE hub_nodes SET instance_id=NULL,lease_until=0 WHERE id=? AND instance_id=?",
             params![node, instance],
