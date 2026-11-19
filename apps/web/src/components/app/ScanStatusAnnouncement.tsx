@@ -22,7 +22,7 @@ export function ScanStatusAnnouncement({
   if (visible && status) {
     const label = formatScanStatusLabel(status, issuesOnly);
     const issueLabel = hasScanStatusIssue(status)
-      ? formatScanStatusLabel(status, true) ?? t("Some sources need attention")
+      ? (formatScanStatusLabel(status, true) ?? t("Some sources need attention"))
       : null;
     if (issuesOnly || (issueLabel !== null && (label === null || label === issueLabel))) {
       announcement = issueLabel;
