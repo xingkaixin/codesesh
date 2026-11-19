@@ -121,6 +121,170 @@ fn child_session_changes_refresh_their_database_root() {
     assert!(refreshed_ids(&mut scanner, &mut cache, "zcode").contains(&"child".to_owned()));
 }
 
+#[test]
+fn cursor_warm_restart_reuses_unchanged_sessions_and_tracks_updates_and_deletions() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("cursor");
+    std::fs::create_dir_all(root.join("globalStorage")).unwrap();
+    let file = root.join("globalStorage/state.vscdb");
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database
+        .execute_batch("CREATE TABLE cursorDiskKV(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        .unwrap();
+    for (key, value) in [
+        (
+            "composerData:a",
+            serde_json::json!({"composerId":"a","createdAt":1000,"lastSendTime":3000,"subagentInfos":[{"id":"child"}]}),
+        ),
+        (
+            "composerData:b",
+            serde_json::json!({"composerId":"b","createdAt":1000,"lastSendTime":2000}),
+        ),
+        (
+            "composerData:c",
+            serde_json::json!({"composerId":"c","createdAt":1000,"lastSendTime":1500}),
+        ),
+        (
+            "composerData:empty",
+            serde_json::json!({"composerId":"empty","createdAt":1000}),
+        ),
+        ("bubbleId:a:1", serde_json::json!({"type":1,"text":"Alpha"})),
+        ("bubbleId:b:1", serde_json::json!({"type":1,"text":"Beta"})),
+        ("bubbleId:c:1", serde_json::json!({"type":1,"text":"Gamma"})),
+        (
+            "bubble:child",
+            serde_json::json!({"chatMessages":[{"role":"assistant","text":"Child v1"}]}),
+        ),
+    ] {
+        database
+            .execute(
+                "INSERT INTO cursorDiskKV VALUES(?1,?2)",
+                rusqlite::params![key, value.to_string()],
+            )
+            .unwrap();
+    }
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "cursor".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    assert_eq!(refreshed_ids(&mut scanner, &mut cache, "cursor").len(), 3);
+
+    // Warm restart with unchanged DB reuses all sessions and empty composers.
+    scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut warm = scanner.refresh(None).unwrap();
+    assert!(warm.complete);
+    assert!(warm.sessions.is_empty());
+    assert!(warm.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut warm.sessions,
+            &warm.removed,
+            "cursor",
+            &warm.checkpoint,
+            warm.complete,
+        )
+        .unwrap();
+    warm.on_reject.take();
+
+    // Live update right after warm restart only parses the single modified session.
+    database
+        .execute(
+            "UPDATE cursorDiskKV SET value=?1 WHERE key='bubbleId:a:1'",
+            [serde_json::json!({"type":1,"text":"Alpha v2"}).to_string()],
+        )
+        .unwrap();
+    let mut live = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert_eq!(live.sessions.len(), 1);
+    assert_eq!(live.sessions[0].head.reference.session_id, "a");
+    assert!(live.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut live.sessions,
+            &live.removed,
+            "cursor",
+            &live.checkpoint,
+            live.complete,
+        )
+        .unwrap();
+    live.on_reject.take();
+
+    // Subsequent warm restart still reuses everything, including the live-updated session.
+    scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    assert!(refreshed_ids(&mut scanner, &mut cache, "cursor").is_empty());
+
+    // Subagent update invalidates only its owner; composer deletion removes only that session.
+    database
+        .execute(
+            "UPDATE cursorDiskKV SET value=?1 WHERE key='bubble:child'",
+            [
+                serde_json::json!({"chatMessages":[{"role":"assistant","text":"Child v2"}]})
+                    .to_string(),
+            ],
+        )
+        .unwrap();
+    database
+        .execute("DELETE FROM cursorDiskKV WHERE key='composerData:b'", [])
+        .unwrap();
+    scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut restarted = scanner.refresh(None).unwrap();
+    assert!(restarted.complete);
+    assert_eq!(restarted.sessions.len(), 1);
+    assert_eq!(restarted.sessions[0].head.reference.session_id, "a");
+    assert_eq!(restarted.removed.len(), 1);
+    assert_eq!(restarted.removed[0].session_id, "b");
+    cache
+        .apply_checkpoint(
+            &mut restarted.sessions,
+            &restarted.removed,
+            "cursor",
+            &restarted.checkpoint,
+            restarted.complete,
+        )
+        .unwrap();
+    restarted.on_reject.take();
+
+    // Emptying a session removes it live and stays quiet across restart.
+    database
+        .execute("DELETE FROM cursorDiskKV WHERE key='bubbleId:c:1'", [])
+        .unwrap();
+    let mut emptied = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert!(emptied.sessions.is_empty());
+    assert_eq!(emptied.removed.len(), 1);
+    assert_eq!(emptied.removed[0].session_id, "c");
+    cache
+        .apply_checkpoint(
+            &mut emptied.sessions,
+            &emptied.removed,
+            "cursor",
+            &emptied.checkpoint,
+            emptied.complete,
+        )
+        .unwrap();
+    emptied.on_reject.take();
+
+    scanner = AgentScanner::new(source, db, pricing);
+    let mut quiet = scanner.refresh(None).unwrap();
+    assert!(quiet.sessions.is_empty());
+    assert!(quiet.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut quiet.sessions,
+            &quiet.removed,
+            "cursor",
+            &quiet.checkpoint,
+            quiet.complete,
+        )
+        .unwrap();
+    quiet.on_reject.take();
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+}
+
 fn database_scanner(
     directory: &Path,
     source: AgentSource,

@@ -18,9 +18,9 @@ mod messages;
 use messages::{append_subagents, detail_stats, messages, model_usage};
 
 mod pagination;
-pub use pagination::enumerate_session_keys;
+pub use pagination::{enumerate_session_keys, fingerprints};
 mod sync;
-pub use sync::CursorSync;
+pub use sync::{CursorSync, scan_page, scan_selected};
 
 pub fn scan(root: &Path, pricing: &Pricing) -> Result<Vec<ParsedSession>> {
     Ok(CursorSync::default().refresh(root, pricing)?.upserts)

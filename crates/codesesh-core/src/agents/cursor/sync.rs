@@ -1,10 +1,12 @@
 use super::{composer_id, parse_composer, string, workspace_paths};
+#[cfg(test)]
+use crate::model::SessionReference;
 use crate::{
     agents::{ParsedSession, open_readonly_sqlite},
-    model::SessionReference,
     pricing::Pricing,
 };
 use anyhow::Result;
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -24,6 +26,7 @@ pub struct CursorSync {
 }
 pub struct CursorDelta {
     pub upserts: Vec<ParsedSession>,
+    #[cfg(test)]
     pub removed: Vec<SessionReference>,
 }
 impl CursorSync {
@@ -31,6 +34,7 @@ impl CursorSync {
         self.refresh_inner(root, pricing, None)
     }
 
+    #[cfg(test)]
     pub fn refresh_selected(
         &mut self,
         root: &Path,
@@ -52,10 +56,12 @@ impl CursorSync {
         );
         let path = root.join("globalStorage/state.vscdb");
         if !path.exists() {
+            #[cfg(test)]
             let removed = references(self.active.iter().cloned());
             *self = Self::default();
             return Ok(CursorDelta {
                 upserts: Vec::new(),
+                #[cfg(test)]
                 removed,
             });
         }
@@ -134,24 +140,28 @@ impl CursorSync {
         let mut active = self.active.clone();
         active.retain(|id| !affected.contains(id));
         let mut upserts = Vec::new();
-        {
-            let mut query = transaction.prepare(
-                "SELECT key,value FROM cursorDiskKV WHERE key LIKE 'composerData:%' ORDER BY rowid",
-            )?;
-            let mut rows = query.query([])?;
+        if !affected.is_empty() {
+            let mut query =
+                transaction.prepare("SELECT value,rowid FROM cursorDiskKV WHERE key=?1")?;
+            let mut ordered = Vec::new();
+            for (key, value) in &composers {
+                let Some(id) = composer_id(value).filter(|id| affected.contains(*id)) else {
+                    continue;
+                };
+                if let Some((raw, row_id)) = query
+                    .query_row([key], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })
+                    .optional()?
+                {
+                    ordered.push((row_id, id, raw));
+                }
+            }
+            ordered.sort_by_key(|(row_id, ..)| *row_id);
             let mut bubble_query = transaction.prepare(
                 "SELECT key,value FROM cursorDiskKV WHERE key >= ?1 AND key < ?2 ORDER BY rowid",
             )?;
-            while let Some(row) = rows.next()? {
-                let key: String = row.get(0)?;
-                let Some(id) = composers
-                    .get(&key)
-                    .and_then(|c| composer_id(c))
-                    .filter(|id| affected.contains(*id))
-                else {
-                    continue;
-                };
-                let raw: String = row.get(1)?;
+            for (_, id, raw) in ordered {
                 let composer: Value = serde_json::from_str(&raw)?;
                 let mut bubble_rows =
                     bubble_query.query([format!("bubbleId:{id}:"), format!("bubbleId:{id};")])?;
@@ -177,6 +187,7 @@ impl CursorSync {
                 }
             }
         }
+        #[cfg(test)]
         let removed = references(self.active.difference(&active).cloned());
         transaction.commit()?;
         self.root = Some(root.into());
@@ -185,9 +196,14 @@ impl CursorSync {
         self.directories = directories;
         self.active = active;
         self.dirty = deferred;
-        Ok(CursorDelta { upserts, removed })
+        Ok(CursorDelta {
+            upserts,
+            #[cfg(test)]
+            removed,
+        })
     }
 }
+#[cfg(test)]
 fn references(ids: impl Iterator<Item = String>) -> Vec<SessionReference> {
     let mut ids = ids.collect::<Vec<_>>();
     ids.sort();
@@ -226,8 +242,9 @@ fn child_owners(composers: &HashMap<String, Arc<Value>>) -> HashMap<String, Hash
 }
 
 mod selected;
+pub use selected::{scan_page, scan_selected};
 
-fn fingerprint(row_id: i64, raw: &str) -> [u8; 32] {
+pub(super) fn fingerprint(row_id: i64, raw: &str) -> [u8; 32] {
     let mut hash = Sha256::new();
     hash.update(row_id.to_le_bytes());
     hash.update(raw.as_bytes());

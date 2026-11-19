@@ -152,10 +152,43 @@ pub fn database_stamp(source: &AgentSource) -> Result<Option<String>> {
             database_stamp.push_str(&stamp(&path)?.1);
         }
     }
+    if source.agent == "cursor" {
+        append_cursor_workspace_stamps(&source.scan_path, &mut database_stamp)?;
+    }
     Ok(Some(database_stamp))
 }
+fn append_cursor_workspace_stamps(root: &Path, out: &mut String) -> Result<()> {
+    let storage = root.join("workspaceStorage");
+    if !storage.try_exists()? {
+        return Ok(());
+    }
+    let mut entries: Vec<_> = std::fs::read_dir(storage)?.collect::<std::io::Result<_>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let dir = entry.path();
+        for name in [
+            "workspace.json",
+            "state.vscdb",
+            "state.vscdb-wal",
+            "state.vscdb-journal",
+        ] {
+            let path = dir.join(name);
+            if path.try_exists()? {
+                out.push('|');
+                out.push_str(&entry.file_name().to_string_lossy());
+                out.push('/');
+                out.push_str(name);
+                out.push(':');
+                out.push_str(&stamp(&path)?.1);
+            }
+        }
+    }
+    Ok(())
+}
 /// Per-session content fingerprints, so writes that leave a session untouched do not invalidate it.
-/// Cursor pages never reuse items and keep the database stamp.
 fn session_fingerprints(source: &AgentSource) -> Result<HashMap<String, String>> {
     let root = &source.scan_path;
     match source.agent.as_str() {
@@ -186,14 +219,23 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     if source.agent == "codex" {
         return codex_inventory(source);
     }
-    let root = crate::agents::session_root(&source.agent, &source.scan_path);
-    let keys = match source.agent.as_str() {
-        "cursor" => Some(
+    if source.agent == "cursor" {
+        return Ok(
             crate::agents::cursor::enumerate_session_keys(&source.scan_path)?
                 .into_iter()
-                .map(|key| (key.id, key.activity))
-                .collect::<Vec<_>>(),
-        ),
+                .map(|key| Item {
+                    key: key.id,
+                    path: None,
+                    activity: key.activity,
+                    fingerprint: key.fingerprint,
+                    target: false,
+                    bytes: 0,
+                })
+                .collect(),
+        );
+    }
+    let root = crate::agents::session_root(&source.agent, &source.scan_path);
+    let keys = match source.agent.as_str() {
         "opencode" | "zcode" => {
             let path = if source.agent == "opencode" {
                 source.scan_path.clone()
