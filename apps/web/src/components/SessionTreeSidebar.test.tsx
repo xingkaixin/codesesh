@@ -1,8 +1,13 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionHead } from "@codesesh/contract";
 import { getSessionReferenceKey } from "../lib/session-indexes";
-import { buildSessionTreeModel, SessionTreeSidebar } from "./SessionTreeSidebar";
+import {
+  buildSessionTreeModel,
+  MAX_SESSION_TREE_NESTING,
+  SessionTreeSidebar,
+  type SessionTreeItem,
+} from "./SessionTreeSidebar";
 
 function makeSession(
   input: Partial<SessionHead> & { sessionId: string; agentName?: string },
@@ -23,13 +28,17 @@ function makeSession(
   };
 }
 
-function groupOrderOf(paths: string[]) {
-  const seen: string[] = [];
-  for (const path of paths) {
-    const group = path.split("/")[0]!;
-    if (!seen.includes(group)) seen.push(group);
+function collectSessions(items: SessionTreeItem[]): SessionHead[] {
+  const result: SessionHead[] = [];
+  const stack = [...items].reverse();
+  while (stack.length > 0) {
+    const item = stack.pop()!;
+    if (item.session) result.push(item.session);
+    for (let index = item.children.length - 1; index >= 0; index -= 1) {
+      stack.push(item.children[index]!);
+    }
   }
-  return seen;
+  return result;
 }
 
 describe("buildSessionTreeModel group sorting", () => {
@@ -44,26 +53,29 @@ describe("buildSessionTreeModel group sorting", () => {
     });
 
     const model = buildSessionTreeModel([a, b]);
-    const references = [a, b].map((session) => getSessionReferenceKey(session));
+    const allSessions = collectSessions(model.roots);
 
-    expect(model.paths).toHaveLength(2);
-    expect(new Set(model.paths).size).toBe(2);
-    for (const reference of references) {
-      expect(model.pathBySessionReference.get(reference)).toMatch(/^Unmounted\//);
+    expect(model.roots.map((root) => root.label)).toEqual(["Unmounted"]);
+    expect(allSessions).toHaveLength(2);
+    expect(new Set(allSessions)).toEqual(new Set([a, b]));
+    for (const session of [a, b]) {
+      expect(model.ancestorIdsBySessionReference.get(getSessionReferenceKey(session))).toEqual([
+        "group:__unmounted__",
+      ]);
     }
   });
 
-  it("keeps paths for equal session ids from different agents", () => {
+  it("keeps items for equal session ids from different agents", () => {
     const codex = makeSession({ sessionId: "same" });
     const claude = makeSession({ sessionId: "same", agentName: "claude" });
 
     const model = buildSessionTreeModel([codex, claude]);
 
-    expect(model.pathBySessionReference.get(getSessionReferenceKey(codex))).toBeDefined();
-    expect(model.pathBySessionReference.get(getSessionReferenceKey(claude))).toBeDefined();
+    expect(model.itemBySessionReference.get(getSessionReferenceKey(codex))?.session).toBe(codex);
+    expect(model.itemBySessionReference.get(getSessionReferenceKey(claude))?.session).toBe(claude);
   });
 
-  it("mounts child sessions below their parent path", () => {
+  it("mounts child sessions below their parent item", () => {
     const parent = makeSession({ sessionId: "parent", title: "Main" });
     const child = makeSession({
       sessionId: "child",
@@ -72,14 +84,14 @@ describe("buildSessionTreeModel group sorting", () => {
     });
 
     const model = buildSessionTreeModel([parent, child]);
-    const parentPath = model.pathBySessionReference.get(getSessionReferenceKey(parent))!;
-    const childPath = model.pathBySessionReference.get(getSessionReferenceKey(child))!;
+    const parentItem = model.itemBySessionReference.get(getSessionReferenceKey(parent))!;
+    const childItem = model.itemBySessionReference.get(getSessionReferenceKey(child))!;
 
-    expect(parentPath.endsWith("/")).toBe(true);
-    expect(childPath.startsWith(parentPath)).toBe(true);
-    expect(model.paths).toContain(childPath);
-    expect(model.sessionByPath.get(parentPath)).toBe(parent);
-    expect(model.sessionByPath.get(childPath)).toBe(child);
+    expect(parentItem.children).toEqual([childItem]);
+    expect(parentItem.count).toBe(1);
+    expect(model.ancestorIdsBySessionReference.get(getSessionReferenceKey(child))).toContain(
+      parentItem.id,
+    );
   });
 
   it("renders a child without its parent under the Unmounted group", () => {
@@ -90,12 +102,9 @@ describe("buildSessionTreeModel group sorting", () => {
     });
 
     const model = buildSessionTreeModel([rooted, child]);
-    const childPath = model.pathBySessionReference.get(getSessionReferenceKey(child))!;
 
-    expect(childPath.startsWith("Unmounted/")).toBe(true);
-    expect(model.paths).toContain(childPath);
-    expect(model.sessionByPath.get(childPath)).toBe(child);
-    expect(groupOrderOf(model.paths)).toEqual(["known", "Unmounted"]);
+    expect(model.roots.map((root) => root.label)).toEqual(["known", "Unmounted"]);
+    expect(model.roots[1]?.children[0]?.session).toBe(child);
   });
 
   it("keeps a grandchild mounted under its orphaned parent", () => {
@@ -109,18 +118,34 @@ describe("buildSessionTreeModel group sorting", () => {
     });
 
     const model = buildSessionTreeModel([orphan, grandchild]);
-    const orphanPath = model.pathBySessionReference.get(getSessionReferenceKey(orphan))!;
-    const grandchildPath = model.pathBySessionReference.get(getSessionReferenceKey(grandchild))!;
+    const orphanItem = model.itemBySessionReference.get(getSessionReferenceKey(orphan))!;
+    const grandchildItem = model.itemBySessionReference.get(getSessionReferenceKey(grandchild))!;
 
-    expect(orphanPath.endsWith("/")).toBe(true);
-    expect(grandchildPath.startsWith(orphanPath)).toBe(true);
+    expect(orphanItem.children).toEqual([grandchildItem]);
+  });
+
+  it("flattens chains deeper than MAX_SESSION_TREE_NESTING into a Deeper sessions group", () => {
+    const chain = Array.from({ length: MAX_SESSION_TREE_NESTING + 3 }, (_, index) =>
+      makeSession({
+        sessionId: `s-${index}`,
+        parent_reference:
+          index === 0 ? undefined : { agentName: "codex", sessionId: `s-${index - 1}` },
+      }),
+    );
+
+    const model = buildSessionTreeModel(chain, { groupByProject: false });
+    const deepestSession = chain.at(-1)!;
+    const ancestors = model.ancestorIdsBySessionReference.get(
+      getSessionReferenceKey(deepestSession),
+    )!;
+
+    expect(ancestors.some((id) => id.startsWith("overflow:"))).toBe(true);
+    expect(collectSessions(model.roots)).toHaveLength(chain.length);
   });
 });
 
-describe("buildSessionTreeModel path allocation", () => {
-  it("CS-145: allocates unique paths for fully colliding titles and id prefixes", () => {
-    // Same title and same first 8 id characters: every leaf lands on one base
-    // path. A restart-from-2 probe is O(N²) here and cannot finish in time.
+describe("buildSessionTreeModel allocation and naming", () => {
+  it("CS-145: handles 20,000 sessions with colliding titles and id prefixes in linear time", () => {
     const sessions = Array.from({ length: 20_000 }, (_, index) =>
       makeSession({
         sessionId: `deadbeef-${index}`,
@@ -130,12 +155,13 @@ describe("buildSessionTreeModel path allocation", () => {
     );
 
     const model = buildSessionTreeModel(sessions);
+    const items = model.roots[0]!.children;
 
-    expect(model.paths).toHaveLength(sessions.length);
-    expect(new Set(model.paths).size).toBe(sessions.length);
+    expect(items).toHaveLength(sessions.length);
+    expect(new Set(items.map((item) => item.id)).size).toBe(sessions.length);
     for (const session of sessions) {
-      const path = model.pathBySessionReference.get(getSessionReferenceKey(session));
-      expect(model.sessionByPath.get(path ?? "")).toBe(session);
+      const item = model.itemBySessionReference.get(getSessionReferenceKey(session));
+      expect(item?.session).toBe(session);
     }
   });
 
@@ -146,12 +172,12 @@ describe("buildSessionTreeModel path allocation", () => {
       makeSession({ sessionId: "c", directory: "/repo/three/shared" }),
     ];
 
-    const { paths } = buildSessionTreeModel(sessions);
+    const model = buildSessionTreeModel(sessions);
 
-    expect(groupOrderOf(paths)).toEqual(["shared", "shared (2)", "shared (3)"]);
+    expect(model.roots.map((root) => root.label)).toEqual(["shared", "shared (2)", "shared (3)"]);
   });
 
-  it("prefers ProjectGroup displayName for grouped session paths", () => {
+  it("prefers ProjectGroup displayName for grouped session roots", () => {
     const fallback = makeSession({
       sessionId: "a",
       project_identity: {
@@ -165,58 +191,192 @@ describe("buildSessionTreeModel path allocation", () => {
         ["git_remote:github.com/xingkaixin/codesesh", "codesesh-monorepo"],
       ]),
     });
-    expect(groupOrderOf(model.paths)).toEqual(["codesesh-monorepo"]);
+
+    expect(model.roots.map((root) => root.label)).toEqual(["codesesh-monorepo"]);
   });
 });
 
-function renderSessionTreeSidebar(sessions: SessionHead[]) {
-  const reference = getSessionReferenceKey(sessions[0]!);
-  render(
-    <SessionTreeSidebar
-      sessions={sessions}
-      activeSessionReference={reference}
-      selectedSessionReference={reference}
-      onSelectSession={() => {}}
-      bookmarkedSessionReferences={new Set()}
-      onCopySessionAsMarkdown={() => {}}
-      onToggleBookmark={() => {}}
-      onRenameSession={() => {}}
-    />,
-  );
-}
+describe("SessionTreeSidebar interaction and live updates", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
-describe("CS-275: untrusted session titles stay inert", () => {
-  afterEach(cleanup);
-
-  // The sidebar's XSS safety rests on two facts about @pierre/trees: node
-  // labels go through vnodes (escaped), and the innerHTML-rendered
-  // `composition` slot stays unset. This test enforces the invariant so a
-  // dependency bump or a future `composition` use cannot silently turn
-  // transcript-derived titles into an HTML sink.
-  function queryDeep(root: ParentNode, selector: string): Element | null {
-    const direct = root.querySelector(selector);
-    if (direct) return direct;
-    for (const element of root.querySelectorAll("*")) {
-      const nested = (element as HTMLElement).shadowRoot;
-      if (nested) {
-        const hit = queryDeep(nested, selector);
-        if (hit) return hit;
-      }
-    }
-    return null;
-  }
-
-  it("renders HTML metacharacters in titles as text, not markup", async () => {
+  it("CS-275: renders HTML metacharacters in titles as text, not markup", () => {
     const hostileTitle = '<img src=x onerror="globalThis.__cs275 = true"> <b>bold';
-    renderSessionTreeSidebar([makeSession({ sessionId: "hostile", title: hostileTitle })]);
+    const session = makeSession({ sessionId: "hostile", title: hostileTitle });
+    const reference = getSessionReferenceKey(session);
 
-    // The full title survives verbatim as escaped text (the visible label is
-    // split by MiddleTruncate, so assert on the row's aria-label instead).
-    await waitFor(() =>
-      expect(queryDeep(document, `[aria-label='${hostileTitle}']`)).not.toBeNull(),
+    render(
+      <SessionTreeSidebar
+        sessions={[session]}
+        activeSessionReference={reference}
+        selectedSessionReference={reference}
+        onSelectSession={() => {}}
+        bookmarkedSessionReferences={new Set()}
+        onCopySessionAsMarkdown={() => {}}
+        onToggleBookmark={() => {}}
+        onRenameSession={() => {}}
+      />,
     );
-    expect(queryDeep(document, "img")).toBeNull();
-    expect(queryDeep(document, "b")).toBeNull();
+
+    expect(screen.getByRole("treeitem", { name: hostileTitle })).toBeTruthy();
+    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector("b")).toBeNull();
     expect((globalThis as { __cs275?: boolean }).__cs275).toBeUndefined();
+  });
+
+  it("preserves expanded groups and does not re-scroll across live SSE session updates", () => {
+    const alpha = makeSession({
+      sessionId: "a1",
+      title: "Alpha session",
+      directory: "/repo/alpha",
+      time_updated: 20,
+    });
+    const beta = makeSession({
+      sessionId: "b1",
+      title: "Beta session",
+      directory: "/repo/beta",
+      time_updated: 10,
+    });
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const alphaRef = getSessionReferenceKey(alpha);
+    const props = {
+      activeSessionReference: alphaRef,
+      selectedSessionReference: alphaRef,
+      onSelectSession: vi.fn(),
+      bookmarkedSessionReferences: new Set<string>(),
+      onCopySessionAsMarkdown: vi.fn(),
+      onToggleBookmark: vi.fn(),
+      onRenameSession: vi.fn(),
+      groupByProject: true,
+    };
+
+    const { rerender } = render(<SessionTreeSidebar sessions={[alpha, beta]} {...props} />);
+
+    // Active group is expanded on mount; non-active group starts collapsed.
+    expect(screen.getByRole("treeitem", { name: "Alpha session" })).toBeTruthy();
+    expect(screen.queryByRole("treeitem", { name: "Beta session" })).toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    // User manually expands the Beta group.
+    fireEvent.click(screen.getByRole("treeitem", { name: "beta" }));
+    expect(screen.getByRole("treeitem", { name: "Beta session" })).toBeTruthy();
+
+    // Live SSE update pushes a fresh sessions array with updated metadata and a new session.
+    const betaTwo = makeSession({
+      sessionId: "b2",
+      title: "Beta follow-up",
+      directory: "/repo/beta",
+      time_updated: 30,
+    });
+    rerender(
+      <SessionTreeSidebar
+        sessions={[{ ...alpha, time_updated: 25 }, { ...beta }, betaTwo]}
+        {...props}
+      />,
+    );
+
+    // Both groups remain expanded and scrollIntoView is not re-triggered.
+    expect(screen.getByRole("treeitem", { name: "Alpha session" })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Beta session" })).toBeTruthy();
+    expect(screen.getByRole("treeitem", { name: "Beta follow-up" })).toBeTruthy();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("highlights and scrolls keyboard-selected sessions on Project views when activeSessionReference is null", () => {
+    const first = makeSession({
+      sessionId: "p1",
+      title: "Parent session",
+      directory: "/repo/project",
+      time_updated: 30,
+    });
+    const child = makeSession({
+      sessionId: "c1",
+      title: "Nested worker",
+      directory: "/repo/project",
+      parent_reference: { agentName: "codex", sessionId: "p1" },
+      time_updated: 20,
+    });
+    const second = makeSession({
+      sessionId: "p2",
+      title: "Second root",
+      directory: "/repo/project",
+      time_updated: 10,
+    });
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    const baseProps = {
+      sessions: [first, child, second],
+      activeSessionReference: null,
+      onSelectSession: vi.fn(),
+      bookmarkedSessionReferences: new Set<string>(),
+      onCopySessionAsMarkdown: vi.fn(),
+      onToggleBookmark: vi.fn(),
+      onRenameSession: vi.fn(),
+      groupByProject: false,
+    };
+
+    const { rerender } = render(
+      <SessionTreeSidebar {...baseProps} selectedSessionReference={null} />,
+    );
+
+    expect(screen.queryByRole("treeitem", { name: "Nested worker" })).toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    // Keyboard navigation selects the nested child on a Project view.
+    rerender(
+      <SessionTreeSidebar
+        {...baseProps}
+        selectedSessionReference={getSessionReferenceKey(child)}
+      />,
+    );
+
+    const childItem = screen.getByRole("treeitem", { name: "Nested worker" });
+    expect(childItem.getAttribute("data-selected")).toBe("true");
+    expect(childItem.getAttribute("aria-selected")).toBe("true");
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+
+    // Moving to another root updates selection and scrolls it into view.
+    rerender(
+      <SessionTreeSidebar
+        {...baseProps}
+        selectedSessionReference={getSessionReferenceKey(second)}
+      />,
+    );
+
+    const secondItem = screen.getByRole("treeitem", { name: "Second root" });
+    expect(secondItem.getAttribute("data-selected")).toBe("true");
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens session action menu items from the row trigger without selecting the session", () => {
+    const session = makeSession({ sessionId: "s1", title: "Inspectable session" });
+    const onSelectSession = vi.fn();
+    const onRenameSession = vi.fn();
+    const onToggleBookmark = vi.fn();
+
+    render(
+      <SessionTreeSidebar
+        sessions={[session]}
+        activeSessionReference={null}
+        selectedSessionReference={null}
+        onSelectSession={onSelectSession}
+        bookmarkedSessionReferences={new Set()}
+        onCopySessionAsMarkdown={vi.fn()}
+        onToggleBookmark={onToggleBookmark}
+        onRenameSession={onRenameSession}
+        groupByProject={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Session options" }));
+    expect(onSelectSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    expect(onRenameSession).toHaveBeenCalledWith(session);
   });
 });
