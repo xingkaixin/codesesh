@@ -47,7 +47,13 @@ function dateTicks(count: number): Map<number, number> {
   return new Map(indexes.map((index, order) => [index, order]));
 }
 
-export function OverviewDailyTokens({ daily }: { daily: readonly DashboardDailyBucket[] }) {
+export function OverviewDailyTokens({
+  daily,
+  onSelectDay,
+}: {
+  daily: readonly DashboardDailyBucket[];
+  onSelectDay?: (date: string) => void;
+}) {
   const locale = useLocale();
   const [scope, setScope] = useState<Scope>("all");
   const [active, setActive] = useState<number | null>(null);
@@ -92,6 +98,12 @@ export function OverviewDailyTokens({ daily }: { daily: readonly DashboardDailyB
   const hasCost = daily.some((bucket) => bucket.cost > 0);
   const ticks = dateTicks(count);
   const hovered = active === null ? undefined : daily[active];
+  const minChartWidth =
+    count > LABELLED_DAYS
+      ? Math.min(Math.max(count * 10 + 120, 480), 960)
+      : count > 7
+        ? 380
+        : undefined;
 
   return (
     <Panel role="region" aria-label={t("Daily tokens")} className="relative">
@@ -131,211 +143,230 @@ export function OverviewDailyTokens({ daily }: { daily: readonly DashboardDailyB
             {t("No usage data")}
           </p>
         ) : (
-          <div className="grid grid-cols-[44px_minmax(0,1fr)_48px] gap-x-2.5">
+          <div className="overflow-x-auto pb-1">
             <div
-              aria-hidden
-              className="console-mono -mt-1.5 flex h-[252px] flex-col items-end justify-between text-[10px] leading-3 text-[var(--console-muted)]"
+              className="grid grid-cols-[44px_minmax(0,1fr)_48px] gap-x-2.5"
+              style={minChartWidth ? { minWidth: minChartWidth } : undefined}
             >
-              {TICKS.map((ratio) => (
-                <span key={ratio}>{formatCompact(chart.tokenMax * ratio)}</span>
-              ))}
-            </div>
-
-            <div
-              className="relative border-b border-[var(--console-border-strong)]"
-              style={{
-                height: PLOT_HEIGHT,
-                backgroundImage: "linear-gradient(var(--console-border) 1px, transparent 1px)",
-                backgroundSize: `100% ${PLOT_HEIGHT / (TICKS.length - 1)}px`,
-              }}
-            >
-              <div className="absolute inset-0 flex">
-                {daily.map((bucket, index) => (
-                  <div
-                    key={bucket.date}
-                    data-testid="overview-daily-column"
-                    className={cn(
-                      "flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5",
-                      active === index
-                        ? "bg-[var(--brand-soft)]"
-                        : chart.days[index]!.weekend && count <= 31
-                          ? "bg-[var(--console-surface-muted)]"
-                          : null,
-                    )}
-                    onMouseEnter={() => setActive(index)}
-                    onMouseLeave={() => setActive(null)}
-                  >
-                    {labelled && chart.totals[index]! > 0 ? (
-                      <span className="console-mono text-[11px] font-medium text-[var(--console-text-secondary)] max-sm:hidden">
-                        {formatCompact(chart.totals[index]!)}
-                      </span>
-                    ) : null}
-                    <div
-                      className={cn(
-                        "flex flex-col-reverse gap-px",
-                        labelled ? "w-[44%] max-w-[60px]" : "w-[70%]",
-                      )}
-                    >
-                      {kinds.map((kind) =>
-                        bucket[kind.key] > 0 ? (
-                          <span
-                            key={kind.key}
-                            className={cn("block rounded-[2px] last:rounded-t-[6px]", kind.swatch)}
-                            style={{
-                              height: Math.max(
-                                (bucket[kind.key] / chart.tokenMax) * PLOT_HEIGHT,
-                                1.5,
-                              ),
-                            }}
-                          />
-                        ) : null,
-                      )}
-                    </div>
-                  </div>
+              <div
+                aria-hidden
+                className="console-mono -mt-1.5 flex h-[252px] flex-col items-end justify-between text-[10px] leading-3 text-[var(--console-muted)]"
+              >
+                {TICKS.map((ratio) => (
+                  <span key={ratio}>{formatCompact(chart.tokenMax * ratio)}</span>
                 ))}
               </div>
 
-              {chart.average > 0 ? (
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[var(--console-text)]/40"
-                  style={{ bottom: (chart.average / chart.tokenMax) * PLOT_HEIGHT }}
-                >
-                  <span className="console-mono absolute bottom-1 left-1.5 rounded-full bg-[var(--console-surface)] px-1.5 text-[10px] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)]">
-                    {t("Daily average {0}", [formatCompact(chart.average)])}
-                  </span>
-                </div>
-              ) : null}
-
-              {hasCost ? (
-                <>
-                  <svg
-                    aria-hidden
-                    viewBox={`0 0 ${count * 100} ${PLOT_HEIGHT}`}
-                    preserveAspectRatio="none"
-                    className="pointer-events-none absolute inset-0 h-full w-full"
-                  >
-                    <path
-                      d={smoothPath(chart.costPoints)}
-                      fill="none"
-                      stroke="var(--console-text)"
-                      strokeWidth="1.75"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </svg>
-                  {labelled
-                    ? daily.map((bucket, index) => (
-                        <span
-                          key={bucket.date}
-                          aria-hidden
-                          className="pointer-events-none absolute size-[9px] -translate-x-1/2 translate-y-1/2 rounded-full bg-[var(--console-surface)] shadow-[inset_0_0_0_2px_var(--console-text)]"
-                          style={{
-                            left: `${((index + 0.5) / count) * 100}%`,
-                            bottom: (bucket.cost / chart.costMax) * PLOT_HEIGHT,
-                          }}
-                        />
-                      ))
-                    : null}
-                </>
-              ) : null}
-
-              <ChartKeyboardList
-                label={t("Daily tokens chart")}
-                itemLabels={chart.itemLabels}
-                activeIndex={active}
-                onActiveIndexChange={setActive}
-                layout="columns"
-              />
-
-              {hovered && active !== null ? (
-                <ChartTooltip index={active} count={count}>
-                  <div className="flex justify-between gap-6 font-semibold">
-                    <span>
-                      {chart.days[active]!.label} {chart.days[active]!.weekday}
-                    </span>
-                    <span className="font-normal text-[var(--console-muted)]">
-                      {t("{0} sessions", [formatInt(hovered.sessions)])}
-                    </span>
-                  </div>
-                  {kinds.map((kind) => (
-                    <div key={kind.key} className="mt-1 flex items-center gap-2">
-                      <span aria-hidden className={cn("size-2 rounded-[2px]", kind.swatch)} />
-                      {t(kind.label)}
-                      <span className="ml-auto">{formatCompact(hovered[kind.key])}</span>
-                    </div>
-                  ))}
-                  <div className="mt-1.5 flex justify-between gap-6 border-t border-[var(--console-border)] pt-1.5">
-                    <span>{t("API value")}</span>
-                    <span>{formatUsd(hovered.cost)}</span>
-                  </div>
-                </ChartTooltip>
-              ) : null}
-            </div>
-
-            <div
-              aria-hidden
-              className="console-mono -mt-1.5 flex h-[252px] flex-col justify-between text-[10px] leading-3 text-[var(--console-muted)]"
-            >
-              {hasCost
-                ? TICKS.map((ratio) => (
-                    <span key={ratio}>{formatCostTick(chart.costMax * ratio)}</span>
-                  ))
-                : null}
-            </div>
-
-            <div aria-hidden className="col-start-2 flex pt-2 text-center">
-              {chart.days.map((day, index) => (
-                <span
-                  key={daily[index]!.date}
-                  className={cn(
-                    "flex min-w-0 flex-1 flex-col items-center",
-                    ticks.size > 4 && (ticks.get(index) ?? 0) % 2 === 1 ? "max-sm:invisible" : null,
-                  )}
-                >
-                  {ticks.has(index) ? (
-                    <>
-                      <span className="console-mono block text-[11px] font-medium whitespace-nowrap text-[var(--console-text)]">
-                        {day.label}
-                      </span>
-                      {labelled ? (
-                        <span className="block text-[10px] text-[var(--console-muted)]">
-                          {day.weekday}
+              <div
+                className="relative border-b border-[var(--console-border-strong)]"
+                style={{
+                  height: PLOT_HEIGHT,
+                  backgroundImage: "linear-gradient(var(--console-border) 1px, transparent 1px)",
+                  backgroundSize: `100% ${PLOT_HEIGHT / (TICKS.length - 1)}px`,
+                }}
+              >
+                <div className="absolute inset-0 flex">
+                  {daily.map((bucket, index) => (
+                    <div
+                      key={bucket.date}
+                      data-testid="overview-daily-column"
+                      className={cn(
+                        "flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5",
+                        onSelectDay ? "cursor-pointer" : null,
+                        active === index
+                          ? "bg-[var(--brand-soft)]"
+                          : chart.days[index]!.weekend && count <= 31
+                            ? "bg-[var(--console-surface-muted)]"
+                            : null,
+                      )}
+                      onMouseEnter={() => setActive(index)}
+                      onMouseLeave={() => setActive(null)}
+                      onClick={
+                        onSelectDay ? () => onSelectDay(bucket.date.slice(0, 10)) : undefined
+                      }
+                    >
+                      {labelled && chart.totals[index]! > 0 ? (
+                        <span className="console-mono text-[11px] font-medium text-[var(--console-text-secondary)] max-sm:hidden">
+                          {formatCompact(chart.totals[index]!)}
                         </span>
                       ) : null}
-                    </>
-                  ) : null}
-                </span>
-              ))}
-            </div>
-
-            <div className="sr-only">
-              <table>
-                <caption>{t("Daily tokens data")}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{t("Date")}</th>
-                    {TOKEN_KINDS.map((kind) => (
-                      <th key={kind.key} scope="col">
-                        {t(kind.label)}
-                      </th>
-                    ))}
-                    <th scope="col">{t("API value")}</th>
-                    <th scope="col">{t("Sessions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {daily.map((bucket) => (
-                    <tr key={bucket.date}>
-                      <th scope="row">{formatMonthDay(bucket.date)}</th>
-                      {TOKEN_KINDS.map((kind) => (
-                        <td key={kind.key}>{formatInt(bucket[kind.key])}</td>
-                      ))}
-                      <td>{formatUsd(bucket.cost)}</td>
-                      <td>{formatInt(bucket.sessions)}</td>
-                    </tr>
+                      <div
+                        className={cn(
+                          "flex flex-col-reverse gap-px",
+                          labelled ? "w-[44%] max-w-[60px]" : "w-[70%]",
+                        )}
+                      >
+                        {kinds.map((kind) =>
+                          bucket[kind.key] > 0 ? (
+                            <span
+                              key={kind.key}
+                              className={cn(
+                                "block rounded-[2px] last:rounded-t-[6px]",
+                                kind.swatch,
+                              )}
+                              style={{
+                                height: Math.max(
+                                  (bucket[kind.key] / chart.tokenMax) * PLOT_HEIGHT,
+                                  1.5,
+                                ),
+                              }}
+                            />
+                          ) : null,
+                        )}
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+
+                {chart.average > 0 ? (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[var(--console-text)]/40"
+                    style={{ bottom: (chart.average / chart.tokenMax) * PLOT_HEIGHT }}
+                  >
+                    <span className="console-mono absolute bottom-1 left-1.5 rounded-full bg-[var(--console-surface)] px-1.5 text-[10px] text-[var(--console-text-secondary)] shadow-[inset_0_0_0_1px_var(--console-border)]">
+                      {t("Daily average {0}", [formatCompact(chart.average)])}
+                    </span>
+                  </div>
+                ) : null}
+
+                {hasCost ? (
+                  <>
+                    <svg
+                      aria-hidden
+                      viewBox={`0 0 ${count * 100} ${PLOT_HEIGHT}`}
+                      preserveAspectRatio="none"
+                      className="pointer-events-none absolute inset-0 h-full w-full"
+                    >
+                      <path
+                        d={smoothPath(chart.costPoints)}
+                        fill="none"
+                        stroke="var(--console-text)"
+                        strokeWidth="1.75"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </svg>
+                    {labelled
+                      ? daily.map((bucket, index) => (
+                          <span
+                            key={bucket.date}
+                            aria-hidden
+                            className="pointer-events-none absolute size-[9px] -translate-x-1/2 translate-y-1/2 rounded-full bg-[var(--console-surface)] shadow-[inset_0_0_0_2px_var(--console-text)]"
+                            style={{
+                              left: `${((index + 0.5) / count) * 100}%`,
+                              bottom: (bucket.cost / chart.costMax) * PLOT_HEIGHT,
+                            }}
+                          />
+                        ))
+                      : null}
+                  </>
+                ) : null}
+
+                <ChartKeyboardList
+                  label={t("Daily tokens chart")}
+                  itemLabels={chart.itemLabels}
+                  activeIndex={active}
+                  onActiveIndexChange={setActive}
+                  onActivate={
+                    onSelectDay
+                      ? (index) => onSelectDay(daily[index]!.date.slice(0, 10))
+                      : undefined
+                  }
+                  layout="columns"
+                />
+
+                {hovered && active !== null ? (
+                  <ChartTooltip index={active} count={count}>
+                    <div className="flex justify-between gap-6 font-semibold">
+                      <span>
+                        {chart.days[active]!.label} {chart.days[active]!.weekday}
+                      </span>
+                      <span className="font-normal text-[var(--console-muted)]">
+                        {t("{0} sessions", [formatInt(hovered.sessions)])}
+                      </span>
+                    </div>
+                    {kinds.map((kind) => (
+                      <div key={kind.key} className="mt-1 flex items-center gap-2">
+                        <span aria-hidden className={cn("size-2 rounded-[2px]", kind.swatch)} />
+                        {t(kind.label)}
+                        <span className="ml-auto">{formatCompact(hovered[kind.key])}</span>
+                      </div>
+                    ))}
+                    <div className="mt-1.5 flex justify-between gap-6 border-t border-[var(--console-border)] pt-1.5">
+                      <span>{t("API value")}</span>
+                      <span>{formatUsd(hovered.cost)}</span>
+                    </div>
+                  </ChartTooltip>
+                ) : null}
+              </div>
+
+              <div
+                aria-hidden
+                className="console-mono -mt-1.5 flex h-[252px] flex-col justify-between text-[10px] leading-3 text-[var(--console-muted)]"
+              >
+                {hasCost
+                  ? TICKS.map((ratio) => (
+                      <span key={ratio}>{formatCostTick(chart.costMax * ratio)}</span>
+                    ))
+                  : null}
+              </div>
+
+              <div aria-hidden className="col-start-2 flex pt-2 text-center">
+                {chart.days.map((day, index) => (
+                  <span
+                    key={daily[index]!.date}
+                    className={cn(
+                      "flex min-w-0 flex-1 flex-col items-center",
+                      ticks.size > 4 && (ticks.get(index) ?? 0) % 2 === 1
+                        ? "max-sm:invisible"
+                        : null,
+                    )}
+                  >
+                    {ticks.has(index) ? (
+                      <>
+                        <span className="console-mono block text-[11px] font-medium whitespace-nowrap text-[var(--console-text)]">
+                          {day.label}
+                        </span>
+                        {labelled ? (
+                          <span className="block text-[10px] text-[var(--console-muted)]">
+                            {day.weekday}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </span>
+                ))}
+              </div>
+
+              <div className="sr-only">
+                <table>
+                  <caption>{t("Daily tokens data")}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{t("Date")}</th>
+                      {TOKEN_KINDS.map((kind) => (
+                        <th key={kind.key} scope="col">
+                          {t(kind.label)}
+                        </th>
+                      ))}
+                      <th scope="col">{t("API value")}</th>
+                      <th scope="col">{t("Sessions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {daily.map((bucket) => (
+                      <tr key={bucket.date}>
+                        <th scope="row">{formatMonthDay(bucket.date)}</th>
+                        {TOKEN_KINDS.map((kind) => (
+                          <td key={kind.key}>{formatInt(bucket[kind.key])}</td>
+                        ))}
+                        <td>{formatUsd(bucket.cost)}</td>
+                        <td>{formatInt(bucket.sessions)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
