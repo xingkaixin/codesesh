@@ -118,6 +118,7 @@ fn milestone(status: &Value) -> Value {
             .collect::<Vec<_>>()
     };
     json!([
+        status["pricingHistory"],
         status["active"],
         status["phase"],
         status["totalAgents"],

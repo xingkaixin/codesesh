@@ -92,24 +92,38 @@ impl PricingController {
             .stage_remote(data))
     }
 
-    pub async fn refresh_from(&self, url: &str, timeout: Duration) -> Result<bool> {
+    pub async fn refresh_from(&self, url: &str, timeout: Duration, force: bool) -> Result<bool> {
         let _refresh = self.inner.refresh.lock().await;
-        let controller = self.clone();
-        let needed = tokio::task::spawn_blocking(move || -> Result<bool> {
-            Ok(controller
-                .inner
-                .manager
-                .read()
-                .map_err(|_| anyhow!("pricing lock poisoned"))?
-                .needs_refresh())
-        })
-        .await??;
-        if !needed {
-            return Ok(false);
+        if !force {
+            let controller = self.clone();
+            let needed = tokio::task::spawn_blocking(move || -> Result<bool> {
+                Ok(controller
+                    .inner
+                    .manager
+                    .read()
+                    .map_err(|_| anyhow!("pricing lock poisoned"))?
+                    .needs_refresh())
+            })
+            .await??;
+            if !needed {
+                return Ok(false);
+            }
         }
         let data = fetch_remote(url, timeout).await?;
         let controller = self.clone();
-        tokio::task::spawn_blocking(move || controller.stage_remote(&data)).await?
+        tokio::task::spawn_blocking(move || {
+            let mut manager = controller
+                .inner
+                .manager
+                .write()
+                .map_err(|_| anyhow!("pricing lock poisoned"))?;
+            anyhow::ensure!(
+                manager.stage_remote(&data),
+                "No model prices in the downloaded catalog"
+            );
+            controller.publish(&mut manager)
+        })
+        .await?
     }
 
     pub fn publish_pending(&self) -> Result<bool> {
@@ -118,6 +132,10 @@ impl PricingController {
             .manager
             .write()
             .map_err(|_| anyhow!("pricing lock poisoned"))?;
+        self.publish(&mut manager)
+    }
+
+    fn publish(&self, manager: &mut PricingManager) -> Result<bool> {
         let published = manager.publish_pending()?;
         if published {
             self.inner

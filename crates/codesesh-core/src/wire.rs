@@ -568,6 +568,13 @@ pub enum ScanPhase {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 pub struct ScanStatusEvent {
+    #[serde(
+        rename = "pricingHistory",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional)]
+    pub pricing_history: Option<PricingHistoryStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub sources: Option<BTreeMap<String, crate::discovery::AgentCollectionStatus>>,
@@ -1001,6 +1008,26 @@ pub struct OfficialModelOption {
     pub model: String,
     pub rates: PricingRatePerMillion,
     pub has_long_context: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum PricingHistoryPhase {
+    Repricing,
+    Current,
+    Failed,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+pub struct PricingHistoryStatus {
+    #[ts(type = "number")]
+    pub generation: u64,
+    pub phase: PricingHistoryPhase,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+pub struct PricingRefreshResponse {
+    pub changed: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]

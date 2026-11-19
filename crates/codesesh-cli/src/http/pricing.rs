@@ -18,7 +18,8 @@ use codesesh_core::{
     state::{StateStore, UpsertModelPriceOverride},
     wire::{
         PricingModelActionRequest, PricingOverrideKind, PricingOverridesResponse,
-        PricingRatePerMillion, UnmatchedModelsResponse, UpsertPricingOverrideRequest,
+        PricingRatePerMillion, PricingRefreshResponse, UnmatchedModelsResponse,
+        UpsertPricingOverrideRequest,
     },
 };
 use serde::de::DeserializeOwned;
@@ -190,12 +191,34 @@ fn replace_overrides(
 }
 
 async fn reprice(state: &State, new_snapshot: PricingSnapshot) -> Result<(), ApiError> {
-    state.runtime.reprice_all(new_snapshot).await.map_err(|_| {
-        ApiError::static_msg(
+    match crate::pricing_refresh::reprice_history(&state.runtime, new_snapshot).await {
+        Ok(Ok(())) => Ok(()),
+        _ => Err(ApiError::static_msg(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to reprice cached sessions",
+        )),
+    }
+}
+
+pub async fn refresh(AxumState(state): AxumState<Arc<State>>) -> Response {
+    let result = tokio::spawn(async move {
+        crate::pricing_refresh::refresh_once(
+            &state.pricing,
+            &state.runtime,
+            codesesh_core::pricing::MODELS_DEV_URL,
+            true,
         )
+        .await
     })
+    .await;
+    match result {
+        Ok(Ok(changed)) => Json(PricingRefreshResponse { changed }).into_response(),
+        Ok(Err(_)) => error(StatusCode::BAD_GATEWAY, "Could not refresh model prices"),
+        Err(_) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Pricing refresh task failed",
+        ),
+    }
 }
 
 pub async fn overrides(AxumState(state): AxumState<Arc<State>>) -> Response {

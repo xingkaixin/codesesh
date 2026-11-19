@@ -201,6 +201,7 @@ pub fn router(state: Arc<State>) -> Router {
         .route("/api/dashboard", get(catalog::dashboard))
         .route("/api/pricing/unmatched", get(pricing::unmatched))
         .route("/api/pricing/models", get(pricing::models))
+        .route("/api/pricing/refresh", post(pricing::refresh))
         .route(
             "/api/pricing/overrides",
             get(pricing::overrides).put(pricing::put_override),

@@ -94,7 +94,7 @@ CodeSesh 当前在本机发现、解析和保存 AI 编码 Agent 会话，并通
 | `ScanBatch` 含进程内回调、定价快照等 | `crates/codesesh-core/src/runtime.rs` | 不能直接序列化作为网络协议 |
 | 扫描器持有 cache 路径、旧记录、fingerprint、checkpoint 等 | `crates/codesesh-core/src/discovery/incremental.rs` | 不能简单移除完整数据库就假设增量采集仍可运行 |
 | checkpoint 已包含解析器版本判断 | `crates/codesesh-core/src/discovery/incremental.rs` | 优先沿用现有修订机制，不重复设计另一套相同概念 |
-| 定价刷新任务在服务启动后执行一次检查 | `crates/codesesh-cli/src/pricing_refresh.rs` | 需补周期执行，当前并非自动定时刷新 |
+| 服务启动后和每 6 小时检查一次价格缓存 | `crates/codesesh-cli/src/pricing_refresh.rs` | 定价抽屉也可强制下载 |
 | 价格缓存 TTL 为 24 小时 | `crates/codesesh-core/src/pricing/manager.rs` | TTL 不等于后台定时器 |
 | 重算按模型和用量，未按历史生效时间选价 | `crates/codesesh-core/src/storage/reprice.rs` | 保持当前费用口径，不顺带引入历史价格账本 |
 
@@ -639,11 +639,12 @@ Worker 不联网查价，不维护价格缓存，不因 Hub 价格刷新重新�
 
 ### 16.2 长期运行刷新
 
-启动立即加载现有缓存，必要时后台刷新；运行期间每 6 小时检查一次 TTL。下载失败继续使用上一份有效价格并记录警告，在下一次固定间隔检查时重试，不做退避。价格内容没有变化时不发起无意义的历史重算。
+启动时先加载本地价格，在后台检查 24 小时缓存，之后每 6 小时检查一次。
+单机和 Hub 的定价抽屉可手动从 models.dev 下载，即使缓存仍有效。
+发布后模型搜索立即使用新目录，已有覆盖规则继续生效。下载失败时使用上一份可用价格。
 
-价格发生变化后，由 Hub 使用已经保存的估算事实重新计算。必须审计现有同步估算逻辑如何拆出，不能让移除 Worker 查价改变 Token 归一化和各 Agent 成本语义。
-
-重算应有有界事务和进度，避免占满 writer 阻塞远程数据。若不能一次发布全部新估算，需要明确重算中状态及汇总刷新策略，不能把部分更新的统计默认为全局完成。本文不假定当前单机实现已经具有跨全部 Agent 的原子价格切换。
+下载检查结束后按最终可用价格核对历史。writer 每提交一批费用和进度就让出写入线程。
+重算完成或失败时，服务合并发布已提交的变化。界面通过 `pricingHistory` 显示重算状态，完成后刷新未匹配列表。
 
 ## 17. Hub 存储与接口改造
 

@@ -266,14 +266,24 @@ async fn history_repricing_yields_to_hub_writes_and_recovers_from_a_partial_pass
         controller.publish_pending().unwrap();
     };
     publish_rate(3);
-    let (pass, during) = tokio::join!(biased;
+    let (release, hold) = std::sync::mpsc::channel();
+    let observer = runtime.clone();
+    // Hold the writer until its queue contains the first price batch followed by the control request.
+    let (held, pass, during, ()) = tokio::join!(biased;
+        runtime.hub_control(move |_| Ok(hold.recv()?)),
         runtime.reprice_all(initial.clone()),
-        runtime.hub_control(|cache| Ok(cache.connection().query_row(
-            "SELECT count(*) FROM sessions WHERE total_cost=3", [], |row| row.get::<_, i64>(0)
-        )?))
+        runtime.hub_control(move |cache| {
+            let committed = cache.connection().query_row(
+                "SELECT count(*) FROM sessions WHERE total_cost=3", [], |row| row.get::<_, i64>(0)
+            )?;
+            let published = observer.snapshot().iter().filter(|head| head.stats.total_cost == 3.0).count();
+            Ok((committed, published))
+        }),
+        async { release.send(()).unwrap() }
     );
+    held.unwrap();
+    assert_eq!(during.unwrap(), (32, 0));
     assert!(pass.is_err());
-    assert!((1..sessions.len() as i64).contains(&during.unwrap()));
     let partial = runtime.snapshot();
     assert_eq!(partial[0].stats.total_cost, 3.0);
     assert_eq!(partial.last().unwrap().stats.total_cost, 0.0);

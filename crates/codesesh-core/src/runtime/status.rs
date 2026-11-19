@@ -46,6 +46,8 @@ pub struct ScanProgress {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pricing_history: Option<crate::wire::PricingHistoryStatus>,
     pub sources: BTreeMap<String, crate::discovery::AgentCollectionStatus>,
     #[serde(rename = "type")]
     pub kind: &'static str,
@@ -69,6 +71,7 @@ impl ScanStatus {
         let now = chrono::Utc::now().timestamp_millis();
         let names: Vec<_> = agents.collect();
         Self {
+            pricing_history: None,
             sources: names
                 .iter()
                 .map(|name| (name.clone(), Default::default()))

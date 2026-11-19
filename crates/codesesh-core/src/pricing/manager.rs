@@ -78,13 +78,13 @@ impl PricingManager {
     }
 
     pub(crate) fn publish_pending(&mut self) -> Result<bool> {
-        let Some(pending) = &self.pending else {
+        let Some(official) = self.pending.take() else {
             return Ok(false);
         };
-        write_cache(&self.path, pending)?;
-        let official = self.pending.take().expect("pending pricing generation");
+        write_cache(&self.path, &official)?;
+        let previous = self.published.generation();
         self.published = Pricing::from_official_and_overrides(official, &self.overrides);
-        Ok(true)
+        Ok(self.published.generation() != previous)
     }
 }
 
