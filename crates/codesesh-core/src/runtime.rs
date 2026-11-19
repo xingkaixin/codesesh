@@ -309,22 +309,20 @@ impl Runtime {
     }
 
     pub async fn reprice_all(&self, pricing: crate::pricing::PricingSnapshot) -> Result<()> {
-        let generation = pricing.generation();
-        // A failed check only costs a redundant writer pass.
-        if !self
-            .read(move |connection| crate::storage::needs_reprice(connection, generation))
-            .await
-            .unwrap_or(true)
-        {
-            return Ok(());
+        loop {
+            let (response, result) = oneshot::channel();
+            self.inner
+                .writer
+                .send(writer::Command::Reprice {
+                    pricing: pricing.clone(),
+                    response,
+                })
+                .await
+                .map_err(|_| anyhow::anyhow!("SQLite writer stopped"))?;
+            if result.await?? {
+                return Ok(());
+            }
         }
-        let (response, result) = oneshot::channel();
-        self.inner
-            .writer
-            .send(writer::Command::Reprice { pricing, response })
-            .await
-            .map_err(|_| anyhow::anyhow!("SQLite writer stopped"))?;
-        result.await?
     }
 
     pub async fn hub_control<T: Send + 'static>(

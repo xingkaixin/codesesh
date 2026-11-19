@@ -23,7 +23,7 @@ pub(super) enum Command {
     HubControl(Box<dyn FnOnce(&mut Cache) + Send>),
     Reprice {
         pricing: crate::pricing::PricingSnapshot,
-        response: oneshot::Sender<Result<()>>,
+        response: oneshot::Sender<Result<bool>>,
     },
     Upload {
         credential: String,
@@ -64,24 +64,17 @@ pub(super) fn run(
         }
     }
     let mut last_reclaim = Instant::now();
-    let mut priced_generations = std::collections::HashMap::new();
+    let mut unpublished_prices = Vec::new();
     while let Some(command) = commands.blocking_recv() {
         match command {
             Command::HubControl(operation) => operation(&mut cache),
             Command::Reprice { pricing, response } => {
                 let result = pricing.with_latest(|active_pricing| {
-                    if !crate::storage::needs_reprice(
-                        cache.connection(),
-                        active_pricing.generation(),
-                    )? {
-                        return Ok(());
-                    }
-                    let mut references = Vec::new();
-                    for agent in crate::agents::catalog(0) {
-                        references.extend(cache.reprice(&agent.name, active_pricing)?);
-                    }
-                    publish_changes(&cache, &snapshots, &events, &references)?;
-                    crate::storage::mark_repriced(cache.connection(), active_pricing.generation())
+                    let (changed, complete) = cache.reprice_batch(active_pricing)?;
+                    unpublished_prices.extend(changed);
+                    publish_changes(&cache, &snapshots, &events, &unpublished_prices)?;
+                    unpublished_prices.clear();
+                    Ok(complete)
                 });
                 let _ = response.send(result);
             }
@@ -131,38 +124,15 @@ pub(super) fn run(
                         &batch.checkpoint,
                         batch.complete,
                     )?;
-                    let mut repriced = Vec::new();
-                    if let Some(active_pricing) = active_pricing
-                        && priced_generations.get(&agent) != Some(&active_pricing.generation())
-                    {
-                        if crate::storage::needs_reprice(
-                            cache.connection(),
-                            active_pricing.generation(),
-                        )? {
-                            repriced = cache.reprice(&agent, active_pricing)?;
-                        }
-                        priced_generations.insert(agent.clone(), active_pricing.generation());
-                    }
                     let write_elapsed = write_started.elapsed();
                     let snapshot_started = Instant::now();
                     batch.on_reject.take();
-                    if !batch.sessions.is_empty()
-                        || !batch.removed.is_empty()
-                        || !repriced.is_empty()
-                    {
-                        let mut changed_references: Vec<_> = batch
+                    if !batch.sessions.is_empty() || !batch.removed.is_empty() {
+                        let changed_references: Vec<_> = batch
                             .sessions
                             .iter()
                             .map(|session| session.head.reference.clone())
                             .collect();
-                        changed_references.append(&mut repriced);
-                        changed_references.sort_by(|a, b| {
-                            a.source_node_id
-                                .cmp(&b.source_node_id)
-                                .then(a.agent_name.cmp(&b.agent_name))
-                                .then(a.session_id.cmp(&b.session_id))
-                        });
-                        changed_references.dedup();
                         let heads =
                             Arc::new(cache.refresh_snapshot(
                                 snapshots.borrow().as_ref(),

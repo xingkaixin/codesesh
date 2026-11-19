@@ -9,25 +9,25 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Every stored cost matches this generation: a full pass checked older rows, and later writes
-/// are priced at the current generation.
 const REPRICED_GENERATION: &str = "repriced_generation";
+const REPRICE_BATCH_SIZE: usize = 32;
 
-pub(crate) fn needs_reprice(connection: &Connection, generation: u64) -> Result<bool> {
-    let repriced: Option<String> = connection
-        .query_row(
-            "SELECT value FROM cache_meta WHERE key=?",
-            [REPRICED_GENERATION],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(repriced != Some(generation.to_string()))
+// Completed passes retain the original numeric format. A partial pass records the last
+// visited identity, including sessions whose costs did not change.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum RepriceCheckpoint {
+    Complete(u64),
+    Partial {
+        generation: u64,
+        after: SessionReference,
+    },
 }
 
-pub(crate) fn mark_repriced(connection: &Connection, generation: u64) -> Result<()> {
+pub(super) fn invalidate_other_generation(connection: &Connection, generation: u64) -> Result<()> {
     connection.execute(
-        "INSERT INTO cache_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        params![REPRICED_GENERATION, generation.to_string()],
+        "DELETE FROM cache_meta WHERE key=? AND coalesce(json_extract(value,'$.generation'), cast(value AS INTEGER))<>?",
+        params![REPRICED_GENERATION, generation as i64],
     )?;
     Ok(())
 }
@@ -241,83 +241,183 @@ pub(super) fn reprice_head(
     head.stats.total_cost = state.head.cost.unwrap_or_default();
     head.stats.cost_source = state.head.source.clone();
     head.stats.cost_inputs = state.head.inputs.clone();
+    // A metadata upload replaces only the head. Zero keeps mixed generations eligible for a pass.
+    state.generation = Some(
+        if state
+            .messages
+            .values()
+            .flat_map(|basis| &basis.inputs)
+            .all(|input| input.generation == pricing.generation())
+        {
+            pricing.generation()
+        } else {
+            0
+        },
+    );
     *value = serde_json::to_value(state)?;
     Ok(())
 }
 
 impl Cache {
+    pub(crate) fn reprice_batch(
+        &mut self,
+        pricing: &Pricing,
+    ) -> Result<(Vec<SessionReference>, bool)> {
+        let transaction = self.connection.transaction()?;
+        let generation = pricing.generation();
+        let checkpoint: Option<String> = transaction
+            .query_row(
+                "SELECT value FROM cache_meta WHERE key=?",
+                [REPRICED_GENERATION],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let checkpoint = checkpoint
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?;
+        let after = match checkpoint {
+            Some(RepriceCheckpoint::Complete(done)) if done == generation => {
+                return Ok((Vec::new(), true));
+            }
+            Some(RepriceCheckpoint::Partial {
+                generation: pending,
+                after,
+            }) if pending == generation => Some(after),
+            _ => None,
+        };
+        let (changed, next) = reprice_page(&transaction, pricing, after.as_ref())?;
+        let next = match next {
+            Some(after) => RepriceCheckpoint::Partial { generation, after },
+            None => RepriceCheckpoint::Complete(generation),
+        };
+        transaction.execute(
+            "INSERT INTO cache_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![REPRICED_GENERATION, serde_json::to_string(&next)?],
+        )?;
+        transaction.commit()?;
+        Ok((changed, matches!(next, RepriceCheckpoint::Complete(_))))
+    }
+
     pub(crate) fn reprice(
         &mut self,
         agent: &str,
         pricing: &Pricing,
     ) -> Result<Vec<SessionReference>> {
         let transaction = self.connection.transaction()?;
-        let entries = {
-            let mut query = transaction.prepare("SELECT source_node_id,session_id FROM sessions WHERE agent_name=? AND publication_id IS NULL AND json_extract(meta_json,'$.rustPricing.version')=1 AND json_extract(meta_json,'$.rustPricing.generation')<>?")?;
-            query
-                .query_map(params![agent, pricing.generation() as i64], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?
+        let changed = {
+            let mut query = transaction.prepare(
+                "SELECT source_node_id, agent_name, session_id, meta_json FROM sessions
+                 WHERE agent_name=? AND publication_id IS NULL
+                   AND json_extract(meta_json,'$.rustPricing.version')=1
+                   AND json_extract(meta_json,'$.rustPricing.generation')<>?",
+            )?;
+            let rows = query.query(params![agent, pricing.generation() as i64])?;
+            reprice_rows(&transaction, pricing, rows)?.0
         };
-        let mut changed = Vec::new();
-        for (node, id) in entries {
-            let raw: String = transaction.query_row(
-                "SELECT meta_json FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
-                params![node, agent, id],
-                |row| row.get(0),
-            )?;
-            let mut state = serde_json::from_str::<StoredPricing>(&raw)?.state;
-            let mut updated = state.head.reprice(pricing);
-            for (index, basis) in &mut state.messages {
-                if basis.reprice(pricing) {
-                    transaction.execute("UPDATE messages SET cost=?,cost_source=? WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?", params![basis.cost,basis.source.as_ref().map(CostSource::as_str),node,agent,id,*index as i64])?;
-                    updated = true;
-                }
-            }
-            // Unchanged costs keep their older generation; the repriced generation marker covers them.
-            if !updated {
-                continue;
-            }
-            state.generation = Some(pricing.generation());
-            let mut metadata: serde_json::Value = serde_json::from_str(&raw)?;
-            metadata["rustPricing"] = serde_json::to_value(&state)?;
-            metadata["rustPricingRevision"] =
-                (metadata["rustPricingRevision"].as_u64().unwrap_or(0) + 1).into();
-            transaction.execute("UPDATE sessions SET total_cost=?,cost_source=?,meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?", params![state.head.cost.unwrap_or(0.0),state.head.source.as_ref().map(CostSource::as_str),serde_json::to_string(&metadata)?,node,agent,id])?;
-            for table in ["session_model_cost", "session_cost_summary"] {
-                transaction.execute(
-                    &format!("DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"),
-                    params![node, agent, id],
-                )?;
-            }
-            let reference = SessionReference {
-                source_node_id: node.clone(),
-                agent_name: agent.into(),
-                session_id: id,
-            };
-            facts::write(&transaction, &reference, &[])?;
-            let head = transaction.query_row(
-                &format!(
-                    "SELECT {} FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
-                    snapshot::HEAD_COLUMNS
-                ),
-                params![node, agent, reference.session_id],
-                snapshot::head,
-            )?;
-            transaction.execute(
-                "UPDATE session_documents SET content_hash=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
-                params![facts::content_hash(&head)?, node, agent, reference.session_id],
-            )?;
-            changed.push(reference);
-        }
         if !changed.is_empty() {
-            transaction.execute("INSERT INTO cache_meta VALUES('analytics_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1", [])?;
-            transaction.execute("UPDATE cache_meta SET value=json_set(value,'$.revision',(SELECT value FROM cache_meta WHERE key='analytics_revision')) WHERE key LIKE 'rust_json_inventory:%' AND json_extract(value,'$.revision')=CAST(CAST((SELECT value FROM cache_meta WHERE key='analytics_revision') AS INTEGER)-1 AS TEXT)", [])?;
+            invalidate_other_generation(&transaction, pricing.generation())?;
         }
         transaction.commit()?;
         Ok(changed)
     }
+}
+
+fn reprice_page(
+    transaction: &Connection,
+    pricing: &Pricing,
+    after: Option<&SessionReference>,
+) -> Result<(Vec<SessionReference>, Option<SessionReference>)> {
+    let mut query = transaction.prepare(
+        "SELECT source_node_id,agent_name,session_id,
+            CASE WHEN json_extract(meta_json,'$.rustPricing.version')=1
+                 AND json_extract(meta_json,'$.rustPricing.generation')<>?1 THEN meta_json END
+         FROM sessions WHERE (source_node_id,agent_name,session_id)>(?2,?3,?4)
+            AND publication_id IS NULL
+         ORDER BY source_node_id,agent_name,session_id LIMIT ?5",
+    )?;
+    let rows = query.query(params![
+        pricing.generation() as i64,
+        after.map_or("", |r| &r.source_node_id),
+        after.map_or("", |r| &r.agent_name),
+        after.map_or("", |r| &r.session_id),
+        REPRICE_BATCH_SIZE as i64
+    ])?;
+    reprice_rows(transaction, pricing, rows)
+}
+
+fn reprice_rows(
+    transaction: &Connection,
+    pricing: &Pricing,
+    mut rows: rusqlite::Rows<'_>,
+) -> Result<(Vec<SessionReference>, Option<SessionReference>)> {
+    let mut changed = Vec::new();
+    let mut next = None;
+    let mut count = 0;
+    while let Some(row) = rows.next()? {
+        let reference = SessionReference {
+            source_node_id: row.get(0)?,
+            agent_name: row.get(1)?,
+            session_id: row.get(2)?,
+        };
+        count += 1;
+        if count == REPRICE_BATCH_SIZE {
+            next = Some(reference.clone());
+        }
+        let Some(raw) = row.get::<_, Option<String>>(3)? else {
+            continue;
+        };
+        let SessionReference {
+            source_node_id: node,
+            agent_name: agent,
+            session_id: id,
+        } = &reference;
+        let mut state = serde_json::from_str::<StoredPricing>(&raw)?.state;
+        let mut updated = state.head.reprice(pricing);
+        for (index, basis) in &mut state.messages {
+            if basis.reprice(pricing) {
+                transaction.execute("UPDATE messages SET cost=?,cost_source=? WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index=?", params![basis.cost,basis.source.as_ref().map(CostSource::as_str),node,agent,id,*index as i64])?;
+                updated = true;
+            }
+        }
+        // Unchanged costs keep their older generation; the repriced generation marker covers them.
+        if !updated {
+            continue;
+        }
+        state.generation = Some(pricing.generation());
+        let mut metadata: serde_json::Value = serde_json::from_str(&raw)?;
+        metadata["rustPricing"] = serde_json::to_value(&state)?;
+        metadata["rustPricingRevision"] =
+            (metadata["rustPricingRevision"].as_u64().unwrap_or(0) + 1).into();
+        transaction.execute("UPDATE sessions SET total_cost=?,cost_source=?,meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?", params![state.head.cost.unwrap_or(0.0),state.head.source.as_ref().map(CostSource::as_str),serde_json::to_string(&metadata)?,node,agent,id])?;
+        for table in ["session_model_cost", "session_cost_summary"] {
+            transaction.execute(
+                &format!(
+                    "DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"
+                ),
+                params![node, agent, id],
+            )?;
+        }
+        facts::write(transaction, &reference, &[])?;
+        let head = transaction.query_row(
+            &format!(
+                "SELECT {} FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
+                snapshot::HEAD_COLUMNS
+            ),
+            params![node, agent, reference.session_id],
+            snapshot::head,
+        )?;
+        transaction.execute(
+                "UPDATE session_documents SET content_hash=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
+                params![facts::content_hash(&head)?, node, agent, reference.session_id],
+            )?;
+        changed.push(reference);
+    }
+    if !changed.is_empty() {
+        transaction.execute("INSERT INTO cache_meta VALUES('analytics_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1", [])?;
+        transaction.execute("UPDATE cache_meta SET value=json_set(value,'$.revision',(SELECT value FROM cache_meta WHERE key='analytics_revision')) WHERE key LIKE 'rust_json_inventory:%' AND json_extract(value,'$.revision')=CAST(CAST((SELECT value FROM cache_meta WHERE key='analytics_revision') AS INTEGER)-1 AS TEXT)", [])?;
+    }
+    Ok((changed, next))
 }
 
 #[cfg(test)]
@@ -631,11 +731,16 @@ mod tests {
         let path = root.path().join("cache.db");
         let mut cache = Cache::open(Some(&path)).unwrap();
         cache.publish(std::slice::from_mut(&mut session)).unwrap();
-        mark_repriced(cache.connection(), 1).unwrap();
+        cache
+            .connection()
+            .execute(
+                "INSERT INTO cache_meta VALUES(?,?)",
+                params![REPRICED_GENERATION, "1"],
+            )
+            .unwrap();
         drop(cache);
         std::fs::remove_file(&session.source).unwrap();
         let mut cache = Cache::open(Some(&path)).unwrap();
-        assert!(needs_reprice(cache.connection(), pricing.generation()).unwrap());
         assert_eq!(
             cache.reprice("codex", &pricing).unwrap(),
             [session.head.reference.clone()]

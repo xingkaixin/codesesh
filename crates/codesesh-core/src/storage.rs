@@ -9,7 +9,7 @@ mod memory;
 mod message_reuse;
 mod read;
 mod reprice;
-pub(crate) use reprice::{StoredPricing, mark_repriced, needs_reprice, reprice_session};
+pub(crate) use reprice::{StoredPricing, reprice_session};
 mod schema;
 pub(crate) use schema::{COMPACT_MIN_FREE_PAGES, sparse_pages};
 mod search_text;
@@ -302,6 +302,9 @@ impl Cache {
             let mut metadata = serde_json::json!({"sourcePath":session.source.to_string_lossy(),"sourceFingerprint":fingerprint,"parserVersion":crate::agents::parser_version(&reference.agent_name)});
             let head_metadata = snapshot::HeadMetadata::encode(head)?;
             metadata["rustPricing"] = reprice::state(session)?;
+            if let Some(generation) = metadata["rustPricing"]["generation"].as_u64() {
+                reprice::invalidate_other_generation(transaction, generation)?;
+            }
             let detail_version = json::stringify(&serde_json::json!([
                 "session-detail-v1",
                 fingerprint,

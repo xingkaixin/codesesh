@@ -322,6 +322,7 @@ fn update_metadata(
         serde_json::from_str(&raw)?
     };
     crate::storage::reprice::reprice_head(head, pricing, &mut metadata["rustPricing"])?;
+    crate::storage::reprice::invalidate_other_generation(tx, pricing.generation())?;
     metadata["sourcePath"] = source.into();
     let reference = &head.reference;
     let head_metadata = crate::storage::snapshot::HeadMetadata::encode(head)?;
