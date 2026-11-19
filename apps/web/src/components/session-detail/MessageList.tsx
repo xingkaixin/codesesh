@@ -69,8 +69,9 @@ export function MessageList({
     measurementVersion,
   );
   const commitMeasurements = useCallback(() => {
-    captureAnchor();
+    const anchor = captureAnchor();
     setMeasurementVersion((version) => version + 1);
+    return anchor;
   }, [captureAnchor]);
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
@@ -131,7 +132,7 @@ function VirtualizedMessageList({
   onCommitMeasurements,
 }: MessageListProps & {
   measurementVersion: number;
-  onCommitMeasurements: () => void;
+  onCommitMeasurements: () => number | undefined;
 }) {
   const locale = useLocale();
 
@@ -147,6 +148,7 @@ function VirtualizedMessageList({
     height: 900,
     listTop: 0,
   }));
+  const [measurementAnchor, setMeasurementAnchor] = useState<number | undefined>();
   const viewportRef = useRef(viewport);
 
   useEffect(() => {
@@ -280,7 +282,8 @@ function VirtualizedMessageList({
       if (pendingMeasureFrameRef.current) return;
       pendingMeasureFrameRef.current = requestAnimationFrame(() => {
         pendingMeasureFrameRef.current = 0;
-        onCommitMeasurements();
+        const index = onCommitMeasurements();
+        setMeasurementAnchor(index);
       });
     },
     [heightIndex, messages, measuredHeights, onCommitMeasurements],
@@ -308,18 +311,33 @@ function VirtualizedMessageList({
       }
 
       const forcedIndex = forcedItem?.heightIndex === heightIndex ? forcedItem.index : null;
-      if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
-        if (!items.some((item) => item.index === forcedIndex)) {
-          items.push({ index: forcedIndex, start: heightIndex.startAt(forcedIndex) });
-          items.sort((a, b) => a.start - b.start);
+      for (const index of [measurementAnchor, forcedIndex]) {
+        if (index != null && index >= 0 && index < messages.length) {
+          if (!items.some((item) => item.index === index)) {
+            items.push({ index, start: heightIndex.startAt(index) });
+            items.sort((a, b) => a.start - b.start);
+          }
         }
       }
-
       return items;
     },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, forcedItem, heightIndex, measurementVersion, messages.length, viewport],
+    [
+      locale,
+      forcedItem,
+      measurementAnchor,
+      heightIndex,
+      measurementVersion,
+      messages.length,
+      viewport,
+    ],
   );
+
+  useEffect(() => {
+    if (measurementAnchor === undefined) return;
+    updateViewport();
+    setMeasurementAnchor(undefined);
+  }, [measurementVersion, measurementAnchor, updateViewport]);
 
   const scrollToIndex = useCallback(
     (index: number) => {
@@ -421,6 +439,7 @@ function VirtualizedMessageRow({
   return (
     <div
       ref={rowRef}
+      data-list-index={index}
       className="absolute left-0 top-0 w-full"
       style={{ transform: `translateY(${top}px)` }}
     >

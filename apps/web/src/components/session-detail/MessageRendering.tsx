@@ -225,7 +225,8 @@ export const MessageItem = memo(function MessageItem({
             <AbortToolItem />
           ) : (
             blocks.map((block, index) => {
-              const timelineAnchorId = buildBlockTimelineAnchorId(messageIndex, index);
+              const timelineAnchorId =
+                block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, index);
               if (block.type === "reasoning") {
                 return (
                   <ReasoningSection

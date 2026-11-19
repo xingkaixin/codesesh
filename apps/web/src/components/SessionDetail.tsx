@@ -192,8 +192,9 @@ export function SessionDetail({
   );
   const expandedSnapshot = useExpandedItemsSnapshot(expandedItems);
   const { hasCollapsible, allExpanded } = useMemo(
-    () => deriveExpandedSummary(filteredMessages, expandedSnapshot),
-    [filteredMessages, expandedSnapshot],
+    () =>
+      deriveExpandedSummary(filteredMessages, expandedSnapshot, sessionAgentKey, session.directory),
+    [filteredMessages, expandedSnapshot, sessionAgentKey, session.directory],
   );
   const showTranscriptToolbar = countActiveFilterChips(toc, filterState) > 0 || hasCollapsible;
   const virtualListRef = useRef<MessageListHandle | null>(null);

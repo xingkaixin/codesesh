@@ -6,6 +6,9 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { buildCodexPlanDisplay } from "./codex-plan";
+import { isCodexTurnAbortedMessage } from "./codex-abort";
+import { getToolDisplayStrategy, normalizeToolState } from "./tool-strategy";
 import type { FilteredSessionMessage } from "./toc";
 import { buildBlockTimelineAnchorId } from "./timeline";
 
@@ -83,64 +86,47 @@ export function buildToolItemKey(
   return anchorId ?? `tool:${messageIndex}:${blockIndex}:${partIndex}`;
 }
 
+function* collapsibleKeys(messages: FilteredSessionMessage[], agent: string, directory: string) {
+  for (const { blocks, index: messageIndex, msg } of messages) {
+    if (isCodexTurnAbortedMessage(msg, agent)) continue;
+    for (const [blockIndex, block] of blocks.entries()) {
+      const anchor = block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex);
+      if (block.type === "reasoning") yield buildReasoningItemKey(anchor);
+      if (block.type === "plan") {
+        for (const [index, plan] of block.parts.entries()) {
+          if (buildCodexPlanDisplay(plan).expandable) yield buildPlanItemKey(anchor, index);
+        }
+      }
+      if (block.type === "tool") {
+        for (const [index, tool] of block.parts.entries()) {
+          if (
+            getToolDisplayStrategy(agent, tool, normalizeToolState(tool), directory, {
+              includeOutput: false,
+            }).expandable
+          ) {
+            yield buildToolItemKey(block.anchorIds?.[index], messageIndex, blockIndex, index);
+          }
+        }
+      }
+    }
+  }
+}
+
 export function deriveExpandedSummary(
   messages: FilteredSessionMessage[],
   snapshot: ExpandedItemsSnapshot,
+  agent: string,
+  directory: string,
 ): { hasCollapsible: boolean; allExpanded: boolean } {
   let hasCollapsible = false;
-
-  if (snapshot.overrides.size === 0) {
-    for (const { blocks } of messages) {
-      for (const block of blocks) {
-        if (block.type === "reasoning" || block.type === "plan" || block.type === "tool") {
-          return { hasCollapsible: true, allExpanded: snapshot.defaultExpanded };
-        }
-      }
-    }
-    return { hasCollapsible: false, allExpanded: false };
+  for (const key of collapsibleKeys(messages, agent, directory)) {
+    hasCollapsible = true;
+    if (snapshot.overrides.size === 0)
+      return { hasCollapsible, allExpanded: snapshot.defaultExpanded };
+    if (snapshot.defaultExpanded === snapshot.overrides.has(key))
+      return { hasCollapsible, allExpanded: false };
   }
-
-  let allExpanded = true;
-  for (const { blocks, index: messageIndex } of messages) {
-    for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-      const block = blocks[blockIndex]!;
-      if (block.type === "reasoning") {
-        hasCollapsible = true;
-        const key = buildReasoningItemKey(buildBlockTimelineAnchorId(messageIndex, blockIndex));
-        const expanded = snapshot.defaultExpanded
-          ? !snapshot.overrides.has(key)
-          : snapshot.overrides.has(key);
-        if (!expanded) allExpanded = false;
-      } else if (block.type === "plan") {
-        const anchorId = buildBlockTimelineAnchorId(messageIndex, blockIndex);
-        for (let planIndex = 0; planIndex < block.parts.length; planIndex += 1) {
-          hasCollapsible = true;
-          const key = buildPlanItemKey(anchorId, planIndex);
-          const expanded = snapshot.defaultExpanded
-            ? !snapshot.overrides.has(key)
-            : snapshot.overrides.has(key);
-          if (!expanded) allExpanded = false;
-        }
-      } else if (block.type === "tool") {
-        for (let partIndex = 0; partIndex < block.parts.length; partIndex += 1) {
-          hasCollapsible = true;
-          const key = buildToolItemKey(
-            block.anchorIds?.[partIndex],
-            messageIndex,
-            blockIndex,
-            partIndex,
-          );
-          const expanded = snapshot.defaultExpanded
-            ? !snapshot.overrides.has(key)
-            : snapshot.overrides.has(key);
-          if (!expanded) allExpanded = false;
-        }
-      }
-      if (hasCollapsible && !allExpanded) return { hasCollapsible: true, allExpanded: false };
-    }
-  }
-
-  return { hasCollapsible, allExpanded: hasCollapsible && allExpanded };
+  return { hasCollapsible, allExpanded: hasCollapsible };
 }
 
 const ExpandedItemsContext = createContext<ExpandedItemsRegistry | null>(null);

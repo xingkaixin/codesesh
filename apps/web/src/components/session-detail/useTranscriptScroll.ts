@@ -10,10 +10,10 @@ import {
 export function useTranscriptScroll(content: unknown, followTail = true, layoutVersion = 0) {
   const containerRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<() => void>(() => {});
-  const captureRef = useRef<() => void>(() => {});
+  const captureRef = useRef<() => number | undefined>(() => undefined);
   const followTailRef = useRef(followTail);
   const captureAnchor = useCallback(() => {
-    captureRef.current();
+    return captureRef.current();
   }, []);
 
   useLayoutEffect(() => {
@@ -48,7 +48,7 @@ export function useTranscriptScroll(content: unknown, followTail = true, layoutV
             viewportTop: rowViewportTop,
             contentTop: rowViewportTop + currentScrollTop,
           };
-          break;
+          return Number(row.parentElement?.dataset.listIndex);
         }
       }
     };
@@ -58,7 +58,7 @@ export function useTranscriptScroll(content: unknown, followTail = true, layoutV
         cancelAnimationFrame(captureFrame);
         captureFrame = 0;
       }
-      capture();
+      return capture();
     };
 
     const scheduleCapture = () => {
@@ -131,7 +131,7 @@ export function useTranscriptScroll(content: unknown, followTail = true, layoutV
       parent.removeEventListener("scroll", handleScroll);
       observer?.disconnect();
       restoreRef.current = () => {};
-      captureRef.current = () => {};
+      captureRef.current = () => undefined;
     };
   }, []);
 
