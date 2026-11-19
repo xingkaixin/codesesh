@@ -759,6 +759,22 @@ async fn pricing_app(
     (router(Arc::new(state)), runtime, pricing, dir)
 }
 
+async fn wait_for_repricing(runtime: &codesesh_core::runtime::Runtime, generation: u64) {
+    let mut statuses = runtime.statuses();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        statuses.wait_for(|status| {
+            status.pricing_history.as_ref().is_some_and(|history| {
+                history.generation == generation
+                    && history.phase == codesesh_core::wire::PricingHistoryPhase::Current
+            })
+        }),
+    )
+    .await
+    .expect("background pricing history reprice should complete")
+    .unwrap();
+}
+
 #[tokio::test]
 async fn pricing_routes_enforce_mode_storage_and_validation() {
     let auth = [("authorization", "Bearer secret")];
@@ -910,6 +926,7 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
             .unwrap()
             .is_empty()
     );
+    wait_for_repricing(&hub_runtime, hub_pricing.generation()).await;
 
     let (status, sessions_json) =
         request(&hub_app, Method::GET, "/api/sessions?days=0", &auth, "").await;
@@ -984,6 +1001,7 @@ async fn pricing_routes_enforce_mode_storage_and_validation() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    wait_for_repricing(&hub_runtime, hub_pricing.generation()).await;
     let (status, sessions_json) =
         request(&hub_app, Method::GET, "/api/sessions?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
@@ -1161,6 +1179,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(unmatched["unmatchedModels"].as_array().unwrap().len(), 0);
+    wait_for_repricing(&runtime, pricing.generation()).await;
     let (status, sessions_json) =
         request(&app, Method::GET, "/api/sessions?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
@@ -1179,6 +1198,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    wait_for_repricing(&runtime, pricing.generation()).await;
     let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
     assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 7.0).abs() < 1e-6);
@@ -1210,6 +1230,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    wait_for_repricing(&runtime, pricing.generation()).await;
     let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
     assert!((dashboard["totals"]["cost"].as_f64().unwrap() - expected_gpt5_cost).abs() < 1e-6);
@@ -1267,6 +1288,7 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    wait_for_repricing(&runtime, pricing.generation()).await;
 
     assert!(
         pricing
@@ -1337,10 +1359,103 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(unmatched["unmatchedModels"].as_array().unwrap().len(), 0);
+    wait_for_repricing(&runtime, pricing.generation()).await;
 
     let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
     assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 18.0).abs() < 1e-6);
+
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn pricing_override_save_and_delete_reprice_in_background_without_blocking_http() {
+    let auth = [("authorization", "Bearer secret")];
+    let json_auth = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+    let (app, runtime, pricing, _dir) = pricing_app(
+        &[("000000000021", "acme/bg-reprice-v1", 1_000_000, 500_000)],
+        Some(StateStore::memory().unwrap()),
+        false,
+    )
+    .await;
+
+    let before_generation = pricing.generation();
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let hold_runtime = runtime.clone();
+    let hold_task = tokio::spawn(async move {
+        hold_runtime
+            .hub_control(move |_| {
+                let _ = entered_tx.send(());
+                release_rx.recv().map_err(Into::into)
+            })
+            .await
+    });
+    entered_rx.await.unwrap();
+
+    let (status, saved) = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        request(
+            &app,
+            Method::PUT,
+            "/api/pricing/overrides",
+            &json_auth,
+            r#"{"model":"acme/bg-reprice-v1","kind":"manual","rates":{"input":2.0,"output":10.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+        ),
+    )
+    .await
+    .expect("PUT /api/pricing/overrides must not block on runtime writer");
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["overrides"][0]["modelKey"], "acme/bg-reprice-v1");
+    let saved_generation = pricing.generation();
+    assert_ne!(saved_generation, before_generation);
+
+    release_tx.send(()).unwrap();
+    hold_task.await.unwrap().unwrap();
+    wait_for_repricing(&runtime, saved_generation).await;
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 7.0).abs() < 1e-6);
+
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let hold_runtime = runtime.clone();
+    let hold_task = tokio::spawn(async move {
+        hold_runtime
+            .hub_control(move |_| {
+                let _ = entered_tx.send(());
+                release_rx.recv().map_err(Into::into)
+            })
+            .await
+    });
+    entered_rx.await.unwrap();
+
+    let (status, deleted) = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        request(
+            &app,
+            Method::POST,
+            "/api/pricing/overrides/delete",
+            &json_auth,
+            r#"{"model":"acme/bg-reprice-v1"}"#,
+        ),
+    )
+    .await
+    .expect("POST /api/pricing/overrides/delete must not block on runtime writer");
+    assert_eq!(status, StatusCode::OK);
+    assert!(deleted["overrides"].as_array().unwrap().is_empty());
+    let deleted_generation = pricing.generation();
+    assert_ne!(deleted_generation, saved_generation);
+
+    release_tx.send(()).unwrap();
+    hold_task.await.unwrap().unwrap();
+    wait_for_repricing(&runtime, deleted_generation).await;
+    let (status, dashboard) = request(&app, Method::GET, "/api/dashboard?days=0", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(dashboard["totals"]["cost"], 0.0);
 
     runtime.shutdown().await.unwrap();
 }

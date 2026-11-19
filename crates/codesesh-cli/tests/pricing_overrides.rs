@@ -160,7 +160,18 @@ async fn cli_persists_overrides_across_clear_cache_json_and_hub_restart() {
         .await
         .unwrap();
     assert_eq!(put_response.status(), reqwest::StatusCode::OK);
-    let dashboard = wait_for_json(&client, &format!("{origin}/api/dashboard?days=0")).await;
+    let mut dashboard = Value::Null;
+    for _ in 0..100 {
+        let body = wait_for_json(&client, &format!("{origin}/api/dashboard?days=0")).await;
+        if body["totals"]["cost"]
+            .as_f64()
+            .is_some_and(|cost| (cost - 7.0).abs() < 1e-6)
+        {
+            dashboard = body;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert!((dashboard["totals"]["cost"].as_f64().unwrap() - 7.0).abs() < 1e-6);
     drop(first_server);
 
