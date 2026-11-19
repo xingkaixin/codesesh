@@ -1,7 +1,8 @@
 import { getLocale } from "../i18n/language";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Link } from "react-router-dom";
 import { formatSessionReference, type SessionHead } from "@codesesh/contract";
 import { findAgent, type AgentCatalog } from "../lib/agents";
@@ -154,6 +155,8 @@ function SessionListPanel({
 }) {
   useLocale();
 
+  const list = useRef<HTMLUListElement>(null);
+
   if (totalCount === 0) {
     return (
       <Panel className="p-4 text-sm text-[var(--console-muted)]">{t("No sessions yet")}</Panel>
@@ -165,7 +168,7 @@ function SessionListPanel({
   return (
     <Panel className="p-4">
       <PanelHeader title={title} meta={t("{0} items", [totalCount])} />
-      <ul className="mt-3 space-y-2">
+      <ul ref={list} className="mt-3 space-y-2">
         {sessions.map((session) => {
           const bookmarked = isBookmarked(
             session.reference.agentName,
@@ -193,7 +196,15 @@ function SessionListPanel({
       </ul>
       {remaining > 0 && onShowMore ? (
         <div className="mt-3 flex justify-center border-t border-[var(--console-border)] pt-3">
-          <button type="button" onClick={onShowMore} className={BUTTON_OUTLINE_CLASS}>
+          <button
+            type="button"
+            onClick={(event) => {
+              if (event.detail !== 0) return onShowMore();
+              flushSync(onShowMore);
+              list.current?.children[sessions.length]?.querySelector("a")?.focus();
+            }}
+            className={BUTTON_OUTLINE_CLASS}
+          >
             {t("Show more ({0} remaining)", [remaining])}
           </button>
         </div>

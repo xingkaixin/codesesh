@@ -181,7 +181,7 @@ export function InteractiveReceipt({
           />
           <div
             ref={hitSurfaceRef}
-            className="invisible absolute left-0 top-0 z-[62] cursor-grab touch-none active:cursor-grabbing"
+            className="invisible absolute left-0 top-0 z-[62] cursor-grab touch-pan-y active:cursor-grabbing"
             aria-label={t("Interactive thermal receipt with Verlet paper simulation")}
           />
         </div>

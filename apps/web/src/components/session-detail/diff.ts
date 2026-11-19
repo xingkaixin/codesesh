@@ -105,10 +105,16 @@ export function buildPiEditDiffBlocks(state: NormalizedToolState, filePath: stri
   const metadata = toRecord(state.metadataValue);
   const patch = toStringValue(metadata.patch) || toStringValue(metadata.diff);
   if (!patch.trim()) return [];
+  const lines = splitDiffChunkLines(patch);
+  const firstHunk = lines.findIndex((line) => line.startsWith("@@"));
   return [
     {
       label,
-      lines: splitDiffChunkLines(patch).map(parsePatchLine),
+      lines: lines.map((line, index) =>
+        index < firstHunk && (line.startsWith("+++ ") || line.startsWith("--- "))
+          ? { type: "context", text: line }
+          : parsePatchLine(line),
+      ),
     },
   ];
 }
@@ -141,9 +147,6 @@ export function buildDshEditDiffBlocks(state: NormalizedToolState, filePath: str
 }
 
 function parsePatchLine(line: string): DiffLineItem {
-  if (line.startsWith("@@") || line.startsWith("+++ ") || line.startsWith("--- ")) {
-    return { type: "context", text: line };
-  }
   if (line.startsWith("+")) return { type: "add", text: line.slice(1) };
   if (line.startsWith("-")) return { type: "remove", text: line.slice(1) };
   if (line.startsWith(" ")) return { type: "context", text: line.slice(1) };

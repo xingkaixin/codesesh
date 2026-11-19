@@ -142,7 +142,7 @@ export function summarizeHubNodes(
   const attentionCount = active.filter(nodeNeedsAttention).length;
 
   let health: HubNodesHealth;
-  if (onlineCount === 0) {
+  if (active.length > 0 && onlineCount === 0) {
     health = "offline";
   } else if (attentionCount > 0 || onlineCount < active.length) {
     health = "degraded";

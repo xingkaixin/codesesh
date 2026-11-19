@@ -1,3 +1,4 @@
+import { ScanStatusAnnouncement } from "./components/app/ScanStatusAnnouncement";
 import { useLocale } from "./hooks/useLocale";
 import { t } from "./i18n/translate";
 import {
@@ -545,8 +546,9 @@ export default function App() {
     appConfig.config != null &&
     !pricingNoticeDismissed &&
     (pricingAttentionCount > 0 || pricingError);
-  const sidebarPricingTab: PricingDrawerTab =
-    pricingOverridesError && !pricingUnmatchedError
+  const sidebarPricingTab: PricingDrawerTab = pricingUnmatchedError
+    ? "unmatched"
+    : pricingOverridesError
       ? "overrides"
       : (unmatchedModelCount ?? 0) === 0 &&
           (officialAvailableCount > 0 || pricingOverrides.length > 0)
@@ -632,6 +634,7 @@ export default function App() {
         >
           {t("Skip to content")}
         </a>
+        <ScanStatusAnnouncement visible={scanStatusVisible} issuesOnly={!isDashboardOrSearch} />
         <AppSidebar
           model={{
             sidebarCollapsed,

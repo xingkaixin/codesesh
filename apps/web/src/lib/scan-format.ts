@@ -79,9 +79,12 @@ export function formatSearchSubtitle(query: string, loading: boolean, count: num
   return query ? t('{0} matches for "{1}"', [count, query]) : t("{0} recent sessions", [count]);
 }
 
-export function formatScanStatusLabel(status: ScanStatusEvent | null): string | null {
+export function formatScanStatusLabel(
+  status: ScanStatusEvent | null,
+  issuesOnly = false,
+): string | null {
   if (!status) return null;
-  if (status.backfill?.active) {
+  if (!issuesOnly && status.backfill?.active) {
     const current = status.backfill.currentAgent;
     const pending = status.backfill.pendingAgents.filter((agent) => agent !== current).length;
     const progress = status.backfill.progress;
@@ -124,7 +127,7 @@ export function formatScanStatusLabel(status: ScanStatusEvent | null): string | 
       failedAgent.error ? ` · ${failedAgent.error}` : "",
     ]);
   }
-  if (status.active && status.phase === "initializing") {
+  if (!issuesOnly && status.active && status.phase === "initializing") {
     return t("Initializing recent sessions");
   }
 

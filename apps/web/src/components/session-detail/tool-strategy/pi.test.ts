@@ -102,7 +102,7 @@ describe("Pi tool execution evidence", () => {
       input: { path: "/repo/a.ts" },
       output: [{ type: "text", text: "Replaced." }],
       metadata: {
-        patch: "--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n keep\n-before\n+after\n",
+        patch: "--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n keep\n--- old comment\n+++ increment\n",
       },
     });
 
@@ -116,8 +116,8 @@ describe("Pi tool execution evidence", () => {
             { type: "context", text: "+++ b/a.ts" },
             { type: "context", text: "@@ -1,3 +1,3 @@" },
             { type: "context", text: "keep" },
-            { type: "remove", text: "before" },
-            { type: "add", text: "after" },
+            { type: "remove", text: "-- old comment" },
+            { type: "add", text: "++ increment" },
           ],
         },
       ],
