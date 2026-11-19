@@ -11,6 +11,7 @@ import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   normalizeToolName,
   toPlainText,
@@ -18,6 +19,7 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -130,14 +132,16 @@ export function buildZCodeToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = normalizeToolName(tool);
   const input = toRecord(state.inputValue);
   const metadata = toRecord(state.metadataValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
-  const outputText = getOutputOrErrorText(state);
+  const getOutputText = () => getOutputOrErrorText(state);
 
   if (toolKey === "bash" || toolKey === "shell") {
     const description = toPlainText(input.description);
@@ -151,27 +155,20 @@ export function buildZCodeToolStrategy(
       baseDirectory,
       includeCommandDetail: true,
       emptyOutputMarker: t("(Bash completed with no output)"),
+      includeOutput,
     });
   }
 
   if (toolKey === "read" || toolKey === "readfile") {
-    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   }
 
   if (toolKey === "edit" || toolKey === "strreplacefile") {
-    const diffBlocks = buildZCodeEditDiffBlocks(state, displayPath || filePath);
-    const oldValue = toStringValue(input.old_string);
-    const newValue = toStringValue(input.new_string);
-    const fallbackDiffBlocks = buildStructuredDiffFromTexts(
-      displayPath || filePath,
-      oldValue,
-      newValue,
-    );
-    const blocks = diffBlocks.length > 0 ? diffBlocks : fallbackDiffBlocks;
     const display = toRecord(metadata.display);
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
+      includeOutput,
       details: [
         typeof display.additions === "number"
           ? { label: t("Additions"), value: String(display.additions) }
@@ -180,10 +177,20 @@ export function buildZCodeToolStrategy(
           ? { label: t("Deletions"), value: String(display.deletions) }
           : null,
       ].filter((item): item is ToolDetailItem => item != null),
-      outputContent:
-        state.status !== "error" && blocks.length > 0
+      outputContent: () => {
+        const diffBlocks = buildZCodeEditDiffBlocks(state, displayPath || filePath);
+        const blocks =
+          diffBlocks.length > 0
+            ? diffBlocks
+            : buildStructuredDiffFromTexts(
+                displayPath || filePath,
+                toStringValue(input.old_string),
+                toStringValue(input.new_string),
+              );
+        return state.status !== "error" && blocks.length > 0
           ? { kind: "structured-diff", blocks }
-          : { kind: "plain", text: outputText, language: "text", isCode: false },
+          : { kind: "plain", text: getOutputText(), language: "text", isCode: false };
+      },
     });
   }
 
@@ -194,6 +201,7 @@ export function buildZCodeToolStrategy(
       filePath,
       displayPath,
       Icon: FilePlus2,
+      includeOutput,
     });
   }
 
@@ -205,6 +213,7 @@ export function buildZCodeToolStrategy(
       path: toPlainText(input.path),
       pattern: toPlainText(input.pattern),
       baseDirectory,
+      includeOutput,
     });
   }
 
@@ -237,17 +246,34 @@ export function buildZCodeToolStrategy(
       secondaryText: description || undefined,
       details: subagentType ? [{ label: t("Type"), value: subagentType }] : [],
       showInputPreview: true,
-      outputContent: {
-        kind: "plain",
-        text: outputText,
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputText(),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
   if (toolKey === "askuserquestion") {
-    const display = buildZCodeAskUserQuestionDisplay(state.inputValue, outputText);
+    if (!includeOutput) {
+      const rawQuestions = Array.isArray(input.questions) ? input.questions : [];
+      const count = rawQuestions.filter((value) =>
+        Boolean(toPlainText(toRecord(value).question)),
+      ).length;
+      return {
+        ...defaultStrategy,
+        Icon: CircleHelp,
+        title: "ask",
+        secondaryText: count ? t("{0} question{1}", [count, count === 1 ? "" : "s"]) : undefined,
+        details: [],
+        showInputPreview: false,
+        outputContent: EMPTY_TOOL_OUTPUT,
+      };
+    }
+    const display = buildZCodeAskUserQuestionDisplay(state.inputValue, getOutputText());
     return {
       ...defaultStrategy,
       Icon: CircleHelp,
@@ -271,12 +297,14 @@ export function buildZCodeToolStrategy(
           .find((line) => line.trim())
           ?.replace(/^#+\s*/, "") || undefined,
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: plan || outputText,
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: plan || getOutputText(),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -288,7 +316,9 @@ export function buildZCodeToolStrategy(
       title: t("web search"),
       secondaryText: query || undefined,
       showInputPreview: false,
-      outputContent: { kind: "plain", text: outputText, language: "markdown", isCode: false },
+      outputContent: includeOutput
+        ? { kind: "plain", text: getOutputText(), language: "markdown", isCode: false }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -300,7 +330,9 @@ export function buildZCodeToolStrategy(
       title: "skill",
       secondaryText: skill || undefined,
       showInputPreview: false,
-      outputContent: { kind: "plain", text: outputText, language: "markdown", isCode: false },
+      outputContent: includeOutput
+        ? { kind: "plain", text: getOutputText(), language: "markdown", isCode: false }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 

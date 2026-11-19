@@ -16,6 +16,7 @@ import {
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   buildSemanticOutputContent,
   compactText,
   getOutputOrErrorText,
@@ -26,6 +27,7 @@ import {
   toStringValue,
 } from "../tool-normalize";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -125,17 +127,27 @@ function buildGrokReadStrategy(
   state: NormalizedToolState,
   defaultStrategy: ToolDisplayStrategy,
   baseDirectory?: string,
+  includeOutput = true,
 ) {
   const input = toRecord(state.inputValue);
   const payload = payloadFromState(state);
   const fileContent = toRecord(payload.FileContent);
-  const imageContent = toRecord(payload.ImageContent);
-  const pdfContent = toRecord(payload.PdfPageImages);
   const filePath =
     toPlainText(fileContent.absolute_path) ||
     toPlainText(input.target_file) ||
     toPlainText(input.file_path);
   const displayPath = getDisplayPath(filePath, baseDirectory);
+  if (!includeOutput) {
+    return buildFileReadStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
+      includeOutput: false,
+    });
+  }
+  const imageContent = toRecord(payload.ImageContent);
+  const pdfContent = toRecord(payload.PdfPageImages);
   const details = buildReadDetails(fileContent, imageContent, pdfContent);
   const mediaOutput = buildReadMedia(imageContent, pdfContent);
 
@@ -213,6 +225,7 @@ function buildGrokBashStrategy(
   state: NormalizedToolState,
   defaultStrategy: ToolDisplayStrategy,
   baseDirectory?: string,
+  includeOutput = true,
 ): ToolDisplayStrategy {
   const input = toRecord(state.inputValue);
   const payload = payloadFromState(state);
@@ -224,9 +237,10 @@ function buildGrokBashStrategy(
       Icon: Bot,
       title: "task",
       secondaryText: toPlainText(payload.task_id) || description || undefined,
-      details: payloadDetails(payload, ["type", "summary", "retrieval_hint"]),
-      outputContent:
-        payload.status === "running"
+      details: includeOutput ? payloadDetails(payload, ["type", "summary", "retrieval_hint"]) : [],
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : payload.status === "running"
           ? {
               kind: "task-list",
               items: [
@@ -241,6 +255,17 @@ function buildGrokBashStrategy(
     };
   }
   const displayCommand = getDisplayTextWithRelativePaths(command, baseDirectory);
+  if (!includeOutput) {
+    return {
+      ...defaultStrategy,
+      Icon: SquareTerminal,
+      title: "bash",
+      secondaryText: description || compactText(displayCommand).slice(0, 120) || undefined,
+      details: [],
+      showInputPreview: false,
+      outputContent: EMPTY_TOOL_OUTPUT,
+    };
+  }
   const currentDirectory = getDisplayPath(toPlainText(payload.current_dir), baseDirectory);
   const outputFile = getDisplayPath(toPlainText(payload.output_file), baseDirectory);
   const exitCode = integerValue(payload.exit_code);
@@ -284,6 +309,7 @@ function buildGrokTaskOutputStrategy(
   state: NormalizedToolState,
   defaultStrategy: ToolDisplayStrategy,
   baseDirectory?: string,
+  includeOutput = true,
 ): ToolDisplayStrategy {
   const payload = payloadFromState(state);
   const result = toRecord(payload.Result);
@@ -293,16 +319,16 @@ function buildGrokTaskOutputStrategy(
     { ...state, outputValue: result },
     defaultStrategy,
     baseDirectory,
+    includeOutput,
   );
   return {
     ...terminal,
     Icon: Bot,
     title: "task",
     secondaryText: toPlainText(result.task_id) || undefined,
-    details: [
-      ...payloadDetails(result, ["output"]),
-      ...payloadDetails(payload, ["type", "Result"]),
-    ],
+    details: includeOutput
+      ? [...payloadDetails(result, ["output"]), ...payloadDetails(payload, ["type", "Result"])]
+      : [],
     showInputPreview: true,
   };
 }
@@ -312,6 +338,7 @@ function buildGrokFileStrategy(
   defaultStrategy: ToolDisplayStrategy,
   write: boolean,
   baseDirectory?: string,
+  includeOutput = true,
 ): ToolDisplayStrategy {
   const payload = payloadFromState(state);
   const applied = toRecord(payload.EditsApplied);
@@ -319,25 +346,33 @@ function buildGrokFileStrategy(
 
   const filePath = toPlainText(applied.absolute_path) || getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
-  const details = [
-    ...payloadDetails(payload, ["type", "EditsApplied"]),
-    ...payloadDetails(applied, [
-      "absolute_path",
-      "old_string",
-      "new_string",
-      "edits",
-      "tool_output_for_prompt_concise",
-    ]),
-  ];
+  const details = includeOutput
+    ? [
+        ...payloadDetails(payload, ["type", "EditsApplied"]),
+        ...payloadDetails(applied, [
+          "absolute_path",
+          "old_string",
+          "new_string",
+          "edits",
+          "tool_output_for_prompt_concise",
+        ]),
+      ]
+    : [];
   if (write) {
     if (typeof applied.new_string !== "string") return defaultStrategy;
-    const strategy = buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+    const strategy = buildFileWriteStrategy({
+      defaultStrategy,
+      state,
+      filePath,
+      displayPath,
+      includeOutput,
+    });
     return {
       ...strategy,
       details,
       showInputPreview: true,
       outputContent:
-        strategy.outputContent.kind === "plain"
+        includeOutput && strategy.outputContent.kind === "plain"
           ? {
               ...strategy.outputContent,
               text: applied.new_string || t("File is empty."),
@@ -357,25 +392,31 @@ function buildGrokFileStrategy(
   ) {
     return defaultStrategy;
   }
-  const blocks = entries.flatMap((value) => {
-    const edit = toRecord(value);
-    const oldLine = integerValue(edit.old_line);
-    const newLine = integerValue(edit.new_line);
-    const label =
-      oldLine !== null && newLine !== null ? `${displayPath}:${oldLine} → ${newLine}` : displayPath;
-    return buildStructuredDiffFromTexts(
-      label,
-      toStringValue(edit.old_string),
-      toStringValue(edit.new_string),
-    );
-  });
   return {
     ...buildFileEditStrategy({
       defaultStrategy,
       displayPath,
       details,
-      outputContent:
-        blocks.length > 0 ? { kind: "structured-diff", blocks } : defaultStrategy.outputContent,
+      includeOutput,
+      outputContent: () => {
+        const blocks = entries.flatMap((value) => {
+          const edit = toRecord(value);
+          const oldLine = integerValue(edit.old_line);
+          const newLine = integerValue(edit.new_line);
+          const label =
+            oldLine !== null && newLine !== null
+              ? `${displayPath}:${oldLine} → ${newLine}`
+              : displayPath;
+          return buildStructuredDiffFromTexts(
+            label,
+            toStringValue(edit.old_string),
+            toStringValue(edit.new_string),
+          );
+        });
+        return blocks.length > 0
+          ? { kind: "structured-diff", blocks }
+          : defaultStrategy.outputContent;
+      },
     }),
     showInputPreview: true,
   };
@@ -470,15 +511,28 @@ function buildGrokWebFetchStrategy(
   state: NormalizedToolState,
   defaultStrategy: ToolDisplayStrategy,
   baseDirectory?: string,
+  includeOutput = true,
 ): ToolDisplayStrategy {
   const input = toRecord(state.inputValue);
   const payload = payloadFromState(state);
   const content = toRecord(payload.Content);
   const error = toRecord(payload.Error);
-  const redirect = toRecord(payload.CrossHostRedirect);
-  const outputLocation = toRecord(content.outputLocation);
   const inputUrl = toPlainText(input.url);
   const url = toPlainText(content.url) || toPlainText(error.url) || inputUrl;
+  if (!includeOutput) {
+    return {
+      ...defaultStrategy,
+      Icon: FileSearch,
+      title: t("web fetch"),
+      secondaryText: url || undefined,
+      details: [],
+      showInputPreview: false,
+      contentLabel: state.status === "error" ? t("Error") : t("Page content"),
+      outputContent: EMPTY_TOOL_OUTPUT,
+    };
+  }
+  const redirect = toRecord(payload.CrossHostRedirect);
+  const outputLocation = toRecord(content.outputLocation);
   const statusCode = integerValue(content.status_code);
   const sizeBytes = integerValue(content.bytes);
   const contentType = toPlainText(content.content_type);
@@ -530,25 +584,33 @@ export function buildGrokToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = normalizeToolName(tool);
   const nativeTool = tool.tool.trim().toLowerCase();
 
   if (toolKey === "read" || nativeTool === "read_file") {
-    return buildGrokReadStrategy(state, defaultStrategy, baseDirectory);
+    return buildGrokReadStrategy(state, defaultStrategy, baseDirectory, includeOutput);
   }
   if (toolKey === "bash" || nativeTool === "run_terminal_command") {
-    return buildGrokBashStrategy(state, defaultStrategy, baseDirectory);
+    return buildGrokBashStrategy(state, defaultStrategy, baseDirectory, includeOutput);
   }
   if (nativeTool === "get_command_or_subagent_output") {
-    return buildGrokTaskOutputStrategy(state, defaultStrategy, baseDirectory);
+    return buildGrokTaskOutputStrategy(state, defaultStrategy, baseDirectory, includeOutput);
   }
   if (toolKey === "web fetch" || nativeTool === "web_fetch") {
-    return buildGrokWebFetchStrategy(state, defaultStrategy, baseDirectory);
+    return buildGrokWebFetchStrategy(state, defaultStrategy, baseDirectory, includeOutput);
   }
   if (nativeTool === "search_replace" || nativeTool === "write") {
-    return buildGrokFileStrategy(state, defaultStrategy, nativeTool === "write", baseDirectory);
+    return buildGrokFileStrategy(
+      state,
+      defaultStrategy,
+      nativeTool === "write",
+      baseDirectory,
+      includeOutput,
+    );
   }
   if (nativeTool === "grep") {
     return buildGrokGrepStrategy(state, defaultStrategy, baseDirectory);
@@ -566,15 +628,20 @@ export function buildGrokToolStrategy(
       title: "list",
       path: toPlainText(directory.absolute_root_path) || toPlainText(input.target_directory),
       baseDirectory,
+      includeOutput,
     });
     return {
       ...list,
-      details: [
-        ...payloadDetails(payload, ["type", "Content"]),
-        ...payloadDetails(directory, ["content", "absolute_root_path"]),
-      ],
+      details: includeOutput
+        ? [
+            ...payloadDetails(payload, ["type", "Content"]),
+            ...payloadDetails(directory, ["content", "absolute_root_path"]),
+          ]
+        : [],
       showInputPreview: true,
-      outputContent: { kind: "plain", text: directory.content, language: "text", isCode: false },
+      outputContent: includeOutput
+        ? { kind: "plain", text: directory.content, language: "text", isCode: false }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
   if (nativeTool === "search_tool" && typeof payload.content === "string") {
@@ -583,12 +650,15 @@ export function buildGrokToolStrategy(
       state,
       title: "search_tool",
       pattern: toPlainText(input.query),
+      includeOutput,
     });
     return {
       ...search,
-      details: payloadDetails(payload, ["type", "content"]),
+      details: includeOutput ? payloadDetails(payload, ["type", "content"]) : [],
       showInputPreview: true,
-      outputContent: { kind: "plain", text: payload.content, language: "text", isCode: false },
+      outputContent: includeOutput
+        ? { kind: "plain", text: payload.content, language: "text", isCode: false }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
   const mcpOutput = toRecord(payload.output);
@@ -601,13 +671,15 @@ export function buildGrokToolStrategy(
       ...defaultStrategy,
       Icon: Wrench,
       secondaryText: toPlainText(input.tool_name) || toPlainText(payload.tool_name) || undefined,
-      details: payloadDetails(payload, ["type", "output"]),
-      outputContent: buildSemanticOutputContent(mcpOutput.OkayOutput) ?? {
-        kind: "plain",
-        text: mcpOutput.OkayOutput,
-        language: "text",
-        isCode: false,
-      },
+      details: includeOutput ? payloadDetails(payload, ["type", "output"]) : [],
+      outputContent: !includeOutput
+        ? EMPTY_TOOL_OUTPUT
+        : (buildSemanticOutputContent(mcpOutput.OkayOutput) ?? {
+            kind: "plain",
+            text: mcpOutput.OkayOutput,
+            language: "text",
+            isCode: false,
+          }),
     };
   }
   return defaultStrategy;

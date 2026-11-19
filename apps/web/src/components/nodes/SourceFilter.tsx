@@ -13,6 +13,12 @@ export function SourceFilter({
   useLocale();
   const nodes = useNodes();
   if (!nodes.data) return null;
+  const sourceCount = (nodes.data.local ? 1 : 0) + nodes.data.nodes.length;
+  if (sourceCount <= 1 && !value) return null;
+  const hasKnownValue =
+    !value ||
+    (value === "local" && Boolean(nodes.data.local)) ||
+    nodes.data.nodes.some((node) => node.id === value);
   return (
     <NativeSelect
       aria-label={t("Source node")}
@@ -27,6 +33,7 @@ export function SourceFilter({
           {node.name}
         </option>
       ))}
+      {!hasKnownValue && value ? <option value={value}>{value}</option> : null}
     </NativeSelect>
   );
 }

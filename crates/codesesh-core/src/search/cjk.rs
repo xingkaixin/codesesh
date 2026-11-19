@@ -217,7 +217,7 @@ pub(super) fn search_candidates(
     if parsed_groups.is_empty() {
         return Ok(Vec::new());
     }
-    let parts = sql::build_parts(options);
+    let parts = sql::build_parts(connection, options)?;
     if parts.impossible {
         return Ok(Vec::new());
     }

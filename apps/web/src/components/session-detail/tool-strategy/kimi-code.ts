@@ -6,7 +6,12 @@
  */
 import type { ToolPart } from "@codesesh/contract";
 import { getKimiEditEntries } from "../diff";
-import { type NormalizedToolState, type ToolDisplayStrategy, toRecord } from "../tool-normalize";
+import {
+  type NormalizedToolState,
+  type ToolDisplayStrategy,
+  type ToolStrategyOptions,
+  toRecord,
+} from "../tool-normalize";
 import { buildKimiToolStrategy } from "./kimi";
 import { buildZCodeToolStrategy } from "./zcode";
 
@@ -14,6 +19,7 @@ export function buildKimiCodeToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
   const toolKey = tool.tool.toLowerCase();
   if (
@@ -22,7 +28,7 @@ export function buildKimiCodeToolStrategy(
       state.status === "completed" &&
       getKimiEditEntries(state.inputValue).length > 0)
   ) {
-    return buildKimiToolStrategy(tool, state, baseDirectory);
+    return buildKimiToolStrategy(tool, state, baseDirectory, options);
   }
 
   const input = toRecord(state.inputValue);
@@ -41,5 +47,6 @@ export function buildKimiCodeToolStrategy(
     { ...tool, title: "" },
     { ...state, inputValue: normalizedInput },
     baseDirectory,
+    options,
   );
 }

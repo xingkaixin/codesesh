@@ -1,5 +1,6 @@
-use super::{ProjectScope, SearchOptions};
-use rusqlite::types::Value;
+use super::{ProjectScope, SearchOptions, reader};
+use crate::analytics::{self, DashboardScope};
+use rusqlite::{Connection, params_from_iter, types::Value};
 
 #[derive(Default)]
 pub struct Filters {
@@ -71,7 +72,10 @@ pub struct FilterParts {
     pub extra: Filters,
 }
 
-pub fn build_parts(options: &SearchOptions) -> FilterParts {
+pub fn build_parts(
+    connection: &Connection,
+    options: &SearchOptions,
+) -> rusqlite::Result<FilterParts> {
     let mut parts = FilterParts::default();
     if let (Some(from), Some(to)) = (options.from, options.to)
         && from > to
@@ -106,6 +110,45 @@ pub fn build_parts(options: &SearchOptions) -> FilterParts {
             project_scope(&mut parts.extra, project);
         }
     }
+    if let Some(model) = &options.model {
+        let mut heads = connection.prepare(&format!(
+            "SELECT {} FROM sessions s WHERE s.publication_id IS NULL {}",
+            reader::HEAD_COLUMNS,
+            parts.session_cheap.where_sql() + &parts.extra.where_sql()
+        ))?;
+        let sessions = heads
+            .query_map(
+                params_from_iter(parts.session_cheap.params.iter().chain(&parts.extra.params)),
+                reader::head,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let scope = DashboardScope {
+            agent: options.agent.clone(),
+            project_kind: options.project_kind.clone(),
+            project_key: options.project_key.clone(),
+        };
+        let references = analytics::model_entry_refs(
+            connection,
+            &sessions,
+            &scope,
+            model,
+            options.from,
+            options.to,
+        )?;
+        parts
+            .extra
+            .text(&analytics::reference_condition("s"), &references);
+    } else {
+        for (clause, value) in [
+            ("s.activity_time >= ?", options.from),
+            ("s.activity_time <= ?", options.to),
+        ] {
+            if let Some(value) = value {
+                parts.session_cheap.clauses.push(clause.into());
+                parts.session_cheap.params.push(value.into());
+            }
+        }
+    }
     if let Some(agent) = &options.agent {
         parts.session_cheap.text("s.agent_name = ?", agent);
         parts.message_cheap.text("m.agent_name = ?", agent);
@@ -121,15 +164,6 @@ pub fn build_parts(options: &SearchOptions) -> FilterParts {
         _ => {
             parts.impossible = true;
             parts.session_cheap.clauses.push("0".into());
-        }
-    }
-    for (clause, value) in [
-        ("s.activity_time >= ?", options.from),
-        ("s.activity_time <= ?", options.to),
-    ] {
-        if let Some(value) = value {
-            parts.session_cheap.clauses.push(clause.into());
-            parts.session_cheap.params.push(value.into());
         }
     }
     if let Some(scope) = &options.project_scope {
@@ -192,12 +226,12 @@ pub fn build_parts(options: &SearchOptions) -> FilterParts {
     if !costs.is_empty() {
         parts.extra.clauses.push(format!("EXISTS (WITH RECURSIVE session_subtree(source_node_id,agent_name,session_id,own_cost) AS (SELECT s.source_node_id,s.agent_name,s.session_id,s.total_cost UNION SELECT child.source_node_id,child.agent_name,child.session_id,child.total_cost FROM sessions child JOIN session_subtree parent ON child.source_node_id = parent.source_node_id AND child.parent_agent_name = parent.agent_name AND child.parent_session_id = parent.session_id WHERE child.publication_id IS NULL) SELECT SUM(own_cost) FROM session_subtree HAVING {})", costs.join(" AND ")));
     }
-    parts
+    Ok(parts)
 }
 
-pub fn build(options: &SearchOptions) -> Filters {
-    let mut parts = build_parts(options);
+pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Result<Filters> {
+    let mut parts = build_parts(connection, options)?;
     parts.session_cheap.clauses.extend(parts.extra.clauses);
     parts.session_cheap.params.extend(parts.extra.params);
-    parts.session_cheap
+    Ok(parts.session_cheap)
 }

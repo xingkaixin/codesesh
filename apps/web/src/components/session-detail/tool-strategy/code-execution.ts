@@ -4,6 +4,7 @@ import type { CodeExecutionToolOutputContent } from "../../tool-output/types";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   buildSemanticOutputContent,
   compactText,
   getOutputOrErrorText,
@@ -12,15 +13,32 @@ import {
   toStringValue,
   toDisplayText,
 } from "../tool-normalize";
+import { EMPTY_TOOL_OUTPUT } from "./shared";
 import { SquareTerminal } from "../../ui/icons";
 
 export function buildCodeExecutionStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   language: "javascript" | "typescript",
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
+  const includeOutput = options?.includeOutput ?? true;
   const input = toRecord(state.inputValue);
   const description = compactText(input.description);
+  if (!includeOutput) {
+    return {
+      Icon: SquareTerminal,
+      title: tool.tool,
+      secondaryText:
+        description ||
+        (language === "javascript" ? t("Execute JavaScript") : t("Execute TypeScript")),
+      details: [],
+      expandable: true,
+      showInputPreview: false,
+      contentLabel: t("Execution output"),
+      outputContent: EMPTY_TOOL_OUTPUT,
+    };
+  }
   const source =
     typeof state.inputValue === "string" ? state.inputValue : toStringValue(input.code);
   const value =

@@ -62,7 +62,17 @@ export function MessageList({
 }: MessageListProps) {
   useLocale();
 
-  const transcriptRef = useTranscriptScroll(messages, followTail);
+  const [measurementVersion, setMeasurementVersion] = useState(0);
+  const { containerRef: transcriptRef, captureAnchor } = useTranscriptScroll(
+    messages,
+    followTail,
+    measurementVersion,
+  );
+  const commitMeasurements = useCallback(() => {
+    const anchor = captureAnchor();
+    setMeasurementVersion((version) => version + 1);
+    return anchor;
+  }, [captureAnchor]);
   const shouldVirtualize = messages.length > VIRTUALIZED_MESSAGE_THRESHOLD;
 
   useEffect(() => {
@@ -81,6 +91,8 @@ export function MessageList({
           childSessionById={childSessionById}
           apiRef={apiRef}
           anchorRegistry={anchorRegistry}
+          measurementVersion={measurementVersion}
+          onCommitMeasurements={commitMeasurements}
         />
       ) : (
         <TimelineAnchorRegistryProvider registry={anchorRegistry}>
@@ -116,12 +128,16 @@ function VirtualizedMessageList({
   childSessionById,
   apiRef,
   anchorRegistry,
-}: MessageListProps) {
+  measurementVersion,
+  onCommitMeasurements,
+}: MessageListProps & {
+  measurementVersion: number;
+  onCommitMeasurements: () => number | undefined;
+}) {
   const locale = useLocale();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollParentRef = useRef<ScrollParent | null>(null);
-  const [measurementVersion, setMeasurementVersion] = useState(0);
   const pendingMeasureFrameRef = useRef(0);
   const [forcedItem, setForcedItem] = useState<{
     heightIndex: HeightIndex;
@@ -132,17 +148,23 @@ function VirtualizedMessageList({
     height: 900,
     listTop: 0,
   }));
+  const [measurementAnchor, setMeasurementAnchor] = useState<number | undefined>();
   const viewportRef = useRef(viewport);
 
   useEffect(() => {
     viewportRef.current = viewport;
   }, [viewport]);
 
-  const updateViewport = useCallback(() => {
+  const updateViewport = useCallback((resolveScrollParent = false) => {
     if (typeof window === "undefined") return null;
 
     const node = containerRef.current;
-    const scrollParent = node ? findScrollParent(node) : window;
+    const cached = scrollParentRef.current;
+    const canReuseCached =
+      !resolveScrollParent &&
+      cached != null &&
+      (isWindowScrollParent(cached) || cached.isConnected);
+    const scrollParent = canReuseCached ? cached : node ? findScrollParent(node) : window;
     scrollParentRef.current = scrollParent;
     const listTop = node ? getElementTop(scrollParent, node) : 0;
     const next = {
@@ -167,6 +189,7 @@ function VirtualizedMessageList({
 
   useEffect(() => {
     let frame = 0;
+    let needsResolveParent = false;
     let scrollParent: ScrollParent | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
@@ -174,58 +197,54 @@ function VirtualizedMessageList({
       if (scrollParent === next) return;
 
       if (scrollParent) {
-        scrollParent.removeEventListener("scroll", scheduleUpdate);
+        scrollParent.removeEventListener("scroll", scheduleScrollUpdate);
         if (resizeObserver && !isWindowScrollParent(scrollParent)) {
           resizeObserver.unobserve(scrollParent);
         }
       }
 
       scrollParent = next;
-      scrollParent.addEventListener("scroll", scheduleUpdate, { passive: true });
+      scrollParent.addEventListener("scroll", scheduleScrollUpdate, { passive: true });
       if (resizeObserver && !isWindowScrollParent(scrollParent)) {
         resizeObserver.observe(scrollParent);
       }
     };
 
-    const refreshViewport = () => {
-      const nextScrollParent = updateViewport();
+    const refreshViewport = (resolveScrollParent: boolean) => {
+      const nextScrollParent = updateViewport(resolveScrollParent);
       if (nextScrollParent) bindScrollParent(nextScrollParent);
     };
 
-    const scheduleUpdate = () => {
+    const scheduleUpdate = (resolveScrollParent: boolean) => {
+      if (resolveScrollParent) needsResolveParent = true;
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        refreshViewport();
+        const shouldResolve = needsResolveParent;
+        needsResolveParent = false;
+        refreshViewport(shouldResolve);
       });
     };
 
-    window.addEventListener("resize", scheduleUpdate);
+    const scheduleScrollUpdate = () => scheduleUpdate(false);
+    const scheduleLayoutUpdate = () => scheduleUpdate(true);
+
+    window.addEventListener("resize", scheduleLayoutUpdate);
     if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(scheduleUpdate);
+      resizeObserver = new ResizeObserver(scheduleLayoutUpdate);
       if (containerRef.current) resizeObserver.observe(containerRef.current);
       if (document.body) resizeObserver.observe(document.body);
     }
 
-    const layoutObserver = new MutationObserver(scheduleUpdate);
-    let ancestor = containerRef.current?.parentElement;
-    while (ancestor) {
-      layoutObserver.observe(ancestor, {
-        attributes: true,
-        attributeFilter: ["class", "style"],
-      });
-      ancestor = ancestor.parentElement;
-    }
-    document.fonts?.addEventListener("loadingdone", scheduleUpdate);
-    refreshViewport();
+    document.fonts?.addEventListener("loadingdone", scheduleLayoutUpdate);
+    refreshViewport(true);
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
       resizeObserver?.disconnect();
-      layoutObserver.disconnect();
-      document.fonts?.removeEventListener("loadingdone", scheduleUpdate);
-      scrollParent?.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
+      document.fonts?.removeEventListener("loadingdone", scheduleLayoutUpdate);
+      scrollParent?.removeEventListener("scroll", scheduleScrollUpdate);
+      window.removeEventListener("resize", scheduleLayoutUpdate);
     };
   }, [updateViewport]);
 
@@ -244,7 +263,7 @@ function VirtualizedMessageList({
   }, [messages, measuredHeights]);
 
   useEffect(() => {
-    updateViewport();
+    updateViewport(true);
   }, [messages, updateViewport]);
 
   useEffect(() => {
@@ -263,10 +282,11 @@ function VirtualizedMessageList({
       if (pendingMeasureFrameRef.current) return;
       pendingMeasureFrameRef.current = requestAnimationFrame(() => {
         pendingMeasureFrameRef.current = 0;
-        setMeasurementVersion((version) => version + 1);
+        const index = onCommitMeasurements();
+        setMeasurementAnchor(index);
       });
     },
-    [heightIndex, messages, measuredHeights],
+    [heightIndex, messages, measuredHeights, onCommitMeasurements],
   );
 
   const virtualItems = useMemo(
@@ -291,18 +311,33 @@ function VirtualizedMessageList({
       }
 
       const forcedIndex = forcedItem?.heightIndex === heightIndex ? forcedItem.index : null;
-      if (forcedIndex != null && forcedIndex >= 0 && forcedIndex < messages.length) {
-        if (!items.some((item) => item.index === forcedIndex)) {
-          items.push({ index: forcedIndex, start: heightIndex.startAt(forcedIndex) });
-          items.sort((a, b) => a.start - b.start);
+      for (const index of [measurementAnchor, forcedIndex]) {
+        if (index != null && index >= 0 && index < messages.length) {
+          if (!items.some((item) => item.index === index)) {
+            items.push({ index, start: heightIndex.startAt(index) });
+            items.sort((a, b) => a.start - b.start);
+          }
         }
       }
-
       return items;
     },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Display formatters read the active locale.
-    [locale, forcedItem, heightIndex, measurementVersion, messages.length, viewport],
+    [
+      locale,
+      forcedItem,
+      measurementAnchor,
+      heightIndex,
+      measurementVersion,
+      messages.length,
+      viewport,
+    ],
   );
+
+  useEffect(() => {
+    if (measurementAnchor === undefined) return;
+    updateViewport();
+    setMeasurementAnchor(undefined);
+  }, [measurementVersion, measurementAnchor, updateViewport]);
 
   const scrollToIndex = useCallback(
     (index: number) => {
@@ -404,6 +439,7 @@ function VirtualizedMessageRow({
   return (
     <div
       ref={rowRef}
+      data-list-index={index}
       className="absolute left-0 top-0 w-full"
       style={{ transform: `translateY(${top}px)` }}
     >

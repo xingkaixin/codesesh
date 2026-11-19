@@ -25,6 +25,10 @@ export interface NormalizedToolState {
   command: string;
 }
 
+export interface ToolStrategyOptions {
+  includeOutput?: boolean;
+}
+
 export interface ToolDisplayStrategy {
   Icon: typeof LoaderCircle;
   title: string;

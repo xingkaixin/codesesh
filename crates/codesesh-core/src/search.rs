@@ -26,6 +26,7 @@ pub struct QueryScope {
 
 #[derive(Clone, Debug, Default)]
 pub struct SearchOptions {
+    pub model: Option<String>,
     pub agent: Option<String>,
     pub project: Option<String>,
     pub project_kind: Option<String>,
@@ -92,7 +93,7 @@ pub(crate) fn scope_where(
             ..Default::default()
         },
     )?;
-    let filters = sql::build(&options);
+    let filters = sql::build(connection, &options)?;
     Ok((filters.where_sql(), filters.params))
 }
 
@@ -143,6 +144,7 @@ pub fn execute_with_snapshot(
     if !parsed.text.is_empty()
         || options.file.is_some()
         || options.file_kind.is_some()
+        || options.model.is_some()
         || !options.tools.is_empty()
     {
         return execute(connection, query, &options);
@@ -216,8 +218,8 @@ pub(crate) fn matches_head(
     } else {
         session.time_created
     };
-    if options.from.is_some_and(|from| activity < from)
-        || options.to.is_some_and(|to| activity > to)
+    if options.model.is_none()
+        && !crate::session_list::in_window(activity, options.from, options.to)
     {
         return false;
     }
@@ -294,6 +296,9 @@ pub fn filter_candidates(
     options: &SearchOptions,
     snapshot: &[SessionHead],
 ) -> Result<Vec<SearchResult>> {
+    if candidates.is_empty() {
+        return Ok(candidates);
+    }
     let (_, options) = prepare(connection, query, options)?;
     let costs = inclusive_costs(snapshot, &options);
     let candidates: Vec<_> = candidates
@@ -309,7 +314,11 @@ pub fn filter_candidates(
             )
         })
         .collect();
-    if options.file.is_none() && options.file_kind.is_none() && options.tools.is_empty() {
+    if options.file.is_none()
+        && options.file_kind.is_none()
+        && options.tools.is_empty()
+        && options.model.is_none()
+    {
         return Ok(candidates);
     }
     let references: Vec<_> = candidates.iter().map(|r| r.reference.clone()).collect();
@@ -320,6 +329,13 @@ pub fn filter_candidates(
             file: options.file,
             file_kind: options.file_kind,
             tools: options.tools,
+            from: options.from,
+            to: options.to,
+            model: options.model,
+            query_scope: options.query_scope,
+            agent: options.agent,
+            project_kind: options.project_kind,
+            project_key: options.project_key,
             ..Default::default()
         },
     )?;
@@ -345,7 +361,7 @@ pub(crate) fn filter_indexed_references(
     options: &SearchOptions,
 ) -> Result<HashSet<SessionReference>> {
     let (_, options) = prepare(connection, "", options)?;
-    let filters = sql::build(&options);
+    let filters = sql::build(connection, &options)?;
     let mut found = HashSet::new();
     for chunk in references.chunks(200) {
         let conditions =
