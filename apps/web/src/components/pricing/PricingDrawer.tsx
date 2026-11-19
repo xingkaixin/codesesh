@@ -328,6 +328,29 @@ export function PricingDrawer({
       variant="panel"
       side="right"
     >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={pricing.refreshStatus === "pending"}
+          onClick={pricing.refreshModels}
+          className="rounded-sm border border-[var(--console-border)] bg-[var(--console-surface)] px-3 py-1.5 text-xs font-medium text-[var(--console-text)] hover:bg-[var(--console-surface-muted)] focus-visible:ring-2 focus-visible:ring-[var(--brand)] disabled:opacity-60"
+        >
+          {pricing.refreshStatus === "pending"
+            ? t("Checking for updates…")
+            : t("Update models and prices")}
+        </button>
+        <span role="status" className="text-xs text-[var(--console-muted)]">
+          {pricing.refreshStatus === "error" && t("Could not update models and prices.")}
+          {pricing.refreshStatus === "changed" && t("Models and prices updated.")}
+          {pricing.refreshStatus === "unchanged" && t("Models and prices are up to date.")}
+          {pricing.historyPhase === "failed" && (
+            <span className="block">{t("Could not recalculate session costs.")}</span>
+          )}
+          {pricing.historyPhase === "repricing" && (
+            <span className="block">{t("Recalculating session costs…")}</span>
+          )}
+        </span>
+      </div>
       <div
         role="tablist"
         aria-label={t("Pricing sections")}

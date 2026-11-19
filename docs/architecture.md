@@ -8,9 +8,10 @@ CodeSesh 的后端由 Rust 实现。`codesesh-core` 负责解析、查询和持�
 
 ```text
 codesesh-cli / Clap
-  -> 加载价格缓存，尝试刷新并发布启动定价代际
+  -> 加载本地价格和覆盖规则
   -> Runtime 启动专用 SQLite writer，恢复持久化快照
   -> Axum HTTP / SSE 提供已提交的数据
+  -> 后台检查官方价格缓存，按最终可用价格分批核对历史费用
   -> AgentScanner 在有界 blocking 任务中扫描各 Agent
        -> 解析会话、项目身份、成本与派生信息
        -> writer 在事务中提交会话、消息、FTS 与 checkpoint

@@ -1023,6 +1023,19 @@ export const messages = {
   "Long context": ["长上下文", "ロングコンテキスト"],
   "Manual USD / 1M": ["手动填写 USD / 1M", "手動入力 USD / 1M"],
   "Match official model": ["映射官方模型", "公式モデルに紐付け"],
+  "Update models and prices": ["更新模型和价格", "モデルと価格を更新"],
+  "Checking for updates…": ["正在检查更新…", "更新を確認中…"],
+  "Could not update models and prices.": [
+    "模型和价格更新失败。",
+    "モデルと価格を更新できませんでした。",
+  ],
+  "Could not recalculate session costs.": [
+    "会话费用重算失败。",
+    "セッション費用を再計算できませんでした。",
+  ],
+  "Recalculating session costs…": ["正在重算会话费用…", "セッション費用を再計算中…"],
+  "Models and prices updated.": ["模型和价格已更新。", "モデルと価格を更新しました。"],
+  "Models and prices are up to date.": ["模型和价格已是最新。", "モデルと価格は最新です。"],
   "Model pricing": ["模型定价", "モデル料金"],
   "No custom pricing overrides yet": ["暂无自定义定价规则", "カスタム料金ルールはまだありません"],
   "No official models match this search.": [

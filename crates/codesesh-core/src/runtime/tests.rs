@@ -229,6 +229,84 @@ async fn writer_reprices_old_scan_inputs_before_committing_and_publishing() {
 }
 
 #[tokio::test]
+async fn history_repricing_yields_to_hub_writes_and_recovers_from_a_partial_pass() {
+    use crate::{model::MessageTokens, pricing::PricingController, storage::Cache};
+    let root = tempfile::tempdir().unwrap();
+    let database = root.path().join("cache.db");
+    let controller = PricingController::load(root.path());
+    let initial = controller.snapshot().unwrap();
+    let path = root.path().join("rollout-price.jsonl");
+    write_source(&path, "priced history");
+    let mut session = batch(&path).unwrap().sessions.pop().unwrap();
+    let stats = &mut session.head.stats;
+    let tokens: MessageTokens =
+        serde_json::from_value(serde_json::json!({"input":1000000})).unwrap();
+    initial
+        .pricing
+        .estimate_tracked(Some("new-model"), &tokens, 0.0, &mut stats.cost_inputs);
+    let mut sessions: Vec<_> = (0..70)
+        .map(|i| {
+            let mut row = session.clone();
+            row.head.reference.session_id = format!("history-{i:02}");
+            row.detail.head = row.head.clone();
+            row
+        })
+        .collect();
+    {
+        let mut cache = Cache::open(Some(&database)).unwrap();
+        cache.publish(&mut sessions).unwrap();
+        cache.connection().execute_batch("CREATE TRIGGER reject_final_price BEFORE UPDATE OF total_cost ON sessions WHEN NEW.session_id='history-69' BEGIN SELECT RAISE(ABORT,'cost failure'); END").unwrap();
+    }
+    let runtime = Runtime::start_hub(database, vec![], 1).await.unwrap();
+    runtime.reprice_all(initial.clone()).await.unwrap();
+    let publish_rate = |input: u32| {
+        controller.stage_remote(
+            &serde_json::json!({"openai":{"models":{"new-model":{"cost":{"input":input,"output":4}}}}}),
+        ).unwrap();
+        controller.publish_pending().unwrap();
+    };
+    publish_rate(3);
+    let (release, hold) = std::sync::mpsc::channel();
+    let observer = runtime.clone();
+    // Hold the writer until its queue contains the first price batch followed by the control request.
+    let (held, pass, during, ()) = tokio::join!(biased;
+        runtime.hub_control(move |_| Ok(hold.recv()?)),
+        runtime.reprice_all(initial.clone()),
+        runtime.hub_control(move |cache| {
+            let committed = cache.connection().query_row(
+                "SELECT count(*) FROM sessions WHERE total_cost=3", [], |row| row.get::<_, i64>(0)
+            )?;
+            let published = observer.snapshot().iter().filter(|head| head.stats.total_cost == 3.0).count();
+            Ok((committed, published))
+        }),
+        async { release.send(()).unwrap() }
+    );
+    held.unwrap();
+    assert_eq!(during.unwrap(), (32, 0));
+    assert!(pass.is_err());
+    let partial = runtime.snapshot();
+    assert_eq!(partial[0].stats.total_cost, 3.0);
+    assert_eq!(partial.last().unwrap().stats.total_cost, 0.0);
+    runtime
+        .hub_control(|cache| {
+            Ok(cache
+                .connection()
+                .execute_batch("DROP TRIGGER reject_final_price")?)
+        })
+        .await
+        .unwrap();
+    publish_rate(7);
+    runtime.reprice_all(initial).await.unwrap();
+    assert!(
+        runtime
+            .snapshot()
+            .iter()
+            .all(|head| head.stats.total_cost == 7.0)
+    );
+    runtime.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn failed_transaction_never_publishes_and_retries_from_last_good_state() {
     let temporary = tempfile::tempdir().unwrap();
     let path = temporary.path().join("rollout-fixture.jsonl");

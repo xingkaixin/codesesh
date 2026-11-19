@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wire::ModelPriceOverrideView::export_all(&config)?;
     wire::UnmatchedModelStat::export_all(&config)?;
     wire::OfficialModelOption::export_all(&config)?;
+    wire::PricingRefreshResponse::export_all(&config)?;
     wire::PricingOverridesResponse::export_all(&config)?;
     wire::UnmatchedModelsResponse::export_all(&config)?;
     wire::OfficialModelListResponse::export_all(&config)?;

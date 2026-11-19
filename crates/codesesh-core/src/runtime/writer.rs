@@ -1,4 +1,5 @@
 use super::{Cancellation, Event, ScanBatch, ScanStatus};
+use crate::wire::{PricingHistoryPhase, PricingHistoryStatus};
 use crate::{model::SessionHead, storage::Cache};
 use anyhow::Result;
 use std::{
@@ -23,7 +24,7 @@ pub(super) enum Command {
     HubControl(Box<dyn FnOnce(&mut Cache) + Send>),
     Reprice {
         pricing: crate::pricing::PricingSnapshot,
-        response: oneshot::Sender<Result<()>>,
+        response: oneshot::Sender<Result<bool>>,
     },
     Upload {
         credential: String,
@@ -64,24 +65,54 @@ pub(super) fn run(
         }
     }
     let mut last_reclaim = Instant::now();
-    let mut priced_generations = std::collections::HashMap::new();
+    let mut unpublished_heads = Vec::new();
     while let Some(command) = commands.blocking_recv() {
         match command {
             Command::HubControl(operation) => operation(&mut cache),
             Command::Reprice { pricing, response } => {
                 let result = pricing.with_latest(|active_pricing| {
-                    if !crate::storage::needs_reprice(
-                        cache.connection(),
-                        active_pricing.generation(),
-                    )? {
-                        return Ok(());
+                    let generation = active_pricing.generation();
+                    if statuses
+                        .borrow()
+                        .pricing_history
+                        .as_ref()
+                        .is_none_or(|previous| {
+                            previous.generation != generation
+                                || previous.phase == PricingHistoryPhase::Failed
+                        })
+                    {
+                        publish_pricing_status(
+                            &statuses,
+                            &events,
+                            generation,
+                            PricingHistoryPhase::Repricing,
+                        );
                     }
-                    let mut references = Vec::new();
-                    for agent in crate::agents::catalog(0) {
-                        references.extend(cache.reprice(&agent.name, active_pricing)?);
+                    let mut result =
+                        cache
+                            .reprice_batch(active_pricing)
+                            .map(|(changed, complete)| {
+                                unpublished_heads.extend(changed);
+                                complete
+                            });
+                    if !matches!(result, Ok(false))
+                        && let Err(error) = publish_changes(
+                            &cache,
+                            &snapshots,
+                            &events,
+                            &mut unpublished_heads,
+                            Vec::new(),
+                        )
+                    {
+                        result = Err(error);
                     }
-                    publish_changes(&cache, &snapshots, &events, &references)?;
-                    crate::storage::mark_repriced(cache.connection(), active_pricing.generation())
+                    let phase = match &result {
+                        Ok(true) => PricingHistoryPhase::Current,
+                        Ok(false) => PricingHistoryPhase::Repricing,
+                        Err(_) => PricingHistoryPhase::Failed,
+                    };
+                    publish_pricing_status(&statuses, &events, generation, phase);
+                    result
                 });
                 let _ = response.send(result);
             }
@@ -95,11 +126,13 @@ pub(super) fn run(
                     let node = cache.authenticate_worker(&credential)?;
                     let receipt = cache.receive_upload(&node, &upload, active_pricing)?;
                     if let Some(reference) = &receipt.changed {
+                        unpublished_heads.push(reference.clone());
                         publish_changes(
                             &cache,
                             &snapshots,
                             &events,
-                            std::slice::from_ref(reference),
+                            &mut unpublished_heads,
+                            Vec::new(),
                         )?;
                     }
                     Ok(receipt)
@@ -131,58 +164,23 @@ pub(super) fn run(
                         &batch.checkpoint,
                         batch.complete,
                     )?;
-                    let mut repriced = Vec::new();
-                    if let Some(active_pricing) = active_pricing
-                        && priced_generations.get(&agent) != Some(&active_pricing.generation())
-                    {
-                        if crate::storage::needs_reprice(
-                            cache.connection(),
-                            active_pricing.generation(),
-                        )? {
-                            repriced = cache.reprice(&agent, active_pricing)?;
-                        }
-                        priced_generations.insert(agent.clone(), active_pricing.generation());
-                    }
                     let write_elapsed = write_started.elapsed();
                     let snapshot_started = Instant::now();
                     batch.on_reject.take();
-                    if !batch.sessions.is_empty()
-                        || !batch.removed.is_empty()
-                        || !repriced.is_empty()
-                    {
-                        let mut changed_references: Vec<_> = batch
-                            .sessions
-                            .iter()
-                            .map(|session| session.head.reference.clone())
-                            .collect();
-                        changed_references.append(&mut repriced);
-                        changed_references.sort_by(|a, b| {
-                            a.source_node_id
-                                .cmp(&b.source_node_id)
-                                .then(a.agent_name.cmp(&b.agent_name))
-                                .then(a.session_id.cmp(&b.session_id))
-                        });
-                        changed_references.dedup();
-                        let heads =
-                            Arc::new(cache.refresh_snapshot(
-                                snapshots.borrow().as_ref(),
-                                &changed_references,
-                            )?);
-                        let changed_references: std::collections::HashSet<_> =
-                            changed_references.iter().collect();
-                        let changed = Arc::new(
-                            heads
+                    if !batch.sessions.is_empty() || !batch.removed.is_empty() {
+                        unpublished_heads.extend(
+                            batch
+                                .sessions
                                 .iter()
-                                .filter(|head| changed_references.contains(&head.reference))
-                                .cloned()
-                                .collect(),
+                                .map(|session| session.head.reference.clone()),
                         );
-                        snapshots.send_replace(heads.clone());
-                        let _ = events.send(Event::Sessions {
-                            snapshot: heads,
-                            changed,
-                            removed: Arc::new(std::mem::take(&mut batch.removed)),
-                        });
+                        publish_changes(
+                            &cache,
+                            &snapshots,
+                            &events,
+                            &mut unpublished_heads,
+                            std::mem::take(&mut batch.removed),
+                        )?;
                     }
                     if std::env::var_os("CODESESH_PROFILE_SCAN").is_some() {
                         eprintln!(
@@ -266,6 +264,24 @@ pub(super) fn run(
     }
 }
 
+fn publish_pricing_status(
+    statuses: &watch::Sender<Arc<ScanStatus>>,
+    events: &broadcast::Sender<Event>,
+    generation: u64,
+    phase: PricingHistoryPhase,
+) {
+    let history = PricingHistoryStatus { generation, phase };
+    if statuses.borrow().pricing_history.as_ref() == Some(&history) {
+        return;
+    }
+    let mut status = statuses.borrow().as_ref().clone();
+    status.pricing_history = Some(history);
+    status.updated_at = chrono::Utc::now().timestamp_millis();
+    let status = Arc::new(status);
+    statuses.send_replace(status.clone());
+    let _ = events.send(Event::Status(status));
+}
+
 fn release_unused_memory() {
     #[cfg(target_os = "macos")]
     {
@@ -283,17 +299,18 @@ fn publish_changes(
     cache: &Cache,
     snapshots: &watch::Sender<Arc<Vec<SessionHead>>>,
     events: &broadcast::Sender<Event>,
-    references: &[crate::model::SessionReference],
+    references: &mut Vec<crate::model::SessionReference>,
+    removed: Vec<crate::model::SessionReference>,
 ) -> Result<()> {
-    if references.is_empty() {
+    if references.is_empty() && removed.is_empty() {
         return Ok(());
     }
     let heads = Arc::new(cache.refresh_snapshot(snapshots.borrow().as_ref(), references)?);
-    let references: std::collections::HashSet<_> = references.iter().collect();
+    let changed_references: std::collections::HashSet<_> = references.iter().collect();
     let changed = Arc::new(
         heads
             .iter()
-            .filter(|head| references.contains(&head.reference))
+            .filter(|head| changed_references.contains(&head.reference))
             .cloned()
             .collect(),
     );
@@ -301,7 +318,8 @@ fn publish_changes(
     let _ = events.send(Event::Sessions {
         snapshot: heads,
         changed,
-        removed: Arc::new(Vec::new()),
+        removed: Arc::new(removed),
     });
+    references.clear();
     Ok(())
 }

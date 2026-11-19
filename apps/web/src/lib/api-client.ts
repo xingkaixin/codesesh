@@ -2,6 +2,7 @@ import { CODESESH_OPERATION_ID_HEADER, sessionRoutePath } from "@codesesh/contra
 import type {
   HubNodes,
   OfficialModelListResponse,
+  PricingRefreshResponse,
   PricingOverridesResponse,
   RescanHistory,
   AgentInfo,
@@ -411,6 +412,13 @@ export function createApiClient(access: RemoteAccess) {
     );
   }
 
+  async function refreshModelPricing(): Promise<PricingRefreshResponse> {
+    return fetchJson("/api/pricing/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   async function fetchPricingOverrides(): Promise<PricingOverridesResponse> {
     return fetchJson("/api/pricing/overrides");
   }
@@ -486,6 +494,7 @@ export function createApiClient(access: RemoteAccess) {
     upsertSessionAlias,
     deleteSessionAlias,
     fetchPricingOverrides,
+    refreshModelPricing,
     fetchUnmatchedModels,
     fetchOfficialPricingModels,
     savePricingOverride,

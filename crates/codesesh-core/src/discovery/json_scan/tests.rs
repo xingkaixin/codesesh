@@ -155,7 +155,8 @@ fn price_changes_update_json_costs_without_invalidating_content_fingerprints() {
     )
     .unwrap();
     assert_eq!(first.sessions[0].stats.total_cost, 0.0);
-    let cache = Cache::open(Some(&path)).unwrap();
+    let mut cache = Cache::open(Some(&path)).unwrap();
+    assert!(cache.reprice_batch(&Pricing::bundled()).unwrap().1);
     cache.connection().execute_batch("CREATE TRIGGER reject_json_reparse BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'price update reparsed history'); END").unwrap();
     let controller = crate::pricing::PricingController::load(temp.path());
     controller.stage_remote(&serde_json::json!({"openai":{"models":{"json-cost-model":{"cost":{"input":12,"output":8}}}}})).unwrap();
@@ -165,6 +166,14 @@ fn price_changes_update_json_costs_without_invalidating_content_fingerprints() {
     assert_eq!(result.sessions[0].stats.total_cost, 12.0);
     let stable = run_local(std::slice::from_ref(&source), &options, &pricing, &path).unwrap();
     assert_eq!(stable.sessions[0].stats.total_cost, 12.0);
+    // A later server using the original generation must still see the JSON run's changes.
+    let (restored, complete) = cache.reprice_batch(&Pricing::bundled()).unwrap();
+    assert!(complete);
+    assert_eq!(restored, [stable.sessions[0].reference.clone()]);
+    assert_eq!(
+        cache.head(&restored[0]).unwrap().unwrap().stats.total_cost,
+        0.0
+    );
 }
 #[test]
 fn sources_written_during_a_scan_are_output_and_scanned_again() {

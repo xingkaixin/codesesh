@@ -2,10 +2,12 @@
 import type { AgentCollectionStatus } from "./AgentCollectionStatus";
 import type { AgentScanStatus } from "./AgentScanStatus";
 import type { BackfillStatus } from "./BackfillStatus";
+import type { PricingHistoryStatus } from "./PricingHistoryStatus";
 import type { ScanPhase } from "./ScanPhase";
 import type { ScanStatusEventType } from "./ScanStatusEventType";
 
 export type ScanStatusEvent = {
+  pricingHistory?: PricingHistoryStatus;
   sources?: { [key in string]: AgentCollectionStatus };
   type: ScanStatusEventType;
   active: boolean;

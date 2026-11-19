@@ -156,22 +156,28 @@ describe("PricingDrawer", () => {
     expect(await screen.findByText("custom/old")).toBeTruthy();
   });
 
-  it("remaps an unmatched model using official search results", async () => {
+  it("remaps an unmatched model after refreshing an empty official search", async () => {
     let currentOverview = createOverview();
     let capturedSaveBody: UpsertPricingOverrideRequest | null = null;
-    const modelSearchQueries: string[] = [];
+    let published = false;
 
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const parsed = new URL(String(input), "http://localhost");
       const read = readPricing(currentOverview, parsed, init);
       if (read) return read;
+      if (parsed.pathname === "/api/pricing/refresh" && init?.method === "POST") {
+        published = true;
+        return Response.json({ changed: true });
+      }
       if (parsed.pathname === "/api/pricing/models") {
         const q = parsed.searchParams.get("q") ?? "";
-        modelSearchQueries.push(q);
         const filtered = q
           ? officialModels.models.filter((item) => item.model.includes(q))
           : officialModels.models;
-        return Response.json({ models: filtered, total: filtered.length });
+        const models = published
+          ? filtered
+          : filtered.filter((item) => item.model === "gpt-5-mini");
+        return Response.json({ models, total: models.length });
       }
       if (parsed.pathname === "/api/pricing/overrides" && init?.method === "PUT") {
         capturedSaveBody = JSON.parse(String(init.body));
@@ -207,11 +213,11 @@ describe("PricingDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set price" }));
 
     const searchInput = await screen.findByPlaceholderText("Search official models");
+    expect(await screen.findByRole("button", { name: /gpt-5-mini/i })).toBeTruthy();
     fireEvent.change(searchInput, { target: { value: "claude" } });
 
-    await waitFor(() => {
-      expect(modelSearchQueries).toContain("claude");
-    });
+    expect(await screen.findByText("No official models match this search.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Update models and prices" }));
 
     const candidate = await screen.findByRole("button", { name: /claude-sonnet-4-5/i });
     expect(candidate.textContent).toContain("Long context");

@@ -8,3 +8,5 @@ export type { UnmatchedModelsResponse } from "./generated/UnmatchedModelsRespons
 export type { OfficialModelListResponse } from "./generated/OfficialModelListResponse.js";
 export type { UpsertPricingOverrideRequest } from "./generated/UpsertPricingOverrideRequest.js";
 export type { PricingModelActionRequest } from "./generated/PricingModelActionRequest.js";
+export type { PricingRefreshResponse } from "./generated/PricingRefreshResponse.js";
+export type { PricingHistoryPhase } from "./generated/PricingHistoryPhase.js";
