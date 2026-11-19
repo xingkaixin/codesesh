@@ -85,12 +85,11 @@ fn merge_completion(
             if left.completeness == ScanCompleteness::Partial
                 || right.completeness == ScanCompleteness::Partial
             {
-                let source_failure_count =
-                    match (left.source_failure_count, right.source_failure_count) {
-                        (Some(a), Some(b)) => Some(a + b),
-                        (Some(a), None) | (None, Some(a)) => Some(a),
-                        (None, None) => None,
-                    };
+                let source_failure_count = [&left, &right]
+                    .into_iter()
+                    .filter(|batch| batch.completeness == ScanCompleteness::Partial)
+                    .map(|batch| batch.source_failure_count)
+                    .sum();
                 let source_failure_summary =
                     left.source_failure_summary.or(right.source_failure_summary);
                 Some(ScanCompletion {

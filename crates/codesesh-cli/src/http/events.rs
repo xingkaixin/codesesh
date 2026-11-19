@@ -33,13 +33,13 @@ pub async fn events(AxumState(state): AxumState<Arc<State>>) -> Response {
             .insert("retry-after", HeaderValue::from_static("1"));
         return response;
     };
+    let mut receiver = state.runtime.subscribe();
     let Ok(initial_status) = serde_json::to_value(state.runtime.status().as_ref()) else {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to serialize scan status",
         );
     };
-    let mut receiver = state.runtime.subscribe();
     let mut shutdown = state.runtime.shutdown_receiver();
     let mut known: HashSet<_> = state
         .snapshot()

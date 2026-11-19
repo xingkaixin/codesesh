@@ -77,6 +77,7 @@ impl Cancellation {
 }
 
 pub struct ScanRequest {
+    pub retry: bool,
     pub changed_paths: Option<Vec<PathBuf>>,
     pub checkpoint: Option<Value>,
     pub cancellation: Cancellation,
@@ -514,7 +515,8 @@ impl Runtime {
                     continue;
                 }
             };
-            let mut changed_paths = if retry_delay.is_some() {
+            let mut retry = retry_delay.is_some();
+            let mut changed_paths = if retry {
                 None
             } else {
                 request.paths.map(|paths| paths.into_iter().collect())
@@ -533,6 +535,7 @@ impl Runtime {
                         spawn_scan(
                             source.scan.clone(),
                             ScanRequest {
+                                retry: std::mem::take(&mut retry),
                                 changed_paths: changed_paths.take(),
                                 checkpoint: checkpoint.clone(),
                                 cancellation: cancellation.clone(),
@@ -623,6 +626,7 @@ impl Runtime {
                     prefetched = Some(spawn_scan(
                         source.scan.clone(),
                         ScanRequest {
+                            retry: false,
                             changed_paths: None,
                             checkpoint: checkpoint.clone(),
                             cancellation: cancellation.clone(),
