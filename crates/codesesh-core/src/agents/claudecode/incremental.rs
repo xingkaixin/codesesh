@@ -60,9 +60,10 @@ impl Checkpoints {
             && checkpoint.generation == pricing.generation()
             && checkpoint.children == *children
             && checkpoint.offset <= len
+            && let Some(tail_start) = checkpoint.offset.checked_sub(checkpoint.tail.len() as u64)
         {
             let mut tail = vec![0; checkpoint.tail.len()];
-            file.seek(SeekFrom::Start(checkpoint.offset - tail.len() as u64))?;
+            file.seek(SeekFrom::Start(tail_start))?;
             file.read_exact(&mut tail)?;
             if tail == checkpoint.tail {
                 resumed = Some(checkpoint);
@@ -78,7 +79,12 @@ impl Checkpoints {
         let mut partial = None;
         loop {
             line.clear();
-            let read = crate::agents::jsonl::read_line(&mut reader, &mut line)?;
+            let read = crate::agents::jsonl::read_line_with_tail(
+                &mut reader,
+                &mut line,
+                &mut tail,
+                CHECKPOINT_TAIL_BYTES,
+            )?;
             if read == 0 {
                 break;
             }
@@ -89,7 +95,6 @@ impl Checkpoints {
             }
             parser.feed(&line, children, pricing)?;
             offset += read as u64;
-            tail = line.as_bytes()[line.len().saturating_sub(CHECKPOINT_TAIL_BYTES)..].to_vec();
         }
         let mut current = parser.clone();
         if let Some(line) = &partial {

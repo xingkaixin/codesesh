@@ -716,6 +716,107 @@ mod tests {
         fs::write(&path, format!("{}\n{}\n", records[1], records[6])).unwrap();
         compare(&mut checkpoints);
     }
+
+    #[test]
+    fn checkpoints_resume_lines_containing_invalid_utf8() {
+        use std::io::Write;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project/session.jsonl");
+        let project = path.parent().unwrap().to_owned();
+        fs::create_dir_all(&project).unwrap();
+        let pricing = Pricing::bundled();
+        let children = HashMap::new();
+        let mut checkpoints = Checkpoints::default();
+
+        // 57 raw bytes (< 64-byte tail window), 107 bytes after U+FFFD replacement.
+        let mut first_line = b"{\"type\":\"summary\",\"summary\":\"".to_vec();
+        first_line.extend([0xff; 25]);
+        first_line.extend_from_slice(b"\"}\n");
+        let mut file = File::create(&path).unwrap();
+        file.write_all(&first_line).unwrap();
+        file.flush().unwrap();
+        assert!(
+            checkpoints
+                .parse(
+                    &path,
+                    "claudecode",
+                    None,
+                    &project,
+                    &Value::Null,
+                    &children,
+                    &pricing
+                )
+                .unwrap()
+                .is_none()
+        );
+
+        let mut user_line =
+            b"{\"type\":\"user\",\"uuid\":\"u\",\"cwd\":\"/tmp/project\",\"timestamp\":\"2026-04-20T10:00:00Z\",\"message\":{\"role\":\"user\",\"content\":\"Hello "
+                .to_vec();
+        user_line.extend([0xff; 12]);
+        user_line.extend_from_slice(b"\"}}\n");
+        file.write_all(&user_line).unwrap();
+        file.flush().unwrap();
+
+        let resumed = checkpoints
+            .parse(
+                &path,
+                "claudecode",
+                None,
+                &project,
+                &Value::Null,
+                &children,
+                &pricing,
+            )
+            .unwrap();
+        let full = parse(
+            &path,
+            "claudecode",
+            None,
+            &project,
+            &Value::Null,
+            &children,
+            &pricing,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&resumed).unwrap(),
+            serde_json::to_value(&full).unwrap()
+        );
+
+        writeln!(
+            file,
+            "{}",
+            json!({"type":"assistant","uuid":"a","requestId":"r","timestamp":"2026-04-20T10:00:02Z","message":{"role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Done"}]}})
+        )
+        .unwrap();
+        file.flush().unwrap();
+        let resumed_after_tail = checkpoints
+            .parse(
+                &path,
+                "claudecode",
+                None,
+                &project,
+                &Value::Null,
+                &children,
+                &pricing,
+            )
+            .unwrap();
+        let full_after_tail = parse(
+            &path,
+            "claudecode",
+            None,
+            &project,
+            &Value::Null,
+            &children,
+            &pricing,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&resumed_after_tail).unwrap(),
+            serde_json::to_value(&full_after_tail).unwrap()
+        );
+    }
     #[test]
     fn deduplicates_request_usage_and_backfills_tool_results() {
         let root = tempfile::tempdir().unwrap();

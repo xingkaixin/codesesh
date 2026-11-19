@@ -42,6 +42,25 @@ pub(super) fn read_line(reader: &mut impl BufRead, line: &mut String) -> io::Res
     Ok(read)
 }
 
+/// `read_line` that also records up to `tail_limit` trailing raw source bytes for complete lines.
+pub(super) fn read_line_with_tail(
+    reader: &mut impl BufRead,
+    line: &mut String,
+    tail: &mut Vec<u8>,
+    tail_limit: usize,
+) -> io::Result<usize> {
+    let mut bytes = std::mem::take(line).into_bytes();
+    let read = reader.read_until(b'\n', &mut bytes)?;
+    if read > 0 && bytes.ends_with(b"\n") {
+        let start = bytes.len().saturating_sub(tail_limit);
+        tail.clear();
+        tail.extend_from_slice(&bytes[start..]);
+    }
+    *line = String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned());
+    Ok(read)
+}
+
 pub(crate) const ACTIVE_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 /// Parser checkpoints only pay off for transcripts that are still being appended to.
