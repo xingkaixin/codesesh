@@ -44,6 +44,7 @@ import {
   SessionDetailAuxOverlay,
 } from "./session-detail/SessionDetailAux";
 import { SessionMessageTimeline } from "./session-detail/SessionMessageTimeline";
+import { SessionMarkdownActions } from "./session-detail/SessionMarkdownActions";
 import { MessagePagingControls } from "./session-detail/MessagePagingControls";
 import { SessionStats } from "./session-detail/SessionStats";
 import {
@@ -412,7 +413,10 @@ export function SessionDetail({
       data-testid="session-detail"
       className="mx-auto w-full max-w-[1440px] space-y-8 px-2 md:px-4"
     >
-      <SessionStats session={session} toc={toc} />
+      <div className="space-y-3">
+        <SessionStats session={session} toc={toc} />
+        <SessionMarkdownActions session={session} />
+      </div>
       {pageControls}
       <SessionSummarySection
         summary={typeof session.summary_files === "string" ? session.summary_files : undefined}

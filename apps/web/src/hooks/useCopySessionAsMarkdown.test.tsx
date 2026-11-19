@@ -20,11 +20,39 @@ vi.mock("../lib/api", async (importOriginal) => ({
 // oxlint-disable-next-line anti-slop/no-module-mocking -- Control clipboard success and failure while verifying the copy action state.
 vi.mock("../lib/clipboard", () => clipboardMocks);
 
+const originalClipboardItem = globalThis.ClipboardItem;
+const originalClipboard = navigator.clipboard;
+
 afterEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    value: originalClipboardItem,
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    value: originalClipboard,
+    configurable: true,
+  });
 });
 
-it("copies the complete transcript when the detail cache only contains a prefix", async () => {
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+it("copies the complete transcript via writeToClipboard when ClipboardItem is unavailable", async () => {
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    value: undefined,
+    configurable: true,
+    writable: true,
+  });
   const { client, Wrapper } = createQueryWrapper();
   const head = {
     ...SAMPLE_SESSION_HEAD,
@@ -53,4 +81,144 @@ it("copies the complete transcript when the detail cache only contains a prefix"
     expect.stringContaining("Unloaded tail"),
   );
   expect(client.getQueryData(key)).toEqual(partial);
+});
+
+it("passes a Promise<Blob> to ClipboardItem synchronously and tracks isCopying while fetching", async () => {
+  const { Wrapper } = createQueryWrapper();
+  const pendingFetch = deferred<typeof SAMPLE_SESSION_HEAD & { messages: unknown[] }>();
+  apiMocks.fetchSessionData.mockReturnValue(pendingFetch.promise);
+
+  let capturedBlobPromise: Promise<Blob> | undefined;
+  class MockClipboardItem {
+    constructor(items: Record<string, Blob | Promise<Blob>>) {
+      const value = items["text/plain"];
+      if (value instanceof Promise) capturedBlobPromise = value;
+    }
+  }
+  const writeMock = vi.fn(async () => {
+    await capturedBlobPromise;
+  });
+
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    value: MockClipboardItem,
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    value: { write: writeMock },
+    configurable: true,
+  });
+
+  const { result } = renderHook(() => useCopySessionAsMarkdown(), { wrapper: Wrapper });
+
+  let copyPromise!: Promise<void>;
+  act(() => {
+    copyPromise = result.current.copySessionAsMarkdown(SAMPLE_SESSION_HEAD);
+  });
+
+  // Safari and Firefox require clipboard.write() before the first async yield.
+  expect(writeMock).toHaveBeenCalledTimes(1);
+  expect(result.current.isCopying).toBe(true);
+
+  pendingFetch.resolve({
+    ...SAMPLE_SESSION_HEAD,
+    messages: [
+      {
+        id: "m1",
+        role: "user",
+        time_created: 1,
+        parts: [{ type: "text", text: "Fetched asynchronously" }],
+      },
+    ],
+  });
+
+  await act(async () => {
+    await copyPromise;
+  });
+
+  const writtenBlob = await capturedBlobPromise;
+  expect(writtenBlob).toBeInstanceOf(Blob);
+  expect(await writtenBlob?.text()).toContain("Fetched asynchronously");
+  expect(clipboardMocks.writeToClipboard).not.toHaveBeenCalled();
+  expect(result.current.isCopying).toBe(false);
+  expect(result.current.sessionCopyNotice).toBe("Session copied as Markdown.");
+});
+
+it("falls back to writeToClipboard without re-fetching when ClipboardItem write rejects", async () => {
+  const { Wrapper } = createQueryWrapper();
+  apiMocks.fetchSessionData.mockResolvedValue({
+    ...SAMPLE_SESSION_HEAD,
+    messages: [
+      {
+        id: "m1",
+        role: "assistant",
+        time_created: 1,
+        parts: [{ type: "text", text: "Fallback content" }],
+      },
+    ],
+  });
+  clipboardMocks.writeToClipboard.mockResolvedValue(true);
+
+  class MockClipboardItem {
+    constructor(_items: Record<string, Blob | Promise<Blob>>) {}
+  }
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    value: MockClipboardItem,
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    value: { write: vi.fn().mockRejectedValue(new DOMException("Denied", "NotAllowedError")) },
+    configurable: true,
+  });
+
+  const { result } = renderHook(() => useCopySessionAsMarkdown(), { wrapper: Wrapper });
+  await act(() => result.current.copySessionAsMarkdown(SAMPLE_SESSION_HEAD));
+
+  expect(apiMocks.fetchSessionData).toHaveBeenCalledTimes(1);
+  expect(clipboardMocks.writeToClipboard).toHaveBeenCalledWith(
+    expect.stringContaining("Fallback content"),
+  );
+  expect(result.current.isCopying).toBe(false);
+  expect(result.current.sessionCopyNotice).toBe("Session copied as Markdown.");
+});
+
+it("downloads the complete session as a sanitized .md file", async () => {
+  const { Wrapper } = createQueryWrapper();
+  const head = { ...SAMPLE_SESSION_HEAD, display_title: "Debug: API / Crash?" };
+  apiMocks.fetchSessionData.mockResolvedValue({
+    ...head,
+    messages: [
+      {
+        id: "m1",
+        role: "user",
+        time_created: 1,
+        parts: [{ type: "text", text: "Download body" }],
+      },
+    ],
+  });
+
+  const createdBlobs: Blob[] = [];
+  const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation((value) => {
+    if (value instanceof Blob) createdBlobs.push(value);
+    return "blob:session-markdown";
+  });
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+  let downloadedName: string | null = null;
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloadedName = this.download;
+  });
+
+  const { result } = renderHook(() => useCopySessionAsMarkdown(), { wrapper: Wrapper });
+  await act(() => result.current.downloadSessionAsMarkdown(head));
+
+  expect(createObjectURL).toHaveBeenCalledTimes(1);
+  expect(clickSpy).toHaveBeenCalledTimes(1);
+  expect(downloadedName).toBe("Debug-API-Crash.md");
+  expect(await createdBlobs[0]?.text()).toContain("Download body");
+  expect(result.current.isDownloading).toBe(false);
+  expect(result.current.sessionCopyNotice).toBe("Session downloaded as Markdown.");
 });

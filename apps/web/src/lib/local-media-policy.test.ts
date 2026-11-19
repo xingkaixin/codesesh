@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { inlineImageSource, resolveLocalMediaSource } from "./local-media-policy";
+import {
+  inlineImageSource,
+  resolveLocalMediaSource,
+  resolveSafeExternalLink,
+} from "./local-media-policy";
 
 describe("CS-136: local media policy", () => {
   it.each([
@@ -32,5 +36,28 @@ describe("CS-136: local media policy", () => {
     );
     expect(inlineImageSource("text/html", "PHNjcmlwdD4=")).toBeNull();
     expect(inlineImageSource("image/png", "")).toBeNull();
+  });
+
+  it("allows only explicit http and https external links", () => {
+    expect(resolveSafeExternalLink("https://github.com/org/repo/pull/12")).toBe(
+      "https://github.com/org/repo/pull/12",
+    );
+    expect(resolveSafeExternalLink("http://localhost:3000/docs")).toBe(
+      "http://localhost:3000/docs",
+    );
+  });
+
+  it.each([
+    ["javascript", "javascript:alert(1)"],
+    ["uppercase javascript", "JAVASCRIPT:alert(1)"],
+    ["data", "data:text/html,<script>alert(1)</script>"],
+    ["file", "file:///etc/passwd"],
+    ["mailto", "mailto:test@example.com"],
+    ["protocol relative", "//example.com/path"],
+    ["relative path", "/docs/getting-started"],
+    ["malformed", "https://"],
+    ["empty", "   "],
+  ])("blocks unsafe link scheme: %s", (_name, value) => {
+    expect(resolveSafeExternalLink(value)).toBeNull();
   });
 });

@@ -1,5 +1,14 @@
-import type { ImagePart, Message, MessagePart, SessionDetail, ToolPart } from "@codesesh/contract";
+import type {
+  ImagePart,
+  Message,
+  MessagePart,
+  SessionDetail,
+  SessionHead,
+  ToolPart,
+} from "@codesesh/contract";
 import { getSessionDisplayTitle } from "./session-title";
+
+const MAX_FILENAME_STEM_LENGTH = 80;
 
 const messageRoleLabels = {
   user: "User",
@@ -87,14 +96,14 @@ function formatImagePart(part: ImagePart): string {
 function formatMessagePart(part: MessagePart): string {
   switch (part.type) {
     case "text":
-      return part.text.trim();
+      return part.text.trim() ? part.text : "";
     case "reasoning": {
-      const text = part.text.trim();
-      return text ? `### Reasoning\n\n${text}` : "";
+      const text = part.text;
+      return text.trim() ? `### Reasoning\n\n${text}` : "";
     }
     case "plan": {
-      const text = part.text.trim();
-      if (!text) return "";
+      const text = part.text;
+      if (!text.trim()) return "";
       const heading = part.approval_status === "fail" ? "Rejected plan" : "Plan";
       return `### ${heading}\n\n${text}`;
     }
@@ -105,7 +114,7 @@ function formatMessagePart(part: MessagePart): string {
   }
 }
 
-function formatMessage(message: Message): string {
+export function formatMessageAsMarkdown(message: Message): string {
   const content = message.parts.map(formatMessagePart).filter(Boolean).join("\n\n");
   if (!content) return "";
   return `## ${messageRoleLabels[message.role]}\n\n${content}`;
@@ -118,7 +127,27 @@ export function formatSessionAsMarkdown(session: SessionDetail): string {
     `- Session ID: ${inlineCode(session.reference.sessionId)}`,
   ];
   if (session.directory.trim()) metadata.push(`- Directory: ${inlineCode(session.directory)}`);
-  const messages = session.messages.map(formatMessage).filter(Boolean);
+  const messages = session.messages.map(formatMessageAsMarkdown).filter(Boolean);
   const content = messages.length > 0 ? messages.join("\n\n") : "_No displayable messages._";
   return [`# ${title}`, metadata.join("\n"), content].join("\n\n") + "\n";
+}
+
+function sanitizeFilenameSegment(value: string): string {
+  const cleaned = Array.from(value, (char) => {
+    const code = char.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) return " ";
+    return '<>:"/\\|?*'.includes(char) ? " " : char;
+  }).join("");
+  return cleaned
+    .trim()
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
+    .slice(0, MAX_FILENAME_STEM_LENGTH)
+    .replace(/-+$/g, "");
+}
+
+export function buildSessionMarkdownFilename(session: SessionHead): string {
+  const fromTitle = sanitizeFilenameSegment(getSessionDisplayTitle(session));
+  const stem = fromTitle || sanitizeFilenameSegment(session.reference.sessionId) || "session";
+  return `${stem}.md`;
 }

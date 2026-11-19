@@ -982,3 +982,13 @@
   padding: 0;
   white-space: pre;
 }
+
+.console-markdown .console-markdown-codeblock pre {
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.console-markdown .console-markdown-codeblock pre code {
+  white-space: inherit;
+}
