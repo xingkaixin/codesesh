@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(super) const HEAD_COLUMNS: &str = "source_node_id,agent_name,session_id,title,directory,parent_agent_name,parent_session_id,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,message_count,total_input_tokens,total_output_tokens,total_cost,total_cache_read_tokens,total_cache_create_tokens,total_tokens,cost_source,model_usage_json,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision,head_meta_json";
+pub(super) const HEAD_COLUMN_COUNT: usize = 27;
 
 #[derive(Default, Deserialize, Serialize)]
 pub(crate) struct HeadMetadata {

@@ -641,6 +641,42 @@ impl AgentScanner {
             self.source_available = Some(has_sources(&self.source)?);
             return Ok((self.read(paths)?, None, true));
         }
+        if let Some(paths) = paths
+            && !paths.is_empty()
+        {
+            let known: HashSet<&str> = self.file_fingerprints.keys().map(String::as_str).collect();
+            if let Some(targeted) = super::backfill::targeted_items(&self.source, paths, &known)? {
+                self.source_available = Some(true);
+                let changed: Vec<_> = targeted
+                    .iter()
+                    .filter(|item| self.file_fingerprints.get(&item.key) != Some(&item.fingerprint))
+                    .collect();
+                if changed.len() > BATCH_SIZE
+                    || (changed.len() > 1
+                        && changed.iter().map(|item| item.bytes).sum::<u64>() > 16 * 1024 * 1024)
+                {
+                    return self.page(None, None);
+                }
+                let (mut delta, mut retained, _) = self.read_page(&targeted, false)?;
+                retained.extend(
+                    delta
+                        .upserts
+                        .iter()
+                        .map(|session| session.head.reference.clone()),
+                );
+                let scope = ItemScope::new(&targeted);
+                delta.removed.extend(
+                    self.baseline
+                        .iter()
+                        .filter(|(reference, _)| {
+                            !retained.contains(*reference) && self.matches_scope(reference, &scope)
+                        })
+                        .map(|(reference, _)| reference.clone()),
+                );
+                delta.complete = false;
+                return Ok((delta, None, true));
+            }
+        }
         let current = self.inventory()?;
         self.source_available = Some(!current.is_empty() || has_sources(&self.source)?);
         if current.is_empty()
@@ -879,12 +915,9 @@ impl AgentScanner {
         )?;
         self.restore_source_state(state.as_ref(), complete);
 
-        for mut head in cache.source_agent_snapshot(&self.source_node_id, &self.source.agent)? {
-            let (source, has_cost_inputs): (Option<String>, bool) = cache.connection().query_row(
-                "SELECT source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE source_node_id=?1 AND agent_name=?2 AND session_id=?3",
-                [&self.source_node_id, &head.reference.agent_name, &head.reference.session_id],
-                |row| Ok((row.get(0)?,row.get(1)?)),
-            )?;
+        for (mut head, source, has_cost_inputs) in
+            cache.source_agent_restore_rows(&self.source_node_id, &self.source.agent)?
+        {
             let attachments = if head.reference.agent_name == "dsh" {
                 cache
                     .detail(head.clone())?

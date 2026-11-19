@@ -131,6 +131,40 @@ impl ContextFingerprints {
     }
 }
 
+pub(crate) fn conversation_context_fingerprint(root: &Path, id: &str) -> Result<String> {
+    let mut summaries = HashMap::new();
+    let summary_path = root.join("conversation_summaries.db");
+    if summary_path.try_exists()? {
+        let db = open_readonly_sqlite(summary_path)?;
+        db.execute_batch("BEGIN")?;
+        let has_table: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_table {
+            let mut current = Some(id.to_owned());
+            while let Some(key) = current.take() {
+                if summaries.contains_key(&key) {
+                    break;
+                }
+                if let Some(summary) = query_summary(&db, &key)? {
+                    let next = (!summary.parent.is_empty() && summary.parent != key)
+                        .then(|| summary.parent.clone());
+                    summaries.insert(key, summary);
+                    current = next;
+                }
+            }
+        }
+    }
+    let history = history_workspaces(root)?;
+    Ok(hash_conversation_context(
+        id,
+        |key| summaries.get(key),
+        &history,
+    ))
+}
+
 fn hash_str(hash: &mut Sha256, value: &str) {
     hash.update((value.len() as u64).to_le_bytes());
     hash.update(value.as_bytes());

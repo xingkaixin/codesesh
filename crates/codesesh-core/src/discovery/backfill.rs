@@ -440,11 +440,10 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     Ok(items)
 }
 
-fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
-    use crate::agents::codex::rollout;
+fn codex_titles(data_root: &Path) -> Result<HashMap<String, String>> {
     use std::io::BufRead;
-    let mut titles = std::collections::HashMap::new();
-    if let Ok(file) = std::fs::File::open(source.data_root.join("session_index.jsonl")) {
+    let mut titles = HashMap::new();
+    if let Ok(file) = std::fs::File::open(data_root.join("session_index.jsonl")) {
         for line in std::io::BufReader::new(file).lines() {
             if let Ok(record) = serde_json::from_str::<serde_json::Value>(&line?)
                 && let (Some(id), Some(title)) =
@@ -454,6 +453,34 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
     }
+    Ok(titles)
+}
+
+fn codex_item(
+    logical: PathBuf,
+    metadata: &std::fs::Metadata,
+    titles: &HashMap<String, String>,
+) -> Result<Item> {
+    let (activity, mut fingerprint) = stamp_metadata(metadata)?;
+    let stem = logical.file_stem().unwrap_or_default().to_string_lossy();
+    let pieces: Vec<_> = stem.split('-').collect();
+    let id = pieces[pieces.len().saturating_sub(5)..].join("-");
+    fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
+        &titles.get(&id),
+    )?)));
+    Ok(Item {
+        key: logical.to_string_lossy().into_owned(),
+        path: Some(logical),
+        activity,
+        fingerprint,
+        target: false,
+        bytes: metadata.len(),
+    })
+}
+
+fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
+    use crate::agents::codex::rollout;
+    let titles = codex_titles(&source.data_root)?;
     let mut items = Vec::new();
     for (path, physical) in rollout::files(&source.data_root)? {
         let metadata = match std::fs::metadata(&physical) {
@@ -461,23 +488,229 @@ fn codex_inventory(source: &AgentSource) -> Result<Vec<Item>> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
-        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-        let pieces: Vec<_> = stem.split('-').collect();
-        let id = pieces[pieces.len().saturating_sub(5)..].join("-");
-        fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
-            &titles.get(&id),
-        )?)));
-        items.push(Item {
-            key: path.to_string_lossy().into_owned(),
-            path: Some(path),
-            activity,
-            fingerprint,
-            target: false,
-            bytes: metadata.len(),
-        });
+        items.push(codex_item(path, &metadata, &titles)?);
     }
     Ok(items)
+}
+
+/// Builds inventory items for a small batch of modified regular session files without walking the
+/// full source tree. Returns `Ok(None)` when any path requires a full inventory scan (deletions,
+/// directories, companion/index files, or agents with cross-file dependencies).
+pub fn targeted_items(
+    source: &AgentSource,
+    paths: &[PathBuf],
+    known_keys: &std::collections::HashSet<&str>,
+) -> Result<Option<Vec<Item>>> {
+    if paths.is_empty() || paths.len() > BATCH_SIZE {
+        return Ok(None);
+    }
+    let empty_context = crate::hash::hex(&Sha256::digest(b"[]"));
+    let mut seen = std::collections::HashSet::new();
+    let mut items = Vec::with_capacity(paths.len());
+    match source.agent.as_str() {
+        "claudecode" | "qoder" | "qoder-cn" => {
+            let root = crate::agents::session_root(&source.agent, &source.scan_path);
+            let mut index_stamps = HashMap::new();
+            for path in paths {
+                let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file() {
+                    return Ok(None);
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let direct = path.parent().and_then(Path::parent) == Some(root.as_path());
+                let subagent = path.starts_with(&root)
+                    && crate::agents::claudecode::subagents_dir(path).is_some();
+                if !name.ends_with(".jsonl") || !(direct || subagent) {
+                    return Ok(None);
+                }
+                let key = path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                let project = match crate::agents::claudecode::subagents_dir(path) {
+                    Some(subagents) => subagents
+                        .parent()
+                        .and_then(Path::parent)
+                        .unwrap_or(subagents),
+                    None => path.parent().unwrap(),
+                };
+                let index = project.join("sessions-index.json");
+                if index.try_exists()? {
+                    if !index_stamps.contains_key(&index) {
+                        index_stamps.insert(index.clone(), stamp(&index)?.1);
+                    }
+                    fingerprint.push_str(&index_stamps[&index]);
+                }
+                let meta = path.with_extension("meta.json");
+                if meta.try_exists()? {
+                    fingerprint.push_str(&stamp(&meta)?.1);
+                }
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    key,
+                    path: Some(path.clone()),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        "gemini-cli" => {
+            let root = crate::agents::session_root(&source.agent, &source.scan_path);
+            for path in paths {
+                let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file()
+                    || !crate::agents::gemini_cli::is_source(&root, path)
+                {
+                    return Ok(None);
+                }
+                let key = path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    key,
+                    path: Some(path.clone()),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        "omp" => {
+            let root = crate::agents::session_root(&source.agent, &source.scan_path);
+            for path in paths {
+                let Ok(metadata) = std::fs::symlink_metadata(path) else {
+                    return Ok(None);
+                };
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !metadata.file_type().is_file()
+                    || !path.starts_with(&root)
+                    || !name.ends_with(".jsonl")
+                {
+                    return Ok(None);
+                }
+                let key = path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    key,
+                    path: Some(path.clone()),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        "codex" => {
+            use crate::agents::codex::rollout;
+            let sessions_dir = source.data_root.join("sessions");
+            let archived_dir = source.data_root.join("archived_sessions");
+            let mut resolved = Vec::with_capacity(paths.len());
+            for path in paths {
+                if !rollout::is_rollout(path) {
+                    return Ok(None);
+                }
+                let in_sessions = path.starts_with(&sessions_dir);
+                let in_archived = path.starts_with(&archived_dir);
+                if !in_sessions && !in_archived {
+                    return Ok(None);
+                }
+                let logical = rollout::logical_path(path);
+                let key = logical.to_string_lossy().into_owned();
+                if in_archived && !known_keys.contains(key.as_str()) {
+                    return Ok(None);
+                }
+                let Some(physical) = rollout::physical_path(&logical)? else {
+                    return Ok(None);
+                };
+                let Ok(metadata) = std::fs::symlink_metadata(&physical) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file() {
+                    return Ok(None);
+                }
+                if seen.insert(key) {
+                    resolved.push((logical, metadata));
+                }
+            }
+            let titles = codex_titles(&source.data_root)?;
+            for (logical, metadata) in resolved {
+                items.push(codex_item(logical, &metadata, &titles)?);
+            }
+            Ok(Some(items))
+        }
+        "antigravity" | "antigravity-cli" => {
+            let scan_roots = source.scan_roots()?;
+            for path in paths {
+                let raw = path.to_string_lossy();
+                let db_path = raw
+                    .strip_suffix("-wal")
+                    .or_else(|| raw.strip_suffix("-journal"))
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| path.to_owned());
+                let name = db_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let in_root = db_path
+                    .parent()
+                    .is_some_and(|parent| scan_roots.iter().any(|root| root == parent));
+                if !name.ends_with(".db") || !in_root {
+                    return Ok(None);
+                }
+                let Ok(metadata) = std::fs::symlink_metadata(&db_path) else {
+                    return Ok(None);
+                };
+                if !metadata.file_type().is_file() {
+                    return Ok(None);
+                }
+                let key = db_path.to_string_lossy().into_owned();
+                if !seen.insert(key.clone()) {
+                    continue;
+                }
+                let (activity, mut fingerprint) = stamp_metadata(&metadata)?;
+                for suffix in ["-wal", "-journal"] {
+                    let related = PathBuf::from(format!("{}{suffix}", db_path.to_string_lossy()));
+                    if related.try_exists()? {
+                        fingerprint.push_str(&stamp(&related)?.1);
+                    }
+                }
+                let Some(store_root) = db_path.parent().and_then(Path::parent) else {
+                    return Ok(None);
+                };
+                let id = db_path.file_stem().unwrap_or_default().to_string_lossy();
+                fingerprint.push(':');
+                fingerprint.push_str(
+                    &crate::agents::antigravity::conversation_context_fingerprint(store_root, &id)?,
+                );
+                fingerprint.push_str(&empty_context);
+                items.push(Item {
+                    key,
+                    path: Some(db_path),
+                    activity,
+                    fingerprint,
+                    target: false,
+                    bytes: metadata.len(),
+                });
+            }
+            Ok(Some(items))
+        }
+        _ => Ok(None),
+    }
 }
 
 #[derive(Default)]

@@ -132,6 +132,26 @@ impl Cache {
             .collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    pub(crate) fn source_agent_restore_rows(
+        &self,
+        node: &str,
+        agent: &str,
+    ) -> Result<Vec<(SessionHead, Option<String>, bool)>> {
+        let mut query = self.connection.prepare(&format!(
+            "SELECT {},source_path,COALESCE(json_extract(meta_json,'$.rustPricing.version')=1,0) FROM sessions WHERE publication_id IS NULL AND source_node_id=? AND agent_name=? ORDER BY activity_time DESC,session_id",
+            snapshot::HEAD_COLUMNS
+        ))?;
+        Ok(query
+            .query_map([node, agent], |row| {
+                Ok((
+                    snapshot::head(row)?,
+                    row.get(snapshot::HEAD_COLUMN_COUNT)?,
+                    row.get(snapshot::HEAD_COLUMN_COUNT + 1)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub(crate) fn head(&self, reference: &SessionReference) -> Result<Option<SessionHead>> {
         Ok(self.connection.query_row(&format!("SELECT {} FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=? AND publication_id IS NULL", snapshot::HEAD_COLUMNS),params![reference.source_node_id,reference.agent_name,reference.session_id],snapshot::head).optional()?)
     }
