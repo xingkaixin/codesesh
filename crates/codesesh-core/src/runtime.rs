@@ -105,11 +105,17 @@ impl Drop for ScanBatch {
 #[derive(Clone, Debug)]
 pub enum Event {
     Sessions {
-        snapshot: Arc<Vec<SessionHead>>,
-        changed: Arc<Vec<SessionHead>>,
+        revision: u64,
+        changed: Arc<Vec<Arc<SessionHead>>>,
         removed: Arc<Vec<SessionReference>>,
     },
     Status(Arc<ScanStatus>),
+}
+
+#[derive(Clone)]
+struct PublishedSnapshot {
+    revision: u64,
+    heads: Arc<Vec<Arc<SessionHead>>>,
 }
 
 #[derive(Debug)]
@@ -138,7 +144,7 @@ pub struct Runtime {
 
 struct Inner {
     cache_path: PathBuf,
-    snapshots: watch::Receiver<Arc<Vec<SessionHead>>>,
+    snapshots: watch::Receiver<PublishedSnapshot>,
     statuses: watch::Receiver<Arc<ScanStatus>>,
     events: broadcast::Sender<Event>,
     writer: mpsc::Sender<writer::Command>,
@@ -193,7 +199,10 @@ impl Runtime {
         let stopped = Arc::new(AtomicBool::new(false));
         let (shutdown, _) = watch::channel(false);
         let (events, _) = broadcast::channel(128);
-        let (snapshots_tx, snapshots) = watch::channel(Arc::new(Vec::new()));
+        let (snapshots_tx, snapshots) = watch::channel(PublishedSnapshot {
+            revision: 0,
+            heads: Arc::new(Vec::new()),
+        });
         let (statuses_tx, statuses) = watch::channel(Arc::new(ScanStatus::new(
             sources.iter().map(|source| source.name.clone()),
         )));
@@ -279,8 +288,12 @@ impl Runtime {
         self.inner.shutdown.subscribe()
     }
 
-    pub fn snapshot(&self) -> Arc<Vec<SessionHead>> {
-        self.inner.snapshots.borrow().clone()
+    pub fn snapshot(&self) -> Arc<Vec<Arc<SessionHead>>> {
+        self.inner.snapshots.borrow().heads.clone()
+    }
+    pub fn snapshot_with_revision(&self) -> (u64, Arc<Vec<Arc<SessionHead>>>) {
+        let current = self.inner.snapshots.borrow();
+        (current.revision, current.heads.clone())
     }
     pub fn status(&self) -> Arc<ScanStatus> {
         self.inner.statuses.borrow().clone()
@@ -317,13 +330,10 @@ impl Runtime {
 
     pub async fn read_snapshot<T: Send + 'static>(
         &self,
-        query: impl FnOnce(&Connection, &[SessionHead]) -> Result<T> + Send + 'static,
+        query: impl FnOnce(&Connection, &[Arc<SessionHead>]) -> Result<T> + Send + 'static,
     ) -> Result<T> {
-        self.read(move |connection| {
-            let heads = crate::storage::snapshot_from_connection(connection)?;
-            query(connection, &heads)
-        })
-        .await
+        let heads = self.snapshot();
+        self.read(move |connection| query(connection, &heads)).await
     }
 
     pub async fn reprice_all(&self, pricing: crate::pricing::PricingSnapshot) -> Result<()> {

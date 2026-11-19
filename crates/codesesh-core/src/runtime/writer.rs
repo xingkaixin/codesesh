@@ -1,6 +1,6 @@
-use super::{Cancellation, Event, ScanBatch, ScanStatus};
+use super::{Cancellation, Event, PublishedSnapshot, ScanBatch, ScanStatus};
+use crate::storage::Cache;
 use crate::wire::{PricingHistoryPhase, PricingHistoryStatus};
-use crate::{model::SessionHead, storage::Cache};
 use anyhow::Result;
 use std::{
     path::PathBuf,
@@ -38,7 +38,7 @@ pub(super) enum Command {
 pub(super) fn run(
     path: PathBuf,
     mut commands: mpsc::Receiver<Command>,
-    snapshots: watch::Sender<Arc<Vec<SessionHead>>>,
+    snapshots: watch::Sender<PublishedSnapshot>,
     statuses: watch::Sender<Arc<ScanStatus>>,
     events: broadcast::Sender<Event>,
     ready: oneshot::Sender<Result<(Duration, Duration)>>,
@@ -56,7 +56,11 @@ pub(super) fn run(
     let started = Instant::now();
     match cache.snapshot() {
         Ok(heads) => {
-            snapshots.send_replace(Arc::new(heads));
+            let heads: Vec<_> = heads.into_iter().map(Arc::new).collect();
+            snapshots.send_replace(PublishedSnapshot {
+                revision: 1,
+                heads: Arc::new(heads),
+            });
             let _ = ready.send(Ok((cache_open, started.elapsed())));
         }
         Err(error) => {
@@ -236,6 +240,7 @@ pub(super) fn run(
             } => {
                 let count = snapshots
                     .borrow()
+                    .heads
                     .iter()
                     .filter(|head| head.reference.agent_name == agent)
                     .count();
@@ -298,7 +303,7 @@ fn release_unused_memory() {
 
 fn publish_changes(
     cache: &Cache,
-    snapshots: &watch::Sender<Arc<Vec<SessionHead>>>,
+    snapshots: &watch::Sender<PublishedSnapshot>,
     events: &broadcast::Sender<Event>,
     references: &mut Vec<crate::model::SessionReference>,
     removed: Vec<crate::model::SessionReference>,
@@ -306,7 +311,11 @@ fn publish_changes(
     if references.is_empty() && removed.is_empty() {
         return Ok(());
     }
-    let heads = Arc::new(cache.refresh_snapshot(snapshots.borrow().as_ref(), references)?);
+    let (previous_revision, previous_heads) = {
+        let current = snapshots.borrow();
+        (current.revision, current.heads.clone())
+    };
+    let heads = Arc::new(cache.refresh_snapshot(previous_heads.as_ref(), references)?);
     let changed_references: std::collections::HashSet<_> = references.iter().collect();
     let changed = Arc::new(
         heads
@@ -315,9 +324,10 @@ fn publish_changes(
             .cloned()
             .collect(),
     );
-    snapshots.send_replace(heads.clone());
+    let revision = previous_revision.wrapping_add(1);
+    snapshots.send_replace(PublishedSnapshot { revision, heads });
     let _ = events.send(Event::Sessions {
-        snapshot: heads,
+        revision,
         changed,
         removed: Arc::new(removed),
     });

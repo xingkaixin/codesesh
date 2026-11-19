@@ -42,8 +42,10 @@ pub async fn events(AxumState(state): AxumState<Arc<State>>) -> Response {
     };
     let mut shutdown = state.runtime.shutdown_receiver();
     let mut known: HashSet<_> = state
+        .runtime
         .snapshot()
         .iter()
+        .filter(|s| super::matches_scope(s, &state.query_scope))
         .map(|s| s.reference.clone())
         .collect();
     let queue = Arc::new(Mutex::new(super::event_buffer::Buffer::new(permit)));
@@ -74,8 +76,10 @@ pub async fn events(AxumState(state): AxumState<Arc<State>>) -> Response {
                         Ok(payload)=>lock_buffer(&queue).status(&payload),
                         Err(_)=>lock_buffer(&queue).fail(),
                     },
-                    Ok(runtime::Event::Sessions{changed,removed,snapshot})=> {
-                        let aliases=state.aliases().await;let snapshot=super::scoped_heads(&snapshot,&state.query_scope);
+                    Ok(runtime::Event::Sessions{changed,removed,..})=> {
+                        let aliases=state.aliases().await;
+                        let latest=state.runtime.snapshot();
+                        let snapshot:Vec<_>=latest.iter().map(Arc::as_ref).filter(|s|super::matches_scope(s,&state.query_scope)).collect();
                         let visible:HashSet<_>=snapshot.iter().map(|s|s.reference.clone()).collect();
                         let mut changed_agents=Vec::new();let mut new=Vec::new();let mut heads=Vec::new();
                         for head in changed.iter().filter(|h|visible.contains(&h.reference)) {

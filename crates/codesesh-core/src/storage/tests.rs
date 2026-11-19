@@ -31,7 +31,12 @@ fn source_nodes_isolate_content_search_and_updates() {
     let mut cache = Cache::open(None).unwrap();
     cache.publish(std::slice::from_mut(&mut local)).unwrap();
     cache.publish(std::slice::from_mut(&mut remote)).unwrap();
-    let snapshot = cache.snapshot().unwrap();
+    let snapshot: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(Arc::new)
+        .collect();
     assert_eq!(snapshot.len(), 2);
     assert_eq!(cache.agent_snapshot("codex").unwrap().len(), 1);
     assert_eq!(cache.json_baseline().unwrap().heads.len(), 1);
@@ -369,18 +374,35 @@ fn refreshed_snapshot_matches_durable_order_updates_and_removals() {
     ];
     let mut cache = Cache::open(None).unwrap();
     cache.publish(&mut sessions).unwrap();
-    let previous = cache.snapshot().unwrap();
+    let previous: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(Arc::new)
+        .collect();
+    let unchanged_ref = sessions[2].head.reference.clone();
+    let unchanged_prev = previous
+        .iter()
+        .find(|head| head.reference == unchanged_ref)
+        .unwrap()
+        .clone();
     let removed = sessions[1].head.reference.clone();
     sessions[0].head.title = "Changed".into();
     sessions[0].head.time_updated += 1000.0;
     let changed = sessions[0].head.reference.clone();
     cache.apply(&mut sessions[..1], &[removed]).unwrap();
     let refreshed = cache.refresh_snapshot(&previous, &[changed]).unwrap();
+    let refreshed_values: Vec<_> = refreshed.iter().map(|head| (**head).clone()).collect();
     assert_eq!(
-        serde_json::to_value(&refreshed).unwrap(),
+        serde_json::to_value(&refreshed_values).unwrap(),
         serde_json::to_value(cache.snapshot().unwrap()).unwrap()
     );
     assert_eq!(refreshed[0].title, "Changed");
+    let unchanged_after = refreshed
+        .iter()
+        .find(|head| head.reference == unchanged_ref)
+        .unwrap();
+    assert!(Arc::ptr_eq(&unchanged_prev, unchanged_after));
     cache
         .apply(
             &mut [],
@@ -391,6 +413,70 @@ fn refreshed_snapshot_matches_durable_order_updates_and_removals() {
         )
         .unwrap();
     assert!(cache.refresh_snapshot(&refreshed, &[]).unwrap().is_empty());
+}
+
+#[test]
+fn batched_refresh_snapshot_matches_full_snapshot_across_chunks_and_reuses_unchanged_arcs() {
+    let root = tempfile::tempdir().unwrap();
+    let template = source(root.path(), "batch");
+    let total = 300usize;
+    let mut sessions: Vec<_> = (0..total)
+        .map(|index| {
+            let mut session = template.clone();
+            session.head.reference.session_id = format!("batch-{index:04}");
+            session.detail.head.reference = session.head.reference.clone();
+            session.head.title = format!("Initial {index}");
+            session.detail.head.title = session.head.title.clone();
+            session.head.time_created = 1_700_000_000_000.0 + (index as f64) * 1000.0;
+            session.head.time_updated = session.head.time_created;
+            session.detail.head.time_created = session.head.time_created;
+            session.detail.head.time_updated = session.head.time_updated;
+            session
+        })
+        .collect();
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(&mut sessions).unwrap();
+    let previous: Vec<_> = cache
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(Arc::new)
+        .collect();
+    let previous_by_ref: HashMap<_, _> = previous
+        .iter()
+        .map(|head| (head.reference.clone(), head.clone()))
+        .collect();
+
+    // Update 270 sessions (> HEAD_BATCH_SIZE=250) and leave 30 untouched.
+    let changed_count = 270usize;
+    for session in &mut sessions[..changed_count] {
+        session.head.title.push_str(" updated");
+        session.detail.head.title = session.head.title.clone();
+        session.head.time_updated += 500_000.0;
+        session.detail.head.time_updated = session.head.time_updated;
+    }
+    let changed_refs: Vec<_> = sessions[..changed_count]
+        .iter()
+        .map(|session| session.head.reference.clone())
+        .collect();
+    cache.publish(&mut sessions[..changed_count]).unwrap();
+
+    let refreshed = cache.refresh_snapshot(&previous, &changed_refs).unwrap();
+    let durable = cache.snapshot().unwrap();
+    let refreshed_values: Vec<_> = refreshed.iter().map(|head| (**head).clone()).collect();
+    assert_eq!(
+        serde_json::to_value(&refreshed_values).unwrap(),
+        serde_json::to_value(&durable).unwrap()
+    );
+    let changed_set: std::collections::HashSet<_> = changed_refs.iter().collect();
+    for head in &refreshed {
+        let prev = &previous_by_ref[&head.reference];
+        if changed_set.contains(&head.reference) {
+            assert!(!Arc::ptr_eq(prev, head));
+        } else {
+            assert!(Arc::ptr_eq(prev, head));
+        }
+    }
 }
 
 #[test]

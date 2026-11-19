@@ -90,13 +90,32 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
     let result = state
         .runtime
         .read_snapshot(move |conn, heads| {
-            let snapshot = super::scoped_heads(heads, &query_scope);
-            let ranked = search::execute_with_snapshot(conn, &query, &options, &snapshot)?;
-            let needle = search::parse_query(&query).text.trim().to_lowercase();
-            let candidates = if needle.is_empty() {
+            let scoped: Vec<_> = heads
+                .iter()
+                .map(Arc::as_ref)
+                .filter(|s| super::matches_scope(s, &query_scope))
+                .collect();
+            let parsed = search::parse_query(&query);
+            let uses_sql_search = !parsed.text.is_empty()
+                || options.file.is_some()
+                || parsed.filters.file.is_some()
+                || options.file_kind.is_some()
+                || parsed.filters.file_kind.is_some()
+                || !options.tools.is_empty()
+                || !parsed.filters.tools.is_empty();
+            let mut owned_snapshot = None;
+            let ranked = if uses_sql_search {
+                search::execute_with_snapshot(conn, &query, &options, &[])?
+            } else {
+                let snapshot = owned_snapshot
+                    .get_or_insert_with(|| scoped.iter().map(|s| (*s).clone()).collect::<Vec<_>>());
+                search::execute_with_snapshot(conn, &query, &options, snapshot)?
+            };
+            let needle = parsed.text.trim().to_lowercase();
+            let candidates: Vec<_> = if needle.is_empty() {
                 Vec::new()
             } else {
-                snapshot
+                scoped
                     .iter()
                     .filter(|s| {
                         aliases
@@ -105,7 +124,7 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
                     })
                     .map(|s| SearchResult {
                         reference: s.reference.clone(),
-                        session: s.clone(),
+                        session: (*s).clone(),
                         snippet: format!("Alias · {}", s.directory),
                         snippet_highlights: vec![],
                         match_type: "title".into(),
@@ -113,8 +132,22 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
                     })
                     .collect()
             };
-            let mut alias_results =
-                search::filter_candidates(conn, candidates, &query, &options, &snapshot)?;
+            let mut alias_results = if candidates.is_empty() {
+                Vec::new()
+            } else {
+                let needs_inclusive_costs = options.cost_min.is_some()
+                    || options.cost_max.is_some()
+                    || parsed.filters.cost_min.is_some()
+                    || parsed.filters.cost_max.is_some();
+                if needs_inclusive_costs {
+                    let snapshot = owned_snapshot.get_or_insert_with(|| {
+                        scoped.iter().map(|s| (*s).clone()).collect::<Vec<_>>()
+                    });
+                    search::filter_candidates(conn, candidates, &query, &options, snapshot)?
+                } else {
+                    search::filter_candidates(conn, candidates, &query, &options, &[])?
+                }
+            };
             alias_results.sort_by(|a, b| b.session.time_updated.total_cmp(&a.session.time_updated));
             let merged = merge(ranked, alias_results, limit);
             let mut values = Vec::with_capacity(merged.len());
@@ -125,7 +158,7 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
                     .parent_reference
                     .as_ref()
                     .and_then(|parent_ref| {
-                        snapshot
+                        scoped
                             .iter()
                             .find(|s| s.reference == *parent_ref)
                             .map(|parent| SearchResultParent {

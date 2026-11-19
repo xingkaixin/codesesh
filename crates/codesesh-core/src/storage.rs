@@ -20,7 +20,7 @@ use crate::{
 };
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 pub(crate) const CACHE_SCHEMA_VERSION: i64 = 39;
 
@@ -70,9 +70,9 @@ impl Cache {
 
     pub(crate) fn refresh_snapshot(
         &self,
-        previous: &[SessionHead],
+        previous: &[Arc<SessionHead>],
         changed: &[SessionReference],
-    ) -> Result<Vec<SessionHead>> {
+    ) -> Result<Vec<Arc<SessionHead>>> {
         let transaction = self.connection.unchecked_transaction()?;
         let references = {
             let mut query = transaction.prepare(
@@ -92,21 +92,32 @@ impl Cache {
         let heads = if self.snapshot_data_version.get() != Some(version) {
             // Another connection may have changed headers outside this publication.
             snapshot::load(&transaction)?
+                .into_iter()
+                .map(Arc::new)
+                .collect()
         } else {
             let previous: std::collections::HashMap<_, _> = previous
                 .iter()
                 .map(|head| (&head.reference, head))
                 .collect();
             let changed: std::collections::HashSet<_> = changed.iter().collect();
+            let to_load: Vec<_> = references
+                .iter()
+                .filter(|reference| {
+                    changed.contains(*reference) || !previous.contains_key(*reference)
+                })
+                .collect();
+            let mut loaded = snapshot::load_many(&transaction, &to_load)?;
             references
                 .into_iter()
                 .map(|reference| {
                     if !changed.contains(&reference)
                         && let Some(head) = previous.get(&reference)
                     {
-                        return Ok((*head).clone());
+                        return Ok(Arc::clone(head));
                     }
-                    self.head(&reference)?
+                    loaded
+                        .remove(&reference)
                         .ok_or_else(|| anyhow::anyhow!("published session is missing"))
                 })
                 .collect::<Result<Vec<_>>>()?

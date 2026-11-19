@@ -1459,3 +1459,105 @@ async fn pricing_override_save_and_delete_reprice_in_background_without_blocking
 
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn search_reuses_published_in_memory_snapshot() {
+    use codesesh_core::{
+        agents::{ParsedSession, parse_codex},
+        pricing::Pricing,
+        storage::Cache,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("rollout-search.jsonl");
+    std::fs::write(
+        &source,
+        concat!(
+            "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
+            "{\"timestamp\":\"2026-09-01T10:00:01Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"text\":\"Needle in transcript\"}]}}\n"
+        ),
+    )
+    .unwrap();
+    let data = parse_codex(&source, &Default::default(), &Pricing::bundled())
+        .unwrap()
+        .unwrap();
+    let reference = data.head.reference.clone();
+    let mut sessions = [ParsedSession {
+        head: data.head.clone(),
+        detail: data,
+        source,
+    }];
+    let db_path = dir.path().join("cache.db");
+    let mut external = Cache::open(Some(&db_path)).unwrap();
+    external.publish(&mut sessions).unwrap();
+
+    let runtime = Runtime::start(db_path.clone(), vec![], 1).await.unwrap();
+    let published = runtime.snapshot();
+    assert_eq!(published.len(), 1);
+
+    // Mutate the SQLite title directly outside the runtime writer: read_snapshot must
+    // still hand back the exact published in-memory Arc<SessionHead> without re-querying SQLite.
+    external
+        .connection()
+        .execute("UPDATE sessions SET title='Mutated outside runtime'", [])
+        .unwrap();
+    let ptr_matches = runtime
+        .read_snapshot({
+            let expected = published[0].clone();
+            move |_conn, heads| {
+                Ok(heads.len() == 1
+                    && Arc::ptr_eq(&heads[0], &expected)
+                    && heads[0].title == expected.title)
+            }
+        })
+        .await
+        .unwrap();
+    assert!(ptr_matches);
+
+    let saved = StateStore::memory().unwrap();
+    saved
+        .upsert_alias(&reference, "Custom Alias Match")
+        .unwrap();
+    let state = Arc::new(State::new(
+        runtime.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(saved),
+        Options {
+            token: Some("secret".into()),
+            hostname: "127.0.0.1".into(),
+            port: 4521,
+            tls: false,
+            trust_proxy: false,
+            public_origin: None,
+            loopback_authority: true,
+            default_from: None,
+            default_to: None,
+            default_days: Some(0),
+            enabled_agents: vec!["codex".into()],
+            cwd: None,
+        },
+    ));
+    let app = router(state);
+    let auth = [("authorization", "Bearer secret")];
+
+    // Empty-query browse uses the in-memory snapshot title (not the out-of-band SQLite mutation).
+    let (status, recent) = request(&app, Method::GET, "/api/search?q=", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let results = recent["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["session"]["title"], published[0].title);
+    assert_eq!(results[0]["session"]["display_title"], "Custom Alias Match");
+
+    // Text FTS search still queries SQLite FTS while matching aliases from the in-memory snapshot.
+    let (status, fts) = request(&app, Method::GET, "/api/search?q=Needle", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fts["results"].as_array().unwrap().len(), 1);
+
+    let (status, alias_hit) =
+        request(&app, Method::GET, "/api/search?q=Custom%20Alias", &auth, "").await;
+    assert_eq!(status, StatusCode::OK);
+    let alias_results = alias_hit["results"].as_array().unwrap();
+    assert_eq!(alias_results.len(), 1);
+    assert_eq!(alias_results[0]["session"]["title"], published[0].title);
+
+    runtime.shutdown().await.unwrap();
+}

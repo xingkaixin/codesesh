@@ -29,19 +29,22 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
         return paginated_sessions(&state, &query, limit, Vec::new());
     }
     let aliases = state.aliases().await;
-    let snapshot = state.snapshot();
+    let query_scope = state.scope(query.optional("sourceNodeId"));
+    let raw_snapshot = state.runtime.snapshot();
     let cwd = query
         .optional("cwd")
         .filter(|_| project.is_none())
         .map(str::to_owned);
     let selected = if let Some(cwd) = cwd {
-        let snapshot = snapshot.clone();
         match tokio::task::spawn_blocking(move || {
             let scope = projects::create_project_scope_matcher(&cwd);
-            snapshot
+            raw_snapshot
                 .iter()
-                .filter(|s| projects::matches_project_scope(s, &scope))
-                .cloned()
+                .filter(|s| {
+                    super::matches_scope(s, &query_scope)
+                        && projects::matches_project_scope(s, &scope)
+                })
+                .map(|s| (**s).clone())
                 .collect::<Vec<_>>()
         })
         .await
@@ -50,16 +53,8 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
             Err(_) => return error(StatusCode::SERVICE_UNAVAILABLE, "Project scope unavailable"),
         }
     } else {
-        snapshot.as_ref().clone()
+        super::scoped_shared_heads(&raw_snapshot, &query_scope)
     };
-    let selected: Vec<_> = selected
-        .into_iter()
-        .filter(|session| {
-            query
-                .optional("sourceNodeId")
-                .is_none_or(|source| source == session.reference.source_node_id)
-        })
-        .collect();
     let filter = SessionFilter {
         agent: query.get("agent"),
         project,
