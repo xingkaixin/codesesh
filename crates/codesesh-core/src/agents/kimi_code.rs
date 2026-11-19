@@ -1,3 +1,5 @@
+use super::jsonl::CachedSources;
+use super::jsonl::records;
 use super::{ParsedSession, claudecode::common::InvalidSession, kimi::helpers::*};
 use crate::{model::*, pricing::Pricing};
 use serde_json::Value;
@@ -6,13 +8,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
 pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {
+    scan_cached(root, pricing, &CachedSources::default())
+}
+
+pub(super) fn scan_cached(
+    root: &Path,
+    pricing: &Pricing,
+    cached_sources: &CachedSources<'_>,
+) -> anyhow::Result<Vec<ParsedSession>> {
     let sessions = if root.join("sessions").is_dir() {
         root.join("sessions")
     } else {
         root.to_owned()
     };
-    scan_directories(&sessions, directories(&sessions)?, pricing, None)
+    scan_directories(&sessions, directories(&sessions)?, pricing, cached_sources)
 }
 
 pub fn scan_changed(
@@ -26,9 +37,16 @@ pub fn scan_changed(
     } else {
         root.to_owned()
     };
+    let cached_sources = CachedSources {
+        paths: previous
+            .iter()
+            .map(|record| record.source.as_path())
+            .collect(),
+        damaged: None,
+    };
     match affected_session_dirs(&sessions, changed_paths)? {
         Some(dirs) => {
-            let upserts = scan_directories(&sessions, dirs.clone(), pricing, Some(previous))?;
+            let upserts = scan_directories(&sessions, dirs.clone(), pricing, &cached_sources)?;
             let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
             let removed = previous
                 .iter()
@@ -46,7 +64,7 @@ pub fn scan_changed(
         }
         None => {
             let upserts =
-                scan_directories(&sessions, directories(&sessions)?, pricing, Some(previous))?;
+                scan_directories(&sessions, directories(&sessions)?, pricing, &cached_sources)?;
             let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
             let removed = previous
                 .iter()
@@ -74,7 +92,7 @@ pub fn scan_paths(
         root.to_owned()
     };
     match affected_session_dirs(&sessions, changed_paths)? {
-        Some(paths) => scan_directories(&sessions, paths, pricing, None),
+        Some(paths) => scan_directories(&sessions, paths, pricing, &CachedSources::default()),
         None => scan(root, pricing),
     }
 }
@@ -83,7 +101,7 @@ fn scan_directories(
     sessions: &Path,
     paths: Vec<PathBuf>,
     pricing: &Pricing,
-    previous: Option<&[crate::agents::SessionRecord]>,
+    cached_sources: &CachedSources<'_>,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let mut workdirs = HashMap::new();
     for record in records(
@@ -91,6 +109,7 @@ fn scan_directories(
             .parent()
             .unwrap_or(sessions)
             .join("session_index.jsonl"),
+        || false,
     )? {
         let record = record?;
         if let (Some(path), Some(cwd)) = (record["sessionDir"].as_str(), record["workDir"].as_str())
@@ -101,8 +120,8 @@ fn scan_directories(
     }
     let mut result = vec![];
     for path in paths {
-        let cached =
-            previous.is_some_and(|sessions| sessions.iter().any(|session| session.source == path));
+        let cached = cached_sources.paths.contains(path.as_path());
+        let id = path.file_name().unwrap().to_string_lossy().into_owned();
         let state_path = path.join("state.json");
         let wire_path = path.join("agents/main/wire.jsonl");
         let state_exists = state_path.try_exists()?;
@@ -143,7 +162,9 @@ fn scan_directories(
         let mut model_usage = BTreeMap::new();
         let mut read = 0.;
         let mut create = 0.;
-        for (seq, r) in records(&wire_path)?.enumerate() {
+        for (seq, r) in
+            records(&wire_path, || cached_sources.reject_invalid(&id, cached))?.enumerate()
+        {
             let r = r?;
             let ts = timestamp(&r["time"]).unwrap_or(0.);
             let id = format!("wire-{}", seq + 1);
@@ -359,7 +380,6 @@ fn scan_directories(
         )
         .or(first)
         .unwrap_or_else(|| "Untitled Session".into());
-        let id = path.file_name().unwrap().to_string_lossy().into_owned();
         let mut detail = finish(
             "kimi-code",
             id,

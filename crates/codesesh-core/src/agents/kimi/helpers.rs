@@ -2,20 +2,9 @@ use crate::{agents::tool_calls, model::*};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-pub fn records(path: &Path) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Value>>>> {
-    use std::io::BufRead;
-    if !path.exists() {
-        return Ok(Box::new(std::iter::empty()));
-    }
-    let reader = std::io::BufReader::new(std::fs::File::open(path)?);
-    Ok(Box::new(reader.split(b'\n').filter_map(|line| {
-        match line {
-            Ok(bytes) => serde_json::from_str::<Value>(&String::from_utf8_lossy(&bytes))
-                .ok()
-                .map(Ok),
-            Err(error) => Some(Err(error.into())),
-        }
-    })))
+pub(crate) fn session_directory(root: &Path, path: &Path) -> Option<PathBuf> {
+    let mut relative = path.strip_prefix(root).ok()?.components();
+    Some(root.join(relative.next()?).join(relative.next()?))
 }
 pub fn directories(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
     if !root.exists() {
@@ -442,14 +431,13 @@ pub fn affected_directories(
         if globals.contains(&change) || root.starts_with(&change) {
             return Ok(None);
         }
-        let Ok(relative) = change.strip_prefix(&root) else {
+        if !change.starts_with(&root) {
             continue;
-        };
-        let mut components = relative.components();
-        let (Some(bucket), Some(session)) = (components.next(), components.next()) else {
+        }
+        let Some(session) = session_directory(&root, &change) else {
             return Ok(None);
         };
-        paths.insert(root.join(bucket).join(session));
+        paths.insert(session);
     }
     Ok(Some(paths.into_iter().collect()))
 }

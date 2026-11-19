@@ -1,3 +1,4 @@
+use super::jsonl::CachedSources;
 use super::{ParsedSession, claudecode::common::InvalidSession, tool_calls};
 use crate::{model::*, pricing::Pricing, projects::path_identity};
 use serde_json::{Value, json};
@@ -12,7 +13,16 @@ mod transcript;
 use helpers::*;
 use transcript::transcript;
 
+#[cfg(test)]
 pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>> {
+    scan_cached(root, pricing, &CachedSources::default())
+}
+
+pub(super) fn scan_cached(
+    root: &Path,
+    pricing: &Pricing,
+    cached_sources: &CachedSources<'_>,
+) -> anyhow::Result<Vec<ParsedSession>> {
     let sessions = root.join("sessions");
     let base = if sessions.is_dir() {
         sessions.as_path()
@@ -29,10 +39,14 @@ pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>
             continue;
         }
         let path = entry.path();
-        match parse_source(path, pricing) {
+        let cached = cached_sources.paths.contains(path);
+        match parse_source(path, pricing, |id| {
+            cached_sources.reject_invalid(id, cached)
+        }) {
             Ok(Some(session)) => results.push(session),
+            Ok(None) if cached => return Err(InvalidSession("incomplete Grok session").into()),
             Ok(None) => {}
-            Err(error) if error.is::<InvalidSession>() => {}
+            Err(error) if !cached && error.is::<InvalidSession>() => {}
             Err(error) => return Err(error),
         }
     }
@@ -60,7 +74,7 @@ pub fn scan_paths(
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let mut results = Vec::new();
     for source in sources.iter().collect::<std::collections::BTreeSet<_>>() {
-        match parse_source(source, pricing) {
+        match parse_source(source, pricing, |_| false) {
             Ok(Some(session)) => results.push(session),
             Ok(None) => {}
             Err(error) if error.is::<InvalidSession>() => {}
@@ -119,7 +133,7 @@ pub fn scan_changed(
             .iter()
             .filter(|session| session.source == source)
             .collect();
-        let parsed = match parse_source(&source, pricing) {
+        let parsed = match parse_source(&source, pricing, |_| !old.is_empty()) {
             Ok(Some(session)) => Some(session),
             Ok(None) => {
                 if !old.is_empty() && source.try_exists()? {
@@ -149,7 +163,11 @@ pub fn scan_changed(
     })
 }
 
-fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedSession>> {
+fn parse_source(
+    path: &Path,
+    pricing: &Pricing,
+    reject_invalid: impl Fn(&str) -> bool,
+) -> anyhow::Result<Option<ParsedSession>> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -171,15 +189,9 @@ fn parse_source(path: &Path, pricing: &Pricing) -> anyhow::Result<Option<ParsedS
         .or_else(|| iso(&summary["updated_at"]))
         .unwrap_or(created);
     let updates = path.with_file_name("updates.jsonl");
-    let records = match fs::read(&updates) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes)
-            .lines()
-            .filter_map(|s| serde_json::from_str::<Value>(s).ok())
-            .filter(Value::is_object)
-            .collect::<Vec<_>>(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => return Err(error.into()),
-    };
+    let records = super::jsonl::records(&updates, || reject_invalid(&id))?
+        .filter(|record| record.as_ref().map_or(true, Value::is_object))
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let messages = transcript(
         &records,
         &id,
@@ -627,7 +639,7 @@ mod tests {
         );
 
         fs::write(&summary_path, &summary).unwrap();
-        fs::write(&updates_path, "{\"truncated\":").unwrap();
+        fs::write(&updates_path, format!("{updates}\n{{broken\n")).unwrap();
         assert!(
             scan_changed(
                 root.path(),

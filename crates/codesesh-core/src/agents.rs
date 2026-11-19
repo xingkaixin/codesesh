@@ -118,6 +118,7 @@ pub(crate) fn scan_agent(
     scan_path: &Path,
     data_root: &Path,
     pricing: &Pricing,
+    cached_sources: &jsonl::CachedSources<'_>,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match agent {
         "antigravity" | "antigravity-cli" => antigravity::scan(scan_path, pricing, agent),
@@ -126,9 +127,9 @@ pub(crate) fn scan_agent(
         "codex" => codex::scan(data_root, pricing),
         "cursor" => cursor::scan(scan_path, pricing),
         "droid" => droid::scan(scan_path, data_root, pricing),
-        "kimi" => kimi::scan_with_data_root(scan_path, data_root, pricing),
-        "kimi-code" => kimi_code::scan(scan_path, pricing),
-        "grok" => grok::scan(scan_path, pricing),
+        "kimi" => kimi::scan_cached(scan_path, data_root, pricing, cached_sources),
+        "kimi-code" => kimi_code::scan_cached(scan_path, pricing, cached_sources),
+        "grok" => grok::scan_cached(scan_path, pricing, cached_sources),
         "pi" => pi::scan(scan_path, pricing),
         "omp" => omp::scan(scan_path, pricing),
         "opencode" => opencode::scan_database(scan_path, "opencode", true, pricing),
@@ -191,21 +192,27 @@ pub(crate) fn is_session_file(
         "grok" => name == "summary.json",
         "droid" => entry.depth() <= 2 && name.ends_with(".jsonl"),
         "dsh" => entry.depth() == 3 && dsh::generation(&name).is_some(),
-        // A session directory holding both files is one session, listed by its state.json.
-        "kimi" => {
-            entry.depth() == 3
-                && (name == "state.json"
-                    || name == "metadata.json"
-                        && !path.with_file_name("state.json").try_exists()?)
-        }
-        "kimi-code" => {
-            entry.depth() == 3
-                && name == "state.json"
-                && path
-                    .parent()
-                    .unwrap()
-                    .join("agents/main/wire.jsonl")
-                    .try_exists()?
+        "kimi" | "kimi-code" => {
+            let Some(session) = kimi::helpers::session_directory(root, path) else {
+                return Ok(false);
+            };
+            let sources: &[&str] = if agent == "kimi" {
+                &["state.json", "metadata.json", "context.jsonl", "wire.jsonl"]
+            } else {
+                &["state.json", "agents/main/wire.jsonl"]
+            };
+            let Some(index) = sources
+                .iter()
+                .position(|suffix| session.join(suffix) == path)
+            else {
+                return Ok(false);
+            };
+            for preferred in &sources[..index] {
+                if session.join(preferred).try_exists()? {
+                    return Ok(false);
+                }
+            }
+            true
         }
         _ => false,
     })

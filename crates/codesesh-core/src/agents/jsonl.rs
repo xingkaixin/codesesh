@@ -6,6 +6,51 @@ use std::{
     sync::LazyLock,
 };
 
+#[derive(Default)]
+pub(crate) struct CachedSources<'a> {
+    pub(crate) paths: std::collections::HashSet<&'a std::path::Path>,
+    pub(crate) damaged: Option<std::cell::RefCell<std::collections::HashSet<String>>>,
+}
+
+impl CachedSources<'_> {
+    pub(super) fn reject_invalid(&self, session_id: &str, cached: bool) -> bool {
+        if let Some(damaged) = &self.damaged {
+            damaged.borrow_mut().insert(session_id.to_owned());
+            false
+        } else {
+            cached
+        }
+    }
+}
+
+pub(super) fn records(
+    path: &std::path::Path,
+    reject_invalid: impl Fn() -> bool,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Value>>> {
+    let file = match std::fs::File::open(path) {
+        Ok(file) => Some(file),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(file
+        .into_iter()
+        .flat_map(|f| BufReader::new(f).split(b'\n'))
+        .filter_map(move |line| {
+            let bytes = match line {
+                Ok(bytes) => bytes,
+                Err(error) => return Some(Err(error.into())),
+            };
+            if bytes.iter().all(u8::is_ascii_whitespace) {
+                return None;
+            }
+            match serde_json::from_str(&String::from_utf8_lossy(&bytes)) {
+                Ok(value) => Some(Ok(value)),
+                Err(error) if reject_invalid() => Some(Err(error.into())),
+                Err(_) => None,
+            }
+        }))
+}
+
 pub(super) struct JsonLines<R> {
     reader: BufReader<R>,
     line: String,

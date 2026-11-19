@@ -331,7 +331,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             }
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
-            entry.path().parent().unwrap().to_owned()
+            crate::agents::kimi::helpers::session_directory(&root, entry.path()).unwrap()
         } else {
             entry.path().to_owned()
         };

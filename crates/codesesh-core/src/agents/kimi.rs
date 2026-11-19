@@ -1,4 +1,6 @@
+use super::jsonl::CachedSources;
 pub(crate) mod helpers;
+use super::jsonl::records;
 use super::{ParsedSession, claudecode::common::InvalidSession};
 use crate::{model::*, pricing::Pricing};
 use helpers::*;
@@ -19,12 +21,22 @@ pub fn scan(root: &Path, pricing: &Pricing) -> anyhow::Result<Vec<ParsedSession>
     scan_with_data_root(&sessions, data, pricing)
 }
 
+#[cfg(test)]
 pub fn scan_with_data_root(
     sessions: &Path,
     data: &Path,
     pricing: &Pricing,
 ) -> anyhow::Result<Vec<ParsedSession>> {
-    scan_directories(directories(sessions)?, data, pricing, None)
+    scan_cached(sessions, data, pricing, &CachedSources::default())
+}
+
+pub(super) fn scan_cached(
+    sessions: &Path,
+    data: &Path,
+    pricing: &Pricing,
+    cached_sources: &CachedSources<'_>,
+) -> anyhow::Result<Vec<ParsedSession>> {
+    scan_directories(directories(sessions)?, data, pricing, cached_sources)
 }
 
 pub fn scan_changed(
@@ -34,9 +46,16 @@ pub fn scan_changed(
     changed_paths: &[PathBuf],
     previous: &[crate::agents::SessionRecord],
 ) -> anyhow::Result<super::ScanDelta> {
+    let cached_sources = CachedSources {
+        paths: previous
+            .iter()
+            .map(|record| record.source.as_path())
+            .collect(),
+        damaged: None,
+    };
     match affected_session_dirs(sessions, data, changed_paths)? {
         Some(dirs) => {
-            let upserts = scan_directories(dirs.clone(), data, pricing, Some(previous))?;
+            let upserts = scan_directories(dirs.clone(), data, pricing, &cached_sources)?;
             let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
             let removed = previous
                 .iter()
@@ -53,7 +72,7 @@ pub fn scan_changed(
             })
         }
         None => {
-            let upserts = scan_directories(directories(sessions)?, data, pricing, Some(previous))?;
+            let upserts = scan_directories(directories(sessions)?, data, pricing, &cached_sources)?;
             let retained: HashSet<_> = upserts.iter().map(|s| &s.head.reference).collect();
             let removed = previous
                 .iter()
@@ -77,7 +96,7 @@ pub fn scan_paths_with_data_root(
     changed_paths: &[PathBuf],
 ) -> anyhow::Result<Vec<ParsedSession>> {
     match affected_session_dirs(sessions, data, changed_paths)? {
-        Some(paths) => scan_directories(paths, data, pricing, None),
+        Some(paths) => scan_directories(paths, data, pricing, &CachedSources::default()),
         None => scan_with_data_root(sessions, data, pricing),
     }
 }
@@ -105,7 +124,7 @@ fn scan_directories(
     paths: Vec<PathBuf>,
     data: &Path,
     pricing: &Pricing,
-    previous: Option<&[crate::agents::SessionRecord]>,
+    cached_sources: &CachedSources<'_>,
 ) -> anyhow::Result<Vec<ParsedSession>> {
     let config_path = data.join("config.toml");
     let config = if config_path.exists() {
@@ -127,8 +146,8 @@ fn scan_directories(
     }
     let mut result = vec![];
     for path in paths {
-        let cached =
-            previous.is_some_and(|sessions| sessions.iter().any(|session| session.source == path));
+        let cached = cached_sources.paths.contains(path.as_path());
+        let id = path.file_name().unwrap().to_string_lossy().into_owned();
         let state = path.join("state.json");
         let meta = if state.try_exists()? {
             state.clone()
@@ -139,7 +158,7 @@ fn scan_directories(
         let has_transcript =
             path.join("context.jsonl").try_exists()? || path.join("wire.jsonl").try_exists()?;
         if !meta_exists || !has_transcript {
-            if cached && meta_exists {
+            if cached && (meta_exists || has_transcript) {
                 return Err(InvalidSession("incomplete Kimi session").into());
             }
             continue;
@@ -197,7 +216,9 @@ fn scan_directories(
         let mut builder = Builder::default();
         let mut ignored = HashSet::new();
         if context_path.exists() {
-            for (seq, r) in records(&context_path)?.enumerate() {
+            for (seq, r) in
+                records(&context_path, || cached_sources.reject_invalid(&id, cached))?.enumerate()
+            {
                 let r = r?;
                 if r["role"] == "_usage" {
                     if let Some(n) = r["token_count"].as_f64() {
@@ -314,7 +335,9 @@ fn scan_directories(
             create += tokens.cache_create.unwrap_or(0.);
             cost
         };
-        for (seq, r) in records(&wire_path)?.enumerate() {
+        for (seq, r) in
+            records(&wire_path, || cached_sources.reject_invalid(&id, cached))?.enumerate()
+        {
             let r = r?;
             if !context_path.exists() && r["role"] == "_usage" && r["token_count"].is_number() {
                 stats.total_tokens = r["token_count"].as_f64();
@@ -443,7 +466,7 @@ fn scan_directories(
             }
         }
         for wire in subagent_wires(&path)? {
-            for r in records(&wire)? {
+            for r in records(&wire, || cached_sources.reject_invalid(&id, cached))? {
                 let r = r?;
                 if let Some(tokens) = status_tokens(&r) {
                     count(
@@ -462,7 +485,6 @@ fn scan_directories(
             .unwrap_or_default()
             .to_string_lossy();
         let directory = projects.get(hash.as_ref()).cloned().unwrap_or_default();
-        let id = path.file_name().unwrap().to_string_lossy().into_owned();
         let detail = finish(
             "kimi",
             id,
@@ -569,7 +591,7 @@ fn configured_model(config: &str) -> Option<String> {
     Some(model.unwrap_or(key))
 }
 fn first_user_title(context: &Path, wire: &Path) -> anyhow::Result<Option<String>> {
-    for r in records(context)? {
+    for r in records(context, || false)? {
         let r = r?;
         if r["role"] == "user"
             && let Some(title) = title(&content_text(&r["content"], true))
@@ -577,7 +599,7 @@ fn first_user_title(context: &Path, wire: &Path) -> anyhow::Result<Option<String
             return Ok(Some(title));
         }
     }
-    for r in records(wire)? {
+    for r in records(wire, || false)? {
         let r = r?;
         if r["message"]["type"] == "TurnBegin"
             && r["message"]["payload"]["user_input"].is_array()

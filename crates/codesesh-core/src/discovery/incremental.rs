@@ -967,7 +967,15 @@ impl AgentScanner {
     }
 
     fn full(&self) -> Result<ScanDelta> {
-        let result = scan_source_raw(&self.source, &self.pricing)?;
+        let cached_sources = agents::jsonl::CachedSources {
+            paths: self
+                .previous
+                .iter()
+                .map(|record| record.source.as_path())
+                .collect(),
+            damaged: None,
+        };
+        let result = scan_source_raw(&self.source, &self.pricing, &cached_sources)?;
         if !result.available && (!self.previous.is_empty() || !self.durable_references.is_empty()) {
             return Ok(ScanDelta::default());
         }
