@@ -1,5 +1,6 @@
 mod catalog;
 mod compression;
+mod etag;
 mod event_buffer;
 mod events;
 mod logs;
@@ -107,9 +108,6 @@ impl State {
             pricing_unmatched_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             pricing_write_lock: Arc::new(AsyncMutex::new(())),
         }
-    }
-    fn snapshot(&self) -> Vec<SessionHead> {
-        scoped_shared_heads(&self.runtime.snapshot(), &self.query_scope)
     }
     async fn aliases(&self) -> HashMap<SessionReference, String> {
         let saved = self.saved.clone();

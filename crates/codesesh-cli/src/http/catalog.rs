@@ -1,8 +1,8 @@
-use super::{State, decorate_wire, error, params::Params};
+use super::{State, decorate_wire, error, etag, params::Params};
 use axum::{
     Extension, Json,
     extract::{RawQuery, State as AxumState},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use codesesh_core::{
@@ -12,7 +12,7 @@ use codesesh_core::{
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
+    sync::{Arc, Condvar, Mutex},
     time::Instant,
 };
 
@@ -54,9 +54,30 @@ pub(super) const ANALYTICS_REVISION_QUERY: &str = concat!(
     "WHERE key='analytics_revision'), '0') AS INTEGER)"
 );
 
+enum InFlightState<T> {
+    Running,
+    Ready(T),
+    Failed(String),
+}
+
+struct InFlight<T> {
+    state: Mutex<InFlightState<T>>,
+    done: Condvar,
+}
+
+impl<T> InFlight<T> {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(InFlightState::Running),
+            done: Condvar::new(),
+        }
+    }
+}
+
 pub struct CatalogCache<T = Value> {
     revision: i64,
     entries: VecDeque<(Value, T)>,
+    in_flight: Vec<(i64, Value, Arc<InFlight<T>>)>,
 }
 
 impl<T> Default for CatalogCache<T> {
@@ -64,6 +85,7 @@ impl<T> Default for CatalogCache<T> {
         Self {
             revision: 0,
             entries: VecDeque::new(),
+            in_flight: Vec::new(),
         }
     }
 }
@@ -100,25 +122,105 @@ impl<T: Clone> CatalogCache<T> {
     }
 }
 
+struct InFlightGuard<'a, T> {
+    cache: &'a Mutex<CatalogCache<T>>,
+    revision: i64,
+    key: Value,
+    slot: Arc<InFlight<T>>,
+    completed: bool,
+}
+
+impl<T> Drop for InFlightGuard<'_, T> {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        if let Ok(mut guard) = self.cache.lock() {
+            guard
+                .in_flight
+                .retain(|(rev, candidate, _)| *rev != self.revision || *candidate != self.key);
+        }
+        if let Ok(mut state) = self.slot.state.lock() {
+            *state = InFlightState::Failed("catalog computation aborted".into());
+            self.slot.done.notify_all();
+        }
+    }
+}
+
 pub(super) fn cached_catalog<T: Clone>(
-    cache: &std::sync::Mutex<CatalogCache<T>>,
+    cache: &Mutex<CatalogCache<T>>,
     revision: i64,
     key: Value,
     build: impl FnOnce() -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
-    let cached = cache
-        .lock()
-        .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?
-        .get(revision, &key);
-    if let Some(value) = cached {
-        return Ok(value);
+    let slot = {
+        let mut guard = cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?;
+        if let Some(value) = guard.get(revision, &key) {
+            return Ok(value);
+        }
+        if let Some((_, _, existing)) = guard
+            .in_flight
+            .iter()
+            .find(|(rev, candidate, _)| *rev == revision && *candidate == key)
+        {
+            Err(existing.clone())
+        } else {
+            let slot = Arc::new(InFlight::new());
+            guard.in_flight.push((revision, key.clone(), slot.clone()));
+            Ok(slot)
+        }
+    };
+    let slot = match slot {
+        Ok(leader) => leader,
+        Err(existing) => {
+            let mut state = existing
+                .state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("catalog flight poisoned"))?;
+            while matches!(*state, InFlightState::Running) {
+                state = existing
+                    .done
+                    .wait(state)
+                    .map_err(|_| anyhow::anyhow!("catalog flight poisoned"))?;
+            }
+            return match &*state {
+                InFlightState::Ready(value) => Ok(value.clone()),
+                InFlightState::Failed(message) => anyhow::bail!("{message}"),
+                InFlightState::Running => unreachable!(),
+            };
+        }
+    };
+
+    let mut guard = InFlightGuard {
+        cache,
+        revision,
+        key: key.clone(),
+        slot: slot.clone(),
+        completed: false,
+    };
+    let result = build();
+    {
+        let mut cache_guard = cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?;
+        cache_guard
+            .in_flight
+            .retain(|(rev, candidate, _)| *rev != revision || *candidate != key);
+        if let Ok(ref value) = result {
+            cache_guard.insert(revision, key, value.clone());
+        }
     }
-    let value = build()?;
-    cache
-        .lock()
-        .map_err(|_| anyhow::anyhow!("catalog cache poisoned"))?
-        .insert(revision, key, value.clone());
-    Ok(value)
+    if let Ok(mut state) = slot.state.lock() {
+        *state = match &result {
+            Ok(value) => InFlightState::Ready(value.clone()),
+            Err(error) => InFlightState::Failed(error.to_string()),
+        };
+        slot.done.notify_all();
+    }
+    guard.completed = true;
+    result
 }
 
 pub async fn config(
@@ -140,26 +242,51 @@ pub async fn config(
 pub async fn status(AxumState(state): AxumState<Arc<State>>) -> Json<Value> {
     Json(serde_json::to_value(state.runtime.status().as_ref()).unwrap())
 }
-pub async fn agents(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQuery) -> Response {
+pub async fn agents(
+    AxumState(state): AxumState<Arc<State>>,
+    RawQuery(raw): RawQuery,
+    headers: HeaderMap,
+) -> Response {
     let query = Params::new(raw.as_deref());
     let (from, to) = match query.window(&state.options) {
         Ok(v) => v,
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
-    let selected = session_list::filter_activity_window(&state.snapshot(), from, to);
+    let source_node_id = query.optional("sourceNodeId");
+    let (revision, raw_snapshot) = state.runtime.snapshot_with_revision();
+    let tag = etag::weak_etag(&json!(["agents", revision, from, to, source_node_id]));
+    if etag::matches_if_none_match(&headers, &tag) {
+        return etag::not_modified(&tag);
+    }
+    let scope = state.scope(source_node_id);
+    let scoped = super::scoped_shared_heads(&raw_snapshot, &scope);
+    let selected = session_list::filter_activity_window(&scoped, from, to);
     let mut counts = HashMap::new();
-    for s in selected.into_iter().filter(|session| {
-        query
-            .optional("sourceNodeId")
-            .is_none_or(|source| source == session.reference.source_node_id)
-    }) {
+    for s in selected {
         *counts.entry(s.reference.agent_name).or_insert(0) += 1;
     }
-    Json(agent_info(&counts)).into_response()
+    let mut response = Json(agent_info(&counts)).into_response();
+    etag::apply_headers(&mut response, &tag);
+    response
 }
+
+enum ProjectsLookup {
+    NotModified {
+        etag: String,
+        timings: QueryTimings,
+    },
+    Loaded {
+        groups: Vec<Value>,
+        summary: Value,
+        timings: QueryTimings,
+        etag: String,
+    },
+}
+
 pub async fn projects(
     AxumState(state): AxumState<Arc<State>>,
     RawQuery(raw): RawQuery,
+    headers: HeaderMap,
     Extension(context): Extension<crate::logging::LogContext>,
 ) -> Response {
     let query = Params::new(raw.as_deref());
@@ -188,7 +315,7 @@ pub async fn projects(
                 ..Default::default()
             },
         );
-        return paginated_projects(&state, &query, limit, Vec::new(), Value::Null);
+        return paginated_projects(&state, &query, limit, Vec::new(), Value::Null, None);
     }
     let result = state
         .runtime
@@ -200,6 +327,18 @@ pub async fn projects(
             };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
+            let tag = etag::weak_etag(&json!([
+                "projects",
+                revision,
+                from,
+                to,
+                query_scope.source_node_id,
+                identity,
+                limit
+            ]));
+            if etag::matches_if_none_match(&headers, &tag) {
+                return Ok(ProjectsLookup::NotModified { etag: tag, timings });
+            }
             let value = cached_catalog(
                 &cache,
                 revision,
@@ -256,14 +395,30 @@ pub async fn projects(
                 anyhow::bail!("invalid project aggregate");
             };
             let summary = analytics::summarize_projects(&groups);
-            Ok((groups, summary, timings))
+            Ok(ProjectsLookup::Loaded {
+                groups,
+                summary,
+                timings,
+                etag: tag,
+            })
         })
         .await;
-    let Ok((groups, summary, timings)) = result else {
-        return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
-    };
-    log_query(context, "/api/projects", started, timings);
-    paginated_projects(&state, &query, limit, groups, summary)
+    match result {
+        Ok(ProjectsLookup::NotModified { etag: tag, timings }) => {
+            log_query(context, "/api/projects", started, timings);
+            etag::not_modified(&tag)
+        }
+        Ok(ProjectsLookup::Loaded {
+            groups,
+            summary,
+            timings,
+            etag: tag,
+        }) => {
+            log_query(context, "/api/projects", started, timings);
+            paginated_projects(&state, &query, limit, groups, summary, Some(&tag))
+        }
+        Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects"),
+    }
 }
 
 fn paginated_projects(
@@ -272,6 +427,7 @@ fn paginated_projects(
     limit: usize,
     groups: Vec<Value>,
     summary: Value,
+    tag: Option<&str>,
 ) -> Response {
     let Ok(mut pages) = state.project_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
@@ -284,11 +440,17 @@ fn paginated_projects(
         || (groups, summary),
     ) {
         Ok(page) => {
+            let has_next = page.next_cursor.is_some();
             let mut v = json!({"projects":page.items,"summary":page.view});
             if let Some(c) = page.next_cursor {
                 v["nextCursor"] = json!(c);
             }
-            Json(v).into_response()
+            let mut response = Json(v).into_response();
+            // Only emit ETag when there is no ephemeral cursor so clients never cache an expiring cursor.
+            if !has_next && let Some(tag) = tag {
+                etag::apply_headers(&mut response, tag);
+            }
+            response
         }
         Err(PaginationError::InvalidCursor) => error(
             StatusCode::BAD_REQUEST,
@@ -353,9 +515,22 @@ pub(super) fn resolve_dashboard_window(
     })
 }
 
+enum DashboardLookup {
+    NotModified {
+        etag: String,
+        timings: QueryTimings,
+    },
+    Loaded {
+        value: Box<codesesh_core::wire::DashboardData>,
+        timings: QueryTimings,
+        etag: String,
+    },
+}
+
 pub async fn dashboard(
     AxumState(state): AxumState<Arc<State>>,
     RawQuery(raw): RawQuery,
+    headers: HeaderMap,
     Extension(context): Extension<crate::logging::LogContext>,
 ) -> Response {
     let query = Params::new(raw.as_deref());
@@ -399,6 +574,8 @@ pub async fn dashboard(
         days,
         zone.name()
     ]);
+    let aliases = state.aliases().await;
+    let aliases_fp = etag::aliases_fingerprint(&aliases);
     let started = Instant::now();
     let result = state
         .runtime
@@ -410,6 +587,10 @@ pub async fn dashboard(
             };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
+            let tag = etag::weak_etag(&json!([revision, &key, &aliases_fp]));
+            if etag::matches_if_none_match(&headers, &tag) {
+                return Ok(DashboardLookup::NotModified { etag: tag, timings });
+            }
             let value = cached_catalog(&cache, revision, key, || {
                 timings.cache_hit = false;
                 let phase = Instant::now();
@@ -453,13 +634,24 @@ pub async fn dashboard(
                 timings.dashboard = dashboard_timings;
                 Ok(value)
             })?;
-            Ok((value, timings))
+            Ok(DashboardLookup::Loaded {
+                value: Box::new(value),
+                timings,
+                etag: tag,
+            })
         })
         .await;
     match result {
-        Ok((mut value, timings)) => {
+        Ok(DashboardLookup::NotModified { etag: tag, timings }) => {
+            log_query(context, "/api/dashboard", started, timings);
+            etag::not_modified(&tag)
+        }
+        Ok(DashboardLookup::Loaded {
+            mut value,
+            timings,
+            etag: tag,
+        }) => {
             value.window.to = to;
-            let aliases = state.aliases().await;
             for row in &mut value.aggregate.recent_sessions {
                 decorate_wire(&mut row.session, &aliases);
             }
@@ -467,7 +659,9 @@ pub async fn dashboard(
                 decorate_wire(&mut row.session, &aliases);
             }
             log_query(context, "/api/dashboard", started, timings);
-            Json(value).into_response()
+            let mut response = Json(*value).into_response();
+            etag::apply_headers(&mut response, &tag);
+            response
         }
         Err(_) => error(
             StatusCode::INTERNAL_SERVER_ERROR,

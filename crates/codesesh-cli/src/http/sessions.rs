@@ -1,7 +1,7 @@
-use super::{State, error, params::Params, retry};
+use super::{State, error, etag, params::Params, retry};
 use axum::{
     extract::{Path, RawQuery, State as AxumState},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::Response,
 };
 use codesesh_core::wire::WireSessionListPage;
@@ -9,9 +9,14 @@ use codesesh_core::{
     projects,
     session_list::{PaginationError, SessionFilter, filter_sessions},
 };
+use serde_json::json;
 use std::sync::Arc;
 
-pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQuery) -> Response {
+pub async fn list(
+    AxumState(state): AxumState<Arc<State>>,
+    RawQuery(raw): RawQuery,
+    headers: HeaderMap,
+) -> Response {
     let query = Params::new(raw.as_deref());
     let limit = match query.limit(250, 500) {
         Ok(v) => v,
@@ -26,15 +31,35 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
     if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
-        return paginated_sessions(&state, &query, limit, Vec::new());
+        return paginated_sessions(&state, &query, limit, Vec::new(), None);
     }
     let aliases = state.aliases().await;
-    let query_scope = state.scope(query.optional("sourceNodeId"));
-    let raw_snapshot = state.runtime.snapshot();
+    let source_node_id = query.optional("sourceNodeId");
+    let query_scope = state.scope(source_node_id);
+    let (revision, raw_snapshot) = state.runtime.snapshot_with_revision();
     let cwd = query
         .optional("cwd")
         .filter(|_| project.is_none())
         .map(str::to_owned);
+    let paginated = query.get("limit").is_some();
+    let tag = etag::weak_etag(&json!([
+        "sessions",
+        revision,
+        etag::aliases_fingerprint(&aliases),
+        paginated,
+        limit,
+        cwd,
+        source_node_id,
+        query.get("agent"),
+        project,
+        query.get("tag"),
+        query.get("q"),
+        from,
+        to
+    ]));
+    if etag::matches_if_none_match(&headers, &tag) {
+        return etag::not_modified(&tag);
+    }
     let selected = if let Some(cwd) = cwd {
         match tokio::task::spawn_blocking(move || {
             let scope = projects::create_project_scope_matcher(&cwd);
@@ -64,10 +89,10 @@ pub async fn list(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQue
         to,
     };
     let items = filter_sessions(&selected, &filter, &aliases);
-    if query.get("limit").is_none() && query.get("cursor").is_none() {
-        return session_page(items, None);
+    if !paginated {
+        return session_page(items, None, Some(&tag));
     }
-    paginated_sessions(&state, &query, limit, items)
+    paginated_sessions(&state, &query, limit, items, Some(&tag))
 }
 
 fn paginated_sessions(
@@ -75,6 +100,7 @@ fn paginated_sessions(
     query: &Params,
     limit: usize,
     items: Vec<codesesh_core::model::SessionHead>,
+    tag: Option<&str>,
 ) -> Response {
     let Ok(mut pages) = state.session_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load sessions");
@@ -86,7 +112,7 @@ fn paginated_sessions(
         limit,
         || (items, ()),
     ) {
-        Ok(page) => session_page(page.items, page.next_cursor),
+        Ok(page) => session_page(page.items, page.next_cursor, tag),
         Err(PaginationError::InvalidCursor) => error(
             StatusCode::BAD_REQUEST,
             "cursor is invalid for this request",
@@ -146,19 +172,28 @@ pub async fn detail(
 fn session_page(
     items: Vec<codesesh_core::model::SessionHead>,
     next_cursor: Option<String>,
+    tag: Option<&str>,
 ) -> Response {
     match items
         .into_iter()
         .map(super::wire::head)
         .collect::<Result<Vec<_>, _>>()
     {
-        Ok(sessions) => super::streaming::json_with_guard(
-            WireSessionListPage {
-                sessions,
-                next_cursor,
-            },
-            (),
-        ),
+        Ok(sessions) => {
+            let has_next = next_cursor.is_some();
+            let mut response = super::streaming::json_with_guard(
+                WireSessionListPage {
+                    sessions,
+                    next_cursor,
+                },
+                (),
+            );
+            // Only emit ETag when there is no ephemeral cursor so clients never cache an expiring cursor.
+            if !has_next && let Some(tag) = tag {
+                etag::apply_headers(&mut response, tag);
+            }
+            response
+        }
         Err(_) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Invalid session contract",
