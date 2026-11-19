@@ -542,7 +542,9 @@ export default function App() {
   const scanStatusVisible =
     appConfig.config != null && !hubEnabled && (isDashboardOrSearch || hasScanIssue);
   const pricingNoticeVisible =
-    appConfig.config != null && !pricingNoticeDismissed && (pricingAttentionCount > 0 || pricingError);
+    appConfig.config != null &&
+    !pricingNoticeDismissed &&
+    (pricingAttentionCount > 0 || pricingError);
   const sidebarPricingTab: PricingDrawerTab =
     pricingOverridesError && !pricingUnmatchedError
       ? "overrides"
@@ -614,12 +616,16 @@ export default function App() {
     </>
   );
   const hasIntro = Boolean(
-    routeHeader.hero || scanStatusVisible || pricingNoticeVisible || sessionLoadNotice || hubEnabled,
+    routeHeader.hero ||
+    scanStatusVisible ||
+    pricingNoticeVisible ||
+    sessionLoadNotice ||
+    hubEnabled,
   );
 
   return (
     <ResolvedThemeContext.Provider value={resolvedTheme}>
-      <div className="console-ui flex h-screen overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
+      <div className="console-ui flex h-dvh overflow-hidden bg-[var(--console-sidebar-bg)] text-[var(--console-text)]">
         <a
           href="#main"
           className="sr-only rounded-sm border border-[var(--console-border-strong)] bg-[var(--console-surface)] px-3 py-1.5 text-xs text-[var(--console-text)] focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--console-bg)] focus-visible:outline-none"

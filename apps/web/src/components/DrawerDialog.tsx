@@ -6,8 +6,8 @@ import { X } from "./ui/icons";
 
 const VARIANT_STYLES = {
   desktop: {
-    backdrop: "z-[60] hidden bg-[var(--scrim)] min-[1025px]:block",
-    popup: "z-[61] hidden w-[min(92vw,430px)] p-4 min-[1025px]:block",
+    backdrop: "z-[60] bg-[var(--scrim)]",
+    popup: "z-[61] w-[min(92vw,430px)] p-4",
   },
   filters: {
     backdrop: "z-50 bg-[var(--scrim)] min-[1280px]:hidden",

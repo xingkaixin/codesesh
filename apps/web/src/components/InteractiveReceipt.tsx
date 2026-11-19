@@ -16,7 +16,7 @@ interface InteractiveReceiptProps {
 
 export function InteractiveReceipt({
   session,
-  minWidthQuery = "(min-width: 1025px)",
+  minWidthQuery = "(min-width: 0px)",
 }: InteractiveReceiptProps) {
   const locale = useLocale();
   const [ready, setReady] = useState(false);
