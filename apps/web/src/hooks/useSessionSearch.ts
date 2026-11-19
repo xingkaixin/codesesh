@@ -232,6 +232,7 @@ export function useSessionSearch(
   const setSearchFilters = useCallback(
     (next: SetStateAction<SearchFilterState>, draftQuery?: string) => {
       const nextFilters = typeof next === "function" ? next(searchFilters) : next;
+      if (nextFilters.project !== searchFilters.project) setPreservedProjectOptions(projectOptions);
       const nextQuery = draftQuery !== undefined ? draftQuery.trim() : activeSearchQuery;
       writeSearchUrl(
         { active: true, query: nextQuery, filters: nextFilters },
@@ -239,7 +240,7 @@ export function useSessionSearch(
       );
       setRequestedSearchIndex(0);
     },
-    [activeSearchQuery, searchFilters, searchMode, writeSearchUrl],
+    [activeSearchQuery, projectOptions, searchFilters, searchMode, writeSearchUrl],
   );
 
   const closeSearch = useCallback(() => {

@@ -35,7 +35,8 @@ export function valueMatchesHighlight(value: unknown, pattern: RegExp | null, de
     return value.some((item) => valueMatchesHighlight(item, pattern, depth + 1));
   }
   if (typeof value === "object") {
-    for (const nested of Object.values(value)) {
+    for (const [key, nested] of Object.entries(value)) {
+      if (matchesHighlightPattern(key, pattern)) return true;
       if (valueMatchesHighlight(nested, pattern, depth + 1)) return true;
     }
   }

@@ -135,7 +135,7 @@ export function PropertyListOutput({
           className="grid gap-1 border-b border-[var(--console-border)] px-3 py-2.5 last:border-b-0 sm:grid-cols-[130px_1fr] sm:gap-3"
         >
           <dt className="console-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--console-muted)]">
-            {item.label}
+            {renderHighlightedText(item.label, highlightQuery)}
           </dt>
           <dd className="console-mono min-w-0 text-xs leading-relaxed text-[var(--console-text)]">
             <PropertyValue value={item.value} highlightQuery={highlightQuery} />

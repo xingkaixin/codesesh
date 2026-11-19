@@ -290,8 +290,11 @@ export function SessionDetail({
     if (targetMessageIndex == null) return;
     const target = displayModel.resolveSourceMessageAnchor(targetMessageIndex);
     if (!target) return;
-    handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto");
+    const frame = requestAnimationFrame(() =>
+      handleJumpToMessageAnchor(target.anchorId, target.messageIndex, "auto"),
+    );
     return () => {
+      cancelAnimationFrame(frame);
       scrollRequestRef.current += 1;
     };
   });

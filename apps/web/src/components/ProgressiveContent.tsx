@@ -1,3 +1,4 @@
+import { buildHighlightPattern } from "../lib/search-highlight";
 import { formatNumber } from "../lib/format";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
@@ -74,6 +75,7 @@ export function ContentRenderControls({
 interface ProgressiveTextProps {
   text: string;
   initialBudget: ContentRenderBudget;
+  highlightQuery?: string;
   children: (visibleText: string) => ReactNode;
 }
 
@@ -107,14 +109,34 @@ export function useProgressiveRenderBudget(
   };
 }
 
-export function ProgressiveText({ text, initialBudget, children }: ProgressiveTextProps) {
+export function ProgressiveText({
+  text,
+  initialBudget,
+  highlightQuery,
+  children,
+}: ProgressiveTextProps) {
   useLocale();
 
   const { budget, renderMore } = useProgressiveRenderBudget(text, initialBudget, {
     characters: text.length,
     lines: text.length + 1,
   });
-  const preview = useMemo(() => buildTextRenderPreview(text, budget), [budget, text]);
+  const match = useMemo(
+    () => buildHighlightPattern(highlightQuery)?.exec(text),
+    [text, highlightQuery],
+  );
+  const preview = useMemo(() => {
+    const prefix = buildTextRenderPreview(text, budget);
+    if (!match || !prefix.truncated || match.index + match[0].length <= prefix.renderedCharacters)
+      return prefix;
+    const start = Math.max(text.lastIndexOf("\n", match.index - 1) + 1, match.index - 80, 0);
+    const excerpt = buildTextRenderPreview(text.slice(start), budget);
+    return {
+      ...excerpt,
+      text: (start > 0 ? "…" : "") + excerpt.text,
+      truncated: start > 0 || excerpt.truncated,
+    };
+  }, [budget, text, match]);
 
   return (
     <>

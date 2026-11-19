@@ -75,7 +75,11 @@ export function ToolOutputRenderer({ outputContent, highlightQuery }: ToolOutput
 
   if (!outputContent.isCode || outputContent.language === "text") {
     return (
-      <ProgressiveText text={outputText} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}>
+      <ProgressiveText
+        text={outputText}
+        initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.plain}
+        highlightQuery={activeHighlight}
+      >
         {(visibleText) => (
           <pre className="console-mono max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-sm border border-[var(--console-border)] bg-[var(--console-surface-sunken)] p-3 text-xs leading-relaxed text-[var(--console-text)]">
             {renderHighlightedText(visibleText, activeHighlight)}

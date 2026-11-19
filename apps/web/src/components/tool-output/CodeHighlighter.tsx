@@ -38,7 +38,11 @@ export function CodeHighlighter({ language, text, highlightQuery }: CodeHighligh
   const highlightPattern = useMemo(() => buildHighlightPattern(highlightQuery), [highlightQuery]);
 
   return (
-    <ProgressiveText text={text} initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.code}>
+    <ProgressiveText
+      text={text}
+      initialBudget={INITIAL_CONTENT_RENDER_BUDGETS.code}
+      highlightQuery={highlightQuery}
+    >
       {(visibleText) =>
         matchesHighlightPattern(visibleText, highlightPattern) ? (
           // Use plain highlighted text when matches exist so multi-token queries
