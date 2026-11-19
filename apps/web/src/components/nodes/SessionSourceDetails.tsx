@@ -27,9 +27,9 @@ export function SessionSourceDetails({
   resumeDescriptionId: string;
 }) {
   const locale = useLocale();
-  const nodes = useNodes();
-  const now = useNodeClock();
   const remote = sourceNodeId !== "local";
+  const nodes = useNodes(remote);
+  const now = useNodeClock(remote);
   const node = nodes.data?.nodes.find((item) => item.id === sourceNodeId);
 
   if (!remote) {

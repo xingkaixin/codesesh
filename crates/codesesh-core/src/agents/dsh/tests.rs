@@ -333,3 +333,54 @@ fn skips_corrupt_sessions_without_failing_the_source() {
         vec![parsed.upserts[0].head.reference.clone()]
     );
 }
+
+#[test]
+fn corrupt_or_in_flight_cached_session_errors_instead_of_removing() {
+    let temp = tempfile::tempdir().unwrap();
+    let pricing = Pricing::bundled();
+    let path = fixture(temp.path(), false, json!({}), &[user(0, "Keep cached")]);
+    let previous: Vec<_> = scan(temp.path(), &pricing)
+        .unwrap()
+        .iter()
+        .map(crate::agents::SessionRecord::from)
+        .collect();
+    assert_eq!(previous.len(), 1);
+
+    let original = fs::read(&path).unwrap();
+    fs::write(&path, "{\"type\":\"session\",\"truncated\":").unwrap();
+    assert!(
+        scan_changed(
+            temp.path(),
+            &pricing,
+            std::slice::from_ref(&path),
+            &previous
+        )
+        .is_err()
+    );
+
+    fs::write(&path, &original).unwrap();
+    let next_gen = path.with_file_name("session.v2.jsonl");
+    fs::write(
+        &next_gen,
+        format!(
+            "{}\n",
+            json!({"type":"session","version":2,"id":"child","cwd":"/tmp/project","createdAt":100,"delegationDepth":0})
+        ),
+    )
+    .unwrap();
+    assert!(
+        scan_changed(
+            temp.path(),
+            &pricing,
+            std::slice::from_ref(&next_gen),
+            &previous
+        )
+        .is_err()
+    );
+
+    fs::remove_file(&next_gen).unwrap();
+    fs::remove_file(&path).unwrap();
+    let deleted = scan_changed(temp.path(), &pricing, &[path], &previous).unwrap();
+    assert!(deleted.upserts.is_empty());
+    assert_eq!(deleted.removed, vec![previous[0].head.reference.clone()]);
+}

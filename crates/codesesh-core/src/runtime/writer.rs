@@ -208,6 +208,7 @@ pub(super) fn run(
                         batch.complete,
                         batch.source_presence.clone(),
                         progress,
+                        batch.completion.clone(),
                     );
                     let status = Arc::new(status);
                     statuses.send_replace(status.clone());

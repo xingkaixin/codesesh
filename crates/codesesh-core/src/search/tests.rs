@@ -7,6 +7,11 @@ fn index(db: &Connection) {
         [],
     )
     .unwrap();
+    db.execute(
+        "INSERT INTO session_title_fts(session_title_fts) VALUES('delete-all')",
+        [],
+    )
+    .unwrap();
     let mut query = db
         .prepare("SELECT rowid,content_text FROM messages")
         .unwrap();
@@ -18,9 +23,26 @@ fn index(db: &Connection) {
         .collect::<rusqlite::Result<Vec<_>>>()
         .unwrap();
     for (rowid, text) in rows {
+        let (indexed, code_tokens) = index_parts(&text);
         db.execute(
-            "INSERT INTO message_fts(rowid,content_text) VALUES(?,?)",
-            params![rowid, index_text(&text)],
+            "INSERT INTO message_fts(rowid,content_text,code_tokens) VALUES(?,?,?)",
+            params![rowid, indexed, code_tokens],
+        )
+        .unwrap();
+    }
+    let mut titles = db.prepare("SELECT rowid,title FROM sessions").unwrap();
+    let title_rows = titles
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    for (rowid, title) in title_rows {
+        let (indexed, code_tokens) = index_parts(&title);
+        db.execute(
+            "INSERT INTO session_title_fts(rowid,title,code_tokens) VALUES(?,?,?)",
+            params![rowid, indexed, code_tokens],
         )
         .unwrap();
     }
@@ -53,6 +75,49 @@ fn database() -> Connection {
     .unwrap();
     index(&db);
     db
+}
+
+#[test]
+fn model_drilldown_uses_the_dashboards_window_and_entry_sessions() {
+    let db = database();
+    db.execute_batch(r#"
+        UPDATE sessions SET total_input_tokens=3, model_usage_json='{"widget":3}';
+        UPDATE sessions SET activity_time=500, time_updated=500 WHERE session_id='one';
+        INSERT INTO session_cost_summary(agent_name,session_id,input_tokens,message_cost,untimed_message_cost)
+            VALUES ('codex','two',3,0,0), ('codex','three',3,0,0);
+        INSERT INTO session_usage_bucket VALUES
+            (150,'local','codex','two','widget','',1,3,0,0,0,0,0),
+            (50,'local','codex','three','widget','',1,3,0,0,0,0,0);
+    "#).unwrap();
+    let search = |from, to| {
+        execute_with_snapshot(
+            &db,
+            "model:widget",
+            &SearchOptions {
+                from: Some(from),
+                to: Some(to),
+                ..Default::default()
+            },
+            &[],
+        )
+        .unwrap()
+        .into_iter()
+        .map(|hit| hit.reference.session_id)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(search(140.0, 210.0), ["one"]);
+    assert_eq!(search(40.0, 60.0), ["three"]);
+    assert_eq!(search(490.0, 510.0), ["one"]);
+    assert!(search(300.0, 400.0).is_empty());
+    let tomorrow = chrono::Utc::now().timestamp_millis() + 86_400_000;
+    db.execute(
+        "UPDATE session_usage_bucket SET bucket_start=? WHERE session_id='three'",
+        [tomorrow],
+    )
+    .unwrap();
+    let all = execute_with_snapshot(&db, "model:widget", &SearchOptions::default(), &[]).unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].reference.session_id, "one");
 }
 
 #[test]
@@ -192,7 +257,9 @@ fn mixed_chinese_queries_preserve_boolean_precedence_and_filters() {
             .collect::<HashSet<_>>()
     };
     assert_eq!(ids("数据库 hello"), HashSet::from(["mixed".into()]));
-    assert!(ids("数据库 hell").is_empty());
+    assert_eq!(ids("数据库 hell"), HashSet::from(["mixed".into()]));
+    assert!(ids("数据库 \"hell\"").is_empty());
+    assert!(ids("数据库 ello").is_empty());
     assert_eq!(
         ids("数据库 hello OR 缓存"),
         HashSet::from(["mixed".into(), "han-body".into()])
@@ -595,6 +662,165 @@ fn cross_message_fallbacks_preserve_text_highlights_and_source_identity() {
         assert_eq!(local.match_type, "tool_output");
         assert_eq!(local.snippet, "alpha omega 数据库连接");
     }
+}
+
+#[test]
+fn prefix_and_code_token_recall_preserve_exact_quotes_and_highlights() {
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(include_str!("../storage/schema.sql"))
+        .unwrap();
+    for (id, title, body, time) in [
+        (
+            "prefix",
+            "Auth guide",
+            "修复authentication后重试 setTtl",
+            100,
+        ),
+        (
+            "camel",
+            "Refactor useAuth hook",
+            "Inspect HTTPRequest and oauth2Token handlers",
+            200,
+        ),
+        (
+            "snake",
+            "Token cleanup",
+            "Rotate auth_token before expiry",
+            300,
+        ),
+        (
+            "phrase",
+            "Prose",
+            "Please use auth middleware carefully",
+            400,
+        ),
+        (
+            "spaced-cjk",
+            "数 据 库",
+            "这里有 数 据 库 但不是连续词",
+            500,
+        ),
+    ] {
+        db.execute(
+            "INSERT INTO sessions(agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES('codex',?,?,'/work','path','/work','work',10,?,?,1,0,0,0)",
+            params![id, title, time, time],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex',?,0,'m','user',10,'[]',?)",
+            params![id, body],
+        )
+        .unwrap();
+    }
+    index(&db);
+
+    let ids = |query| {
+        execute(&db, query, &SearchOptions::default())
+            .unwrap()
+            .into_iter()
+            .map(|r| r.reference.session_id)
+            .collect::<HashSet<_>>()
+    };
+
+    // Unquoted prefix matches authentication; quoted exact does not.
+    let prefix_results = execute(&db, "authenticat", &SearchOptions::default()).unwrap();
+    assert_eq!(prefix_results.len(), 1);
+    assert_eq!(prefix_results[0].reference.session_id, "prefix");
+    assert_eq!(
+        prefix_results[0].snippet_highlights,
+        vec![HighlightRange { start: 2, end: 13 }]
+    );
+    assert!(ids("\"authenticat\"").is_empty());
+    for (query, start, end) in [("\"authentication\"", 2, 16), ("tt", 23, 25)] {
+        let hits = execute(&db, query, &SearchOptions::default()).unwrap();
+        assert_eq!(hits[0].message_index, Some(0));
+        assert_eq!(
+            hits[0].snippet_highlights,
+            vec![HighlightRange { start, end }]
+        );
+    }
+
+    // Unquoted `auth` finds camelCase title (`useAuth`), snake_case (`auth_token`),
+    // prefix (`authentication`), and standalone word (`use auth`).
+    let auth_results = execute(&db, "auth", &SearchOptions::default()).unwrap();
+    assert_eq!(
+        auth_results
+            .iter()
+            .map(|r| r.reference.session_id.as_str())
+            .collect::<HashSet<_>>(),
+        HashSet::from(["prefix", "camel", "snake", "phrase"])
+    );
+    // Title matches (`camel` and `prefix`) rank ahead of body-only matches (`phrase`, `snake`).
+    assert_eq!(auth_results[0].reference.session_id, "camel");
+    assert_eq!(auth_results[0].match_type, "title");
+    assert_eq!(
+        auth_results[0].snippet_highlights,
+        vec![HighlightRange { start: 12, end: 16 }]
+    );
+    assert_eq!(auth_results[1].reference.session_id, "prefix");
+    assert_eq!(auth_results[1].match_type, "title");
+
+    // Acronym & digit-to-upper splits work; lowercase full identifier matches camelCase.
+    assert_eq!(ids("request"), HashSet::from(["camel".into()]));
+    assert_eq!(
+        ids("token"),
+        HashSet::from(["camel".into(), "snake".into()])
+    );
+    assert_eq!(ids("useauth"), HashSet::from(["camel".into()]));
+    assert_eq!(ids("auth_tok"), HashSet::from(["snake".into()]));
+
+    // Quoted exact phrases stay exact: `"use auth"` does NOT match `useAuth`,
+    // and `"useAuth"` does NOT match `use auth`.
+    assert_eq!(ids("\"use auth\""), HashSet::from(["phrase".into()]));
+    assert_eq!(ids("\"useAuth\""), HashSet::from(["camel".into()]));
+
+    // Spaced Han characters must not match contiguous CJK query.
+    assert!(ids("数据库").is_empty());
+}
+
+#[test]
+fn or_precedence_and_large_snippet_window_preserve_semantics() {
+    let terms = snippet::Terms::parse("alpha OR beta gamma");
+    assert!(terms.matches("only alpha"));
+    assert!(terms.matches("beta and gamma"));
+    assert!(!terms.matches("only beta"));
+    assert!(!terms.matches("only gamma"));
+
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(include_str!("../storage/schema.sql"))
+        .unwrap();
+    let long_prefix = "🔎 filler ".repeat(15_000); // >150 KB with astral emoji
+    let long_body = format!("{long_prefix}beta only here, later alpha target value end");
+    for (id, title, body, time) in [
+        ("only-beta", "beta only title", "beta only body", 500),
+        ("alpha-body", "beta in title", &long_body, 100),
+        ("beta-gamma", "beta gamma title", "unrelated", 50),
+    ] {
+        db.execute(
+            "INSERT INTO sessions(agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES('codex',?,?,'/work','path','/work','work',10,?,?,1,0,0,0)",
+            params![id, title, time, time],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO messages(agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('codex',?,0,'m','user',10,'[]',?)",
+            params![id, body],
+        )
+        .unwrap();
+    }
+    index(&db);
+
+    let results = execute(&db, "alpha OR beta gamma", &SearchOptions::default()).unwrap();
+    // `only-beta` must NOT match; `beta-gamma` is a true title match and ranks first;
+    // `alpha-body` must NOT be misclassified as a title match even though its title has `beta`.
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].reference.session_id, "beta-gamma");
+    assert_eq!(results[0].match_type, "title");
+    assert_eq!(results[1].reference.session_id, "alpha-body");
+    assert_eq!(results[1].match_type, "user_message");
+    assert!(results[1].snippet.contains("alpha"));
+    assert!(results[1].snippet.starts_with("… "));
+    assert!(!results[1].snippet.contains('\u{FFFD}'));
+    assert!(results[1].snippet.len() < 300);
 }
 
 #[test]

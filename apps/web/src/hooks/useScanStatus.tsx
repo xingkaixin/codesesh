@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ScanStatusEvent } from "@codesesh/contract";
 import { fetchScanStatus } from "../lib/api";
+import { hasScanStatusIssue } from "../lib/scan-format";
 
 class ScanStatusStore {
   private status: ScanStatusEvent | null;
@@ -68,6 +69,12 @@ export function ScanStatusProvider({
 export function useScanStatus(): ScanStatusEvent | null {
   const store = useScanStatusStore();
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+export function useHasScanStatusIssue(): boolean {
+  const store = useScanStatusStore();
+  const getSnapshot = () => hasScanStatusIssue(store.getSnapshot());
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 }
 
 export function useScanStatusPublisher(): (status: ScanStatusEvent) => void {

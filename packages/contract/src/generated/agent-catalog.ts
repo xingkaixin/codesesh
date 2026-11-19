@@ -158,7 +158,7 @@ export const AGENT_CATALOG = [
       recordedCost: true,
       toolResults: true,
       reasoning: true,
-      sessionTree: false,
+      sessionTree: true,
     },
   },
   {

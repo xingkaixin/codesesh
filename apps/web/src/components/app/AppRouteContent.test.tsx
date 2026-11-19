@@ -139,6 +139,39 @@ describe("AppRouteContent", () => {
     expect(bookmarks.toggleSessionBookmark).toHaveBeenCalledWith(claudeSession, "claudecode");
   });
 
+  it("exposes all agent sessions beyond the top 5 via pagination", async () => {
+    const props = makeProps();
+    const bookmarks = makeBookmarks();
+    const sessions = Array.from({ length: 30 }, (_, index) => ({
+      ...makeLandingSession("claudecode", `session-${index + 1}`, `Session #${index + 1}`),
+      time_updated: 1_000 - index,
+    }));
+    props.route = {
+      mode: "agent",
+      activeAgentKey: "claudecode",
+      activeSessionId: null,
+      agents: routeAgents,
+      agentCatalog: createAgentCatalog(routeAgents),
+      sessions,
+      bookmarks,
+    };
+
+    renderContent(props);
+
+    expect(
+      await screen.findByText("Session #1", {}, { timeout: LAZY_SURFACE_TIMEOUT_MS }),
+    ).toBeTruthy();
+    expect(screen.getByText("Session #6")).toBeTruthy();
+    expect(screen.getByText("Session #25")).toBeTruthy();
+    expect(screen.queryByText("Session #26")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show more (5 remaining)" }));
+
+    expect(screen.getByText("Session #26")).toBeTruthy();
+    expect(screen.getByText("Session #30")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
+  });
+
   it("lists unlinked child sessions on a parent session and updates them when sourceNodeId changes", async () => {
     const bookmarks = makeBookmarks();
     const agentCatalog = createAgentCatalog(routeAgents);

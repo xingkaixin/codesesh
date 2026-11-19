@@ -6,6 +6,51 @@ use std::{
     sync::LazyLock,
 };
 
+#[derive(Default)]
+pub(crate) struct CachedSources<'a> {
+    pub(crate) paths: std::collections::HashSet<&'a std::path::Path>,
+    pub(crate) damaged: Option<std::cell::RefCell<std::collections::HashSet<String>>>,
+}
+
+impl CachedSources<'_> {
+    pub(super) fn reject_invalid(&self, session_id: &str, cached: bool) -> bool {
+        if let Some(damaged) = &self.damaged {
+            damaged.borrow_mut().insert(session_id.to_owned());
+            false
+        } else {
+            cached
+        }
+    }
+}
+
+pub(super) fn records(
+    path: &std::path::Path,
+    reject_invalid: impl Fn() -> bool,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Value>>> {
+    let file = match std::fs::File::open(path) {
+        Ok(file) => Some(file),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(file
+        .into_iter()
+        .flat_map(|f| BufReader::new(f).split(b'\n'))
+        .filter_map(move |line| {
+            let bytes = match line {
+                Ok(bytes) => bytes,
+                Err(error) => return Some(Err(error.into())),
+            };
+            if bytes.iter().all(u8::is_ascii_whitespace) {
+                return None;
+            }
+            match serde_json::from_str(&String::from_utf8_lossy(&bytes)) {
+                Ok(value) => Some(Ok(value)),
+                Err(error) if reject_invalid() => Some(Err(error.into())),
+                Err(_) => None,
+            }
+        }))
+}
+
 pub(super) struct JsonLines<R> {
     reader: BufReader<R>,
     line: String,
@@ -37,6 +82,25 @@ impl<R: Read> JsonLines<R> {
 pub(super) fn read_line(reader: &mut impl BufRead, line: &mut String) -> io::Result<usize> {
     let mut bytes = std::mem::take(line).into_bytes();
     let read = reader.read_until(b'\n', &mut bytes)?;
+    *line = String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned());
+    Ok(read)
+}
+
+/// `read_line` that also records up to `tail_limit` trailing raw source bytes for complete lines.
+pub(super) fn read_line_with_tail(
+    reader: &mut impl BufRead,
+    line: &mut String,
+    tail: &mut Vec<u8>,
+    tail_limit: usize,
+) -> io::Result<usize> {
+    let mut bytes = std::mem::take(line).into_bytes();
+    let read = reader.read_until(b'\n', &mut bytes)?;
+    if read > 0 && bytes.ends_with(b"\n") {
+        let start = bytes.len().saturating_sub(tail_limit);
+        tail.clear();
+        tail.extend_from_slice(&bytes[start..]);
+    }
     *line = String::from_utf8(bytes)
         .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned());
     Ok(read)

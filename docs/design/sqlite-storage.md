@@ -4,7 +4,7 @@
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 38`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 39`
 <!-- repo-fact:cache-schema-version:end -->
 
 入口是 `crates/codesesh-core/src/storage.rs`，建表定义在
@@ -29,16 +29,16 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `message_tools` | 消息工具名，用于结构化过滤 |
 | `session_file_activity` | 文件路径、操作类型、次数和最近活动时间 |
 | `session_documents` | 标题、内容签名和已索引消息数 |
-| `message_fts` | 消息全文检索，无内容表，rowid 对应 `messages.rowid` |
-| `session_title_fts` | 会话标题全文检索，内容来自 `sessions` |
+| `message_fts` | 消息全文检索，无内容表，含 `code_tokens` 拆词列，rowid 对应 `messages.rowid` |
+| `session_title_fts` | 会话标题全文检索，无内容表，含 `code_tokens` 拆词列，rowid 对应 `sessions.rowid` |
 | `session_file_activity_path_fts` | 文件路径 trigram 检索 |
 | `project_groups_v` | 按项目身份聚合会话 |
 
 `(source_node_id, agent_name, session_id)` 是持久化会话身份。消息和文件活动通过复合外键关联会话，删除
-会话时级联清理。标题和文件路径 FTS 由内容表触发器维护。`message_fts` 不保存原文，由 writer
-在写入或删除消息时同步维护，只索引新增或变化的消息；汉字逐字切分，使中文子串可以按短语
-查询。搜索在会话层面组合各个词的 FTS 命中；含汉字的词还要按结果顺序逐个会话核对原文子串，
-凑够条数即停，避免读取全部命中消息的正文。片段从命中消息的 `content_text` 生成。
+会话时级联清理。文件路径 FTS 由内容表触发器维护。`message_fts` 和 `session_title_fts` 均不保存原文，由 writer
+在写入或删除会话、消息时同步维护，只索引新增或变化的记录；汉字逐字切分，使中文子串可以按短语
+查询，同时在 `code_tokens` 列写入 camelCase/缩写拆词结果以支持代码标识符检索。搜索先通过标题和消息 FTS
+结合基础过滤条件收集候选会话，再在 Rust 侧按标题命中和最近活动时间排序并复用到片段生成，避免全表扫描与重复 FTS 查询；含汉字的词按结果顺序逐个会话核对原文子串，凑够条数即停。片段围绕首个命中窗口从 `content_text` 生成。
 
 schema 34 保存 `automated` 标记，并为非自动用户消息建立部分时间索引，用于活跃时段统计。
 
@@ -55,6 +55,11 @@ schema 38 新增 `session_usage_bucket`。`storage::facts::write` 重写会话�
 成本事实，单次请求的内存只随窗口内的桶数增长。`idx_sessions_visible` 覆盖会话身份和
 `publication_id`，成本查询排除未发布会话时不回表读取会话行。升级时同时删除 schema 37
 开发构建为进程内缓存加入的 `session_cost_summary.revision`。
+
+schema 39 为 `message_fts` 与 `session_title_fts` 增加 `code_tokens` 列，并将 `session_title_fts`
+改为由 writer 同步的无内容 FTS5 虚表（支持标题中文子串、前缀与 camelCase 检索，消除搜索全表扫描）；
+同时删除严格冗余的 `idx_sessions_activity`（被 `idx_sessions_heads` 前缀覆盖）与
+`idx_file_activity_project_latest`（被 `idx_file_activity_project_latest_ordered` 覆盖）。
 
 现行时区偏移都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与
 逐条消息归因结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。
@@ -87,14 +92,12 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 
 打开数据库时先读取 `PRAGMA user_version`，兼容旧库的 `cache_meta.version`：
 
-1. 新库直接创建 schema 38。
+1. 新库直接创建 schema 39。
 2. schema 35 及更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份；迁移重建带来源维度的键，早于 schema 35 的库同时回填 `head_meta_json`。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
-5. 缺失的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做。
-6. schema 36、37 升级到 38 不重建表：先写入新版本号，再分批就地压缩旧的文本 `parts_json`，
-   中断后从 checkpoint 续做；缺少 `usage_buckets_v1` 标记时，在一个事务中按会话回填
-   `session_usage_bucket`。
+5. 缺失或旧结构的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做，完成后重建 `session_title_fts`。
+6. schema 36、37、38 升级到 39 不重建表：先写入新版本号，删除冗余索引，按需分批就地压缩旧的文本 `parts_json`、回填 `session_usage_bucket`，并通过可中断续做机制重建 `message_fts` 与 `session_title_fts`。
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。schema 36 不支持

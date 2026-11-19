@@ -616,6 +616,13 @@ async fn serve(
     pricing_controller: PricingController,
     logger: &'static AppLogger,
 ) -> Result<()> {
+    let signals = match ShutdownSignals::install() {
+        Ok(signals) => signals,
+        Err(error) => {
+            let _ = runtime.shutdown().await;
+            return Err(error);
+        }
+    };
     let pricing_task = pricing_refresh::spawn(
         pricing_controller,
         runtime.clone(),
@@ -631,7 +638,7 @@ async fn serve(
         let stop = handle.clone();
         let stopping_runtime = runtime.clone();
         tokio::spawn(async move {
-            shutdown_signal().await;
+            signals.wait().await;
             if let Err(error) = stopping_runtime.shutdown().await {
                 eprintln!("Shutdown failed: {error:#}");
             }
@@ -645,7 +652,7 @@ async fn serve(
         let stopping_runtime = runtime.clone();
         axum::serve(listener, router)
             .with_graceful_shutdown(async move {
-                shutdown_signal().await;
+                signals.wait().await;
                 if let Err(error) = stopping_runtime.shutdown().await {
                     eprintln!("Shutdown failed: {error:#}");
                 }
@@ -697,16 +704,45 @@ async fn open_browser(url: &str) -> Result<()> {
     );
     Ok(())
 }
-async fn shutdown_signal() {
+pub(crate) struct ShutdownSignals {
     #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
-        let mut hup = signal(SignalKind::hangup()).expect("install SIGHUP handler");
-        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=term.recv()=>{},_=hup.recv()=>{},_=service::shutdown_requested()=>{}}
+    term: tokio::signal::unix::Signal,
+    #[cfg(unix)]
+    hup: tokio::signal::unix::Signal,
+}
+
+impl ShutdownSignals {
+    pub(crate) fn install() -> Result<Self> {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            let term =
+                signal(SignalKind::terminate()).context("Unable to install SIGTERM handler")?;
+            let hup = signal(SignalKind::hangup()).context("Unable to install SIGHUP handler")?;
+            Ok(Self { term, hup })
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(Self {})
+        }
     }
-    #[cfg(not(unix))]
-    {
-        tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = service::shutdown_requested() => {} }
+
+    pub(crate) async fn wait(#[allow(unused_mut)] mut self) {
+        #[cfg(unix)]
+        {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = self.term.recv() => {},
+                _ = self.hup.recv() => {},
+                _ = service::shutdown_requested() => {},
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = service::shutdown_requested() => {},
+            }
+        }
     }
 }

@@ -1,8 +1,11 @@
 use super::super::{composer_id, pagination, parse_composer, string, workspace_paths};
 use super::{CursorSync, child_owners, fingerprint};
-use crate::{agents::ParsedSession, pricing::Pricing};
+use crate::{
+    agents::{ParsedSession, open_readonly_sqlite},
+    pricing::Pricing,
+};
 use anyhow::Result;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
@@ -28,7 +31,7 @@ impl CursorSync {
         if !path.exists() {
             return Ok(Vec::new());
         }
-        let mut db = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let mut db = open_readonly_sqlite(&path)?;
         let tx = db.transaction()?;
         let mut composers = Vec::new();
         {

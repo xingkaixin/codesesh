@@ -14,13 +14,8 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import type { SessionDetailPhase } from "../../hooks/useSessionDetail";
 import type { AgentCatalog } from "../../lib/agents";
-import type {
-  AgentInfo,
-  AppConfig,
-  ApiProjectGroup,
-  ApiProjectPage,
-  SessionHead,
-} from "@codesesh/contract";
+import type { DashboardFilters } from "../../lib/api";
+import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "@codesesh/contract";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
@@ -126,7 +121,6 @@ type RootRouteModel = Extract<ViewState, { mode: "root" }> & {
 
 type ProjectsRouteModel = Extract<ViewState, { mode: "projects" }> & {
   agentCatalog: AgentCatalog;
-  projectPage: ApiProjectPage;
   projectsLoad: LoadModel;
   window: AppConfig["window"] | null;
 };
@@ -274,7 +268,13 @@ function LoadError({ load }: { load: LoadModel }) {
   );
 }
 
-function RootRouteContent({ route }: { route: RootRouteModel }) {
+function RootRouteContent({
+  route,
+  onSelectModel,
+}: {
+  route: RootRouteModel;
+  onSelectModel: (model: string, scope: DashboardFilters) => void;
+}) {
   useLocale();
 
   return (
@@ -286,6 +286,7 @@ function RootRouteContent({ route }: { route: RootRouteModel }) {
           rangePreset={route.overview.rangePreset}
           unmatchedModelCount={route.overview.unmatchedModelCount}
           onOpenPricing={route.overview.onOpenPricing}
+          onSelectModel={onSelectModel}
         />
       </LazySurface>
     </RenderProfiler>
@@ -298,7 +299,6 @@ function ProjectsRouteContent({ route }: { route: ProjectsRouteModel }) {
   return (
     <LazySurface>
       <ProjectsOverview
-        initialPage={route.projectPage}
         window={route.window}
         agentCatalog={route.agentCatalog}
         loading={route.projectsLoad.loading}
@@ -309,7 +309,13 @@ function ProjectsRouteContent({ route }: { route: ProjectsRouteModel }) {
   );
 }
 
-function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
+function ProjectRouteContent({
+  route,
+  onSelectModel,
+}: {
+  route: ProjectRouteModel;
+  onSelectModel: (model: string, scope: DashboardFilters) => void;
+}) {
   useLocale();
 
   return (
@@ -324,6 +330,7 @@ function ProjectRouteContent({ route }: { route: ProjectRouteModel }) {
         sessions={route.sessions}
         activeAgent={route.agentFilter.selectedAgent}
         onChangeAgent={route.agentFilter.onChangeAgent}
+        onSelectModel={onSelectModel}
         timeWindow={route.overview.window}
         rangePreset={route.overview.rangePreset}
       />
@@ -488,16 +495,22 @@ function InvalidRouteContent() {
   );
 }
 
-function RouteContent({ route }: { route: AppRouteModel }) {
+function RouteContent({
+  route,
+  onSelectModel,
+}: {
+  route: AppRouteModel;
+  onSelectModel: (model: string, scope: DashboardFilters) => void;
+}) {
   useLocale();
 
   switch (route.mode) {
     case "root":
-      return <RootRouteContent route={route} />;
+      return <RootRouteContent route={route} onSelectModel={onSelectModel} />;
     case "projects":
       return <ProjectsRouteContent route={route} />;
     case "project":
-      return <ProjectRouteContent route={route} />;
+      return <ProjectRouteContent route={route} onSelectModel={onSelectModel} />;
     case "agent":
       return <AgentRouteContent route={route} />;
     case "session":
@@ -512,8 +525,23 @@ function RouteContent({ route }: { route: AppRouteModel }) {
 export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
   useLocale();
 
+  const { onChangeFilters } = search;
+  const handleSelectModel = useCallback(
+    (model: string, scope: DashboardFilters) => {
+      onChangeFilters(
+        {
+          ...(scope.project ? { project: scope.project } : {}),
+          ...(scope.agent ? { agent: scope.agent } : {}),
+          ...(scope.sourceNodeId ? { sourceNodeId: scope.sourceNodeId } : {}),
+        },
+        `model:"${model}"`,
+      );
+    },
+    [onChangeFilters],
+  );
+
   if (load.loading) return <SessionDetailSkeleton />;
   if (search.active) return <SearchRouteContent search={search} controlsRef={search.controls} />;
   if (load.error) return <LoadError load={load} />;
-  return <RouteContent route={route} />;
+  return <RouteContent route={route} onSelectModel={handleSelectModel} />;
 }

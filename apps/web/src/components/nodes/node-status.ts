@@ -117,6 +117,47 @@ export function nodeNeedsAttention(node: SourceNode) {
   return !node.revoked && (Boolean(node.error) || missingSources(node).length > 0);
 }
 
+export type HubNodesHealth = "healthy" | "degraded" | "offline" | "error" | "loading";
+
+export interface HubNodesSummary {
+  health: HubNodesHealth;
+  activeCount: number;
+  onlineCount: number;
+  attentionCount: number;
+}
+
+export function summarizeHubNodes(
+  nodes: readonly SourceNode[] | undefined,
+  now: number,
+  isError: boolean,
+): HubNodesSummary {
+  if (isError) {
+    return { health: "error", activeCount: 0, onlineCount: 0, attentionCount: 0 };
+  }
+  if (!nodes) {
+    return { health: "loading", activeCount: 0, onlineCount: 0, attentionCount: 0 };
+  }
+  const active = nodes.filter((node) => !node.revoked);
+  const onlineCount = active.filter((node) => isNodeOnline(node, now)).length;
+  const attentionCount = active.filter(nodeNeedsAttention).length;
+
+  let health: HubNodesHealth;
+  if (active.length > 0 && onlineCount === 0) {
+    health = "offline";
+  } else if (attentionCount > 0 || onlineCount < active.length) {
+    health = "degraded";
+  } else {
+    health = "healthy";
+  }
+
+  return {
+    health,
+    activeCount: active.length,
+    onlineCount,
+    attentionCount,
+  };
+}
+
 const PLATFORM_NAMES: Record<string, string> = {
   macos: "macOS",
   linux: "Linux",

@@ -61,9 +61,6 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions_agent_activity_order
       ON sessions(agent_name, activity_time DESC, session_id);
 
-CREATE INDEX idx_sessions_activity
-      ON sessions(activity_time DESC, agent_name, session_id);
-
 CREATE INDEX idx_sessions_project
       ON sessions(project_identity_kind, project_identity_key, activity_time);
 
@@ -190,9 +187,6 @@ CREATE TABLE session_file_activity (
         ON DELETE CASCADE
     );
 
-CREATE INDEX idx_file_activity_project_latest
-      ON session_file_activity(project_identity_key, latest_time);
-
 CREATE INDEX idx_file_activity_latest
       ON session_file_activity(latest_time DESC, count DESC, path);
 
@@ -260,30 +254,17 @@ CREATE INDEX idx_session_documents_state
 
 CREATE VIRTUAL TABLE message_fts USING fts5(
       content_text,
+      code_tokens,
       content='',
       contentless_delete=1
     );
 
 CREATE VIRTUAL TABLE session_title_fts USING fts5(
       title,
-      content='sessions',
-      content_rowid='rowid'
+      code_tokens,
+      content='',
+      contentless_delete=1
     );
-
-CREATE TRIGGER session_title_ai AFTER INSERT ON sessions BEGIN
-      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
-    END;
-
-CREATE TRIGGER session_title_ad AFTER DELETE ON sessions BEGIN
-      INSERT INTO session_title_fts(session_title_fts, rowid, title)
-      VALUES ('delete', old.rowid, old.title);
-    END;
-
-CREATE TRIGGER session_title_au AFTER UPDATE OF title ON sessions BEGIN
-      INSERT INTO session_title_fts(session_title_fts, rowid, title)
-      VALUES ('delete', old.rowid, old.title);
-      INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
-    END;
 
 CREATE VIEW project_groups_v AS
       SELECT

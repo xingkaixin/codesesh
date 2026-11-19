@@ -609,3 +609,73 @@ fn cancelled_backup_preserves_original_and_is_not_a_completed_backup() {
     assert_eq!(backups.len(), 1);
     assert!(backups[0].path().to_string_lossy().ends_with(".partial"));
 }
+
+#[test]
+fn schema38_migrates_in_place_to_schema39_and_rebuilds_fts() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = source(root.path(), "v38");
+    session.head.title = "Fix useAuth 数据库连接".into();
+    session.detail.head.title = session.head.title.clone();
+    session.detail.messages[0].parts = vec![MessagePart::Text {
+        text: "Investigate HTTPRequest and auth_token authentication".into(),
+        time_created: None,
+    }];
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    let db = cache.connection();
+
+    // Simulate a schema 38 database with legacy 1-column FTS tables, title triggers,
+    // and the two redundant indexes retired in schema 39.
+    db.execute_batch(
+        "DROP TABLE message_fts;
+         DROP TABLE session_title_fts;
+         CREATE VIRTUAL TABLE message_fts USING fts5(content_text, content='', contentless_delete=1);
+         CREATE VIRTUAL TABLE session_title_fts USING fts5(title, content='sessions', content_rowid='rowid');
+         CREATE TRIGGER session_title_ai AFTER INSERT ON sessions BEGIN
+           INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
+         END;
+         CREATE TRIGGER session_title_ad AFTER DELETE ON sessions BEGIN
+           INSERT INTO session_title_fts(session_title_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+         END;
+         CREATE TRIGGER session_title_au AFTER UPDATE OF title ON sessions BEGIN
+           INSERT INTO session_title_fts(session_title_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+           INSERT INTO session_title_fts(rowid, title) VALUES (new.rowid, new.title);
+         END;
+         CREATE INDEX idx_sessions_activity ON sessions(activity_time DESC, agent_name, session_id);
+         CREATE INDEX idx_file_activity_project_latest ON session_file_activity(project_identity_key, latest_time);
+         DELETE FROM cache_meta WHERE key IN ('message_fts_v2','message_fts_v2_cursor','redundant_indexes_retired_v1');
+         INSERT OR REPLACE INTO cache_meta VALUES('message_fts_v1','1');
+         PRAGMA user_version=38;
+         UPDATE cache_meta SET value='38' WHERE key='version';",
+    )
+    .unwrap();
+
+    for _ in 0..2 {
+        schema::ensure(db, None).unwrap();
+        assert_eq!(
+            db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            CACHE_SCHEMA_VERSION
+        );
+        let redundant: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_sessions_activity','idx_file_activity_project_latest')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(redundant, 0);
+        let old_triggers: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('session_title_ai','session_title_ad','session_title_au')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(old_triggers, 0);
+        for query in ["auth", "request", "authenticat", "数据库"] {
+            let results = crate::search::search_sessions(db, query, &Default::default()).unwrap();
+            assert_eq!(results.len(), 1, "query={query}");
+        }
+    }
+}

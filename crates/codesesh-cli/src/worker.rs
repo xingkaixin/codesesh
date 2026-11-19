@@ -236,6 +236,7 @@ pub async fn run(
                             removed: Vec::new(),
                             checkpoint: None,
                             complete: false,
+                            completion: None,
                             on_reject: None,
                             pricing: None,
                         };
@@ -270,7 +271,7 @@ pub async fn run(
     };
     let mut reported = None;
     let mut retry_seconds = 1u64;
-    let mut shutdown = Box::pin(crate::shutdown_signal());
+    let mut shutdown = Box::pin(crate::ShutdownSignals::install()?.wait());
     let mut next_tick = Instant::now();
     loop {
         tokio::select! {

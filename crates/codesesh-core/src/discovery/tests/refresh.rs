@@ -1,6 +1,61 @@
 use super::*;
 
 #[test]
+fn incomplete_kimi_sources_keep_both_cached_messages() {
+    for (agent, wire_name, message) in [
+        (
+            "kimi",
+            "wire.jsonl",
+            r#"{"timestamp":1,"message":{"type":"TurnBegin","payload":{"user_input":[{"text":"hello"}]}}}"#,
+        ),
+        (
+            "kimi-code",
+            "agents/main/wire.jsonl",
+            r#"{"type":"context.append_message","message":{"role":"user","content":"hello"}}"#,
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let source = environment(temp.path()).source(agent).unwrap();
+        let dir = source.scan_path.join("bucket/session");
+        let wire = dir.join(wire_name);
+        let state = dir.join("state.json");
+        std::fs::create_dir_all(wire.parent().unwrap()).unwrap();
+        let transcript = format!("{message}\n{message}\n");
+        std::fs::write(&wire, &transcript).unwrap();
+        std::fs::write(&state, "{}").unwrap();
+        let db = temp.path().join("cache.db");
+        let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+        let mut scanner = AgentScanner::new(source, db, std::sync::Arc::new(Pricing::bundled()));
+        let mut initial = scanner.refresh(None).unwrap();
+        assert_eq!(initial.sessions[0].detail.messages.len(), 2);
+        let head = initial.sessions[0].head.clone();
+        cache
+            .apply_checkpoint(
+                &mut initial.sessions,
+                &initial.removed,
+                agent,
+                &initial.checkpoint,
+                initial.complete,
+            )
+            .unwrap();
+        initial.on_reject.take();
+        for companion in [&state, &wire] {
+            let backup = temp.path().join("backup");
+            std::fs::rename(companion, &backup).unwrap();
+            assert!(
+                scanner.refresh(None).is_err(),
+                "{agent}: {}",
+                companion.display()
+            );
+            std::fs::rename(backup, companion).unwrap();
+        }
+        std::fs::write(&wire, format!("{message}\n{{broken\n")).unwrap();
+        assert!(scanner.refresh(None).is_err());
+        assert_eq!(cache.detail(head).unwrap().unwrap().messages.len(), 2);
+    }
+}
+
+#[test]
 fn pi_parent_changes_refresh_cached_children() {
     for restart in [false, true] {
         let temporary = tempfile::tempdir().unwrap();

@@ -53,10 +53,13 @@ export interface SessionDetailFetchOptions extends FetchOptions {
   operationId?: string;
 }
 
+export type ProjectSort = "latest" | "sessions" | "cost";
+
 export interface ProjectPageOptions extends FetchOptions {
   cursor?: string;
   project?: ProjectIdentityRef;
   sourceNodeId?: string;
+  sort?: ProjectSort;
 }
 
 export interface SessionFetchProgress {
@@ -225,6 +228,7 @@ export function createApiClient(access: RemoteAccess) {
     params.set("limit", options?.project ? "1" : "100");
     if (options?.cursor) params.set("cursor", options.cursor);
     if (options?.sourceNodeId) params.set("sourceNodeId", options.sourceNodeId);
+    if (options?.sort && options.sort !== "latest") params.set("sort", options.sort);
     if (options?.project) {
       params.set("projectKind", options.project.kind);
       params.set("projectKey", options.project.key);
@@ -238,7 +242,7 @@ export function createApiClient(access: RemoteAccess) {
   async function fetchProject(
     window: AppConfig["window"],
     project: ProjectIdentityRef,
-    options?: FetchOptions,
+    options?: FetchOptions & { sourceNodeId?: string },
   ): Promise<ApiProjectGroup | null> {
     const page = await fetchProjects(window, { ...options, project });
     return page.projects[0] ?? null;
