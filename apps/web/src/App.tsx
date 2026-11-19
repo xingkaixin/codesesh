@@ -417,6 +417,7 @@ export default function App() {
         onClose: search.closeSearch,
         onRetry: search.retrySearch,
         selectedIndex: search.selectedSearchIndex,
+        onSelectIndex: search.selectSearchIndex,
         registerResultRef: search.registerResultRef,
         controls: searchControlsRef,
         onSubmit: submitSearch,

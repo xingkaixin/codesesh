@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   resolveTimeWindow,
   writeCustomTimeWindow,
@@ -34,6 +34,7 @@ function isRollingPreset(preset: TimeWindowPreset | null): boolean {
 
 export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const search = searchParams.toString();
   const hasRange = searchParams.has("range");
@@ -70,9 +71,16 @@ export function useTimeWindow(defaultWindow: TimeWindow | undefined) {
 
   useEffect(() => {
     if (effectiveSearch !== search) {
-      setSearchParams(effectiveParams, { replace: true });
+      navigate(
+        {
+          pathname: location.pathname,
+          search: effectiveSearch ? `?${effectiveSearch}` : "",
+          hash: location.hash,
+        },
+        { replace: true, state: location.state },
+      );
     }
-  }, [effectiveParams, effectiveSearch, search, setSearchParams]);
+  }, [effectiveSearch, location.hash, location.pathname, location.state, navigate, search]);
 
   const resolved = useMemo(
     () =>

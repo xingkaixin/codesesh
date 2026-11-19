@@ -133,7 +133,6 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutsDeps) {
         const result = searchResults[selectedSearchIndex];
         if (!result) return;
         event.preventDefault();
-        closeSearch();
         navigate(searchResultPath(result), { state: { searchQuery: activeSearchQuery } });
       }
       return;
