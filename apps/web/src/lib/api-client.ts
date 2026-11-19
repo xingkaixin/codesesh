@@ -241,7 +241,7 @@ export function createApiClient(access: RemoteAccess) {
   async function fetchProject(
     window: AppConfig["window"],
     project: ProjectIdentityRef,
-    options?: FetchOptions,
+    options?: FetchOptions & { sourceNodeId?: string },
   ): Promise<ApiProjectGroup | null> {
     const page = await fetchProjects(window, { ...options, project });
     return page.projects[0] ?? null;

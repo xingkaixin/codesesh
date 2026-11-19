@@ -1,5 +1,6 @@
-use super::{ProjectScope, SearchOptions};
-use rusqlite::types::Value;
+use super::{ProjectScope, SearchOptions, reader};
+use crate::analytics::{self, DashboardScope};
+use rusqlite::{Connection, params_from_iter, types::Value};
 
 #[derive(Default)]
 pub struct Filters {
@@ -63,7 +64,7 @@ fn project_scope(filters: &mut Filters, scope: &ProjectScope) {
     ]);
 }
 
-pub fn build(options: &SearchOptions) -> Filters {
+pub fn build(connection: &Connection, options: &SearchOptions) -> rusqlite::Result<Filters> {
     let mut filters = Filters::default();
     if let Some(scope) = &options.query_scope {
         if let Some(source) = &scope.source_node_id {
@@ -80,6 +81,40 @@ pub fn build(options: &SearchOptions) -> Filters {
         }
         if let Some(project) = &scope.project_scope {
             project_scope(&mut filters, project);
+        }
+    }
+    if let Some(model) = &options.model {
+        let mut heads = connection.prepare(&format!(
+            "SELECT {} FROM sessions s WHERE s.publication_id IS NULL {}",
+            reader::HEAD_COLUMNS,
+            filters.where_sql()
+        ))?;
+        let sessions = heads
+            .query_map(params_from_iter(&filters.params), reader::head)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let scope = DashboardScope {
+            agent: options.agent.clone(),
+            project_kind: options.project_kind.clone(),
+            project_key: options.project_key.clone(),
+        };
+        let references = analytics::model_entry_refs(
+            connection,
+            &sessions,
+            &scope,
+            model,
+            options.from,
+            options.to,
+        )?;
+        filters.text(&analytics::reference_condition("s"), &references);
+    } else {
+        for (clause, value) in [
+            ("s.activity_time >= ?", options.from),
+            ("s.activity_time <= ?", options.to),
+        ] {
+            if let Some(value) = value {
+                filters.clauses.push(clause.into());
+                filters.params.push(value.into());
+            }
         }
     }
     if let Some(agent) = &options.agent {
@@ -130,15 +165,6 @@ pub fn build(options: &SearchOptions) -> Filters {
         ));
         filters.params.extend(files.params);
     }
-    for (clause, value) in [
-        ("s.activity_time >= ?", options.from),
-        ("s.activity_time <= ?", options.to),
-    ] {
-        if let Some(value) = value {
-            filters.clauses.push(clause.into());
-            filters.params.push(value.into());
-        }
-    }
     let mut costs = Vec::new();
     if let Some(value) = options.cost_min {
         costs.push(if options.cost_min_exclusive {
@@ -159,5 +185,5 @@ pub fn build(options: &SearchOptions) -> Filters {
     if !costs.is_empty() {
         filters.clauses.push(format!("EXISTS (WITH RECURSIVE session_subtree(source_node_id,agent_name,session_id,own_cost) AS (SELECT s.source_node_id,s.agent_name,s.session_id,s.total_cost UNION SELECT child.source_node_id,child.agent_name,child.session_id,child.total_cost FROM sessions child JOIN session_subtree parent ON child.source_node_id = parent.source_node_id AND child.parent_agent_name = parent.agent_name AND child.parent_session_id = parent.session_id WHERE child.publication_id IS NULL) SELECT SUM(own_cost) FROM session_subtree HAVING {})",costs.join(" AND ")));
     }
-    filters
+    Ok(filters)
 }

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiProjectGroup, ApiProjectPage, HubNodes } from "@codesesh/contract";
 import { SAMPLE_DASHBOARD_DATA, SAMPLE_SESSION_HEAD } from "@codesesh/contract/test-fixtures";
@@ -73,7 +73,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function LocationSearch() {
   const location = useLocation();
-  return <span data-testid="location-search">{location.search}</span>;
+  const navigate = useNavigate();
+  return (
+    <>
+      <span data-testid="location-search">{location.search}</span>
+      <button onClick={() => navigate(-1)}>Browser back</button>
+    </>
+  );
 }
 
 afterEach(() => {
@@ -107,14 +113,16 @@ describe("ProjectsOverview", () => {
           return Promise.resolve(
             jsonResponse({
               projects: [projectB, projectA],
+              nextCursor: cursor ? undefined : "cost-page-2",
               summary: defaultFirstPage.summary,
             }),
           );
         }
-        if (cursor === "cursor-page-2") {
+        if (cursor === "cursor-page-2" || cursor === "cursor-page-3") {
           return Promise.resolve(
             jsonResponse({
               projects: [projectB],
+              nextCursor: cursor === "cursor-page-2" ? "cursor-page-3" : undefined,
               summary: defaultFirstPage.summary,
             }),
           );
@@ -131,23 +139,33 @@ describe("ProjectsOverview", () => {
       <Wrapper>
         <MemoryRouter initialEntries={["/projects?range=7d"]}>
           <LocationSearch />
-          <ProjectsOverview
-            initialPage={defaultFirstPage}
-            window={{ from: 1, to: 2, days: 7 }}
-            agentCatalog={createAgentCatalog([])}
-            loading={false}
-            error={null}
-            onRetry={vi.fn()}
-          />
+          <Routes>
+            <Route
+              path="/projects"
+              element={
+                <ProjectsOverview
+                  window={{ from: 1, to: 2, days: 7 }}
+                  agentCatalog={createAgentCatalog([])}
+                  loading={false}
+                  error={null}
+                  onRetry={vi.fn()}
+                />
+              }
+            />
+            <Route path="*" element={<div>Project detail</div>} />
+          </Routes>
         </MemoryRouter>
       </Wrapper>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getByText("beta")).toBeTruthy());
     expect(screen.getByTestId("location-search").textContent).toBe(
       "?range=7d&page=2&cursor=cursor-page-2",
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("link", { name: "beta" });
 
     // Changing sort sends sort=cost to the server and resets pagination in the URL.
     fireEvent.click(screen.getByRole("radio", { name: "Cost" }));
@@ -161,6 +179,18 @@ describe("ProjectsOverview", () => {
       expect.stringContaining("beta"),
       expect.stringContaining("alpha"),
     ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("link", { name: "beta" });
+    fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(screen.getByTestId("location-search").textContent).toContain("cursor=cursor-page-3");
+    fireEvent.click(await screen.findByRole("link", { name: "beta" }));
+    await screen.findByText("Project detail");
+    fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Previous" }));
+    expect(screen.getByTestId("location-search").textContent).toContain("cursor=cursor-page-2");
+    fireEvent.click(await screen.findByRole("radio", { name: "Cost" }));
 
     // Selecting a source node persists sourceNodeId in URL and propagates to project links.
     fireEvent.change(screen.getByRole("combobox", { name: "Source node" }), {
@@ -196,7 +226,6 @@ describe("ProjectsOverview", () => {
         <MemoryRouter initialEntries={["/projects?sort=cost&page=2&cursor=bad-cursor"]}>
           <LocationSearch />
           <ProjectsOverview
-            initialPage={defaultFirstPage}
             window={{ from: 1, to: 2, days: 7 }}
             agentCatalog={createAgentCatalog([])}
             loading={false}
@@ -210,7 +239,7 @@ describe("ProjectsOverview", () => {
     await waitFor(() =>
       expect(screen.getByTestId("location-search").textContent).toBe("?sort=cost"),
     );
-    expect(screen.getByText("alpha")).toBeTruthy();
+    expect(await screen.findByText("alpha")).toBeTruthy();
   });
 });
 

@@ -1,7 +1,7 @@
 import { t } from "../i18n/translate";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ApiProjectGroup, ApiProjectPage, AppConfig } from "@codesesh/contract";
+import type { ApiProjectGroup, AppConfig } from "@codesesh/contract";
 import { ApiRequestError, fetchProject, fetchProjects, type ProjectSort } from "../lib/api";
 import { getProjectIdentityKey, type ProjectRouteIdentity } from "../lib/projects";
 import { queryKeys } from "../lib/query-keys";
@@ -9,18 +9,14 @@ import { queryKeys } from "../lib/query-keys";
 const PROJECT_QUERY_STALE_TIME_MS = 2_000;
 const EMPTY_CURSORS: string[] = [];
 
-export interface ProjectPaginationControl {
-  cursor?: string;
-  pageNumber?: number;
-  onNavigate: (
-    next: { cursor?: string; pageNumber: number },
-    options?: { replace?: boolean },
-  ) => void;
-}
-
-interface PageBackEntry {
+export interface ProjectPageLocation {
   cursor?: string;
   pageNumber: number;
+  previousCursors?: string[];
+}
+
+export interface ProjectPaginationControl extends Partial<ProjectPageLocation> {
+  onNavigate: (next: ProjectPageLocation, options?: { replace?: boolean }) => void;
 }
 
 function windowKey(window: AppConfig["window"] | null): string {
@@ -30,7 +26,6 @@ function windowKey(window: AppConfig["window"] | null): string {
 
 export function useProjectPagination(
   window: AppConfig["window"] | null,
-  initialPage: ApiProjectPage,
   sourceNodeId?: string,
   sort: ProjectSort = "latest",
   control?: ProjectPaginationControl,
@@ -40,10 +35,6 @@ export function useProjectPagination(
     key,
     cursors: [],
   });
-  const [backStack, setBackStack] = useState<{ key: string; entries: PageBackEntry[] }>({
-    key,
-    entries: [],
-  });
   const cursors = navigation.key === key ? navigation.cursors : EMPTY_CURSORS;
   const cursor = control ? control.cursor : cursors.at(-1);
   const pageNumber = control
@@ -51,24 +42,22 @@ export function useProjectPagination(
       ? Math.max(2, control.pageNumber ?? 2)
       : 1
     : cursors.length + 1;
-  const isDefaultFirstPage = !cursor && !sourceNodeId && sort === "latest";
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: queryKeys.projectPage(window ?? {}, cursor, sourceNodeId, sort),
     queryFn: ({ signal }) =>
       fetchProjects(window ?? undefined, { cursor, signal, sourceNodeId, sort }),
     enabled: window != null,
-    initialData: isDefaultFirstPage ? initialPage : undefined,
-    placeholderData: isDefaultFirstPage ? undefined : keepPreviousData,
     staleTime: PROJECT_QUERY_STALE_TIME_MS,
     retry: false,
   });
-  const page = query.data ?? (isDefaultFirstPage ? initialPage : null);
+  const page = query.data ?? null;
   const staleCursor =
     Boolean(cursor) &&
     query.error instanceof ApiRequestError &&
     (query.error.status === 409 || query.error.status === 400);
   const onNavigate = control?.onNavigate;
+  const previousCursors = control?.previousCursors ?? EMPTY_CURSORS;
 
   useEffect(() => {
     if (!staleCursor) return;
@@ -84,7 +73,6 @@ export function useProjectPagination(
       .then(() => {
         if (cancelled) return;
         if (onNavigate) {
-          setBackStack({ key, entries: [] });
           onNavigate({ cursor: undefined, pageNumber: 1 }, { replace: true });
         } else {
           setNavigation((current) =>
@@ -103,11 +91,11 @@ export function useProjectPagination(
     const nextCursor = query.data?.nextCursor;
     if (!nextCursor || query.isPlaceholderData) return;
     if (onNavigate) {
-      setBackStack((current) => ({
-        key,
-        entries: [...(current.key === key ? current.entries : []), { cursor, pageNumber }],
-      }));
-      onNavigate({ cursor: nextCursor, pageNumber: pageNumber + 1 });
+      onNavigate({
+        cursor: nextCursor,
+        pageNumber: pageNumber + 1,
+        previousCursors: cursor ? [...previousCursors, cursor] : [],
+      });
     } else {
       setNavigation({ key, cursors: [...cursors, nextCursor] });
     }
@@ -117,20 +105,23 @@ export function useProjectPagination(
     key,
     onNavigate,
     pageNumber,
+    previousCursors,
     query.data?.nextCursor,
     query.isPlaceholderData,
   ]);
 
   const previous = useCallback(() => {
     if (onNavigate) {
-      const entries = backStack.key === key ? backStack.entries : [];
-      const target = entries.at(-1) ?? { cursor: undefined, pageNumber: 1 };
-      setBackStack({ key, entries: entries.slice(0, -1) });
-      onNavigate(target);
+      const previous = previousCursors.at(-1);
+      onNavigate({
+        cursor: previous,
+        pageNumber: previous ? pageNumber - 1 : 1,
+        previousCursors: previousCursors.slice(0, -1),
+      });
     } else {
       setNavigation({ key, cursors: cursors.slice(0, -1) });
     }
-  }, [backStack, cursors, key, onNavigate]);
+  }, [cursors, key, onNavigate, pageNumber, previousCursors]);
 
   const retry = useCallback(async () => {
     await query.refetch();
@@ -159,6 +150,7 @@ export function useProjectLookup(
   window: AppConfig["window"] | null,
   identity: ProjectRouteIdentity | null,
   projects: ApiProjectGroup[],
+  sourceNodeId?: string,
 ) {
   const identityKey = identity ? getProjectIdentityKey(identity) : null;
   const localProject = useMemo(
@@ -173,8 +165,12 @@ export function useProjectLookup(
     [identityKey, projects],
   );
   const query = useQuery({
-    queryKey: queryKeys.projectDetail(window ?? {}, identity ?? { kind: "path", key: "" }),
-    queryFn: ({ signal }) => fetchProject(window!, identity!, { signal }),
+    queryKey: queryKeys.projectDetail(
+      window ?? {},
+      identity ?? { kind: "path", key: "" },
+      sourceNodeId,
+    ),
+    queryFn: ({ signal }) => fetchProject(window!, identity!, { signal, sourceNodeId }),
     enabled: window != null && identity != null && localProject == null,
     staleTime: PROJECT_QUERY_STALE_TIME_MS,
     retry: false,

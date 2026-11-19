@@ -73,6 +73,7 @@ pub fn parse_query(input: &str) -> ParsedQuery {
         }
         let mut consumed = true;
         match key.to_ascii_lowercase().as_str() {
+            "model" => filters.model = Some(value.into()),
             "agent" => filters.agent = Some(value.to_lowercase()),
             "project" => filters.project = Some(value.into()),
             "projectkey" | "project-key" => filters.project_key = Some(value.into()),
@@ -230,6 +231,7 @@ pub fn merge(query: &str, options: &SearchOptions) -> (ParsedQuery, SearchOption
     macro_rules! fallback { ($($field:ident),*) => { $(if merged.$field.is_none() { merged.$field = parsed.filters.$field.clone(); })* }; }
     fallback!(
         agent,
+        model,
         project,
         project_kind,
         project_key,

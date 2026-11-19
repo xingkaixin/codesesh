@@ -103,14 +103,14 @@ describe("useProjectPagination", () => {
       const { client, Wrapper } = createQueryWrapper();
       const { result } = renderHook(
         () => {
-          const initial = useQuery({
+          useQuery({
             queryKey: queryKeys.projectPage(window),
             queryFn: ({ signal }) => fetchProjects(window, { signal }),
             initialData: firstPage,
             enabled: firstPageActive,
             staleTime: Infinity,
           });
-          return useProjectPagination(window, initial.data);
+          return useProjectPagination(window);
         },
         { wrapper: Wrapper },
       );
@@ -185,10 +185,7 @@ describe("useProjectPagination", () => {
           initialData: firstPage,
           staleTime: Infinity,
         });
-        return useProjectPagination(
-          window,
-          window === firstWindow ? firstPage : secondWindowFirstPage,
-        );
+        return useProjectPagination(window);
       },
       { initialProps: { window: firstWindow }, wrapper: Wrapper },
     );
@@ -206,6 +203,7 @@ describe("useProjectPagination", () => {
     await waitFor(() => expect(recoveryStarted).toBe(true));
 
     rerender({ window: secondWindow });
+    await waitFor(() => expect(result.current.page).toEqual(secondWindowFirstPage));
     act(() => result.current.next());
     await waitFor(() =>
       expect(result.current.page?.projects).toEqual(secondWindowSecondPage.projects),

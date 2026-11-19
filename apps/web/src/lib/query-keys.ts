@@ -47,8 +47,8 @@ export const queryKeys = {
       ? (["projects", normalizeWindow(window), "page", cursor ?? null, sourceNodeId] as const)
       : (["projects", normalizeWindow(window), "page", cursor ?? null] as const);
   },
-  projectDetail: (window: TimeWindow, project: ProjectIdentityRef) =>
-    ["projects", normalizeWindow(window), "detail", project] as const,
+  projectDetail: (window: TimeWindow, project: ProjectIdentityRef, sourceNodeId?: string) =>
+    ["projects", normalizeWindow(window), "detail", project, sourceNodeId ?? null] as const,
   search: (query: string, options: SearchRequestOptions) => ["search", query, options] as const,
   searches: ["search"] as const,
   sessionDetails: ["session-detail"] as const,

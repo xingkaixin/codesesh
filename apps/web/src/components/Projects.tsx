@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type {
-  ApiProjectAgentStat,
-  ApiProjectGroup,
-  ApiProjectPage,
-  AppConfig,
-} from "@codesesh/contract";
-import { useProjectPagination } from "../hooks/useProjects";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import type { ApiProjectAgentStat, ApiProjectGroup, AppConfig } from "@codesesh/contract";
+import {
+  useProjectPagination,
+  useProjectLookup,
+  type ProjectPageLocation,
+} from "../hooks/useProjects";
 import { findAgent, type AgentCatalog } from "../lib/agents";
 import type { DashboardFilters, ProjectSort } from "../lib/api";
 import { formatCompact, formatMoney, formatNumber, formatRelativeTime } from "../lib/format";
@@ -94,14 +93,12 @@ function ProjectAgents({
 }
 
 export function ProjectsOverview({
-  initialPage,
   window,
   agentCatalog,
   loading,
   error,
   onRetry,
 }: {
-  initialPage: ApiProjectPage;
   window: AppConfig["window"] | null;
   agentCatalog: AgentCatalog;
   loading: boolean;
@@ -111,6 +108,12 @@ export function ProjectsOverview({
   useLocale();
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const savedCursors: unknown = location.state?.projectCursors;
+  const previousCursors =
+    Array.isArray(savedCursors) && savedCursors.every((value) => typeof value === "string")
+      ? savedCursors
+      : undefined;
   const sort = parseProjectSort(searchParams.get("sort"));
   const sourceNodeId = searchParams.get("sourceNodeId") || undefined;
   const cursor = searchParams.get("cursor") || undefined;
@@ -147,7 +150,7 @@ export function ProjectsOverview({
   );
 
   const handleNavigatePage = useCallback(
-    (next: { cursor?: string; pageNumber: number }, options?: { replace?: boolean }) => {
+    (next: ProjectPageLocation, options?: { replace?: boolean }) => {
       setSearchParams(
         (current) => {
           const updated = new URLSearchParams(current);
@@ -160,7 +163,7 @@ export function ProjectsOverview({
           }
           return updated;
         },
-        options?.replace ? { replace: true } : undefined,
+        { replace: options?.replace, state: { projectCursors: next.previousCursors } },
       );
     },
     [setSearchParams],
@@ -192,22 +195,34 @@ export function ProjectsOverview({
     () => ({
       cursor,
       pageNumber: urlPageNumber,
+      previousCursors,
       onNavigate: handleNavigatePage,
     }),
-    [cursor, handleNavigatePage, urlPageNumber],
+    [cursor, handleNavigatePage, previousCursors, urlPageNumber],
   );
-  const pagination = useProjectPagination(
-    window,
-    initialPage,
-    sourceNodeId,
-    sort,
-    paginationControl,
-  );
-  const page = pagination.page ?? initialPage;
-  const projects = page.projects.slice(0, 250);
+  const pagination = useProjectPagination(window, sourceNodeId, sort, paginationControl);
+  const page = pagination.page;
   const currentError = pagination.error ?? error;
   const retry = pagination.error ? () => void pagination.retry() : onRetry;
 
+  if (!page)
+    return (
+      <div className="mx-auto max-w-6xl space-y-4">
+        <SourceFilter value={sourceNodeId} onChange={handleSourceNodeChange} />
+        {currentError ? (
+          <ResourceLoadFailure
+            title={t("Couldn't load projects.")}
+            message={currentError}
+            onRetry={retry}
+          />
+        ) : (
+          <Panel className="p-6 text-sm text-[var(--console-muted)]">
+            {t("Loading projects...")}
+          </Panel>
+        )}
+      </div>
+    );
+  const projects = page.projects.slice(0, 250);
   if (page.summary.projects === 0 && !sourceNodeId) {
     if (currentError) {
       return (
@@ -494,6 +509,13 @@ export function ProjectDashboardView({
     [setSearchParams],
   );
 
+  const scopedProject = useProjectLookup(
+    timeWindow,
+    sourceNodeId && project ? { kind: project.identityKind, key: project.identityKey } : null,
+    [],
+    sourceNodeId,
+  );
+
   if (loading) {
     return (
       <Panel className="mx-auto max-w-4xl p-6 text-sm text-[var(--console-muted)]">
@@ -544,7 +566,11 @@ export function ProjectDashboardView({
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <ProjectHero
-        project={project}
+        project={
+          sourceNodeId
+            ? { ...project, agentStats: scopedProject.project?.agentStats ?? [] }
+            : project
+        }
         agentCatalog={agentCatalog}
         activeAgent={activeAgent}
         onChangeAgent={onChangeAgent}
@@ -552,6 +578,13 @@ export function ProjectDashboardView({
         onChangeSourceNode={handleSourceNodeChange}
       />
 
+      {scopedProject.error ? (
+        <ResourceLoadFailure
+          title={t("Couldn't load project.")}
+          message={scopedProject.error}
+          onRetry={() => void scopedProject.retry()}
+        />
+      ) : null}
       <OverviewScreen
         key={`${project.identityKind}:${project.identityKey}`}
         project={{ kind: project.identityKind, key: project.identityKey }}

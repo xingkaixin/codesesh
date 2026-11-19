@@ -55,6 +55,11 @@ export function OverviewDailyTokens({
   onSelectDay?: (date: string) => void;
 }) {
   const locale = useLocale();
+  const hasActivity = (bucket: DashboardDailyBucket) =>
+    bucket.sessions > 0 ||
+    bucket.messages > 0 ||
+    bucket.cost > 0 ||
+    bucket.input + bucket.output + bucket.cache_read + bucket.cache_create > 0;
   const [scope, setScope] = useState<Scope>("all");
   const [active, setActive] = useState<number | null>(null);
   const withCacheRead = scope === "all";
@@ -172,7 +177,7 @@ export function OverviewDailyTokens({
                       data-testid="overview-daily-column"
                       className={cn(
                         "flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5",
-                        onSelectDay ? "cursor-pointer" : null,
+                        onSelectDay && hasActivity(bucket) ? "cursor-pointer" : null,
                         active === index
                           ? "bg-[var(--brand-soft)]"
                           : chart.days[index]!.weekend && count <= 31
@@ -182,7 +187,9 @@ export function OverviewDailyTokens({
                       onMouseEnter={() => setActive(index)}
                       onMouseLeave={() => setActive(null)}
                       onClick={
-                        onSelectDay ? () => onSelectDay(bucket.date.slice(0, 10)) : undefined
+                        onSelectDay && hasActivity(bucket)
+                          ? () => onSelectDay(bucket.date.slice(0, 10))
+                          : undefined
                       }
                     >
                       {labelled && chart.totals[index]! > 0 ? (
@@ -269,7 +276,10 @@ export function OverviewDailyTokens({
                   onActiveIndexChange={setActive}
                   onActivate={
                     onSelectDay
-                      ? (index) => onSelectDay(daily[index]!.date.slice(0, 10))
+                      ? (index) => {
+                          const bucket = daily[index]!;
+                          if (hasActivity(bucket)) onSelectDay(bucket.date.slice(0, 10));
+                        }
                       : undefined
                   }
                   layout="columns"

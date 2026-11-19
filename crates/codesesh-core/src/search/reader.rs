@@ -41,7 +41,7 @@ pub(super) fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
         time_created: row.get("time_created")?,
         time_updated: row
             .get::<_, Option<f64>>("time_updated")?
-            .unwrap_or_default(),
+            .unwrap_or(row.get("time_created")?),
         stats: SessionStats {
             cost_inputs: Vec::new(),
             message_count: row.get::<_, i64>("message_count")? as usize,
@@ -71,7 +71,7 @@ pub(super) fn search_prepared(
     query: &str,
     options: &SearchOptions,
 ) -> Result<Vec<SearchResult>> {
-    let mut filters = sql::build(options);
+    let mut filters = sql::build(connection, options)?;
     let query = query.trim();
     let limit = options.limit.unwrap_or(50);
     let (rows, any_message) = if query.is_empty() {
@@ -246,7 +246,7 @@ pub(super) fn search_files(
     if path.is_empty() {
         return Ok(Vec::new());
     }
-    let mut filters = sql::build(options);
+    let mut filters = sql::build(connection, options)?;
     sql::file_filter(&mut filters, path);
     if let Some(kind) = &options.file_kind {
         filters.text("fa.kind = ?", kind);

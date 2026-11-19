@@ -16,13 +16,7 @@ import { Link, useLocation } from "react-router-dom";
 import type { SessionDetailPhase } from "../../hooks/useSessionDetail";
 import type { AgentCatalog } from "../../lib/agents";
 import type { DashboardFilters } from "../../lib/api";
-import type {
-  AgentInfo,
-  AppConfig,
-  ApiProjectGroup,
-  ApiProjectPage,
-  SessionHead,
-} from "@codesesh/contract";
+import type { AgentInfo, AppConfig, ApiProjectGroup, SessionHead } from "@codesesh/contract";
 import { getSessionRouteKey, type IndexedSession } from "../../lib/session-indexes";
 import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
@@ -127,7 +121,6 @@ type RootRouteModel = Extract<ViewState, { mode: "root" }> & {
 
 type ProjectsRouteModel = Extract<ViewState, { mode: "projects" }> & {
   agentCatalog: AgentCatalog;
-  projectPage: ApiProjectPage;
   projectsLoad: LoadModel;
   window: AppConfig["window"] | null;
 };
@@ -290,7 +283,6 @@ function ProjectsRouteContent({ route }: { route: ProjectsRouteModel }) {
   return (
     <LazySurface>
       <ProjectsOverview
-        initialPage={route.projectPage}
         window={route.window}
         agentCatalog={route.agentCatalog}
         loading={route.projectsLoad.loading}
@@ -526,7 +518,7 @@ export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
         ...(scope.agent ? { agent: scope.agent } : {}),
         ...(scope.sourceNodeId ? { sourceNodeId: scope.sourceNodeId } : {}),
       });
-      onSubmit(model);
+      onSubmit(`model:"${model}"`);
     },
     [onChangeFilters, onSubmit],
   );
