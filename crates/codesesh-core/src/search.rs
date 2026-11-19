@@ -376,5 +376,33 @@ pub(crate) fn filter_indexed_references(
     Ok(found)
 }
 
+pub fn find_session_message_matches(
+    connection: &Connection,
+    reference: &SessionReference,
+    query: &str,
+) -> Result<Vec<usize>> {
+    let terms = snippet::Terms::parse(query);
+    if terms.values.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection.prepare_cached(
+        "SELECT message_index, content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? ORDER BY message_index",
+    )?;
+    let mut rows = statement.query(rusqlite::params![
+        reference.source_node_id,
+        reference.agent_name,
+        reference.session_id
+    ])?;
+    let mut indices = Vec::new();
+    while let Some(row) = rows.next()? {
+        let index: i64 = row.get(0)?;
+        let content_text: String = row.get(1)?;
+        if index >= 0 && terms.matches(&content_text) {
+            indices.push(index as usize);
+        }
+    }
+    Ok(indices)
+}
+
 #[cfg(test)]
 mod tests;

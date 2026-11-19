@@ -1342,3 +1342,81 @@ async fn pricing_override_lifecycle_reprices_dashboard_and_handles_official_rele
 
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn session_matches_endpoint_returns_ordered_indices_and_isolates_nodes() {
+    let (app, runtime, _dir) = app().await;
+    let auth = [("authorization", "Bearer secret")];
+    runtime
+        .hub_control(|cache| {
+            let connection = cache.connection();
+            for (node, id) in [("local", "s1"), ("worker-a", "s1")] {
+                connection.execute(
+                    "INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES(?,'codex',?,'title','/repo','path','/repo','repo',1,2,2,3,0,0,0)",
+                    (node, id),
+                )?;
+            }
+            for (index, body) in [
+                (0_i64, "first message"),
+                (1_i64, "second with needleToken"),
+                (2_i64, "third with 数据库 needleToken"),
+            ] {
+                connection.execute(
+                    "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','s1',?,?,'assistant',1,'[]',?)",
+                    (index, format!("m{index}"), body),
+                )?;
+            }
+            connection.execute(
+                "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('worker-a','codex','s1',0,'r0','assistant',1,'[]','needleToken remote')",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let (status, body) = request(
+        &app,
+        Method::GET,
+        "/api/sessions/codex/s1/matches?q=needletoken",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, serde_json::json!({ "messageIndices": [1, 2] }));
+
+    let (status, body) = request(
+        &app,
+        Method::GET,
+        "/api/sessions/codex/s1/matches?q=%E6%95%B0%E6%8D%AE%E5%BA%93",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, serde_json::json!({ "messageIndices": [2] }));
+
+    let (status, body) = request(
+        &app,
+        Method::GET,
+        "/api/sessions/nodes/worker-a/codex/s1/matches?q=needletoken",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, serde_json::json!({ "messageIndices": [0] }));
+
+    let (status, _) = request(
+        &app,
+        Method::GET,
+        "/api/sessions/codex/missing/matches?q=needletoken",
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    runtime.shutdown().await.unwrap();
+}
