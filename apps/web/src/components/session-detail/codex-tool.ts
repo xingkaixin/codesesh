@@ -289,12 +289,20 @@ export function analyzeCodexBashOutput(
   };
 }
 
+const EMPTY_CODEX_BASH_OUTPUT_ANALYSIS: CodexBashOutputAnalysis = {
+  text: "",
+  language: "text",
+  isCode: false,
+  confidence: "plain",
+};
+
 export function buildCodexExecCommandDisplay(
   inputValue: unknown,
   outputText: string,
   detectLanguageByFilePath: (filePath: string) => ToolOutputLanguage,
   formatPathForDisplay: (path: string) => string = (path) => path,
   formatTextForDisplay: (text: string) => string = (text) => text,
+  includeOutput = true,
 ) {
   const input = toRecord(inputValue);
   const command = toPlainText(input.cmd);
@@ -304,16 +312,20 @@ export function buildCodexExecCommandDisplay(
   const displayCommand = formatTextForDisplay(command);
 
   const details: ToolDetailItem[] = [];
-  appendDetail(details, t("Command"), displayCommand);
-  appendDetail(details, t("Workdir"), formatPathForDisplay(workdir));
-  appendDetail(details, t("Escalation"), escalation);
-  appendDetail(details, t("Justification"), justification);
+  if (includeOutput) {
+    appendDetail(details, t("Command"), displayCommand);
+    appendDetail(details, t("Workdir"), formatPathForDisplay(workdir));
+    appendDetail(details, t("Escalation"), escalation);
+    appendDetail(details, t("Justification"), justification);
+  }
 
   const commandPreview = truncateText(displayCommand);
   const secondaryText = justification
     ? [justification, commandPreview].filter(Boolean).join("\n")
     : commandPreview || undefined;
-  const outputAnalysis = analyzeCodexBashOutput(command, outputText, detectLanguageByFilePath);
+  const outputAnalysis = includeOutput
+    ? analyzeCodexBashOutput(command, outputText, detectLanguageByFilePath)
+    : EMPTY_CODEX_BASH_OUTPUT_ANALYSIS;
 
   return {
     secondaryText,
@@ -326,6 +338,7 @@ export function buildCodexWriteStdinDisplay(
   inputValue: unknown,
   outputText: string,
   detectLanguageByFilePath: (filePath: string) => ToolOutputLanguage,
+  includeOutput = true,
 ) {
   const input = toRecord(inputValue);
   const sessionId = toDisplayValue(input.session_id);
@@ -333,16 +346,20 @@ export function buildCodexWriteStdinDisplay(
   const mode = chars ? "stdin" : "poll";
 
   const details: ToolDetailItem[] = [];
-  appendDetail(details, t("Session"), sessionId);
-  details.push({
-    label: t("Chars"),
-    value: chars || "(empty)",
-  });
+  if (includeOutput) {
+    appendDetail(details, t("Session"), sessionId);
+    details.push({
+      label: t("Chars"),
+      value: chars || "(empty)",
+    });
+  }
 
   return {
     secondaryText: sessionId ? t("session #{0} · {1}", [sessionId, mode]) : mode,
     details,
-    outputAnalysis: analyzeCodexBashOutput("", outputText, detectLanguageByFilePath),
+    outputAnalysis: includeOutput
+      ? analyzeCodexBashOutput("", outputText, detectLanguageByFilePath)
+      : EMPTY_CODEX_BASH_OUTPUT_ANALYSIS,
   };
 }
 

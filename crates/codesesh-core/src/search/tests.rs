@@ -78,6 +78,49 @@ fn database() -> Connection {
 }
 
 #[test]
+fn model_drilldown_uses_the_dashboards_window_and_entry_sessions() {
+    let db = database();
+    db.execute_batch(r#"
+        UPDATE sessions SET total_input_tokens=3, model_usage_json='{"widget":3}';
+        UPDATE sessions SET activity_time=500, time_updated=500 WHERE session_id='one';
+        INSERT INTO session_cost_summary(agent_name,session_id,input_tokens,message_cost,untimed_message_cost)
+            VALUES ('codex','two',3,0,0), ('codex','three',3,0,0);
+        INSERT INTO session_usage_bucket VALUES
+            (150,'local','codex','two','widget','',1,3,0,0,0,0,0),
+            (50,'local','codex','three','widget','',1,3,0,0,0,0,0);
+    "#).unwrap();
+    let search = |from, to| {
+        execute_with_snapshot(
+            &db,
+            "model:widget",
+            &SearchOptions {
+                from: Some(from),
+                to: Some(to),
+                ..Default::default()
+            },
+            &[],
+        )
+        .unwrap()
+        .into_iter()
+        .map(|hit| hit.reference.session_id)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(search(140.0, 210.0), ["one"]);
+    assert_eq!(search(40.0, 60.0), ["three"]);
+    assert_eq!(search(490.0, 510.0), ["one"]);
+    assert!(search(300.0, 400.0).is_empty());
+    let tomorrow = chrono::Utc::now().timestamp_millis() + 86_400_000;
+    db.execute(
+        "UPDATE session_usage_bucket SET bucket_start=? WHERE session_id='three'",
+        [tomorrow],
+    )
+    .unwrap();
+    let all = execute_with_snapshot(&db, "model:widget", &SearchOptions::default(), &[]).unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].reference.session_id, "one");
+}
+
+#[test]
 fn ranked_fts_and_utf16_message_highlights() {
     let db = database();
     let results = execute(&db, "hello", &SearchOptions::default()).unwrap();

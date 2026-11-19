@@ -305,6 +305,18 @@ pub async fn projects(
         Ok(v) => v,
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
+    let sort = match query.optional("sort") {
+        None => analytics::ProjectSort::Latest,
+        Some(raw) => match analytics::ProjectSort::parse(raw) {
+            Some(sort) => sort,
+            None => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "sort must be one of latest, sessions, cost",
+                );
+            }
+        },
+    };
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let etag_namespace = state.etag_namespace;
     let cache = state.catalog_cache.clone();
@@ -319,7 +331,7 @@ pub async fn projects(
                 ..Default::default()
             },
         );
-        return paginated_projects(&state, &query, limit, Vec::new(), Value::Null, None);
+        return paginated_projects(&state, &query, sort, limit, Vec::new(), Value::Null, None);
     }
     let result = state
         .runtime
@@ -340,6 +352,7 @@ pub async fn projects(
                     to,
                     query_scope.source_node_id,
                     identity,
+                    sort.as_str(),
                     limit
                 ]),
             );
@@ -349,7 +362,14 @@ pub async fn projects(
             let value = cached_catalog(
                 &cache,
                 revision,
-                json!(["projects", from, to, query_scope.source_node_id, identity]),
+                json!([
+                    "projects",
+                    from,
+                    to,
+                    query_scope.source_node_id,
+                    identity,
+                    sort.as_str()
+                ]),
                 || {
                     timings.cache_hit = false;
                     let phase = Instant::now();
@@ -394,6 +414,7 @@ pub async fn projects(
                             .iter()
                             .any(|k| g[*k].as_f64().unwrap_or(0.0) > 0.0)
                     });
+                    analytics::sort_projects(&mut groups, sort);
                     timings.build_ms += phase.elapsed().as_secs_f64() * 1000.0;
                     Ok(Value::Array(groups))
                 },
@@ -422,7 +443,7 @@ pub async fn projects(
             etag: tag,
         }) => {
             log_query(context, "/api/projects", started, timings);
-            paginated_projects(&state, &query, limit, groups, summary, Some(&tag))
+            paginated_projects(&state, &query, sort, limit, groups, summary, Some(&tag))
         }
         Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects"),
     }
@@ -431,6 +452,7 @@ pub async fn projects(
 fn paginated_projects(
     state: &State,
     query: &Params,
+    sort: analytics::ProjectSort,
     limit: usize,
     groups: Vec<Value>,
     summary: Value,
@@ -439,9 +461,16 @@ fn paginated_projects(
     let Ok(mut pages) = state.project_pages.lock() else {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load projects");
     };
+    let mut pagination_query: Vec<(String, String)> = query
+        .pairs
+        .iter()
+        .filter(|(key, _)| key != "sort")
+        .cloned()
+        .collect();
+    pagination_query.push(("sort".into(), sort.as_str().into()));
     match pages.paginate(
         chrono::Utc::now().timestamp_millis(),
-        &query.pairs,
+        &pagination_query,
         query.get("cursor"),
         limit,
         || (groups, summary),

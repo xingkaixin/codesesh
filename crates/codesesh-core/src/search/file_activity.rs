@@ -36,7 +36,7 @@ pub fn list_file_activity(
             ..Default::default()
         },
     )?;
-    let mut filters = sql::build(&search);
+    let mut filters = sql::build(connection, &search)?;
     match (&options.project_kind, &options.project_key) {
         (Some(kind), Some(key)) => {
             filters.text("s.project_identity_kind = ?", kind);

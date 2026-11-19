@@ -351,7 +351,6 @@ export default function App() {
       routeContent = {
         ...viewState,
         agentCatalog,
-        projectPage,
         projectsLoad: {
           loading: projectsLoading,
           error: projectsError,

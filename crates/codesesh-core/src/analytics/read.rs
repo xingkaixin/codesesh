@@ -1,12 +1,13 @@
 use super::{
-    DashboardCostFacts, DashboardScope, MessageCostFact, SessionCostSummary, SessionModelCostFact,
+    CostFactsIndex, DashboardCostFacts, DashboardScope, MessageCostFact, SessionCostSummary,
+    SessionModelCostFact, attribution,
 };
 use crate::{
     model::{CostSource, SessionHead, SessionReference},
     session_list::SessionTree,
 };
 use rusqlite::{Connection, Row, types::Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn nonnegative(row: &Row<'_>, name: &str) -> rusqlite::Result<f64> {
     Ok(row.get::<_, Option<f64>>(name)?.unwrap_or(0.0).max(0.0))
@@ -48,6 +49,42 @@ pub fn load_scoped_cost_facts(
     read_cost_facts(connection, from, to, include_model_costs, Some(references))
 }
 
+pub(crate) fn model_entry_refs(
+    connection: &Connection,
+    sessions: &[SessionHead],
+    scope: &DashboardScope,
+    model: &str,
+    from: Option<f64>,
+    to: Option<f64>,
+) -> rusqlite::Result<String> {
+    let to = to.unwrap_or_else(|| chrono::Utc::now().timestamp_millis() as f64);
+    let facts = CostFactsIndex::from(load_scoped_cost_facts(
+        connection,
+        sessions,
+        scope,
+        from,
+        Some(to),
+        false,
+    )?);
+    let tree = SessionTree::new(sessions);
+    let entries: HashSet<_> = attribution::contributions(&tree, scope, from, to, Some(&facts))
+        .into_iter()
+        .filter(|contribution| {
+            contribution
+                .usage
+                .models
+                .get(model)
+                .is_some_and(|tokens| *tokens > 0.0)
+        })
+        .map(|contribution| contribution.entry)
+        .collect();
+    Ok(encode_references(
+        entries
+            .into_iter()
+            .map(|entry| &tree.sessions[entry].reference),
+    ))
+}
+
 pub(super) fn encode_references<'a>(
     references: impl Iterator<Item = &'a SessionReference>,
 ) -> String {
@@ -57,7 +94,7 @@ pub(super) fn encode_references<'a>(
     serde_json::to_string(&references).expect("serializable session references")
 }
 
-pub(super) fn reference_condition(alias: &str) -> String {
+pub(crate) fn reference_condition(alias: &str) -> String {
     format!(
         "({alias}.source_node_id,{alias}.agent_name,{alias}.session_id) IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?))"
     )

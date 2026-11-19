@@ -7,12 +7,14 @@ import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   toPlainText,
   toRecord,
   toStringValue,
 } from "../tool-normalize";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -70,8 +72,10 @@ export function buildOpencodeToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const metadata = toRecord(state.metadataValue);
@@ -88,6 +92,7 @@ export function buildOpencodeToolStrategy(
     defaultStrategy.showInputPreview = state.status !== "error";
   }
   if (state.status === "error") {
+    if (!includeOutput) return defaultStrategy;
     const error = toPlainText(state.errorValue);
     const output = toPlainText(state.outputValue);
     return error && output
@@ -168,12 +173,14 @@ export function buildOpencodeToolStrategy(
         ...(format ? [{ label: t("Format"), value: format }] : []),
       ],
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: format === "markdown" ? "markdown" : "text",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: format === "markdown" ? "markdown" : "text",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -184,6 +191,7 @@ export function buildOpencodeToolStrategy(
       title: tool.tool || "glob",
       pattern: toPlainText(input.pattern),
       baseDirectory,
+      includeOutput,
     });
   }
 
@@ -195,6 +203,7 @@ export function buildOpencodeToolStrategy(
       path: toPlainText(input.path),
       pattern: toPlainText(input.pattern),
       baseDirectory,
+      includeOutput,
     });
   }
 
@@ -206,35 +215,39 @@ export function buildOpencodeToolStrategy(
       command: toPlainText(input.command),
       description: toPlainText(input.description),
       baseDirectory,
+      includeOutput,
     });
   }
 
   if (toolKey === "read") {
-    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   }
 
   if (toolKey === "edit") {
-    const blocks = buildStructuredDiffFromTexts(
-      displayPath || filePath,
-      toPlainText(input.oldString),
-      toPlainText(input.newString),
-    );
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
-      outputContent: blocks.length
-        ? { kind: "structured-diff", blocks }
-        : {
-            kind: "plain",
-            text: extractEditDiff(state),
-            language: "diff",
-            isCode: true,
-          },
+      includeOutput,
+      outputContent: () => {
+        const blocks = buildStructuredDiffFromTexts(
+          displayPath || filePath,
+          toPlainText(input.oldString),
+          toPlainText(input.newString),
+        );
+        return blocks.length
+          ? { kind: "structured-diff", blocks }
+          : {
+              kind: "plain",
+              text: extractEditDiff(state),
+              language: "diff",
+              isCode: true,
+            };
+      },
     });
   }
 
   if (toolKey === "write") {
-    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileWriteStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   }
 
   if (toolKey === "skill") {

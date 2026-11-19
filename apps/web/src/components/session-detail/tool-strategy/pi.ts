@@ -12,12 +12,14 @@ import { getDisplayPath, getFilePathFromInput } from "../path-extract";
 import {
   type NormalizedToolState,
   type ToolDisplayStrategy,
+  type ToolStrategyOptions,
   getOutputOrErrorText,
   toPlainText,
   toRecord,
   toStringValue,
 } from "../tool-normalize";
 import {
+  EMPTY_TOOL_OUTPUT,
   buildDefaultToolStrategy,
   buildFileEditStrategy,
   buildFileReadStrategy,
@@ -60,15 +62,17 @@ export function buildPiToolStrategy(
   tool: ToolPart,
   state: NormalizedToolState,
   baseDirectory?: string,
+  options?: ToolStrategyOptions,
 ): ToolDisplayStrategy {
-  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory);
+  const includeOutput = options?.includeOutput ?? true;
+  const defaultStrategy = buildDefaultToolStrategy(tool, state, baseDirectory, options);
   const toolKey = tool.tool.toLowerCase();
   const input = toRecord(state.inputValue);
   const metadata = toRecord(state.metadataValue);
   const filePath = getFilePathFromInput(state.inputValue);
   const displayPath = getDisplayPath(filePath, baseDirectory);
 
-  if (toolKey === "codemode") return buildPiCodeExecutionStrategy(tool, state);
+  if (toolKey === "codemode") return buildPiCodeExecutionStrategy(tool, state, options);
 
   if (toolKey === "todo") {
     const action = toPlainText(input.action) || toPlainText(metadata.action) || "todo";
@@ -77,7 +81,7 @@ export function buildPiToolStrategy(
     const subject = toPlainText(task.subject) || toPlainText(input.subject);
     const description = toPlainText(task.description) || toPlainText(input.description);
     const status = toPlainText(task.status) || toPlainText(input.status);
-    const statusChange = getPiTodoStatusChange(state);
+    const statusChange = includeOutput || action === "update" ? getPiTodoStatusChange(state) : "";
     const secondaryParts = [
       taskId ? `#${taskId}` : "",
       subject,
@@ -97,17 +101,19 @@ export function buildPiToolStrategy(
         statusChange ? { label: t("Change"), value: statusChange } : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: description || getOutputOrErrorText(state),
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: description || getOutputOrErrorText(state),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
   if (toolKey === "read") {
-    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath });
+    return buildFileReadStrategy({ defaultStrategy, state, filePath, displayPath, includeOutput });
   }
 
   if (toolKey === "write") {
@@ -117,12 +123,11 @@ export function buildPiToolStrategy(
       filePath,
       displayPath,
       Icon: FilePlus2,
+      includeOutput,
     });
   }
 
   if (toolKey === "edit" || toolKey === "strreplace") {
-    const diffBlocks =
-      state.status === "completed" ? buildPiEditDiffBlocks(state, displayPath || filePath) : [];
     const firstChangedLine =
       typeof metadata.firstChangedLine === "number"
         ? String(metadata.firstChangedLine)
@@ -130,11 +135,15 @@ export function buildPiToolStrategy(
     return buildFileEditStrategy({
       defaultStrategy,
       displayPath,
+      includeOutput,
       details: firstChangedLine ? [{ label: t("Line"), value: firstChangedLine }] : [],
-      outputContent:
-        diffBlocks.length > 0
+      outputContent: () => {
+        const diffBlocks =
+          state.status === "completed" ? buildPiEditDiffBlocks(state, displayPath || filePath) : [];
+        return diffBlocks.length > 0
           ? { kind: "structured-diff", blocks: diffBlocks }
-          : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false },
+          : { kind: "plain", text: getOutputOrErrorText(state), language: "text", isCode: false };
+      },
     });
   }
 
@@ -160,31 +169,35 @@ export function buildPiToolStrategy(
           : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
   if (toolKey === "get_subagent_result") {
     const agentId = toPlainText(input.agent_id);
-    const outputText = getOutputOrErrorText(state);
+    const outputText = includeOutput ? getOutputOrErrorText(state) : "";
     return {
       ...defaultStrategy,
       Icon: Bot,
       title: t("subagent result"),
       secondaryText: agentId ? `#${agentId}` : undefined,
-      details: buildPiSubagentResultDetails(outputText),
+      details: includeOutput ? buildPiSubagentResultDetails(outputText) : [],
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: outputText,
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: outputText,
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -206,12 +219,14 @@ export function buildPiToolStrategy(
         question ? { label: t("Question"), value: question } : null,
       ].filter((item): item is ToolDetailItem => item != null),
       showInputPreview: false,
-      outputContent: {
-        kind: "plain",
-        text: getOutputOrErrorText(state),
-        language: "markdown",
-        isCode: false,
-      },
+      outputContent: includeOutput
+        ? {
+            kind: "plain",
+            text: getOutputOrErrorText(state),
+            language: "markdown",
+            isCode: false,
+          }
+        : EMPTY_TOOL_OUTPUT,
     };
   }
 
@@ -224,6 +239,7 @@ export function buildPiToolStrategy(
       pattern:
         toPlainText(input.pattern) || toPlainText(input.glob_pattern) || toPlainText(input.glob),
       baseDirectory,
+      includeOutput,
     });
     return {
       ...strategy,
@@ -245,6 +261,7 @@ export function buildPiToolStrategy(
         command: toStringValue(input.command),
         description: toPlainText(input.description),
         baseDirectory,
+        includeOutput,
       }),
       showInputPreview: Object.keys(input).some(
         (key) => key !== "command" && key !== "description",

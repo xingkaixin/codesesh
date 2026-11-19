@@ -92,6 +92,8 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
         .read_snapshot(move |conn, heads| {
             let parsed = search::parse_query(&query);
             let uses_sql_search = !parsed.text.is_empty()
+                || options.model.is_some()
+                || parsed.filters.model.is_some()
                 || options.file.is_some()
                 || parsed.filters.file.is_some()
                 || options.file_kind.is_some()

@@ -37,10 +37,11 @@ export interface SessionDetailDisplayModel {
   ): { anchorId: string; messageIndex: number } | undefined;
 }
 
-function attachToolAnchors(blocks: MessageBlock[], messageIndex: number): MessageBlock[] {
+function attachTimelineAnchors(blocks: MessageBlock[], messageIndex: number): MessageBlock[] {
   let toolIndex = 0;
-  return blocks.map((block) => {
-    if (block.type !== "tool") return block;
+  return blocks.map((block, blockIndex) => {
+    if (block.type !== "tool")
+      return { ...block, anchorIds: [buildBlockTimelineAnchorId(messageIndex, blockIndex)] };
     const anchorIds = block.parts.map(() => buildToolAnchorId(messageIndex, toolIndex++));
     return { ...block, anchorIds };
   });
@@ -54,7 +55,7 @@ function buildMessageDisplayModels(messages: Message[]): MessageDisplayModel[] {
     if (blocks.length === 0) continue;
 
     const index = models.length;
-    models.push({ msg, blocks: attachToolAnchors(blocks, index), index });
+    models.push({ msg, blocks: attachTimelineAnchors(blocks, index), index });
   }
 
   return models;

@@ -115,7 +115,7 @@ export function buildSessionTimelineEntries(
         return;
       }
 
-      const anchorId = buildBlockTimelineAnchorId(messageIndex, blockIndex);
+      const anchorId = block.anchorIds?.[0] ?? buildBlockTimelineAnchorId(messageIndex, blockIndex);
       const summary = summarizeParts(block.parts);
       entries.push({
         id: anchorId,
