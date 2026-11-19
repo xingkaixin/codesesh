@@ -22,7 +22,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
-pub(crate) const CACHE_SCHEMA_VERSION: i64 = 38;
+pub(crate) const CACHE_SCHEMA_VERSION: i64 = 39;
 
 pub struct StorageProgress {
     pub phase: String,
@@ -267,6 +267,7 @@ impl Cache {
         }
         for reference in removed {
             search_text::forget(transaction, reference, 0..i64::MAX)?;
+            search_text::forget_title(transaction, reference)?;
             for table in ["pending_reindex", "session_documents", "sessions"] {
                 transaction.execute(
                     &format!("DELETE FROM {table} WHERE source_node_id=? AND agent_name=? AND session_id=?"),
@@ -320,6 +321,7 @@ impl Cache {
             let retained = message_reuse::stored_digests(transaction, reference)?;
             if retained.is_empty() {
                 search_text::forget(transaction, reference, 0..i64::MAX)?;
+                search_text::forget_title(transaction, reference)?;
                 transaction.execute(
                     "DELETE FROM sessions WHERE source_node_id=? AND agent_name=? AND session_id=?",
                     params![
@@ -350,6 +352,7 @@ impl Cache {
                 "INSERT INTO sessions(source_node_id,agent_name,session_id,sort_index,title,source_path,directory,project_identity_kind,project_identity_key,project_display_name,project_identity_resolver_revision,project_identity_input_signature,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost,smart_tags_json,smart_tags_source_updated_at,smart_tags_classifier_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET sort_index=excluded.sort_index,title=excluded.title,source_path=excluded.source_path,directory=excluded.directory,project_identity_kind=excluded.project_identity_kind,project_identity_key=excluded.project_identity_key,project_display_name=excluded.project_display_name,project_identity_resolver_revision=excluded.project_identity_resolver_revision,project_identity_input_signature=excluded.project_identity_input_signature,time_created=excluded.time_created,time_updated=excluded.time_updated,activity_time=excluded.activity_time,message_count=excluded.message_count,total_input_tokens=excluded.total_input_tokens,total_output_tokens=excluded.total_output_tokens,total_cost=excluded.total_cost,smart_tags_json=excluded.smart_tags_json,smart_tags_source_updated_at=excluded.smart_tags_source_updated_at,smart_tags_classifier_revision=excluded.smart_tags_classifier_revision,publication_id=NULL",
                 params![reference.source_node_id,reference.agent_name,reference.session_id,order as i64,head.title,session.source.to_string_lossy(),head.directory,head.project_identity.kind,head.project_identity.key,head.project_identity.display_name,head.project_identity_resolver_revision,head.project_identity_input_signature,head.time_created,head.time_updated,head.time_updated,head.stats.message_count as i64,head.stats.total_input_tokens,head.stats.total_output_tokens,head.stats.total_cost,serde_json::to_string(&head.smart_tags)?,head.smart_tags_source_updated_at,head.smart_tags_classifier_revision],
             )?;
+            search_text::index_title_for_reference(transaction, reference, &head.title)?;
             transaction.execute(
                 "UPDATE sessions SET parent_agent_name=?, parent_session_id=?, total_cache_read_tokens=?, total_cache_create_tokens=?, cost_source=?, total_tokens=?, model_usage_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
                 params![head.parent_reference.as_ref().map(|parent| &parent.agent_name),head.parent_reference.as_ref().map(|parent| &parent.session_id),head.stats.total_cache_read_tokens,head.stats.total_cache_create_tokens,head.stats.cost_source.as_ref().map(CostSource::as_str),head.stats.total_tokens,head.model_usage.as_ref().map(json::stringify).transpose()?,reference.source_node_id,reference.agent_name,reference.session_id],

@@ -222,9 +222,9 @@ pub fn ensure_with_progress(
             [super::CACHE_SCHEMA_VERSION.to_string()],
         )?;
         db.execute_batch("COMMIT")?;
-    } else if matches!(version, 36 | 37) {
-        // Schemas 37 and 38 add compressed message bodies and usage buckets;
-        // `compress_existing` and `ensure_usage_buckets` fill them in place.
+    } else if matches!(version, 36..=38) {
+        // Schemas 37-39 add compressed message bodies, usage buckets, and code-token FTS;
+        // `compress_existing`, `ensure_usage_buckets`, and `search_text::ensure_index` upgrade in place.
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
@@ -314,6 +314,10 @@ pub fn ensure_with_progress(
             (
                 "usage_time_index_retired_v1",
                 "DROP INDEX IF EXISTS idx_messages_usage_time",
+            ),
+            (
+                "redundant_indexes_retired_v1",
+                "DROP INDEX IF EXISTS idx_sessions_activity; DROP INDEX IF EXISTS idx_file_activity_project_latest;",
             ),
             (
                 "visible_sessions_index_v1",
