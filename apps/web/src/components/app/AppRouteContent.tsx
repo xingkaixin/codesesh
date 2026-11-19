@@ -27,6 +27,7 @@ import type { TimeWindowPreset } from "../../lib/time-window";
 import type { ViewState } from "../../lib/view-state";
 import type { LandingAgentItem } from "../DetailLanding";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { OverviewSkeleton } from "../overview/OverviewSkeleton";
 import { RenderProfiler } from "../RenderProfiler";
 import { SessionDetailSkeleton } from "../SessionDetailSkeleton";
 import type { SearchFilterState, SearchLoadState, SearchProjectOption } from "./types";
@@ -54,13 +55,19 @@ const SearchResultsPanel = lazy(() =>
   import("./SearchResultsPanel").then((module) => ({ default: module.SearchResultsPanel })),
 );
 
-function LazySurface({ children }: { children: ReactNode }) {
+function LazySurface({
+  fallback = <OverviewSkeleton />,
+  children,
+}: {
+  fallback?: ReactNode;
+  children: ReactNode;
+}) {
   useLocale();
 
   const location = useLocation();
   return (
     <ErrorBoundary key={location.pathname}>
-      <Suspense fallback={<SessionDetailSkeleton />}>{children}</Suspense>
+      <Suspense fallback={fallback}>{children}</Suspense>
     </ErrorBoundary>
   );
 }
@@ -410,7 +417,7 @@ function SessionRouteContent({ route }: { route: SessionRouteModel }) {
         session: phase.session.reference.sessionId,
       }}
     >
-      <LazySurface>
+      <LazySurface fallback={<SessionDetailSkeleton />}>
         <SessionDetailView
           key={getSessionRouteKey(
             phase.session.reference.agentName,
@@ -497,7 +504,9 @@ function RouteContent({ route }: { route: AppRouteModel }) {
 export function AppRouteContent({ load, search, route }: AppRouteContentProps) {
   useLocale();
 
-  if (load.loading) return <SessionDetailSkeleton />;
+  if (load.loading) {
+    return route.mode === "session" ? <SessionDetailSkeleton /> : <OverviewSkeleton />;
+  }
   if (search.active) return <SearchRouteContent search={search} controlsRef={search.controls} />;
   if (load.error) return <LoadError load={load} />;
   return <RouteContent route={route} />;

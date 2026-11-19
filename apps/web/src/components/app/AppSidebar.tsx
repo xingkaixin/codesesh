@@ -22,7 +22,6 @@ import {
 } from "../../lib/projects";
 import type { ViewState } from "../../lib/view-state";
 import { AgentIcon } from "../AgentIcon";
-import { DrawerDialog } from "../DrawerDialog";
 import { RenderProfiler } from "../RenderProfiler";
 import { ResourceLoadFailure } from "../ResourceLoadFailure";
 import { SessionActionsMenu } from "../SessionActionsMenu";
@@ -35,6 +34,9 @@ import { SidebarFooter } from "./SidebarFooter";
 
 declare const __APP_VERSION__: string;
 
+const DrawerDialog = lazy(() =>
+  import("../DrawerDialog").then((module) => ({ default: module.DrawerDialog })),
+);
 const SessionTreeSidebar = lazy(() =>
   import("../SessionTreeSidebar").then((module) => ({ default: module.SessionTreeSidebar })),
 );
@@ -197,15 +199,17 @@ function SidebarFrame({
 
   if (mobileOpen) {
     return (
-      <DrawerDialog
-        open
-        onOpenChange={onMobileOpenChange}
-        title={t("Navigation")}
-        variant="mobile"
-        side="left"
-      >
-        {children}
-      </DrawerDialog>
+      <Suspense fallback={null}>
+        <DrawerDialog
+          open
+          onOpenChange={onMobileOpenChange}
+          title={t("Navigation")}
+          variant="mobile"
+          side="left"
+        >
+          {children}
+        </DrawerDialog>
+      </Suspense>
     );
   }
 
