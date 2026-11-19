@@ -1,7 +1,7 @@
-use super::ParsedSession;
+use super::{ParsedSession, open_readonly_sqlite};
 use crate::{model::*, pricing::Pricing, projects::path_identity};
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OpenFlags, types::ValueRef};
+use rusqlite::{Connection, types::ValueRef};
 use serde_json::{Map, Value};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

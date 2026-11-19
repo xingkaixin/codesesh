@@ -141,6 +141,15 @@ pub(crate) fn scan_agent(
     }
 }
 
+pub(crate) fn open_readonly_sqlite(
+    path: impl AsRef<Path>,
+) -> rusqlite::Result<rusqlite::Connection> {
+    let db =
+        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    db.busy_timeout(std::time::Duration::from_secs(5))?;
+    Ok(db)
+}
+
 /// The SQLite file of a database-backed source; `None` for file-backed sources.
 pub(crate) fn database_path(agent: &str, scan_path: &Path) -> Option<PathBuf> {
     match agent {
@@ -236,3 +245,44 @@ pub(crate) fn complete_projections_with_previous(
 mod smart_tags;
 
 mod file_activity;
+
+#[cfg(test)]
+mod tests {
+    use super::open_readonly_sqlite;
+    use rusqlite::Connection;
+    use std::{sync::mpsc, thread, time::Duration};
+
+    #[test]
+    fn open_readonly_sqlite_waits_for_concurrent_writer_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("external.db");
+        let writer = Connection::open(&path).unwrap();
+        writer
+            .execute_batch(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY); INSERT INTO items VALUES (1);",
+            )
+            .unwrap();
+
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let writer_handle = thread::spawn(move || {
+            writer.execute_batch("BEGIN EXCLUSIVE").unwrap();
+            locked_tx.send(()).unwrap();
+            thread::sleep(Duration::from_millis(80));
+            writer
+                .execute_batch("INSERT INTO items VALUES (2); COMMIT;")
+                .unwrap();
+        });
+        locked_rx.recv().unwrap();
+
+        let reader = open_readonly_sqlite(&path).unwrap();
+        let timeout_ms: i64 = reader
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(timeout_ms, 5_000);
+        let count: i64 = reader
+            .query_row("SELECT COUNT(*) FROM items", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+        writer_handle.join().unwrap();
+    }
+}

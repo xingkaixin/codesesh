@@ -1,4 +1,4 @@
-use super::ParsedSession;
+use super::{ParsedSession, open_readonly_sqlite};
 use crate::{
     model::{
         CostSource, Message, MessagePart, Role, SessionDetail, SessionHead, SessionReference,
@@ -8,7 +8,7 @@ use crate::{
     projects::path_identity,
 };
 use anyhow::Result;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::Connection;
 use serde_json::Value;
 use std::{collections::HashMap, path::Path};
 
@@ -197,9 +197,7 @@ fn workspace_paths(root: &Path) -> HashMap<String, String> {
             continue;
         };
         let path = normalize_path(&path);
-        let Ok(db) =
-            Connection::open_with_flags(dir.join("state.vscdb"), OpenFlags::SQLITE_OPEN_READ_ONLY)
-        else {
+        let Ok(db) = open_readonly_sqlite(dir.join("state.vscdb")) else {
             continue;
         };
         let Ok(raw) = db.query_row(
