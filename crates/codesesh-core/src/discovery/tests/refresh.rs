@@ -370,3 +370,86 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
     deleted.on_reject.take();
     assert_eq!(cache.snapshot().unwrap().len(), 1);
 }
+
+#[test]
+fn unchanged_live_refresh_omits_source_state_until_files_change() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("codex");
+    let sessions = root.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let path =
+        sessions.join("rollout-2026-09-01T00-00-00-019f0000-0000-0000-0000-000000000001.jsonl");
+    let write_rollout = |text: &str| {
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n",
+                serde_json::json!({
+                    "type": "session_meta",
+                    "timestamp": "2026-09-01T00:00:00Z",
+                    "payload": {"id": "019f0000-0000-0000-0000-000000000001", "cwd": "/work/demo"}
+                }),
+                serde_json::json!({
+                    "type": "response_item",
+                    "timestamp": "2026-09-01T00:00:01Z",
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
+                }),
+            ),
+        )
+        .unwrap();
+    };
+    write_rollout("Initial");
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "codex".into(),
+        data_root: root,
+        scan_path: sessions,
+    };
+    let db = temporary.path().join("worker.db");
+    let mut store = crate::sync::WorkerStore::open(&db).unwrap();
+    let mut scanner = AgentScanner::for_worker(source.clone(), db.clone());
+
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 1);
+    assert!(
+        initial
+            .checkpoint
+            .as_ref()
+            .and_then(|v| v.get("sourceState"))
+            .is_some()
+    );
+    store.save_batch("codex", &mut initial).unwrap();
+
+    // Unchanged live refresh skips rebuilding sourceState while preserving stored state.
+    let mut unchanged = scanner.refresh(Some(std::slice::from_ref(&path))).unwrap();
+    assert!(unchanged.sessions.is_empty());
+    assert!(unchanged.complete);
+    assert!(
+        unchanged
+            .checkpoint
+            .as_ref()
+            .and_then(|v| v.get("sourceState"))
+            .is_none()
+    );
+    store.save_batch("codex", &mut unchanged).unwrap();
+    assert!(store.baseline("codex").unwrap().state.is_some());
+
+    // A real file change marks sourceState dirty and emits the updated fingerprint.
+    write_rollout("Updated prompt content");
+    let mut updated = scanner.refresh(Some(std::slice::from_ref(&path))).unwrap();
+    assert_eq!(updated.sessions.len(), 1);
+    assert!(
+        updated
+            .checkpoint
+            .as_ref()
+            .and_then(|v| v.get("sourceState"))
+            .is_some()
+    );
+    store.save_batch("codex", &mut updated).unwrap();
+
+    // Restarted scanner sees the persisted updated fingerprint and parses nothing.
+    let mut restarted = AgentScanner::for_worker(source, db);
+    let mut warm = restarted.refresh(None).unwrap();
+    assert!(warm.sessions.is_empty());
+    warm.on_reject.take();
+}
