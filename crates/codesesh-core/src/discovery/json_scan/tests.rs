@@ -222,3 +222,29 @@ fn sources_written_during_a_scan_are_output_and_scanned_again() {
     .unwrap();
     assert_eq!(settled.sessions[0].stats.message_count, 1 + appended);
 }
+
+#[test]
+fn pi_subagent_replaces_legacy_session_id_in_warm_cache() {
+    let (temp, mut source, cache) = fixture();
+    source.agent = "pi".into();
+    source.scan_path = temp.path().join("pi");
+    let run = source.scan_path.join("parent/child/run-0");
+    fs::create_dir_all(&run).unwrap();
+    let scan = |id: &str| {
+        let header = serde_json::json!({"type":"session","version":3,"id":id,"cwd":"/project","timestamp":1000});
+        let message = serde_json::json!({"type":"message","id":"u","message":{"role":"user","content":"task"}});
+        fs::write(run.join("session.jsonl"), format!("{header}\n{message}\n")).unwrap();
+        run_local(
+            std::slice::from_ref(&source),
+            &ScanOptions::default(),
+            &Pricing::bundled(),
+            &cache,
+        )
+        .unwrap()
+        .sessions
+    };
+    assert_eq!(scan("session")[0].reference.session_id, "session");
+    let migrated = scan("unique-subagent-id");
+    assert_eq!(migrated.len(), 1);
+    assert_eq!(migrated[0].reference.session_id, "unique-subagent-id");
+}

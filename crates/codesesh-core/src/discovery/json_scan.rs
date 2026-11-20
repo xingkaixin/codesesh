@@ -214,6 +214,15 @@ pub fn run(
                         if source.retains_missing_source(path)? {
                             references.insert(head.reference.clone());
                             heads.push(head.clone());
+                        } else if source.agent == "pi"
+                            && head.reference.session_id == "session"
+                            && scanned
+                                .sessions
+                                .iter()
+                                .any(|session| session.source == path)
+                        {
+                            // Older Pi parsers keyed every run-N/session.jsonl transcript as "session".
+                            continue;
                         } else if path.try_exists()? {
                             bail!(
                                 "Previously cached session could not be parsed from {}; retaining cached sessions",
