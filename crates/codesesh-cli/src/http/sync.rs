@@ -64,7 +64,13 @@ fn worker_operation_error(failure: &anyhow::Error) -> Response {
     })
 }
 
-async fn authenticate(state: &State, headers: &HeaderMap) -> Result<AuthenticatedWorker, Response> {
+async fn with_worker<T: Send + 'static>(
+    state: &State,
+    headers: &HeaderMap,
+    operation: impl FnOnce(&mut codesesh_core::storage::Cache, AuthenticatedWorker) -> anyhow::Result<T>
+    + Send
+    + 'static,
+) -> Result<T, Response> {
     let Some((credential, instance)) = worker_headers(headers) else {
         return Err(error(
             StatusCode::UNAUTHORIZED,
@@ -76,13 +82,14 @@ async fn authenticate(state: &State, headers: &HeaderMap) -> Result<Authenticate
         .hub_control(move |cache| {
             let node = cache.authenticate_worker(&credential)?;
             cache.claim_worker_instance(&node, &instance)?;
-            Ok(AuthenticatedWorker { node, credential })
+            Ok(operation(cache, AuthenticatedWorker { node, credential }))
         })
         .await
         .map_err(|failure| {
             worker_auth_error(&failure)
                 .unwrap_or_else(|| retry("Worker authentication is temporarily unavailable"))
-        })
+        })?
+        .map_err(|failure| worker_operation_error(&failure))
 }
 
 pub async fn goodbye(AxumState(state): AxumState<Arc<State>>, headers: HeaderMap) -> Response {
@@ -161,20 +168,13 @@ pub async fn hello(
     headers: HeaderMap,
     Json(request): Json<WorkerHello>,
 ) -> Response {
-    let Some((credential, instance)) = worker_headers(&headers) else {
-        return error(StatusCode::UNAUTHORIZED, "Worker credential required");
-    };
-    match state
-        .runtime
-        .hub_control(move |cache| {
-            let node = cache.authenticate_worker(&credential)?;
-            cache.claim_worker_instance(&node, &instance)?;
-            cache.worker_hello(&node, &request, MINIMUM_WORKER_VERSION)
-        })
-        .await
+    match with_worker(&state, &headers, move |cache, auth| {
+        cache.worker_hello(&auth.node, &request, MINIMUM_WORKER_VERSION)
+    })
+    .await
     {
         Ok(hello) => Json(hello).into_response(),
-        Err(failure) => worker_operation_error(&failure),
+        Err(response) => response,
     }
 }
 
@@ -195,7 +195,7 @@ pub async fn upload(
     if let Some(response) = compatibility(version, protocol, request.payload_version) {
         return response;
     }
-    let auth = match authenticate(&state, &headers).await {
+    let auth = match with_worker(&state, &headers, |_, auth| Ok(auth)).await {
         Ok(auth) => auth,
         Err(response) => return response,
     };
@@ -406,20 +406,13 @@ pub async fn recover(
     if let Some(response) = compatibility(version, protocol, PAYLOAD_VERSION) {
         return response;
     }
-    let Some((credential, instance)) = worker_headers(&headers) else {
-        return error(StatusCode::UNAUTHORIZED, "Worker credential required");
-    };
-    match state
-        .runtime
-        .hub_control(move |cache| {
-            let node = cache.authenticate_worker(&credential)?;
-            cache.claim_worker_instance(&node, &instance)?;
-            cache.recover_worker(&node, &request)
-        })
-        .await
+    match with_worker(&state, &headers, move |cache, auth| {
+        cache.recover_worker(&auth.node, &request)
+    })
+    .await
     {
         Ok(()) => Json(json!({"recovered":true})).into_response(),
-        Err(failure) => worker_operation_error(&failure),
+        Err(response) => response,
     }
 }
 
