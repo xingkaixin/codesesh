@@ -23,6 +23,7 @@ use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 
 pub(crate) use status::ScanStatus;
 pub use watcher::watch_paths;
+pub use writer::release_unused_memory;
 
 pub(crate) type Scanner = dyn Fn(ScanRequest) -> Result<ScanBatch> + Send + Sync;
 

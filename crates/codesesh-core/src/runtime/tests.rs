@@ -631,3 +631,11 @@ async fn standalone_and_hub_configure_expected_sqlite_pragmas() {
     assert_eq!(hub_sync, 2);
     hub.shutdown().await.unwrap();
 }
+
+#[test]
+fn release_unused_memory_succeeds_after_dropping_allocation() {
+    let buffer = vec![1u8; 4 * 1024 * 1024];
+    std::hint::black_box(&buffer);
+    drop(buffer);
+    release_unused_memory();
+}

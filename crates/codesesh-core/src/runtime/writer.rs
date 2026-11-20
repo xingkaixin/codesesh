@@ -147,6 +147,14 @@ pub(super) fn run(
                     }
                     Ok(receipt)
                 });
+                let changed = result
+                    .as_ref()
+                    .is_ok_and(|receipt| receipt.changed.is_some());
+                drop(upload);
+                if changed && last_reclaim.elapsed() >= Duration::from_secs(1) {
+                    release_unused_memory();
+                    last_reclaim = Instant::now();
+                }
                 let _ = response.send(result);
             }
             Command::Publish {
@@ -294,7 +302,7 @@ fn publish_pricing_status(
     let _ = events.send(Event::Status(status));
 }
 
-fn release_unused_memory() {
+pub fn release_unused_memory() {
     #[cfg(target_os = "macos")]
     {
         unsafe extern "C" {
@@ -303,6 +311,29 @@ fn release_unused_memory() {
         // NULL selects all allocator zones; zero asks to release unused pages after batch data is dropped.
         unsafe {
             malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
+        }
+    }
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        unsafe extern "C" {
+            fn malloc_trim(pad: usize) -> std::ffi::c_int;
+        }
+        unsafe {
+            malloc_trim(0);
+        }
+    }
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetProcessHeap() -> *mut std::ffi::c_void;
+            fn HeapCompact(h_heap: *mut std::ffi::c_void, dw_flags: u32) -> usize;
+        }
+        unsafe {
+            let heap = GetProcessHeap();
+            if !heap.is_null() {
+                HeapCompact(heap, 0);
+            }
         }
     }
 }
