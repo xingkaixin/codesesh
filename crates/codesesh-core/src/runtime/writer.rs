@@ -147,11 +147,14 @@ pub(super) fn run(
                     }
                     Ok(receipt)
                 });
-                let changed = result
+                let reclaim = matches!(
+                    upload.operation,
+                    crate::sync::Operation::SnapshotCommit { .. }
+                ) || result
                     .as_ref()
                     .is_ok_and(|receipt| receipt.changed.is_some());
                 drop(upload);
-                if changed && last_reclaim.elapsed() >= Duration::from_secs(1) {
+                if reclaim && last_reclaim.elapsed() >= Duration::from_secs(1) {
                     release_unused_memory();
                     last_reclaim = Instant::now();
                 }
@@ -324,16 +327,23 @@ pub fn release_unused_memory() {
     }
     #[cfg(windows)]
     {
-        #[link(name = "kernel32")]
-        unsafe extern "system" {
-            fn GetProcessHeap() -> *mut std::ffi::c_void;
-            fn HeapCompact(h_heap: *mut std::ffi::c_void, dw_flags: u32) -> usize;
-        }
+        use windows_sys::Win32::System::{
+            Memory::{GetProcessHeap, HeapOptimizeResources, HeapSetInformation},
+            SystemServices::{
+                HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION, HEAP_OPTIMIZE_RESOURCES_INFORMATION,
+            },
+        };
+        let info = HEAP_OPTIMIZE_RESOURCES_INFORMATION {
+            Version: HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION,
+            Flags: 0,
+        };
         unsafe {
-            let heap = GetProcessHeap();
-            if !heap.is_null() {
-                HeapCompact(heap, 0);
-            }
+            HeapSetInformation(
+                GetProcessHeap(),
+                HeapOptimizeResources,
+                (&raw const info).cast(),
+                std::mem::size_of_val(&info),
+            );
         }
     }
 }
