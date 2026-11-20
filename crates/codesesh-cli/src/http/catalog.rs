@@ -275,39 +275,6 @@ pub async fn agents(
     response
 }
 
-fn snapshot_matches_revision(
-    runtime: &codesesh_core::runtime::Runtime,
-    snapshot_sync: &Mutex<Option<(u64, i64)>>,
-    snap_rev_before: u64,
-    snapshot_len: usize,
-    revision: i64,
-    published_count: impl FnOnce() -> anyhow::Result<usize>,
-) -> anyhow::Result<bool> {
-    if runtime.snapshot_with_revision().0 != snap_rev_before {
-        return Ok(false);
-    }
-    let state = snapshot_sync.lock().ok().and_then(|guard| *guard);
-    match state {
-        Some((last_snap, last_rev)) if snap_rev_before == last_snap => Ok(revision == last_rev),
-        Some((last_snap, last_rev)) if snap_rev_before < last_snap || revision < last_rev => {
-            Ok(false)
-        }
-        _ => {
-            // Verify the published snapshot matches this SQLite read snapshot so writes
-            // between SQLite commit and snapshot publish fall back to SQLite.
-            let matches = published_count()? == snapshot_len
-                && runtime.snapshot_with_revision().0 == snap_rev_before;
-            if matches
-                && let Ok(mut guard) = snapshot_sync.lock()
-                && guard.is_none_or(|(last_snap, _)| snap_rev_before >= last_snap)
-            {
-                *guard = Some((snap_rev_before, revision));
-            }
-            Ok(matches)
-        }
-    }
-}
-
 enum ProjectsLookup {
     NotModified {
         etag: String,
@@ -355,8 +322,6 @@ pub async fn projects(
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let etag_namespace = state.etag_namespace;
     let cache = state.catalog_cache.clone();
-    let runtime = state.runtime.clone();
-    let snapshot_sync = state.snapshot_sync.clone();
     let started = Instant::now();
     if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
         log_query(
@@ -370,7 +335,6 @@ pub async fn projects(
         );
         return paginated_projects(&state, &query, sort, limit, Vec::new(), Value::Null, None);
     }
-    let (snap_rev_before, raw_heads) = state.runtime.snapshot_with_revision();
     let result = state
         .runtime
         .read(move |conn| {
@@ -411,25 +375,8 @@ pub async fn projects(
                 || {
                     timings.cache_hit = false;
                     let phase = Instant::now();
-                    let sessions = if snapshot_matches_revision(
-                        &runtime,
-                        &snapshot_sync,
-                        snap_rev_before,
-                        raw_heads.len(),
-                        revision,
-                        || {
-                            Ok(conn.query_row(
-                                "SELECT COUNT(*) FROM sessions WHERE publication_id IS NULL",
-                                [],
-                                |row| row.get::<_, i64>(0),
-                            )? as usize)
-                        },
-                    )? {
-                        super::scoped_shared_heads(&raw_heads, &query_scope)
-                    } else {
-                        let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
-                        super::scoped_heads(&heads, &query_scope)
-                    };
+                    let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                    let sessions = super::scoped_heads(&heads, &query_scope);
                     timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
                     let groups = projects::build_project_groups(&sessions)
@@ -443,18 +390,24 @@ pub async fn projects(
                         .collect::<serde_json::Result<Vec<_>>>()?;
                     timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let facts = analytics::CostFactsIndex::from(analytics::load_scoped_cost_facts(
-                        conn,
-                        &sessions,
-                        &analytics::DashboardScope {
-                            agent: None,
-                            project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
-                            project_key: identity.as_ref().map(|(_, key)| key.clone()),
+                    let facts = analytics::CostFactsIndex::from(
+                        if identity.is_none() && sessions.len() == heads.len() {
+                            analytics::load_cost_facts(conn, from, to, false)?
+                        } else {
+                            analytics::load_scoped_cost_facts(
+                                conn,
+                                &sessions,
+                                &analytics::DashboardScope {
+                                    agent: None,
+                                    project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
+                                    project_key: identity.as_ref().map(|(_, key)| key.clone()),
+                                },
+                                from,
+                                to,
+                                false,
+                            )?
                         },
-                        from,
-                        to,
-                        false,
-                    )?);
+                    );
                     timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
                     let mut groups = analytics::attach_project_metrics(
@@ -668,10 +621,7 @@ pub async fn dashboard(
     let aliases = state.aliases().await;
     let etag_namespace = state.etag_namespace;
     let aliases_fp = etag::aliases_fingerprint(&aliases);
-    let runtime = state.runtime.clone();
-    let snapshot_sync = state.snapshot_sync.clone();
     let started = Instant::now();
-    let (snap_rev_before, raw_heads) = state.runtime.snapshot_with_revision();
     let result = state
         .runtime
         .read(move |conn| {
@@ -689,35 +639,25 @@ pub async fn dashboard(
             let value = cached_catalog(&cache, revision, key, || {
                 timings.cache_hit = false;
                 let phase = Instant::now();
-                let sessions = if snapshot_matches_revision(
-                    &runtime,
-                    &snapshot_sync,
-                    snap_rev_before,
-                    raw_heads.len(),
-                    revision,
-                    || {
-                        Ok(conn.query_row(
-                            "SELECT COUNT(*) FROM sessions WHERE publication_id IS NULL",
-                            [],
-                            |row| row.get::<_, i64>(0),
-                        )? as usize)
-                    },
-                )? {
-                    super::scoped_shared_heads(&raw_heads, &query_scope)
-                } else {
-                    let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
-                    super::scoped_heads(&heads, &query_scope)
-                };
+                let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                let sessions = super::scoped_heads(&heads, &query_scope);
                 timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
-                let facts = analytics::CostFactsIndex::from(analytics::load_scoped_cost_facts(
-                    conn,
-                    &sessions,
-                    &scope,
-                    compare.map(|(from, _)| from).or(from),
-                    Some(to),
-                    true,
-                )?);
+                let facts_from = compare.map(|(from, _)| from).or(from);
+                let facts = analytics::CostFactsIndex::from(
+                    if scope.is_unfiltered() && sessions.len() == heads.len() {
+                        analytics::load_cost_facts(conn, facts_from, Some(to), true)?
+                    } else {
+                        analytics::load_scoped_cost_facts(
+                            conn,
+                            &sessions,
+                            &scope,
+                            facts_from,
+                            Some(to),
+                            true,
+                        )?
+                    },
+                );
                 timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
                 let info = agent_info(&HashMap::new())

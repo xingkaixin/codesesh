@@ -497,7 +497,7 @@ fn load_scoped_cost_facts_matches_unfiltered_and_filtered_scopes() {
     let unfiltered = DashboardScope::default();
     let expected = load_cost_facts(cache.connection(), None, None, true).unwrap();
 
-    // Unfiltered full snapshot (fast path without serializing all references).
+    // The scoped and unrestricted APIs agree on a complete snapshot.
     let actual = load_scoped_cost_facts(
         cache.connection(),
         &all_sessions,
@@ -556,6 +556,22 @@ fn load_scoped_cost_facts_matches_unfiltered_and_filtered_scopes() {
     assert_eq!(subset_actual.sessions.len(), 1);
     assert_eq!(subset_actual.sessions[0].reference.agent_name, "codex");
     assert_eq!(subset_actual.messages.len(), 1);
+
+    let mut absent = codex_only[0].clone();
+    absent.reference.session_id = "absent".into();
+    let stale = [codex_only[0].clone(), absent];
+    for scope in [
+        &unfiltered,
+        &DashboardScope {
+            agent: Some("codex".into()),
+            ..Default::default()
+        },
+    ] {
+        let facts =
+            load_scoped_cost_facts(cache.connection(), &stale, scope, None, None, true).unwrap();
+        assert_eq!(facts.sessions.len(), 1);
+        assert_eq!(facts.sessions[0].reference, codex_only[0].reference);
+    }
 
     // Filtered DashboardScope on full snapshot matches the same codex-only subset.
     let agent_scope = DashboardScope {

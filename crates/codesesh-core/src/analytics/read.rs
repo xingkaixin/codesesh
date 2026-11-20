@@ -20,23 +20,13 @@ fn reference(row: &Row<'_>) -> rusqlite::Result<SessionReference> {
     })
 }
 
-#[cfg(test)]
 pub fn load_cost_facts(
     connection: &Connection,
     from: Option<f64>,
     to: Option<f64>,
     include_model_costs: bool,
 ) -> rusqlite::Result<DashboardCostFacts> {
-    let transaction = if connection.is_autocommit() {
-        Some(connection.unchecked_transaction()?)
-    } else {
-        None
-    };
-    let facts = query_cost_facts(connection, from, to, include_model_costs, None)?;
-    if let Some(transaction) = transaction {
-        transaction.commit()?;
-    }
-    Ok(facts)
+    read_cost_facts(connection, from, to, include_model_costs, None)
 }
 
 pub fn load_scoped_cost_facts(
@@ -47,57 +37,19 @@ pub fn load_scoped_cost_facts(
     to: Option<f64>,
     include_model_costs: bool,
 ) -> rusqlite::Result<DashboardCostFacts> {
-    if sessions.is_empty() {
-        return Ok(DashboardCostFacts {
-            messages: Vec::new(),
-            sessions: Vec::new(),
-        });
-    }
-    let transaction = if connection.is_autocommit() {
-        Some(connection.unchecked_transaction()?)
-    } else {
-        None
-    };
-    let total_published = connection.query_row(
-        "SELECT COUNT(*) FROM sessions WHERE publication_id IS NULL",
-        [],
-        |row| row.get::<_, i64>(0),
-    )? as usize;
     let references = if scope.is_unfiltered() {
-        let mut unique = Vec::with_capacity(sessions.len());
-        let mut seen = HashSet::with_capacity(sessions.len());
-        for session in sessions {
-            if seen.insert(&session.reference) {
-                unique.push(&session.reference);
-            }
-        }
-        // Complete scopes read the bucket window in key order without serializing every reference.
-        (unique.len() != total_published).then(|| encode_references(unique.into_iter()))
+        encode_references(sessions.iter().map(|session| &session.reference))
     } else {
         let tree = SessionTree::new(sessions);
-        let selected: Vec<_> = tree
-            .entries
-            .iter()
-            .filter(|&&entry| scope.matches(tree.sessions[entry]))
-            .flat_map(|&entry| tree.descendants(entry))
-            .map(|index| &tree.sessions[index].reference)
-            .collect();
-        if selected.is_empty() {
-            if let Some(transaction) = transaction {
-                transaction.commit()?;
-            }
-            return Ok(DashboardCostFacts {
-                messages: Vec::new(),
-                sessions: Vec::new(),
-            });
-        }
-        (selected.len() != total_published).then(|| encode_references(selected.into_iter()))
+        encode_references(
+            tree.entries
+                .iter()
+                .filter(|&&entry| scope.matches(tree.sessions[entry]))
+                .flat_map(|&entry| tree.descendants(entry))
+                .map(|index| &tree.sessions[index].reference),
+        )
     };
-    let facts = query_cost_facts(connection, from, to, include_model_costs, references)?;
-    if let Some(transaction) = transaction {
-        transaction.commit()?;
-    }
-    Ok(facts)
+    read_cost_facts(connection, from, to, include_model_costs, Some(references))
 }
 
 pub(crate) fn model_entry_refs(
@@ -151,13 +103,18 @@ pub(crate) fn reference_condition(alias: &str) -> String {
     )
 }
 
-fn query_cost_facts(
+fn read_cost_facts(
     connection: &Connection,
     from: Option<f64>,
     to: Option<f64>,
     include_model_costs: bool,
     references: Option<String>,
 ) -> rusqlite::Result<DashboardCostFacts> {
+    let transaction = if connection.is_autocommit() {
+        Some(connection.unchecked_transaction()?)
+    } else {
+        None
+    };
     let scope = references
         .as_ref()
         .map(|_| format!("WHERE {}", reference_condition("c")))
@@ -257,5 +214,8 @@ fn query_cost_facts(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(query);
+    if let Some(transaction) = transaction {
+        transaction.commit()?;
+    }
     Ok(DashboardCostFacts { messages, sessions })
 }

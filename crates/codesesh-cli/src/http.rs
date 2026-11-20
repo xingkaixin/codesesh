@@ -67,7 +67,6 @@ pub struct State {
     catalog_cache: Arc<Mutex<catalog::CatalogCache>>,
     dashboard_cache: Arc<Mutex<catalog::CatalogCache<DashboardData>>>,
     pricing_unmatched_cache: Arc<Mutex<catalog::CatalogCache<UnmatchedModelsResponse>>>,
-    snapshot_sync: Arc<Mutex<Option<(u64, i64)>>>,
     pricing_write_lock: Arc<AsyncMutex<()>>,
     query_scope: codesesh_core::search::QueryScope,
 }
@@ -109,7 +108,6 @@ impl State {
             catalog_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             dashboard_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
             pricing_unmatched_cache: Arc::new(Mutex::new(catalog::CatalogCache::default())),
-            snapshot_sync: Arc::new(Mutex::new(None)),
             pricing_write_lock: Arc::new(AsyncMutex::new(())),
         }
     }
