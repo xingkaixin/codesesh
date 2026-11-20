@@ -198,7 +198,10 @@ async function refreshLiveSnapshotAggregates(
     ),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.pricing }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.pricingUnmatcheds,
+      refetchType: "active",
+    }),
   ]);
 }
 
@@ -224,7 +227,7 @@ function liveAggregateRefreshDelay(queryClient: QueryClient, window: AppConfig["
       .map((query) => query.state),
     ...queryClient
       .getQueryCache()
-      .findAll({ queryKey: queryKeys.pricing, type: "active" })
+      .findAll({ queryKey: queryKeys.pricingUnmatcheds, type: "active" })
       .map((query) => query.state),
   ];
   if (states.some((state) => !state || state.data === undefined || state.isInvalidated)) return 0;

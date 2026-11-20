@@ -1,6 +1,7 @@
 import {
   getSessionReferenceKey,
   mergeSessionsUpdatedEvents,
+  type BookmarkView,
   type SessionsUpdatedEvent,
 } from "@codesesh/contract";
 import type { QueryClient } from "@tanstack/react-query";
@@ -52,7 +53,10 @@ export async function invalidateLiveSessionCollections(queryClient: QueryClient)
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboards }),
     queryClient.invalidateQueries({ queryKey: queryKeys.searches }),
     queryClient.invalidateQueries({ queryKey: queryKeys.nodeSessions }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.pricing }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.pricingUnmatcheds,
+      refetchType: "active",
+    }),
   ]);
 }
 
@@ -86,9 +90,20 @@ export async function invalidateLiveSessionDerivedQueries(
   ]);
   if (changed.size === 0) return;
 
+  const cachedBookmarks = queryClient.getQueryData<{ bookmarks: BookmarkView[] }>(
+    queryKeys.bookmarks,
+  );
+  const affectsBookmarks =
+    cachedBookmarks !== undefined &&
+    cachedBookmarks.bookmarks.some((bookmark) =>
+      changed.has(getSessionReferenceKey(bookmark.reference)),
+    );
+
   await queryClient.invalidateQueries({
     predicate: ({ queryKey }) => {
-      if (queryKey.length === 1 && queryKey[0] === queryKeys.bookmarks[0]) return true;
+      if (queryKey.length === 1 && queryKey[0] === queryKeys.bookmarks[0]) {
+        return affectsBookmarks;
+      }
       if (
         (queryKey.length !== 3 && queryKey.length !== 4) ||
         queryKey[0] !== queryKeys.sessionDetails[0] ||
