@@ -101,6 +101,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.5.0",
+        date: "2026-11-20",
+        title: "Find inside a session and return to your search",
+        summary:
+          "CodeSesh 1.5.0 lets you search within one AI coding session, move between parent and child sessions, and come back to the same global search results with the browser's Back button. Code identifiers are easier to find, sessions export as Markdown files, and long sessions, large histories, and always-on Hub and Worker setups do less repeated work.",
+        direction:
+          "Make it faster to go from a vague memory to the exact message, and keep the local history responsive as it grows across projects and machines.",
+        highlights: [
+          {
+            title: "Find within a session",
+            description:
+              "Press f to search the open session, including collapsed tool output, reasoning, plans, and messages that have not loaded yet. Step through matches with Enter; matched cards open automatically. Child sessions link back to their parent, and parents list every child.",
+          },
+          {
+            title: "Keep search results and find code by name",
+            description:
+              "Search terms and filters stay in the URL, so Back returns to your results after opening a session. Matches are highlighted in code and tool output, and a search for auth also finds useAuth and auth_token.",
+          },
+          {
+            title: "Reuse sessions as Markdown",
+            description:
+              "Copy a single message or download a whole session as a .md file. Code blocks show their language and a copy button, and explicit web links open in a new tab while remote images stay blocked.",
+          },
+          {
+            title: "Sort projects and drill into charts",
+            description:
+              "Sort all projects by recent activity, session count, or cost. Click a day, agent, or model on the Dashboard to narrow the view, and update model prices from the pricing drawer whenever you need to.",
+          },
+        ],
+      },
+      {
         version: "1.4.7",
         date: "2026-11-17",
         title: "Price custom models and find Antigravity Desktop history",
@@ -1077,6 +1108,36 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.5.0",
+        date: "2026-11-20",
+        title: "会话内查找，返回时保留搜索结果",
+        summary:
+          "CodeSesh 1.5.0 支持在单个 AI 编码会话内查找，在父子会话之间跳转，打开会话后按浏览器返回即可回到原来的全局搜索结果。代码标识符更容易搜到，会话可导出为 Markdown 文件；长会话、大历史以及常驻的 Hub 和 Worker 也减少了重复处理。",
+        direction: "缩短从模糊记忆到具体消息的路径，并让本地历史在跨项目、跨机器增长时保持流畅。",
+        highlights: [
+          {
+            title: "在会话内查找",
+            description:
+              "按 f 搜索当前会话，范围包括折叠的工具输出、推理、计划和尚未加载的消息。按 Enter 逐个跳转，命中的卡片自动展开。子会话可直接返回父会话，父会话列出全部子会话。",
+          },
+          {
+            title: "保留搜索结果，按名称找代码",
+            description:
+              "搜索词和筛选条件写入 URL，打开会话后按返回即可回到结果列表。代码和工具输出中的命中会高亮，搜索 auth 也能找到 useAuth 和 auth_token。",
+          },
+          {
+            title: "以 Markdown 复用会话",
+            description:
+              "可复制单条消息，或将整个会话下载为 .md 文件。代码块显示语言并提供复制按钮，明确的网页链接在新标签页打开，远程图片仍被拦截。",
+          },
+          {
+            title: "项目排序与图表下钻",
+            description:
+              "按最近活动、会话数或成本对全部项目排序。在 Dashboard 点击某天、某个 Agent 或模型即可缩小范围，也可随时在定价抽屉中更新模型价格。",
+          },
+        ],
+      },
+      {
         version: "1.4.7",
         date: "2026-11-17",
         title: "自定义模型定价，汇总 Antigravity Desktop 历史",
@@ -2028,6 +2089,37 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.5.0",
+        date: "2026-11-20",
+        title: "セッション内を検索し、検索結果にすぐ戻る",
+        summary:
+          "CodeSesh 1.5.0 では、1 つの AI コーディングセッションの中を検索し、親セッションと子セッションを行き来できます。セッションを開いた後もブラウザの「戻る」で同じグローバル検索結果に戻れます。コードの識別子が見つけやすくなり、セッションを Markdown ファイルとして書き出せます。長いセッションや大量の履歴、常時稼働する Hub と Worker の重複処理も減りました。",
+        direction:
+          "あいまいな記憶から目的のメッセージまでを短くし、プロジェクトやマシンをまたいで履歴が増えてもローカルで快適に使えるようにします。",
+        highlights: [
+          {
+            title: "セッション内を検索",
+            description:
+              "f キーで開いているセッションを検索します。折りたたまれたツール出力、推論、計画、まだ読み込んでいないメッセージも対象です。Enter で一致箇所を順に移動し、該当するカードは自動で開きます。子セッションから親に戻れ、親にはすべての子セッションが並びます。",
+          },
+          {
+            title: "検索結果を保ち、名前でコードを探す",
+            description:
+              "検索語とフィルターは URL に残るため、セッションを開いた後も「戻る」で結果一覧に戻れます。コードやツール出力の一致箇所も強調表示され、auth で検索すると useAuth や auth_token も見つかります。",
+          },
+          {
+            title: "Markdown でセッションを再利用",
+            description:
+              "1 件のメッセージをコピーしたり、セッション全体を .md ファイルとしてダウンロードしたりできます。コードブロックには言語名とコピーボタンが付き、明示的な Web リンクは新しいタブで開きます。リモート画像は引き続きブロックします。",
+          },
+          {
+            title: "プロジェクトの並べ替えとグラフからの絞り込み",
+            description:
+              "すべてのプロジェクトを最新のアクティビティ、セッション数、コストで並べ替えられます。Dashboard で日付、Agent、モデルをクリックすると範囲を絞り込め、料金設定のドロワーからいつでもモデル料金を更新できます。",
+          },
+        ],
+      },
       {
         version: "1.4.7",
         date: "2026-11-17",

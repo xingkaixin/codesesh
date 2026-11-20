@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.5.0] - 2026-11-20
+
+This release adds Find in Session, parent-child session navigation, URL-persisted global search, Markdown downloads, project sorting, and Dashboard chart drill-down. Search matches code identifiers by prefix and camelCase or snake_case parts. Session detail scrolling, incremental discovery, search, and long-running Hub and Worker processes do less repeated work, and the Web UI ships about 31% fewer asset bytes. (#922–#930, #932, #933, #935, #937, #939–#944)
+
+### Features
+
+- Find text in the current session with `f`, including collapsed tool inputs and outputs, reasoning, plans, and messages that are not loaded yet. Step through matches with `Enter` and `Shift+Enter`; matched cards expand automatically. (#940)
+- Open a parent session from a child session's header or with `Esc`, and list every child session from the parent, including children without an inline link. (#940)
+- Keep the global search query, filters, and mode in the URL so browser Back restores the results after opening a session. Highlight matches in inline and fenced code and in tool outputs, expand collapsed cards that contain a match, and clear highlights from the transcript toolbar. (#935)
+- Match code identifiers by prefix and by camelCase, acronym, digit, and snake_case parts, so `auth` finds `useAuth` and `auth_token`. Quoted phrases still match exactly, and Chinese substring search is unchanged. (#932)
+- Copy a single message as Markdown, download a session as a `.md` file, and copy fenced code blocks from a header that shows the language. Explicit `http` and `https` links open in a new tab; other schemes and remote images stay blocked. (#939)
+- Sort all projects by latest activity, session count, or cost before pagination, and keep sort, source node, and page in the URL. In Hub mode, filter project dashboards and timelines by source node. (#927)
+- Drill down from Dashboard charts by pointer or keyboard: a day column narrows the time window to that day, an agent row toggles the agent filter, and a model row opens a scoped search. (#927)
+- Update models and prices from the pricing drawer on demand, even when the 24-hour cache is fresh. The drawer reports an unchanged catalog, a failed download, or repricing in progress, and manual rates and remaps keep precedence. (#924)
+- Keep expanded tool, reasoning, and plan cards open while scrolling long sessions, and expand or collapse them all from the session toolbar. (#929)
+
+### Bug Fixes
+
+- Return a retryable 503 when Hub shutdown interrupts a Worker request. Workers no longer treat the interruption as a credential rejection and stay paused; invalid or revoked credentials still return 401. (#923)
+- Retry failed standalone scans with backoff from 5 to 60 seconds; shutdown, manual refresh, and new file changes cancel the wait. Report partial scan failures in status and clear recovered backfill failures. Saving or deleting a pricing rule returns immediately and reprices history in the background. (#928)
+- Keep cached Dsh, Grok, Kimi-Cli, and Kimi-Code sessions when their source file is temporarily corrupt or still being written, and remove them only after the file is deleted. Wait up to five seconds for locked external SQLite sources, and keep raw bytes in Claude Code and Codex checkpoints that end in invalid UTF-8. (#925)
+- Let focused buttons, links, and other interactive controls handle `Enter` instead of global shortcuts. List every session on an agent page, remove doubled diff markers in Pi edits, and show the Session Receipt on narrow screens and tablets. (#926)
+- Show offline or degraded Hub nodes in the sidebar status and in the main view when the sidebar is collapsed, surface local scan errors on every route, and show pricing load failures instead of zero. Stop node polling outside Hub mode. (#926)
+- Identify Pi `run-N/session.jsonl` subagent sessions by their header ID and resolve their parent from the directory layout when the header omits it. Declare Pi session tree support in the agent catalog. (#925, #941)
+
+### Performance
+
+- Coalesce scroll anchoring, avoid layout work while scrolling, and defer diff and output formatting until a tool card expands. (#929)
+- Look up Cursor sessions by key and persist per-session fingerprints, fingerprint Antigravity summaries per conversation, scan only changed session files on live refresh, restore cached sessions in one query, and reset file watchers only when a watched root changes. (#930)
+- Rank search candidates from FTS results instead of sorting the full session table, reuse message hits when building results, and build snippets without converting the whole message body. Fix `OR` precedence in snippet matching. (#932)
+- Replace `@pierre/trees` with a native session tree that keeps expansion and scroll position across live updates. Ship Latin `.woff2` fonts only and lazy-load rarely opened dialogs, reducing Web assets from 2.26 MB to 1.56 MB. (#933)
+- Share unchanged session heads between snapshots, batch snapshot refreshes, and reuse the published snapshot for search. Combine session upserts, read only needed message columns, release SQLite readers before slow clients, coalesce concurrent catalog cache misses, and answer unchanged catalog requests with `304 Not Modified`. (#937)
+- Reclaim heap memory after Hub uploads, size SQLite reader caches at 4 MiB, and renew Worker leases without SQLite writes. Read dashboard and project data in one transaction, revalidate unmatched-pricing responses with ETags, and skip unrelated bookmark refreshes. (#942, #943)
+- Pass watcher paths to Worker incremental scans, release idle parser checkpoints, skip unchanged source state, and remove 10 Hz idle outbox polling. Throttle unchanged scan-success writes and reclaim memory after large scan batches. (#944)
+- Download the pricing catalog before startup repricing so history is repriced once, and commit repricing in batches of 32 sessions so Worker handshakes and uploads are not blocked. (#924)
+
+### Build
+
+- Write Cloudflare Build Output v1 for the product site so deployments work with cf 1.0. (#922)
+- Remove the unused `@pierre/trees` and `date-fns` dependencies. (#933)
+
+### Documentation
+
+- Document schema 39 search storage, the Pi session tree capability, and the new search, export, and navigation features in the READMEs. (#925, #932)
+
+### Compatibility
+
+- The cache schema moves to version 39. Upgrading drops two redundant indexes and rebuilds the message and title search indexes in resumable batches without recreating tables; the first start can take longer on large histories. (#932)
+- Cached Pi, Cursor, Antigravity Desktop, and Antigravity CLI sessions are reparsed as needed; the first refresh can take longer on large histories. (#930, #941)
+
 ## [1.4.7] - 2026-11-17
 
 This release adds model pricing rules for aliases and unlisted models, imports Antigravity Desktop SQLite history, and keeps sessions grouped by their recorded project when a worktree disappears. Pricing rules load independently of unmatched-model counts, large-history pricing queries do less repeated work, and session timestamps show the full date and time. (#911–#920)

@@ -24,7 +24,7 @@ CodeSesh does three jobs:
 
 ### Find
 
-- **Structured search.** Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings match, and message results open at the first hit
+- **Structured search.** Search titles, messages, tool output, and file paths. Filter by agent, project, smart tag, tool, file activity, and cost. Chinese substrings and code identifier parts match, message results open at the first hit, and browser Back returns to your results
 - **Projects.** Group sessions by repository identity across agents, with subagent sessions nested under their parent
 - **File activity.** Jump to files that were read, edited, created, deleted, or moved, and find the sessions that touched them
 - **Bookmarks and aliases.** Keep important sessions on the dashboard and give them names that carry through search and activity views
@@ -40,8 +40,8 @@ CodeSesh does three jobs:
 
 ### Reuse
 
-- **Full replay.** Messages, tool calls, and reasoning, paged or complete, with your reading position kept
-- **Copy as Markdown.** Take a whole conversation into a new prompt, issue, or note
+- **Full replay.** Messages, tool calls, and reasoning, paged or complete, with your reading position kept. Find text within a session and move between parent and child sessions
+- **Markdown export.** Copy a conversation or a single message, or download it as a `.md` file for a new prompt, issue, or note
 - **Resume commands.** Copy worktree-aware resume commands for supported agents, with the source machine shown
 
 **Under the hood:** zero configuration, local by default (no account or telemetry), live refresh, an SQLite cache with resumable history indexing, keyboard navigation, light and dark themes, and an English, Simplified Chinese, and Japanese UI.
