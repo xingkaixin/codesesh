@@ -91,26 +91,31 @@ describe("live session detail invalidation", () => {
     expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(true);
   });
 
-  it("retries an active bookmark query after its first load fails", async () => {
-    const client = makeClient();
-    const restored = { bookmarks: [] };
-    const queryFn = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("unavailable"))
-      .mockResolvedValue(restored);
-    const observer = new QueryObserver(client, { queryKey: queryKeys.bookmarks, queryFn });
-    const unsubscribe = observer.subscribe(() => {});
-    try {
-      await vi.waitFor(() => expect(observer.getCurrentResult().isError).toBe(true));
-      await invalidateLiveSessionDerivedQueries(client, {
-        ...SAMPLE_SESSIONS_UPDATED_EVENT,
-        changedSessionHeads: [changedHead("codex", "updated")],
-      });
-      expect(observer.getCurrentResult().data).toEqual(restored);
-    } finally {
-      unsubscribe();
-    }
-  });
+  it.each([false, true])(
+    "retries a failed bookmark query (has cached data: %s)",
+    async (cached) => {
+      const client = makeClient();
+      if (cached) client.setQueryData(queryKeys.bookmarks, { bookmarks: [] });
+      const restored = { bookmarks: [] };
+      const queryFn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("unavailable"))
+        .mockResolvedValue(restored);
+      const observer = new QueryObserver(client, { queryKey: queryKeys.bookmarks, queryFn });
+      const unsubscribe = observer.subscribe(() => {});
+      try {
+        await vi.waitFor(() => expect(observer.getCurrentResult().isError).toBe(true));
+        await invalidateLiveSessionDerivedQueries(client, {
+          ...SAMPLE_SESSIONS_UPDATED_EVENT,
+          changedSessionHeads: [changedHead("codex", "updated")],
+        });
+        expect(observer.getCurrentResult().isSuccess).toBe(true);
+        expect(observer.getCurrentResult().data).toEqual(restored);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 
   it("skips invalidating bookmarks when empty or unrelated and invalidates on bookmarked removal", async () => {
     const emptyClient = makeClient();

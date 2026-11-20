@@ -100,9 +100,9 @@ export async function invalidateLiveSessionDerivedQueries(
     );
 
   await queryClient.invalidateQueries({
-    predicate: ({ queryKey }) => {
+    predicate: ({ queryKey, state }) => {
       if (queryKey.length === 1 && queryKey[0] === queryKeys.bookmarks[0]) {
-        return affectsBookmarks;
+        return state.status === "error" || affectsBookmarks;
       }
       if (
         (queryKey.length !== 3 && queryKey.length !== 4) ||
