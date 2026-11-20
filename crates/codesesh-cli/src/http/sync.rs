@@ -55,13 +55,11 @@ fn worker_auth_error(failure: &anyhow::Error) -> Option<Response> {
 }
 
 fn worker_operation_error(failure: &anyhow::Error) -> Response {
-    worker_auth_error(failure).unwrap_or_else(|| {
-        if failure.is::<codesesh_core::runtime::ReadBusy>() {
-            retry("Hub is busy")
-        } else {
-            error(StatusCode::CONFLICT, &failure.to_string())
-        }
-    })
+    if failure.is::<codesesh_core::runtime::ReadBusy>() {
+        retry("Hub is busy")
+    } else {
+        error(StatusCode::CONFLICT, &failure.to_string())
+    }
 }
 
 async fn with_worker<T: Send + 'static>(
