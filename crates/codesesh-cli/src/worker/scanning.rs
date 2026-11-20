@@ -19,6 +19,7 @@ type ScanResult = (AgentScanner, Result<ScanBatch>);
 
 const RESCAN_INTERVAL: Duration = Duration::from_secs(5);
 const SUCCESS_RECORD_INTERVAL: Duration = Duration::from_secs(60);
+const RECLAIM_INTERVAL: Duration = Duration::from_secs(1);
 const PENDING_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_TRACKED_PATHS: usize = 1024;
 #[cfg(not(test))]
@@ -75,6 +76,7 @@ pub(super) struct Scanning {
     changes: Arc<[Mutex<PendingChange>]>,
     wake: Arc<Notify>,
     last_success_recorded: Option<Instant>,
+    last_reclaim: Option<Instant>,
     /// Dropping the sender stops the watcher; `None` means every source is polled.
     watching: Option<watch::Sender<bool>>,
     errors: BTreeMap<String, String>,
@@ -149,6 +151,7 @@ impl Scanning {
             changes,
             wake,
             last_success_recorded: None,
+            last_reclaim: None,
             watching,
             errors: BTreeMap::new(),
         }
@@ -291,15 +294,31 @@ impl Scanning {
         })
     }
 
+    fn reclaim_memory(&mut self) {
+        let now = Instant::now();
+        if self
+            .last_reclaim
+            .is_none_or(|at| now.saturating_duration_since(at) >= RECLAIM_INTERVAL)
+        {
+            codesesh_core::runtime::release_unused_memory();
+            self.last_reclaim = Some(now);
+        }
+    }
+
     pub(super) async fn tick(&mut self, store: &mut WorkerStore, paused: bool) -> Result<bool> {
         let now = Instant::now();
+        let mut released_idle = false;
         for (schedule, slot) in self.schedules.iter_mut().zip(self.scanners.iter_mut()) {
             if schedule.idle_release_at.is_some_and(|at| now >= at)
                 && let Some(scanner) = slot.as_mut()
             {
                 scanner.release_idle();
                 schedule.idle_release_at = None;
+                released_idle = true;
             }
+        }
+        if released_idle {
+            self.reclaim_memory();
         }
         if paused
             && self
@@ -373,6 +392,9 @@ impl Scanning {
                     self.scanners[index] = Some(scanner);
                 }
                 let failed = self.errors.contains_key(agent);
+                if !paused && (has_changes || complete) {
+                    self.reclaim_memory();
+                }
                 let finished_at = Instant::now();
                 self.schedules[index] = Schedule {
                     next_scan: finished_at + RESCAN_INTERVAL,
