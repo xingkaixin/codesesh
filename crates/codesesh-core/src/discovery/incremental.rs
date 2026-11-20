@@ -90,6 +90,7 @@ pub struct AgentScanner {
     price_dependencies: Option<PriceDependencies>,
     file_fingerprints: HashMap<String, String>,
     empty_sources: HashSet<String>,
+    source_state_dirty: bool,
     database_inventory: Option<(String, Vec<Item>)>,
 }
 impl AgentScanner {
@@ -121,6 +122,7 @@ impl AgentScanner {
             price_dependencies: Some(HashMap::new()),
             file_fingerprints: HashMap::new(),
             empty_sources: HashSet::new(),
+            source_state_dirty: true,
             database_inventory: None,
         }
     }
@@ -184,7 +186,7 @@ impl AgentScanner {
             })),
         }
     }
-    fn release_idle(&mut self) {
+    pub fn release_idle(&mut self) {
         self.codex.release_idle();
         self.claude.release_idle();
     }
@@ -217,6 +219,9 @@ impl AgentScanner {
                     .is_none_or(|dependencies| !ticket.pricing.matches_dependencies(dependencies))
         });
         if let Some(ticket) = &ticket {
+            if ticket.pricing.generation() != self.pricing.generation() {
+                self.source_state_dirty = true;
+            }
             self.pricing = Arc::new(ticket.pricing.clone());
         }
         if self.rejected.swap(false, Ordering::AcqRel) {
@@ -224,6 +229,7 @@ impl AgentScanner {
             self.backfill = None;
             self.opencode = None;
             self.fingerprints.clear();
+            self.source_state_dirty = true;
         }
         if pricing_changed
             || !self.initialized
@@ -248,7 +254,12 @@ impl AgentScanner {
         });
         let (mut delta, mut next_checkpoint, complete) = result?;
         if let Some(previous) = &mut self.price_dependencies {
-            previous.extend(dependencies);
+            for (model, price) in dependencies {
+                if previous.get(&model) != Some(&price) {
+                    previous.insert(model, price);
+                    self.source_state_dirty = true;
+                }
+            }
         }
         for session in &mut delta.upserts {
             let previous = self
@@ -311,25 +322,38 @@ impl AgentScanner {
         }
         self.durable_references = self.baseline.keys().cloned().collect();
         self.initialized = true;
+        let empty_before = self.empty_sources.len();
         self.empty_sources
             .retain(|key| self.file_fingerprints.contains_key(key));
+        if self.empty_sources.len() != empty_before {
+            self.source_state_dirty = true;
+        }
+        let next_history_complete = self.history_complete || complete;
+        if next_history_complete != self.history_complete {
+            self.source_state_dirty = true;
+        }
         let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
         checkpoint["incremental"] = self.history_complete.into();
-        checkpoint["sourceState"] = serde_json::json!({
-            "version": 1,
-            "sourceNodeId": self.source_node_id,
-            "historyComplete": self.history_complete || complete,
-            "parserVersion": agents::parser_version(&self.source.agent),
-            "generation": self.pricing.generation(),
-            "priceDependencies": self.price_dependencies,
-            "root": self.source.scan_path,
-            "antigravityProfiles": self.source.antigravity_profiles,
-            "files": self.file_fingerprints,
-            "databaseSessions": self.fingerprints,
-            "emptySources": self.empty_sources,
-        });
-        // Workers poll in page mode every round, so reloading their baseline would repeat each time.
-        if page_mode && complete && !self.worker && self.cache_path.is_file() {
+        if page_mode || !complete || self.source_state_dirty {
+            checkpoint["sourceState"] = serde_json::json!({
+                "version": 1,
+                "sourceNodeId": self.source_node_id,
+                "historyComplete": next_history_complete,
+                "parserVersion": agents::parser_version(&self.source.agent),
+                "generation": self.pricing.generation(),
+                "priceDependencies": self.price_dependencies,
+                "root": self.source.scan_path,
+                "antigravityProfiles": self.source.antigravity_profiles,
+                "files": self.file_fingerprints,
+                "databaseSessions": self.fingerprints,
+                "emptySources": self.empty_sources,
+            });
+            self.source_state_dirty = false;
+        }
+        if complete {
+            self.history_complete = true;
+        }
+        if page_mode && complete && self.cache_path.is_file() {
             // Release headers interleaved with parsed bodies; the next refresh reloads durable metadata.
             self.previous = Vec::new();
             self.baseline = HashMap::new();
@@ -382,8 +406,12 @@ impl AgentScanner {
             let mut items = self.inventory()?;
             self.source_available = Some(!items.is_empty() || has_sources(&self.source)?);
             let present: HashSet<_> = items.iter().map(|item| item.key.as_str()).collect();
+            let fingerprints_before = self.file_fingerprints.len();
             self.file_fingerprints
                 .retain(|key, _| present.contains(key.as_str()));
+            if self.file_fingerprints.len() != fingerprints_before {
+                self.source_state_dirty = true;
+            }
             if let Some(target) = &self.target {
                 let known = self
                     .baseline
@@ -656,9 +684,14 @@ impl AgentScanner {
             .collect();
         let plan = self.backfill.as_mut().unwrap();
         for item in current {
-            if item.path.as_ref().is_some_and(|path| parsed.contains(path)) {
-                self.file_fingerprints
-                    .insert(item.key.clone(), item.fingerprint.clone());
+            if item.path.as_ref().is_some_and(|path| parsed.contains(path))
+                && self
+                    .file_fingerprints
+                    .insert(item.key.clone(), item.fingerprint.clone())
+                    .as_deref()
+                    != Some(item.fingerprint.as_str())
+            {
+                self.source_state_dirty = true;
             }
             match original.get(&item.key) {
                 Some(&index) if index >= plan.offset => plan.items[index] = item,
@@ -742,8 +775,12 @@ impl AgentScanner {
             .removed
             .extend(self.durable_references.difference(&retained).cloned());
         let present: HashSet<_> = current.iter().map(|item| item.key.as_str()).collect();
+        let fingerprints_before = self.file_fingerprints.len();
         self.file_fingerprints
             .retain(|key, _| present.contains(key.as_str()));
+        if self.file_fingerprints.len() != fingerprints_before {
+            self.source_state_dirty = true;
+        }
         Ok((delta, None, true))
     }
     fn read_page(
@@ -827,9 +864,11 @@ impl AgentScanner {
                 Some(path) => path == &session.source,
                 None => session.head.reference.session_id == item.key,
             }) {
-                self.empty_sources.remove(&item.key);
-            } else {
-                self.empty_sources.insert(item.key.clone());
+                if self.empty_sources.remove(&item.key) {
+                    self.source_state_dirty = true;
+                }
+            } else if self.empty_sources.insert(item.key.clone()) {
+                self.source_state_dirty = true;
             }
             let fingerprint = if item.path.is_none() {
                 self.fingerprints
@@ -839,7 +878,14 @@ impl AgentScanner {
             } else {
                 item.fingerprint.clone()
             };
-            self.file_fingerprints.insert(item.key.clone(), fingerprint);
+            if self
+                .file_fingerprints
+                .insert(item.key.clone(), fingerprint.clone())
+                .as_ref()
+                != Some(&fingerprint)
+            {
+                self.source_state_dirty = true;
+            }
         }
         Ok((delta, reused, consumed))
     }
@@ -889,7 +935,11 @@ impl AgentScanner {
                     "cherrystudio" => agents::cherrystudio::scan_page(root, &self.pricing, &ids)?,
                     _ => agents::minimax_code::scan_page(root, &self.pricing, &ids)?,
                 };
-                self.fingerprints.extend(fingerprints);
+                for (id, hash) in fingerprints {
+                    if self.fingerprints.insert(id, hash.clone()).as_ref() != Some(&hash) {
+                        self.source_state_dirty = true;
+                    }
+                }
                 upserts
             }
             _ => {
@@ -914,12 +964,13 @@ impl AgentScanner {
         self.empty_sources.clear();
         self.history_complete = false;
         self.price_dependencies = Some(HashMap::new());
+        self.source_state_dirty = true;
         if !self.cache_path.exists() {
             return Ok(());
         }
         if self.worker {
-            let baseline =
-                crate::sync::WorkerStore::open(&self.cache_path)?.baseline(&self.source.agent)?;
+            let baseline = crate::sync::WorkerStore::open_read_only(&self.cache_path)?
+                .baseline(&self.source.agent)?;
             self.restore_source_state(baseline.state.as_ref(), baseline.complete);
             for record in baseline.sessions {
                 self.durable_references
@@ -987,10 +1038,19 @@ impl AgentScanner {
                 ),
             );
             if pricing_changed && !has_cost_inputs {
-                self.file_fingerprints.remove(&head.reference.session_id);
-                self.fingerprints.remove(&head.reference.session_id);
+                let mut removed = self
+                    .file_fingerprints
+                    .remove(&head.reference.session_id)
+                    .is_some();
+                removed |= self
+                    .fingerprints
+                    .remove(&head.reference.session_id)
+                    .is_some();
                 if let Some(source) = &source {
-                    self.file_fingerprints.remove(source);
+                    removed |= self.file_fingerprints.remove(source).is_some();
+                }
+                if removed {
+                    self.source_state_dirty = true;
                 }
             }
             self.baseline.insert(
@@ -1035,6 +1095,11 @@ impl AgentScanner {
                 serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
             self.fingerprints =
                 serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
+            if state["generation"].as_u64() == Some(self.pricing.generation())
+                && self.history_complete
+            {
+                self.source_state_dirty = false;
+            }
         }
     }
 
@@ -1226,27 +1291,48 @@ impl AgentScanner {
                 .iter()
                 .any(|session| session.head.reference.session_id == *id)
             {
-                self.empty_sources.remove(id);
-            } else {
-                self.empty_sources.insert(id.clone());
+                if self.empty_sources.remove(id) {
+                    self.source_state_dirty = true;
+                }
+            } else if self.empty_sources.insert(id.clone()) {
+                self.source_state_dirty = true;
             }
         }
         if let Some(eligible) = eligible {
             for id in eligible {
                 if let Some(hash) = current.get(id) {
-                    self.fingerprints.insert(id.clone(), hash.clone());
-                    self.file_fingerprints.insert(id.clone(), hash.clone());
+                    if self.fingerprints.insert(id.clone(), hash.clone()).as_ref() != Some(hash) {
+                        self.source_state_dirty = true;
+                    }
+                    if self
+                        .file_fingerprints
+                        .insert(id.clone(), hash.clone())
+                        .as_ref()
+                        != Some(hash)
+                    {
+                        self.source_state_dirty = true;
+                    }
                 } else {
-                    self.fingerprints.remove(id);
-                    self.file_fingerprints.remove(id);
-                    self.empty_sources.remove(id);
+                    let mut removed = self.fingerprints.remove(id).is_some();
+                    removed |= self.file_fingerprints.remove(id).is_some();
+                    removed |= self.empty_sources.remove(id);
+                    if removed {
+                        self.source_state_dirty = true;
+                    }
                 }
             }
         } else {
+            if self.file_fingerprints != current || self.fingerprints != current {
+                self.source_state_dirty = true;
+            }
             self.file_fingerprints = current.clone();
             self.fingerprints = current;
+            let empty_before = self.empty_sources.len();
             self.empty_sources
                 .retain(|id| self.file_fingerprints.contains_key(id));
+            if self.empty_sources.len() != empty_before {
+                self.source_state_dirty = true;
+            }
         }
         Ok(ScanDelta {
             upserts,

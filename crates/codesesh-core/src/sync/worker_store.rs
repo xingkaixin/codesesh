@@ -158,6 +158,17 @@ impl WorkerStore {
         Ok(Self { db })
     }
 
+    pub(crate) fn open_read_only(path: &Path) -> Result<Self> {
+        let db = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        db.busy_timeout(Duration::from_secs(5))?;
+        let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        ensure!(
+            version == 2,
+            "Read-only Worker state requires schema 2, found {version}"
+        );
+        Ok(Self { db })
+    }
+
     pub fn last_scan_success(&self) -> Result<Option<i64>> {
         let value: Option<String> = self
             .db
