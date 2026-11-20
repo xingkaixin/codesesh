@@ -21,6 +21,10 @@ use std::{
 };
 
 impl AgentSource {
+    pub fn is_database_source(&self) -> bool {
+        agents::database_path(&self.agent, &self.scan_path).is_some()
+    }
+
     pub fn watch_roots(&self) -> Vec<PathBuf> {
         let root = &self.scan_path;
         let mut roots = match self.agent.as_str() {
@@ -706,7 +710,7 @@ impl AgentScanner {
         &mut self,
         paths: Option<&[PathBuf]>,
     ) -> Result<(ScanDelta, Option<serde_json::Value>, bool)> {
-        if agents::database_path(&self.source.agent, &self.source.scan_path).is_some() {
+        if self.source.is_database_source() {
             self.source_available = Some(has_sources(&self.source)?);
             return Ok((self.read(paths)?, None, true));
         }

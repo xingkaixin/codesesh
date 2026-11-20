@@ -77,6 +77,7 @@ pub(super) struct Scanning {
     wake: Arc<Notify>,
     last_success_recorded: Option<Instant>,
     last_reclaim: Option<Instant>,
+    reclaim_due: Option<Instant>,
     /// Dropping the sender stops the watcher; `None` means every source is polled.
     watching: Option<watch::Sender<bool>>,
     errors: BTreeMap<String, String>,
@@ -152,6 +153,7 @@ impl Scanning {
             wake,
             last_success_recorded: None,
             last_reclaim: None,
+            reclaim_due: None,
             watching,
             errors: BTreeMap::new(),
         }
@@ -201,6 +203,14 @@ impl Scanning {
         let mut slot = self.changes[index]
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if self.sources[index].is_database_source() {
+            // A database path can represent the entire history. Keep events received mid-page
+            // pending for the next bounded pass.
+            if !schedule.unfinished {
+                *slot = PendingChange::None;
+            }
+            return None;
+        }
         if schedule.unfinished {
             return match std::mem::replace(&mut *slot, PendingChange::None) {
                 PendingChange::Paths(paths) => Some(paths.into_iter().collect()),
@@ -240,7 +250,7 @@ impl Scanning {
                 now + PENDING_POLL_INTERVAL
             });
         }
-        let mut earliest: Option<Instant> = None;
+        let mut earliest = self.reclaim_due;
         let mut consider = |instant: Instant| {
             earliest = Some(match earliest {
                 Some(current) => current.min(instant),
@@ -296,13 +306,15 @@ impl Scanning {
 
     fn reclaim_memory(&mut self) {
         let now = Instant::now();
-        if self
-            .last_reclaim
-            .is_none_or(|at| now.saturating_duration_since(at) >= RECLAIM_INTERVAL)
+        if let Some(next) = self.last_reclaim.map(|at| at + RECLAIM_INTERVAL)
+            && now < next
         {
-            codesesh_core::runtime::release_unused_memory();
-            self.last_reclaim = Some(now);
+            self.reclaim_due = Some(next);
+            return;
         }
+        codesesh_core::runtime::release_unused_memory();
+        self.last_reclaim = Some(now);
+        self.reclaim_due = None;
     }
 
     pub(super) async fn tick(&mut self, store: &mut WorkerStore, paused: bool) -> Result<bool> {
@@ -317,7 +329,7 @@ impl Scanning {
                 released_idle = true;
             }
         }
-        if released_idle {
+        if released_idle || self.reclaim_due.is_some_and(|at| now >= at) {
             self.reclaim_memory();
         }
         if paused
@@ -595,6 +607,8 @@ mod tests {
         };
         let mut scanning = Scanning::new(vec![source], path);
 
+        scanning.changes = Arc::new([Mutex::new(PendingChange::Full)]);
+
         // Initial scan runs full page mode and initializes the source.
         assert!(!scanning.tick(&mut store, false).await.unwrap());
         finish(&scanning).await;
@@ -642,6 +656,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn database_events_during_backfill_schedule_another_paged_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("opencode.db");
+        let source = AgentSource {
+            agent: "opencode".into(),
+            data_root: dir.path().into(),
+            scan_path: path.clone(),
+            antigravity_profiles: None,
+        };
+        let mut scanning = Scanning::new(vec![source], dir.path().join("worker.db"));
+        scanning.changes = Arc::new([Mutex::new(PendingChange::Paths(BTreeSet::from([path])))]);
+        let mut schedule = scanning.schedules[0];
+        schedule.unfinished = true;
+        assert_eq!(scanning.take_paths(0, schedule, true), None);
+        assert!(scanning.has_pending_change(0));
+        schedule.unfinished = false;
+        schedule.initialized = true;
+        assert_eq!(scanning.take_paths(0, schedule, false), None);
+        assert!(!scanning.has_pending_change(0));
+        scanning.watching = None;
+        assert_eq!(scanning.take_paths(0, schedule, false), None);
+    }
+
+    #[tokio::test]
     async fn unchanged_scans_throttle_last_scan_success_and_go_idle_without_polling() {
         let (_dir, mut scanning, mut store) = fixture();
         // Complete initial scan for both sources; first success records timestamp.
@@ -673,6 +711,12 @@ mod tests {
 
         // After idle release fires and no changes are pending, `next_wake` stops waking the loop.
         tokio::time::sleep(IDLE_RELEASE_DELAY + Duration::from_millis(15)).await;
+        scanning.last_reclaim = Some(Instant::now());
+        assert!(!scanning.tick(&mut store, false).await.unwrap());
+        let due = scanning.reclaim_due.unwrap();
+        assert_eq!(scanning.next_wake(false), Some(due));
+        scanning.last_reclaim = Some(Instant::now() - RECLAIM_INTERVAL);
+        scanning.reclaim_due = Some(Instant::now());
         assert!(!scanning.tick(&mut store, false).await.unwrap());
         assert_eq!(scanning.next_wake(false), None);
 
