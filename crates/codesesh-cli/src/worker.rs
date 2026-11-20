@@ -264,6 +264,7 @@ pub async fn run(
     let mut next_status = Instant::now();
     let mut next_hello = Instant::now();
     let mut next_upload = Instant::now();
+    let mut outbox_may_have_items = true;
     let mut link = if collector.store.pause_reason()?.is_some() {
         Link::Paused
     } else {
@@ -272,14 +273,35 @@ pub async fn run(
     let mut reported = None;
     let mut retry_seconds = 1u64;
     let mut shutdown = Box::pin(crate::ShutdownSignals::install()?.wait());
-    let mut next_tick = Instant::now();
+    let wake = collector.scanning.notifier();
     loop {
-        tokio::select! {
-            biased;
-            _ = &mut shutdown => break,
-            _ = tokio::time::sleep_until(next_tick.into()) => {}
+        let now = Instant::now();
+        let mut sleep_until = if reported != Some(link) {
+            now
+        } else {
+            next_status
+        };
+        sleep_until = sleep_until.min(next_hello);
+        if link == Link::Connected && outbox_may_have_items {
+            sleep_until = sleep_until.min(next_upload);
         }
-        next_tick = Instant::now() + Duration::from_millis(100);
+        if let Some(scan_wake) = collector.scanning.next_wake(link.suspended()) {
+            sleep_until = sleep_until.min(scan_wake);
+        }
+        if sleep_until > now {
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => break,
+                _ = tokio::time::sleep_until(sleep_until.into()) => {}
+                _ = wake.notified() => {}
+            }
+        } else {
+            tokio::select! {
+                biased;
+                _ = &mut shutdown => break,
+                _ = tokio::task::yield_now() => {}
+            }
+        }
         if Instant::now() >= next_status || reported != Some(link) {
             let queue = collector.store.queue_status()?;
             let detail = format!(
@@ -316,6 +338,7 @@ pub async fn run(
                     Ok(response) if response.status().is_success() => {
                         grant.epoch = recovery.epoch;
                         collector.store.finish_recovery(origin.as_str(), &grant)?;
+                        outbox_may_have_items = true;
                         log_info("worker.recovery.done", serde_json::json!({}));
                         next_hello = Instant::now();
                         false
@@ -364,6 +387,7 @@ pub async fn run(
                     {
                         collector.scanning.reset();
                         collector.store.prepare_recovery(&hello.epoch)?;
+                        outbox_may_have_items = true;
                         next_hello = Instant::now();
                         link = Link::Recovering;
                         continue;
@@ -373,6 +397,7 @@ pub async fn run(
                         && collector.store.begin_rescan(task, &collector.agents)?
                     {
                         collector.scanning.reset();
+                        outbox_may_have_items = true;
                     }
                     let answered = if hello.error.is_some() {
                         Link::Paused
@@ -429,14 +454,18 @@ pub async fn run(
                 }
             }
         }
-        collector
+        if collector
             .scanning
             .tick(&mut collector.store, link.suspended())
-            .await?;
-        if link == Link::Connected
-            && Instant::now() >= next_upload
-            && let Some(pending) = collector.store.next_upload()?
+            .await?
         {
+            outbox_may_have_items = true;
+        }
+        if link == Link::Connected && outbox_may_have_items && Instant::now() >= next_upload {
+            let Some(pending) = collector.store.next_upload()? else {
+                outbox_may_have_items = false;
+                continue;
+            };
             let request = Upload {
                 epoch: grant.epoch.clone(),
                 stream_id: collector.store.stream_id()?,
@@ -466,7 +495,7 @@ pub async fn run(
                         &receipt.digest,
                     )?;
                     retry_seconds = 1;
-                    next_tick = Instant::now();
+                    next_upload = Instant::now();
                 }
                 Ok(response)
                     if response.status() == StatusCode::CONFLICT
