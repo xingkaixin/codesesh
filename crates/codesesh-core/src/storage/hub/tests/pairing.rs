@@ -78,10 +78,17 @@ fn cloned_worker_instances_cannot_share_an_active_node() {
         .release_worker_instance(&grant.node_id, &second)
         .unwrap();
     cache.claim_worker_instance(&grant.node_id, &first).unwrap();
-    cache
-        .connection
-        .execute("UPDATE hub_nodes SET lease_until=0", [])
-        .unwrap();
+    let expiry = &mut cache.worker_leases.get_mut(&grant.node_id).unwrap().1;
+    *expiry = std::time::Instant::now() + std::time::Duration::from_secs(45);
+    let before_renewal = std::time::Instant::now();
+    let changes = cache.connection.total_changes();
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+    assert!(
+        cache.worker_leases[&grant.node_id].1
+            >= before_renewal + std::time::Duration::from_secs(60)
+    );
+    assert_eq!(cache.connection.total_changes(), changes);
+    cache.worker_leases.get_mut(&grant.node_id).unwrap().1 = std::time::Instant::now();
     cache
         .claim_worker_instance(&grant.node_id, &second)
         .unwrap();

@@ -53,6 +53,7 @@ pub struct Cache {
     snapshot_data_version: std::cell::Cell<Option<i64>>,
     reclaim_connection: std::cell::Cell<bool>,
     synchronous_normal: bool,
+    worker_leases: std::collections::HashMap<String, (String, std::time::Instant)>,
 }
 
 impl Cache {
@@ -188,6 +189,7 @@ impl Cache {
             snapshot_data_version: std::cell::Cell::new(None),
             reclaim_connection: std::cell::Cell::new(false),
             synchronous_normal: false,
+            worker_leases: Default::default(),
         })
     }
 
@@ -223,6 +225,7 @@ impl Cache {
             snapshot_data_version: std::cell::Cell::new(None),
             reclaim_connection,
             synchronous_normal: false,
+            worker_leases: Default::default(),
         })
     }
 

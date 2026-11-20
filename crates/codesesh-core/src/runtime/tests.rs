@@ -610,11 +610,20 @@ async fn standalone_and_hub_configure_expected_sqlite_pragmas() {
         .unwrap();
     // SQLite PRAGMA synchronous: 1 = NORMAL, 2 = FULL.
     assert_eq!(standalone_sync, 1);
+    let writer_cache_size: i64 = standalone
+        .hub_control(|cache| {
+            Ok(cache
+                .connection()
+                .pragma_query_value(None, "cache_size", |row| row.get(0))?)
+        })
+        .await
+        .unwrap();
+    assert_eq!(writer_cache_size, -16384);
     let reader_cache_size: i64 = standalone
         .read(|conn| Ok(conn.pragma_query_value(None, "cache_size", |row| row.get(0))?))
         .await
         .unwrap();
-    assert_eq!(reader_cache_size, -16384);
+    assert_eq!(reader_cache_size, -4096);
     standalone.shutdown().await.unwrap();
 
     let hub = Runtime::start_hub(dir.path().join("hub.db"), vec![], 1)
@@ -630,4 +639,12 @@ async fn standalone_and_hub_configure_expected_sqlite_pragmas() {
         .unwrap();
     assert_eq!(hub_sync, 2);
     hub.shutdown().await.unwrap();
+}
+
+#[test]
+fn release_unused_memory_succeeds_after_dropping_allocation() {
+    let buffer = vec![1u8; 4 * 1024 * 1024];
+    std::hint::black_box(&buffer);
+    drop(buffer);
+    release_unused_memory();
 }

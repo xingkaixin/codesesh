@@ -1,6 +1,8 @@
 use super::*;
 use crate::sync::WorkerAuthRejection;
 
+use std::time::{Duration, Instant};
+
 fn secret() -> String {
     format!(
         "{}{}",
@@ -282,6 +284,7 @@ impl Cache {
         })?;
         tx.execute("INSERT INTO hub_control.nodes(id,name,version,credential_hash,stream_id,paired_at) SELECT id,name,version,credential_hash,stream_id,paired_at FROM hub_nodes WHERE id=? ON CONFLICT(id) DO UPDATE SET name=excluded.name,version=excluded.version,credential_hash=excluded.credential_hash,stream_id=excluded.stream_id,revoked=0",[&node_id])?;
         tx.commit()?;
+        self.worker_leases.remove(&node_id);
         Ok(PairingGrant {
             node_id,
             credential,
@@ -304,16 +307,30 @@ impl Cache {
     pub fn claim_worker_instance(&mut self, node: &str, instance: &str) -> Result<()> {
         uuid::Uuid::parse_str(instance)
             .context(WorkerAuthRejection::InvalidCredentialOrInstance)?;
-        let now = chrono::Utc::now().timestamp_millis();
-        ensure!(self.connection.execute(
-            "UPDATE hub_nodes SET instance_id=?,lease_until=? WHERE id=? AND (instance_id IS NULL OR instance_id=? OR lease_until<=?)",
-            params![instance, now + 60_000, node, instance, now],
-        )? == 1, WorkerAuthRejection::InstanceConflict);
+        let now = Instant::now();
+        let until = now + Duration::from_secs(60);
+        if let Some((owner, expiry)) = self.worker_leases.get_mut(node) {
+            if owner != instance {
+                ensure!(*expiry <= now, WorkerAuthRejection::InstanceConflict);
+                instance.clone_into(owner);
+            }
+            *expiry = until;
+        } else {
+            let exists: bool = self.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM hub_nodes WHERE id=?)",
+                [node],
+                |row| row.get(0),
+            )?;
+            ensure!(exists, WorkerAuthRejection::InstanceConflict);
+            self.worker_leases
+                .insert(node.to_owned(), (instance.to_owned(), until));
+        }
         Ok(())
     }
 
     /// Call only before serving requests, while holding the exclusive Hub process lock.
     pub fn clear_worker_leases(&mut self) -> Result<()> {
+        self.worker_leases.clear();
         self.connection
             .execute("UPDATE hub_nodes SET instance_id=NULL,lease_until=0", [])?;
         Ok(())
@@ -322,10 +339,13 @@ impl Cache {
     pub fn release_worker_instance(&mut self, node: &str, instance: &str) -> Result<()> {
         uuid::Uuid::parse_str(instance)
             .context(WorkerAuthRejection::InvalidCredentialOrInstance)?;
-        self.connection.execute(
-            "UPDATE hub_nodes SET instance_id=NULL,lease_until=0 WHERE id=? AND instance_id=?",
-            params![node, instance],
-        )?;
+        if self
+            .worker_leases
+            .get(node)
+            .is_some_and(|(owner, _)| owner == instance)
+        {
+            self.worker_leases.remove(node);
+        }
         Ok(())
     }
 

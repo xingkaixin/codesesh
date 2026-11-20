@@ -23,6 +23,7 @@ use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 
 pub(crate) use status::ScanStatus;
 pub use watcher::watch_paths;
+pub use writer::release_unused_memory;
 
 pub(crate) type Scanner = dyn Fn(ScanRequest) -> Result<ScanBatch> + Send + Sync;
 
@@ -414,7 +415,7 @@ impl Runtime {
                         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
                     )?;
                     connection.busy_timeout(Duration::from_secs(5))?;
-                    connection.execute_batch("PRAGMA query_only=ON; PRAGMA cache_size=-16384")?;
+                    connection.execute_batch("PRAGMA query_only=ON; PRAGMA cache_size=-4096")?;
                     connection
                 }
             };
