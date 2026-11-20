@@ -212,11 +212,18 @@ fn session_id(path: &Path, header: &Value, agent: &str) -> String {
         return header_id;
     }
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    stem.split_once('_')
+    if let Some(id) = stem
+        .split_once('_')
         .map(|(_, id)| id)
         .filter(|id| !id.is_empty())
-        .unwrap_or(&stem)
-        .to_owned()
+    {
+        return id.to_owned();
+    }
+    // pi-subagents stores each transcript as .../run-N/session.jsonl without a <timestamp>_<id> stem.
+    if !header_id.is_empty() {
+        return header_id;
+    }
+    stem.into_owned()
 }
 
 pub(crate) fn parent_fingerprint(path: &Path, root: &Path) -> Result<String> {
@@ -713,6 +720,83 @@ mod tests {
                 scan_changed(root.path(), &pricing, std::slice::from_ref(&child), &[]).unwrap();
             assert!(changed.upserts[0].head.parent_reference.is_none());
         }
+    }
+
+    #[test]
+    fn subagent_session_files_use_header_id_and_resolve_parent_links() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("--Users-example-project--");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let write_session = |path: &Path, id: &str, parent: Option<&Path>| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let records = [
+                json!({"type":"session","version":3,"id":id,"cwd":"/tmp/project","timestamp":1000,"parentSession":parent}),
+                json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","content":"Subagent task"}}),
+            ];
+            std::fs::write(
+                path,
+                records
+                    .iter()
+                    .map(Value::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+        };
+
+        let parent = workspace.join("2026-11-01T10-00-00-000Z_parent-uuid.jsonl");
+        write_session(&parent, "parent-uuid", None);
+        let sub_a =
+            workspace.join("2026-11-01T10-00-00-000Z_parent-uuid/sub-a/run-0/session.jsonl");
+        write_session(&sub_a, "01a18503-sub-a", Some(&parent));
+        let sub_b =
+            workspace.join("2026-11-01T10-00-00-000Z_parent-uuid/sub-b/run-0/session.jsonl");
+        write_session(&sub_b, "02b29614-sub-b", Some(&parent));
+        let nested =
+            workspace.join("2026-11-01T10-00-00-000Z_parent-uuid/sub-a/nested/run-0/session.jsonl");
+        write_session(&nested, "03c3a725-nested", Some(&sub_a));
+        let standard = workspace.join("2026-11-01T11-00-00-000Z_stem-id.jsonl");
+        write_session(&standard, "different-header-id", None);
+
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let by_source: HashMap<&Path, &ParsedSession> = sessions
+            .iter()
+            .map(|session| (session.source.as_path(), session))
+            .collect();
+
+        assert_eq!(sessions.len(), 5);
+        assert_eq!(
+            by_source[parent.as_path()].head.reference.session_id,
+            "parent-uuid"
+        );
+        assert_eq!(
+            by_source[sub_a.as_path()].head.reference.session_id,
+            "01a18503-sub-a"
+        );
+        assert_eq!(
+            by_source[sub_b.as_path()].head.reference.session_id,
+            "02b29614-sub-b"
+        );
+        assert_eq!(
+            by_source[nested.as_path()].head.reference.session_id,
+            "03c3a725-nested"
+        );
+        assert_eq!(
+            by_source[standard.as_path()].head.reference.session_id,
+            "stem-id"
+        );
+        assert_eq!(
+            by_source[sub_a.as_path()].head.parent_reference.as_ref(),
+            Some(&by_source[parent.as_path()].head.reference)
+        );
+        assert_eq!(
+            by_source[sub_b.as_path()].head.parent_reference.as_ref(),
+            Some(&by_source[parent.as_path()].head.reference)
+        );
+        assert_eq!(
+            by_source[nested.as_path()].head.parent_reference.as_ref(),
+            Some(&by_source[sub_a.as_path()].head.reference)
+        );
     }
 
     #[test]

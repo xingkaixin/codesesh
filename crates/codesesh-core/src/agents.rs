@@ -4,7 +4,7 @@ pub(crate) fn parser_version(agent: &str) -> &'static str {
     } else if matches!(agent, "codex" | "grok") {
         "rust-parser-v11"
     } else if agent == "pi" {
-        "rust-parser-v8"
+        "rust-parser-v9"
     } else if matches!(agent, "kimi-code" | "opencode" | "omp" | "cursor") {
         "rust-parser-v7"
     } else {
