@@ -23,58 +23,83 @@ struct AuthenticatedWorker {
     credential: String,
 }
 
-enum InstanceLease {
-    Claim,
-    Release,
-}
-
-async fn authenticate(
-    state: &State,
-    headers: &HeaderMap,
-    lease: InstanceLease,
-) -> Result<AuthenticatedWorker, Response> {
+fn worker_headers(headers: &HeaderMap) -> Option<(String, String)> {
     let credential = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .filter(|v| v.len() == 64)
-        .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "Worker credential required"))?
+        .filter(|v| v.len() == 64)?
         .to_owned();
     let instance = headers
         .get("x-codesesh-worker-instance")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_owned();
+    Some((credential, instance))
+}
+
+fn worker_auth_error(failure: &anyhow::Error) -> Option<Response> {
+    match failure.downcast_ref::<WorkerAuthRejection>() {
+        Some(reason @ WorkerAuthRejection::InvalidCredentialOrInstance) => {
+            Some(error(StatusCode::UNAUTHORIZED, &reason.to_string()))
+        }
+        Some(reason @ WorkerAuthRejection::InstanceConflict) => Some(
+            (
+                [(axum::http::header::RETRY_AFTER, "2")],
+                error(StatusCode::CONFLICT, &reason.to_string()),
+            )
+                .into_response(),
+        ),
+        None => None,
+    }
+}
+
+fn worker_operation_error(failure: &anyhow::Error) -> Response {
+    worker_auth_error(failure).unwrap_or_else(|| {
+        if failure.is::<codesesh_core::runtime::ReadBusy>() {
+            retry("Hub is busy")
+        } else {
+            error(StatusCode::CONFLICT, &failure.to_string())
+        }
+    })
+}
+
+async fn authenticate(state: &State, headers: &HeaderMap) -> Result<AuthenticatedWorker, Response> {
+    let Some((credential, instance)) = worker_headers(headers) else {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "Worker credential required",
+        ));
+    };
     state
         .runtime
         .hub_control(move |cache| {
             let node = cache.authenticate_worker(&credential)?;
-            match lease {
-                InstanceLease::Claim => cache.claim_worker_instance(&node, &instance)?,
-                InstanceLease::Release => cache.release_worker_instance(&node, &instance)?,
-            }
+            cache.claim_worker_instance(&node, &instance)?;
             Ok(AuthenticatedWorker { node, credential })
         })
         .await
-        .map_err(
-            |failure| match failure.downcast_ref::<WorkerAuthRejection>() {
-                Some(reason @ WorkerAuthRejection::InvalidCredentialOrInstance) => {
-                    error(StatusCode::UNAUTHORIZED, &reason.to_string())
-                }
-                Some(reason @ WorkerAuthRejection::InstanceConflict) => (
-                    [(axum::http::header::RETRY_AFTER, "2")],
-                    error(StatusCode::CONFLICT, &reason.to_string()),
-                )
-                    .into_response(),
-                None => retry("Worker authentication is temporarily unavailable"),
-            },
-        )
+        .map_err(|failure| {
+            worker_auth_error(&failure)
+                .unwrap_or_else(|| retry("Worker authentication is temporarily unavailable"))
+        })
 }
 
 pub async fn goodbye(AxumState(state): AxumState<Arc<State>>, headers: HeaderMap) -> Response {
-    match authenticate(&state, &headers, InstanceLease::Release).await {
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(response) => response,
+    let Some((credential, instance)) = worker_headers(&headers) else {
+        return error(StatusCode::UNAUTHORIZED, "Worker credential required");
+    };
+    match state
+        .runtime
+        .hub_control(move |cache| {
+            let node = cache.authenticate_worker(&credential)?;
+            cache.release_worker_instance(&node, &instance)
+        })
+        .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(failure) => worker_auth_error(&failure)
+            .unwrap_or_else(|| retry("Worker authentication is temporarily unavailable")),
     }
 }
 
@@ -136,21 +161,20 @@ pub async fn hello(
     headers: HeaderMap,
     Json(request): Json<WorkerHello>,
 ) -> Response {
-    let auth = match authenticate(&state, &headers, InstanceLease::Claim).await {
-        Ok(auth) => auth,
-        Err(response) => return response,
+    let Some((credential, instance)) = worker_headers(&headers) else {
+        return error(StatusCode::UNAUTHORIZED, "Worker credential required");
     };
     match state
         .runtime
         .hub_control(move |cache| {
-            let node = cache.authenticate_worker(&auth.credential)?;
+            let node = cache.authenticate_worker(&credential)?;
+            cache.claim_worker_instance(&node, &instance)?;
             cache.worker_hello(&node, &request, MINIMUM_WORKER_VERSION)
         })
         .await
     {
         Ok(hello) => Json(hello).into_response(),
-        Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
-        Err(failure) => error(StatusCode::CONFLICT, &failure.to_string()),
+        Err(failure) => worker_operation_error(&failure),
     }
 }
 
@@ -171,7 +195,7 @@ pub async fn upload(
     if let Some(response) = compatibility(version, protocol, request.payload_version) {
         return response;
     }
-    let auth = match authenticate(&state, &headers, InstanceLease::Claim).await {
+    let auth = match authenticate(&state, &headers).await {
         Ok(auth) => auth,
         Err(response) => return response,
     };
@@ -198,8 +222,7 @@ pub async fn upload(
         .await
     {
         Ok(receipt) => Json(receipt).into_response(),
-        Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
-        Err(failure) => error(StatusCode::CONFLICT, &failure.to_string()),
+        Err(failure) => worker_operation_error(&failure),
     }
 }
 
@@ -383,21 +406,20 @@ pub async fn recover(
     if let Some(response) = compatibility(version, protocol, PAYLOAD_VERSION) {
         return response;
     }
-    let auth = match authenticate(&state, &headers, InstanceLease::Claim).await {
-        Ok(auth) => auth,
-        Err(response) => return response,
+    let Some((credential, instance)) = worker_headers(&headers) else {
+        return error(StatusCode::UNAUTHORIZED, "Worker credential required");
     };
     match state
         .runtime
         .hub_control(move |cache| {
-            let node = cache.authenticate_worker(&auth.credential)?;
+            let node = cache.authenticate_worker(&credential)?;
+            cache.claim_worker_instance(&node, &instance)?;
             cache.recover_worker(&node, &request)
         })
         .await
     {
         Ok(()) => Json(json!({"recovered":true})).into_response(),
-        Err(failure) if failure.is::<codesesh_core::runtime::ReadBusy>() => retry("Hub is busy"),
-        Err(failure) => error(StatusCode::CONFLICT, &failure.to_string()),
+        Err(failure) => worker_operation_error(&failure),
     }
 }
 

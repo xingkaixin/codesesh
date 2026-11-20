@@ -89,6 +89,88 @@ fn cloned_worker_instances_cannot_share_an_active_node() {
 }
 
 #[test]
+fn worker_instance_lease_skips_writes_until_half_elapsed() {
+    use crate::sync::WorkerAuthRejection;
+
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "node", "1.1.1", &uuid::Uuid::new_v4().to_string())
+        .unwrap();
+    let first = uuid::Uuid::new_v4().to_string();
+    let second = uuid::Uuid::new_v4().to_string();
+
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+
+    let far_future = chrono::Utc::now().timestamp_millis() + 45_000;
+    cache
+        .connection
+        .execute(
+            "UPDATE hub_nodes SET lease_until=? WHERE id=?",
+            params![far_future, &grant.node_id],
+        )
+        .unwrap();
+    let changes_before = cache.connection.total_changes();
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+    let lease_after: i64 = cache
+        .connection
+        .query_row(
+            "SELECT lease_until FROM hub_nodes WHERE id=?",
+            [&grant.node_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(lease_after, far_future);
+    assert_eq!(cache.connection.total_changes(), changes_before);
+
+    let conflict = cache
+        .claim_worker_instance(&grant.node_id, &second)
+        .unwrap_err();
+    assert!(matches!(
+        conflict.downcast_ref::<WorkerAuthRejection>(),
+        Some(WorkerAuthRejection::InstanceConflict)
+    ));
+
+    let expiring = chrono::Utc::now().timestamp_millis() + 25_000;
+    cache
+        .connection
+        .execute(
+            "UPDATE hub_nodes SET lease_until=? WHERE id=?",
+            params![expiring, &grant.node_id],
+        )
+        .unwrap();
+    let still_conflict = cache
+        .claim_worker_instance(&grant.node_id, &second)
+        .unwrap_err();
+    assert!(matches!(
+        still_conflict.downcast_ref::<WorkerAuthRejection>(),
+        Some(WorkerAuthRejection::InstanceConflict)
+    ));
+
+    let changes_before_renew = cache.connection.total_changes();
+    cache.claim_worker_instance(&grant.node_id, &first).unwrap();
+    let renewed: i64 = cache
+        .connection
+        .query_row(
+            "SELECT lease_until FROM hub_nodes WHERE id=?",
+            [&grant.node_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(renewed > expiring + 20_000);
+    assert_eq!(cache.connection.total_changes(), changes_before_renew + 1);
+
+    let missing = cache
+        .claim_worker_instance("missing-node", &first)
+        .unwrap_err();
+    assert!(matches!(
+        missing.downcast_ref::<WorkerAuthRejection>(),
+        Some(WorkerAuthRejection::InstanceConflict)
+    ));
+}
+
+#[test]
 fn local_pairing_requires_bound_proof_and_preserves_existing_history() {
     let dir = tempfile::tempdir().unwrap();
     let mut cache = Cache::open(None).unwrap();

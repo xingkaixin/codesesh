@@ -1,6 +1,9 @@
 use super::*;
 use crate::sync::WorkerAuthRejection;
 
+const WORKER_LEASE_MS: i64 = 60_000;
+const WORKER_LEASE_RENEW_THRESHOLD_MS: i64 = WORKER_LEASE_MS / 2;
+
 fn secret() -> String {
     format!(
         "{}{}",
@@ -305,10 +308,27 @@ impl Cache {
         uuid::Uuid::parse_str(instance)
             .context(WorkerAuthRejection::InvalidCredentialOrInstance)?;
         let now = chrono::Utc::now().timestamp_millis();
-        ensure!(self.connection.execute(
-            "UPDATE hub_nodes SET instance_id=?,lease_until=? WHERE id=? AND (instance_id IS NULL OR instance_id=? OR lease_until<=?)",
-            params![instance, now + 60_000, node, instance, now],
-        )? == 1, WorkerAuthRejection::InstanceConflict);
+        let (current_instance, lease_until): (Option<String>, Option<i64>) = self
+            .connection
+            .query_row(
+                "SELECT instance_id, lease_until FROM hub_nodes WHERE id=?",
+                [node],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .context(WorkerAuthRejection::InstanceConflict)?;
+        if current_instance.as_deref() == Some(instance)
+            && lease_until.is_some_and(|until| until > now + WORKER_LEASE_RENEW_THRESHOLD_MS)
+        {
+            return Ok(());
+        }
+        ensure!(
+            self.connection.execute(
+                "UPDATE hub_nodes SET instance_id=?,lease_until=? WHERE id=? AND (instance_id IS NULL OR instance_id=? OR lease_until<=?)",
+                params![instance, now + WORKER_LEASE_MS, node, instance, now],
+            )? == 1,
+            WorkerAuthRejection::InstanceConflict
+        );
         Ok(())
     }
 
