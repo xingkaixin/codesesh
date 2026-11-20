@@ -1,5 +1,5 @@
 import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/contract/test-fixtures";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BookmarkView, SessionsUpdatedEvent } from "@codesesh/contract";
 import { queryKeys } from "./query-keys";
@@ -89,6 +89,27 @@ describe("live session detail invalidation", () => {
     expect(active.getQueryState(unchangedKey)?.isInvalidated).toBe(false);
     expect(active.getQueryState(descendantKey)?.isInvalidated).toBe(false);
     expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(true);
+  });
+
+  it("retries an active bookmark query after its first load fails", async () => {
+    const client = makeClient();
+    const restored = { bookmarks: [] };
+    const queryFn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValue(restored);
+    const observer = new QueryObserver(client, { queryKey: queryKeys.bookmarks, queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await vi.waitFor(() => expect(observer.getCurrentResult().isError).toBe(true));
+      await invalidateLiveSessionDerivedQueries(client, {
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [changedHead("codex", "updated")],
+      });
+      expect(observer.getCurrentResult().data).toEqual(restored);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("skips invalidating bookmarks when empty or unrelated and invalidates on bookmarked removal", async () => {

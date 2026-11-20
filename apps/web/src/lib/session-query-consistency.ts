@@ -94,7 +94,7 @@ export async function invalidateLiveSessionDerivedQueries(
     queryKeys.bookmarks,
   );
   const affectsBookmarks =
-    cachedBookmarks !== undefined &&
+    cachedBookmarks === undefined ||
     cachedBookmarks.bookmarks.some((bookmark) =>
       changed.has(getSessionReferenceKey(bookmark.reference)),
     );
