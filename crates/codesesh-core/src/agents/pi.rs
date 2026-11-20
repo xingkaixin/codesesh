@@ -205,10 +205,21 @@ fn assistant_parts(value: &Value, time: f64) -> Vec<MessagePart> {
     parts
 }
 
+fn subagent_parent_stem(path: &Path) -> Option<&Path> {
+    let run = path.parent()?;
+    let index = run.file_name()?.to_str()?.strip_prefix("run-")?;
+    if path.file_name()? != "session.jsonl"
+        || index.is_empty()
+        || !index.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    run.parent()?.parent()
+}
+
 fn session_id(path: &Path, header: &Value, agent: &str) -> String {
     let header_id = text(&header["id"]).trim().to_owned();
-    // omp names subagent and advisor transcripts after the task, so only their header id is unique.
-    if agent == "omp" && !header_id.is_empty() {
+    if !header_id.is_empty() && (agent == "omp" || subagent_parent_stem(path).is_some()) {
         return header_id;
     }
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -226,7 +237,7 @@ pub(crate) fn parent_fingerprint(path: &Path, root: &Path) -> Result<String> {
             continue;
         };
         if header["type"] == "session" {
-            return Ok(parent_reference(&header, root)
+            return Ok(parent_reference(&header, path, root)
                 .map(|parent| parent.session_id)
                 .unwrap_or_default());
         }
@@ -234,8 +245,18 @@ pub(crate) fn parent_fingerprint(path: &Path, root: &Path) -> Result<String> {
     Ok(String::new())
 }
 
-fn parent_reference(header: &Value, root: &Path) -> Option<SessionReference> {
-    let parent = Path::new(header["parentSession"].as_str()?);
+fn parent_reference(header: &Value, path: &Path, root: &Path) -> Option<SessionReference> {
+    let inferred;
+    let parent = if header["parentSession"].is_null() {
+        inferred = {
+            let mut name = subagent_parent_stem(path)?.as_os_str().to_owned();
+            name.push(".jsonl");
+            name
+        };
+        Path::new(&inferred)
+    } else {
+        Path::new(header["parentSession"].as_str()?)
+    };
     if !parent.is_absolute()
         || parent
             .extension()
@@ -596,7 +617,7 @@ fn parse_as(
     if agent == "omp" {
         detail.head.parent_reference = super::omp::parent(path);
     } else if agent == "pi" {
-        detail.head.parent_reference = parent_reference(&header, root);
+        detail.head.parent_reference = parent_reference(&header, path, root);
     }
     Ok(Some(detail))
 }
@@ -713,6 +734,90 @@ mod tests {
                 scan_changed(root.path(), &pricing, std::slice::from_ref(&child), &[]).unwrap();
             assert!(changed.upserts[0].head.parent_reference.is_none());
         }
+    }
+
+    #[test]
+    fn subagent_session_files_use_header_id_and_resolve_parent_links() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("--Users-example-project--");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let write_session = |path: &Path, id: &str, parent: Option<&Path>| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let records = [
+                json!({"type":"session","version":3,"id":id,"cwd":"/tmp/project","timestamp":1000,"parentSession":parent}),
+                json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","content":"Subagent task"}}),
+            ];
+            std::fs::write(
+                path,
+                records
+                    .iter()
+                    .map(Value::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .unwrap();
+        };
+
+        let parent = workspace.join("2026-11-01T10-00-00-000Z_parent-uuid.jsonl");
+        write_session(&parent, "parent-uuid", None);
+        let sub_a =
+            workspace.join("2026-11-01T10-00-00-000Z_parent-uuid/sub-a/run-0/session.jsonl");
+        write_session(&sub_a, "01a18503-sub-a", Some(&parent));
+        let sub_b =
+            workspace.join("2026-11-01T10-00-00-000Z_parent-uuid/sub-b/run-0/session.jsonl");
+        write_session(&sub_b, "02b29614-sub-b", None);
+        let nested = workspace.join(
+            "2026-11-01T10-00-00-000Z_parent-uuid/sub-a/run-0/session/nested/run-0/session.jsonl",
+        );
+        write_session(&nested, "03c3a725-nested", None);
+        let custom = workspace.join("reports.jsonl");
+        write_session(&custom, "custom-id", None);
+        let standard = workspace.join("2026-11-01T11-00-00-000Z_stem-id.jsonl");
+        write_session(&standard, "different-header-id", None);
+
+        let sessions = scan(root.path(), &Pricing::bundled()).unwrap();
+        let by_source: HashMap<&Path, &ParsedSession> = sessions
+            .iter()
+            .map(|session| (session.source.as_path(), session))
+            .collect();
+
+        assert_eq!(sessions.len(), 6);
+        assert_eq!(
+            by_source[custom.as_path()].head.reference.session_id,
+            "reports"
+        );
+        assert_eq!(
+            by_source[parent.as_path()].head.reference.session_id,
+            "parent-uuid"
+        );
+        assert_eq!(
+            by_source[sub_a.as_path()].head.reference.session_id,
+            "01a18503-sub-a"
+        );
+        assert_eq!(
+            by_source[sub_b.as_path()].head.reference.session_id,
+            "02b29614-sub-b"
+        );
+        assert_eq!(
+            by_source[nested.as_path()].head.reference.session_id,
+            "03c3a725-nested"
+        );
+        assert_eq!(
+            by_source[standard.as_path()].head.reference.session_id,
+            "stem-id"
+        );
+        assert_eq!(
+            by_source[sub_a.as_path()].head.parent_reference.as_ref(),
+            Some(&by_source[parent.as_path()].head.reference)
+        );
+        assert_eq!(
+            by_source[sub_b.as_path()].head.parent_reference.as_ref(),
+            Some(&by_source[parent.as_path()].head.reference)
+        );
+        assert_eq!(
+            by_source[nested.as_path()].head.parent_reference.as_ref(),
+            Some(&by_source[sub_a.as_path()].head.reference)
+        );
     }
 
     #[test]
