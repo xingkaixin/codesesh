@@ -431,4 +431,57 @@ describe("useSessionStore", () => {
     expect(api.fetchSessions).not.toHaveBeenCalled();
     expect(result.current.version).toBeGreaterThan(0);
   });
+
+  it("keeps pricing overrides and unrelated bookmarks intact on live events while refreshing unmatched pricing and affected bookmarks", async () => {
+    const pinned: BookmarkView = {
+      reference: { agentName: "claudecode", sessionId: "pinned-session" },
+      bookmarkedAt: 1,
+      availability: "session-unavailable",
+    };
+    const fetchBookmarks = vi.fn().mockResolvedValue({ bookmarks: [pinned] });
+    const fetchOverrides = vi.fn().mockResolvedValue({ overrides: [] });
+    const fetchUnmatched = vi.fn().mockResolvedValue({ unmatchedModels: [] });
+    const unmatchedKey = queryKeys.pricingUnmatched(
+      config.window.from,
+      config.window.to,
+      config.window.days,
+    );
+    const { Wrapper, client } = createQueryWrapper();
+    const { result } = renderHook(
+      () => ({
+        store: useSessionStore(config.window),
+        bookmarks: useQuery({ queryKey: queryKeys.bookmarks, queryFn: fetchBookmarks }),
+        overrides: useQuery({ queryKey: queryKeys.pricingOverrides, queryFn: fetchOverrides }),
+        unmatched: useQuery({ queryKey: unmatchedKey, queryFn: fetchUnmatched }),
+      }),
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(result.current.store.loading).toBe(false));
+    await waitFor(() => expect(result.current.bookmarks.data?.bookmarks).toEqual([pinned]));
+    await waitFor(() => expect(result.current.overrides.data).toEqual({ overrides: [] }));
+    await waitFor(() => expect(result.current.unmatched.data).toEqual({ unmatchedModels: [] }));
+    fetchBookmarks.mockClear();
+    fetchOverrides.mockClear();
+    fetchUnmatched.mockClear();
+
+    await act(() => result.current.store.applyLiveEvent(SAMPLE_SESSIONS_UPDATED_EVENT));
+
+    await waitFor(() => expect(fetchUnmatched).toHaveBeenCalledOnce());
+    expect(fetchOverrides).not.toHaveBeenCalled();
+    expect(client.getQueryState(queryKeys.pricingOverrides)?.isInvalidated).toBe(false);
+    expect(fetchBookmarks).not.toHaveBeenCalled();
+    expect(client.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(false);
+
+    await act(() =>
+      result.current.store.applyLiveEvent({
+        ...SAMPLE_SESSIONS_UPDATED_EVENT,
+        changedSessionHeads: [],
+        newSessionRefs: [],
+        removedSessionRefs: [pinned.reference],
+      }),
+    );
+
+    await waitFor(() => expect(fetchBookmarks).toHaveBeenCalledOnce());
+    expect(fetchOverrides).not.toHaveBeenCalled();
+  });
 });

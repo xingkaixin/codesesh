@@ -1,7 +1,7 @@
 import { SAMPLE_SESSIONS_UPDATED_EVENT } from "@codesesh/contract/test-fixtures";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionsUpdatedEvent } from "@codesesh/contract";
+import type { BookmarkView, SessionsUpdatedEvent } from "@codesesh/contract";
 import { queryKeys } from "./query-keys";
 import {
   invalidateLiveSessionDerivedQueries,
@@ -52,7 +52,7 @@ function changedHead(
 }
 
 describe("live session detail invalidation", () => {
-  it("invalidates changed details and bookmark views with one cache scan request", async () => {
+  it("invalidates changed details and matching bookmark views with one cache scan request", async () => {
     const active = makeClient();
     const changedKey = queryKeys.sessionDetail("codex", "changed");
     const removedKey = queryKeys.sessionDetail("codex", "removed");
@@ -62,7 +62,12 @@ describe("live session detail invalidation", () => {
     active.setQueryData(removedKey, { id: "removed" });
     active.setQueryData(unchangedKey, { id: "unchanged" });
     active.setQueryData(descendantKey, { id: "changed-messages" });
-    active.setQueryData(queryKeys.bookmarks, { bookmarks: [] });
+    const bookmarked: BookmarkView = {
+      reference: { agentName: "codex", sessionId: "changed" },
+      bookmarkedAt: 1,
+      availability: "session-unavailable",
+    };
+    active.setQueryData(queryKeys.bookmarks, { bookmarks: [bookmarked] });
     const invalidateQueries = vi.spyOn(active, "invalidateQueries");
     const event = {
       ...SAMPLE_SESSIONS_UPDATED_EVENT,
@@ -83,6 +88,65 @@ describe("live session detail invalidation", () => {
     expect(active.getQueryState(removedKey)?.isInvalidated).toBe(true);
     expect(active.getQueryState(unchangedKey)?.isInvalidated).toBe(false);
     expect(active.getQueryState(descendantKey)?.isInvalidated).toBe(false);
+    expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(true);
+  });
+
+  it.each([false, true])(
+    "retries a failed bookmark query (has cached data: %s)",
+    async (cached) => {
+      const client = makeClient();
+      if (cached) client.setQueryData(queryKeys.bookmarks, { bookmarks: [] });
+      const restored = { bookmarks: [] };
+      const queryFn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("unavailable"))
+        .mockResolvedValue(restored);
+      const observer = new QueryObserver(client, { queryKey: queryKeys.bookmarks, queryFn });
+      const unsubscribe = observer.subscribe(() => {});
+      try {
+        await vi.waitFor(() => expect(observer.getCurrentResult().isError).toBe(true));
+        await invalidateLiveSessionDerivedQueries(client, {
+          ...SAMPLE_SESSIONS_UPDATED_EVENT,
+          changedSessionHeads: [changedHead("codex", "updated")],
+        });
+        expect(observer.getCurrentResult().isSuccess).toBe(true);
+        expect(observer.getCurrentResult().data).toEqual(restored);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+
+  it("skips invalidating bookmarks when empty or unrelated and invalidates on bookmarked removal", async () => {
+    const emptyClient = makeClient();
+    emptyClient.setQueryData(queryKeys.bookmarks, { bookmarks: [] });
+    await invalidateLiveSessionDerivedQueries(emptyClient, {
+      ...SAMPLE_SESSIONS_UPDATED_EVENT,
+      changedSessionHeads: [changedHead("codex", "other")],
+      removedSessionRefs: [],
+    });
+    expect(emptyClient.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(false);
+
+    const active = makeClient();
+    const bookmarked: BookmarkView = {
+      reference: { agentName: "codex", sessionId: "pinned" },
+      bookmarkedAt: 1,
+      availability: "session-unavailable",
+    };
+    active.setQueryData(queryKeys.bookmarks, { bookmarks: [bookmarked] });
+
+    await invalidateLiveSessionDerivedQueries(active, {
+      ...SAMPLE_SESSIONS_UPDATED_EVENT,
+      changedSessionHeads: [changedHead("codex", "unrelated")],
+      removedSessionRefs: [{ agentName: "codex", sessionId: "also-unrelated" }],
+    });
+    expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(false);
+
+    await invalidateLiveSessionDerivedQueries(active, {
+      ...SAMPLE_SESSIONS_UPDATED_EVENT,
+      changedSessionHeads: [],
+      removedSessionRefs: [{ agentName: "CodeX", sessionId: "pinned" }],
+    });
     expect(active.getQueryState(queryKeys.bookmarks)?.isInvalidated).toBe(true);
   });
 });

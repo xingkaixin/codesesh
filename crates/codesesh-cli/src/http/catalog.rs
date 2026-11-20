@@ -262,12 +262,14 @@ pub async fn agents(
         return etag::not_modified(&tag);
     }
     let scope = state.scope(source_node_id);
-    let scoped = super::scoped_shared_heads(&raw_snapshot, &scope);
-    let selected = session_list::filter_activity_window(&scoped, from, to);
-    let mut counts = HashMap::new();
-    for s in selected {
-        *counts.entry(s.reference.agent_name).or_insert(0) += 1;
-    }
+    let counts = session_list::count_agents_in_activity_window(
+        raw_snapshot
+            .iter()
+            .map(Arc::as_ref)
+            .filter(|s| super::matches_scope(s, &scope)),
+        from,
+        to,
+    );
     let mut response = Json(agent_info(&counts)).into_response();
     etag::apply_headers(&mut response, &tag);
     response
@@ -388,18 +390,24 @@ pub async fn projects(
                         .collect::<serde_json::Result<Vec<_>>>()?;
                     timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let facts = analytics::CostFactsIndex::from(analytics::load_scoped_cost_facts(
-                        conn,
-                        &sessions,
-                        &analytics::DashboardScope {
-                            agent: None,
-                            project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
-                            project_key: identity.as_ref().map(|(_, key)| key.clone()),
+                    let facts = analytics::CostFactsIndex::from(
+                        if identity.is_none() && sessions.len() == heads.len() {
+                            analytics::load_cost_facts(conn, from, to, false)?
+                        } else {
+                            analytics::load_scoped_cost_facts(
+                                conn,
+                                &sessions,
+                                &analytics::DashboardScope {
+                                    agent: None,
+                                    project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
+                                    project_key: identity.as_ref().map(|(_, key)| key.clone()),
+                                },
+                                from,
+                                to,
+                                false,
+                            )?
                         },
-                        from,
-                        to,
-                        false,
-                    )?);
+                    );
                     timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
                     let mut groups = analytics::attach_project_metrics(
@@ -635,14 +643,21 @@ pub async fn dashboard(
                 let sessions = super::scoped_heads(&heads, &query_scope);
                 timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
-                let facts = analytics::CostFactsIndex::from(analytics::load_scoped_cost_facts(
-                    conn,
-                    &sessions,
-                    &scope,
-                    compare.map(|(from, _)| from).or(from),
-                    Some(to),
-                    true,
-                )?);
+                let facts_from = compare.map(|(from, _)| from).or(from);
+                let facts = analytics::CostFactsIndex::from(
+                    if scope.is_unfiltered() && sessions.len() == heads.len() {
+                        analytics::load_cost_facts(conn, facts_from, Some(to), true)?
+                    } else {
+                        analytics::load_scoped_cost_facts(
+                            conn,
+                            &sessions,
+                            &scope,
+                            facts_from,
+                            Some(to),
+                            true,
+                        )?
+                    },
+                );
                 timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
                 let info = agent_info(&HashMap::new())

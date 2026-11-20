@@ -20,7 +20,6 @@ fn reference(row: &Row<'_>) -> rusqlite::Result<SessionReference> {
     })
 }
 
-#[cfg(test)]
 pub fn load_cost_facts(
     connection: &Connection,
     from: Option<f64>,
@@ -38,14 +37,18 @@ pub fn load_scoped_cost_facts(
     to: Option<f64>,
     include_model_costs: bool,
 ) -> rusqlite::Result<DashboardCostFacts> {
-    let tree = SessionTree::new(sessions);
-    let references = encode_references(
-        tree.entries
-            .iter()
-            .filter(|&&entry| scope.matches(tree.sessions[entry]))
-            .flat_map(|&entry| tree.descendants(entry))
-            .map(|index| &tree.sessions[index].reference),
-    );
+    let references = if scope.is_unfiltered() {
+        encode_references(sessions.iter().map(|session| &session.reference))
+    } else {
+        let tree = SessionTree::new(sessions);
+        encode_references(
+            tree.entries
+                .iter()
+                .filter(|&&entry| scope.matches(tree.sessions[entry]))
+                .flat_map(|&entry| tree.descendants(entry))
+                .map(|index| &tree.sessions[index].reference),
+        )
+    };
     read_cost_facts(connection, from, to, include_model_costs, Some(references))
 }
 
@@ -109,17 +112,6 @@ fn read_cost_facts(
 ) -> rusqlite::Result<DashboardCostFacts> {
     let transaction = if connection.is_autocommit() {
         Some(connection.unchecked_transaction()?)
-    } else {
-        None
-    };
-    let references = if let Some(references) = references {
-        let covers_all = connection.query_row(
-            &format!("SELECT NOT EXISTS(SELECT 1 FROM sessions s WHERE s.publication_id IS NULL AND NOT ({}))", reference_condition("s")),
-            [&references],
-            |row| row.get::<_, bool>(0),
-        )?;
-        // Complete scopes read the bucket window in key order without filtering each row.
-        (!covers_all).then_some(references)
     } else {
         None
     };

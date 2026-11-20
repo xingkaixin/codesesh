@@ -9,9 +9,7 @@ mod time_zone;
 mod unmatched;
 pub use facts::*;
 pub use projects::{ProjectSort, attach_project_metrics, sort_projects, summarize_projects};
-#[cfg(test)]
-pub(crate) use read::load_cost_facts;
-pub use read::load_scoped_cost_facts;
+pub use read::{load_cost_facts, load_scoped_cost_facts};
 pub(crate) use read::{model_entry_refs, reference_condition};
 pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_response};
 pub use time_zone::DashboardTimeZone;
@@ -39,6 +37,10 @@ pub struct DashboardScope {
     pub project_key: Option<String>,
 }
 impl DashboardScope {
+    pub fn is_unfiltered(&self) -> bool {
+        self.agent.is_none() && self.project_kind.is_none() && self.project_key.is_none()
+    }
+
     pub(crate) fn matches(&self, session: &SessionHead) -> bool {
         self.agent
             .as_ref()

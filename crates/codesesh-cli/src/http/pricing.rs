@@ -3,14 +3,14 @@ use super::{
     catalog::{
         ANALYTICS_REVISION_QUERY, DashboardWindow, cached_catalog, resolve_dashboard_window,
     },
-    error,
+    error, etag,
     params::Params,
 };
 use axum::{
     Json,
     body::Bytes,
     extract::{RawQuery, State as AxumState},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use codesesh_core::{
@@ -142,11 +142,22 @@ async fn load_overrides(state: &State) -> Result<PricingOverridesResponse, ApiEr
     }
 }
 
+enum UnmatchedLookup {
+    NotModified {
+        etag: String,
+    },
+    Loaded {
+        value: UnmatchedModelsResponse,
+        etag: String,
+    },
+}
+
 async fn load_unmatched(
     state: &State,
+    headers: HeaderMap,
     from: Option<f64>,
     to: Option<f64>,
-) -> Result<UnmatchedModelsResponse, ApiError> {
+) -> Result<UnmatchedLookup, ApiError> {
     let failure = || {
         ApiError::static_msg(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -156,13 +167,22 @@ async fn load_unmatched(
     let snapshot = state.pricing.snapshot().map_err(|_| failure())?;
     let cache = state.pricing_unmatched_cache.clone();
     let query_scope = state.query_scope.clone();
+    let etag_namespace = state.etag_namespace;
     state
         .runtime
         .read(move |conn| {
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
-            let key = json!(["pricing-unmatched", snapshot.generation(), from, to]);
-            cached_catalog(&cache, revision, key, || {
+            let generation = snapshot.generation();
+            let tag = etag::weak_etag(
+                etag_namespace,
+                &json!(["pricing-unmatched", revision, generation, from, to]),
+            );
+            if etag::matches_if_none_match(&headers, &tag) {
+                return Ok(UnmatchedLookup::NotModified { etag: tag });
+            }
+            let key = json!(["pricing-unmatched", generation, from, to]);
+            let value = cached_catalog(&cache, revision, key, || {
                 Ok(UnmatchedModelsResponse {
                     unmatched_models: codesesh_core::query_unmatched_models(
                         conn,
@@ -172,7 +192,8 @@ async fn load_unmatched(
                         &snapshot.pricing,
                     )?,
                 })
-            })
+            })?;
+            Ok(UnmatchedLookup::Loaded { value, etag: tag })
         })
         .await
         .map_err(|_| failure())
@@ -218,15 +239,22 @@ pub async fn overrides(AxumState(state): AxumState<Arc<State>>) -> Response {
 pub async fn unmatched(
     AxumState(state): AxumState<Arc<State>>,
     RawQuery(raw): RawQuery,
+    headers: HeaderMap,
 ) -> Response {
-    async {
+    match async {
         let window = parse_window(raw.as_deref(), &state.options)?;
-        load_unmatched(&state, window.from, window.base_to)
-            .await
-            .map(Json)
+        load_unmatched(&state, headers, window.from, window.base_to).await
     }
     .await
-    .into_response()
+    {
+        Ok(UnmatchedLookup::NotModified { etag: tag }) => etag::not_modified(&tag),
+        Ok(UnmatchedLookup::Loaded { value, etag: tag }) => {
+            let mut response = Json(value).into_response();
+            etag::apply_headers(&mut response, &tag);
+            response
+        }
+        Err(error) => error.into_response(),
+    }
 }
 
 pub async fn models(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQuery) -> Response {
