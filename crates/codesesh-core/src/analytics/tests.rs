@@ -452,3 +452,179 @@ fn dashboard_prefers_non_fallback_project_name_outside_requested_window() {
     );
     assert_eq!(result["perProject"][0]["displayName"], "codesesh-monorepo");
 }
+
+#[test]
+fn load_scoped_cost_facts_matches_unfiltered_and_filtered_scopes() {
+    const BUCKET: i64 = 900_000;
+    let first = head("first", None, 2 * BUCKET);
+    let mut second = head("second", None, 3 * BUCKET);
+    second.reference.agent_name = "claudecode".into();
+    second.project_identity.key = "/other".into();
+    let mut parsed: Vec<_> = [first, second]
+        .into_iter()
+        .map(|mut head| {
+            head.stats.message_count = 1;
+            head.stats.total_input_tokens = 10.0;
+            head.stats.total_output_tokens = 2.0;
+            head.stats.total_cost = 1.5;
+            let time = head.time_updated as i64;
+            let mut detail = serde_json::to_value(&head).unwrap();
+            detail["messages"] = json!([{
+                "id": "m1",
+                "role": "assistant",
+                "agent": null,
+                "time_created": time,
+                "time_completed": null,
+                "mode": null,
+                "model": "model-a",
+                "provider": null,
+                "tokens": { "input": 10, "output": 2 },
+                "cost": 1.5,
+                "parts": []
+            }]);
+            detail["detail_freshness"] = json!("fresh");
+            detail["file_activity"] = json!([]);
+            crate::agents::ParsedSession {
+                head,
+                source: "/fixture/not-required".into(),
+                detail: serde_json::from_value(detail).unwrap(),
+            }
+        })
+        .collect();
+    let mut cache = crate::storage::Cache::open(None).unwrap();
+    cache.publish(&mut parsed).unwrap();
+    let all_sessions = cache.snapshot().unwrap();
+    let unfiltered = DashboardScope::default();
+    let expected = load_cost_facts(cache.connection(), None, None, true).unwrap();
+
+    // Unfiltered full snapshot (fast path without serializing all references).
+    let actual = load_scoped_cost_facts(
+        cache.connection(),
+        &all_sessions,
+        &unfiltered,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(actual.sessions.len(), expected.sessions.len());
+    assert_eq!(actual.messages.len(), expected.messages.len());
+    assert_eq!(
+        serde_json::to_value(&actual.sessions).unwrap(),
+        serde_json::to_value(&expected.sessions).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&actual.messages).unwrap(),
+        serde_json::to_value(&expected.messages).unwrap()
+    );
+
+    // Duplicate entries in an unfiltered snapshot still match full cost facts.
+    let duplicated = vec![
+        all_sessions[0].clone(),
+        all_sessions[0].clone(),
+        all_sessions[1].clone(),
+    ];
+    let dup_actual = load_scoped_cost_facts(
+        cache.connection(),
+        &duplicated,
+        &unfiltered,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&dup_actual.sessions).unwrap(),
+        serde_json::to_value(&expected.sessions).unwrap()
+    );
+
+    // Subsetted snapshot (e.g. query_scope filter) with unfiltered DashboardScope stays restricted.
+    let codex_only: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.reference.agent_name == "codex")
+        .cloned()
+        .collect();
+    let subset_actual = load_scoped_cost_facts(
+        cache.connection(),
+        &codex_only,
+        &unfiltered,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(subset_actual.sessions.len(), 1);
+    assert_eq!(subset_actual.sessions[0].reference.agent_name, "codex");
+    assert_eq!(subset_actual.messages.len(), 1);
+
+    // Filtered DashboardScope on full snapshot matches the same codex-only subset.
+    let agent_scope = DashboardScope {
+        agent: Some("codex".into()),
+        ..DashboardScope::default()
+    };
+    let filtered_actual = load_scoped_cost_facts(
+        cache.connection(),
+        &all_sessions,
+        &agent_scope,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&filtered_actual.sessions).unwrap(),
+        serde_json::to_value(&subset_actual.sessions).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&filtered_actual.messages).unwrap(),
+        serde_json::to_value(&subset_actual.messages).unwrap()
+    );
+
+    // Non-matching scope and empty snapshot both return empty cost facts.
+    let empty_scope = DashboardScope {
+        agent: Some("missing".into()),
+        ..DashboardScope::default()
+    };
+    let no_match = load_scoped_cost_facts(
+        cache.connection(),
+        &all_sessions,
+        &empty_scope,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    assert!(no_match.sessions.is_empty());
+    assert!(no_match.messages.is_empty());
+
+    let empty_slice =
+        load_scoped_cost_facts(cache.connection(), &[], &unfiltered, None, None, true).unwrap();
+    assert!(empty_slice.sessions.is_empty());
+    assert!(empty_slice.messages.is_empty());
+}
+
+#[test]
+fn count_agents_in_activity_window_matches_filter_activity_window() {
+    let parent = head("parent", None, 200);
+    let mut child = head("child", Some("parent"), 500);
+    child.reference.agent_name = "claudecode".into();
+    child.parent_reference = Some(parent.reference.clone());
+    let mut orphan = head("orphan", None, 900);
+    orphan.reference.agent_name = "claudecode".into();
+    let cycle_a = head("a", Some("b"), 100);
+    let cycle_b = head("b", Some("a"), 220);
+    let sessions = vec![parent, child, orphan, cycle_a, cycle_b];
+
+    for (from, to) in [
+        (None, None),
+        (Some(150.0), Some(250.0)),
+        (Some(800.0), None),
+    ] {
+        let mut expected = HashMap::new();
+        for s in crate::session_list::filter_activity_window(&sessions, from, to) {
+            *expected.entry(s.reference.agent_name).or_insert(0) += 1;
+        }
+        let actual = crate::session_list::count_agents_in_activity_window(&sessions, from, to);
+        assert_eq!(actual, expected, "window=({from:?}, {to:?})");
+    }
+}

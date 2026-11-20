@@ -1907,3 +1907,207 @@ async fn session_matches_endpoint_returns_ordered_indices_and_isolates_nodes() {
 
     runtime.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn pricing_unmatched_supports_weak_etag_304_and_invalidates_on_override_and_revision() {
+    use axum::http::header;
+
+    async fn raw_get(
+        app: &Router,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut req = Request::builder()
+            .method(Method::GET)
+            .uri(path)
+            .header("host", "localhost:4521");
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let response = app
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap()
+            .to_vec();
+        (status, headers, bytes)
+    }
+
+    let auth = [("authorization", "Bearer secret")];
+    let json_auth = [
+        ("authorization", "Bearer secret"),
+        ("content-type", "application/json"),
+    ];
+    let (app, runtime, pricing, _dir) = pricing_app(
+        &[("000000000031", "acme/etag-unmatched-v1", 1_000_000, 500_000)],
+        Some(StateStore::memory().unwrap()),
+        true,
+    )
+    .await;
+
+    let path = "/api/pricing/unmatched?days=0";
+    let (status, headers, body) = raw_get(&app, path, &auth).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok()),
+        Some("no-cache")
+    );
+    let initial_etag = headers
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .expect("weak ETag header")
+        .to_owned();
+    assert!(initial_etag.starts_with("W/\""));
+    let parsed: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        parsed["unmatchedModels"][0]["modelKey"],
+        "acme/etag-unmatched-v1"
+    );
+
+    // Matching If-None-Match returns 304 Not Modified with empty body.
+    let (status_304, headers_304, body_304) = raw_get(
+        &app,
+        path,
+        &[
+            ("authorization", "Bearer secret"),
+            ("if-none-match", &initial_etag),
+        ],
+    )
+    .await;
+    assert_eq!(status_304, StatusCode::NOT_MODIFIED);
+    assert!(body_304.is_empty());
+    assert_eq!(
+        headers_304.get(header::ETAG).and_then(|v| v.to_str().ok()),
+        Some(initial_etag.as_str())
+    );
+    assert_eq!(
+        headers_304
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok()),
+        Some("no-cache")
+    );
+
+    // Saving a pricing override bumps pricing generation and invalidates the ETag immediately.
+    let (status, _) = request(
+        &app,
+        Method::PUT,
+        "/api/pricing/overrides",
+        &json_auth,
+        r#"{"model":"acme/etag-unmatched-v1","kind":"manual","rates":{"input":1.0,"output":2.0,"cacheRead":0.0,"cacheWrite":0.0}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status_after_override, headers_after_override, body_after_override) = raw_get(
+        &app,
+        path,
+        &[
+            ("authorization", "Bearer secret"),
+            ("if-none-match", &initial_etag),
+        ],
+    )
+    .await;
+    assert_eq!(status_after_override, StatusCode::OK);
+    let override_etag = headers_after_override
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .unwrap()
+        .to_owned();
+    assert_ne!(override_etag, initial_etag);
+    let parsed: Value = serde_json::from_slice(&body_after_override).unwrap();
+    assert!(parsed["unmatchedModels"].as_array().unwrap().is_empty());
+
+    wait_for_repricing(&runtime, pricing.generation()).await;
+    // After repricing bumps analytics_revision, obtain the settled ETag and verify 304.
+    let (status, headers, _) = raw_get(&app, path, &auth).await;
+    assert_eq!(status, StatusCode::OK);
+    let settled_etag = headers
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .unwrap()
+        .to_owned();
+    let (status_304, _, _) = raw_get(
+        &app,
+        path,
+        &[
+            ("authorization", "Bearer secret"),
+            ("if-none-match", &settled_etag),
+        ],
+    )
+    .await;
+    assert_eq!(status_304, StatusCode::NOT_MODIFIED);
+
+    // Uploading a new session with another unmatched model bumps analytics_revision and invalidates ETag.
+    let worker_dir = tempfile::tempdir().unwrap();
+    let (mut worker, grant) = pair_test_worker(&app, worker_dir.path(), "Worker ETag").await;
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut batch = codesesh_core::runtime::ScanBatch {
+        source_presence: None,
+        sessions: vec![codex_fixture_session(
+            worker_dir.path(),
+            "000000000032",
+            "acme/etag-unmatched-v2",
+            500_000,
+            250_000,
+            now - 5_000,
+            &codesesh_core::pricing::Pricing::bundled(),
+        )],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        completion: None,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    while let Some(pending) = worker.next_upload().unwrap() {
+        let upload = codesesh_core::sync::Upload {
+            epoch: grant.epoch.clone(),
+            stream_id: worker.stream_id().unwrap(),
+            sequence: pending.sequence,
+            payload_version: pending.payload_version,
+            digest: pending.digest,
+            operation: pending.operation,
+        };
+        let receipt = runtime
+            .receive_upload(
+                grant.credential.clone(),
+                upload,
+                pricing.snapshot().unwrap(),
+            )
+            .await
+            .unwrap();
+        worker
+            .acknowledge(&receipt.stream_id, receipt.sequence, &receipt.digest)
+            .unwrap();
+    }
+
+    let (status_after_upload, headers_after_upload, body_after_upload) = raw_get(
+        &app,
+        path,
+        &[
+            ("authorization", "Bearer secret"),
+            ("if-none-match", &settled_etag),
+        ],
+    )
+    .await;
+    assert_eq!(status_after_upload, StatusCode::OK);
+    let upload_etag = headers_after_upload
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .unwrap();
+    assert_ne!(upload_etag, settled_etag.as_str());
+    let parsed: Value = serde_json::from_slice(&body_after_upload).unwrap();
+    assert_eq!(
+        parsed["unmatchedModels"][0]["modelKey"],
+        "acme/etag-unmatched-v2"
+    );
+
+    runtime.shutdown().await.unwrap();
+}

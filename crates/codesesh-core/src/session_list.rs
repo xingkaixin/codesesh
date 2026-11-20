@@ -16,11 +16,15 @@ pub(crate) struct SessionTree<'a> {
 
 impl<'a> SessionTree<'a> {
     pub fn new(sessions: &'a [SessionHead]) -> Self {
-        let mut by_ref = HashMap::new();
-        let mut unique = Vec::new();
+        Self::from_refs(sessions.iter())
+    }
+
+    pub fn from_refs(sessions: impl IntoIterator<Item = &'a SessionHead>) -> Self {
+        let mut by_ref: HashMap<&'a SessionReference, usize> = HashMap::new();
+        let mut unique: Vec<&'a SessionHead> = Vec::new();
         for session in sessions {
             if !by_ref.contains_key(&session.reference) {
-                by_ref.insert(session.reference.clone(), unique.len());
+                by_ref.insert(&session.reference, unique.len());
                 unique.push(session);
             }
         }
@@ -104,6 +108,45 @@ pub fn filter_activity_window(
         .iter()
         .filter(|s| visible.contains(&s.reference))
         .cloned()
+        .collect()
+}
+
+pub fn count_agents_in_activity_window<'a>(
+    sessions: impl IntoIterator<Item = &'a SessionHead>,
+    from: Option<f64>,
+    to: Option<f64>,
+) -> HashMap<String, usize> {
+    let mut counts: HashMap<&'a str, usize> = HashMap::new();
+    if from.is_none() && to.is_none() {
+        for session in sessions {
+            *counts
+                .entry(session.reference.agent_name.as_str())
+                .or_insert(0) += 1;
+        }
+        return counts
+            .into_iter()
+            .map(|(agent, count)| (agent.to_owned(), count))
+            .collect();
+    }
+    let items: Vec<&'a SessionHead> = sessions.into_iter().collect();
+    let tree = SessionTree::from_refs(items.iter().copied());
+    let visible: HashSet<&'a SessionReference> = tree
+        .entries
+        .iter()
+        .filter(|&&entry| in_window(tree.sessions[entry].time_updated, from, to))
+        .flat_map(|&entry| tree.descendants(entry))
+        .map(|index| &tree.sessions[index].reference)
+        .collect();
+    for session in items {
+        if visible.contains(&session.reference) {
+            *counts
+                .entry(session.reference.agent_name.as_str())
+                .or_insert(0) += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(agent, count)| (agent.to_owned(), count))
         .collect()
 }
 

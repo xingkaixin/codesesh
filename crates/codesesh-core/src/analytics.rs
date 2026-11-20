@@ -39,6 +39,10 @@ pub struct DashboardScope {
     pub project_key: Option<String>,
 }
 impl DashboardScope {
+    pub(crate) fn is_unfiltered(&self) -> bool {
+        self.agent.is_none() && self.project_kind.is_none() && self.project_key.is_none()
+    }
+
     pub(crate) fn matches(&self, session: &SessionHead) -> bool {
         self.agent
             .as_ref()
