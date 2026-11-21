@@ -55,6 +55,7 @@ CREATE TABLE sessions (
       meta_json TEXT,
       head_meta_json TEXT,
       publication_id TEXT,
+      has_unmatched_pricing_meta INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (source_node_id, agent_name, session_id)
     );
 
@@ -66,6 +67,10 @@ CREATE INDEX idx_sessions_project
 
 CREATE INDEX idx_sessions_parent
       ON sessions(source_node_id, parent_agent_name, parent_session_id);
+
+CREATE INDEX idx_sessions_unmatched_pricing_meta
+      ON sessions(has_unmatched_pricing_meta, activity_time)
+      WHERE publication_id IS NULL AND has_unmatched_pricing_meta = 1;
 
 CREATE TABLE messages (
       source_node_id TEXT NOT NULL DEFAULT 'local',

@@ -211,6 +211,24 @@ fn collect_bucket_unmatched(
     Ok(())
 }
 
+fn meta_unmatched_sql(scope_sql: &str, window: &str) -> String {
+    format!(
+        "SELECT s.source_node_id, s.agent_name, s.session_id, s.meta_json
+         FROM sessions s
+         WHERE s.publication_id IS NULL
+           AND s.has_unmatched_pricing_meta = 1
+           AND NOT EXISTS (
+               SELECT 1 FROM session_cost_summary c
+               WHERE c.source_node_id = s.source_node_id
+                 AND c.agent_name = s.agent_name
+                 AND c.session_id = s.session_id
+                 AND ({TIMED_USAGE_SQL})
+           )
+           {scope_sql}
+           {window}"
+    )
+}
+
 fn collect_meta_unmatched(
     connection: &Connection,
     scope_sql: &str,
@@ -230,33 +248,21 @@ fn collect_meta_unmatched(
         window.push_str(" AND s.activity_time <= ?");
         params.push(Value::Real(to));
     }
-    let sql = format!(
-        "SELECT s.source_node_id, s.agent_name, s.session_id, s.meta_json
-         FROM sessions s
-         WHERE s.publication_id IS NULL
-           AND s.meta_json LIKE '%\"rustPricing\"%'
-           AND (instr(s.meta_json, '\"cost\":null') > 0 OR instr(s.meta_json, '\"cost\": null') > 0)
-           AND NOT EXISTS (
-               SELECT 1 FROM session_cost_summary c
-               WHERE c.source_node_id = s.source_node_id
-                 AND c.agent_name = s.agent_name
-                 AND c.session_id = s.session_id
-                 AND ({TIMED_USAGE_SQL})
-           )
-           {scope_sql}
-           {window}"
-    );
+    let sql = meta_unmatched_sql(scope_sql, &window);
     let mut stmt = connection.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(params), |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(3)?,
         ))
     })?;
     for row in rows {
         let (node_id, agent_name, session_id, raw_meta) = row?;
+        let Some(raw_meta) = raw_meta else {
+            continue;
+        };
         let Ok(stored) = serde_json::from_str::<StoredPricing>(&raw_meta) else {
             continue;
         };
@@ -868,5 +874,160 @@ mod tests {
         .unwrap();
         assert_eq!(after_zero.len(), 1);
         assert_eq!(after_zero[0].model_key, "other-model");
+    }
+
+    #[test]
+    fn meta_unmatched_query_uses_partial_index_and_tracks_reprice_transitions() {
+        let home = tempfile::tempdir().unwrap();
+        let controller = PricingController::load(home.path());
+        let pricing = controller.snapshot().unwrap().pricing;
+
+        let tokens = MessageTokens {
+            input: Some(1_000.0),
+            output: Some(200.0),
+            reasoning: None,
+            cache_read: None,
+            cache_create: None,
+            cache_create_1h: None,
+        };
+        let priced_sess = make_session(
+            TestSession {
+                node_id: "local",
+                agent: "droid",
+                id: "priced-1",
+                directory: "/work/app",
+                time: 1_800_000.0,
+                messages: Vec::new(),
+                head_inputs_model: Some(("gpt-5.4", tokens.clone())),
+            },
+            &pricing,
+        );
+        let unmatched_sess = make_session(
+            TestSession {
+                node_id: "local",
+                agent: "droid",
+                id: "unmatched-1",
+                directory: "/work/app",
+                time: 1_800_000.0,
+                messages: Vec::new(),
+                head_inputs_model: Some(("acme/unmatched-head", tokens.clone())),
+            },
+            &pricing,
+        );
+        let mut cache = Cache::open(None).unwrap();
+        cache.publish(&mut [priced_sess, unmatched_sess]).unwrap();
+
+        let flag = |db: &Connection, id: &str| -> i64 {
+            db.query_row(
+                "SELECT has_unmatched_pricing_meta FROM sessions WHERE session_id=?",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(flag(cache.connection(), "priced-1"), 0);
+        assert_eq!(flag(cache.connection(), "unmatched-1"), 1);
+
+        // Register UDF required by TIMED_USAGE_SQL before running EXPLAIN QUERY PLAN.
+        let _ = query_unmatched_models(
+            cache.connection(),
+            &QueryScope::default(),
+            None,
+            None,
+            &pricing,
+        )
+        .unwrap();
+
+        let explain = |scope: &QueryScope, window: &str, extra_params: Vec<Value>| -> Vec<String> {
+            let (scope_sql, mut params) = scope_where(cache.connection(), scope).unwrap();
+            params.extend(extra_params);
+            let sql = format!(
+                "EXPLAIN QUERY PLAN {}",
+                meta_unmatched_sql(&scope_sql, window)
+            );
+            let mut stmt = cache.connection().prepare(&sql).unwrap();
+            stmt.query_map(params_from_iter(params), |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+        };
+
+        for (label, plan) in [
+            ("unscoped", explain(&QueryScope::default(), "", Vec::new())),
+            (
+                "windowed",
+                explain(
+                    &QueryScope::default(),
+                    " AND s.activity_time >= ? AND s.activity_time <= ?",
+                    vec![Value::Real(1_000_000.0), Value::Real(2_000_000.0)],
+                ),
+            ),
+            (
+                "scoped",
+                explain(
+                    &QueryScope {
+                        source_node_id: Some("local".into()),
+                        agents: vec!["droid".into()],
+                        project_scope: None,
+                    },
+                    " AND s.activity_time >= ? AND s.activity_time <= ?",
+                    vec![Value::Real(1_000_000.0), Value::Real(2_000_000.0)],
+                ),
+            ),
+        ] {
+            let joined = plan.join(" | ");
+            assert!(
+                joined.contains("idx_sessions_unmatched_pricing_meta"),
+                "{label} plan must use idx_sessions_unmatched_pricing_meta, got: {joined}"
+            );
+        }
+
+        // Adding a zero-dollar override and repricing clears the flag to 0.
+        let zero_snap = controller
+            .replace_overrides(vec![ModelPriceOverrideRecord {
+                model_key: "acme/unmatched-head".into(),
+                display_model: "acme/unmatched-head".into(),
+                kind: PricingOverrideKind::Manual,
+                target_model: None,
+                rates: Some(PricingRatePerMillion {
+                    input: 0.0,
+                    output: 0.0,
+                    cache_read: 0.0,
+                    cache_write: 0.0,
+                }),
+                acknowledged_official_hash: None,
+                acknowledged_official_json: None,
+                created_at: 1,
+                updated_at: 1,
+            }])
+            .unwrap();
+        cache.reprice("droid", &zero_snap.pricing).unwrap();
+        assert_eq!(flag(cache.connection(), "unmatched-1"), 0);
+        assert!(
+            query_unmatched_models(
+                cache.connection(),
+                &QueryScope::default(),
+                None,
+                None,
+                &zero_snap.pricing,
+            )
+            .unwrap()
+            .is_empty()
+        );
+
+        // Removing the override and repricing sets the flag back to 1.
+        let cleared_snap = controller.replace_overrides(Vec::new()).unwrap();
+        cache.reprice("droid", &cleared_snap.pricing).unwrap();
+        assert_eq!(flag(cache.connection(), "unmatched-1"), 1);
+        let restored = query_unmatched_models(
+            cache.connection(),
+            &QueryScope::default(),
+            None,
+            None,
+            &cleared_snap.pricing,
+        )
+        .unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].model_key, "acme/unmatched-head");
     }
 }
