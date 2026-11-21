@@ -75,7 +75,8 @@ pub async fn guard(
     let mut response = authorize(&state, request, next).await;
     let duration_ms = started.elapsed().as_millis();
     if let Some(logger) = crate::logging::current() {
-        let level = request_log_level(&route, response.status(), duration_ms);
+        let keep_info = response.extensions().get::<KeepInfoLog>().is_some();
+        let level = request_log_level(&route, response.status(), duration_ms, keep_info);
         logger.with_context(context).emit(
             level,
             "http.request",
@@ -275,8 +276,18 @@ pub async fn static_file(request: Request) -> Response {
 
 const WORKER_FAST_REQUEST_THRESHOLD_MS: u128 = 200;
 
-fn request_log_level(route: &str, status: StatusCode, duration_ms: u128) -> crate::logging::Level {
-    if matches!(route, "/api/worker/hello" | "/api/worker/upload")
+/// Marks a 2xx worker response (e.g. version-incompatibility `hello`) to stay at `info`.
+#[derive(Clone, Copy)]
+pub(super) struct KeepInfoLog;
+
+fn request_log_level(
+    route: &str,
+    status: StatusCode,
+    duration_ms: u128,
+    keep_info: bool,
+) -> crate::logging::Level {
+    if !keep_info
+        && matches!(route, "/api/worker/hello" | "/api/worker/upload")
         && status.is_success()
         && duration_ms < WORKER_FAST_REQUEST_THRESHOLD_MS
     {
@@ -310,41 +321,69 @@ mod tests {
 
     #[test]
     fn worker_routine_fast_success_requests_log_at_debug() {
-        for (route, status, duration_ms, expected) in [
-            ("/api/worker/hello", StatusCode::OK, 0, Level::Debug),
-            ("/api/worker/hello", StatusCode::OK, 199, Level::Debug),
-            ("/api/worker/upload", StatusCode::OK, 15, Level::Debug),
+        for (route, status, duration_ms, keep_info, expected) in [
+            ("/api/worker/hello", StatusCode::OK, 0, false, Level::Debug),
+            (
+                "/api/worker/hello",
+                StatusCode::OK,
+                199,
+                false,
+                Level::Debug,
+            ),
+            ("/api/worker/hello", StatusCode::OK, 5, true, Level::Info),
+            (
+                "/api/worker/upload",
+                StatusCode::OK,
+                15,
+                false,
+                Level::Debug,
+            ),
             (
                 "/api/worker/upload",
                 StatusCode::NO_CONTENT,
                 50,
+                false,
                 Level::Debug,
             ),
-            ("/api/worker/hello", StatusCode::OK, 200, Level::Info),
-            ("/api/worker/upload", StatusCode::OK, 350, Level::Info),
+            ("/api/worker/hello", StatusCode::OK, 200, false, Level::Info),
+            (
+                "/api/worker/upload",
+                StatusCode::OK,
+                350,
+                false,
+                Level::Info,
+            ),
             (
                 "/api/worker/hello",
                 StatusCode::UNAUTHORIZED,
                 5,
+                false,
                 Level::Info,
             ),
-            ("/api/worker/upload", StatusCode::CONFLICT, 5, Level::Info),
+            (
+                "/api/worker/upload",
+                StatusCode::CONFLICT,
+                5,
+                false,
+                Level::Info,
+            ),
             (
                 "/api/worker/upload",
                 StatusCode::INTERNAL_SERVER_ERROR,
                 5,
+                false,
                 Level::Info,
             ),
-            ("/api/worker/pair", StatusCode::OK, 5, Level::Info),
-            ("/api/worker/recover", StatusCode::OK, 5, Level::Info),
-            ("/api/worker/goodbye", StatusCode::OK, 5, Level::Info),
-            ("/api/sessions", StatusCode::OK, 5, Level::Info),
-            ("/api/status", StatusCode::OK, 5, Level::Info),
+            ("/api/worker/pair", StatusCode::OK, 5, false, Level::Info),
+            ("/api/worker/recover", StatusCode::OK, 5, false, Level::Info),
+            ("/api/worker/goodbye", StatusCode::OK, 5, false, Level::Info),
+            ("/api/sessions", StatusCode::OK, 5, false, Level::Info),
+            ("/api/status", StatusCode::OK, 5, false, Level::Info),
         ] {
             assert_eq!(
-                request_log_level(route, status, duration_ms),
+                request_log_level(route, status, duration_ms, keep_info),
                 expected,
-                "{route} {status} {duration_ms}ms"
+                "{route} {status} {duration_ms}ms keep_info={keep_info}"
             );
         }
     }

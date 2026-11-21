@@ -401,8 +401,7 @@ impl Scanning {
                             enqueued |= batch_enqueued;
                             has_changes = batch_changed;
                             cleared_error = self.errors.remove(agent).is_some();
-                            if cleared_error {
-                                self.logged_errors.remove(agent);
+                            if complete && self.logged_errors.remove(agent).is_some() {
                                 super::log_info(
                                     "worker.scan.recovered",
                                     serde_json::json!({"agent": agent}),
@@ -869,7 +868,37 @@ mod tests {
         assert!(scanning.logged_errors["codex"].1 > first_logged_at);
         assert!(scanning.errors["codex"].contains("disk full"));
 
-        // Recovery clears both the active error and throttle entry.
+        // An incomplete page success must not clear the throttle or emit recovery,
+        // so a persistent error on a later page stays throttled until a complete scan succeeds.
+        let scanner = scanning.scanners[0].take().unwrap();
+        let mut partial_batch = batch();
+        partial_batch.complete = false;
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Ok(partial_batch)) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(!scanning.errors.contains_key("codex"));
+        let (tracked_msg, tracked_at) = scanning.logged_errors["codex"].clone();
+        assert!(tracked_msg.contains("disk full"));
+
+        // Because `partial_batch.complete == false`, `tick` immediately scheduled the next page.
+        // Replace that pending page with the same failure and verify the throttle still suppresses it.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let (_, _, pending_page) = scanning.pending.take().unwrap();
+        let (scanner, _) = pending_page.await.unwrap();
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Err(anyhow::anyhow!("disk full"))) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.logged_errors["codex"].1, tracked_at);
+
+        // Full scan recovery clears both the active error and throttle entry.
         let scanner = scanning.scanners[0].take().unwrap();
         scanning.pending = Some((
             0,

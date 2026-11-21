@@ -171,7 +171,16 @@ pub async fn hello(
     })
     .await
     {
-        Ok(hello) => Json(hello).into_response(),
+        Ok(hello) => {
+            let keep_info = hello.error.is_some();
+            let mut response = Json(hello).into_response();
+            if keep_info {
+                response
+                    .extensions_mut()
+                    .insert(super::security::KeepInfoLog);
+            }
+            response
+        }
         Err(response) => response,
     }
 }
