@@ -123,9 +123,9 @@ fn migrate(
         for table in saved.iter().rev() {
             db.execute_batch(&format!("DROP TABLE migration_{table}"))?;
         }
-        // A full table migration drops the indexes installed by this patch.
+        // A full table migration drops the indexes installed by this patch and resets derived flags.
         db.execute(
-            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1')",
+            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1','unmatched_pricing_meta_index_v1','unmatched_pricing_meta_v1','unmatched_pricing_meta_v1_cursor')",
             [],
         )?;
         super::search_text::reset_index(db)?;
@@ -222,9 +222,9 @@ pub fn ensure_with_progress(
             [super::CACHE_SCHEMA_VERSION.to_string()],
         )?;
         db.execute_batch("COMMIT")?;
-    } else if matches!(version, 36..=38) {
-        // Schemas 37-39 add compressed message bodies, usage buckets, and code-token FTS;
-        // `compress_existing`, `ensure_usage_buckets`, and `search_text::ensure_index` upgrade in place.
+    } else if matches!(version, 36..=39) {
+        // Schemas 37-40 add compressed message bodies/search text, usage buckets,
+        // code-token FTS, and unmatched pricing metadata indexing in place.
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
@@ -282,6 +282,19 @@ pub fn ensure_with_progress(
             total: None,
         })?;
     }
+    // Ensure new in-place columns exist before `missing_objects_schema()` can create indexes over them.
+    if !columns(db, "sessions")?.contains("has_unmatched_pricing_meta") {
+        db.execute_batch("BEGIN IMMEDIATE")?;
+        let altered = db.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN has_unmatched_pricing_meta INTEGER NOT NULL DEFAULT 0",
+        );
+        if altered.is_err() {
+            let _ = db.execute_batch("ROLLBACK");
+        } else {
+            db.execute_batch("COMMIT")?;
+        }
+        altered?;
+    }
     if !exists(db, "session_file_activity_path_fts")? {
         db.execute_batch("BEGIN IMMEDIATE")?;
         let repaired = (|| -> Result<()> {
@@ -324,6 +337,10 @@ pub fn ensure_with_progress(
                 "CREATE INDEX IF NOT EXISTS idx_sessions_visible ON sessions(source_node_id,agent_name,session_id,publication_id)",
             ),
             (
+                "unmatched_pricing_meta_index_v1",
+                "CREATE INDEX IF NOT EXISTS idx_sessions_unmatched_pricing_meta ON sessions(has_unmatched_pricing_meta,activity_time) WHERE publication_id IS NULL AND has_unmatched_pricing_meta=1",
+            ),
+            (
                 "pi_automated_messages_v1",
                 "INSERT OR IGNORE INTO pending_reindex SELECT source_node_id,agent_name,session_id FROM sessions WHERE agent_name='pi'",
             ),
@@ -357,10 +374,12 @@ pub fn ensure_with_progress(
         let _ = db.execute_batch("ROLLBACK");
     }
     result?;
+    ensure_unmatched_pricing_meta(db, progress)?;
     ensure_usage_buckets(db, progress)?;
     super::search_text::rebuild(db, progress)?;
     super::search_text::ensure_index(db, progress)?;
     super::body::compress_existing(db, progress)?;
+    super::body::compress_existing_content_text(db, progress)?;
     if path.is_some() {
         compact(db, COMPACT_MIN_FREE_PAGES, progress)?;
     }
@@ -380,6 +399,99 @@ fn missing_objects_schema() -> String {
 }
 
 const USAGE_BUCKETS_KEY: &str = "usage_buckets_v1";
+const UNMATCHED_PRICING_META_KEY: &str = "unmatched_pricing_meta_v1";
+const UNMATCHED_PRICING_META_CURSOR_KEY: &str = "unmatched_pricing_meta_v1_cursor";
+const UNMATCHED_PRICING_META_BATCH: i64 = 500;
+
+fn ensure_unmatched_pricing_meta(
+    db: &Connection,
+    progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
+) -> Result<()> {
+    let present = db
+        .query_row(
+            "SELECT 1 FROM cache_meta WHERE key=?",
+            [UNMATCHED_PRICING_META_KEY],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if present {
+        return Ok(());
+    }
+    let total: i64 = db.query_row("SELECT COALESCE(MAX(rowid),0) FROM sessions", [], |row| {
+        row.get(0)
+    })?;
+    let mut cursor: i64 = db
+        .query_row(
+            "SELECT value FROM cache_meta WHERE key=?",
+            [UNMATCHED_PRICING_META_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    while cursor < total {
+        progress(super::StorageProgress {
+            phase: "Indexing unmatched pricing metadata".into(),
+            done: cursor as u64,
+            total: Some(total as u64),
+        })?;
+        db.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| -> Result<i64> {
+            let rows = db
+                .prepare_cached(
+                    "SELECT rowid,has_unmatched_pricing_meta,
+                        CASE WHEN meta_json LIKE '%\"rustPricing\"%'
+                              AND (instr(meta_json,'\"cost\":null')>0 OR instr(meta_json,'\"cost\": null')>0)
+                             THEN meta_json END
+                     FROM sessions WHERE rowid>? ORDER BY rowid LIMIT ?",
+                )?
+                .query_map(params![cursor, UNMATCHED_PRICING_META_BATCH], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, bool>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let mut last = total;
+            for (rowid, current, raw) in rows {
+                let desired = super::reprice::has_unmatched_pricing_meta(raw.as_deref());
+                if desired != current {
+                    db.prepare_cached(
+                        "UPDATE sessions SET has_unmatched_pricing_meta=? WHERE rowid=?",
+                    )?
+                    .execute(params![desired, rowid])?;
+                }
+                last = rowid;
+            }
+            db.execute(
+                "INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![UNMATCHED_PRICING_META_CURSOR_KEY, last.to_string()],
+            )?;
+            Ok(last)
+        })();
+        match result {
+            Ok(last) => {
+                db.execute_batch("COMMIT")?;
+                cursor = last;
+            }
+            Err(error) => {
+                let _ = db.execute_batch("ROLLBACK");
+                return Err(error);
+            }
+        }
+    }
+    db.execute(
+        "DELETE FROM cache_meta WHERE key=?",
+        [UNMATCHED_PRICING_META_CURSOR_KEY],
+    )?;
+    db.execute(
+        "INSERT OR REPLACE INTO cache_meta VALUES(?,'1')",
+        [UNMATCHED_PRICING_META_KEY],
+    )?;
+    Ok(())
+}
 
 fn ensure_usage_buckets(
     db: &Connection,

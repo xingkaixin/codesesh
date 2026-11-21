@@ -22,7 +22,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, sync::Arc};
 
-pub(crate) const CACHE_SCHEMA_VERSION: i64 = 39;
+pub(crate) const CACHE_SCHEMA_VERSION: i64 = 40;
 
 pub struct StorageProgress {
     pub phase: String,
@@ -345,10 +345,12 @@ impl Cache {
             ]))?;
             let mut metadata = serde_json::json!({"sourcePath":session.source.to_string_lossy(),"sourceFingerprint":fingerprint,"parserVersion":crate::agents::parser_version(&reference.agent_name)});
             let head_metadata = snapshot::HeadMetadata::encode(head)?;
-            metadata["rustPricing"] = reprice::state(session)?;
-            if let Some(generation) = metadata["rustPricing"]["generation"].as_u64() {
+            let pricing_state = reprice::state(session);
+            let has_unmatched_pricing_meta = pricing_state.has_unmatched_head_input();
+            if let Some(generation) = pricing_state.generation {
                 reprice::invalidate_other_generation(transaction, generation)?;
             }
+            metadata["rustPricing"] = serde_json::to_value(&pricing_state)?;
             let detail_version = json::stringify(&serde_json::json!([
                 "session-detail-v1",
                 fingerprint,
@@ -401,8 +403,9 @@ impl Cache {
                      time_created,time_updated,activity_time,message_count,total_input_tokens,\
                      total_output_tokens,total_cache_read_tokens,total_cache_create_tokens,total_cost,\
                      cost_source,total_tokens,model_usage_json,smart_tags_json,\
-                     smart_tags_source_updated_at,smart_tags_classifier_revision,meta_json,head_meta_json\
-                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+                     smart_tags_source_updated_at,smart_tags_classifier_revision,meta_json,head_meta_json,\
+                     has_unmatched_pricing_meta\
+                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
                      ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET \
                      sort_index=excluded.sort_index,title=excluded.title,source_path=excluded.source_path,\
                      directory=excluded.directory,parent_agent_name=excluded.parent_agent_name,\
@@ -423,7 +426,8 @@ impl Cache {
                      smart_tags_json=excluded.smart_tags_json,\
                      smart_tags_source_updated_at=excluded.smart_tags_source_updated_at,\
                      smart_tags_classifier_revision=excluded.smart_tags_classifier_revision,\
-                     meta_json=excluded.meta_json,head_meta_json=excluded.head_meta_json,publication_id=NULL",
+                     meta_json=excluded.meta_json,head_meta_json=excluded.head_meta_json,\
+                     has_unmatched_pricing_meta=excluded.has_unmatched_pricing_meta,publication_id=NULL",
                 )?
                 .execute(params![
                     reference.source_node_id,
@@ -457,6 +461,7 @@ impl Cache {
                     head.smart_tags_classifier_revision,
                     json::stringify(&metadata)?,
                     head_metadata,
+                    has_unmatched_pricing_meta,
                 ])?;
             search_text::index_title_for_reference(transaction, reference, &head.title)?;
             let message_started = std::time::Instant::now();
@@ -491,7 +496,7 @@ impl Cache {
                     )?;
                 }
                 transaction.prepare_cached("INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,time_completed,agent,mode,model,provider,tokens_json,cost,cost_source,parts_json,parts_format_version,content_chain_digest,subagent_id,nickname,automated,content_text,tool_metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)")?.execute(
-                    params![reference.source_node_id,reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),body::pack(&parts)?,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),content,facts::tool_metadata(message)?])?;
+                    params![reference.source_node_id,reference.agent_name,reference.session_id,index as i64,message.id,role_name(&message.role),message.time_created,message.time_completed,message.agent,message.mode,message.model,message.provider,tokens,message.cost,message.cost_source.as_ref().map(CostSource::as_str),body::pack(&parts)?,digest,message.subagent_id,message.nickname,message.automated.unwrap_or(false),body::pack(&content)?,facts::tool_metadata(message)?])?;
                 search_text::index(transaction, transaction.last_insert_rowid(), &content)?;
                 indexed_bytes += content.len() as i64;
             }

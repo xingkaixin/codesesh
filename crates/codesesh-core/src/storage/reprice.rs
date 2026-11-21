@@ -99,8 +99,32 @@ pub(crate) struct PricingState {
     pub(crate) messages: BTreeMap<usize, CostBasis>,
 }
 
-pub(super) fn state(session: &ParsedSession) -> Result<serde_json::Value> {
-    Ok(serde_json::to_value(PricingState {
+impl PricingState {
+    pub(crate) fn has_unmatched_head_input(&self) -> bool {
+        self.version == 1
+            && self
+                .head
+                .inputs
+                .iter()
+                .any(|input| input.cost.is_none() && input.model.is_some())
+    }
+}
+
+pub(super) fn has_unmatched_pricing_meta(meta_json: Option<&str>) -> bool {
+    let Some(raw) = meta_json else {
+        return false;
+    };
+    if !raw.contains("\"rustPricing\"")
+        || (!raw.contains("\"cost\":null") && !raw.contains("\"cost\": null"))
+    {
+        return false;
+    }
+    serde_json::from_str::<StoredPricing>(raw)
+        .is_ok_and(|stored| stored.state.has_unmatched_head_input())
+}
+
+pub(super) fn state(session: &ParsedSession) -> PricingState {
+    PricingState {
         version: 1,
         generation: session
             .head
@@ -152,7 +176,7 @@ pub(super) fn state(session: &ParsedSession) -> Result<serde_json::Value> {
                 )
             })
             .collect(),
-    })?)
+    }
 }
 
 pub(crate) fn reprice_session(session: &mut ParsedSession, pricing: &Pricing) {
@@ -232,7 +256,7 @@ pub(super) fn reprice_head(
     head: &mut crate::model::SessionHead,
     pricing: &Pricing,
     value: &mut serde_json::Value,
-) -> Result<()> {
+) -> Result<bool> {
     let mut state: PricingState = serde_json::from_value(value.clone())?;
     state.head.cost = Some(head.stats.total_cost);
     state.head.source = head.stats.cost_source.clone();
@@ -254,8 +278,9 @@ pub(super) fn reprice_head(
             0
         },
     );
+    let has_unmatched = state.has_unmatched_head_input();
     *value = serde_json::to_value(state)?;
-    Ok(())
+    Ok(has_unmatched)
 }
 
 impl Cache {
@@ -389,7 +414,18 @@ fn reprice_rows(
         metadata["rustPricing"] = serde_json::to_value(&state)?;
         metadata["rustPricingRevision"] =
             (metadata["rustPricingRevision"].as_u64().unwrap_or(0) + 1).into();
-        transaction.execute("UPDATE sessions SET total_cost=?,cost_source=?,meta_json=? WHERE source_node_id=? AND agent_name=? AND session_id=?", params![state.head.cost.unwrap_or(0.0),state.head.source.as_ref().map(CostSource::as_str),serde_json::to_string(&metadata)?,node,agent,id])?;
+        transaction.execute(
+            "UPDATE sessions SET total_cost=?,cost_source=?,meta_json=?,has_unmatched_pricing_meta=? WHERE source_node_id=? AND agent_name=? AND session_id=?",
+            params![
+                state.head.cost.unwrap_or(0.0),
+                state.head.source.as_ref().map(CostSource::as_str),
+                serde_json::to_string(&metadata)?,
+                state.has_unmatched_head_input(),
+                node,
+                agent,
+                id
+            ],
+        )?;
         for table in ["session_model_cost", "session_cost_summary"] {
             transaction.execute(
                 &format!(

@@ -846,3 +846,358 @@ fn single_upsert_persists_and_updates_all_session_columns() {
     assert_eq!(updated.summary_files, None);
     assert!(updated.recorded_git_remotes.is_empty());
 }
+
+#[test]
+fn content_text_compresses_roundtrips_and_searches_with_fts_and_snippets() {
+    assert_eq!(
+        body::pack("").unwrap(),
+        rusqlite::types::Value::Text(String::new())
+    );
+    assert!(matches!(
+        body::pack("short").unwrap(),
+        rusqlite::types::Value::Text(_)
+    ));
+    let compressible = "compressible needle 数据库连接 ".repeat(40);
+    let packed = body::pack(&compressible).unwrap();
+    let rusqlite::types::Value::Blob(bytes) = packed else {
+        panic!("expected compressible text to pack as zstd blob");
+    };
+    assert_eq!(
+        body::unpack(rusqlite::types::ValueRef::Blob(&bytes)).unwrap(),
+        compressible
+    );
+
+    let root = tempfile::tempdir().unwrap();
+    let mut session = source(root.path(), "compressed-content");
+    session.head.title = "Unrelated title".into();
+    session.detail.head.title = session.head.title.clone();
+    session.detail.messages[0].parts = vec![MessagePart::Text {
+        text: compressible.clone(),
+        time_created: None,
+    }];
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+
+    let encoding: String = cache
+        .connection()
+        .query_row("SELECT typeof(content_text) FROM messages", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(encoding, "blob");
+
+    for query in ["needle", "数据库连接"] {
+        let hits =
+            crate::search::search_sessions(cache.connection(), query, &Default::default()).unwrap();
+        assert_eq!(hits.len(), 1, "query={query}");
+        assert!(
+            hits[0].snippet.contains(query),
+            "snippet={}",
+            hits[0].snippet
+        );
+    }
+
+    // Rebuilding FTS must unpack compressed BLOB rows cleanly.
+    cache.rebuild_search_indexes().unwrap();
+    for query in ["needle", "数据库连接"] {
+        let hits =
+            crate::search::search_sessions(cache.connection(), query, &Default::default()).unwrap();
+        assert_eq!(hits.len(), 1, "rebuilt query={query}");
+        assert!(hits[0].snippet.contains(query));
+    }
+
+    // Exercise the `length(content_text)>0` fallback when an earlier message has empty text
+    // and the next message is stored as a compressed BLOB.
+    let db = cache.connection();
+    db.execute(
+        "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
+         VALUES('local','codex',?,1,'m-empty','user',100,'[]','')",
+        [&session.head.reference.session_id],
+    )
+    .unwrap();
+    let compressed_fallback = body::pack(&"fallback payload ".repeat(30)).unwrap();
+    db.execute(
+        "UPDATE messages SET message_index=2, content_text=? WHERE message_index=0",
+        [&compressed_fallback],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE messages SET message_index=0 WHERE message_id='m-empty'",
+        [],
+    )
+    .unwrap();
+    // Point FTS hit for 'orphan' at rowid of m-empty (empty text) so resolve_message_match
+    // falls back to the first non-empty message (message_index=2, compressed BLOB).
+    let empty_rowid: i64 = db
+        .query_row(
+            "SELECT rowid FROM messages WHERE message_id='m-empty'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    db.execute(
+        "INSERT INTO message_fts(rowid,content_text,code_tokens) VALUES(?,'orphan','')",
+        [empty_rowid],
+    )
+    .unwrap();
+    let fallback_hits = crate::search::search_sessions(db, "orphan", &Default::default()).unwrap();
+    assert_eq!(fallback_hits.len(), 1);
+    assert!(
+        fallback_hits[0].snippet.contains("fallback payload"),
+        "expected fallback to skip empty text and unpack compressed blob, got: {}",
+        fallback_hits[0].snippet
+    );
+}
+
+#[test]
+fn existing_uncompressed_content_text_is_compressed_in_place() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = source(root.path(), "migrate-content");
+    let long_text = "repeated searchable token 数据库 ".repeat(40);
+    let mut short_msg = session.detail.messages[0].clone();
+    short_msg.id = "short-msg".into();
+    short_msg.parts = vec![MessagePart::Text {
+        text: "hi".into(),
+        time_created: None,
+    }];
+    session.detail.messages[0].parts = vec![MessagePart::Text {
+        text: long_text,
+        time_created: None,
+    }];
+    session.detail.messages.push(short_msg);
+
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    let db = cache.connection();
+
+    // Downgrade content_text back to uncompressed TEXT and clear completion marker.
+    let unpacked: Vec<(i64, String)> = db
+        .prepare("SELECT rowid, content_text FROM messages ORDER BY message_index")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, body::unpack(row.get_ref(1)?)?.into_owned()))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    for (rowid, text) in &unpacked {
+        db.execute(
+            "UPDATE messages SET content_text=? WHERE rowid=?",
+            params![text, rowid],
+        )
+        .unwrap();
+    }
+    db.execute_batch(
+        "DELETE FROM cache_meta WHERE key IN ('content_text_zstd_v1','content_text_zstd_v1_cursor','search_text_v2');",
+    )
+    .unwrap();
+
+    let types_before: Vec<String> = db
+        .prepare("SELECT typeof(content_text) FROM messages ORDER BY message_index")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(types_before, vec!["text", "text"]);
+
+    for _ in 0..2 {
+        schema::ensure(db, None).unwrap();
+        let types_after: Vec<String> = db
+            .prepare("SELECT typeof(content_text) FROM messages ORDER BY message_index")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(types_after, vec!["blob", "text"]);
+        let marker: String = db
+            .query_row(
+                "SELECT value FROM cache_meta WHERE key='content_text_zstd_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(marker, "1");
+        let cursor_present: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM cache_meta WHERE key='content_text_zstd_v1_cursor'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cursor_present, 0);
+        let hits = crate::search::search_sessions(db, "searchable", &Default::default()).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].snippet.contains("searchable"));
+    }
+}
+
+#[test]
+fn schema39_upgrades_in_place_to_schema40_without_backup() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("cache.db");
+    let pricing = crate::pricing::Pricing::bundled();
+    let tokens = crate::model::MessageTokens {
+        input: Some(1_000.0),
+        output: Some(200.0),
+        reasoning: None,
+        cache_read: None,
+        cache_create: None,
+        cache_create_1h: None,
+    };
+
+    let mut unmatched = source(root.path(), "v39-unmatched");
+    unmatched.detail.messages[0].parts = vec![MessagePart::Text {
+        text: "v39 compressible body ".repeat(40),
+        time_created: None,
+    }];
+    pricing.estimate_aggregate_tracked(
+        Some("acme/v39-missing"),
+        &tokens,
+        0.0,
+        &mut unmatched.head.stats.cost_inputs,
+    );
+    unmatched.head.stats.total_input_tokens = 1_000.0;
+    unmatched.head.stats.total_output_tokens = 200.0;
+    unmatched.detail.head = unmatched.head.clone();
+
+    let mut priced = source(root.path(), "v39-priced");
+    let cost = pricing
+        .estimate_aggregate_tracked(
+            Some("gpt-5.4"),
+            &tokens,
+            0.0,
+            &mut priced.head.stats.cost_inputs,
+        )
+        .unwrap();
+    priced.head.stats.total_cost = cost;
+    priced.head.stats.cost_source = Some(CostSource::Estimated);
+    priced.head.stats.total_input_tokens = 1_000.0;
+    priced.head.stats.total_output_tokens = 200.0;
+    priced.detail.head = priced.head.clone();
+
+    // Message has an unmatched cost_input, while head has only priced inputs:
+    // has_unmatched_pricing_meta must stay 0 because collect_meta_unmatched only reads head.inputs.
+    let mut msg_only_unmatched = source(root.path(), "v39-msg-only");
+    pricing.estimate_tracked(
+        Some("acme/msg-only"),
+        &tokens,
+        0.0,
+        &mut msg_only_unmatched.detail.messages[0].cost_inputs,
+    );
+    let head_cost = pricing
+        .estimate_aggregate_tracked(
+            Some("gpt-5.4"),
+            &tokens,
+            0.0,
+            &mut msg_only_unmatched.head.stats.cost_inputs,
+        )
+        .unwrap();
+    msg_only_unmatched.head.stats.total_cost = head_cost;
+    msg_only_unmatched.head.stats.cost_source = Some(CostSource::Estimated);
+    msg_only_unmatched.detail.head = msg_only_unmatched.head.clone();
+
+    let mut cache = Cache::open(Some(&path)).unwrap();
+    cache
+        .publish(&mut [
+            unmatched.clone(),
+            priced.clone(),
+            msg_only_unmatched.clone(),
+        ])
+        .unwrap();
+
+    // Downgrade in-place to simulate an existing production schema-39 database.
+    let db = cache.connection();
+    let unpacked: Vec<(i64, String)> = db
+        .prepare("SELECT rowid, content_text FROM messages")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, body::unpack(row.get_ref(1)?)?.into_owned()))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    for (rowid, text) in unpacked {
+        db.execute(
+            "UPDATE messages SET content_text=? WHERE rowid=?",
+            params![text, rowid],
+        )
+        .unwrap();
+    }
+    db.execute_batch(
+        "DROP INDEX idx_sessions_unmatched_pricing_meta;
+         ALTER TABLE sessions DROP COLUMN has_unmatched_pricing_meta;
+         DELETE FROM cache_meta WHERE key IN (
+             'unmatched_pricing_meta_index_v1',
+             'unmatched_pricing_meta_v1',
+             'unmatched_pricing_meta_v1_cursor',
+             'content_text_zstd_v1',
+             'content_text_zstd_v1_cursor'
+         );
+         PRAGMA user_version=39;
+         UPDATE cache_meta SET value='39' WHERE key='version';",
+    )
+    .unwrap();
+    drop(cache);
+
+    for _ in 0..2 {
+        let cache = Cache::open(Some(&path)).unwrap();
+        let db = cache.connection();
+        assert_eq!(
+            db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            CACHE_SCHEMA_VERSION
+        );
+        assert!(
+            !std::fs::read_dir(root.path())
+                .unwrap()
+                .flatten()
+                .any(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("cache-migration")),
+            "v39 -> v40 must upgrade in place without creating a backup file"
+        );
+        let index_exists: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_sessions_unmatched_pricing_meta'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(index_exists, 1);
+
+        let flag = |id: &str| -> i64 {
+            db.query_row(
+                "SELECT has_unmatched_pricing_meta FROM sessions WHERE session_id=?",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(flag(&unmatched.head.reference.session_id), 1);
+        assert_eq!(flag(&priced.head.reference.session_id), 0);
+        assert_eq!(flag(&msg_only_unmatched.head.reference.session_id), 0);
+
+        let encoding: String = db
+            .query_row(
+                "SELECT typeof(content_text) FROM messages WHERE session_id=?",
+                [&unmatched.head.reference.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(encoding, "blob");
+
+        let stats = crate::analytics::query_unmatched_models(
+            db,
+            &crate::search::QueryScope::default(),
+            None,
+            None,
+            &pricing,
+        )
+        .unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].model_key, "acme/v39-missing");
+    }
+}

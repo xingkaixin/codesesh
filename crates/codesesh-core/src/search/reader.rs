@@ -155,7 +155,7 @@ fn resolve_message_match(
                 row.get::<_, String>(1)?,
                 row.get::<_, Option<String>>(2)?,
                 row.get::<_, Option<String>>(3)?,
-                row.get::<_, String>(4)?,
+                crate::storage::body::unpack(row.get_ref(4)?)?.into_owned(),
             ))
         })?;
         if let Some(hit) = terms.satisfied_match(&text) {
@@ -181,9 +181,9 @@ fn resolve_message_match(
     let text = if covering.is_empty() {
         connection
             .query_row(
-                "SELECT content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND content_text<>'' ORDER BY message_index LIMIT 1",
+                "SELECT content_text FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND length(content_text)>0 ORDER BY message_index LIMIT 1",
                 params![reference.source_node_id, reference.agent_name, reference.session_id],
-                |row| row.get::<_, String>(0),
+                |row| Ok(crate::storage::body::unpack(row.get_ref(0)?)?.into_owned()),
             )
             .optional()?
     } else {

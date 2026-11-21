@@ -187,8 +187,9 @@ impl TermData {
             let mut content =
                 connection.prepare_cached("SELECT content_text FROM messages WHERE rowid=?")?;
             for &(_, msg_rowid) in hits {
-                if pattern.is_match(&content.query_row([msg_rowid], |row| row.get::<_, String>(0))?)
-                {
+                if content.query_row([msg_rowid], |row| {
+                    Ok(pattern.is_match(&crate::storage::body::unpack(row.get_ref(0)?)?))
+                })? {
                     return Ok(true);
                 }
             }
