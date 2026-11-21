@@ -12,7 +12,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{path::Path, time::Duration};
 
-const CHUNK_BYTES: usize = 256 * 1024;
+pub(crate) const CHUNK_BYTES: usize = 256 * 1024;
 
 pub struct WorkerStore {
     db: Connection,
@@ -111,9 +111,8 @@ impl WorkerStore {
         }
         let db = Connection::open(path)?;
         db.busy_timeout(Duration::from_secs(5))?;
-        // WAL + synchronous=NORMAL is corruption-safe; Worker state/outbox can be rebuilt from local history.
         db.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
         )?;
         let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         ensure!(
@@ -661,12 +660,7 @@ impl WorkerStore {
         );
         let is_chunk = match (stored_digest == digest, prefix.as_slice()) {
             (true, p) if p.starts_with(b"{\"type\":\"snapshot-chunk\"") => true,
-            (true, p)
-                if p.starts_with(b"{\"type\":\"snapshot-commit\"")
-                    || p.starts_with(b"{\"type\":\"metadata\"") =>
-            {
-                false
-            }
+            (true, p) if p.starts_with(b"{\"type\":\"snapshot-commit\"") => false,
             _ => {
                 // Metadata payloads with `Some(null)` round-trip to a different digest than `worker_outbox.digest`.
                 let next = self

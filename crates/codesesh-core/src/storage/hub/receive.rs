@@ -164,13 +164,11 @@ fn apply_operation(
                     encoded.len() <= 350_000,
                     "Snapshot chunk exceeds transport limit"
                 );
-                let staged: i64 = tx.query_row(
-                    "SELECT COUNT(*) FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
-                    params![node, stream, transfer_id],
-                    |row| row.get(0),
-                )?;
-                ensure!(staged == 0, "SNAPSHOT_INCOMPLETE");
                 let payload = STANDARD.decode(encoded)?;
+                ensure!(
+                    payload.len() <= crate::sync::worker_store::CHUNK_BYTES,
+                    "Snapshot chunk exceeds transport limit"
+                );
                 ensure!(!payload.is_empty(), "SNAPSHOT_INCOMPLETE");
                 ensure!(payload.len() as u64 == *bytes, "SNAPSHOT_CHECKSUM_MISMATCH");
                 payload

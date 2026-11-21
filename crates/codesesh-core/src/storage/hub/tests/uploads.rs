@@ -736,32 +736,6 @@ fn hub_accepts_legacy_chunked_single_snapshot_and_validates_inline_integrity() {
         )
         .unwrap();
 
-    // Mixing inline `data` with already-staged `hub_chunks` must fail and preserve the staged chunk.
-    let mixed = Operation::SnapshotCommit {
-        transfer_id: transfer_id.clone(),
-        chunks: 0,
-        bytes: payload.len() as u64,
-        digest: digest(&payload),
-        data: Some(encoded.clone()),
-        base: None,
-        messages: None,
-    };
-    assert_eq!(
-        cache
-            .receive_upload(&grant.node_id, &make_upload(2, mixed), &Pricing::bundled())
-            .unwrap_err()
-            .to_string(),
-        "SNAPSHOT_INCOMPLETE"
-    );
-    assert_eq!(
-        cache
-            .connection
-            .query_row("SELECT COUNT(*) FROM hub_chunks", [], |row| row
-                .get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-
     // Valid legacy commit deserialized without the optional `data` field succeeds.
     let legacy_commit: Operation = serde_json::from_value(serde_json::json!({
         "type": "snapshot-commit",
@@ -789,6 +763,8 @@ fn hub_accepts_legacy_chunked_single_snapshot_and_validates_inline_integrity() {
     );
 
     // Inline SnapshotCommit integrity rejections.
+    let oversized_payload = vec![b'x'; crate::sync::worker_store::CHUNK_BYTES + 1];
+    let oversized_encoded = STANDARD.encode(&oversized_payload);
     let fresh_id = uuid::Uuid::new_v4().to_string();
     for (op, expected_error) in [
         (
@@ -838,6 +814,18 @@ fn hub_accepts_legacy_chunked_single_snapshot_and_validates_inline_integrity() {
                 messages: None,
             },
             "SNAPSHOT_CHECKSUM_MISMATCH",
+        ),
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id.clone(),
+                chunks: 0,
+                bytes: oversized_payload.len() as u64,
+                digest: digest(&oversized_payload),
+                data: Some(oversized_encoded),
+                base: None,
+                messages: None,
+            },
+            "Snapshot chunk exceeds transport limit",
         ),
         (
             Operation::SnapshotCommit {

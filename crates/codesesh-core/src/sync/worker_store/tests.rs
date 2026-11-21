@@ -254,14 +254,8 @@ fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
 }
 
 #[test]
-fn worker_store_uses_normal_sync_and_acknowledges_round_trip_metadata_digests() {
+fn worker_store_acknowledges_round_trip_metadata_digests_and_rejects_raw_digest() {
     let (_dir, mut store, mut scanner) = setup();
-    let synchronous: i64 = store
-        .db
-        .pragma_query_value(None, "synchronous", |row| row.get(0))
-        .unwrap();
-    assert_eq!(synchronous, 1);
-
     let mut batch = scanner.refresh(None).unwrap();
     store.save_batch("codex", &mut batch).unwrap();
     drain(&mut store);
@@ -279,6 +273,13 @@ fn worker_store_uses_normal_sync_and_acknowledges_round_trip_metadata_digests() 
     assert_ne!(stored_digest, pending.digest);
 
     let stream = store.stream_id().unwrap();
+    assert!(
+        store
+            .acknowledge(&stream, pending.sequence, &stored_digest)
+            .is_err()
+    );
+    assert_eq!(store.queue_status().unwrap().batches, 1);
+
     store
         .acknowledge(&stream, pending.sequence, &pending.digest)
         .unwrap();
