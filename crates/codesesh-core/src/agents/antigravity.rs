@@ -52,12 +52,12 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<V
         } else {
             None
         };
-        let history = history_workspaces(root)?;
         let mut ctx = StoreContext {
             agent,
+            root,
             conversations,
             summaries: summaries.as_ref(),
-            history: &history,
+            history: None,
             resolved: HashMap::new(),
             visited: HashSet::new(),
         };
@@ -74,11 +74,24 @@ pub fn scan_paths(pricing: &Pricing, paths: &[PathBuf], agent: &str) -> Result<V
 
 struct StoreContext<'a> {
     agent: &'a str,
+    root: &'a Path,
     conversations: &'a Path,
     summaries: Option<&'a Connection>,
-    history: &'a HashMap<String, String>,
+    history: Option<HashMap<String, String>>,
     resolved: HashMap<String, String>,
     visited: HashSet<String>,
+}
+
+impl StoreContext<'_> {
+    fn history_workspace(&mut self, id: &str) -> Result<Option<&str>> {
+        if self.history.is_none() {
+            self.history = Some(history_workspaces(self.root)?);
+        }
+        Ok(self
+            .history
+            .as_ref()
+            .and_then(|history| history.get(id).map(String::as_str)))
+    }
 }
 
 #[derive(Default)]
@@ -296,10 +309,11 @@ fn parse(
         .ok()
         .map(|uris| workspace_paths(uris, path))
         .unwrap_or_default();
-    let time = chrono::DateTime::parse_from_str(&summary.modified, "%Y-%m-%d %H:%M:%S%.f%:z")
-        .ok()
-        .map(|time| time.timestamp_millis() as f64)
-        .unwrap_or(crate::time::file_mtime_ms(path)?);
+    let time = match chrono::DateTime::parse_from_str(&summary.modified, "%Y-%m-%d %H:%M:%S%.f%:z")
+    {
+        Ok(time) => time.timestamp_millis() as f64,
+        Err(_) => crate::time::file_mtime_ms(path)?,
+    };
     let db = open_readonly_sqlite(path)?;
     db.execute_batch("BEGIN")?;
     if candidates.is_empty() {
@@ -327,17 +341,17 @@ fn parse(
         let index: i64 = row.get(0)?;
         let kind: i64 = row.get(1)?;
         let status: i64 = row.get(2)?;
-        let payload: Option<Vec<u8>> = row.get(3)?;
-        let Some(payload) = payload else {
+        let Some(payload) = row.get_ref(3)?.as_blob_or_null()? else {
             unsupported += 1;
             continue;
         };
-        let step = proto::Step::decode(payload.as_slice())
+        let step = proto::Step::decode(payload)
             .with_context(|| format!("invalid Antigravity step {index} in {}", path.display()))?;
         let output = tool_output(&step, kind);
-        let error_details: Option<Vec<u8>> = row.get(4)?;
-        let error = error_details
-            .map(|data| proto::ErrorDetails::decode(data.as_slice()))
+        let error = row
+            .get_ref(4)?
+            .as_blob_or_null()?
+            .map(proto::ErrorDetails::decode)
             .transpose()
             .with_context(|| {
                 format!(
@@ -681,8 +695,8 @@ fn trajectory_workspaces(db: &Connection, path: &Path) -> Result<Vec<String>> {
     let mut statement = db.prepare("SELECT data FROM trajectory_metadata_blob")?;
     let mut rows = statement.query([])?;
     while let Some(row) = rows.next()? {
-        let data: Vec<u8> = row.get(0)?;
-        let metadata = proto::TrajectoryMetadata::decode(data.as_slice()).with_context(|| {
+        let data = row.get_ref(0)?.as_blob()?;
+        let metadata = proto::TrajectoryMetadata::decode(data).with_context(|| {
             format!(
                 "invalid Antigravity workspace metadata in {}",
                 path.display()
@@ -708,13 +722,12 @@ fn history_workspaces(root: &Path) -> Result<HashMap<String, String>> {
         let Ok(line) = line else {
             continue;
         };
-        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+        let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
-        if let (Some(id), Some(workspace)) = (
-            value["conversationId"].as_str().filter(|s| !s.is_empty()),
-            value["workspace"].as_str().filter(|s| !s.is_empty()),
-        ) {
+        let id = entry["conversationId"].as_str().filter(|s| !s.is_empty());
+        let workspace = entry["workspace"].as_str().filter(|s| !s.is_empty());
+        if let (Some(id), Some(workspace)) = (id, workspace) {
             workspaces.insert(id.to_owned(), workspace.to_owned());
         }
     }
@@ -882,8 +895,7 @@ fn resolve_directory(
         return Ok(candidates[0].clone());
     }
     if let Some(idx) = ctx
-        .history
-        .get(id)
+        .history_workspace(id)?
         .and_then(|ws| match_candidate(ws, normalized_candidates))
     {
         return Ok(candidates[idx].clone());
@@ -896,8 +908,7 @@ fn resolve_directory(
     }
     if !parent.is_empty() && parent != id {
         if let Some(idx) = ctx
-            .history
-            .get(parent)
+            .history_workspace(parent)?
             .and_then(|ws| match_candidate(ws, normalized_candidates))
         {
             return Ok(candidates[idx].clone());
@@ -953,8 +964,7 @@ fn resolve_uncached_directory(
         .map(|candidate| crate::projects::normalize_project_directory(candidate))
         .collect();
     if let Some(idx) = ctx
-        .history
-        .get(parent_id)
+        .history_workspace(parent_id)?
         .and_then(|ws| match_candidate(ws, &normalized_candidates))
     {
         return Ok(Some(candidates[idx].clone()));
@@ -968,11 +978,10 @@ fn resolve_uncached_directory(
     while let Some(row) = rows.next()? {
         let index: i64 = row.get(0)?;
         let kind: i64 = row.get(1)?;
-        let payload: Option<Vec<u8>> = row.get(2)?;
-        let Some(payload) = payload else {
+        let Some(payload) = row.get_ref(2)?.as_blob_or_null()? else {
             continue;
         };
-        let step = proto::Step::decode(payload.as_slice())
+        let step = proto::Step::decode(payload)
             .with_context(|| format!("invalid Antigravity step {index} in {}", path.display()))?;
         if kind == 23 {
             continue;
@@ -1030,8 +1039,8 @@ fn model_names(db: &Connection, path: &Path) -> Result<HashMap<u64, String>> {
     let mut rows = statement.query([])?;
     let mut models = HashMap::new();
     while let Some(row) = rows.next()? {
-        let data: Vec<u8> = row.get(0)?;
-        let chat = proto::Generation::decode(data.as_slice())
+        let data = row.get_ref(0)?.as_blob()?;
+        let chat = proto::Generation::decode(data)
             .with_context(|| {
                 format!(
                     "invalid Antigravity generation metadata in {}",

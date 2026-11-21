@@ -178,6 +178,7 @@ fn snapshot_validation_preserves_chunks_for_a_valid_retry() {
             chunks: count,
             bytes: length,
             digest: checksum,
+            data: None,
             base: None,
             messages: None,
         };
@@ -226,9 +227,14 @@ fn failed_commit_rolls_back_content_and_receipt_and_retries() {
     let grant = cache
         .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
         .unwrap();
+    let mut session = crate::storage::tests::source(dir.path(), "shared");
+    session.detail.messages[0].parts = vec![crate::model::MessagePart::Text {
+        text: "x".repeat(300_000),
+        time_created: None,
+    }];
     let mut batch = ScanBatch {
         source_presence: None,
-        sessions: Vec::new(),
+        sessions: vec![session],
         removed: Vec::new(),
         checkpoint: None,
         complete: true,
@@ -236,30 +242,35 @@ fn failed_commit_rolls_back_content_and_receipt_and_retries() {
         on_reject: None,
         pricing: None,
     };
-    batch
-        .sessions
-        .push(crate::storage::tests::source(dir.path(), "shared"));
     worker.save_batch("codex", &mut batch).unwrap();
-    let first = worker.next_upload().unwrap().unwrap();
-    let upload = Upload {
-        epoch: grant.epoch.clone(),
-        stream_id: worker.stream_id().unwrap(),
-        sequence: first.sequence,
-        payload_version: first.payload_version,
-        digest: first.digest,
-        operation: first.operation,
+    let stream = worker.stream_id().unwrap();
+    let mut staged_chunks = 0;
+    let commit = loop {
+        let pending = worker.next_upload().unwrap().unwrap();
+        if matches!(pending.operation, Operation::SnapshotCommit { .. }) {
+            break pending;
+        }
+        let upload = Upload {
+            epoch: grant.epoch.clone(),
+            stream_id: stream.clone(),
+            sequence: pending.sequence,
+            payload_version: pending.payload_version,
+            digest: pending.digest,
+            operation: pending.operation,
+        };
+        cache
+            .receive_upload(&grant.node_id, &upload, &Pricing::bundled())
+            .unwrap();
+        worker
+            .acknowledge(&upload.stream_id, upload.sequence, &upload.digest)
+            .unwrap();
+        staged_chunks += 1;
     };
-    cache
-        .receive_upload(&grant.node_id, &upload, &Pricing::bundled())
-        .unwrap();
-    worker
-        .acknowledge(&upload.stream_id, upload.sequence, &upload.digest)
-        .unwrap();
+    assert!(staged_chunks > 1);
     cache.connection.execute_batch("CREATE TRIGGER reject_receipt BEFORE UPDATE OF confirmed_sequence ON hub_nodes BEGIN SELECT RAISE(ABORT,'disk failure'); END;").unwrap();
-    let commit = worker.next_upload().unwrap().unwrap();
     let upload = Upload {
         epoch: grant.epoch.clone(),
-        stream_id: worker.stream_id().unwrap(),
+        stream_id: stream,
         sequence: commit.sequence,
         payload_version: commit.payload_version,
         digest: commit.digest,
@@ -277,7 +288,7 @@ fn failed_commit_rolls_back_content_and_receipt_and_retries() {
             .query_row("SELECT COUNT(*) FROM hub_chunks", [], |r| r
                 .get::<_, i64>(0))
             .unwrap(),
-        1
+        staged_chunks
     );
     cache
         .connection
@@ -574,4 +585,267 @@ fn identity_recovery_moves_file_activity_and_stats_and_metadata_preserves_record
     let updated = cache.head(&hub_head.reference).unwrap().unwrap();
     assert_eq!(updated.title, "Metadata Only");
     assert_eq!(updated.recorded_git_remotes, vec!["github.com/acme/app"]);
+}
+
+#[test]
+fn inline_single_chunk_commit_round_trips_without_hub_chunks_and_respects_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub-fixture").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let grant = cache
+        .pair_worker(&token, "Laptop", "1.5.0", &worker.stream_id().unwrap())
+        .unwrap();
+    cache
+        .connection
+        .execute_batch(
+            "CREATE TRIGGER forbid_hub_chunks BEFORE INSERT ON hub_chunks BEGIN SELECT RAISE(ABORT,'unexpected chunk'); END;",
+        )
+        .unwrap();
+
+    let session = crate::storage::tests::source(dir.path(), "inline");
+    let mut batch = ScanBatch {
+        source_presence: None,
+        sessions: vec![session.clone()],
+        removed: Vec::new(),
+        checkpoint: None,
+        complete: true,
+        completion: None,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert_eq!(worker.queue_status().unwrap().batches, 1);
+    let pending = worker.next_upload().unwrap().unwrap();
+    assert!(matches!(
+        pending.operation,
+        Operation::SnapshotCommit {
+            chunks: 0,
+            data: Some(_),
+            ..
+        }
+    ));
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(worker.queue_status().unwrap().batches, 0);
+    let head = cache.snapshot().unwrap().remove(0);
+    assert_eq!(
+        cache.detail(head).unwrap().unwrap().messages,
+        session.detail.messages
+    );
+
+    // Exact 256 KiB serialized payload stays inline; 256 KiB + 1 spills into SnapshotChunk.
+    let mut exact = session;
+    let base_len = serde_json::to_vec(&CapturedSession::from_parsed(exact.clone()))
+        .unwrap()
+        .len();
+    let crate::model::MessagePart::Text { text, .. } = &mut exact.detail.messages[0].parts[0]
+    else {
+        panic!("expected text part");
+    };
+    let chunk_bytes = 256 * 1024;
+    text.push_str(&"a".repeat(chunk_bytes - base_len));
+    assert_eq!(
+        serde_json::to_vec(&CapturedSession::from_parsed(exact.clone()))
+            .unwrap()
+            .len(),
+        chunk_bytes
+    );
+    batch.sessions = vec![exact.clone()];
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert_eq!(worker.queue_status().unwrap().batches, 1);
+    assert!(matches!(
+        worker.next_upload().unwrap().unwrap().operation,
+        Operation::SnapshotCommit {
+            chunks: 0,
+            bytes,
+            data: Some(_),
+            ..
+        } if bytes == chunk_bytes as u64
+    ));
+    transfer(&mut cache, &mut worker, &grant);
+
+    cache
+        .connection
+        .execute_batch("DROP TRIGGER forbid_hub_chunks")
+        .unwrap();
+    let crate::model::MessagePart::Text { text, .. } = &mut exact.detail.messages[0].parts[0]
+    else {
+        panic!("expected text part");
+    };
+    text.push('b');
+    assert_eq!(
+        serde_json::to_vec(&CapturedSession::from_parsed(exact.clone()))
+            .unwrap()
+            .len(),
+        chunk_bytes + 1
+    );
+    batch.sessions = vec![exact];
+    worker.save_batch("codex", &mut batch).unwrap();
+    assert_eq!(worker.queue_status().unwrap().batches, 3);
+    assert!(matches!(
+        worker.next_upload().unwrap().unwrap().operation,
+        Operation::SnapshotChunk { index: 0, .. }
+    ));
+    transfer(&mut cache, &mut worker, &grant);
+    assert_eq!(
+        cache
+            .connection
+            .query_row("SELECT COUNT(*) FROM hub_chunks", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn hub_accepts_legacy_chunked_single_snapshot_and_validates_inline_integrity() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    cache.initialize_hub("hub-fixture").unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let stream = uuid::Uuid::new_v4().to_string();
+    let grant = cache
+        .pair_worker(&token, "Legacy", "1.1.1", &stream)
+        .unwrap();
+
+    let session = crate::storage::tests::source(dir.path(), "legacy");
+    let payload = serde_json::to_vec(&CapturedSession::from_parsed(session.clone())).unwrap();
+    let encoded = STANDARD.encode(&payload);
+    let transfer_id = uuid::Uuid::new_v4().to_string();
+    let make_upload = |sequence: i64, operation: Operation| Upload {
+        epoch: grant.epoch.clone(),
+        stream_id: stream.clone(),
+        sequence,
+        payload_version: PAYLOAD_VERSION,
+        digest: digest(&serde_json::to_vec(&operation).unwrap()),
+        operation,
+    };
+
+    // Legacy Worker (v1.1.1-v1.5.0) sends SnapshotChunk + SnapshotCommit without `data`.
+    let chunk_op = Operation::SnapshotChunk {
+        transfer_id: transfer_id.clone(),
+        index: 0,
+        data: encoded.clone(),
+    };
+    cache
+        .receive_upload(
+            &grant.node_id,
+            &make_upload(1, chunk_op),
+            &Pricing::bundled(),
+        )
+        .unwrap();
+
+    // Valid legacy commit deserialized without the optional `data` field succeeds.
+    let legacy_commit: Operation = serde_json::from_value(serde_json::json!({
+        "type": "snapshot-commit",
+        "transfer_id": transfer_id,
+        "chunks": 1,
+        "bytes": payload.len(),
+        "digest": digest(&payload),
+    }))
+    .unwrap();
+    cache
+        .receive_upload(
+            &grant.node_id,
+            &make_upload(2, legacy_commit),
+            &Pricing::bundled(),
+        )
+        .unwrap();
+    assert_eq!(cache.snapshot().unwrap().len(), 1);
+    assert_eq!(
+        cache
+            .connection
+            .query_row("SELECT COUNT(*) FROM hub_chunks", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+
+    // Inline SnapshotCommit integrity rejections.
+    let oversized_payload = vec![b'x'; crate::sync::worker_store::CHUNK_BYTES + 1];
+    let oversized_encoded = STANDARD.encode(&oversized_payload);
+    let fresh_id = uuid::Uuid::new_v4().to_string();
+    for (op, expected_error) in [
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id.clone(),
+                chunks: 1,
+                bytes: payload.len() as u64,
+                digest: digest(&payload),
+                data: Some(encoded.clone()),
+                base: None,
+                messages: None,
+            },
+            "SNAPSHOT_INCOMPLETE",
+        ),
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id.clone(),
+                chunks: 0,
+                bytes: 0,
+                digest: digest(b""),
+                data: Some(String::new()),
+                base: None,
+                messages: None,
+            },
+            "SNAPSHOT_INCOMPLETE",
+        ),
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id.clone(),
+                chunks: 0,
+                bytes: payload.len() as u64 + 1,
+                digest: digest(&payload),
+                data: Some(encoded.clone()),
+                base: None,
+                messages: None,
+            },
+            "SNAPSHOT_CHECKSUM_MISMATCH",
+        ),
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id.clone(),
+                chunks: 0,
+                bytes: payload.len() as u64,
+                digest: "0".repeat(64),
+                data: Some(encoded),
+                base: None,
+                messages: None,
+            },
+            "SNAPSHOT_CHECKSUM_MISMATCH",
+        ),
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id.clone(),
+                chunks: 0,
+                bytes: oversized_payload.len() as u64,
+                digest: digest(&oversized_payload),
+                data: Some(oversized_encoded),
+                base: None,
+                messages: None,
+            },
+            "Snapshot chunk exceeds transport limit",
+        ),
+        (
+            Operation::SnapshotCommit {
+                transfer_id: fresh_id,
+                chunks: 0,
+                bytes: 350_001,
+                digest: "0".repeat(64),
+                data: Some("A".repeat(350_001)),
+                base: None,
+                messages: None,
+            },
+            "Snapshot chunk exceeds transport limit",
+        ),
+    ] {
+        assert_eq!(
+            cache
+                .receive_upload(&grant.node_id, &make_upload(3, op), &Pricing::bundled())
+                .unwrap_err()
+                .to_string(),
+            expected_error
+        );
+    }
 }

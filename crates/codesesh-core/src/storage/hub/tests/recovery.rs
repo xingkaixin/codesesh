@@ -11,9 +11,14 @@ fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
         .pair_worker(&token, "Laptop", "1.1.1", &worker.stream_id().unwrap())
         .unwrap();
     worker.bind("https://hub.example/", &grant).unwrap();
+    let mut session = crate::storage::tests::source(dir.path(), "shared");
+    session.detail.messages[0].parts = vec![crate::model::MessagePart::Text {
+        text: "x".repeat(300_000),
+        time_created: None,
+    }];
     let mut batch = ScanBatch {
         source_presence: None,
-        sessions: vec![crate::storage::tests::source(dir.path(), "shared")],
+        sessions: vec![session],
         removed: vec![],
         checkpoint: None,
         complete: true,
@@ -22,7 +27,10 @@ fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
         pricing: None,
     };
     worker.save_batch("codex", &mut batch).unwrap();
+    let queued = worker.queue_status().unwrap().batches;
+    assert!(queued > 2);
     let pending = worker.next_upload().unwrap().unwrap();
+    assert!(matches!(pending.operation, Operation::SnapshotChunk { .. }));
     let old = Upload {
         epoch: grant.epoch.clone(),
         stream_id: worker.stream_id().unwrap(),
@@ -39,7 +47,7 @@ fn recovery_replays_acknowledged_chunks_and_rejects_old_receipts() {
         .unwrap();
     grant.epoch = cache.rotate_data_epoch().unwrap();
     let recovery = worker.prepare_recovery(&grant.epoch).unwrap();
-    assert_eq!(worker.queue_status().unwrap().batches, 2);
+    assert_eq!(worker.queue_status().unwrap().batches, queued);
     assert_eq!(
         worker.prepare_recovery(&grant.epoch).unwrap().new_stream,
         recovery.new_stream
@@ -114,7 +122,7 @@ fn recovery_survives_another_epoch_change_before_acknowledgment() {
         let mut worker = WorkerStore::open(&path).unwrap();
         let recovery = worker.prepare_recovery(&grant.epoch).unwrap();
         assert_ne!(recovery.new_stream, stale.new_stream);
-        assert_eq!(worker.queue_status().unwrap().batches, 2);
+        assert_eq!(worker.queue_status().unwrap().batches, 1);
         cache.recover_worker(&grant.node_id, &recovery).unwrap();
         cache.recover_worker(&grant.node_id, &recovery).unwrap();
         worker

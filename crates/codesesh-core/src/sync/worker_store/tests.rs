@@ -53,7 +53,7 @@ fn pending_content_survives_restart_and_confirmed_content_is_removed() {
             .acknowledge(&stream, first.sequence, "wrong-content")
             .is_err()
     );
-    assert_eq!(store.queue_status().unwrap().batches, 2);
+    assert_eq!(store.queue_status().unwrap().batches, 1);
     drop(store);
     let mut store = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
     assert_eq!(store.stream_id().unwrap(), stream);
@@ -105,7 +105,7 @@ fn enqueue_failure_rolls_back_progress_and_can_retry() {
         .unwrap();
     store.save_batch("codex", &mut batch).unwrap();
     assert_eq!(store.checkpoint("codex").unwrap(), batch.checkpoint);
-    assert_eq!(store.queue_status().unwrap().batches, 2);
+    assert_eq!(store.queue_status().unwrap().batches, 1);
 }
 
 #[test]
@@ -181,8 +181,10 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
                 bytes,
                 chunks,
                 digest: expected,
+                data,
                 ..
             } => {
+                assert!(data.is_none());
                 assert_eq!(*bytes, payload.len() as u64);
                 assert_eq!(*chunks, chunk_count);
                 assert_eq!(*expected, digest(&payload));
@@ -215,9 +217,16 @@ fn chunked_snapshot_round_trips_and_bad_receipt_cannot_skip_ahead() {
 fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     let (dir, mut store, mut scanner) = setup();
     let mut batch = scanner.refresh(None).unwrap();
+    batch.sessions[0].detail.messages[0].parts = vec![crate::model::MessagePart::Text {
+        text: "x".repeat(CHUNK_BYTES + 1024),
+        time_created: None,
+    }];
     store.save_batch("codex", &mut batch).unwrap();
+    let queued = store.queue_status().unwrap().batches;
+    assert!(queued > 2);
     let old_stream = store.stream_id().unwrap();
     let chunk = store.next_upload().unwrap().unwrap();
+    assert!(matches!(chunk.operation, Operation::SnapshotChunk { .. }));
     store
         .acknowledge(&old_stream, chunk.sequence, &chunk.digest)
         .unwrap();
@@ -231,7 +240,7 @@ fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     store.rebind("https://new-hub.example/", &grant).unwrap();
     drop(store);
     let mut store = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
-    assert_eq!(store.queue_status().unwrap().batches, 2);
+    assert_eq!(store.queue_status().unwrap().batches, queued);
     assert_eq!(store.next_upload().unwrap().unwrap().digest, chunk.digest);
     assert_eq!(store.confirmed_sequence().unwrap(), 0);
     assert!(store.pause_reason().unwrap().is_none());
@@ -242,4 +251,37 @@ fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     store.update_origin("https://renamed-hub.example/").unwrap();
     assert_eq!(store.binding().unwrap().unwrap().1.node_id, "new-node");
     assert_eq!(store.stream_id().unwrap(), recovery.new_stream);
+}
+
+#[test]
+fn worker_store_acknowledges_round_trip_metadata_digests_and_rejects_raw_digest() {
+    let (_dir, mut store, mut scanner) = setup();
+    let mut batch = scanner.refresh(None).unwrap();
+    store.save_batch("codex", &mut batch).unwrap();
+    drain(&mut store);
+
+    batch.sessions[0].head.summary_files = Some(serde_json::Value::Null);
+    batch.sessions[0].head.title = "With null summary".into();
+    store.save_batch("codex", &mut batch).unwrap();
+
+    let stored_digest: String = store
+        .db
+        .query_row("SELECT digest FROM worker_outbox", [], |row| row.get(0))
+        .unwrap();
+    let pending = store.next_upload().unwrap().unwrap();
+    assert!(matches!(pending.operation, Operation::Metadata { .. }));
+    assert_ne!(stored_digest, pending.digest);
+
+    let stream = store.stream_id().unwrap();
+    assert!(
+        store
+            .acknowledge(&stream, pending.sequence, &stored_digest)
+            .is_err()
+    );
+    assert_eq!(store.queue_status().unwrap().batches, 1);
+
+    store
+        .acknowledge(&stream, pending.sequence, &pending.digest)
+        .unwrap();
+    assert_eq!(store.queue_status().unwrap().batches, 0);
 }

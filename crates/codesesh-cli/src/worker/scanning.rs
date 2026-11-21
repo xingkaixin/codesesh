@@ -649,7 +649,7 @@ mod tests {
         finish(&scanning).await;
         assert!(scanning.tick(&mut store, false).await.unwrap());
         assert!(scanning.schedules[0].initialized);
-        assert_eq!(store.queue_status().unwrap().batches, 4);
+        assert_eq!(store.queue_status().unwrap().batches, 2);
 
         // Make an unrelated compressed rollout unreadable; a targeted scan of `first` must not touch it.
         let broken = second.with_extension("jsonl.zst");

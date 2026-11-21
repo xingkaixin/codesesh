@@ -19,9 +19,13 @@ pub enum Operation {
     },
     SnapshotCommit {
         transfer_id: String,
+        /// Count of staged `SnapshotChunk` operations; `0` when `data` is inlined.
         chunks: u32,
         bytes: u64,
         digest: String,
+        /// Base64-encoded snapshot payload when it fits within one chunk.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
         /// Present when the snapshot holds only the messages after `keep` of the last sent state.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base: Option<SnapshotBase>,

@@ -12,7 +12,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{path::Path, time::Duration};
 
-const CHUNK_BYTES: usize = 256 * 1024;
+pub(crate) const CHUNK_BYTES: usize = 256 * 1024;
 
 pub struct WorkerStore {
     db: Connection,
@@ -620,8 +620,13 @@ impl WorkerStore {
             ensure!(payload_version == PAYLOAD_VERSION, "Unsupported queued payload version {payload_version}; preserve the queue and upgrade Worker");
             ensure!(super::worker_store::digest(&payload) == digest, "Queued payload checksum mismatch; preserve the queue for recovery");
             let operation: Operation = serde_json::from_slice(&payload)?;
-            // The Hub checks the digest against its own serialization, which drops values such as `Some(null)` that do not survive a round trip.
-            let digest = super::worker_store::digest(&serde_json::to_vec(&operation)?);
+            // The Hub checks the digest against its own serialization; only Metadata holds Value fields that can drop `Some(null)` on round trip.
+            let digest = match operation {
+                Operation::Metadata { .. } => {
+                    super::worker_store::digest(&serde_json::to_vec(&operation)?)
+                }
+                Operation::SnapshotChunk { .. } | Operation::SnapshotCommit { .. } => digest,
+            };
             Ok(PendingUpload { sequence,payload_version,operation,digest })
         }).transpose()
     }
@@ -631,18 +636,45 @@ impl WorkerStore {
             self.stream_id()? == stream_id,
             "Confirmation belongs to another upload stream"
         );
-        if sequence <= self.confirmed_sequence()? {
+        let confirmed = self.confirmed_sequence()?;
+        if sequence <= confirmed {
             return Ok(());
         }
-        let next = self
-            .next_upload()?
-            .context("Confirmation has no pending upload")?;
+        let next: Option<(i64, u32, String, Vec<u8>)> = self
+            .db
+            .query_row(
+                "SELECT sequence,payload_version,digest,substr(payload,1,32) FROM worker_outbox WHERE sequence>? ORDER BY sequence LIMIT 1",
+                [confirmed],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        let (next_sequence, payload_version, stored_digest, prefix) =
+            next.context("Confirmation has no pending upload")?;
         ensure!(
-            next.sequence == sequence && next.digest == digest,
+            payload_version == PAYLOAD_VERSION,
+            "Unsupported queued payload version {payload_version}; preserve the queue and upgrade Worker"
+        );
+        ensure!(
+            next_sequence == sequence,
             "Confirmation does not match the pending upload"
         );
+        let is_chunk = match (stored_digest == digest, prefix.as_slice()) {
+            (true, p) if p.starts_with(b"{\"type\":\"snapshot-chunk\"") => true,
+            (true, p) if p.starts_with(b"{\"type\":\"snapshot-commit\"") => false,
+            _ => {
+                // Metadata payloads with `Some(null)` round-trip to a different digest than `worker_outbox.digest`.
+                let next = self
+                    .next_upload()?
+                    .context("Confirmation has no pending upload")?;
+                ensure!(
+                    next.sequence == sequence && next.digest == digest,
+                    "Confirmation does not match the pending upload"
+                );
+                matches!(next.operation, Operation::SnapshotChunk { .. })
+            }
+        };
         let tx = self.db.transaction()?;
-        if !matches!(next.operation, Operation::SnapshotChunk { .. }) {
+        if !is_chunk {
             tx.execute("DELETE FROM worker_outbox WHERE sequence<=?", [sequence])?;
         }
         tx.execute(

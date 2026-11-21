@@ -22,24 +22,36 @@ pub(super) fn session_digests(
     let mut content = Sha256::new();
     let mut chain = Vec::with_capacity(messages.len());
     let mut previous = [0_u8; 16];
+    let mut buffer = Vec::new();
     content.update(b"[[");
     for (index, message) in messages.iter().enumerate() {
         if index > 0 {
             content.update(b",");
         }
-        let bytes = serde_json::to_vec(message)?;
-        content.update(&bytes);
+        buffer.clear();
+        serde_json::to_writer(&mut buffer, message)?;
+        content.update(&buffer);
         let mut link = Sha256::new();
         link.update(previous);
-        link.update(&bytes);
-        link.update(serde_json::to_vec(&cost_inputs.get(&index))?);
+        link.update(&buffer);
+        if let Some(inputs) = cost_inputs.get(&index) {
+            buffer.clear();
+            serde_json::to_writer(&mut buffer, inputs)?;
+            link.update(&buffer);
+        } else {
+            link.update(b"null");
+        }
         previous.copy_from_slice(&link.finalize()[..16]);
         chain.push(previous);
     }
     content.update(b"],");
-    content.update(serde_json::to_vec(file_activity)?);
+    buffer.clear();
+    serde_json::to_writer(&mut buffer, file_activity)?;
+    content.update(&buffer);
     content.update(b",");
-    content.update(serde_json::to_vec(cost_inputs)?);
+    buffer.clear();
+    serde_json::to_writer(&mut buffer, cost_inputs)?;
+    content.update(&buffer);
     content.update(b"]");
     Ok(SessionDigests {
         content: crate::hash::hex(&content.finalize()),
@@ -56,13 +68,21 @@ pub(super) fn enqueue_snapshot(
     let mut writer = SnapshotWriter {
         tx,
         transfer_id: uuid::Uuid::new_v4().to_string(),
-        buffer: Vec::with_capacity(CHUNK_BYTES),
+        buffer: Vec::new(),
         hash: Sha256::new(),
         chunks: 0,
         bytes: 0,
     };
     serde_json::to_writer(&mut writer, snapshot)?;
-    writer.flush()?;
+    let data = if writer.chunks == 0 {
+        ensure!(!writer.buffer.is_empty(), "Session snapshot is empty");
+        writer.hash.update(&writer.buffer);
+        writer.bytes = writer.buffer.len() as u64;
+        Some(STANDARD.encode(&writer.buffer))
+    } else {
+        writer.enqueue_chunk()?;
+        None
+    };
     enqueue(
         tx,
         &Operation::SnapshotCommit {
@@ -70,6 +90,7 @@ pub(super) fn enqueue_snapshot(
             chunks: writer.chunks,
             bytes: writer.bytes,
             digest: crate::hash::hex(&writer.hash.finalize()),
+            data,
             base,
             messages,
         },
@@ -111,17 +132,18 @@ impl Write for SnapshotWriter<'_, '_> {
     fn write(&mut self, mut bytes: &[u8]) -> io::Result<usize> {
         let len = bytes.len();
         while !bytes.is_empty() {
-            let take = (CHUNK_BYTES - self.buffer.len()).min(bytes.len());
-            self.buffer.extend_from_slice(&bytes[..take]);
-            bytes = &bytes[take..];
+            // Delay flushing a full buffer until more bytes arrive so exact CHUNK_BYTES snapshots stay inline.
             if self.buffer.len() == CHUNK_BYTES {
                 self.enqueue_chunk().map_err(io::Error::other)?;
             }
+            let take = (CHUNK_BYTES - self.buffer.len()).min(bytes.len());
+            self.buffer.extend_from_slice(&bytes[..take]);
+            bytes = &bytes[take..];
         }
         Ok(len)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.enqueue_chunk().map_err(io::Error::other)
+        Ok(())
     }
 }
