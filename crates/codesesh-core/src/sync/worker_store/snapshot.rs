@@ -22,24 +22,36 @@ pub(super) fn session_digests(
     let mut content = Sha256::new();
     let mut chain = Vec::with_capacity(messages.len());
     let mut previous = [0_u8; 16];
+    let mut buffer = Vec::new();
     content.update(b"[[");
     for (index, message) in messages.iter().enumerate() {
         if index > 0 {
             content.update(b",");
         }
-        let bytes = serde_json::to_vec(message)?;
-        content.update(&bytes);
+        buffer.clear();
+        serde_json::to_writer(&mut buffer, message)?;
+        content.update(&buffer);
         let mut link = Sha256::new();
         link.update(previous);
-        link.update(&bytes);
-        link.update(serde_json::to_vec(&cost_inputs.get(&index))?);
+        link.update(&buffer);
+        if let Some(inputs) = cost_inputs.get(&index) {
+            buffer.clear();
+            serde_json::to_writer(&mut buffer, inputs)?;
+            link.update(&buffer);
+        } else {
+            link.update(b"null");
+        }
         previous.copy_from_slice(&link.finalize()[..16]);
         chain.push(previous);
     }
     content.update(b"],");
-    content.update(serde_json::to_vec(file_activity)?);
+    buffer.clear();
+    serde_json::to_writer(&mut buffer, file_activity)?;
+    content.update(&buffer);
     content.update(b",");
-    content.update(serde_json::to_vec(cost_inputs)?);
+    buffer.clear();
+    serde_json::to_writer(&mut buffer, cost_inputs)?;
+    content.update(&buffer);
     content.update(b"]");
     Ok(SessionDigests {
         content: crate::hash::hex(&content.finalize()),

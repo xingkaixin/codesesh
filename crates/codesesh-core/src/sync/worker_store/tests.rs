@@ -252,3 +252,35 @@ fn re_pairing_preserves_pending_content_and_restarts_a_recovery_stream() {
     assert_eq!(store.binding().unwrap().unwrap().1.node_id, "new-node");
     assert_eq!(store.stream_id().unwrap(), recovery.new_stream);
 }
+
+#[test]
+fn worker_store_uses_normal_sync_and_acknowledges_round_trip_metadata_digests() {
+    let (_dir, mut store, mut scanner) = setup();
+    let synchronous: i64 = store
+        .db
+        .pragma_query_value(None, "synchronous", |row| row.get(0))
+        .unwrap();
+    assert_eq!(synchronous, 1);
+
+    let mut batch = scanner.refresh(None).unwrap();
+    store.save_batch("codex", &mut batch).unwrap();
+    drain(&mut store);
+
+    batch.sessions[0].head.summary_files = Some(serde_json::Value::Null);
+    batch.sessions[0].head.title = "With null summary".into();
+    store.save_batch("codex", &mut batch).unwrap();
+
+    let stored_digest: String = store
+        .db
+        .query_row("SELECT digest FROM worker_outbox", [], |row| row.get(0))
+        .unwrap();
+    let pending = store.next_upload().unwrap().unwrap();
+    assert!(matches!(pending.operation, Operation::Metadata { .. }));
+    assert_ne!(stored_digest, pending.digest);
+
+    let stream = store.stream_id().unwrap();
+    store
+        .acknowledge(&stream, pending.sequence, &pending.digest)
+        .unwrap();
+    assert_eq!(store.queue_status().unwrap().batches, 0);
+}
