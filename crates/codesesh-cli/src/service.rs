@@ -94,11 +94,26 @@ struct Report {
     updated_at: i64,
     stopping: bool,
 }
+const SERVICE_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+
 fn root(home: &Path) -> PathBuf {
     codesesh_core::app_paths::root(home).join("services")
 }
 fn path(home: &Path, role: ServiceRole, suffix: &str) -> PathBuf {
     root(home).join(format!("{}.{}", role.name(), suffix))
+}
+fn rotate_service_log(path: &Path, max_bytes: u64) -> std::io::Result<()> {
+    let size = match std::fs::metadata(path) {
+        Ok(metadata) => metadata.len(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if size <= max_bytes {
+        return Ok(());
+    }
+    let mut rotated = path.as_os_str().to_os_string();
+    rotated.push(".1");
+    std::fs::rename(path, PathBuf::from(rotated))
 }
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
@@ -324,6 +339,7 @@ async fn start_service(
         write_private(&path(home, role, "open"), b"open")?;
     }
     let log = path(home, role, "log");
+    rotate_service_log(&log, SERVICE_LOG_MAX_BYTES)?;
     let mut options = std::fs::OpenOptions::new();
     options.create(true).append(true);
     #[cfg(unix)]
@@ -331,7 +347,7 @@ async fn start_service(
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(log)?;
+    options.open(&log)?;
     match std::fs::remove_file(path(home, role, "last.json")) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -618,5 +634,35 @@ mod tests {
             load(home.path(), ServiceRole::Worker).unwrap().environment["PATH"],
             kept.to_string_lossy()
         );
+    }
+
+    #[test]
+    fn rotate_service_log_preserves_small_files_and_overwrites_backup_when_oversized() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("worker.log");
+        let backup = dir.path().join("worker.log.1");
+
+        // Missing file is a no-op.
+        rotate_service_log(&log, 10).unwrap();
+        assert!(!log.exists());
+        assert!(!backup.exists());
+
+        // Below or equal to threshold stays untouched.
+        std::fs::write(&log, b"0123456789").unwrap();
+        rotate_service_log(&log, 10).unwrap();
+        assert_eq!(std::fs::read(&log).unwrap(), b"0123456789");
+        assert!(!backup.exists());
+
+        // Above threshold rotates to `.log.1`.
+        std::fs::write(&log, b"0123456789a").unwrap();
+        rotate_service_log(&log, 10).unwrap();
+        assert!(!log.exists());
+        assert_eq!(std::fs::read(&backup).unwrap(), b"0123456789a");
+
+        // Subsequent rotation overwrites the existing `.log.1`.
+        std::fs::write(&log, b"new-oversized-log").unwrap();
+        rotate_service_log(&log, 10).unwrap();
+        assert!(!log.exists());
+        assert_eq!(std::fs::read(&backup).unwrap(), b"new-oversized-log");
     }
 }

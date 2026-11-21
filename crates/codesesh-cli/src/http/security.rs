@@ -73,8 +73,21 @@ pub async fn guard(
     keys.dedup();
     request.extensions_mut().insert(context.clone());
     let mut response = authorize(&state, request, next).await;
+    let duration_ms = started.elapsed().as_millis();
     if let Some(logger) = crate::logging::current() {
-        logger.with_context(context).info("http.request",&serde_json::json!({"method":method,"route":route,"query_keys":keys,"status":response.status().as_u16(),"duration_ms":started.elapsed().as_millis()}));
+        let keep_info = response.extensions().get::<KeepInfoLog>().is_some();
+        let level = request_log_level(&route, response.status(), duration_ms, keep_info);
+        logger.with_context(context).emit(
+            level,
+            "http.request",
+            &serde_json::json!({
+                "method": method,
+                "route": route,
+                "query_keys": keys,
+                "status": response.status().as_u16(),
+                "duration_ms": duration_ms,
+            }),
+        );
     }
     let headers = response.headers_mut();
     for (name, value) in [
@@ -261,9 +274,34 @@ pub async fn static_file(request: Request) -> Response {
     (StatusCode::NOT_FOUND, "404 Not Found").into_response()
 }
 
+const WORKER_FAST_REQUEST_THRESHOLD_MS: u128 = 200;
+
+/// Marks a 2xx worker response (e.g. version-incompatibility `hello`) to stay at `info`.
+#[derive(Clone, Copy)]
+pub(super) struct KeepInfoLog;
+
+fn request_log_level(
+    route: &str,
+    status: StatusCode,
+    duration_ms: u128,
+    keep_info: bool,
+) -> crate::logging::Level {
+    if !keep_info
+        && matches!(route, "/api/worker/hello" | "/api/worker/upload")
+        && status.is_success()
+        && duration_ms < WORKER_FAST_REQUEST_THRESHOLD_MS
+    {
+        crate::logging::Level::Debug
+    } else {
+        crate::logging::Level::Info
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logging::Level;
+
     #[test]
     fn loopback_authority_rejects_port_and_host_smuggling() {
         assert!(valid_authority(1, "localhost:4521", "127.0.0.1", 4521));
@@ -279,5 +317,74 @@ mod tests {
             assert!(!valid_authority(1, host, "127.0.0.1", 4521), "{host}");
         }
         assert!(!valid_authority(2, "localhost:4521", "127.0.0.1", 4521));
+    }
+
+    #[test]
+    fn worker_routine_fast_success_requests_log_at_debug() {
+        for (route, status, duration_ms, keep_info, expected) in [
+            ("/api/worker/hello", StatusCode::OK, 0, false, Level::Debug),
+            (
+                "/api/worker/hello",
+                StatusCode::OK,
+                199,
+                false,
+                Level::Debug,
+            ),
+            ("/api/worker/hello", StatusCode::OK, 5, true, Level::Info),
+            (
+                "/api/worker/upload",
+                StatusCode::OK,
+                15,
+                false,
+                Level::Debug,
+            ),
+            (
+                "/api/worker/upload",
+                StatusCode::NO_CONTENT,
+                50,
+                false,
+                Level::Debug,
+            ),
+            ("/api/worker/hello", StatusCode::OK, 200, false, Level::Info),
+            (
+                "/api/worker/upload",
+                StatusCode::OK,
+                350,
+                false,
+                Level::Info,
+            ),
+            (
+                "/api/worker/hello",
+                StatusCode::UNAUTHORIZED,
+                5,
+                false,
+                Level::Info,
+            ),
+            (
+                "/api/worker/upload",
+                StatusCode::CONFLICT,
+                5,
+                false,
+                Level::Info,
+            ),
+            (
+                "/api/worker/upload",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                5,
+                false,
+                Level::Info,
+            ),
+            ("/api/worker/pair", StatusCode::OK, 5, false, Level::Info),
+            ("/api/worker/recover", StatusCode::OK, 5, false, Level::Info),
+            ("/api/worker/goodbye", StatusCode::OK, 5, false, Level::Info),
+            ("/api/sessions", StatusCode::OK, 5, false, Level::Info),
+            ("/api/status", StatusCode::OK, 5, false, Level::Info),
+        ] {
+            assert_eq!(
+                request_log_level(route, status, duration_ms, keep_info),
+                expected,
+                "{route} {status} {duration_ms}ms keep_info={keep_info}"
+            );
+        }
     }
 }

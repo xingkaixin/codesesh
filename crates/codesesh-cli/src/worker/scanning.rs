@@ -19,6 +19,7 @@ type ScanResult = (AgentScanner, Result<ScanBatch>);
 
 const RESCAN_INTERVAL: Duration = Duration::from_secs(5);
 const SUCCESS_RECORD_INTERVAL: Duration = Duration::from_secs(60);
+const ERROR_LOG_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const RECLAIM_INTERVAL: Duration = Duration::from_secs(1);
 const PENDING_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_TRACKED_PATHS: usize = 1024;
@@ -81,7 +82,27 @@ pub(super) struct Scanning {
     /// Dropping the sender stops the watcher; `None` means every source is polled.
     watching: Option<watch::Sender<bool>>,
     errors: BTreeMap<String, String>,
+    logged_errors: BTreeMap<String, (String, Instant)>,
     source_statuses: BTreeMap<String, codesesh_core::discovery::AgentCollectionStatus>,
+}
+
+fn should_log_scan_error(
+    logged: &mut BTreeMap<String, (String, Instant)>,
+    agent: &str,
+    message: &str,
+    now: Instant,
+) -> bool {
+    let emit = match logged.get(agent) {
+        Some((last_message, logged_at)) => {
+            last_message != message
+                || now.saturating_duration_since(*logged_at) >= ERROR_LOG_INTERVAL
+        }
+        None => true,
+    };
+    if emit {
+        logged.insert(agent.to_owned(), (message.to_owned(), now));
+    }
+    emit
 }
 
 #[derive(Clone, Copy)]
@@ -156,6 +177,7 @@ impl Scanning {
             reclaim_due: None,
             watching,
             errors: BTreeMap::new(),
+            logged_errors: BTreeMap::new(),
         }
     }
 
@@ -379,6 +401,12 @@ impl Scanning {
                             enqueued |= batch_enqueued;
                             has_changes = batch_changed;
                             cleared_error = self.errors.remove(agent).is_some();
+                            if complete && self.logged_errors.remove(agent).is_some() {
+                                super::log_info(
+                                    "worker.scan.recovered",
+                                    serde_json::json!({"agent": agent}),
+                                );
+                            }
                         }
                         Err(error) => {
                             let message: String =
@@ -386,11 +414,18 @@ impl Scanning {
                                     .chars()
                                     .take(2048)
                                     .collect();
-                            eprintln!("Worker scan failed; progress retained: {message}");
-                            super::log_warn(
-                                "worker.scan.failed",
-                                serde_json::json!({"agent":agent,"error":format!("{error:#}")}),
-                            );
+                            if should_log_scan_error(
+                                &mut self.logged_errors,
+                                agent,
+                                &message,
+                                Instant::now(),
+                            ) {
+                                eprintln!("Worker scan failed; progress retained: {message}");
+                                super::log_warn(
+                                    "worker.scan.failed",
+                                    serde_json::json!({"agent":agent,"error":format!("{error:#}")}),
+                                );
+                            }
                             self.errors.insert(agent.clone(), message);
                             let status = self.source_statuses.entry(agent.clone()).or_default();
                             status.error = self.errors.get(agent).cloned();
@@ -734,5 +769,145 @@ mod tests {
         assert!(!scanning.tick(&mut store, false).await.unwrap());
         assert!(scanning.error().is_none());
         assert!(store.last_scan_success().unwrap().unwrap() > before_recovery);
+    }
+
+    #[tokio::test]
+    async fn scan_error_logging_throttles_identical_repeats_and_resets_on_change_or_recovery() {
+        let base = Instant::now();
+        let mut logged = BTreeMap::new();
+        assert!(should_log_scan_error(
+            &mut logged,
+            "pi",
+            "missing header",
+            base
+        ));
+        assert!(!should_log_scan_error(
+            &mut logged,
+            "pi",
+            "missing header",
+            base + Duration::from_secs(5),
+        ));
+        assert!(!should_log_scan_error(
+            &mut logged,
+            "pi",
+            "missing header",
+            base + ERROR_LOG_INTERVAL - Duration::from_secs(1),
+        ));
+        assert!(should_log_scan_error(
+            &mut logged,
+            "pi",
+            "missing header",
+            base + ERROR_LOG_INTERVAL,
+        ));
+        assert!(!should_log_scan_error(
+            &mut logged,
+            "pi",
+            "missing header",
+            base + ERROR_LOG_INTERVAL + Duration::from_secs(5),
+        ));
+        assert!(should_log_scan_error(
+            &mut logged,
+            "pi",
+            "permission denied",
+            base + ERROR_LOG_INTERVAL + Duration::from_secs(10),
+        ));
+        assert!(should_log_scan_error(
+            &mut logged,
+            "codex",
+            "permission denied",
+            base + ERROR_LOG_INTERVAL + Duration::from_secs(10),
+        ));
+
+        let (_dir, mut scanning, mut store) = fixture();
+        // Keep the second source out of the way while exercising codex failures and recovery.
+        scanning.schedules[1].next_scan = Instant::now() + Duration::from_secs(60);
+
+        let scanner = scanning.scanners[0].take().unwrap();
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Err(anyhow::anyhow!("missing header"))) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        let (first_msg, first_logged_at) = scanning.logged_errors["codex"].clone();
+        assert!(first_msg.contains("missing header"));
+        assert_eq!(scanning.errors["codex"], first_msg);
+        assert_eq!(
+            scanning.source_statuses["codex"].error.as_deref(),
+            Some(first_msg.as_str())
+        );
+
+        // Immediate identical repeat is suppressed while keeping status and error state accurate.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let scanner = scanning.scanners[0].take().unwrap();
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Err(anyhow::anyhow!("missing header"))) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.logged_errors["codex"].1, first_logged_at);
+        assert_eq!(scanning.errors["codex"], first_msg);
+        assert_eq!(
+            scanning.source_statuses["codex"].error.as_deref(),
+            Some(first_msg.as_str())
+        );
+
+        // Changed error message logs immediately and updates tracked throttle state.
+        let scanner = scanning.scanners[0].take().unwrap();
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Err(anyhow::anyhow!("disk full"))) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(scanning.logged_errors["codex"].0.contains("disk full"));
+        assert!(scanning.logged_errors["codex"].1 > first_logged_at);
+        assert!(scanning.errors["codex"].contains("disk full"));
+
+        // An incomplete page success must not clear the throttle or emit recovery,
+        // so a persistent error on a later page stays throttled until a complete scan succeeds.
+        let scanner = scanning.scanners[0].take().unwrap();
+        let mut partial_batch = batch();
+        partial_batch.complete = false;
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Ok(partial_batch)) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(!scanning.errors.contains_key("codex"));
+        let (tracked_msg, tracked_at) = scanning.logged_errors["codex"].clone();
+        assert!(tracked_msg.contains("disk full"));
+
+        // Because `partial_batch.complete == false`, `tick` immediately scheduled the next page.
+        // Replace that pending page with the same failure and verify the throttle still suppresses it.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let (_, _, pending_page) = scanning.pending.take().unwrap();
+        let (scanner, _) = pending_page.await.unwrap();
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Err(anyhow::anyhow!("disk full"))) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert_eq!(scanning.logged_errors["codex"].1, tracked_at);
+
+        // Full scan recovery clears both the active error and throttle entry.
+        let scanner = scanning.scanners[0].take().unwrap();
+        scanning.pending = Some((
+            0,
+            scanning.generation,
+            tokio::spawn(async move { (scanner, Ok(batch())) }),
+        ));
+        finish(&scanning).await;
+        scanning.tick(&mut store, false).await.unwrap();
+        assert!(!scanning.errors.contains_key("codex"));
+        assert!(!scanning.logged_errors.contains_key("codex"));
     }
 }
