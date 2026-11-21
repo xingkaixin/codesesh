@@ -496,10 +496,8 @@ fn scan_directories(
             builder.messages,
             None,
         );
-        let mut head = detail.head.clone();
-        head.stats.message_count = 0;
         result.push(ParsedSession {
-            head,
+            head: detail.head.clone(),
             source: path,
             detail,
         });
@@ -771,6 +769,8 @@ mod tests {
         assert_eq!(detail.head.directory, cwd);
         assert_eq!(detail.head.title, "Fix a bug");
         assert_eq!(detail.messages.len(), 3);
+        assert_eq!(sessions[0].head.stats.message_count, 3);
+        assert_eq!(detail.head.stats.message_count, 3);
         assert_eq!(detail.head.stats.total_tokens, Some(99.));
         assert_eq!(detail.head.stats.total_input_tokens, 27.);
         assert_eq!(detail.head.stats.total_output_tokens, 8.);
