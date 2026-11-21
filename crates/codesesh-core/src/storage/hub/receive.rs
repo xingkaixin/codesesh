@@ -153,28 +153,49 @@ fn apply_operation(
             chunks,
             bytes,
             digest: expected,
+            data,
             base,
             messages,
         } => {
-            let (stored_chunks, stored_bytes): (i64, i64) = tx.query_row(
-                "SELECT COUNT(*), COALESCE(SUM(length(data)), 0) FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
-                params![node, stream, transfer_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )?;
-            ensure!(
-                stored_chunks > 0 && stored_chunks == i64::from(*chunks),
-                "SNAPSHOT_INCOMPLETE"
-            );
-            ensure!(stored_bytes as u64 == *bytes, "SNAPSHOT_CHECKSUM_MISMATCH");
-            let mut payload = Vec::new();
-            payload.try_reserve_exact(usize::try_from(stored_bytes)?)?;
-            {
-                let mut query = tx.prepare("SELECT data FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=? ORDER BY chunk_index")?;
-                let mut rows = query.query(params![node, stream, transfer_id])?;
-                while let Some(row) = rows.next()? {
-                    payload.extend_from_slice(row.get_ref(0)?.as_blob()?);
+            let payload = if let Some(encoded) = data {
+                uuid::Uuid::parse_str(transfer_id).context("Invalid transfer ID")?;
+                ensure!(*chunks == 0, "SNAPSHOT_INCOMPLETE");
+                ensure!(
+                    encoded.len() <= 350_000,
+                    "Snapshot chunk exceeds transport limit"
+                );
+                let staged: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
+                    params![node, stream, transfer_id],
+                    |row| row.get(0),
+                )?;
+                ensure!(staged == 0, "SNAPSHOT_INCOMPLETE");
+                let payload = STANDARD.decode(encoded)?;
+                ensure!(!payload.is_empty(), "SNAPSHOT_INCOMPLETE");
+                ensure!(payload.len() as u64 == *bytes, "SNAPSHOT_CHECKSUM_MISMATCH");
+                payload
+            } else {
+                let (stored_chunks, stored_bytes): (i64, i64) = tx.query_row(
+                    "SELECT COUNT(*), COALESCE(SUM(length(data)), 0) FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
+                    params![node, stream, transfer_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?;
+                ensure!(
+                    stored_chunks > 0 && stored_chunks == i64::from(*chunks),
+                    "SNAPSHOT_INCOMPLETE"
+                );
+                ensure!(stored_bytes as u64 == *bytes, "SNAPSHOT_CHECKSUM_MISMATCH");
+                let mut payload = Vec::new();
+                payload.try_reserve_exact(usize::try_from(stored_bytes)?)?;
+                {
+                    let mut query = tx.prepare("SELECT data FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=? ORDER BY chunk_index")?;
+                    let mut rows = query.query(params![node, stream, transfer_id])?;
+                    while let Some(row) = rows.next()? {
+                        payload.extend_from_slice(row.get_ref(0)?.as_blob()?);
+                    }
                 }
-            }
+                payload
+            };
             ensure!(digest(&payload) == *expected, "SNAPSHOT_CHECKSUM_MISMATCH");
             let captured = serde_json::from_slice::<CapturedSession>(&payload)?;
             drop(payload);
@@ -191,10 +212,12 @@ fn apply_operation(
                     "Session update did not match the Hub copy",
                 )?;
                 tx.execute("INSERT INTO hub_orphans VALUES(?,?,?,?) ON CONFLICT(node_id,agent,session_id) DO UPDATE SET payload=excluded.payload",params![node,session.head.reference.agent_name,session.head.reference.session_id,serde_json::to_string(operation)?])?;
-                tx.execute(
-                    "DELETE FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
-                    params![node, stream, transfer_id],
-                )?;
+                if data.is_none() {
+                    tx.execute(
+                        "DELETE FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
+                        params![node, stream, transfer_id],
+                    )?;
+                }
                 return Ok(None);
             }
             session.detail.head = session.head.clone();
@@ -229,10 +252,12 @@ fn apply_operation(
                 "DELETE FROM hub_orphans WHERE node_id=? AND agent=? AND session_id=?",
                 params![node, reference.agent_name, reference.session_id],
             )?;
-            tx.execute(
-                "DELETE FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
-                params![node, stream, transfer_id],
-            )?;
+            if data.is_none() {
+                tx.execute(
+                    "DELETE FROM hub_chunks WHERE node_id=? AND stream_id=? AND transfer_id=?",
+                    params![node, stream, transfer_id],
+                )?;
+            }
             Ok(Some(reference))
         }
         Operation::Metadata {

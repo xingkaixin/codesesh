@@ -56,13 +56,21 @@ pub(super) fn enqueue_snapshot(
     let mut writer = SnapshotWriter {
         tx,
         transfer_id: uuid::Uuid::new_v4().to_string(),
-        buffer: Vec::with_capacity(CHUNK_BYTES),
+        buffer: Vec::new(),
         hash: Sha256::new(),
         chunks: 0,
         bytes: 0,
     };
     serde_json::to_writer(&mut writer, snapshot)?;
-    writer.flush()?;
+    let data = if writer.chunks == 0 {
+        ensure!(!writer.buffer.is_empty(), "Session snapshot is empty");
+        writer.hash.update(&writer.buffer);
+        writer.bytes = writer.buffer.len() as u64;
+        Some(STANDARD.encode(&writer.buffer))
+    } else {
+        writer.enqueue_chunk()?;
+        None
+    };
     enqueue(
         tx,
         &Operation::SnapshotCommit {
@@ -70,6 +78,7 @@ pub(super) fn enqueue_snapshot(
             chunks: writer.chunks,
             bytes: writer.bytes,
             digest: crate::hash::hex(&writer.hash.finalize()),
+            data,
             base,
             messages,
         },
@@ -111,17 +120,18 @@ impl Write for SnapshotWriter<'_, '_> {
     fn write(&mut self, mut bytes: &[u8]) -> io::Result<usize> {
         let len = bytes.len();
         while !bytes.is_empty() {
-            let take = (CHUNK_BYTES - self.buffer.len()).min(bytes.len());
-            self.buffer.extend_from_slice(&bytes[..take]);
-            bytes = &bytes[take..];
+            // Delay flushing a full buffer until more bytes arrive so exact CHUNK_BYTES snapshots stay inline.
             if self.buffer.len() == CHUNK_BYTES {
                 self.enqueue_chunk().map_err(io::Error::other)?;
             }
+            let take = (CHUNK_BYTES - self.buffer.len()).min(bytes.len());
+            self.buffer.extend_from_slice(&bytes[..take]);
+            bytes = &bytes[take..];
         }
         Ok(len)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.enqueue_chunk().map_err(io::Error::other)
+        Ok(())
     }
 }
