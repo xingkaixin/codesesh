@@ -145,7 +145,7 @@ pub(super) fn rebuild(
                         row.get::<_, Option<String>>(2)?,
                         row.get::<_, Option<String>>(3)?,
                         super::body::unpack(row.get_ref(4)?)?.into_owned(),
-                        row.get::<_, String>(5)?,
+                        super::body::unpack(row.get_ref(5)?)?.into_owned(),
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -155,7 +155,7 @@ pub(super) fn rebuild(
                 let next = text(&role, agent.as_deref(), model.as_deref(), &parts);
                 if next != stored {
                     db.prepare_cached("UPDATE messages SET content_text=? WHERE rowid=?")?
-                        .execute(params![next, rowid])?;
+                        .execute(params![super::body::pack(&next)?, rowid])?;
                     // An interrupted index run must not resume past rows rewritten here.
                     reset_index(db)?;
                 }
@@ -244,7 +244,8 @@ pub(super) fn ensure_index(
             let mut last = total;
             while let Some(row) = rows.next()? {
                 last = row.get(0)?;
-                index(db, last, row.get_ref(1)?.as_str()?)?;
+                let content = super::body::unpack(row.get_ref(1)?)?;
+                index(db, last, &content)?;
             }
             set_meta(db, INDEX_CURSOR_KEY, &last.to_string())?;
             Ok(last)

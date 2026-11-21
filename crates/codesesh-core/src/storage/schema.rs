@@ -361,6 +361,7 @@ pub fn ensure_with_progress(
     super::search_text::rebuild(db, progress)?;
     super::search_text::ensure_index(db, progress)?;
     super::body::compress_existing(db, progress)?;
+    super::body::compress_existing_content_text(db, progress)?;
     if path.is_some() {
         compact(db, COMPACT_MIN_FREE_PAGES, progress)?;
     }

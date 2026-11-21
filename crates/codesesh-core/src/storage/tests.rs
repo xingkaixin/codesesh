@@ -846,3 +846,189 @@ fn single_upsert_persists_and_updates_all_session_columns() {
     assert_eq!(updated.summary_files, None);
     assert!(updated.recorded_git_remotes.is_empty());
 }
+
+#[test]
+fn content_text_compresses_roundtrips_and_searches_with_fts_and_snippets() {
+    assert_eq!(
+        body::pack("").unwrap(),
+        rusqlite::types::Value::Text(String::new())
+    );
+    assert!(matches!(
+        body::pack("short").unwrap(),
+        rusqlite::types::Value::Text(_)
+    ));
+    let compressible = "compressible needle 数据库连接 ".repeat(40);
+    let packed = body::pack(&compressible).unwrap();
+    let rusqlite::types::Value::Blob(bytes) = packed else {
+        panic!("expected compressible text to pack as zstd blob");
+    };
+    assert_eq!(
+        body::unpack(rusqlite::types::ValueRef::Blob(&bytes)).unwrap(),
+        compressible
+    );
+
+    let root = tempfile::tempdir().unwrap();
+    let mut session = source(root.path(), "compressed-content");
+    session.head.title = "Unrelated title".into();
+    session.detail.head.title = session.head.title.clone();
+    session.detail.messages[0].parts = vec![MessagePart::Text {
+        text: compressible.clone(),
+        time_created: None,
+    }];
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+
+    let encoding: String = cache
+        .connection()
+        .query_row("SELECT typeof(content_text) FROM messages", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(encoding, "blob");
+
+    for query in ["needle", "数据库连接"] {
+        let hits =
+            crate::search::search_sessions(cache.connection(), query, &Default::default()).unwrap();
+        assert_eq!(hits.len(), 1, "query={query}");
+        assert!(
+            hits[0].snippet.contains(query),
+            "snippet={}",
+            hits[0].snippet
+        );
+    }
+
+    // Rebuilding FTS must unpack compressed BLOB rows cleanly.
+    cache.rebuild_search_indexes().unwrap();
+    for query in ["needle", "数据库连接"] {
+        let hits =
+            crate::search::search_sessions(cache.connection(), query, &Default::default()).unwrap();
+        assert_eq!(hits.len(), 1, "rebuilt query={query}");
+        assert!(hits[0].snippet.contains(query));
+    }
+
+    // Exercise the `length(content_text)>0` fallback when an earlier message has empty text
+    // and the next message is stored as a compressed BLOB.
+    let db = cache.connection();
+    db.execute(
+        "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text)
+         VALUES('local','codex',?,1,'m-empty','user',100,'[]','')",
+        [&session.head.reference.session_id],
+    )
+    .unwrap();
+    let compressed_fallback = body::pack(&"fallback payload ".repeat(30)).unwrap();
+    db.execute(
+        "UPDATE messages SET message_index=2, content_text=? WHERE message_index=0",
+        [&compressed_fallback],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE messages SET message_index=0 WHERE message_id='m-empty'",
+        [],
+    )
+    .unwrap();
+    // Point FTS hit for 'orphan' at rowid of m-empty (empty text) so resolve_message_match
+    // falls back to the first non-empty message (message_index=2, compressed BLOB).
+    let empty_rowid: i64 = db
+        .query_row(
+            "SELECT rowid FROM messages WHERE message_id='m-empty'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    db.execute(
+        "INSERT INTO message_fts(rowid,content_text,code_tokens) VALUES(?,'orphan','')",
+        [empty_rowid],
+    )
+    .unwrap();
+    let fallback_hits = crate::search::search_sessions(db, "orphan", &Default::default()).unwrap();
+    assert_eq!(fallback_hits.len(), 1);
+    assert!(
+        fallback_hits[0].snippet.contains("fallback payload"),
+        "expected fallback to skip empty text and unpack compressed blob, got: {}",
+        fallback_hits[0].snippet
+    );
+}
+
+#[test]
+fn existing_uncompressed_content_text_is_compressed_in_place() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = source(root.path(), "migrate-content");
+    let long_text = "repeated searchable token 数据库 ".repeat(40);
+    let mut short_msg = session.detail.messages[0].clone();
+    short_msg.id = "short-msg".into();
+    short_msg.parts = vec![MessagePart::Text {
+        text: "hi".into(),
+        time_created: None,
+    }];
+    session.detail.messages[0].parts = vec![MessagePart::Text {
+        text: long_text,
+        time_created: None,
+    }];
+    session.detail.messages.push(short_msg);
+
+    let mut cache = Cache::open(None).unwrap();
+    cache.publish(std::slice::from_mut(&mut session)).unwrap();
+    let db = cache.connection();
+
+    // Downgrade content_text back to uncompressed TEXT and clear completion marker.
+    let unpacked: Vec<(i64, String)> = db
+        .prepare("SELECT rowid, content_text FROM messages ORDER BY message_index")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, body::unpack(row.get_ref(1)?)?.into_owned()))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    for (rowid, text) in &unpacked {
+        db.execute(
+            "UPDATE messages SET content_text=? WHERE rowid=?",
+            params![text, rowid],
+        )
+        .unwrap();
+    }
+    db.execute_batch(
+        "DELETE FROM cache_meta WHERE key IN ('content_text_zstd_v1','content_text_zstd_v1_cursor','search_text_v2');",
+    )
+    .unwrap();
+
+    let types_before: Vec<String> = db
+        .prepare("SELECT typeof(content_text) FROM messages ORDER BY message_index")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(types_before, vec!["text", "text"]);
+
+    for _ in 0..2 {
+        schema::ensure(db, None).unwrap();
+        let types_after: Vec<String> = db
+            .prepare("SELECT typeof(content_text) FROM messages ORDER BY message_index")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(types_after, vec!["blob", "text"]);
+        let marker: String = db
+            .query_row(
+                "SELECT value FROM cache_meta WHERE key='content_text_zstd_v1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(marker, "1");
+        let cursor_present: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM cache_meta WHERE key='content_text_zstd_v1_cursor'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cursor_present, 0);
+        let hits = crate::search::search_sessions(db, "searchable", &Default::default()).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].snippet.contains("searchable"));
+    }
+}

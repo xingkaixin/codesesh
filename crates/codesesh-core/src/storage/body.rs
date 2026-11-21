@@ -9,6 +9,8 @@ use std::{borrow::Cow, cell::RefCell};
 const LEVEL: i32 = 3;
 const KEY: &str = "message_parts_zstd_v1";
 const CURSOR_KEY: &str = "message_parts_zstd_v1_cursor";
+const CONTENT_TEXT_KEY: &str = "content_text_zstd_v1";
+const CONTENT_TEXT_CURSOR_KEY: &str = "content_text_zstd_v1_cursor";
 const BATCH: i64 = 500;
 
 thread_local! {
@@ -73,7 +75,7 @@ pub(crate) fn unpack(value: ValueRef<'_>) -> rusqlite::Result<Cow<'_, str>> {
             }),
         other => Err(rusqlite::Error::InvalidColumnType(
             0,
-            "message parts".into(),
+            "message body".into(),
             other.data_type(),
         )),
     }
@@ -84,40 +86,77 @@ pub(super) fn compress_existing(
     db: &Connection,
     progress: &mut dyn FnMut(StorageProgress) -> Result<()>,
 ) -> Result<()> {
-    if meta(db, KEY)?.is_some() {
+    compress_text_column(
+        db,
+        "SELECT rowid,parts_json FROM messages WHERE rowid>? AND typeof(parts_json)='text' ORDER BY rowid LIMIT ?",
+        "UPDATE messages SET parts_json=? WHERE rowid=?",
+        "Compressing message parts",
+        KEY,
+        CURSOR_KEY,
+        progress,
+    )
+}
+
+/// Compresses `messages.content_text` written before schema 40 in resumable batches.
+pub(super) fn compress_existing_content_text(
+    db: &Connection,
+    progress: &mut dyn FnMut(StorageProgress) -> Result<()>,
+) -> Result<()> {
+    compress_text_column(
+        db,
+        "SELECT rowid,content_text FROM messages WHERE rowid>? AND typeof(content_text)='text' ORDER BY rowid LIMIT ?",
+        "UPDATE messages SET content_text=? WHERE rowid=?",
+        "Compressing message search text",
+        CONTENT_TEXT_KEY,
+        CONTENT_TEXT_CURSOR_KEY,
+        progress,
+    )
+}
+
+fn compress_text_column(
+    db: &Connection,
+    select_sql: &str,
+    update_sql: &str,
+    phase: &str,
+    key: &str,
+    cursor_key: &str,
+    progress: &mut dyn FnMut(StorageProgress) -> Result<()>,
+) -> Result<()> {
+    if meta(db, key)?.is_some() {
         return Ok(());
     }
     let total: i64 = db.query_row("SELECT COALESCE(MAX(rowid),0) FROM messages", [], |row| {
         row.get(0)
     })?;
-    let mut cursor: i64 = meta(db, CURSOR_KEY)?
+    let mut cursor: i64 = meta(db, cursor_key)?
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
     while cursor < total {
         progress(StorageProgress {
-            phase: "Compressing message parts".into(),
+            phase: phase.into(),
             done: cursor as u64,
             total: Some(total as u64),
         })?;
         db.execute_batch("BEGIN IMMEDIATE")?;
         let result = (|| -> Result<i64> {
             let rows = db
-                .prepare_cached(
-                    "SELECT rowid,parts_json FROM messages WHERE rowid>? AND typeof(parts_json)='text' ORDER BY rowid LIMIT ?",
-                )?
+                .prepare_cached(select_sql)?
                 .query_map(params![cursor, BATCH], |row| {
                     Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut last = total;
-            for (rowid, parts) in rows {
-                db.prepare_cached("UPDATE messages SET parts_json=? WHERE rowid=?")?
-                    .execute(params![pack(&parts)?, rowid])?;
+            for (rowid, text) in rows {
+                let packed = pack(&text)?;
+                if matches!(packed, Value::Blob(_)) {
+                    db.prepare_cached(update_sql)?
+                        .execute(params![packed, rowid])?;
+                }
                 last = rowid;
             }
             db.execute(
                 "INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                params![CURSOR_KEY, last.to_string()],
+                params![cursor_key, last.to_string()],
             )?;
             Ok(last)
         })();
@@ -132,8 +171,8 @@ pub(super) fn compress_existing(
             }
         }
     }
-    db.execute("DELETE FROM cache_meta WHERE key=?", [CURSOR_KEY])?;
-    db.execute("INSERT OR REPLACE INTO cache_meta VALUES(?,'1')", [KEY])?;
+    db.execute("DELETE FROM cache_meta WHERE key=?", [cursor_key])?;
+    db.execute("INSERT OR REPLACE INTO cache_meta VALUES(?,'1')", [key])?;
     Ok(())
 }
 
