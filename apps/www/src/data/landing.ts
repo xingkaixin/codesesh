@@ -107,7 +107,7 @@ interface LandingCopy {
   };
 }
 
-export const landingUpdated = "2026-10-03";
+export const landingUpdated = "2026-11-22";
 
 export const siteUrl = "https://codesesh.xingkaixin.me";
 
@@ -167,7 +167,7 @@ export const agents = AGENT_CATALOG.map((entry) => ({
 export const copy = {
   zh: {
     meta: {
-      title: "CodeSesh：Claude Code 与 Codex 历史会话查看器",
+      title: "Claude Code 与 Codex 历史会话查看器 | CodeSesh",
       description: `在本机搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种 AI 编码工具的历史。按项目查找对话、工具调用和文件变更，免费开源，无需账号。`,
     },
     header: {
@@ -357,9 +357,9 @@ export const copy = {
   },
   en: {
     meta: {
-      title: "Claude Code & Codex History Viewer | CodeSesh",
+      title: "Claude Code & Codex Session History Viewer | CodeSesh",
       description:
-        "Search Claude Code, Codex, and Cursor history locally. Find conversations, tool calls, and file changes by project. Free and open source, with no account needed.",
+        "Search Claude Code, Codex, and Cursor session history locally. Find conversations, tool calls, and file changes by project. Free and open source, no account needed.",
     },
     header: {
       tour: "Tour",

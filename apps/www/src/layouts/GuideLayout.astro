@@ -30,7 +30,11 @@ const links = [
   ...others.filter((entry) => entry.category === guide.category),
   ...others.filter((entry) => entry.category !== guide.category),
 ].slice(0, 2);
-const toc = headings.filter((heading) => heading.depth === 2);
+const faqItems = content.faq ?? [];
+const toc = [
+  ...headings.filter((heading) => heading.depth === 2),
+  ...(faqItems.length > 0 ? [{ depth: 2, slug: "faq", text: t.faq }] : []),
+];
 ---
 
 <LandingLayout locale={locale} page={guidePageConfig(locale, guide)}>
@@ -92,6 +96,35 @@ const toc = headings.filter((heading) => heading.depth === 2);
             <div class="prose">
               <slot />
             </div>
+            {faqItems.length > 0 && (
+              <section class="gfaq" aria-labelledby="faq">
+                <h2 id="faq">{t.faq}</h2>
+                <div>
+                  {faqItems.map((item, index) => (
+                    <details class="qa" open={index === 0}>
+                      <summary>
+                        <span class="qn" aria-hidden="true">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <h3>{item.question}</h3>
+                        <span class="pm" aria-hidden="true">
+                          <Icon name="plus" />
+                        </span>
+                      </summary>
+                      <div class="ans">
+                        <p>{item.answer}</p>
+                        {item.link && (
+                          <a class="tlink" href={item.link.href}>
+                            {item.link.label}
+                            <Icon name="arrow" />
+                          </a>
+                        )}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </section>
+            )}
             <section class="rel" aria-labelledby="related-guides">
               <h2 id="related-guides">{t.related}</h2>
               <ul class="rel-cards">
@@ -366,6 +399,106 @@ const toc = headings.filter((heading) => heading.depth === 2);
     color: #ffc29f;
     font-style: italic;
   }
+  .prose :global(table) {
+    display: block;
+    width: 100%;
+    margin: 24px 0;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  .prose :global(th),
+  .prose :global(td) {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+  .prose :global(th) {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .prose :global(td) {
+    color: var(--text-2);
+  }
+  .gfaq {
+    margin-top: 64px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+  .gfaq > h2 {
+    margin: 0 0 20px;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .gfaq .qa {
+    border-top: 1px solid var(--border);
+  }
+  .gfaq .qa:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+  .gfaq summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 0;
+    list-style: none;
+    cursor: pointer;
+  }
+  .gfaq summary::-webkit-details-marker {
+    display: none;
+  }
+  .gfaq summary h3 {
+    flex: 1;
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+  .gfaq .qn {
+    flex: none;
+    width: 24px;
+    color: var(--muted);
+    font: 500 11px/1 var(--mono);
+  }
+  .gfaq .qa[open] .qn {
+    color: var(--brand-ink);
+  }
+  .gfaq .pm {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    transition:
+      transform 0.3s var(--ease-out),
+      background 0.2s,
+      border-color 0.2s;
+  }
+  .gfaq .qa[open] .pm {
+    border-color: var(--brand-line);
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    transform: rotate(45deg);
+  }
+  .gfaq .ans {
+    padding: 0 46px 20px 38px;
+    color: var(--text-2);
+    font-size: 14.5px;
+    line-height: 1.8;
+  }
+  .gfaq .ans p {
+    margin: 0;
+  }
+  .gfaq .ans .tlink {
+    margin-top: 12px;
+  }
   .rel {
     margin-top: 64px;
     padding-top: 32px;
@@ -464,6 +597,9 @@ const toc = headings.filter((heading) => heading.depth === 2);
     }
     .rel-cards {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .gfaq .ans {
+      padding: 0 0 18px 38px;
     }
   }
 </style>

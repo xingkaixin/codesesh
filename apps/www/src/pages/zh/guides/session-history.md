@@ -4,73 +4,90 @@ locale: zh
 slug: session-history
 ---
 
-Claude Code 的本地对话记录通常保存在 `~/.claude/projects/`。Codex 的普通会话记录保存在 `~/.codex/sessions/`，归档记录保存在 `~/.codex/archived_sessions/`。这些都是 JSONL 文件，每行是一条 JSON 记录。`~` 代表当前用户的主目录；自定义配置可以改变这些位置。
+大多数本地 AI 编码 Agent 会把历史会话保存在用户主目录下的隐藏 JSONL 文件夹或 SQLite 数据库中：Claude Code 将完整对话保存在 `~/.claude/projects/`（输入历史在 `~/.claude/history.jsonl`），Codex 将 `rollout-*.jsonl` 保存在 `~/.codex/sessions/`，而 Cursor、OpenCode、Gemini CLI 也各有独立存储路径。CodeSesh 可以把这些本地记录聚合到一个可全文搜索的 Web 界面中，默认不上传任何数据。
 
-## 1. Claude Code 和 Codex 历史记录的保存位置
+如果需要具体工具的目录结构、原生恢复命令和清理机制排查，可直接阅读 [Claude Code 历史会话指南](/zh/guides/claude-code-session-history/) 和 [Codex 历史会话指南](/zh/guides/codex-session-history/)。
 
-`~` 代表当前用户的主目录。CodeSesh 默认读取以下位置：
+## 常见 Agent 的默认历史存储位置
 
-- **Claude Code：** `~/.claude/projects/` 下的 JSONL 会话记录。如果设置了 `CLAUDE_CONFIG_DIR`，则读取该配置根目录下的 `projects/`。
-- **Codex：** `~/.codex/sessions/` 下的 `rollout-*.jsonl`，包括按日期嵌套的子目录。如果设置了 `CODEX_HOME`，则读取该根目录下的 `sessions/`。
+`~` 代表当前用户主目录。CodeSesh 默认扫描以下本地路径：
 
-启动 CodeSesh 的终端应使用与编码工具相同的环境变量。这两个变量指向工具的根目录，不是直接指向 `projects/` 或 `sessions/`。
+| Agent       | 默认历史路径                                                                                                               | 环境变量覆盖                    | 原生恢复命令      |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------- |
+| Claude Code | `~/.claude/projects/`                                                                                                      | `CLAUDE_CONFIG_DIR`             | `claude --resume` |
+| Codex       | `~/.codex/sessions/`                                                                                                       | `CODEX_HOME`                    | `codex resume`    |
+| Cursor      | `~/Library/Application Support/Cursor/User`（macOS）、`~/.config/Cursor/User`（Linux）、`%APPDATA%\Cursor\User`（Windows） | `CURSOR_DATA_PATH`              | —                 |
+| OpenCode    | `~/.local/share/opencode/opencode.db`                                                                                      | `OPENCODE_DB` / `XDG_DATA_HOME` | `opencode -s`     |
+| Gemini CLI  | `~/.gemini/tmp/`                                                                                                           | `GEMINI_CLI_HOME`               | `gemini --resume` |
+| Droid       | `~/.factory/sessions/`                                                                                                     | `FACTORY_HOME_OVERRIDE`         | `droid --resume`  |
+| Pi          | `~/.pi/agent/sessions/`                                                                                                    | `PI_CODING_AGENT_DIR`           | `pi --session`    |
+| Antigravity | `~/.gemini/antigravity/conversations/`                                                                                     | `ANTIGRAVITY_CONVERSATIONS_DIR` | —                 |
 
-当前 Codex 适配器默认不扫描 `~/.codex/archived_sessions/`。仅保存在另一台电脑或托管服务中的对话，也不属于这次本地扫描的范围。
+请确保启动 CodeSesh 的终端与编码工具使用相同的环境变量。像 `CLAUDE_CONFIG_DIR` 和 `CODEX_HOME` 指向的是工具的根目录，而不是直接指向 `projects/` 或 `sessions/`。
 
-不安装查看器，也可以用文本编辑器打开已有的 JSONL 文件。一个会话文件包含多条记录和工具活动；搜索单个文件与跨项目搜索对话不同。查看时保留原文件，不要修改内容。
+有两个常见细节值得注意：
 
-## 2. 用 CodeSesh 搜索历史会话
+- **Codex 归档目录：** 当前 Codex 适配器默认扫描 `~/.codex/sessions/`，不扫描 `~/.codex/archived_sessions/`。
+- **Claude Code 输入记录与完整对话分离：** `~/.claude/history.jsonl` 只记录终端输入提示词，完整的回复、工具调用和子 Agent 会话位于 `~/.claude/projects/`。
 
-CodeSesh 可以跨受支持的本地记录搜索和回放对话，按项目组织会话，并查找消息、工具输出和文件路径。单机模式无需账号，历史记录留在你的电脑上。独立可执行文件和其他安装方式见[安装指南](/zh/guides/getting-started/)。
+## 原生命令行恢复与跨项目检索的区别
 
-安装 Node.js 22 或更高版本，然后在终端运行：
+如果你就在原项目目录下、只想继续最近一次对话，直接用 `claude --resume` 或 `codex resume` 最快。但当你只记得一个报错片段、某个被改过的文件路径，或者忘了几周前用的是哪个工具时，原生命令行列表很难反查。
+
+不安装任何工具也可以用文本编辑器直接打开 JSONL 文件，但单个文件里混杂了大量工具事件和元数据，跨目录检索效率很低。手动查阅时请保持原文件不变。
+
+## 用 CodeSesh 搜索和回放历史会话
+
+CodeSesh 会将受支持的本地记录建立到一个 SQLite 索引中，支持跨项目、跨 Agent 搜索消息正文、工具输出和文件路径。单机模式无需账号，所有记录留在你的本机。独立可执行文件和其他安装方式见[安装指南](/zh/guides/getting-started/)。
+
+安装 Node.js 22 或更高版本后，在终端运行全量扫描：
 
 ```sh
 npx codesesh --days 0
 ```
 
-CodeSesh 会打开 `http://localhost:4521`。如果端口被占用，请使用终端中打印的地址。浏览期间保持终端进程运行。
+CodeSesh 会打开 `http://localhost:4521`（如果端口被占用，使用终端打印的地址）。浏览期间保持该进程运行。
 
-**为什么加 `--days 0`？** 默认命令 `npx codesesh` 只包含最近七个本地日历日内活跃的会话。查找更早的对话时，使用 `--days 0`。历史记录较多时，首次扫描和搜索索引需要一些时间。
+**为什么加 `--days 0`？** 默认命令 `npx codesesh` 只展示最近 7 个本地日历日内活跃的会话，以加快首次启动；查找更早的对话时使用 `--days 0`。
 
-## 3. 按项目和内容找回一次对话
+## 按项目、Agent 或文件路径定位对话
 
-假设你记得在 `my-app` 仓库中修过登录超时，但忘了当时用的是 Claude Code 还是 Codex：
+假设你几周前在 `my-app` 仓库修过登录超时，但不记得当时用的是 Claude Code 还是 Codex：
 
-1. 打开全局搜索，输入对话中出现过的词句，例如 `登录超时`。请使用你真实记录里的文字；这里的词句只是操作示例，不是内置会话数据。
-2. 用项目筛选缩小结果范围。如果记得使用的工具，再通过 Agent 筛选选择 Claude Code 或 Codex。
-3. 不记得原话时，尝试文件路径，例如 `src/auth.ts`。搜索可以匹配已索引的文件路径、工具输出和对话正文。
-4. 打开匹配的会话，查看前后消息，展开工具调用以阅读当时的判断和输出。通过文件活动视图定位读取或修改过的文件。
+1. 打开全局搜索，输入对话正文或报错中出现过的关键词。
+2. 结合项目筛选、Agent 筛选或智能标签缩小范围。
+3. 不记得原话时，直接搜文件路径（如 `src/auth.ts`），或在文件活动视图中反查所有读/改过该文件的会话。
+4. 打开匹配的会话，按时间顺序回放消息、工具调用与思考过程；如需继续，可直接复制对应 Agent 的恢复命令。
 
-也可以在项目目录中启动，让服务只显示该项目的会话：
+在项目目录中启动时，可以只扫描当前仓库：
 
 ```sh
 npx codesesh --days 0 --cwd .
 ```
 
-只查看这两种 Agent 时，可以运行：
+只查看 Claude Code 和 Codex 时，可以运行：
 
 ```sh
 npx codesesh --days 0 --agent claudecode,codex
 ```
 
-回放是查看已记录的对话和工具活动，不会重新执行命令或恢复当时的文件系统。可以先查看[搜索与会话回放演示](/zh/#tour)，了解界面。
+回放只读取历史记录，不会重新执行命令或改动本地文件。可以先查看[搜索与会话回放演示](/zh/#tour)，或在[Token 用量与成本指南](/zh/guides/usage-and-costs/)中查看模型消耗统计。
 
 <span id="troubleshooting"></span>
 
-## 4. 找不到会话时怎么排查
+## 找不到会话时怎么排查
 
-- **先检查时间范围。** 使用 `--days 0` 重新启动，并清除界面中限制过严的筛选。如果 `--from`、`--to`、`--cwd` 或 `--agent` 排除了目标会话，也需要移除这些参数。
-- **确认源文件仍存在。** 检查对应的本地目录及当前用户的读取权限。Codex 会话还需确认是否已被移到 `archived_sessions/`。
-- **检查自定义根目录。** 确认启动 CodeSesh 的终端能读取 `CLAUDE_CONFIG_DIR` 或 `CODEX_HOME`，尤其是编码工具从另一种 Shell 或应用启动时。
-- **等待索引完成。** 首次历史回填和搜索索引在后台进行。会话列表已经显示，不代表所有旧消息都能立即搜到。
-- **反馈可复现的解析问题。** 如果受支持的记录确实存在但仍未出现，可以[提交问题](https://github.com/xingkaixin/codesesh/issues)，附上 CodeSesh 版本、Agent 和相关错误。分享前移除私人提示词、路径和凭据。
+- **检查时间范围。** 用 `--days 0` 重新启动，或在界面将时间范围从 7 天切到「全部」，同时移除过严的 `--from`、`--to`、`--cwd` 或 `--agent` 参数。
+- **检查清理周期与归档目录。** Claude Code 会按 `cleanupPeriodDays` 自动清理旧本地记录（默认 30 天）；Codex 归档后的会话会移到 `~/.codex/archived_sessions/`。
+- **检查自定义根目录环境变量。** 确认启动 CodeSesh 的终端里能读到 `CLAUDE_CONFIG_DIR`、`CODEX_HOME` 等变量。
+- **等待后台索引完成。** 首次全量回填在后台运行，列表先出现会话标题后，全文索引可能仍在进行。
+- **反馈可复现的解析问题。** 如果源文件存在且可读但依然缺失，可[提交 Issue](https://github.com/xingkaixin/codesesh/issues)，附上 CodeSesh 版本、Agent 名称和脱敏后的错误信息。
 
-## 5. 了解本地索引的边界
+## 了解本地索引的边界
 
-CodeSesh 是查看器和搜索索引，不是原始会话文件的备份。它不能恢复已从 Agent 存储中删除的历史。`--json` 输出的是会话元数据，不包含完整消息和工具调用存档。
+CodeSesh 是只读查看器和搜索索引，不是原始记录的备份工具。它会在来源暂时消失时保留已入库记录，但无法恢复在扫描前已被删除的历史文件；`--json` 输出的也只是会话元数据，而非完整对话归档。
 
-需要保留历史时，请保存 Agent 的原始数据。其他受支持的工具和产品能力可在 [CodeSesh 产品介绍](/zh/)中查看。
+如果需要长期留存历史，请妥善备份 Agent 原始数据目录。其他受支持工具与能力可在 [CodeSesh 产品介绍](/zh/)查看。
 
 ## 延伸阅读
 
