@@ -3071,6 +3071,7 @@ export function createChangelogPageConfig(locale: Locale) {
   const canonicalUrl = new URL(changelogRoutes[locale], siteUrl).toString();
   const webpageId = `${canonicalUrl}#webpage`;
   const blogId = `${canonicalUrl}#updates`;
+  const authorId = `${siteUrl}/#author`;
   const organizationId = `${siteUrl}/#organization`;
   const softwareId = `${siteUrl}/#software`;
 
@@ -3089,6 +3090,8 @@ export function createChangelogPageConfig(locale: Locale) {
         url: new URL(localeConfig[locale].route, siteUrl).toString(),
         codeRepository: "https://github.com/xingkaixin/codesesh",
         isAccessibleForFree: true,
+        author: { "@id": authorId },
+        creator: { "@id": authorId },
         publisher: { "@id": organizationId },
       },
       {

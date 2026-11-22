@@ -53,11 +53,18 @@ const featureList = t.features.groups.flatMap((group) =>
   group.items.map((item) => item.title),
 );
 const ogImageUrl = `${siteUrl}/og-image.png`;
+const authorId = `${siteUrl}/#author`;
 const websiteId = `${siteUrl}/#website`;
 const softwareId = `${siteUrl}/#software`;
 const webpageId = `${canonicalUrl}#webpage`;
 const faqId = `${canonicalUrl}#faq`;
 const commonSchema = [
+  {
+    "@type": "Person",
+    "@id": authorId,
+    name: "XingKaiXin",
+    url: "https://xingkaixin.me/",
+  },
   {
     "@type": "Organization",
     "@id": `${siteUrl}/#organization`,
@@ -74,6 +81,12 @@ const commonSchema = [
     "@id": websiteId,
     name: "CodeSesh",
     url: siteUrl,
+    author: {
+      "@id": authorId,
+    },
+    creator: {
+      "@id": authorId,
+    },
     publisher: {
       "@id": `${siteUrl}/#organization`,
     },
@@ -122,7 +135,10 @@ const landingSchema = [
     license: "https://opensource.org/license/mit",
     isAccessibleForFree: true,
     author: {
-      "@id": `${siteUrl}/#organization`,
+      "@id": authorId,
+    },
+    creator: {
+      "@id": authorId,
     },
     publisher: {
       "@id": `${siteUrl}/#organization`,

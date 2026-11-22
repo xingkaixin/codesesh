@@ -102,6 +102,8 @@ interface LandingCopy {
     changelog: string;
     docs: string;
     issues: string;
+    blog: string;
+    blogUrl: string;
   };
 }
 
@@ -349,6 +351,8 @@ export const copy = {
       changelog: "更新日志",
       docs: "文档",
       issues: "问题反馈",
+      blog: "XingKaiXin 的博客",
+      blogUrl: "https://xingkaixin.me/",
     },
   },
   en: {
@@ -541,6 +545,8 @@ export const copy = {
       changelog: "Changelog",
       docs: "Docs",
       issues: "Issues",
+      blog: "XingKaiXin's Blog",
+      blogUrl: "https://xingkaixin.me/en/",
     },
   },
   ja: {
@@ -742,6 +748,8 @@ export const copy = {
       changelog: "更新履歴",
       docs: "ドキュメント",
       issues: "問題を報告",
+      blog: "XingKaiXin のブログ",
+      blogUrl: "https://xingkaixin.me/en/",
     },
   },
 } satisfies Record<Locale, LandingCopy>;
