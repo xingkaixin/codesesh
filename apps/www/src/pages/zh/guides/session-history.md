@@ -71,3 +71,8 @@ npx codesesh --days 0 --agent claudecode,codex
 CodeSesh 是查看器和搜索索引，不是原始会话文件的备份。它不能恢复已从 Agent 存储中删除的历史。`--json` 输出的是会话元数据，不包含完整消息和工具调用存档。
 
 需要保留历史时，请保存 Agent 的原始数据。其他受支持的工具和产品能力可在 [CodeSesh 产品介绍](/zh/)中查看。
+
+## 延伸阅读
+
+- [你跟 AI 的每一次编码对话，都在悄悄消失](https://xingkaixin.me/posts/codesesh-ai-coding-sessions-disappearing/)：为什么 AI 编码对话容易在切换工具和终端后散落，以及 CodeSesh 的设计取舍。
+- [每次跟 agent 聊完，你把最值钱的东西丢了](https://xingkaixin.me/posts/session-as-asset/)：讨论如何留住编码会话里的踩坑记录与工程判断，让它们之后还能被搜到。

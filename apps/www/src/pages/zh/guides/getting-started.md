@@ -63,3 +63,7 @@ codesesh --from 2026-09-01 --to 2026-09-30
 `codesesh` 在一个进程中采集本机并提供 Web 界面。Hub 负责查询已保存的数据，Worker 负责采集与上传。需要统一浏览多台电脑时，使用 [Hub 和 Worker](/zh/guides/multi-machine-sync/)；需要关闭终端后继续运行时，参阅[后台服务指南](/zh/guides/background-services/)。
 
 对同一数据目录切换模式前，先停止原来的单机 CodeSesh 进程。不要让单机模式与 Hub/Worker 同时使用该目录。
+
+## 延伸阅读
+
+- [你跟 AI 的每一次编码对话，都在悄悄消失](https://xingkaixin.me/posts/codesesh-ai-coding-sessions-disappearing/)：介绍 CodeSesh 的开发背景、它解决的问题，以及与同类会话查看工具的差异。
