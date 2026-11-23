@@ -106,9 +106,10 @@ export function useModelPricing(
     if (!enabled || !history) return;
     const previous = previousHistory.current;
     previousHistory.current = history;
-    const published = history.generation !== previous?.generation;
+    if (!previous) return;
+    const published = history.generation !== previous.generation;
     if (published) invalidateCatalog(queryClient);
-    if (history.phase === "current" && (published || previous?.phase !== "current")) {
+    if (history.phase === "current" && (published || previous.phase !== "current")) {
       void invalidateRepricedQueries(queryClient);
     }
   }, [enabled, history, queryClient]);

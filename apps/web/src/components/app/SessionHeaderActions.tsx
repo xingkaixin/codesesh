@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../ui/popup-menu";
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { useLocale } from "../../hooks/useLocale";

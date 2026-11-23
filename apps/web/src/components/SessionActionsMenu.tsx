@@ -1,6 +1,6 @@
 import { useLocale } from "../hooks/useLocale";
 import { t } from "../i18n/translate";
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "./ui/popup-menu";
 import { Copy, MoreHorizontal, Pencil, Star } from "./ui/icons";
 import { useRef } from "react";
 

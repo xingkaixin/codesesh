@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "./ui/popup-menu";
 import { buildSessionTree, type SessionHead, type SessionTreeNode } from "@codesesh/contract";
 import {
   memo,

@@ -33,8 +33,8 @@ describe("fetchSessions", () => {
     expect(result.sessions).toEqual([SAMPLE_SESSION_HEAD, nextSession]);
     expect(onFirstPage).toHaveBeenCalledWith([SAMPLE_SESSION_HEAD]);
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "/api/sessions?limit=250",
-      "/api/sessions?limit=250&cursor=next-page",
+      "/api/sessions?limit=500",
+      "/api/sessions?limit=500&cursor=next-page",
     ]);
   });
 
@@ -61,7 +61,7 @@ describe("fetchSessions", () => {
     expect(result.sessions).toEqual([latestSession]);
     expect(onFirstPage).toHaveBeenNthCalledWith(1, [SAMPLE_SESSION_HEAD]);
     expect(onFirstPage).toHaveBeenNthCalledWith(2, [latestSession]);
-    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/sessions?limit=250");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/sessions?limit=500");
   });
 });
 
