@@ -140,6 +140,12 @@ impl StateStore {
                 .join("state.db"),
         )
     }
+    pub fn change_stamp(&self) -> Result<(i64, u64)> {
+        let data_version: i64 = self
+            .db
+            .pragma_query_value(None, "data_version", |row| row.get(0))?;
+        Ok((data_version, self.db.total_changes()))
+    }
     pub fn list_bookmarks(&self) -> Result<Vec<BookmarkRecord>> {
         let sql = if self.memory {
             "SELECT agent_name,session_id,bookmarked_at,source_node_id FROM bookmarks ORDER BY rowid"

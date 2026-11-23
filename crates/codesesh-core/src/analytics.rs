@@ -1,6 +1,8 @@
 mod active_hours;
 mod attribution;
+#[cfg(test)]
 pub(crate) use active_hours::active_hours;
+pub(crate) use active_hours::active_hours_refs;
 mod facts;
 mod projects;
 mod read;
@@ -8,10 +10,15 @@ mod response;
 mod time_zone;
 mod unmatched;
 pub use facts::*;
-pub use projects::{ProjectSort, attach_project_metrics, sort_projects, summarize_projects};
-pub use read::{load_cost_facts, load_scoped_cost_facts};
+pub use projects::{
+    ProjectSort, attach_project_metrics, attach_project_metrics_refs, sort_projects,
+    summarize_projects,
+};
+pub use read::{load_cost_facts, load_scoped_cost_facts, load_scoped_cost_facts_index_refs};
 pub(crate) use read::{model_entry_refs, reference_condition};
-pub use response::{DashboardResponseOptions, DashboardTimings, dashboard_response};
+pub use response::{
+    DashboardResponseOptions, DashboardTimings, dashboard_response, dashboard_response_refs,
+};
 pub use time_zone::DashboardTimeZone;
 pub use unmatched::query_unmatched_models;
 
@@ -330,12 +337,21 @@ fn accumulate(
     acc
 }
 
+#[cfg(test)]
 pub(crate) fn build_dashboard(
     sessions: &[SessionHead],
     options: &DashboardOptions<'_>,
 ) -> anyhow::Result<DashboardAggregate> {
-    let project_names = crate::projects::preferred_project_display_names(sessions);
-    let tree = SessionTree::new(sessions);
+    let refs: Vec<&SessionHead> = sessions.iter().collect();
+    build_dashboard_refs(&refs, options)
+}
+
+pub(crate) fn build_dashboard_refs(
+    sessions: &[&SessionHead],
+    options: &DashboardOptions<'_>,
+) -> anyhow::Result<DashboardAggregate> {
+    let project_names = crate::projects::preferred_project_display_names_refs(sessions);
+    let tree = SessionTree::from_refs(sessions.iter().copied());
     let mut acc = accumulate(&tree, options, options.from, options.to, true);
     let latest = acc.recent.first().map(|&i| tree.sessions[i]);
     let source = |estimated| {

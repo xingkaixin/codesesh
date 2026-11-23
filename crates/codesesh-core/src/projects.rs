@@ -2,8 +2,8 @@ mod groups;
 mod path;
 mod scope;
 
-pub(crate) use groups::preferred_project_display_names;
-pub use groups::{ProjectGroup, build_project_groups};
+pub(crate) use groups::preferred_project_display_names_refs;
+pub use groups::{ProjectGroup, build_project_groups, build_project_groups_refs};
 pub(crate) use path::fallback_display_name;
 pub use scope::*;
 

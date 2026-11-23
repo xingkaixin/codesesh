@@ -108,6 +108,27 @@ impl PricingState {
                 .iter()
                 .any(|input| input.cost.is_none() && input.model.is_some())
     }
+
+    pub(crate) fn has_head_pricing_inputs(&self) -> bool {
+        !self.head.inputs.is_empty()
+    }
+
+    pub(crate) fn has_merged_pricing_models(&self, messages: &[crate::model::Message]) -> bool {
+        self.messages.iter().any(|(&index, basis)| {
+            let Some(message) = messages.get(index) else {
+                return false;
+            };
+            basis.inputs.iter().any(|input| {
+                !pricing_models_match(input.model.as_deref(), message.model.as_deref())
+            })
+        })
+    }
+}
+
+pub(crate) fn pricing_models_match(input: Option<&str>, message: Option<&str>) -> bool {
+    input == message
+        || input.and_then(crate::pricing::normalize_override_model_key)
+            == message.and_then(crate::pricing::normalize_override_model_key)
 }
 
 pub(super) fn has_unmatched_pricing_meta(meta_json: Option<&str>) -> bool {

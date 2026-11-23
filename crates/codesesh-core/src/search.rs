@@ -450,6 +450,37 @@ fn find_message_text(parts: Vec<crate::model::MessagePart>) -> String {
     fields.join("\n")
 }
 
+fn ascii_contains_ignore_case(haystack: &[u8], needle_lower: &[u8]) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if needle_lower.len() > haystack.len() {
+        return false;
+    }
+    let first = needle_lower[0];
+    let first_upper = first.to_ascii_uppercase();
+    let limit = haystack.len() - needle_lower.len();
+    for i in 0..=limit {
+        let b = haystack[i];
+        if (b == first || b == first_upper)
+            && haystack[i..i + needle_lower.len()]
+                .iter()
+                .zip(needle_lower)
+                .all(|(h, n)| h.to_ascii_lowercase() == *n)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn plain_ascii_json_safe(term: &str) -> bool {
+    !term.is_empty()
+        && term
+            .bytes()
+            .all(|b| b.is_ascii() && !b.is_ascii_control() && b != b'"' && b != b'\\')
+}
+
 pub fn find_session_message_matches(
     connection: &Connection,
     reference: &SessionReference,
@@ -466,6 +497,7 @@ pub fn find_session_message_matches(
     if terms.is_empty() {
         return Ok(Vec::new());
     }
+    let can_prefilter = terms.iter().all(|term| plain_ascii_json_safe(term));
     let mut statement = connection.prepare_cached(
         "SELECT message_index, parts_json, parts_format_version FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? ORDER BY message_index",
     )?;
@@ -478,6 +510,23 @@ pub fn find_session_message_matches(
     while let Some(row) = rows.next()? {
         let index: i64 = row.get(0)?;
         let raw = crate::storage::body::unpack(row.get_ref(1)?)?;
+        // Only prefilter when raw JSON is pure ASCII with no \uXXXX escapes; non-ASCII text
+        // (e.g. U+212A Kelvin sign -> 'k') and unicode escapes can fold into ASCII search terms.
+        if can_prefilter && raw.is_ascii() && !raw.contains("\\u") {
+            let raw_bytes = raw.as_bytes();
+            let may_match = if any {
+                terms
+                    .iter()
+                    .any(|term| ascii_contains_ignore_case(raw_bytes, term.as_bytes()))
+            } else {
+                terms
+                    .iter()
+                    .all(|term| ascii_contains_ignore_case(raw_bytes, term.as_bytes()))
+            };
+            if !may_match {
+                continue;
+            }
+        }
         let content_text =
             find_message_text(crate::storage::body::decode_parts(&raw, row.get(2)?)?);
         let lower = content_text.to_lowercase();

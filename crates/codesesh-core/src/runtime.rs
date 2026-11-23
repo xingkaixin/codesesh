@@ -14,7 +14,7 @@ use std::{
     collections::BTreeSet,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -114,10 +114,30 @@ pub enum Event {
 }
 
 #[derive(Clone)]
-struct PublishedSnapshot {
-    revision: u64,
-    heads: Arc<Vec<Arc<SessionHead>>>,
+pub struct SnapshotView {
+    pub revision: u64,
+    pub analytics_revision: i64,
+    pub heads: Arc<Vec<Arc<SessionHead>>>,
+    root_times: Arc<OnceLock<Vec<f64>>>,
 }
+
+impl SnapshotView {
+    pub fn new(revision: u64, analytics_revision: i64, heads: Arc<Vec<Arc<SessionHead>>>) -> Self {
+        Self {
+            revision,
+            analytics_revision,
+            heads,
+            root_times: Arc::new(OnceLock::new()),
+        }
+    }
+
+    pub fn root_times(&self) -> &[f64] {
+        self.root_times
+            .get_or_init(|| crate::session_list::compute_root_activity_times(&self.heads))
+    }
+}
+
+type PublishedSnapshot = SnapshotView;
 
 #[derive(Debug)]
 pub struct ReadBusy;
@@ -200,10 +220,8 @@ impl Runtime {
         let stopped = Arc::new(AtomicBool::new(false));
         let (shutdown, _) = watch::channel(false);
         let (events, _) = broadcast::channel(128);
-        let (snapshots_tx, snapshots) = watch::channel(PublishedSnapshot {
-            revision: 0,
-            heads: Arc::new(Vec::new()),
-        });
+        let (snapshots_tx, snapshots) =
+            watch::channel(PublishedSnapshot::new(0, 0, Arc::new(Vec::new())));
         let (statuses_tx, statuses) = watch::channel(Arc::new(ScanStatus::new(
             sources.iter().map(|source| source.name.clone()),
         )));
@@ -295,6 +313,9 @@ impl Runtime {
     pub fn snapshot_with_revision(&self) -> (u64, Arc<Vec<Arc<SessionHead>>>) {
         let current = self.inner.snapshots.borrow();
         (current.revision, current.heads.clone())
+    }
+    pub fn snapshot_view(&self) -> SnapshotView {
+        self.inner.snapshots.borrow().clone()
     }
     pub fn status(&self) -> Arc<ScanStatus> {
         self.inner.statuses.borrow().clone()
@@ -415,7 +436,9 @@ impl Runtime {
                         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
                     )?;
                     connection.busy_timeout(Duration::from_secs(5))?;
-                    connection.execute_batch("PRAGMA query_only=ON; PRAGMA cache_size=-4096")?;
+                    connection.execute_batch(
+                        "PRAGMA query_only=ON; PRAGMA cache_size=-4096; PRAGMA temp_store=MEMORY;",
+                    )?;
                     connection
                 }
             };

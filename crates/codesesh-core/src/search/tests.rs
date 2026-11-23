@@ -905,3 +905,40 @@ fn find_session_message_matches_isolates_reference_and_supports_ascii_and_cjk() 
         vec![0]
     );
 }
+
+#[test]
+fn find_session_message_matches_preserves_unicode_casefold_and_json_escapes() {
+    let db = Connection::open_in_memory().unwrap();
+    db.execute_batch(include_str!("../storage/schema.sql"))
+        .unwrap();
+    let reference = SessionReference {
+        source_node_id: "local".into(),
+        agent_name: "codex".into(),
+        session_id: "unicode-escape".into(),
+    };
+    db.execute(
+        "INSERT INTO sessions(source_node_id,agent_name,session_id,title,directory,project_identity_kind,project_identity_key,project_display_name,time_created,time_updated,activity_time,message_count,total_input_tokens,total_output_tokens,total_cost) VALUES('local','codex','unicode-escape','title','/repo','path','/repo','repo',1,2,2,2,0,0,0)",
+        [],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','unicode-escape',0,'m0','assistant',1,?,?)",
+        (
+            "[{\"type\":\"text\",\"text\":\"greeting \u{212a}elvin\"}]",
+            "greeting \u{212a}elvin",
+        ),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO messages(source_node_id,agent_name,session_id,message_index,message_id,role,time_created,parts_json,content_text) VALUES('local','codex','unicode-escape',1,'m1','assistant',1,?,?)",
+        (
+            r#"[{"type":"text","text":"escaped k\u0065lvin"}]"#,
+            "escaped kelvin",
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        find_session_message_matches(&db, &reference, "kelvin").unwrap(),
+        vec![0, 1]
+    );
+}

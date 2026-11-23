@@ -51,17 +51,66 @@ fn optional_json<T: serde::de::DeserializeOwned>(
     row: &Row<'_>,
     column: usize,
 ) -> rusqlite::Result<Option<T>> {
-    let text: Option<String> = row.get(column)?;
-    text.map(|text| {
-        serde_json::from_str(&text).map_err(|error| {
+    match row.get_ref(column)? {
+        rusqlite::types::ValueRef::Null => Ok(None),
+        rusqlite::types::ValueRef::Text(bytes) => {
+            serde_json::from_slice(bytes).map(Some).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    column,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        }
+        other => Err(rusqlite::Error::InvalidColumnType(
+            column,
+            String::new(),
+            other.data_type(),
+        )),
+    }
+}
+
+fn head_metadata_json(row: &Row<'_>, column: usize) -> rusqlite::Result<Option<HeadMetadata>> {
+    match row.get_ref(column)? {
+        rusqlite::types::ValueRef::Null => Ok(None),
+        rusqlite::types::ValueRef::Text(b"{}") | rusqlite::types::ValueRef::Text(b"null") => {
+            Ok(None)
+        }
+        rusqlite::types::ValueRef::Text(bytes) => {
+            serde_json::from_slice::<Option<HeadMetadata>>(bytes).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    column,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        }
+        other => Err(rusqlite::Error::InvalidColumnType(
+            column,
+            String::new(),
+            other.data_type(),
+        )),
+    }
+}
+
+fn smart_tags_json(row: &Row<'_>, column: usize) -> rusqlite::Result<Vec<String>> {
+    match row.get_ref(column)? {
+        rusqlite::types::ValueRef::Null
+        | rusqlite::types::ValueRef::Text(b"[]")
+        | rusqlite::types::ValueRef::Text(b"null") => Ok(Vec::new()),
+        rusqlite::types::ValueRef::Text(bytes) => serde_json::from_slice(bytes).map_err(|error| {
             rusqlite::Error::FromSqlConversionFailure(
                 column,
                 rusqlite::types::Type::Text,
                 Box::new(error),
             )
-        })
-    })
-    .transpose()
+        }),
+        other => Err(rusqlite::Error::InvalidColumnType(
+            column,
+            String::new(),
+            other.data_type(),
+        )),
+    }
 }
 
 pub fn load(connection: &Connection) -> Result<Vec<SessionHead>> {
@@ -129,10 +178,24 @@ pub(super) fn load_many(
 pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
     // All callers select HEAD_COLUMNS; positions avoid a name scan for every field.
     let source_node_id: String = row.get(0)?;
-    let metadata = optional_json::<Option<HeadMetadata>>(row, 26)?.flatten();
+    let metadata = head_metadata_json(row, 26)?;
     let parent_agent: Option<String> = row.get(5)?;
     let parent_id: Option<String> = row.get(6)?;
-    let cost_source: Option<String> = row.get(21)?;
+    let cost_source = match row.get_ref(21)? {
+        rusqlite::types::ValueRef::Text(b"recorded") => Some(CostSource::Recorded),
+        rusqlite::types::ValueRef::Text(b"estimated") => Some(CostSource::Estimated),
+        _ => None,
+    };
+    let time_created: f64 = row.get(12)?;
+    let time_updated = row.get::<_, Option<f64>>(13)?.unwrap_or(time_created);
+    let parent_reference =
+        parent_agent
+            .zip(parent_id)
+            .map(|(agent_name, session_id)| SessionReference {
+                source_node_id: source_node_id.clone(),
+                agent_name,
+                session_id,
+            });
     Ok(SessionHead {
         version: metadata
             .as_ref()
@@ -143,20 +206,14 @@ pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             .as_ref()
             .and_then(|meta| meta.summary_files.clone()),
         reference: SessionReference {
-            source_node_id: row.get(0)?,
+            source_node_id,
             agent_name: row.get(1)?,
             session_id: row.get(2)?,
         },
         title: row.get(3)?,
         directory: row.get(4)?,
         display_title: None,
-        parent_reference: parent_agent.zip(parent_id).map(|(agent_name, session_id)| {
-            SessionReference {
-                source_node_id: source_node_id.clone(),
-                agent_name,
-                session_id,
-            }
-        }),
+        parent_reference,
         project_identity: ProjectIdentity {
             kind: row.get(7)?,
             key: row.get(8)?,
@@ -167,8 +224,8 @@ pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             .unwrap_or_default(),
         project_identity_resolver_revision: row.get(10)?,
         project_identity_input_signature: row.get(11)?,
-        time_created: row.get(12)?,
-        time_updated: row.get::<_, Option<f64>>(13)?.unwrap_or(row.get(12)?),
+        time_created,
+        time_updated,
         stats: SessionStats {
             cost_inputs: Vec::new(),
             message_count: row.get::<_, i64>(14)? as usize,
@@ -178,14 +235,10 @@ pub fn head(row: &Row<'_>) -> rusqlite::Result<SessionHead> {
             total_cache_read_tokens: row.get(18)?,
             total_cache_create_tokens: row.get(19)?,
             total_tokens: row.get(20)?,
-            cost_source: match cost_source.as_deref() {
-                Some("recorded") => Some(CostSource::Recorded),
-                Some("estimated") => Some(CostSource::Estimated),
-                _ => None,
-            },
+            cost_source,
         },
         model_usage: optional_json(row, 22)?,
-        smart_tags: optional_json(row, 23)?.unwrap_or_default(),
+        smart_tags: smart_tags_json(row, 23)?,
         smart_tags_source_updated_at: row.get(24)?,
         smart_tags_classifier_revision: row.get(25)?,
     })

@@ -345,16 +345,17 @@ pub(super) fn forget(
     reference: &SessionReference,
     indexes: std::ops::Range<i64>,
 ) -> Result<()> {
-    db.prepare_cached(
-        "DELETE FROM message_fts WHERE rowid IN (SELECT rowid FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? AND message_index<?)",
-    )?
-    .execute(params![
+    let args = params![
         reference.source_node_id,
         reference.agent_name,
         reference.session_id,
         indexes.start,
         indexes.end
-    ])?;
+    ];
+    db.prepare_cached(
+        "DELETE FROM message_fts WHERE rowid IN (SELECT rowid FROM messages WHERE source_node_id=? AND agent_name=? AND session_id=? AND message_index>=? AND message_index<?)",
+    )?
+    .execute(args)?;
     Ok(())
 }
 
