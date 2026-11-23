@@ -120,9 +120,12 @@ async fn run() -> Result<()> {
         .as_ref()
         .map(|store| store.list_model_price_overrides().unwrap_or_default())
         .unwrap_or_default();
-    let (pricing_controller, pricing) = load_pricing(&environment.home, overrides, logger)?;
-    let (cache_path, _temporary) =
-        prepare_cache(&args, &environment.home, hub_enabled, logger).await?;
+    let pricing_home = environment.home.clone();
+    let pricing_task =
+        tokio::task::spawn_blocking(move || load_pricing(&pricing_home, overrides, logger));
+    let cache_result = prepare_cache(&args, &environment.home, hub_enabled, logger).await;
+    let (pricing_controller, pricing) = pricing_task.await??;
+    let (cache_path, _temporary) = cache_result?;
     let local_source = if scan_local {
         resume_local_source(&environment.home, &cache_path, &pricing).await?
     } else {
@@ -422,9 +425,9 @@ async fn start_runtime(
     sources: Vec<runtime::AgentSource>,
 ) -> Result<Runtime> {
     if !hub_enabled {
-        return Runtime::start(cache_path, sources, 4).await;
+        return Runtime::start(cache_path, sources, 8).await;
     }
-    let runtime = Runtime::start_hub(cache_path, sources, 4).await?;
+    let runtime = Runtime::start_hub(cache_path, sources, 8).await?;
     let hub_id = node_identity::hub_id(home)?;
     let local_key = node_identity::local_worker_key(home)?;
     let recover = matches!(

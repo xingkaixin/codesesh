@@ -1,9 +1,9 @@
-use super::{State, decorate_wire, error};
+use super::{State, decorate_wire, error, etag};
 use axum::{
     Json,
     body::Bytes,
     extract::{Path, State as AxumState},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use codesesh_core::{
@@ -60,22 +60,49 @@ async fn materialize(state: &State, records: Vec<BookmarkRecord>) -> anyhow::Res
         .into_iter()
         .map(|a| a.name)
         .collect();
-    let mut views = state
-        .runtime
-        .read(move |conn| {
-            materialize_bookmarks(&records, &HashMap::new(), &known, |refs| {
-                refs.iter()
-                    .filter_map(
-                        |r| match codesesh_core::storage::head_from_connection(conn, r) {
-                            Ok(Some(head)) => Some(Ok((r.clone(), head))),
-                            Ok(None) => None,
-                            Err(e) => Some(Err(e)),
-                        },
-                    )
-                    .collect()
-            })
-        })
-        .await?;
+    let snapshot = state.runtime.snapshot();
+    let wanted: HashSet<SessionReference> = records.iter().map(|r| r.reference.clone()).collect();
+    let mut by_ref = HashMap::with_capacity(wanted.len());
+    if !wanted.is_empty() {
+        for head in snapshot.iter() {
+            if wanted.contains(&head.reference) {
+                by_ref.insert(head.reference.clone(), (**head).clone());
+                if by_ref.len() == wanted.len() {
+                    break;
+                }
+            }
+        }
+        let missing: Vec<SessionReference> = wanted
+            .into_iter()
+            .filter(|r| !by_ref.contains_key(r))
+            .collect();
+        if !missing.is_empty() {
+            let loaded = state
+                .runtime
+                .read(move |conn| {
+                    missing
+                        .iter()
+                        .filter_map(|r| {
+                            match codesesh_core::storage::head_from_connection(conn, r) {
+                                Ok(Some(head)) => Some(Ok((r.clone(), head))),
+                                Ok(None) => None,
+                                Err(e) => Some(Err(e)),
+                            }
+                        })
+                        .collect::<anyhow::Result<Vec<_>>>()
+                })
+                .await?;
+            for (r, head) in loaded {
+                by_ref.insert(r, head);
+            }
+        }
+    }
+    let mut views = materialize_bookmarks(&records, &HashMap::new(), &known, |refs| {
+        Ok(refs
+            .iter()
+            .filter_map(|r| by_ref.get(r).map(|head| (r.clone(), head.clone())))
+            .collect())
+    })?;
     let aliases = state.aliases().await;
     for view in &mut views {
         match view {
@@ -87,10 +114,36 @@ async fn materialize(state: &State, records: Vec<BookmarkRecord>) -> anyhow::Res
     }
     Ok(json!({"bookmarks":views,"storageAvailable":true}))
 }
-pub async fn list(AxumState(state): AxumState<Arc<State>>) -> Response {
+pub async fn list(AxumState(state): AxumState<Arc<State>>, headers: HeaderMap) -> Response {
+    let snapshot_rev = state.runtime.snapshot_view().revision;
+    let stamp = state.state_change_stamp();
+    let (_, aliases_fp) = state.aliases_with_fingerprint().await;
+    let tag = stamp.map(|stamp| {
+        etag::weak_etag(
+            state.etag_namespace,
+            &json!([
+                "bookmarks",
+                snapshot_rev,
+                stamp.0,
+                stamp.1,
+                aliases_fp.as_str()
+            ]),
+        )
+    });
+    if let Some(ref tag) = tag
+        && etag::matches_if_none_match(&headers, tag)
+    {
+        return etag::not_modified(tag);
+    }
     match perform(&state, |s| s.list_bookmarks()).await {
         Ok(records) => match materialize(&state, records).await {
-            Ok(v) => Json(v).into_response(),
+            Ok(v) => {
+                let mut response = Json(v).into_response();
+                if let Some(ref tag) = tag {
+                    etag::apply_headers(&mut response, tag);
+                }
+                response
+            }
             Err(_) => error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to load bookmarks",
@@ -176,7 +229,10 @@ pub async fn alias_put(
         );
     };
     match perform(&state, move |s| s.upsert_alias(&reference, &alias)).await {
-        Ok(alias) => Json(json!({"alias":alias})).into_response(),
+        Ok(alias) => {
+            state.invalidate_aliases();
+            Json(json!({"alias":alias})).into_response()
+        }
         Err(_) => unavailable(true),
     }
 }
@@ -189,7 +245,10 @@ pub async fn alias_delete(
         return error(StatusCode::BAD_REQUEST, &e);
     }
     match perform(&state, move |s| s.delete_alias(&reference)).await {
-        Ok(()) => Json(json!({"ok":true})).into_response(),
+        Ok(()) => {
+            state.invalidate_aliases();
+            Json(json!({"ok":true})).into_response()
+        }
         Err(_) => unavailable(true),
     }
 }

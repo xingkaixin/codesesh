@@ -250,28 +250,237 @@ fn valid_authority(count: usize, host: &str, listener: &str, port: u16) -> bool 
     matches!(name, "localhost" | "127.0.0.1" | "::1") || listener.as_deref() == Some(name)
 }
 
-pub async fn static_file(request: Request) -> Response {
+pub struct PrebuiltHtml {
+    raw: Vec<u8>,
+    zstd: Option<Vec<u8>>,
+    gz: Option<Vec<u8>>,
+    etag_raw: String,
+    etag_zstd: String,
+    etag_gz: String,
+}
+
+fn html_escape_attr(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 16);
+    for ch in raw.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+pub fn build_bootstrapped_html(
+    options: &super::Options,
+    hub_enabled: bool,
+) -> Option<PrebuiltHtml> {
+    // Only embed AppConfig into unauthenticated HTML; auth-protected servers keep /api/config gated.
+    if options.token.is_some() {
+        return None;
+    }
+    let ((mime, asset), _) = crate::assets::spa_entry("/")?;
+    if mime != "text/html; charset=utf-8" {
+        return None;
+    }
+    let html = std::str::from_utf8(asset.raw).ok()?;
+    let head_end = html.find("</head>")?;
+    let config = codesesh_core::wire::AppConfig {
+        hub_enabled: hub_enabled.then_some(true),
+        public_hub_url: hub_enabled.then(|| options.public_origin.clone()).flatten(),
+        window: codesesh_core::wire::SessionWindow {
+            from: options.default_from,
+            to: options.default_to,
+            days: options.default_days.map(f64::from),
+        },
+    };
+    let json = serde_json::to_string(&config).ok()?;
+    let meta = format!(
+        "<meta name=\"codesesh-config\" content=\"{}\" />",
+        html_escape_attr(&json)
+    );
+    let mut injected = String::with_capacity(html.len() + meta.len());
+    injected.push_str(&html[..head_end]);
+    injected.push_str(&meta);
+    injected.push_str(&html[head_end..]);
+    let raw = injected.into_bytes();
+    let zstd = zstd::bulk::compress(&raw, 6)
+        .ok()
+        .filter(|b| b.len() < raw.len());
+    let gz = {
+        use std::io::Write;
+        let mut encoder = flate2::write::GzEncoder::new(
+            Vec::with_capacity(raw.len() / 2),
+            flate2::Compression::best(),
+        );
+        encoder
+            .write_all(&raw)
+            .ok()
+            .and_then(|()| encoder.finish().ok())
+            .filter(|b| b.len() < raw.len())
+    };
+    let mut hash: u128 = 0x6c62272e07bb0142_62b821756295c58d;
+    for &b in &raw {
+        hash ^= u128::from(b);
+        hash = hash.wrapping_mul(0x0000000001000000_000000000000013b);
+    }
+    let etag_raw = format!("\"{hash:032x}\"");
+    let etag_zstd = format!("\"{hash:032x}-zstd\"");
+    let etag_gz = format!("\"{hash:032x}-gz\"");
+    Some(PrebuiltHtml {
+        raw,
+        zstd,
+        gz,
+        etag_raw,
+        etag_zstd,
+        etag_gz,
+    })
+}
+
+pub async fn static_file(AxumState(state): AxumState<Arc<State>>, request: Request) -> Response {
     if !matches!(*request.method(), Method::GET | Method::HEAD) {
         return (StatusCode::NOT_FOUND, "404 Not Found").into_response();
     }
     let path = request.uri().path();
+    let is_head = *request.method() == Method::HEAD;
+    let accept_encoding = request
+        .headers()
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok());
     // Vite fingerprints every file under /assets/; the SPA fallback for a missing name must stay uncached.
     if path.starts_with("/assets/")
-        && let Some((mime, bytes)) = crate::assets::lookup(path)
+        && let Some((mime, asset)) = crate::assets::lookup_entry(path)
     {
-        return (
-            [
-                (header::CONTENT_TYPE, mime),
-                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
-            ],
-            bytes,
-        )
-            .into_response();
+        return static_response(
+            &request,
+            mime,
+            asset,
+            Some("public, max-age=31536000, immutable"),
+            accept_encoding,
+            is_head,
+        );
     }
-    if let Some((mime, bytes)) = crate::assets::spa(path) {
-        return ([(header::CONTENT_TYPE, mime)], bytes).into_response();
+    if let Some(((mime, asset), is_exact_non_html)) = crate::assets::spa_entry(path) {
+        if !is_exact_non_html
+            && mime == "text/html; charset=utf-8"
+            && let Some(html) = state.index_html.as_ref()
+        {
+            return prebuilt_html_response(&request, html, accept_encoding, is_head);
+        }
+        let cache_control = is_exact_non_html.then_some("public, max-age=3600");
+        return static_response(
+            &request,
+            mime,
+            asset,
+            cache_control,
+            accept_encoding,
+            is_head,
+        );
     }
     (StatusCode::NOT_FOUND, "404 Not Found").into_response()
+}
+
+fn mark_pre_negotiated(mut response: Response) -> Response {
+    response
+        .extensions_mut()
+        .insert(super::compression::PreNegotiated);
+    response
+}
+
+fn prebuilt_html_response(
+    request: &Request,
+    html: &PrebuiltHtml,
+    accept_encoding: Option<&str>,
+    is_head: bool,
+) -> Response {
+    let has_variants = html.zstd.is_some() || html.gz.is_some();
+    let chosen = accept_encoding.and_then(|header| {
+        super::compression::select_html_encoding(header, html.zstd.is_some(), html.gz.is_some())
+    });
+    let (encoding, bytes, etag): (Option<&'static str>, &[u8], &str) = match chosen {
+        Some("zstd") => (Some("zstd"), html.zstd.as_deref().unwrap(), &html.etag_zstd),
+        Some("gzip") => (Some("gzip"), html.gz.as_deref().unwrap(), &html.etag_gz),
+        _ => (None, &html.raw, &html.etag_raw),
+    };
+    if super::etag::matches_if_none_match(request.headers(), etag) {
+        let mut builder = Response::builder()
+            .status(StatusCode::NOT_MODIFIED)
+            .header(header::ETAG, etag);
+        if has_variants {
+            builder = builder.header(header::VARY, "Accept-Encoding");
+        }
+        return mark_pre_negotiated(builder.body(Body::empty()).unwrap());
+    }
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CONTENT_LENGTH, bytes.len())
+        .header(header::ETAG, etag);
+    if has_variants {
+        builder = builder.header(header::VARY, "Accept-Encoding");
+    }
+    if let Some(encoding) = encoding {
+        builder = builder.header(header::CONTENT_ENCODING, encoding);
+    }
+    let body = if is_head {
+        Body::empty()
+    } else {
+        Body::from(bytes.to_vec())
+    };
+    mark_pre_negotiated(builder.body(body).unwrap())
+}
+
+fn static_response(
+    request: &Request,
+    mime: &'static str,
+    asset: &'static crate::assets::EmbeddedAsset,
+    cache_control: Option<&'static str>,
+    accept_encoding: Option<&str>,
+    is_head: bool,
+) -> Response {
+    let has_variants = asset.br.is_some() || asset.gz.is_some();
+    let chosen = accept_encoding.and_then(|header| {
+        super::compression::select_static_encoding(header, asset.br.is_some(), asset.gz.is_some())
+    });
+    let (encoding, bytes, etag) = match chosen {
+        Some("br") => (Some("br"), asset.br.unwrap(), asset.etag_br),
+        Some("gzip") => (Some("gzip"), asset.gz.unwrap(), asset.etag_gz),
+        _ => (None, asset.raw, asset.etag),
+    };
+    if super::etag::matches_if_none_match(request.headers(), etag) {
+        let mut builder = Response::builder()
+            .status(StatusCode::NOT_MODIFIED)
+            .header(header::ETAG, etag);
+        if has_variants {
+            builder = builder.header(header::VARY, "Accept-Encoding");
+        }
+        if let Some(cc) = cache_control {
+            builder = builder.header(header::CACHE_CONTROL, cc);
+        }
+        return mark_pre_negotiated(builder.body(Body::empty()).unwrap());
+    }
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CONTENT_LENGTH, bytes.len())
+        .header(header::ETAG, etag);
+    if has_variants {
+        builder = builder.header(header::VARY, "Accept-Encoding");
+    }
+    if let Some(encoding) = encoding {
+        builder = builder.header(header::CONTENT_ENCODING, encoding);
+    }
+    if let Some(cc) = cache_control {
+        builder = builder.header(header::CACHE_CONTROL, cc);
+    }
+    let body = if is_head {
+        Body::empty()
+    } else {
+        Body::from(bytes)
+    };
+    mark_pre_negotiated(builder.body(body).unwrap())
 }
 
 const WORKER_FAST_REQUEST_THRESHOLD_MS: u128 = 200;

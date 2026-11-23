@@ -1819,13 +1819,64 @@ async fn read_only_endpoints_support_weak_etag_304_and_invalidate_on_updates() {
         assert_ne!(new_etag, old_etag.as_str(), "{path}");
     }
 
-    // Paginated response with an ephemeral nextCursor must omit ETag to avoid stale-cursor loops.
+    // Revision-pinned paginated responses emit weak ETags on every page and return 304 while unchanged.
     let (status, headers, body) =
         raw_request(&app, Method::GET, "/api/sessions?limit=1", &auth, "").await;
     assert_eq!(status, StatusCode::OK);
     let page: Value = serde_json::from_slice(&body).unwrap();
-    assert!(page["nextCursor"].as_str().is_some());
-    assert!(headers.get(header::ETAG).is_none());
+    let next_cursor = page["nextCursor"].as_str().expect("nextCursor").to_owned();
+    let page1_etag = headers
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .expect("page 1 ETag")
+        .to_owned();
+    let (status_304, _, body_304) = raw_request(
+        &app,
+        Method::GET,
+        "/api/sessions?limit=1",
+        &[
+            ("authorization", "Bearer secret"),
+            ("if-none-match", &page1_etag),
+        ],
+        "",
+    )
+    .await;
+    assert_eq!(status_304, StatusCode::NOT_MODIFIED);
+    assert!(body_304.is_empty());
+
+    let page2_path = format!("/api/sessions?limit=1&cursor={next_cursor}");
+    let (status2, headers2, body2) = raw_request(&app, Method::GET, &page2_path, &auth, "").await;
+    assert_eq!(status2, StatusCode::OK);
+    let page2: Value = serde_json::from_slice(&body2).unwrap();
+    assert_eq!(page2["sessions"].as_array().unwrap().len(), 1);
+    let page2_etag = headers2
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .expect("page 2 ETag")
+        .to_owned();
+    let (status2_304, _, _) = raw_request(
+        &app,
+        Method::GET,
+        &page2_path,
+        &[
+            ("authorization", "Bearer secret"),
+            ("if-none-match", &page2_etag),
+        ],
+        "",
+    )
+    .await;
+    assert_eq!(status2_304, StatusCode::NOT_MODIFIED);
+
+    // Mismatched query rejects cursor with 400.
+    let (bad_status, _, _) = raw_request(
+        &app,
+        Method::GET,
+        &format!("/api/sessions?limit=1&agent=codex&cursor={next_cursor}"),
+        &auth,
+        "",
+    )
+    .await;
+    assert_eq!(bad_status, StatusCode::BAD_REQUEST);
 
     runtime.shutdown().await.unwrap();
 }
@@ -2108,6 +2159,444 @@ async fn pricing_unmatched_supports_weak_etag_304_and_invalidates_on_override_an
         parsed["unmatchedModels"][0]["modelKey"],
         "acme/etag-unmatched-v2"
     );
+
+    runtime.shutdown().await.unwrap();
+}
+
+async fn raw_http(
+    app: &Router,
+    method: Method,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let mut req = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("host", "localhost:4521");
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let response = app
+        .clone()
+        .oneshot(req.body(Body::from(body.to_owned())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
+        .await
+        .unwrap()
+        .to_vec();
+    (status, headers, bytes)
+}
+
+#[tokio::test]
+async fn session_cursor_rejects_foreign_process_and_survives_mid_pagination_scan() {
+    use codesesh_core::{
+        agents::{ParsedSession, parse_codex},
+        pricing::Pricing,
+        runtime::{AgentSource, ScanBatch},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut paths = Vec::new();
+    for (idx, ts) in [(1, "10:00"), (2, "11:00"), (3, "12:00")] {
+        let path = dir.path().join(format!("rollout-cursor-{idx}.jsonl"));
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"timestamp\":\"2026-09-01T{ts}:00Z\",\"type\":\"session_meta\",\"payload\":{{\"cwd\":\"/fixture-{idx}\"}}}}\n\
+                 {{\"timestamp\":\"2026-09-01T{ts}:01Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"text\":\"Session {idx}\"}}]}}}}\n"
+            ),
+        )
+        .unwrap();
+        paths.push(path);
+    }
+
+    let scan_stage = Arc::new(AtomicUsize::new(2));
+    let stage = scan_stage.clone();
+    let scan_paths = paths.clone();
+    let source = AgentSource {
+        name: "codex".into(),
+        roots: vec![],
+        release_idle: None,
+        scan: Arc::new(move |_| {
+            let count = stage.load(Ordering::Acquire);
+            let mut sessions = Vec::new();
+            for path in scan_paths.iter().take(count) {
+                let parsed = parse_codex(path, &Default::default(), &Pricing::bundled())?.unwrap();
+                sessions.push(ParsedSession {
+                    head: parsed.head.clone(),
+                    detail: parsed,
+                    source: path.clone(),
+                });
+            }
+            Ok(ScanBatch {
+                source_presence: None,
+                sessions,
+                removed: vec![],
+                checkpoint: None,
+                complete: true,
+                completion: None,
+                on_reject: None,
+                pricing: None,
+            })
+        }),
+    };
+
+    let db_path = dir.path().join("cache.db");
+    let runtime1 = Runtime::start(db_path.clone(), vec![source], 2)
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while runtime1.snapshot().len() != 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let options = Options {
+        token: Some("secret".into()),
+        hostname: "127.0.0.1".into(),
+        port: 4521,
+        tls: false,
+        trust_proxy: false,
+        public_origin: None,
+        loopback_authority: true,
+        default_from: None,
+        default_to: None,
+        default_days: Some(0),
+        enabled_agents: vec!["codex".into()],
+        cwd: None,
+    };
+    let app1 = router(Arc::new(State::new(
+        runtime1.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(StateStore::memory().unwrap()),
+        options.clone(),
+    )));
+    let auth = [("authorization", "Bearer secret")];
+
+    let (status1, _, body1) =
+        raw_http(&app1, Method::GET, "/api/sessions?limit=1", &auth, "").await;
+    assert_eq!(status1, StatusCode::OK);
+    let page1: Value = serde_json::from_slice(&body1).unwrap();
+    let page1_id = page1["sessions"][0]["reference"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let next_cursor = page1["nextCursor"].as_str().expect("nextCursor").to_owned();
+
+    // Background scan publishes a 3rd newer session mid-pagination; existing cursor must finish cleanly.
+    scan_stage.store(3, Ordering::Release);
+    runtime1.refresh_all();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while runtime1.snapshot().len() != 3 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let page2_path = format!("/api/sessions?limit=1&cursor={next_cursor}");
+    let (status2, _, body2) = raw_http(&app1, Method::GET, &page2_path, &auth, "").await;
+    assert_eq!(status2, StatusCode::OK);
+    let page2: Value = serde_json::from_slice(&body2).unwrap();
+    let page2_id = page2["sessions"][0]["reference"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(page2_id, page1_id);
+    assert!(page2["nextCursor"].is_null());
+
+    runtime1.shutdown().await.unwrap();
+
+    // A restarted process (new etag_namespace) whose revision counter resets must reject the old cursor.
+    let runtime2 = Runtime::start(db_path, vec![], 2).await.unwrap();
+    let app2 = router(Arc::new(State::new(
+        runtime2.clone(),
+        codesesh_core::pricing::PricingController::load(dir.path()),
+        Some(StateStore::memory().unwrap()),
+        options,
+    )));
+    let (status_foreign, _, _) = raw_http(&app2, Method::GET, &page2_path, &auth, "").await;
+    assert_eq!(status_foreign, StatusCode::CONFLICT);
+
+    runtime2.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn html_and_static_assets_emit_per_encoding_strong_etags_vary_and_head_length() {
+    use axum::http::header;
+
+    // Unauthenticated server uses PrebuiltHtml for `/` and EmbeddedAsset for `/assets/*`.
+    let (app, runtime, _dir) = app_options(false, None).await;
+
+    let (status_raw, headers_raw, body_raw) = raw_http(&app, Method::GET, "/", &[], "").await;
+    if status_raw == StatusCode::NOT_FOUND {
+        runtime.shutdown().await.unwrap();
+        return;
+    }
+    assert_eq!(status_raw, StatusCode::OK);
+    let etag_raw = headers_raw
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .expect("raw html etag")
+        .to_owned();
+    assert!(etag_raw.starts_with('"'));
+
+    let (status_gz, headers_gz, body_gz) =
+        raw_http(&app, Method::GET, "/", &[("accept-encoding", "gzip")], "").await;
+    assert_eq!(status_gz, StatusCode::OK);
+    assert_eq!(
+        headers_gz
+            .get(header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok()),
+        Some("gzip")
+    );
+    let etag_gz = headers_gz
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .expect("gzip html etag")
+        .to_owned();
+    assert!(etag_gz.starts_with('"'));
+    assert_ne!(etag_raw, etag_gz);
+    assert_eq!(
+        headers_gz.get(header::VARY).and_then(|v| v.to_str().ok()),
+        Some("Accept-Encoding")
+    );
+
+    // 304 must include Vary: Accept-Encoding and match only the negotiated encoding's ETag.
+    let (status_304, headers_304, body_304) = raw_http(
+        &app,
+        Method::GET,
+        "/",
+        &[("accept-encoding", "gzip"), ("if-none-match", &etag_gz)],
+        "",
+    )
+    .await;
+    assert_eq!(status_304, StatusCode::NOT_MODIFIED);
+    assert!(body_304.is_empty());
+    assert_eq!(
+        headers_304.get(header::VARY).and_then(|v| v.to_str().ok()),
+        Some("Accept-Encoding")
+    );
+    let (status_mismatch, _, _) = raw_http(
+        &app,
+        Method::GET,
+        "/",
+        &[("accept-encoding", "gzip"), ("if-none-match", &etag_raw)],
+        "",
+    )
+    .await;
+    assert_eq!(status_mismatch, StatusCode::OK);
+
+    // HEAD with Accept-Encoding: gzip must report the compressed byte length and gzip ETag.
+    let (status_head, headers_head, body_head) =
+        raw_http(&app, Method::HEAD, "/", &[("accept-encoding", "gzip")], "").await;
+    assert_eq!(status_head, StatusCode::OK);
+    assert!(body_head.is_empty());
+    assert_eq!(
+        headers_head.get(header::ETAG).and_then(|v| v.to_str().ok()),
+        Some(etag_gz.as_str())
+    );
+    assert_eq!(
+        headers_head
+            .get(header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok()),
+        Some("gzip")
+    );
+    assert_eq!(
+        headers_head
+            .get(header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok()),
+        Some(body_gz.len().to_string().as_str())
+    );
+
+    // Wildcard Accept-Encoding (*;q=1, identity;q=0) must negotiate a precompressed variant across GET, HEAD, and 304.
+    let (status_wild, headers_wild, body_wild) = raw_http(
+        &app,
+        Method::GET,
+        "/",
+        &[("accept-encoding", "*;q=1, identity;q=0")],
+        "",
+    )
+    .await;
+    assert_eq!(status_wild, StatusCode::OK);
+    assert!(
+        matches!(
+            headers_wild
+                .get(header::CONTENT_ENCODING)
+                .and_then(|v| v.to_str().ok()),
+            Some("zstd" | "gzip")
+        ),
+        "wildcard Accept-Encoding should select precompressed HTML"
+    );
+    let etag_wild = headers_wild
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .expect("wildcard html etag")
+        .to_owned();
+    assert_ne!(etag_wild, etag_raw);
+    let (status_wild_head, headers_wild_head, _) = raw_http(
+        &app,
+        Method::HEAD,
+        "/",
+        &[("accept-encoding", "*;q=1, identity;q=0")],
+        "",
+    )
+    .await;
+    assert_eq!(status_wild_head, StatusCode::OK);
+    assert_eq!(
+        headers_wild_head
+            .get(header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok()),
+        Some(body_wild.len().to_string().as_str())
+    );
+    assert_eq!(
+        headers_wild_head
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok()),
+        Some(etag_wild.as_str())
+    );
+
+    // Non-precompressed Accept-Encoding (e.g. deflate on HTML) must stay identity across GET, HEAD, and 304.
+    let (status_deflate, headers_deflate, body_deflate) = raw_http(
+        &app,
+        Method::GET,
+        "/",
+        &[("accept-encoding", "deflate")],
+        "",
+    )
+    .await;
+    assert_eq!(status_deflate, StatusCode::OK);
+    assert!(headers_deflate.get(header::CONTENT_ENCODING).is_none());
+    assert_eq!(
+        headers_deflate
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok()),
+        Some(etag_raw.as_str())
+    );
+    let (status_deflate_head, headers_deflate_head, body_deflate_head) = raw_http(
+        &app,
+        Method::HEAD,
+        "/",
+        &[("accept-encoding", "deflate")],
+        "",
+    )
+    .await;
+    assert_eq!(status_deflate_head, StatusCode::OK);
+    assert!(body_deflate_head.is_empty());
+    assert!(headers_deflate_head.get(header::CONTENT_ENCODING).is_none());
+    assert_eq!(
+        headers_deflate_head
+            .get(header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok()),
+        Some(body_deflate.len().to_string().as_str())
+    );
+
+    // Also verify a real static JS asset from the built bundle.
+    let html_str = String::from_utf8_lossy(&body_raw);
+    if let Some(start) = html_str.find("/assets/") {
+        let rest = &html_str[start..];
+        let end = rest.find('"').unwrap_or(rest.len());
+        let asset_path = &rest[..end];
+        let (a_raw_status, a_raw_headers, a_raw_body) =
+            raw_http(&app, Method::GET, asset_path, &[], "").await;
+        assert_eq!(a_raw_status, StatusCode::OK);
+        let a_etag_raw = a_raw_headers
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .expect("asset raw etag")
+            .to_owned();
+
+        // zstd-only on static JS (no precompressed zstd variant) stays identity across GET and HEAD.
+        let (a_zstd_status, a_zstd_headers, a_zstd_body) = raw_http(
+            &app,
+            Method::GET,
+            asset_path,
+            &[("accept-encoding", "zstd")],
+            "",
+        )
+        .await;
+        assert_eq!(a_zstd_status, StatusCode::OK);
+        assert!(a_zstd_headers.get(header::CONTENT_ENCODING).is_none());
+        assert_eq!(a_zstd_body.len(), a_raw_body.len());
+        let (a_zstd_head_status, a_zstd_head_headers, _) = raw_http(
+            &app,
+            Method::HEAD,
+            asset_path,
+            &[("accept-encoding", "zstd")],
+            "",
+        )
+        .await;
+        assert_eq!(a_zstd_head_status, StatusCode::OK);
+        assert!(a_zstd_head_headers.get(header::CONTENT_ENCODING).is_none());
+        assert_eq!(
+            a_zstd_head_headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|v| v.to_str().ok()),
+            Some(a_zstd_body.len().to_string().as_str())
+        );
+
+        let (a_gz_status, a_gz_headers, a_gz_body) = raw_http(
+            &app,
+            Method::GET,
+            asset_path,
+            &[("accept-encoding", "gzip")],
+            "",
+        )
+        .await;
+        assert_eq!(a_gz_status, StatusCode::OK);
+        let a_etag_gz = a_gz_headers
+            .get(header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .expect("asset gzip etag")
+            .to_owned();
+        if a_gz_headers.get(header::CONTENT_ENCODING).is_some() {
+            assert_ne!(a_etag_raw, a_etag_gz);
+            let (a_304_status, a_304_headers, _) = raw_http(
+                &app,
+                Method::GET,
+                asset_path,
+                &[("accept-encoding", "gzip"), ("if-none-match", &a_etag_gz)],
+                "",
+            )
+            .await;
+            assert_eq!(a_304_status, StatusCode::NOT_MODIFIED);
+            assert_eq!(
+                a_304_headers
+                    .get(header::VARY)
+                    .and_then(|v| v.to_str().ok()),
+                Some("Accept-Encoding")
+            );
+            let (a_head_status, a_head_headers, a_head_body) = raw_http(
+                &app,
+                Method::HEAD,
+                asset_path,
+                &[("accept-encoding", "gzip")],
+                "",
+            )
+            .await;
+            assert_eq!(a_head_status, StatusCode::OK);
+            assert!(a_head_body.is_empty());
+            assert_eq!(
+                a_head_headers
+                    .get(header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok()),
+                Some(a_gz_body.len().to_string().as_str())
+            );
+            assert_eq!(
+                a_head_headers
+                    .get(header::ETAG)
+                    .and_then(|v| v.to_str().ok()),
+                Some(a_etag_gz.as_str())
+            );
+        }
+    }
 
     runtime.shutdown().await.unwrap();
 }

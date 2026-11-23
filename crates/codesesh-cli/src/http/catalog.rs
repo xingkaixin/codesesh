@@ -253,23 +253,31 @@ pub async fn agents(
         Err(e) => return error(StatusCode::BAD_REQUEST, &e),
     };
     let source_node_id = query.optional("sourceNodeId");
-    let (revision, raw_snapshot) = state.runtime.snapshot_with_revision();
+    let snapshot = state.runtime.snapshot_view();
     let tag = etag::weak_etag(
         state.etag_namespace,
-        &json!(["agents", revision, from, to, source_node_id]),
+        &json!(["agents", snapshot.revision, from, to, source_node_id]),
     );
     if etag::matches_if_none_match(&headers, &tag) {
         return etag::not_modified(&tag);
     }
-    let scope = state.scope(source_node_id);
-    let counts = session_list::count_agents_in_activity_window(
-        raw_snapshot
-            .iter()
-            .map(Arc::as_ref)
-            .filter(|s| super::matches_scope(s, &scope)),
-        from,
-        to,
-    );
+    let counts = if source_node_id.is_none()
+        && state.query_scope.project_scope.is_none()
+        && state.all_agents_enabled
+    {
+        session_list::count_agents_with_root_times(&snapshot.heads, snapshot.root_times(), from, to)
+    } else {
+        let scope = state.scope(source_node_id);
+        session_list::count_agents_in_activity_window(
+            snapshot
+                .heads
+                .iter()
+                .map(Arc::as_ref)
+                .filter(|s| super::matches_scope(s, &scope)),
+            from,
+            to,
+        )
+    };
     let mut response = Json(agent_info(&counts)).into_response();
     etag::apply_headers(&mut response, &tag);
     response
@@ -322,6 +330,7 @@ pub async fn projects(
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let etag_namespace = state.etag_namespace;
     let cache = state.catalog_cache.clone();
+    let published = state.runtime.snapshot_view();
     let started = Instant::now();
     if query.get("cursor").is_some_and(|cursor| !cursor.is_empty()) {
         log_query(
@@ -375,11 +384,25 @@ pub async fn projects(
                 || {
                     timings.cache_hit = false;
                     let phase = Instant::now();
-                    let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
-                    let sessions = super::scoped_heads(&heads, &query_scope);
+                    let owned_heads;
+                    let sessions: Vec<&codesesh_core::model::SessionHead> =
+                        if published.analytics_revision == revision {
+                            published
+                                .heads
+                                .iter()
+                                .map(Arc::as_ref)
+                                .filter(|s| super::matches_scope(s, &query_scope))
+                                .collect()
+                        } else {
+                            owned_heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                            owned_heads
+                                .iter()
+                                .filter(|s| super::matches_scope(s, &query_scope))
+                                .collect()
+                        };
                     timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let groups = projects::build_project_groups(&sessions)
+                    let groups = projects::build_project_groups_refs(&sessions)
                         .into_iter()
                         .filter(|g| {
                             identity.as_ref().is_none_or(|(kind, key)| {
@@ -390,27 +413,22 @@ pub async fn projects(
                         .collect::<serde_json::Result<Vec<_>>>()?;
                     timings.build_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let facts = analytics::CostFactsIndex::from(
-                        if identity.is_none() && sessions.len() == heads.len() {
-                            analytics::load_cost_facts(conn, from, to, false)?
-                        } else {
-                            analytics::load_scoped_cost_facts(
-                                conn,
-                                &sessions,
-                                &analytics::DashboardScope {
-                                    agent: None,
-                                    project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
-                                    project_key: identity.as_ref().map(|(_, key)| key.clone()),
-                                },
-                                from,
-                                to,
-                                false,
-                            )?
-                        },
-                    );
+                    let facts_scope = analytics::DashboardScope {
+                        agent: None,
+                        project_kind: identity.as_ref().map(|(kind, _)| kind.clone()),
+                        project_key: identity.as_ref().map(|(_, key)| key.clone()),
+                    };
+                    let facts = analytics::load_scoped_cost_facts_index_refs(
+                        conn,
+                        &sessions,
+                        &facts_scope,
+                        from,
+                        to,
+                        false,
+                    )?;
                     timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                     let phase = Instant::now();
-                    let mut groups = analytics::attach_project_metrics(
+                    let mut groups = analytics::attach_project_metrics_refs(
                         &groups,
                         &sessions,
                         from,
@@ -604,6 +622,7 @@ pub async fn dashboard(
     let names = state.options.enabled_agents.clone();
     let query_scope = state.scope(query.optional("sourceNodeId"));
     let cache = state.dashboard_cache.clone();
+    let published = state.runtime.snapshot_view();
     // Open-ended windows are reused until the next calendar day in the request time zone.
     let cache_to = base_to.unwrap_or_else(|| zone.start_of_day(to));
     let key = json!([
@@ -618,9 +637,8 @@ pub async fn dashboard(
         days,
         zone.name()
     ]);
-    let aliases = state.aliases().await;
+    let (aliases, aliases_fp) = state.aliases_with_fingerprint().await;
     let etag_namespace = state.etag_namespace;
-    let aliases_fp = etag::aliases_fingerprint(&aliases);
     let started = Instant::now();
     let result = state
         .runtime
@@ -632,39 +650,46 @@ pub async fn dashboard(
             };
             let revision =
                 conn.query_row(ANALYTICS_REVISION_QUERY, [], |row| row.get::<_, i64>(0))?;
-            let tag = etag::weak_etag(etag_namespace, &json!([revision, &key, &aliases_fp]));
+            let tag = etag::weak_etag(
+                etag_namespace,
+                &json!([revision, &key, aliases_fp.as_str()]),
+            );
             if etag::matches_if_none_match(&headers, &tag) {
                 return Ok(DashboardLookup::NotModified { etag: tag, timings });
             }
             let value = cached_catalog(&cache, revision, key, || {
                 timings.cache_hit = false;
                 let phase = Instant::now();
-                let heads = codesesh_core::storage::snapshot_from_connection(conn)?;
-                let sessions = super::scoped_heads(&heads, &query_scope);
+                let owned_heads;
+                let sessions: Vec<&codesesh_core::model::SessionHead> =
+                    if published.analytics_revision == revision {
+                        published
+                            .heads
+                            .iter()
+                            .map(Arc::as_ref)
+                            .filter(|s| super::matches_scope(s, &query_scope))
+                            .collect()
+                    } else {
+                        owned_heads = codesesh_core::storage::snapshot_from_connection(conn)?;
+                        owned_heads
+                            .iter()
+                            .filter(|s| super::matches_scope(s, &query_scope))
+                            .collect()
+                    };
                 timings.heads_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
-                let facts_from = compare.map(|(from, _)| from).or(from);
-                let facts = analytics::CostFactsIndex::from(
-                    if scope.is_unfiltered() && sessions.len() == heads.len() {
-                        analytics::load_cost_facts(conn, facts_from, Some(to), true)?
-                    } else {
-                        analytics::load_scoped_cost_facts(
-                            conn,
-                            &sessions,
-                            &scope,
-                            facts_from,
-                            Some(to),
-                            true,
-                        )?
-                    },
-                );
+                let facts = analytics::load_scoped_cost_facts_index_refs(
+                    conn,
+                    &sessions,
+                    &scope,
+                    compare.map(|(f, _)| f).or(from),
+                    Some(to),
+                    true,
+                )?;
                 timings.cost_facts_ms = phase.elapsed().as_secs_f64() * 1000.0;
                 let phase = Instant::now();
-                let info = agent_info(&HashMap::new())
-                    .into_iter()
-                    .map(|a| (a["name"].as_str().unwrap().to_owned(), a))
-                    .collect();
-                let (value, dashboard_timings) = analytics::dashboard_response(
+                let info = agent_info_map();
+                let (value, dashboard_timings) = analytics::dashboard_response_refs(
                     conn,
                     &sessions,
                     &analytics::DashboardResponseOptions {
@@ -673,7 +698,7 @@ pub async fn dashboard(
                             scope: &scope,
                             from,
                             to,
-                            agent_info: Some(&info),
+                            agent_info: Some(info),
                             compare,
                             cost_facts: Some(&facts),
                             time_zone: &zone,
@@ -725,19 +750,43 @@ fn count_days(zone: &analytics::DashboardTimeZone, from: f64, to: f64) -> i64 {
     ((zone.date(to) - zone.date(from)).num_days() + 1).max(1)
 }
 
+fn base_agent_catalog() -> &'static [Value] {
+    static CATALOG: std::sync::LazyLock<Vec<Value>> = std::sync::LazyLock::new(|| {
+        let mut entries: Vec<Value> = serde_json::from_str(include_str!(
+            "../../../codesesh-core/src/agents/catalog.json"
+        ))
+        .expect("bundled agent catalog");
+        for entry in &mut entries {
+            let object = entry.as_object_mut().unwrap();
+            object.remove("sourceKind");
+            object.remove("toolStrategy");
+            object.remove("support");
+            object.insert("count".into(), json!(0));
+        }
+        entries
+    });
+    &CATALOG
+}
+
+fn agent_info_map() -> &'static HashMap<String, Value> {
+    static MAP: std::sync::LazyLock<HashMap<String, Value>> = std::sync::LazyLock::new(|| {
+        base_agent_catalog()
+            .iter()
+            .map(|a| (a["name"].as_str().unwrap().to_owned(), a.clone()))
+            .collect()
+    });
+    &MAP
+}
+
 fn agent_info(counts: &HashMap<String, usize>) -> Vec<Value> {
-    let mut entries: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../codesesh-core/src/agents/catalog.json"
-    ))
-    .expect("bundled agent catalog");
+    let mut entries = base_agent_catalog().to_vec();
     for entry in &mut entries {
         let name = entry["name"].as_str().unwrap();
         let count = counts.get(name).copied().unwrap_or(0);
-        let object = entry.as_object_mut().unwrap();
-        object.remove("sourceKind");
-        object.remove("toolStrategy");
-        object.remove("support");
-        object.insert("count".into(), json!(count));
+        entry
+            .as_object_mut()
+            .unwrap()
+            .insert("count".into(), json!(count));
     }
     entries
 }
