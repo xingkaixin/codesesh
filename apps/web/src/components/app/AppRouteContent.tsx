@@ -30,23 +30,39 @@ import { BUTTON_PRIMARY_CLASS } from "../ui/dialog-styles";
 import { EmptyState } from "../ui/empty-state";
 import { Funnel, RefreshCw, XCircle } from "../ui/icons";
 
+const loadDetailLanding = () => import("../DetailLanding");
+const loadOverviewScreen = () => import("../overview/OverviewScreen");
+const loadProjects = () => import("../Projects");
+const loadSessionDetail = () => import("../SessionDetail");
+const loadSearchResultsPanel = () => import("./SearchResultsPanel");
+
+export function preloadRouteChunk(pathname: string): void {
+  if (pathname === "/" || pathname === "") {
+    void loadOverviewScreen();
+  } else if (pathname.startsWith("/projects")) {
+    void loadProjects();
+  } else if (pathname.startsWith("/sessions/")) {
+    void loadSessionDetail();
+  }
+}
+
 const DetailLanding = lazy(() =>
-  import("../DetailLanding").then((module) => ({ default: module.DetailLanding })),
+  loadDetailLanding().then((module) => ({ default: module.DetailLanding })),
 );
 const OverviewScreen = lazy(() =>
-  import("../overview/OverviewScreen").then((module) => ({ default: module.OverviewScreen })),
+  loadOverviewScreen().then((module) => ({ default: module.OverviewScreen })),
 );
 const ProjectsOverview = lazy(() =>
-  import("../Projects").then((module) => ({ default: module.ProjectsOverview })),
+  loadProjects().then((module) => ({ default: module.ProjectsOverview })),
 );
 const ProjectDashboardView = lazy(() =>
-  import("../Projects").then((module) => ({ default: module.ProjectDashboardView })),
+  loadProjects().then((module) => ({ default: module.ProjectDashboardView })),
 );
 const SessionDetailView = lazy(() =>
-  import("../SessionDetail").then((module) => ({ default: module.SessionDetailRoute })),
+  loadSessionDetail().then((module) => ({ default: module.SessionDetailRoute })),
 );
 const SearchResultsPanel = lazy(() =>
-  import("./SearchResultsPanel").then((module) => ({ default: module.SearchResultsPanel })),
+  loadSearchResultsPanel().then((module) => ({ default: module.SearchResultsPanel })),
 );
 
 function LazySurface({

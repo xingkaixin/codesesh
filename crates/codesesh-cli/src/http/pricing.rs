@@ -232,8 +232,30 @@ pub async fn refresh(AxumState(state): AxumState<Arc<State>>) -> Response {
     }
 }
 
-pub async fn overrides(AxumState(state): AxumState<Arc<State>>) -> Response {
-    load_overrides(&state).await.map(Json).into_response()
+pub async fn overrides(AxumState(state): AxumState<Arc<State>>, headers: HeaderMap) -> Response {
+    let generation = state.pricing.snapshot().ok().map(|s| s.generation());
+    let stamp = state.state_change_stamp();
+    let tag = generation.zip(stamp).map(|(generation, stamp)| {
+        etag::weak_etag(
+            state.etag_namespace,
+            &json!(["pricing-overrides", generation, stamp.0, stamp.1]),
+        )
+    });
+    if let Some(ref tag) = tag
+        && etag::matches_if_none_match(&headers, tag)
+    {
+        return etag::not_modified(tag);
+    }
+    match load_overrides(&state).await {
+        Ok(response) => {
+            let mut resp = Json(response).into_response();
+            if let Some(ref tag) = tag {
+                etag::apply_headers(&mut resp, tag);
+            }
+            resp
+        }
+        Err(error) => error.into_response(),
+    }
 }
 
 pub async fn unmatched(

@@ -415,6 +415,7 @@ dependencies = [
  "tower",
  "url",
  "uuid",
+ "zstd",
 ]
 
 [[package]]

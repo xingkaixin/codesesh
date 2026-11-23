@@ -112,7 +112,18 @@ pub fn attach_project_metrics(
     to: Option<f64>,
     facts: Option<&CostFactsIndex>,
 ) -> Vec<Value> {
-    let tree = SessionTree::new(sessions);
+    let refs: Vec<&SessionHead> = sessions.iter().collect();
+    attach_project_metrics_refs(projects, &refs, from, to, facts)
+}
+
+pub fn attach_project_metrics_refs(
+    projects: &[Value],
+    sessions: &[&SessionHead],
+    from: Option<f64>,
+    to: Option<f64>,
+    facts: Option<&CostFactsIndex>,
+) -> Vec<Value> {
+    let tree = SessionTree::from_refs(sessions.iter().copied());
     let agents: Vec<_> = tree
         .sessions
         .iter()

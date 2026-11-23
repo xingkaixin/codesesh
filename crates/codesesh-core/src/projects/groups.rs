@@ -1,7 +1,7 @@
 use super::get_project_identity_key;
 use crate::model::{SessionHead, SessionReference};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -12,9 +12,6 @@ pub struct ProjectGroup {
     pub sources: Vec<String>,
     pub session_count: usize,
     pub last_activity: Option<f64>,
-}
-fn key(reference: &SessionReference) -> String {
-    crate::state::reference_key(reference)
 }
 
 fn is_fallback_display_name(identity: &crate::model::ProjectIdentity) -> bool {
@@ -44,9 +41,11 @@ fn better_display_candidate(
         .is_gt()
 }
 
-pub(crate) fn preferred_project_display_names(sessions: &[SessionHead]) -> HashMap<String, String> {
+pub(crate) fn preferred_project_display_names_refs(
+    sessions: &[&SessionHead],
+) -> HashMap<String, String> {
     let mut best = HashMap::<String, (bool, f64, &SessionReference, &str)>::new();
-    for session in sessions {
+    for &session in sessions {
         let identity = &session.project_identity;
         let name = identity.display_name.as_str();
         if name.is_empty() {
@@ -74,52 +73,18 @@ pub(crate) fn preferred_project_display_names(sessions: &[SessionHead]) -> HashM
 }
 
 pub fn build_project_groups(sessions: &[SessionHead]) -> Vec<ProjectGroup> {
-    let preferred_names = preferred_project_display_names(sessions);
-    let mut by_key = HashMap::new();
-    for session in sessions {
-        by_key.entry(key(&session.reference)).or_insert(session);
-    }
-    let mut terminates = HashMap::new();
-    for start in by_key.keys() {
-        let mut chain = Vec::new();
-        let mut on_path = HashSet::new();
-        let mut current = start.clone();
-        let reaches_root = loop {
-            if let Some(result) = terminates.get(&current) {
-                break *result;
-            }
-            if !on_path.insert(current.clone()) {
-                break false;
-            }
-            chain.push(current.clone());
-            match by_key[&current]
-                .parent_reference
-                .as_ref()
-                .map(key)
-                .filter(|parent| by_key.contains_key(parent))
-            {
-                Some(parent) => current = parent,
-                None => break true,
-            }
-        };
-        for item in chain {
-            terminates.insert(item, reaches_root);
-        }
-    }
+    let refs: Vec<&SessionHead> = sessions.iter().collect();
+    build_project_groups_refs(&refs)
+}
+
+pub fn build_project_groups_refs(sessions: &[&SessionHead]) -> Vec<ProjectGroup> {
+    let preferred_names = preferred_project_display_names_refs(sessions);
+    let tree = crate::session_list::SessionTree::from_refs(sessions.iter().copied());
     let mut indices = HashMap::<String, usize>::new();
     let mut groups = Vec::<ProjectGroup>::new();
     let mut sources = Vec::<BTreeSet<String>>::new();
-    for session in sessions {
-        let reference = key(&session.reference);
-        let owner = by_key[&reference];
-        if owner
-            .parent_reference
-            .as_ref()
-            .is_some_and(|parent| by_key.contains_key(&key(parent)))
-            && terminates[&reference]
-        {
-            continue;
-        }
+    for &entry in &tree.entries {
+        let session = tree.sessions[entry];
         let identity = &session.project_identity;
         let group_key = get_project_identity_key(identity);
         let agent = session.reference.agent_name.trim().to_lowercase();

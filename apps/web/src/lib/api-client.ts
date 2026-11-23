@@ -73,7 +73,7 @@ export interface DashboardFilters {
   agent?: string;
 }
 
-const SESSION_PAGE_SIZE = 250;
+const SESSION_PAGE_SIZE = 500;
 const SESSION_STALE_RETRY_LIMIT = 2;
 
 export class ApiRequestError extends Error {

@@ -72,8 +72,21 @@ pub fn list_file_activity(
             filters.params.push(value.into());
         }
     }
+    // When no narrow secondary filter restricts fa, walking idx_file_activity_latest in order
+    // avoids SQLite picking idx_file_activity_agent_latest for an IN-list and temp-sorting all rows.
+    let use_latest_index = options.agent.is_none()
+        && options.project_key.is_none()
+        && options.project.is_none()
+        && options.session_id.is_none()
+        && options.path.is_none()
+        && options.kind.is_none();
+    let from_clause = if use_latest_index {
+        "FROM session_file_activity fa INDEXED BY idx_file_activity_latest CROSS JOIN sessions s"
+    } else {
+        "FROM session_file_activity fa JOIN sessions s"
+    };
     let query = format!(
-        "SELECT {},fa.project_identity_key AS file_project_identity_key,fa.path,fa.kind,fa.count,fa.latest_time FROM session_file_activity fa JOIN sessions s ON s.source_node_id=fa.source_node_id AND s.agent_name=fa.agent_name AND s.session_id=fa.session_id AND s.publication_id IS NULL WHERE 1=1 {} ORDER BY fa.latest_time DESC,fa.count DESC,fa.path LIMIT ?",
+        "SELECT {},fa.project_identity_key AS file_project_identity_key,fa.path,fa.kind,fa.count,fa.latest_time {from_clause} ON s.source_node_id=fa.source_node_id AND s.agent_name=fa.agent_name AND s.session_id=fa.session_id AND s.publication_id IS NULL WHERE 1=1 {} ORDER BY fa.latest_time DESC,fa.count DESC,fa.path LIMIT ?",
         reader::HEAD_COLUMNS,
         filters.where_sql()
     );

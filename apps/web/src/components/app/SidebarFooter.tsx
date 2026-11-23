@@ -1,4 +1,4 @@
-import { Menu } from "@base-ui/react/menu";
+import { Menu } from "../ui/popup-menu";
 import { lazy, Suspense, useContext, useRef, useState, useSyncExternalStore } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { useNodeClock, useNodes } from "../../hooks/useNodes";

@@ -35,7 +35,7 @@ function resolvePreference(preference: LanguagePreference): Locale {
 }
 
 const preference = readPreference();
-let snapshot = { preference, locale: resolvePreference(preference) };
+let snapshot = { preference, locale: resolvePreference(preference), catalogVersion: 0 };
 
 export function getLanguageSnapshot() {
   return snapshot;
@@ -45,11 +45,16 @@ export function getLocale(): Locale {
   return snapshot.locale;
 }
 
+export function notifyLanguageListeners() {
+  snapshot = { ...snapshot, catalogVersion: snapshot.catalogVersion + 1 };
+  for (const listener of listeners) listener();
+}
+
 function update(preference: LanguagePreference) {
   const locale = resolvePreference(preference);
   if (typeof document !== "undefined") document.documentElement.lang = locale;
   if (snapshot.preference === preference && snapshot.locale === locale) return;
-  snapshot = { preference, locale };
+  snapshot = { ...snapshot, preference, locale };
   for (const listener of listeners) listener();
 }
 

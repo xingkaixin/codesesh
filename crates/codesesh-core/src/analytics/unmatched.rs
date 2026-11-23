@@ -6,7 +6,7 @@ use crate::{
     wire::UnmatchedModelStat,
 };
 use anyhow::Result;
-use rusqlite::{Connection, functions::FunctionFlags, params_from_iter, types::Value};
+use rusqlite::{Connection, params_from_iter, types::Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 // A display message can merge several models, so matching totals alone cannot justify its buckets.
@@ -21,17 +21,7 @@ const TIMED_USAGE_SQL: &str = "
     AND c.untimed_reasoning_tokens = 0
     AND c.untimed_cache_read_tokens = 0
     AND c.untimed_cache_create_tokens = 0
-    AND NOT EXISTS (
-        SELECT 1
-        FROM jsonb_each(s.meta_json, '$.rustPricing.messages') pricing_message
-        -- CROSS JOIN pins the JSON iterator as the outer loop; otherwise SQLite rescans meta_json per message.
-        CROSS JOIN messages m ON m.source_node_id = s.source_node_id
-                             AND m.agent_name = s.agent_name
-                             AND m.session_id = s.session_id
-                             AND m.message_index = CAST(pricing_message.key AS INTEGER)
-        JOIN jsonb_each(pricing_message.value, '$.inputs') cost_input
-        WHERE NOT codesesh_pricing_models_match(json_extract(cost_input.value, '$.model'), m.model)
-    )
+    AND s.has_merged_pricing_models = 0
 ";
 
 #[derive(Default)]
@@ -53,18 +43,6 @@ pub fn query_unmatched_models(
     to: Option<f64>,
     pricing: &Pricing,
 ) -> Result<Vec<UnmatchedModelStat>> {
-    connection.create_scalar_function(
-        "codesesh_pricing_models_match",
-        2,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-        |context| {
-            let input: Option<String> = context.get(0)?;
-            let message: Option<String> = context.get(1)?;
-            Ok(input == message
-                || input.as_deref().and_then(normalize_override_model_key)
-                    == message.as_deref().and_then(normalize_override_model_key))
-        },
-    )?;
     let (scope_sql, scope_params) = scope_where(connection, scope)?;
     let mut acc: HashMap<String, ModelAcc> = HashMap::new();
     collect_bucket_unmatched(
@@ -129,14 +107,12 @@ fn collect_bucket_unmatched(
         window.push_str(" AND b.bucket_start <= ?");
         params.push(Value::Real(to));
     }
-    // Materializing keeps JSON validation from repeating for every usage bucket.
     let sql = format!(
-        "WITH usage AS MATERIALIZED (
-         SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
+        "SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
                 SUM(b.input_tokens) AS input_tokens, SUM(b.output_tokens) AS output_tokens,
                 SUM(CASE WHEN c.output_tokens = s.total_output_tokens THEN 0 ELSE b.reasoning_tokens END) AS reasoning_tokens,
                 SUM(b.cache_read_tokens) AS cache_read_tokens, SUM(b.cache_create_tokens) AS cache_create_tokens
-         FROM session_usage_bucket b
+         FROM session_usage_bucket b INDEXED BY idx_session_usage_bucket_unpriced
          JOIN sessions s ON s.source_node_id = b.source_node_id
                         AND s.agent_name = b.agent_name
                         AND s.session_id = b.session_id
@@ -147,22 +123,11 @@ fn collect_bucket_unmatched(
            AND b.cost_source = ''
            AND b.model <> ''
            AND (b.input_tokens > 0 OR b.output_tokens > 0 OR b.reasoning_tokens > 0 OR b.cache_read_tokens > 0 OR b.cache_create_tokens > 0)
+           AND ({TIMED_USAGE_SQL})
+           AND (s.cost_source IS NOT 'recorded' OR s.has_head_pricing_inputs = 1)
            {scope_sql}
            {window}
-         GROUP BY b.source_node_id, b.agent_name, b.session_id, b.model
-         )
-         SELECT b.source_node_id, b.agent_name, b.session_id, b.model,
-                b.input_tokens, b.output_tokens, b.reasoning_tokens,
-                b.cache_read_tokens, b.cache_create_tokens
-         FROM usage b
-         JOIN sessions s ON s.source_node_id = b.source_node_id
-                        AND s.agent_name = b.agent_name
-                        AND s.session_id = b.session_id
-         JOIN session_cost_summary c ON c.source_node_id = s.source_node_id
-                                    AND c.agent_name = s.agent_name
-                                    AND c.session_id = s.session_id
-         WHERE ({TIMED_USAGE_SQL})
-           AND (s.cost_source IS NOT 'recorded' OR json_array_length(s.meta_json, '$.rustPricing.head.inputs') > 0)"
+         GROUP BY b.source_node_id, b.agent_name, b.session_id, b.model"
     );
     let mut stmt = connection.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(params), |row| {
@@ -215,15 +180,12 @@ fn meta_unmatched_sql(scope_sql: &str, window: &str) -> String {
     format!(
         "SELECT s.source_node_id, s.agent_name, s.session_id, s.meta_json
          FROM sessions s
+         LEFT JOIN session_cost_summary c ON c.source_node_id = s.source_node_id
+                                         AND c.agent_name = s.agent_name
+                                         AND c.session_id = s.session_id
          WHERE s.publication_id IS NULL
            AND s.has_unmatched_pricing_meta = 1
-           AND NOT EXISTS (
-               SELECT 1 FROM session_cost_summary c
-               WHERE c.source_node_id = s.source_node_id
-                 AND c.agent_name = s.agent_name
-                 AND c.session_id = s.session_id
-                 AND ({TIMED_USAGE_SQL})
-           )
+           AND NOT (c.session_id IS NOT NULL AND {TIMED_USAGE_SQL})
            {scope_sql}
            {window}"
     )
@@ -273,18 +235,17 @@ fn collect_meta_unmatched(
             if input.cost.is_some() {
                 continue;
             }
-            let Some(raw_model) = input.model.as_deref() else {
-                continue;
-            };
-            record_unmatched_tokens(
-                acc,
-                pricing,
-                &node_id,
-                &agent_name,
-                &session_id,
-                raw_model,
-                &input.tokens,
-            );
+            if let Some(raw_model) = input.model.as_deref() {
+                record_unmatched_tokens(
+                    acc,
+                    pricing,
+                    &node_id,
+                    &agent_name,
+                    &session_id,
+                    raw_model,
+                    &input.tokens,
+                );
+            }
         }
     }
     Ok(())

@@ -18,6 +18,7 @@ export function useNodes(enabled = true) {
     queryKey: ["source-nodes"],
     queryFn: ({ signal }) => fetchNodes({ signal }),
     enabled: enabled && hubEnabled,
+    staleTime: 4000,
     refetchInterval: 5000,
     retry: false,
   });

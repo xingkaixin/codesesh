@@ -31,7 +31,7 @@ use codesesh_core::{
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
@@ -51,14 +51,85 @@ pub struct Options {
     pub cwd: Option<String>,
 }
 
+type CachedAliases = (Arc<HashMap<SessionReference, String>>, Arc<String>);
+type VersionedAliases = (
+    (i64, u64),
+    Arc<HashMap<SessionReference, String>>,
+    Arc<String>,
+);
+
+const MAX_SESSION_PAGE_SNAPSHOTS: usize = 32;
+const SESSION_PAGE_TTL_MS: i64 = 60_000;
+
+pub(super) type SessionPageKey = (u64, String, String);
+pub(super) type RetainedSessionItems = (
+    Arc<Vec<Arc<SessionHead>>>,
+    Arc<HashMap<SessionReference, String>>,
+);
+
+struct RetainedSessionPage {
+    items: Arc<Vec<Arc<SessionHead>>>,
+    aliases: Arc<HashMap<SessionReference, String>>,
+    expires_at: i64,
+}
+
+#[derive(Default)]
+pub(super) struct SessionPageCache {
+    entries: HashMap<SessionPageKey, RetainedSessionPage>,
+}
+
+impl SessionPageCache {
+    pub(super) fn get(&mut self, key: &SessionPageKey, now: i64) -> Option<RetainedSessionItems> {
+        self.prune(now);
+        let entry = self.entries.get_mut(key)?;
+        entry.expires_at = now.saturating_add(SESSION_PAGE_TTL_MS);
+        Some((Arc::clone(&entry.items), Arc::clone(&entry.aliases)))
+    }
+
+    pub(super) fn insert(
+        &mut self,
+        key: SessionPageKey,
+        items: Arc<Vec<Arc<SessionHead>>>,
+        aliases: Arc<HashMap<SessionReference, String>>,
+        now: i64,
+    ) {
+        self.prune(now);
+        if !self.entries.contains_key(&key)
+            && self.entries.len() >= MAX_SESSION_PAGE_SNAPSHOTS
+            && let Some(oldest_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.expires_at)
+                .map(|(k, _)| k.clone())
+        {
+            self.entries.remove(&oldest_key);
+        }
+        self.entries.insert(
+            key,
+            RetainedSessionPage {
+                items,
+                aliases,
+                expires_at: now.saturating_add(SESSION_PAGE_TTL_MS),
+            },
+        );
+    }
+
+    pub(super) fn prune(&mut self, now: i64) {
+        self.entries.retain(|_, entry| entry.expires_at > now);
+    }
+}
+
 pub struct State {
     etag_namespace: uuid::Uuid,
     hub_enabled: bool,
+    all_agents_enabled: bool,
+    index_html: Option<security::PrebuiltHtml>,
     runtime: Runtime,
     pricing: codesesh_core::pricing::PricingController,
     saved: Arc<Mutex<Option<StateStore>>>,
+    aliases_cache: Arc<RwLock<Option<VersionedAliases>>>,
     options: Options,
-    session_pages: Mutex<SnapshotPaginator<SessionHead, ()>>,
+    session_pages: Mutex<SessionPageCache>,
     project_pages: Mutex<SnapshotPaginator<Value, Value>>,
     streams: Arc<Semaphore>,
     upload_slots: Arc<Semaphore>,
@@ -74,6 +145,7 @@ pub struct State {
 impl State {
     pub fn with_hub(mut self) -> Self {
         self.hub_enabled = true;
+        self.index_html = security::build_bootstrapped_html(&self.options, true);
         self
     }
 
@@ -83,6 +155,9 @@ impl State {
         saved: Option<StateStore>,
         options: Options,
     ) -> Self {
+        let all_agents_enabled = codesesh_core::agents::catalog(0)
+            .iter()
+            .all(|agent| options.enabled_agents.contains(&agent.name));
         let query_scope = codesesh_core::search::QueryScope {
             source_node_id: None,
             agents: options.enabled_agents.clone(),
@@ -91,15 +166,19 @@ impl State {
                 .as_deref()
                 .map(codesesh_core::projects::create_project_scope_matcher),
         };
+        let index_html = security::build_bootstrapped_html(&options, false);
         Self {
             etag_namespace: uuid::Uuid::new_v4(),
             hub_enabled: false,
+            all_agents_enabled,
+            index_html,
             runtime,
             pricing,
             query_scope,
             saved: Arc::new(Mutex::new(saved)),
+            aliases_cache: Arc::new(RwLock::new(None)),
             options,
-            session_pages: Mutex::new(SnapshotPaginator::default()),
+            session_pages: Mutex::new(SessionPageCache::default()),
             project_pages: Mutex::new(SnapshotPaginator::default()),
             streams: Arc::new(Semaphore::new(32)),
             upload_slots: Arc::new(Semaphore::new(8)),
@@ -111,26 +190,61 @@ impl State {
             pricing_write_lock: Arc::new(AsyncMutex::new(())),
         }
     }
-    async fn aliases(&self) -> HashMap<SessionReference, String> {
+    async fn aliases_with_fingerprint(&self) -> CachedAliases {
         let saved = self.saved.clone();
-        tokio::task::spawn_blocking(move || {
-            saved
-                .lock()
-                .ok()
-                .and_then(|s| s.as_ref().and_then(|s| s.list_aliases().ok()))
+        let cache = self.aliases_cache.clone();
+        // Check SQLite data_version via StateStore or reuse cached map when unchanged;
+        // state.db is tiny (~36KB) so a quick check catches external mutations while avoiding
+        // re-reading rows and recomputing SHA-256 on every request.
+        if let Ok(store_guard) = saved.lock() {
+            let Some(store) = store_guard.as_ref() else {
+                return (Arc::new(HashMap::new()), Arc::new(String::new()));
+            };
+            let current_version = store.change_stamp().ok();
+            if let Some(version) = current_version
+                && let Ok(cached_guard) = cache.read()
+                && let Some((cached_version, map, fp)) = cached_guard.as_ref()
+                && *cached_version == version
+            {
+                return (Arc::clone(map), Arc::clone(fp));
+            }
+            let map: HashMap<SessionReference, String> = store
+                .list_aliases()
                 .unwrap_or_default()
                 .into_iter()
                 .map(|a| (a.reference, a.alias))
-                .collect()
-        })
-        .await
-        .unwrap_or_default()
+                .collect();
+            let fp = etag::aliases_fingerprint(&map);
+            let map = Arc::new(map);
+            let fp = Arc::new(fp);
+            if let Some(version) = current_version
+                && let Ok(mut cached_guard) = cache.write()
+            {
+                *cached_guard = Some((version, Arc::clone(&map), Arc::clone(&fp)));
+            }
+            return (map, fp);
+        }
+        (Arc::new(HashMap::new()), Arc::new(String::new()))
+    }
+    async fn aliases(&self) -> Arc<HashMap<SessionReference, String>> {
+        self.aliases_with_fingerprint().await.0
+    }
+    fn invalidate_aliases(&self) {
+        if let Ok(mut guard) = self.aliases_cache.write() {
+            *guard = None;
+        }
     }
     fn scope(&self, source: Option<&str>) -> codesesh_core::search::QueryScope {
         codesesh_core::search::QueryScope {
             source_node_id: source.map(str::to_owned),
             ..self.query_scope.clone()
         }
+    }
+    fn state_change_stamp(&self) -> Option<(i64, u64)> {
+        self.saved
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().and_then(|s| s.change_stamp().ok()))
     }
     fn known(&self, agent: &str) -> bool {
         codesesh_core::agents::catalog(0)
@@ -279,26 +393,4 @@ fn matches_scope(head: &SessionHead, scope: &codesesh_core::search::QueryScope) 
             .project_scope
             .as_ref()
             .is_none_or(|p| codesesh_core::projects::matches_project_scope(head, p))
-}
-
-fn scoped_heads(
-    heads: &[SessionHead],
-    scope: &codesesh_core::search::QueryScope,
-) -> Vec<SessionHead> {
-    heads
-        .iter()
-        .filter(|s| matches_scope(s, scope))
-        .cloned()
-        .collect()
-}
-
-fn scoped_shared_heads(
-    heads: &[Arc<SessionHead>],
-    scope: &codesesh_core::search::QueryScope,
-) -> Vec<SessionHead> {
-    heads
-        .iter()
-        .filter(|s| matches_scope(s, scope))
-        .map(|s| (**s).clone())
-        .collect()
 }

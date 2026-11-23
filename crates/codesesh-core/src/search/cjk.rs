@@ -1,7 +1,7 @@
 use super::{
     parser::{QueryTerm, parse_terms},
     reader::HEAD_COLUMNS,
-    sql::{self, Filters},
+    sql,
 };
 use crate::model::SessionHead;
 use anyhow::Result;
@@ -222,11 +222,6 @@ pub(super) fn search_candidates(
     if parts.impossible {
         return Ok(Vec::new());
     }
-    if !parts.session_cheap.clauses.is_empty()
-        && !any_visible_session(connection, &parts.session_cheap)?
-    {
-        return Ok(Vec::new());
-    }
 
     let mut unique_terms: Vec<QueryTerm> = Vec::new();
     let mut term_index: HashMap<(String, bool), usize> = HashMap::new();
@@ -249,6 +244,8 @@ pub(super) fn search_candidates(
         }
     }
 
+    let mut extra_cache = ExtraFilterCache::new(&parts);
+    let mut activity_times: HashMap<i64, f64> = HashMap::new();
     let mut term_data: Vec<Option<TermData>> = (0..unique_terms.len()).map(|_| None).collect();
     for group in &groups {
         for &idx in group {
@@ -256,8 +253,9 @@ pub(super) fn search_candidates(
                 term_data[idx] = Some(fetch_term(
                     connection,
                     &unique_terms[idx],
-                    &parts.session_cheap,
-                    &parts.message_cheap,
+                    &parts,
+                    &mut extra_cache,
+                    &mut activity_times,
                 )?);
             }
             if term_data[idx].as_ref().is_some_and(TermData::is_empty) {
@@ -330,42 +328,31 @@ pub(super) fn search_candidates(
         HashMap::new()
     };
 
-    let rowid_list: Vec<i64> = candidate_rowids.into_iter().collect();
-    let mut ranked = Vec::with_capacity(rowid_list.len());
-    for chunk in rowid_list.chunks(CANDIDATE_CHUNK_SIZE) {
-        let placeholders = vec!["?"; chunk.len()].join(",");
-        let mut params: Vec<Value> = chunk.iter().copied().map(Value::Integer).collect();
-        params.extend(parts.extra.params.iter().cloned());
-        let sql = format!(
-            "SELECT s.rowid,s.activity_time FROM sessions s WHERE s.rowid IN ({placeholders}) AND s.publication_id IS NULL {}",
-            parts.extra.where_sql(),
-        );
-        let mut statement = connection.prepare(&sql)?;
-        let mut rows = statement.query(params_from_iter(params))?;
-        while let Some(row) = rows.next()? {
-            let rowid: i64 = row.get(0)?;
-            let activity_time: f64 = row.get(1)?;
-            let title = title_texts.get(&rowid).cloned();
-            let title_match = if !title_candidate_rowids.contains(&rowid) {
-                false
-            } else if !any_han {
-                true
-            } else {
-                groups.iter().any(|group| {
-                    group.iter().all(|&idx| {
-                        term_data[idx]
-                            .as_ref()
-                            .is_some_and(|term| term.matches_title(rowid, title.as_deref()))
-                    })
+    let mut ranked = Vec::with_capacity(candidate_rowids.len());
+    for rowid in candidate_rowids {
+        let Some(&activity_time) = activity_times.get(&rowid) else {
+            continue;
+        };
+        let title = title_texts.get(&rowid).cloned();
+        let title_match = if !title_candidate_rowids.contains(&rowid) {
+            false
+        } else if !any_han {
+            true
+        } else {
+            groups.iter().any(|group| {
+                group.iter().all(|&idx| {
+                    term_data[idx]
+                        .as_ref()
+                        .is_some_and(|term| term.matches_title(rowid, title.as_deref()))
                 })
-            };
-            ranked.push(RankedCandidate {
-                rowid,
-                activity_time,
-                title_match,
-                title,
-            });
-        }
+            })
+        };
+        ranked.push(RankedCandidate {
+            rowid,
+            activity_time,
+            title_match,
+            title,
+        });
     }
 
     ranked.sort_unstable_by(|a, b| {
@@ -410,16 +397,6 @@ pub(super) fn search_candidates(
     Ok(results)
 }
 
-fn any_visible_session(connection: &Connection, filters: &Filters) -> Result<bool> {
-    let sql = format!(
-        "SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.publication_id IS NULL {})",
-        filters.where_sql()
-    );
-    let exists: i64 =
-        connection.query_row(&sql, params_from_iter(&filters.params), |r| r.get(0))?;
-    Ok(exists != 0)
-}
-
 fn fetch_titles(connection: &Connection, rowids: &HashSet<i64>) -> Result<HashMap<i64, String>> {
     let list: Vec<i64> = rowids.iter().copied().collect();
     let mut titles = HashMap::with_capacity(list.len());
@@ -436,11 +413,50 @@ fn fetch_titles(connection: &Connection, rowids: &HashSet<i64>) -> Result<HashMa
     Ok(titles)
 }
 
+struct ExtraFilterCache<'a> {
+    parts: &'a sql::FilterParts,
+    extra_sql: Option<String>,
+    verdict: HashMap<i64, bool>,
+}
+
+impl<'a> ExtraFilterCache<'a> {
+    fn new(parts: &'a sql::FilterParts) -> Self {
+        let extra_sql = (!parts.extra.clauses.is_empty()).then(|| {
+            format!(
+                "SELECT 1 FROM sessions s WHERE s.rowid = ? {}",
+                parts.extra.where_sql()
+            )
+        });
+        Self {
+            parts,
+            extra_sql,
+            verdict: HashMap::new(),
+        }
+    }
+
+    fn accepts(&mut self, connection: &Connection, session_rowid: i64) -> Result<bool> {
+        let Some(sql) = self.extra_sql.as_deref() else {
+            return Ok(true);
+        };
+        if let Some(&cached) = self.verdict.get(&session_rowid) {
+            return Ok(cached);
+        }
+        let mut params = Vec::with_capacity(1 + self.parts.extra.params.len());
+        params.push(Value::Integer(session_rowid));
+        params.extend(self.parts.extra.params.iter().cloned());
+        let mut statement = connection.prepare_cached(sql)?;
+        let matched = statement.exists(params_from_iter(params))?;
+        self.verdict.insert(session_rowid, matched);
+        Ok(matched)
+    }
+}
+
 fn fetch_term(
     connection: &Connection,
     term: &QueryTerm,
-    session_cheap: &Filters,
-    message_cheap: &Filters,
+    parts: &sql::FilterParts,
+    extra_cache: &mut ExtraFilterCache<'_>,
+    activity_times: &mut HashMap<i64, f64>,
 ) -> Result<TermData> {
     let han_pattern = if contains_han(&term.text) {
         Some(
@@ -453,15 +469,17 @@ fn fetch_term(
     };
 
     let title_query = fts_expr(term, "title");
-    let title_hits = query_title_hits(connection, &title_query, session_cheap)?;
+    let title_hits =
+        query_title_hits(connection, &title_query, parts, extra_cache, activity_times)?;
 
     let message_query = fts_expr(term, "content_text");
     let message_hits = query_message_hits(
         connection,
         &message_query,
-        session_cheap,
-        message_cheap,
         han_pattern.is_none(),
+        parts,
+        extra_cache,
+        activity_times,
     )?;
 
     Ok(TermData {
@@ -474,48 +492,68 @@ fn fetch_term(
 fn query_title_hits(
     connection: &Connection,
     fts_query: &str,
-    session_cheap: &Filters,
+    parts: &sql::FilterParts,
+    extra_cache: &mut ExtraFilterCache<'_>,
+    activity_times: &mut HashMap<i64, f64>,
 ) -> Result<HashSet<i64>> {
-    // CROSS JOIN forces SQLite to drive from session_title_fts rather than scanning sessions.
     let sql = format!(
-        "SELECT s.rowid FROM session_title_fts CROSS JOIN sessions s ON s.rowid=session_title_fts.rowid WHERE session_title_fts MATCH ? AND s.publication_id IS NULL {}",
-        session_cheap.where_sql(),
+        "SELECT s.rowid, s.activity_time \
+         FROM session_title_fts \
+         CROSS JOIN sessions s ON s.rowid = session_title_fts.rowid \
+         WHERE session_title_fts MATCH ? AND s.publication_id IS NULL {}",
+        parts.session_cheap.where_sql()
     );
-    let mut params = Vec::with_capacity(1 + session_cheap.params.len());
+    let mut params = Vec::with_capacity(1 + parts.session_cheap.params.len());
     params.push(Value::Text(fts_query.to_owned()));
-    params.extend(session_cheap.params.iter().cloned());
-    let mut statement = connection.prepare(&sql)?;
-    let rowids = statement
-        .query_map(params_from_iter(params), |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
+    params.extend(parts.session_cheap.params.iter().cloned());
+    let mut statement = connection.prepare_cached(&sql)?;
+    let mut rows = statement.query(params_from_iter(params))?;
+    let mut rowids = HashSet::new();
+    while let Some(row) = rows.next()? {
+        let session_rowid: i64 = row.get(0)?;
+        if !extra_cache.accepts(connection, session_rowid)? {
+            continue;
+        }
+        let activity_time: f64 = row.get(1)?;
+        activity_times.entry(session_rowid).or_insert(activity_time);
+        rowids.insert(session_rowid);
+    }
     Ok(rowids)
 }
 
 fn query_message_hits(
     connection: &Connection,
     fts_query: &str,
-    session_cheap: &Filters,
-    message_cheap: &Filters,
     cap_hits: bool,
+    parts: &sql::FilterParts,
+    extra_cache: &mut ExtraFilterCache<'_>,
+    activity_times: &mut HashMap<i64, f64>,
 ) -> Result<HashMap<i64, Vec<(i64, i64)>>> {
-    // CROSS JOIN keeps message_fts as the outer loop so FTS5 MATCH runs once per term.
+    // Drive from message_fts into message_locator and sessions (CROSS JOIN preserves FTS-first plan)
+    // so publication/project/agent/node/time filters reject out-of-scope hits before Rust collects them.
     let sql = format!(
-        "SELECT m.rowid,m.message_index,s.rowid FROM message_fts CROSS JOIN messages m ON m.rowid=message_fts.rowid CROSS JOIN sessions s ON s.source_node_id=m.source_node_id AND s.agent_name=m.agent_name AND s.session_id=m.session_id WHERE message_fts MATCH ? AND s.publication_id IS NULL {}{}",
-        message_cheap.where_sql(),
-        session_cheap.where_sql(),
+        "SELECT l.message_rowid, l.message_index, l.session_rowid, s.activity_time \
+         FROM message_fts \
+         CROSS JOIN message_locator l ON l.message_rowid = message_fts.rowid \
+         CROSS JOIN sessions s ON s.rowid = l.session_rowid \
+         WHERE message_fts MATCH ? AND s.publication_id IS NULL {}",
+        parts.session_cheap.where_sql()
     );
-    let mut params =
-        Vec::with_capacity(1 + message_cheap.params.len() + session_cheap.params.len());
+    let mut params = Vec::with_capacity(1 + parts.session_cheap.params.len());
     params.push(Value::Text(fts_query.to_owned()));
-    params.extend(message_cheap.params.iter().cloned());
-    params.extend(session_cheap.params.iter().cloned());
-    let mut statement = connection.prepare(&sql)?;
+    params.extend(parts.session_cheap.params.iter().cloned());
+    let mut statement = connection.prepare_cached(&sql)?;
     let mut rows = statement.query(params_from_iter(params))?;
     let mut hits: HashMap<i64, Vec<(i64, i64)>> = HashMap::new();
     while let Some(row) = rows.next()? {
+        let session_rowid: i64 = row.get(2)?;
+        if !extra_cache.accepts(connection, session_rowid)? {
+            continue;
+        }
         let msg_rowid: i64 = row.get(0)?;
         let msg_index: i64 = row.get(1)?;
-        let session_rowid: i64 = row.get(2)?;
+        let activity_time: f64 = row.get(3)?;
+        activity_times.entry(session_rowid).or_insert(activity_time);
         let entry = hits.entry(session_rowid).or_default();
         entry.push((msg_index, msg_rowid));
         if cap_hits && entry.len() >= NON_HAN_HIT_CAP * 2 {

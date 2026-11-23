@@ -56,6 +56,8 @@ CREATE TABLE sessions (
       head_meta_json TEXT,
       publication_id TEXT,
       has_unmatched_pricing_meta INTEGER NOT NULL DEFAULT 0,
+      has_merged_pricing_models INTEGER NOT NULL DEFAULT 0,
+      has_head_pricing_inputs INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (source_node_id, agent_name, session_id)
     );
 
@@ -161,6 +163,10 @@ CREATE TABLE session_usage_bucket (
 
 CREATE INDEX idx_session_usage_bucket_session
   ON session_usage_bucket(source_node_id, agent_name, session_id);
+
+CREATE INDEX idx_session_usage_bucket_unpriced
+  ON session_usage_bucket(source_node_id, agent_name, session_id, bucket_start, model, input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_create_tokens)
+  WHERE cost_source = '' AND model <> '';
 
 CREATE TABLE message_tools (
       source_node_id TEXT NOT NULL DEFAULT 'local',
@@ -270,6 +276,27 @@ CREATE VIRTUAL TABLE session_title_fts USING fts5(
       content='',
       contentless_delete=1
     );
+
+CREATE TABLE message_locator (
+      message_rowid INTEGER PRIMARY KEY,
+      session_rowid INTEGER NOT NULL,
+      message_index INTEGER NOT NULL
+    );
+
+CREATE TRIGGER message_locator_ai
+    AFTER INSERT ON messages BEGIN
+      INSERT OR REPLACE INTO message_locator(message_rowid, session_rowid, message_index)
+      SELECT new.rowid, s.rowid, new.message_index
+      FROM sessions s
+      WHERE s.source_node_id = new.source_node_id
+        AND s.agent_name = new.agent_name
+        AND s.session_id = new.session_id;
+    END;
+
+CREATE TRIGGER message_locator_ad
+    AFTER DELETE ON messages BEGIN
+      DELETE FROM message_locator WHERE message_rowid = old.rowid;
+    END;
 
 CREATE VIEW project_groups_v AS
       SELECT

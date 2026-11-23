@@ -88,6 +88,7 @@ fn migrate(
                 saved.push(table);
             }
         }
+        db.execute_batch("DROP TABLE IF EXISTS message_locator;")?;
         db.execute_batch(include_str!("schema.sql"))?;
         if !saved.contains(&"sessions") && exists(db, "cached_sessions")? {
             restore_legacy_heads(db)?;
@@ -125,7 +126,7 @@ fn migrate(
         }
         // A full table migration drops the indexes installed by this patch and resets derived flags.
         db.execute(
-            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1','unmatched_pricing_meta_index_v1','unmatched_pricing_meta_v1','unmatched_pricing_meta_v1_cursor')",
+            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1','unmatched_pricing_meta_index_v1','unmatched_pricing_meta_v1','unmatched_pricing_meta_v1_cursor','message_locator_v1','unpriced_bucket_index_v1','pricing_flags_v1','pricing_flags_v1_cursor')",
             [],
         )?;
         super::search_text::reset_index(db)?;
@@ -222,9 +223,9 @@ pub fn ensure_with_progress(
             [super::CACHE_SCHEMA_VERSION.to_string()],
         )?;
         db.execute_batch("COMMIT")?;
-    } else if matches!(version, 36..=39) {
-        // Schemas 37-40 add compressed message bodies/search text, usage buckets,
-        // code-token FTS, and unmatched pricing metadata indexing in place.
+    } else if matches!(version, 36..=40) {
+        // Schemas 37-41 add compressed message bodies/search text, usage buckets,
+        // code-token FTS, unmatched pricing metadata indexing, and message_locator in place.
         db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
@@ -283,17 +284,24 @@ pub fn ensure_with_progress(
         })?;
     }
     // Ensure new in-place columns exist before `missing_objects_schema()` can create indexes over them.
-    if !columns(db, "sessions")?.contains("has_unmatched_pricing_meta") {
-        db.execute_batch("BEGIN IMMEDIATE")?;
-        let altered = db.execute_batch(
-            "ALTER TABLE sessions ADD COLUMN has_unmatched_pricing_meta INTEGER NOT NULL DEFAULT 0",
-        );
-        if altered.is_err() {
-            let _ = db.execute_batch("ROLLBACK");
-        } else {
-            db.execute_batch("COMMIT")?;
+    let session_cols = columns(db, "sessions")?;
+    for col in [
+        "has_unmatched_pricing_meta",
+        "has_merged_pricing_models",
+        "has_head_pricing_inputs",
+    ] {
+        if !session_cols.contains(col) {
+            db.execute_batch("BEGIN IMMEDIATE")?;
+            let altered = db.execute_batch(&format!(
+                "ALTER TABLE sessions ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
+            ));
+            if altered.is_err() {
+                let _ = db.execute_batch("ROLLBACK");
+            } else {
+                db.execute_batch("COMMIT")?;
+            }
+            altered?;
         }
-        altered?;
     }
     if !exists(db, "session_file_activity_path_fts")? {
         db.execute_batch("BEGIN IMMEDIATE")?;
@@ -314,7 +322,7 @@ pub fn ensure_with_progress(
         if columns(db, "session_cost_summary")?.contains("revision") {
             db.execute_batch("ALTER TABLE session_cost_summary DROP COLUMN revision; DELETE FROM cache_meta WHERE key='cost_facts_revision';")?;
         }
-        if !exists(db, "session_usage_bucket")? {
+        if !exists(db, "session_usage_bucket")? || !exists(db, "message_locator")? {
             db.execute_batch(&missing_objects_schema())?;
         }
         for (key, sql) in [
@@ -339,6 +347,14 @@ pub fn ensure_with_progress(
             (
                 "unmatched_pricing_meta_index_v1",
                 "CREATE INDEX IF NOT EXISTS idx_sessions_unmatched_pricing_meta ON sessions(has_unmatched_pricing_meta,activity_time) WHERE publication_id IS NULL AND has_unmatched_pricing_meta=1",
+            ),
+            (
+                "message_locator_v1",
+                "DELETE FROM message_locator; INSERT OR REPLACE INTO message_locator(message_rowid,session_rowid,message_index) SELECT m.rowid,s.rowid,m.message_index FROM messages m JOIN sessions s ON s.source_node_id=m.source_node_id AND s.agent_name=m.agent_name AND s.session_id=m.session_id;",
+            ),
+            (
+                "unpriced_bucket_index_v1",
+                "CREATE INDEX IF NOT EXISTS idx_session_usage_bucket_unpriced ON session_usage_bucket(source_node_id,agent_name,session_id,bucket_start,model,input_tokens,output_tokens,reasoning_tokens,cache_read_tokens,cache_create_tokens) WHERE cost_source='' AND model<>''",
             ),
             (
                 "pi_automated_messages_v1",
@@ -375,6 +391,7 @@ pub fn ensure_with_progress(
     }
     result?;
     ensure_unmatched_pricing_meta(db, progress)?;
+    ensure_pricing_flags(db, progress)?;
     ensure_usage_buckets(db, progress)?;
     super::search_text::rebuild(db, progress)?;
     super::search_text::ensure_index(db, progress)?;
@@ -489,6 +506,138 @@ fn ensure_unmatched_pricing_meta(
     db.execute(
         "INSERT OR REPLACE INTO cache_meta VALUES(?,'1')",
         [UNMATCHED_PRICING_META_KEY],
+    )?;
+    Ok(())
+}
+
+const PRICING_FLAGS_KEY: &str = "pricing_flags_v1";
+const PRICING_FLAGS_CURSOR_KEY: &str = "pricing_flags_v1_cursor";
+const PRICING_FLAGS_BATCH: i64 = 500;
+
+fn ensure_pricing_flags(
+    db: &Connection,
+    progress: &mut dyn FnMut(super::StorageProgress) -> Result<()>,
+) -> Result<()> {
+    let present = db
+        .query_row(
+            "SELECT 1 FROM cache_meta WHERE key=?",
+            [PRICING_FLAGS_KEY],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if present {
+        return Ok(());
+    }
+    let total: i64 = db.query_row("SELECT COALESCE(MAX(rowid),0) FROM sessions", [], |row| {
+        row.get(0)
+    })?;
+    let mut cursor: i64 = db
+        .query_row(
+            "SELECT value FROM cache_meta WHERE key=?",
+            [PRICING_FLAGS_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    while cursor < total {
+        progress(super::StorageProgress {
+            phase: "Indexing session pricing flags".into(),
+            done: cursor as u64,
+            total: Some(total as u64),
+        })?;
+        db.execute_batch("BEGIN IMMEDIATE")?;
+        let result = (|| -> Result<i64> {
+            let rows = db
+                .prepare_cached(
+                    "SELECT rowid, source_node_id, agent_name, session_id, \
+                            has_merged_pricing_models, has_head_pricing_inputs, \
+                            CASE WHEN meta_json LIKE '%\"rustPricing\"%' THEN meta_json END \
+                     FROM sessions WHERE rowid>? ORDER BY rowid LIMIT ?",
+                )?
+                .query_map(params![cursor, PRICING_FLAGS_BATCH], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, bool>(4)?,
+                        row.get::<_, bool>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let mut msg_models_stmt = db.prepare_cached(
+                "SELECT message_index, model FROM messages \
+                 WHERE source_node_id=? AND agent_name=? AND session_id=?",
+            )?;
+            let mut update_stmt = db.prepare_cached(
+                "UPDATE sessions SET has_merged_pricing_models=?, has_head_pricing_inputs=? WHERE rowid=?",
+            )?;
+            let mut last = total;
+            for (rowid, node_id, agent_name, session_id, cur_merged, cur_head, raw) in rows {
+                let (desired_merged, desired_head) = if let Some(raw) = raw.as_deref()
+                    && let Ok(stored) = serde_json::from_str::<super::reprice::StoredPricing>(raw)
+                {
+                    let head_inputs = stored.state.has_head_pricing_inputs();
+                    let merged = if stored.state.messages.is_empty() {
+                        false
+                    } else {
+                        let msg_models: std::collections::HashMap<usize, Option<String>> =
+                            msg_models_stmt
+                                .query_map(params![node_id, agent_name, session_id], |r| {
+                                    Ok((
+                                        r.get::<_, i64>(0)? as usize,
+                                        r.get::<_, Option<String>>(1)?,
+                                    ))
+                                })?
+                                .collect::<rusqlite::Result<_>>()?;
+                        stored.state.messages.iter().any(|(&idx, basis)| {
+                            let Some(msg_model) = msg_models.get(&idx) else {
+                                return false;
+                            };
+                            basis.inputs.iter().any(|input| {
+                                !super::reprice::pricing_models_match(
+                                    input.model.as_deref(),
+                                    msg_model.as_deref(),
+                                )
+                            })
+                        })
+                    };
+                    (merged, head_inputs)
+                } else {
+                    (false, false)
+                };
+                if desired_merged != cur_merged || desired_head != cur_head {
+                    update_stmt.execute(params![desired_merged, desired_head, rowid])?;
+                }
+                last = rowid;
+            }
+            db.execute(
+                "INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![PRICING_FLAGS_CURSOR_KEY, last.to_string()],
+            )?;
+            Ok(last)
+        })();
+        match result {
+            Ok(last) => {
+                db.execute_batch("COMMIT")?;
+                cursor = last;
+            }
+            Err(error) => {
+                let _ = db.execute_batch("ROLLBACK");
+                return Err(error);
+            }
+        }
+    }
+    db.execute(
+        "DELETE FROM cache_meta WHERE key=?",
+        [PRICING_FLAGS_CURSOR_KEY],
+    )?;
+    db.execute(
+        "INSERT OR REPLACE INTO cache_meta VALUES(?,'1')",
+        [PRICING_FLAGS_KEY],
     )?;
     Ok(())
 }

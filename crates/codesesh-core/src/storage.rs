@@ -22,7 +22,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, sync::Arc};
 
-pub(crate) const CACHE_SCHEMA_VERSION: i64 = 40;
+pub(crate) const CACHE_SCHEMA_VERSION: i64 = 41;
 
 pub struct StorageProgress {
     pub phase: String,
@@ -35,6 +35,14 @@ pub(crate) use read::detail as detail_from_connection;
 pub(crate) use read::detail_with_cursor;
 pub use read::{cursor_message_count, visit_detail_message_page};
 pub use snapshot::load as snapshot_from_connection;
+
+pub fn analytics_revision_from_connection(connection: &Connection) -> Result<i64> {
+    Ok(connection.query_row(
+        "SELECT CAST(COALESCE((SELECT value FROM cache_meta WHERE key='analytics_revision'), '0') AS INTEGER)",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?)
+}
 pub fn head_from_connection(
     connection: &Connection,
     reference: &SessionReference,
@@ -347,6 +355,9 @@ impl Cache {
             let head_metadata = snapshot::HeadMetadata::encode(head)?;
             let pricing_state = reprice::state(session);
             let has_unmatched_pricing_meta = pricing_state.has_unmatched_head_input();
+            let has_merged_pricing_models =
+                pricing_state.has_merged_pricing_models(&session.detail.messages);
+            let has_head_pricing_inputs = pricing_state.has_head_pricing_inputs();
             if let Some(generation) = pricing_state.generation {
                 reprice::invalidate_other_generation(transaction, generation)?;
             }
@@ -404,8 +415,8 @@ impl Cache {
                      total_output_tokens,total_cache_read_tokens,total_cache_create_tokens,total_cost,\
                      cost_source,total_tokens,model_usage_json,smart_tags_json,\
                      smart_tags_source_updated_at,smart_tags_classifier_revision,meta_json,head_meta_json,\
-                     has_unmatched_pricing_meta\
-                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+                     has_unmatched_pricing_meta,has_merged_pricing_models,has_head_pricing_inputs\
+                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
                      ON CONFLICT(source_node_id,agent_name,session_id) DO UPDATE SET \
                      sort_index=excluded.sort_index,title=excluded.title,source_path=excluded.source_path,\
                      directory=excluded.directory,parent_agent_name=excluded.parent_agent_name,\
@@ -427,7 +438,9 @@ impl Cache {
                      smart_tags_source_updated_at=excluded.smart_tags_source_updated_at,\
                      smart_tags_classifier_revision=excluded.smart_tags_classifier_revision,\
                      meta_json=excluded.meta_json,head_meta_json=excluded.head_meta_json,\
-                     has_unmatched_pricing_meta=excluded.has_unmatched_pricing_meta,publication_id=NULL",
+                     has_unmatched_pricing_meta=excluded.has_unmatched_pricing_meta,\
+                     has_merged_pricing_models=excluded.has_merged_pricing_models,\
+                     has_head_pricing_inputs=excluded.has_head_pricing_inputs,publication_id=NULL",
                 )?
                 .execute(params![
                     reference.source_node_id,
@@ -462,6 +475,8 @@ impl Cache {
                     json::stringify(&metadata)?,
                     head_metadata,
                     has_unmatched_pricing_meta,
+                    has_merged_pricing_models,
+                    has_head_pricing_inputs,
                 ])?;
             search_text::index_title_for_reference(transaction, reference, &head.title)?;
             let message_started = std::time::Instant::now();

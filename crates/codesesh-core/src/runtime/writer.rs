@@ -60,13 +60,18 @@ pub(super) fn run(
     }
     let cache_open = started.elapsed();
     let started = Instant::now();
-    match cache.snapshot() {
-        Ok(heads) => {
+    match cache.snapshot().and_then(|heads| {
+        let analytics_revision =
+            crate::storage::analytics_revision_from_connection(cache.connection())?;
+        Ok((heads, analytics_revision))
+    }) {
+        Ok((heads, analytics_revision)) => {
             let heads: Vec<_> = heads.into_iter().map(Arc::new).collect();
-            snapshots.send_replace(PublishedSnapshot {
-                revision: 1,
-                heads: Arc::new(heads),
-            });
+            snapshots.send_replace(PublishedSnapshot::new(
+                1,
+                analytics_revision,
+                Arc::new(heads),
+            ));
             let _ = ready.send(Ok((cache_open, started.elapsed())));
         }
         Err(error) => {
@@ -371,8 +376,10 @@ fn publish_changes(
             .cloned()
             .collect(),
     );
+    let analytics_revision =
+        crate::storage::analytics_revision_from_connection(cache.connection())?;
     let revision = previous_revision.wrapping_add(1);
-    snapshots.send_replace(PublishedSnapshot { revision, heads });
+    snapshots.send_replace(PublishedSnapshot::new(revision, analytics_revision, heads));
     let _ = events.send(Event::Sessions {
         revision,
         changed,

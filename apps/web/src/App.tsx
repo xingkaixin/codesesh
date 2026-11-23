@@ -36,7 +36,11 @@ import { ResolvedThemeContext, useTheme } from "./hooks/useTheme";
 import { buildRouteHeaderModel } from "./lib/build-route-header-model";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { SearchControlsHandle } from "./components/app/SearchControls";
-import { AppRouteContent, type AppRouteModel } from "./components/app/AppRouteContent";
+import {
+  AppRouteContent,
+  preloadRouteChunk,
+  type AppRouteModel,
+} from "./components/app/AppRouteContent";
 import { AppPageHeader, AppPageHero } from "./components/app/AppPageHeader";
 import { AppToasts } from "./components/app/AppToasts";
 import { SessionHeaderActions } from "./components/app/SessionHeaderActions";
@@ -124,6 +128,9 @@ export default function App() {
   const retryLoad = appConfig.error ? appConfig.retry : sessionStore.retryLoad;
 
   const location = useLocation();
+  useEffect(() => {
+    preloadRouteChunk(location.pathname);
+  }, [location.pathname]);
   const setScanStatus = useScanStatusPublisher();
   const hasScanIssue = useHasScanStatusIssue();
   const hubEnabled = Boolean(appConfig.config?.hubEnabled);

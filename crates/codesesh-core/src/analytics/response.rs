@@ -1,5 +1,6 @@
 use super::{
-    CostFactsIndex, DashboardOptions, active_hours, build_dashboard, load_scoped_cost_facts,
+    CostFactsIndex, DashboardOptions, active_hours_refs, build_dashboard_refs,
+    load_scoped_cost_facts,
 };
 use crate::{
     model::SessionHead,
@@ -27,15 +28,25 @@ pub fn dashboard_response(
     sessions: &[SessionHead],
     options: &DashboardResponseOptions<'_>,
 ) -> anyhow::Result<(DashboardData, DashboardTimings)> {
+    let refs: Vec<&SessionHead> = sessions.iter().collect();
+    dashboard_response_refs(connection, &refs, options)
+}
+
+pub fn dashboard_response_refs(
+    connection: &Connection,
+    sessions: &[&SessionHead],
+    options: &DashboardResponseOptions<'_>,
+) -> anyhow::Result<(DashboardData, DashboardTimings)> {
     let mut timings = DashboardTimings::default();
     let aggregate = &options.aggregate;
     let loaded_facts;
     let facts = if let Some(facts) = aggregate.cost_facts {
         facts
     } else {
+        let owned: Vec<SessionHead> = sessions.iter().map(|s| (*s).clone()).collect();
         loaded_facts = CostFactsIndex::from(load_scoped_cost_facts(
             connection,
-            sessions,
+            &owned,
             aggregate.scope,
             aggregate.compare.map(|(from, _)| from).or(aggregate.from),
             Some(aggregate.to),
@@ -44,7 +55,7 @@ pub fn dashboard_response(
         &loaded_facts
     };
     let phase = Instant::now();
-    let dashboard = build_dashboard(
+    let dashboard = build_dashboard_refs(
         sessions,
         &DashboardOptions {
             cost_facts: Some(facts),
@@ -53,7 +64,7 @@ pub fn dashboard_response(
     )?;
     timings.aggregate_ms = phase.elapsed().as_secs_f64() * 1000.0;
     let phase = Instant::now();
-    let hours = active_hours(
+    let hours = active_hours_refs(
         connection,
         sessions,
         aggregate.scope,

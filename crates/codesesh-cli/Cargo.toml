@@ -42,9 +42,10 @@ regex.workspace = true
 libc = "0.2"
 
 async-compression = { version = "0.4", features = ["tokio", "gzip", "zlib"] }
+flate2 = "1"
+zstd.workspace = true
 tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
-flate2 = "1"

@@ -1,6 +1,8 @@
 include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
 
+#[cfg(test)]
 pub type Asset = (&'static str, &'static [u8]);
+pub type AssetEntry = (&'static str, &'static EmbeddedAsset);
 
 fn key(path: &str) -> Option<&str> {
     let path = path.strip_prefix('/').unwrap_or(path);
@@ -16,18 +18,31 @@ fn key(path: &str) -> Option<&str> {
     Some(path)
 }
 
-pub fn lookup(path: &str) -> Option<Asset> {
+pub fn lookup_entry(path: &str) -> Option<AssetEntry> {
     let name = key(path)?;
     let index = WEB_ASSETS
-        .binary_search_by_key(&name, |(name, _)| name)
+        .binary_search_by_key(&name, |asset| asset.name)
         .ok()?;
-    let (name, bytes) = WEB_ASSETS[index];
-    Some((mime(name), bytes))
+    let asset = &WEB_ASSETS[index];
+    Some((mime(asset.name), asset))
 }
 
-pub fn spa(path: &str) -> Option<Asset> {
+pub fn spa_entry(path: &str) -> Option<(AssetEntry, bool)> {
     key(path)?;
-    lookup(path).or_else(|| lookup("index.html"))
+    if let Some(entry) = lookup_entry(path) {
+        return Some((entry, entry.1.name != "index.html"));
+    }
+    lookup_entry("index.html").map(|entry| (entry, false))
+}
+
+#[cfg(test)]
+pub fn lookup(path: &str) -> Option<Asset> {
+    lookup_entry(path).map(|(mime, asset)| (mime, asset.raw))
+}
+
+#[cfg(test)]
+pub fn spa(path: &str) -> Option<Asset> {
+    spa_entry(path).map(|((mime, asset), _)| (mime, asset.raw))
 }
 
 fn mime(path: &str) -> &'static str {
@@ -82,8 +97,11 @@ mod tests {
         assert!(!index.1.is_empty());
         assert_eq!(spa("/sessions/codex/example"), Some(index));
         assert_eq!(spa("/"), Some(index));
-        for (name, bytes) in WEB_ASSETS {
-            assert_eq!(lookup(&format!("/{name}")), Some((mime(name), *bytes)));
+        for asset in WEB_ASSETS {
+            assert_eq!(
+                lookup(&format!("/{}", asset.name)),
+                Some((mime(asset.name), asset.raw))
+            );
         }
     }
 

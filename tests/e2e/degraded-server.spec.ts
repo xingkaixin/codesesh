@@ -5,7 +5,7 @@ import { configureApiAccess, monitorBrowserErrors } from "./test-fixtures.js";
 // scenario, not a defect. Anything else — above all an "Uncaught (in
 // promise)" from the retry handler — must stay absent.
 const EXPECTED_NETWORK_NOISE =
-  /Failed to load resource|net::ERR|Failed to fetch|NetworkError|Failed to load config/i;
+  /Failed to load resource|net::ERR|Failed to fetch|NetworkError|Failed to load (config|data|bookmarks|dashboard|scan status)/i;
 
 // Uses the raw playwright test: the shared browserErrorGate fixture asserts a
 // fully clean console, which a deliberately failing API cannot satisfy.
@@ -16,12 +16,15 @@ base("keeps the retry surface clean while the API is down", async ({ page }) => 
   await configureApiAccess(page.context());
   const errors = monitorBrowserErrors(page);
   let failing = true;
-  await page.route("**/api/config**", (route) =>
+  await page.route("**/api/**", (route) =>
     failing ? route.abort("connectionrefused") : route.continue(),
   );
 
   await page.goto("/");
-  const retry = page.getByRole("button", { name: "Retry" });
+  const retry = page
+    .getByRole("alert")
+    .filter({ hasText: /Failed to load/i })
+    .getByRole("button", { name: "Retry" });
   await expect(retry).toBeVisible({ timeout: 30_000 });
 
   // Retry while the server is still down: the error surface must persist and

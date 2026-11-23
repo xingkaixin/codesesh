@@ -118,7 +118,7 @@ pub async fn search(AxumState(state): AxumState<Arc<State>>, RawQuery(raw): RawQ
             let needle = parsed.text.trim().to_lowercase();
             let mut candidates = Vec::new();
             if !needle.is_empty() {
-                for (reference, alias) in &aliases {
+                for (reference, alias) in aliases.iter() {
                     if !alias.to_lowercase().contains(&needle) {
                         continue;
                     }
