@@ -101,6 +101,37 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.5.1",
+        date: "2026-11-24",
+        title: "Faster page loads, smaller cache, and lighter background sync",
+        summary:
+          "CodeSesh 1.5.1 makes local AI coding history noticeably faster to open, search, and browse on large caches, compresses stored message text to save disk space, and cuts Worker-to-Hub sync traffic and service log noise. It also restores accurate message counts for Kimi sessions and adds dedicated Claude Code and Codex session history guides.",
+        direction:
+          "Keep local AI coding history fast, compact, and quiet in the background so CodeSesh stays effortless to open even after months of sessions across multiple machines.",
+        highlights: [
+          {
+            title: "Faster search, analytics, and page loads",
+            description:
+              "Indexed message lookups and scoped cost queries speed up search, file activity, Dashboard, and project views on large histories. Precompressed Web assets, zstd API compression, inline config bootstrap, and lazy-loaded language packs reduce cold-load and reload transfer size.",
+          },
+          {
+            title: "Smaller cache footprint on disk",
+            description:
+              "Stored message text is compressed with zstd in resumable background batches without rebuilding tables, while a partial index lets unmatched-pricing checks skip scanning full session metadata.",
+          },
+          {
+            title: "Lighter Worker sync and quieter service logs",
+            description:
+              "Small Worker session updates now travel inline in a single commit request while staying compatible with older Workers. Routine fast Worker heartbeats move to debug logs, repeated scan errors are throttled, and managed service logs rotate automatically above 5 MiB.",
+          },
+          {
+            title: "Accurate Kimi message counts and new history guides",
+            description:
+              "Cached Kimi sessions reparse on refresh so their message counts reflect actual parsed messages instead of zero. The site also adds dedicated guides for finding and reusing Claude Code and Codex session history.",
+          },
+        ],
+      },
+      {
         version: "1.5.0",
         date: "2026-11-20",
         title: "Find inside a session and return to your search",
@@ -1108,6 +1139,36 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.5.1",
+        date: "2026-11-24",
+        title: "打开更快、缓存更省空间，后台同步更轻",
+        summary:
+          "CodeSesh 1.5.1 让大体积本地 AI 编码历史的打开、搜索和统计浏览更快，压缩已缓存的消息正文以节省磁盘空间，并减少了 Worker 到 Hub 的同步往返与后台服务日志噪音。本版同时修复了 Kimi 会话消息数显示为零的问题，并新增了 Claude Code 与 Codex 会话历史指南。",
+        direction: "让本地 AI 编码历史在长期积累和多机同步后依然打开顺手、占用克制、后台安静运行。",
+        highlights: [
+          {
+            title: "搜索、统计和页面加载更快",
+            description:
+              "新增消息定位索引和按范围裁剪的费用查询，让大历史下的搜索、文件活动、Dashboard 和项目视图更快响应。预压缩前端资源、zstd 接口压缩、内联配置引导与按需加载语言包减少了冷启动和刷新时的数据传输。",
+          },
+          {
+            title: "本地缓存更省磁盘空间",
+            description:
+              "已缓存的消息正文以可中断续做的方式分批使用 zstd 压缩，无需重建数据表；未匹配定价检查改为走局部索引，不再全表扫描会话元数据。",
+          },
+          {
+            title: "Worker 同步更轻，服务日志更安静",
+            description:
+              "小体积会话更新直接内联在单次提交请求中，减少往返并兼容旧版 Worker。常规快速心跳与上传日志降至 debug 级别，重复扫描报错按间隔节流，后台服务日志超过 5 MiB 自动轮转。",
+          },
+          {
+            title: "修正 Kimi 消息计数并补充使用指南",
+            description:
+              "已缓存的 Kimi 会话会按需重新解析，显示真实的解析消息数而不再为零。产品站新增了 Claude Code 与 Codex 会话历史专题指南，方便查阅各工具的本地存储路径与检索方式。",
+          },
+        ],
+      },
+      {
         version: "1.5.0",
         date: "2026-11-20",
         title: "会话内查找，返回时保留搜索结果",
@@ -2089,6 +2150,37 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.5.1",
+        date: "2026-11-24",
+        title: "読み込みを高速化し、キャッシュとバックグラウンド同期を軽量化",
+        summary:
+          "CodeSesh 1.5.1 では、大きなローカル AI コーディング履歴の読み込み・検索・集計表示を高速化し、キャッシュ内のメッセージ本文を圧縮してディスク使用量を抑えました。Worker から Hub への同期通信やサービスログのノイズも減らし、Kimi セッションのメッセージ件数を修正するとともに、Claude Code と Codex の履歴ガイドを追加しています。",
+        direction:
+          "数か月分のセッションや複数マシンの同期が積み重なっても、ローカルの AI コーディング履歴を軽快・省容量・静かに保ち続けます。",
+        highlights: [
+          {
+            title: "検索・分析・ページ読み込みを高速化",
+            description:
+              "メッセージ参照インデックスと範囲指定のコスト集計により、大きな履歴でも検索・ファイル活動・Dashboard・プロジェクト一覧が速く応答します。事前圧縮アセット、zstd API 圧縮、設定のインライン読み込み、言語パックの遅延読み込みで転送量も削減しました。",
+          },
+          {
+            title: "キャッシュのディスク使用量を削減",
+            description:
+              "保存済みのメッセージ本文をテーブル再構築なしで中断再開可能なバッチにより zstd 圧縮し、料金未対応モデルの確認も部分インデックスでメタデータ全件走査を省きます。",
+          },
+          {
+            title: "Worker 同期とサービスログを整理",
+            description:
+              "小さなセッション更新を 1 回のコミット要求にインライン化して往復を減らしつつ、旧 Worker との互換性を維持しました。高速な定期通信は debug ログに移し、同一のスキャンエラーを間引き、5 MiB を超えたサービスログは自動ローテーションします。",
+          },
+          {
+            title: "Kimi のメッセージ件数修正と履歴ガイド追加",
+            description:
+              "キャッシュ済みの Kimi セッションを再解析し、件数が 0 ではなく実際のメッセージ数になるよう修正しました。製品サイトには Claude Code と Codex のセッション履歴を調べる専用ガイドも追加しています。",
+          },
+        ],
+      },
       {
         version: "1.5.0",
         date: "2026-11-20",
