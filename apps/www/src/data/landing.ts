@@ -115,7 +115,7 @@ interface LandingCopy {
   };
 }
 
-export const landingUpdated = "2026-11-22";
+export const landingUpdated = "2026-11-24";
 
 export const siteUrl = "https://codesesh.xingkaixin.me";
 
@@ -162,7 +162,7 @@ export const localeConfig = {
 const agentDisplayNames = AGENT_CATALOG.map(({ displayName }) => displayName);
 const agentCount = agentDisplayNames.length;
 const agentNamesEn = `${agentDisplayNames.slice(0, -1).join(", ")}, and ${agentDisplayNames.at(-1)}`;
-const agentNamesZh = `${agentDisplayNames.slice(0, -1).join("、")}和${agentDisplayNames.at(-1)}`;
+const agentNamesZh = `${agentDisplayNames.slice(0, -1).join("、")} 和 ${agentDisplayNames.at(-1)}`;
 const agentNamesJa = agentDisplayNames.join("、");
 
 export const agents = AGENT_CATALOG.map((entry) => ({
@@ -363,7 +363,7 @@ export const copy = {
       guideStart: "快速开始",
       guideHistory: "查找历史会话",
       guideUsage: "用量与成本核算",
-      guideBackground: "后台服务与局域网",
+      guideBackground: "后台服务",
       changelog: "更新日志",
       docs: "文档",
       issues: "问题反馈",
@@ -374,8 +374,7 @@ export const copy = {
   en: {
     meta: {
       title: "Claude Code & Codex Session History Viewer | CodeSesh",
-      description:
-        "Search Claude Code, Codex, and Cursor session history locally. Find conversations, tool calls, and file changes by project. Free and open source, no account needed.",
+      description: `Search local session history from Claude Code, Codex, Cursor, and ${agentCount - 3} other AI coding agents. Find conversations, tool calls, and file changes by project. Free and open source, no account needed.`,
     },
     header: {
       tour: "Tour",

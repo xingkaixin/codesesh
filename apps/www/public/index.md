@@ -95,16 +95,35 @@ Not by default. In standalone mode, CodeSesh serves its Web UI on localhost and 
 
 ### How do I install and start CodeSesh?
 
-Run `npx codesesh`. The CLI scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`.
+Run `npx codesesh`. The CLI scans supported local AI coding sessions and opens the Web UI at `http://localhost:4521`. Standalone native builds are also available via `curl`, Homebrew, and Scoop without Node.js.
+
+### Why is a session missing?
+
+CodeSesh opens with sessions active in the last 7 local calendar days while older history scans in the background. Switch the time range in the UI to 30 days, 90 days, or All (or launch with `npx codesesh --days 0`) to view older records. CodeSesh is read-only and cannot recover source files deleted before scanning.
 
 ### How does CodeSesh stay responsive with a large history?
 
 The initial scan persists backfill progress. Later starts restore from the SQLite cache, file watchers update changed sessions incrementally, and long timelines use viewport virtualization.
 
+## Usage guides
+
+- All guides: https://codesesh.xingkaixin.me/guides/
+- Chinese guides: https://codesesh.xingkaixin.me/zh/guides/
+- Japanese guides: https://codesesh.xingkaixin.me/ja/guides/
+- Getting started: https://codesesh.xingkaixin.me/guides/getting-started/
+- Session history: https://codesesh.xingkaixin.me/guides/session-history/
+- Claude Code session history: https://codesesh.xingkaixin.me/guides/claude-code-session-history/
+- Codex session history: https://codesesh.xingkaixin.me/guides/codex-session-history/
+- LAN access: https://codesesh.xingkaixin.me/guides/lan-access/
+- Multi-machine sync: https://codesesh.xingkaixin.me/guides/multi-machine-sync/
+- Background services: https://codesesh.xingkaixin.me/guides/background-services/
+- Token usage and costs: https://codesesh.xingkaixin.me/guides/usage-and-costs/
+
 ## Links
 
 - Product site: https://codesesh.xingkaixin.me/
 - Chinese product site: https://codesesh.xingkaixin.me/zh/
+- Japanese product site: https://codesesh.xingkaixin.me/ja/
 - AI overview: https://codesesh.xingkaixin.me/llms.txt
 - Full AI knowledge file: https://codesesh.xingkaixin.me/llms-full.txt
 - Product changelog: https://codesesh.xingkaixin.me/changelog/

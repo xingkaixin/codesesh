@@ -28,6 +28,17 @@ codesesh
 curl -sSfL https://codesesh.xingkaixin.me/install.sh | sh
 ```
 
+也可以在 macOS 上通过 Homebrew、或在 Windows 上通过 Scoop 安装独立可执行文件：
+
+```sh title="macOS（Homebrew）"
+brew install xingkaixin/tap/codesesh
+```
+
+```sh title="Windows（Scoop）"
+scoop bucket add xingkaixin https://github.com/xingkaixin/scoop-bucket
+scoop install xingkaixin/codesesh
+```
+
 脚本会下载对应平台的可执行文件。Windows 用户也可以从 [GitHub Releases](https://github.com/xingkaixin/codesesh/releases) 下载原生压缩包。选择与你的操作系统和 CPU 架构对应的制品；独立可执行文件不需要 Node.js。
 
 ## 打开本地界面

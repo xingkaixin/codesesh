@@ -1,8 +1,6 @@
 import type { Locale } from "./landing";
 
 interface SectionCopy {
-  heroResults: string;
-  heroVisual: string;
   tour: {
     activity: string;
     ranges: [string, string, string];
@@ -38,9 +36,6 @@ interface SectionCopy {
 
 export const sections = {
   en: {
-    heroResults: "3 sessions · 2 projects",
-    heroVisual:
-      "Sessions from several agents flow into one local, searchable index: a search for refresh 401 finds 3 sessions · 2 projects and previews the session replay on the right",
     tour: {
       activity: "Daily activity",
       ranges: ["7d", "30d", "All"],
@@ -96,9 +91,6 @@ export const sections = {
     },
   },
   zh: {
-    heroResults: "3 个会话 · 2 个项目",
-    heroVisual:
-      "多个 Agent 的会话汇入同一个可搜索的本地索引：搜索 refresh 401，命中 3 个会话 · 2 个项目，并在右侧预览会话回放",
     tour: {
       activity: "每日活跃",
       ranges: ["7 天", "30 天", "全部"],
@@ -144,9 +136,6 @@ export const sections = {
     },
   },
   ja: {
-    heroResults: "3セッション · 2プロジェクト",
-    heroVisual:
-      "複数のエージェントのセッションが1つのローカル検索インデックスに集まる：refresh 401 を検索すると 3セッション · 2プロジェクトがヒットし、右側でセッションのリプレイをプレビュー",
     tour: {
       activity: "日別アクティビティ",
       ranges: ["7日", "30日", "全期間"],
