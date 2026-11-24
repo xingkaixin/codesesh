@@ -5,9 +5,10 @@ import InstallCommand from "./InstallCommand.astro";
 interface Props {
   locale: Locale;
   id: string;
+  tone?: "ember" | "monolith";
 }
 
-const { locale, id } = Astro.props;
+const { locale, id, tone = "monolith" } = Astro.props;
 const labels = {
   en: {
     method: "Installation method",
@@ -75,7 +76,10 @@ const methods = [
 ];
 ---
 
-<div class="install-options" data-install-options>
+<div
+  class:list={["install-options", tone === "monolith" && "is-monolith"]}
+  data-install-options
+>
   <p class="sr-only" id={`${id}-label`}>
     {labels.method}
   </p>
@@ -108,7 +112,7 @@ const methods = [
         command={method.command}
         method={method.id}
         placement={id}
-        tone="ember"
+        tone={tone}
       />
       <p class="cnote">
         {method.note}
@@ -196,15 +200,15 @@ const methods = [
     background: rgba(0, 0, 0, 0.2);
   }
   [role="tab"] {
-    height: 38px;
+    height: 36px;
     padding: 0 15px;
-    border-radius: 10px;
-    color: rgba(255, 255, 255, 0.9);
+    border-radius: 9px;
+    color: rgba(255, 255, 255, 0.88);
     font: 600 12.5px/1 var(--mono);
     cursor: pointer;
     transition:
-      background 0.15s,
-      color 0.15s;
+      background-color 0.16s var(--ease-out),
+      color 0.16s var(--ease-out);
   }
   [role="tab"]:hover {
     background: rgba(255, 255, 255, 0.1);
@@ -217,19 +221,48 @@ const methods = [
   [role="tab"]:focus-visible {
     outline-color: #fff;
   }
+  .is-monolith .ctabs {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: #15151a;
+  }
+  .is-monolith [role="tab"] {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 7px;
+    color: #b6b5bd;
+  }
+  .is-monolith [role="tab"]:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+  }
+  .is-monolith [role="tab"][aria-selected="true"] {
+    background: #ff7a45;
+    color: #101012;
+  }
+  .is-monolith [role="tab"]:focus-visible {
+    outline-color: #ff7a45;
+  }
   .ipanel {
     margin-top: 12px;
   }
   .cnote {
-    margin: 14px 0 0;
+    margin: 12px 0 0;
     color: rgba(255, 255, 255, 0.9);
-    font-size: 12.5px;
-    line-height: 1.75;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .is-monolith .cnote {
+    color: #9b9aa4;
   }
   .cnote code {
     padding: 1px 6px;
     border-radius: 5px;
     background: rgba(0, 0, 0, 0.2);
     font-family: var(--mono);
+  }
+  .is-monolith .cnote code {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e4e3df;
   }
 </style>

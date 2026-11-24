@@ -19,7 +19,7 @@ export const guides: Guide[] = [
     slug: "getting-started",
     category: "start",
     published: "2026-10-03",
-    updated: "2026-10-03",
+    updated: "2026-11-24",
     copy: {
       en: {
         title: "Install CodeSesh and browse AI coding sessions",

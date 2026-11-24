@@ -28,6 +28,17 @@ If you do not want a Node.js dependency, use the native installer on macOS or Li
 curl -sSfL https://codesesh.xingkaixin.me/install.sh | sh
 ```
 
+You can also install the standalone executable with Homebrew on macOS or Scoop on Windows:
+
+```sh title="macOS (Homebrew)"
+brew install xingkaixin/tap/codesesh
+```
+
+```sh title="Windows (Scoop)"
+scoop bucket add xingkaixin https://github.com/xingkaixin/scoop-bucket
+scoop install xingkaixin/codesesh
+```
+
 The installer downloads a platform-specific executable. Windows users can also download the appropriate native archive from [GitHub Releases](https://github.com/xingkaixin/codesesh/releases). Use the executable for your operating system and architecture. The standalone executable does not require Node.js.
 
 ## Open the local interface

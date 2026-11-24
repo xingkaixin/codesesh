@@ -1,12 +1,8 @@
 ---
-import { changelogCopy } from "../data/changelog";
-import { experience } from "../data/experience";
 import { agents, copy, type Locale } from "../data/landing";
-import { sections } from "../data/sections";
-import { fill, marked, showcase } from "../data/showcase";
+import { fill } from "../data/showcase";
 import AgentIcon from "./AgentIcon.astro";
 import HeadingText from "./HeadingText.astro";
-import Icon from "./Icon.astro";
 import InstallCommand from "./InstallCommand.astro";
 
 interface Props {
@@ -15,1038 +11,316 @@ interface Props {
 
 const { locale } = Astro.props;
 const t = copy[locale].hero;
-const s = sections[locale];
-const actions = experience[locale];
-const m = showcase[locale];
-const version = changelogCopy[locale].releases[0]!.version;
-const projects = [
-  ["web-app", 12],
-  ["api-gateway", 8],
-  ["mobile-app", 9],
-  ["infra", 5],
-  ["docs-site", 3],
+const featuredNames = [
+  "Claude Code",
+  "Codex",
+  "Cursor",
+  "OpenCode",
+  "Gemini CLI",
+  "Pi",
 ] as const;
-const results = [
-  {
-    agent: "Claude Code",
-    title: m.titles.refresh,
-    snippet: marked(m.hero.snippet),
-  },
-  {
-    agent: "Codex",
-    title: m.titles.authRefactor,
-    code: marked("$ curl -i /auth/[[refresh]] → HTTP/1.1 [[401]] Unauthorized"),
-  },
-  {
-    agent: "Cursor",
-    title: m.titles.retry,
-    code: marked("src/auth/[[refresh]].ts · src/auth/retry.ts"),
-  },
-];
+const featuredAgents = featuredNames
+  .map((name) => agents.find((entry) => entry.name === name))
+  .filter((entry): entry is (typeof agents)[number] => Boolean(entry));
+const remainingCount = Math.max(0, agents.length - featuredAgents.length);
 ---
 
-<section class="hero dotgrid" aria-labelledby="hero-title">
-  <div class="shell">
-    <div class="hero__copy">
-      <span class="pill-eb">
-        <span class="live"></span>
-        {t.eyebrow}
-      </span>
-      <h1 class="h1" id="hero-title">
-        <HeadingText value={t.title} secondClass="l2" />
-      </h1>
-      <div class="hero-sub">
-        <p class="lead">{t.body}</p>
-        <div class="cta-col">
-          <InstallCommand locale={locale} method="npm" placement="hero" />
-          <div class="btn-row">
-            <a class="btn primary" href="#install">
-              {actions.start}
-              <Icon name="arrow" />
-            </a>
-            <a class="btn ghost" href="#tour">
-              {actions.tour}
-            </a>
-          </div>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-stage">
+    <picture class="hero-art">
+      <source srcset="/hero-topography.avif" type="image/avif" />
+      <source srcset="/hero-topography.webp" type="image/webp" />
+      <img
+        src="/hero-topography.webp"
+        alt=""
+        width="1536"
+        height="1024"
+        loading="eager"
+        decoding="async"
+        fetchpriority="high"
+      />
+    </picture>
+    <div class="hero-veil" aria-hidden="true"></div>
+
+    <div class="shell hero-content">
+      <div class="hero-copy">
+        <h1 class="hero-h1" id="hero-title">
+          <HeadingText value={t.title} secondClass="" />
+        </h1>
+        <p class="hero-lead">{t.body}</p>
+        <div class="hero-action">
+          <InstallCommand
+            locale={locale}
+            method="npm"
+            placement="hero"
+            tone="hero"
+          />
         </div>
       </div>
     </div>
+  </div>
 
-    <div class="stage hero__visual" role="img" aria-label={s.heroVisual}>
-      <div class="fk" aria-hidden="true">
-        <span class="kbd">⌘</span>
-        <span class="kbd">K</span>
-      </div>
-      <div class="win" aria-hidden="true">
-        <div class="win-bar">
-          <div class="dots">
-            <i></i>
-            <i></i>
-            <i></i>
-          </div>
-          <div class="url">
-            <Icon name="lock" class="size-3" />
-            localhost:4521/search?q=refresh+401
-          </div>
-        </div>
-        <div class="win-body">
-          <div class="w-side">
-            <div class="w-brand">
-              <img src="/logo.svg?v=3" alt="" width="20" height="20" />
-              CodeSesh
-              <span>v{version}</span>
-            </div>
-            <div class="w-search">
-              <Icon name="search" class="size-3.5" />
-              {m.hero.searchSessions}
-              <span class="kbd">⌘K</span>
-            </div>
-            <div class="w-nav">
-              <Icon name="dashboard" class="size-3.5" />
-              {m.hero.nav[0]}
-            </div>
-            <div class="w-nav">
-              <Icon name="folder" class="size-3.5" />
-              {m.hero.nav[1]}
-              <span class="c">6</span>
-            </div>
-            <div class="w-nav on">
-              <Icon name="search" class="size-3.5" />
-              {m.hero.nav[2]}
-            </div>
-            <div class="w-label">
-              <span>{m.hero.recentProjects}</span>
-              <span>{m.hero.sessions}</span>
-            </div>
-            {projects.map(([name, count]) => (
-              <div class="w-proj">
-                <Icon name="folder" class="size-3.5" />
-                {name}
-                <span class="c">{count}</span>
-              </div>
-            ))}
-            <div class="w-ember">
-              <span class="live"></span>
-              {m.hero.nodesOnline}
-              <span class="m">{m.hero.manage}</span>
-            </div>
-          </div>
-          <div class="w-main">
-            <div class="w-head">
-              {m.hero.nav[2]}
-              <div class="seg">
-                {s.tour.ranges.map((label, i) => (
-                  <span
-                    class="seg-i"
-                    aria-pressed={i === 0 ? "true" : undefined}
-                  >
-                    {label}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div class="w-q">
-              <Icon name="search" />
-              <span class="q">refresh 401</span>
-              <span class="caret"></span>
-              <span class="kbd">Enter</span>
-            </div>
-            <div class="w-hint">
-              {m.hero.hint}
-              <b>{s.heroResults}</b>
-            </div>
-            <div class="w-res">
-              {results.map((row, i) => (
-                <div class:list={["r hero__flow", i === 0 && "sel"]}>
-                  <AgentIcon name={row.agent} size={18} />
-                  <div>
-                    <div class="r-t">{row.title}</div>
-                    <div class="r-m">{m.hero.meta[i]}</div>
-                  </div>
-                  <span class="hit">{m.hero.hits[i]}</span>
-                  <div class:list={["r-s", row.code && "code"]}>
-                    {(row.snippet ?? row.code)!.map(({ part, mark }) =>
-                      mark ? <mark>{part}</mark> : part,
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div class="toast">
-              <span class="live"></span>
-              <div>
-                {m.hero.toast}
-                <small>{m.hero.toastMeta}</small>
-              </div>
-            </div>
-            <div class="w-pv">
-              <div class="pv-h">
-                <AgentIcon name="Claude Code" />
-                {m.hero.preview}
-                <span class="open">
-                  {m.hero.open}
-                  <Icon name="arrow" class="size-3" />
-                </span>
-              </div>
-              <div class="pv-i">
-                <div class="who">
-                  <span class="av">
-                    <Icon name="user" />
-                  </span>
-                  {s.tour.userBadge}
-                  <span class="t">14:22:05</span>
-                </div>
-                <div class="bub">{s.tour.prompt}</div>
-              </div>
-              <div class="pv-i">
-                <div class="who">
-                  <span class="av">
-                    <AgentIcon name="Claude Code" size={12} />
-                  </span>
-                  {m.hero.agent}
-                  <span class="t">14:22:11</span>
-                </div>
-                <div class="txt">{s.tour.firstReply}</div>
-              </div>
-              <div class="pv-i tool">
-                <span class="tic">
-                  <Icon name="terminal" />
-                </span>
-                <span class="tn">bash</span>
-                <code>rg -n "refresh" src/auth</code>
-                <span class="ok">{m.hero.success}</span>
-              </div>
-              <div class="pv-i tool">
-                <span class="tic">
-                  <Icon name="pencil" />
-                </span>
-                <span class="tn">edit</span>
-                <code>src/auth/refresh.ts</code>
-                <span class="diff">
-                  <span class="a">+18</span> <span class="d">−6</span>
-                </span>
-              </div>
-              <div class="pv-i">
-                <div class="txt">{s.tour.finalReply}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="term" aria-hidden="true">
-        <div class="tb">
-          <i></i>
-          <i></i>
-          <i></i>
-        </div>
-        <div class="tl">
-          <span class="ps">$</span> npx codesesh
-        </div>
-        <div class="tl dim">CodeSesh v{version}</div>
-        <div class="tl">
-          <span class="ok2">●</span>{" "}
-          {fill(m.hero.scanning, { count: agents.length })}
-        </div>
-        <div class="tl">
-          <span class="ok2">●</span> {m.hero.indexed}
-        </div>
-        <div class="tl">
-          <span class="dim">→</span> <span class="url2">{t.endpoint}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="strip">
-      <div class="mq" aria-hidden="true">
-        <div class="mq-track agents__track">
-          {[...agents, ...agents].map((agent) => (
-            <span class="ag">
-              <AgentIcon name={agent.name} size={18} />
-              {agent.name}
-            </span>
-          ))}
-        </div>
-      </div>
+  <div class="agent-strip" aria-label={copy[locale].header.agents}>
+    <div class="agent-grid">
+      {featuredAgents.map((agent) => (
+        <a class="agent-cell" href="#agents">
+          <span class="agent-ic" aria-hidden="true">
+            <AgentIcon name={agent.name} size={20} />
+          </span>
+          <span>{agent.name}</span>
+        </a>
+      ))}
+      <a class="agent-cell agent-more" href="#agents">
+        <span>{fill(t.moreAgents, { count: remainingCount })}</span>
+      </a>
     </div>
   </div>
 </section>
 
 <style>
   .hero {
-    padding: 96px 0 104px;
-    border-radius: 22px 22px 0 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #0f1013;
   }
-  .hero::after {
+
+  .hero-stage {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    min-height: clamp(560px, 76vh, 740px);
+    overflow: hidden;
+    background: #e6e4de;
+  }
+
+  :global(.dark) .hero-stage {
+    background: #0f1014;
+  }
+
+  .hero-art {
     position: absolute;
-    top: -300px;
-    right: -220px;
-    width: 720px;
-    height: 720px;
-    border-radius: 50%;
-    background: radial-gradient(closest-side, var(--brand-soft), transparent);
-    content: "";
-    opacity: 0.9;
+    inset: 0;
     pointer-events: none;
   }
-  .hero .shell {
+
+  .hero-art img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
+  }
+
+  /* Directional veil keeps dark-mode stone sky deep obsidian while preserving the ember crest on the right */
+  .hero-veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      120deg,
+      rgba(232, 230, 224, 0.42) 0%,
+      rgba(232, 230, 224, 0.14) 44%,
+      rgba(232, 230, 224, 0) 68%
+    );
+  }
+
+  :global(.dark) .hero-veil {
+    background: linear-gradient(
+      142deg,
+      rgba(11, 12, 16, 0.92) 0%,
+      rgba(11, 12, 16, 0.82) 42%,
+      rgba(11, 12, 16, 0.28) 70%,
+      rgba(11, 12, 16, 0.04) 100%
+    );
+  }
+
+  .hero-content {
     position: relative;
-    z-index: 1;
+    z-index: 2;
+    padding-top: clamp(92px, 12vw, 148px);
+    padding-bottom: clamp(110px, 14vw, 176px);
   }
-  .pill-eb {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    height: 32px;
-    padding: 0 14px 0 12px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    box-shadow: var(--sh-raised);
-    color: var(--text-2);
-    font: 500 11.5px/1 var(--mono);
-    letter-spacing: 0.04em;
+
+  .hero-copy {
+    max-width: 720px;
   }
-  .h1 {
-    margin: 30px 0 0;
-    font-size: clamp(46px, 7.2vw, 100px);
-    font-weight: 300;
-    line-height: 1.02;
-    letter-spacing: -0.03em;
+
+  .hero-h1 {
+    margin: 0;
+    color: #121318;
+    font-size: clamp(30px, 5vw, 64px);
+    font-weight: 600;
+    line-height: 1.06;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
     word-break: keep-all;
     overflow-wrap: anywhere;
-    text-wrap: balance;
   }
-  :lang(zh-CN) .h1,
-  :lang(ja) .h1 {
+
+  :lang(zh-CN) .hero-h1,
+  :lang(ja) .hero-h1 {
     line-height: 1.12;
   }
-  .h1 :global(.l2) {
-    position: relative;
-    display: inline-block;
-    isolation: isolate;
-  }
-  .h1 :global(.l2)::after {
-    position: absolute;
-    right: -0.04em;
-    bottom: 0.04em;
-    left: -0.04em;
-    z-index: -1;
-    height: 0.16em;
-    background: repeating-linear-gradient(
-      -45deg,
-      var(--brand) 0 3px,
-      transparent 3px 8px
-    );
-    content: "";
-    opacity: 0.55;
-    transform-origin: left;
-    animation: draw-x 1.2s 0.5s var(--ease-settle) both;
-  }
-  .hero-sub {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 32px 72px;
-    align-items: end;
-    margin-top: 40px;
-  }
-  .hero-sub .lead {
-    font-size: 17px;
-  }
-  .cta-col {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    min-width: 360px;
-  }
-  .btn-row {
-    display: flex;
-    gap: 10px;
-  }
-  .btn-row .btn {
-    flex: 1;
+
+  :global(.dark) .hero-h1 {
+    color: #f3f2ef;
   }
 
-  .stage {
+  .hero-lead {
+    max-width: 520px;
+    margin: 24px 0 0;
+    color: #363942;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  :global(.dark) .hero-lead {
+    color: #c4c3cc;
+  }
+
+  .hero-action {
+    margin-top: 36px;
+  }
+
+  /* Crisp full-bleed dark 7-column supported-agents anchor bar */
+  .agent-strip {
     position: relative;
-    margin-top: 80px;
+    z-index: 2;
+    border-top: 1px solid #26282f;
+    background: #0f1013;
   }
-  .win {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--frame);
-    box-shadow: var(--sh-hero);
-  }
-  .win-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 42px;
-    padding: 0 16px;
-  }
-  .dots {
-    display: flex;
-    gap: 7px;
-  }
-  .dots i {
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: var(--border-strong);
-  }
-  .url {
-    position: absolute;
-    left: 50%;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 26px;
-    padding: 0 14px;
-    border-radius: 9px;
-    background: var(--side-accent);
-    color: var(--muted);
-    font: 500 11px/26px var(--mono);
-    white-space: nowrap;
-    transform: translateX(-50%);
-  }
-  .win-body {
+
+  .agent-grid {
     display: grid;
-    grid-template-columns: 212px minmax(0, 1fr);
-    height: 548px;
-    padding: 0 8px 8px 0;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    max-width: 1440px;
+    margin: 0 auto;
   }
-  .w-side {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    padding: 4px 10px 10px 14px;
-    font-size: 12px;
-  }
-  .w-brand {
+
+  .agent-cell {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 6px 8px;
-    font-size: 13px;
-    font-weight: 700;
-  }
-  .w-brand span {
-    color: var(--muted);
-    font: 500 9.5px/1 var(--mono);
-  }
-  .w-search {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 32px;
-    margin-bottom: 8px;
-    padding: 0 6px 0 9px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: var(--surface);
-    color: var(--muted);
-  }
-  .w-search .kbd {
-    margin-left: auto;
-  }
-  .w-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 30px;
-    padding: 0 9px;
-    border-radius: 8px;
-    color: var(--text-2);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-  .w-nav.on {
-    background: var(--side-accent);
-    color: var(--text);
-    font-weight: 600;
-  }
-  .w-nav .c {
-    margin-left: auto;
-    color: var(--muted);
-    font: 500 10px/1 var(--mono);
-  }
-  .w-label {
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 9px 4px;
-    color: var(--muted);
-    font-size: 10px;
-  }
-  .w-proj {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 28px;
-    padding: 0 9px;
-    border-radius: 8px;
-    color: var(--text-2);
-    font: 500 11px/1 var(--mono);
-  }
-  .w-proj .c {
-    margin-left: auto;
-    padding: 3px 6px;
-    border-radius: 999px;
-    background: var(--side-accent);
-    color: var(--muted);
-    font-size: 9.5px;
-  }
-  .w-ember {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: auto;
-    padding: 11px 12px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--ember-from), var(--ember-to));
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-  }
-  .w-ember .live,
-  .term .live {
-    background: var(--live);
-    box-shadow: 0 0 0 3px rgba(139, 230, 207, 0.25);
-  }
-  .w-ember .m {
-    margin-left: auto;
-    padding: 3px 7px;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.2);
-    font-size: 10px;
-  }
-  .w-main {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 13px;
-    background: var(--panel);
-  }
-  .w-head {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: 12px;
-    height: 46px;
-    padding: 0 16px 0 18px;
-    border-bottom: 1px solid var(--border);
-    font-size: 13px;
-    font-weight: 500;
-  }
-  .w-head .seg {
-    margin-left: auto;
-  }
-  .w-head .seg-i {
-    padding: 5px 9px;
-    font-size: 10.5px;
-  }
-  .w-q {
-    display: flex;
-    flex: none;
-    align-items: center;
+    justify-content: center;
     gap: 10px;
-    height: 46px;
-    margin: 18px 18px 8px;
-    padding: 0 10px 0 14px;
-    border: 1.5px solid var(--brand);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: 0 0 0 4px var(--brand-soft);
-    color: var(--muted);
-  }
-  .q {
-    width: 11ch;
-    overflow: hidden;
-    color: var(--text);
-    font: 500 14px/1 var(--mono);
+    height: 84px;
+    padding: 0 12px;
+    border-left: 1px solid #23252c;
+    color: #e6e5e0;
+    font-size: 14px;
+    font-weight: 500;
     white-space: nowrap;
-    animation: type 10s steps(11, end) infinite;
+    transition:
+      background-color 0.16s var(--ease-out),
+      color 0.16s var(--ease-out);
   }
-  .caret {
-    width: 2px;
-    height: 18px;
-    margin-left: -8px;
-    background: var(--brand);
-    animation: blink 1s steps(2) infinite;
+
+  .agent-cell:first-child {
+    border-left: 0;
   }
-  .w-q .kbd {
-    margin-left: auto;
+
+  .agent-cell:hover {
+    background: #17191f;
+    color: #ffffff;
   }
-  .w-hint {
-    display: flex;
-    flex: none;
-    flex-wrap: wrap;
+
+  .agent-cell:focus-visible {
+    outline-color: #ff7a45;
+    outline-offset: -3px;
+  }
+
+  .agent-ic {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    margin: 0 18px 12px;
-    color: var(--muted);
-    font-size: 11px;
+    justify-content: center;
+    color: #f3f2ef;
+    opacity: 0.92;
   }
-  .w-hint b {
-    color: var(--text-2);
-    font: 600 11px/1 var(--mono);
-    animation: fade-meta 10s infinite both;
+
+  .agent-ic :global(img) {
+    border-radius: 4px;
   }
-  .w-res {
-    margin: 0 18px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--sh-raised);
-  }
-  .r {
-    display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    gap: 3px 12px;
-    padding: 13px 16px;
-    border-top: 1px solid var(--border);
-    animation: row-in 10s var(--ease-settle) infinite both;
-  }
-  .r:first-child {
-    border-top: 0;
-  }
-  .r:nth-child(2) {
-    animation-delay: 0.25s;
-  }
-  .r:nth-child(3) {
-    animation-delay: 0.5s;
-  }
-  .r.sel {
-    animation:
-      row-in 10s var(--ease-settle) infinite both,
-      sel 10s linear infinite both;
-  }
-  .r > :global(img),
-  .r > :global(.mask-ic) {
-    margin-top: 1px;
-  }
-  .r-t {
-    overflow: hidden;
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .r-m {
-    color: var(--muted);
-    font: 400 10.5px/1.5 var(--mono);
-  }
-  .r-s {
-    grid-column: 2 / 4;
-    margin-top: 4px;
-    overflow: hidden;
-    color: var(--text-2);
-    font-size: 11.5px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .r-s.code {
+
+  .agent-more {
+    color: #b6b5bd;
     font-family: var(--mono);
-    font-size: 11px;
-  }
-  .hit {
-    height: fit-content;
-    padding: 3px 8px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    color: var(--muted);
-    font-size: 10px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .w-pv {
-    position: absolute;
-    top: 46px;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
-    width: min(392px, 48%);
-    overflow: hidden;
-    padding: 16px 18px;
-    border-left: 1px solid var(--border);
-    background: var(--surface);
-    box-shadow: -20px 0 44px -28px rgba(20, 20, 25, 0.35);
-    animation: pv-in 10s var(--ease-drawer) infinite both;
-  }
-  .pv-h {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .pv-h .open {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    padding: 6px 9px;
-    border-radius: 8px;
-    background: var(--brand-soft);
-    color: var(--brand-ink);
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .pv-i {
-    animation: pv-item 10s var(--ease-settle) infinite both;
-  }
-  .pv-i:nth-child(3) {
-    animation-delay: 0.3s;
-  }
-  .pv-i:nth-child(4) {
-    animation-delay: 0.6s;
-  }
-  .pv-i:nth-child(5) {
-    animation-delay: 0.9s;
-  }
-  .pv-i:nth-child(6) {
-    animation-delay: 1.2s;
-  }
-  .toast {
-    position: absolute;
-    bottom: 18px;
-    left: 18px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--sh-overlay);
-    font-size: 12px;
-    font-weight: 600;
-    animation: toast 10s var(--ease-settle) infinite both;
-  }
-  .toast small {
-    display: block;
-    color: var(--muted);
-    font: 400 10.5px/1.4 var(--mono);
-  }
-  .term {
-    position: absolute;
-    bottom: -60px;
-    left: -30px;
-    z-index: 3;
-    width: 340px;
-    padding: 16px 18px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 16px;
-    background: var(--term);
-    box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.55);
-    color: var(--term-fg);
-    font: 400 11.5px/1.8 var(--mono);
-  }
-  .term .tb {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 10px;
-  }
-  .term .tb i {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #3a3a42;
-  }
-  .term .tl {
-    white-space: nowrap;
-    animation: tl 10s steps(1, end) infinite both;
-  }
-  .term .tl:nth-of-type(3) {
-    animation-delay: 0.5s;
-  }
-  .term .tl:nth-of-type(4) {
-    animation-delay: 1s;
-  }
-  .term .tl:nth-of-type(5) {
-    animation-delay: 1.5s;
-  }
-  .term .tl:nth-of-type(6) {
-    animation-delay: 2s;
-  }
-  .term .ps {
-    color: #ff9a6b;
-  }
-  .term .dim {
-    color: var(--term-dim);
-  }
-  .term .ok2 {
-    color: #7fd6a8;
-  }
-  .term .url2 {
-    color: #ffb98d;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .fk {
-    position: absolute;
-    top: -30px;
-    right: -22px;
-    z-index: 3;
-    display: flex;
-    gap: 6px;
-    transform: rotate(7deg);
-    animation: bob 5s ease-in-out infinite;
-  }
-  .fk .kbd {
-    min-width: 52px;
-    height: 52px;
-    border-bottom-width: 5px;
-    border-radius: 13px;
-    box-shadow: var(--sh-overlay);
-    color: var(--text);
-    font-size: 20px;
-  }
-  .strip {
-    display: flex;
-    align-items: center;
-    gap: 28px;
-    margin-top: 120px;
-  }
-  .mq {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      #000 7%,
-      #000 93%,
-      transparent
-    );
-  }
-  .mq-track {
-    display: flex;
-    width: max-content;
-    animation: mq 56s linear infinite;
-  }
-  .mq:hover .mq-track {
-    animation-play-state: paused;
-  }
-  .ag {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    height: 38px;
-    margin-right: 10px;
-    padding: 0 15px 0 11px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    color: var(--text-2);
-    font-size: 12.5px;
-    font-weight: 600;
-    white-space: nowrap;
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
   }
 
-  @keyframes draw-x {
-    from {
-      transform: scaleX(0);
+  @media (max-width: 1080px) {
+    .agent-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
-  }
-  @keyframes type {
-    0%,
-    14% {
-      width: 0;
+    .agent-cell {
+      height: 68px;
+      border-top: 1px solid #23252c;
     }
-    26%,
-    90% {
-      width: 11ch;
+    .agent-cell:nth-child(-n + 4) {
+      border-top: 0;
     }
-    96%,
-    100% {
-      width: 0;
+    .agent-cell:nth-child(4n + 1) {
+      border-left: 0;
     }
-  }
-  @keyframes fade-meta {
-    0%,
-    27% {
-      opacity: 0;
-    }
-    31%,
-    92% {
-      opacity: 1;
-    }
-    97%,
-    100% {
-      opacity: 0;
-    }
-  }
-  @keyframes row-in {
-    0%,
-    27% {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    33%,
-    92% {
-      opacity: 1;
-      transform: none;
-    }
-    97%,
-    100% {
-      opacity: 0;
-      transform: none;
-    }
-  }
-  @keyframes sel {
-    0%,
-    40% {
-      background: transparent;
-    }
-    44%,
-    92% {
-      background: var(--brand-soft);
-    }
-    97%,
-    100% {
-      background: transparent;
-    }
-  }
-  @keyframes pv-in {
-    0%,
-    44% {
-      transform: translateX(104%);
-    }
-    51%,
-    92% {
-      transform: none;
-    }
-    98%,
-    100% {
-      transform: translateX(104%);
-    }
-  }
-  @keyframes pv-item {
-    0%,
-    50% {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    56%,
-    92% {
-      opacity: 1;
-      transform: none;
-    }
-    97%,
-    100% {
-      opacity: 0;
-      transform: none;
-    }
-  }
-  @keyframes tl {
-    0% {
-      opacity: 0;
-    }
-    2%,
-    93% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  @keyframes toast {
-    0%,
-    70% {
-      opacity: 0;
-      transform: translateY(12px) scale(0.96);
-    }
-    74%,
-    88% {
-      opacity: 1;
-      transform: none;
-    }
-    92%,
-    100% {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-  }
-  @keyframes bob {
-    0%,
-    100% {
-      transform: rotate(7deg) translateY(0);
-    }
-    50% {
-      transform: rotate(5deg) translateY(-8px);
-    }
-  }
-  @keyframes mq {
-    to {
-      transform: translateX(-50%);
+    .agent-more {
+      grid-column: span 2;
     }
   }
 
-  @media (max-width: 1180px) {
-    .term,
-    .fk {
-      display: none;
-    }
-  }
-  @media (max-width: 900px) {
-    .hero-sub {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .cta-col {
-      min-width: 0;
-    }
-    .win-body {
-      grid-template-columns: minmax(0, 1fr);
-      padding: 0 8px 8px;
-    }
-    .w-side {
-      display: none;
-    }
-  }
   @media (max-width: 760px) {
-    .hero {
-      padding: 64px 0 72px;
+    .hero-stage {
+      min-height: 540px;
     }
-    .stage {
-      margin-top: 52px;
+    .hero-art img {
+      object-position: 72% bottom;
     }
-    .win-body {
-      height: 500px;
+    .hero-veil {
+      background: linear-gradient(
+        180deg,
+        rgba(232, 230, 224, 0.78) 0%,
+        rgba(232, 230, 224, 0.56) 54%,
+        rgba(232, 230, 224, 0.08) 82%,
+        rgba(232, 230, 224, 0) 100%
+      );
     }
-    .w-pv,
-    .w-head .seg,
-    .url {
-      display: none;
+    :global(.dark) .hero-veil {
+      background: linear-gradient(
+        180deg,
+        rgba(11, 12, 16, 0.92) 0%,
+        rgba(11, 12, 16, 0.78) 54%,
+        rgba(11, 12, 16, 0.16) 86%,
+        rgba(11, 12, 16, 0.04) 100%
+      );
     }
-    .strip {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 14px;
-      margin-top: 64px;
+    .hero-content {
+      padding-top: 56px;
+      padding-bottom: 148px;
     }
-    .mq {
-      width: 100%;
+    .hero-lead {
+      font-size: 15px;
     }
-    .btn-row {
-      flex-direction: column;
+    .hero-action {
+      margin-top: 28px;
     }
-    .btn-row .btn {
-      flex: none;
+    .agent-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .q {
-      width: auto;
+    .agent-cell {
+      height: 56px;
+      font-size: 13px;
+      border-top: 1px solid #23252c;
+      border-left: 1px solid #23252c;
+    }
+    .agent-cell:nth-child(-n + 2) {
+      border-top: 0;
+    }
+    .agent-cell:nth-child(odd) {
+      border-left: 0;
+    }
+    .agent-more {
+      grid-column: span 2;
+      border-left: 0;
     }
   }
 </style>

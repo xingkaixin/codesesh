@@ -28,6 +28,17 @@ Node.js を使わない場合、macOS と Linux ではネイティブインス�
 curl -sSfL https://codesesh.xingkaixin.me/install.sh | sh
 ```
 
+macOS の Homebrew や Windows の Scoop から単体バイナリをインストールすることもできます。
+
+```sh title="macOS (Homebrew)"
+brew install xingkaixin/tap/codesesh
+```
+
+```sh title="Windows (Scoop)"
+scoop bucket add xingkaixin https://github.com/xingkaixin/scoop-bucket
+scoop install xingkaixin/codesesh
+```
+
 OS と CPU に対応した実行ファイルがダウンロードされます。Windows でも [GitHub Releases](https://github.com/xingkaixin/codesesh/releases) から対応するアーカイブを取得できます。単体の実行ファイルには Node.js は不要です。
 
 ## ローカル画面を開く
