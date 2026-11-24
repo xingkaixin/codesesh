@@ -2,7 +2,6 @@
 import { experience } from "../data/experience";
 import type { Locale } from "../data/landing";
 import Agents from "./Agents.astro";
-import CallToAction from "./CallToAction.astro";
 import FAQ from "./FAQ.astro";
 import Features from "./Features.astro";
 import Footer from "./Footer.astro";
@@ -23,21 +22,31 @@ const { locale } = Astro.props;
 <a class="skip-link" href="#main-content">
   {experience[locale].skip}
 </a>
-<Header locale={locale} />
-<div class="frame">
-  <main id="main-content" class="panel">
-    <Hero locale={locale} />
-    <ProductShowcase locale={locale} />
-    <Features locale={locale} />
-    <LocalBoundary locale={locale} />
-    <HubWorker locale={locale} />
-    <Agents locale={locale} />
-    <Updates locale={locale} />
-    <FAQ locale={locale} />
-    <CallToAction locale={locale} />
-  </main>
-</div>
-<Footer locale={locale} />
+<Header locale={locale} page="landing" />
+<main id="main-content">
+  <Hero locale={locale} />
+  <div class="frame landing-frame">
+    <div class="panel landing-panel">
+      <ProductShowcase locale={locale} />
+      <Features locale={locale} />
+      <LocalBoundary locale={locale} />
+      <HubWorker locale={locale} />
+      <Agents locale={locale} />
+      <Updates locale={locale} />
+      <FAQ locale={locale} />
+    </div>
+  </div>
+</main>
+<Footer locale={locale} showInstall={true} />
+
+<style>
+  .landing-frame {
+    padding: 16px 8px 16px;
+  }
+  .landing-panel > :global(:first-child.sec) {
+    border-top: 0;
+  }
+</style>
 
 <script>
   if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {

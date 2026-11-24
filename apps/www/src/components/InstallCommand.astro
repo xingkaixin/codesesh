@@ -7,15 +7,31 @@ interface Props {
   command?: string;
   method: string;
   placement: string;
-  tone?: "light" | "ember";
+  tone?: "light" | "ember" | "hero" | "monolith";
 }
 
 const { locale, tone = "light" } = Astro.props;
 const t = copy[locale].hero;
 const command = Astro.props.command ?? t.command;
+const copyLabel =
+  tone === "hero"
+    ? t.copyCommand
+    : locale === "zh"
+      ? "复制"
+      : locale === "ja"
+        ? "コピー"
+        : "Copy";
 ---
 
-<div class:list={["cmd", tone === "ember" && "ember"]} data-copy-group>
+<div
+  class:list={[
+    "cmd",
+    tone === "ember" && "ember",
+    tone === "hero" && "hero-tone",
+    tone === "monolith" && "monolith",
+  ]}
+  data-copy-group
+>
   <span class="ps" aria-hidden="true">
     $
   </span>
@@ -26,7 +42,7 @@ const command = Astro.props.command ?? t.command;
     data-copy-command={command}
     data-copy-method={Astro.props.method}
     data-copy-placement={Astro.props.placement}
-    data-copy-label={t.copyCommand}
+    data-copy-label={copyLabel}
     data-copied-label={t.copied}
     data-copy-failed-label={t.copyFailed}
   >
@@ -38,7 +54,7 @@ const command = Astro.props.command ?? t.command;
         <Icon name="check" class="size-3.5" />
       </span>
     </span>
-    <span data-copy-text>{t.copyCommand}</span>
+    <span data-copy-text>{copyLabel}</span>
   </button>
   <span class="sr-only" aria-live="polite" data-copy-status></span>
 </div>
@@ -80,12 +96,103 @@ const command = Astro.props.command ?? t.command;
     font: 600 12px/1 var(--sans);
     white-space: nowrap;
     cursor: pointer;
-    transition: background 0.15s;
+    transition:
+      background-color 0.16s var(--ease-out),
+      color 0.16s var(--ease-out);
   }
   .cp:hover {
     background: var(--side-accent);
     color: var(--text);
   }
+
+  /* Hero B architectural command + ember block */
+  .hero-tone {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0;
+    min-height: 56px;
+    max-width: 100%;
+    padding: 0;
+    border: 1px solid rgba(20, 21, 25, 0.16);
+    border-radius: 0;
+    background: #141519;
+    box-shadow: 0 18px 40px -16px rgba(18, 19, 24, 0.28);
+    color: #f3f2ef;
+    font: 500 15px/1 var(--mono);
+  }
+  :global(.dark) .hero-tone {
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 22px 48px -18px rgba(0, 0, 0, 0.72);
+  }
+  .hero-tone .ps {
+    display: flex;
+    align-items: center;
+    padding-left: 22px;
+    color: #ff7a45;
+  }
+  .hero-tone code {
+    display: flex;
+    align-items: center;
+    padding: 0 24px 0 10px;
+    color: #f3f2ef;
+    white-space: nowrap;
+  }
+  .hero-tone .cp {
+    height: auto;
+    min-width: 148px;
+    justify-content: center;
+    padding: 0 22px;
+    border-radius: 0;
+    background: #d85220;
+    color: #ffffff;
+    font: 600 14px/1 var(--sans);
+  }
+  .hero-tone .cp:hover {
+    background: #b94216;
+    color: #ffffff;
+  }
+  .hero-tone .cp:focus-visible {
+    outline-color: #ffffff;
+    outline-offset: -3px;
+  }
+
+  /* Footer B dark carbon monolith install box */
+  .monolith {
+    align-items: flex-start;
+    min-height: 54px;
+    padding: 9px 9px 9px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    background: #16161b;
+    box-shadow: none;
+    color: #f3f2ef;
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .monolith .ps {
+    color: #ff7a45;
+    padding-top: 1px;
+  }
+  .monolith code {
+    padding-top: 1px;
+    color: #f3f2ef;
+  }
+  .monolith .cp {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-size: 12.5px;
+  }
+  .monolith .cp:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+  }
+  .monolith .cp:focus-visible {
+    outline-color: #ff7a45;
+  }
+
   .ember {
     align-items: flex-start;
     padding: 16px 12px 16px 20px;
@@ -110,9 +217,27 @@ const command = Astro.props.command ?? t.command;
     background: rgba(255, 255, 255, 0.26);
     color: #fff;
   }
+
   @media (max-width: 760px) {
-    .cmd:not(.ember) {
+    .cmd:not(.ember):not(.monolith):not(.hero-tone) {
       font-size: 14px;
+    }
+    .hero-tone {
+      display: flex;
+      width: 100%;
+    }
+    .hero-tone .ps {
+      padding-left: 16px;
+    }
+    .hero-tone code {
+      flex: 1;
+      padding: 0 12px 0 8px;
+      font-size: 14px;
+    }
+    .hero-tone .cp {
+      min-width: 0;
+      padding: 0 16px;
+      font-size: 13.5px;
     }
   }
 </style>

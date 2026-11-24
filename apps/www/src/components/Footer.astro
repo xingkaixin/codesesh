@@ -1,89 +1,351 @@
 ---
-import { copy, localeConfig, type Locale } from "../data/landing";
+import { changelogCopy, changelogRoutes } from "../data/changelog";
+import { experience } from "../data/experience";
 import { guideRoutes } from "../data/guides";
-import { changelogRoutes } from "../data/changelog";
+import { copy, localeConfig, locales, type Locale } from "../data/landing";
+import HeadingText from "./HeadingText.astro";
+import InstallOptions from "./InstallOptions.astro";
 
 interface Props {
   locale: Locale;
+  showInstall?: boolean;
 }
 
-const { locale } = Astro.props;
+const { locale, showInstall = false } = Astro.props;
 const t = copy[locale].footer;
+const h = copy[locale].header;
+const exp = experience[locale];
+const homeRoute = localeConfig[locale].route;
+const version = changelogCopy[locale].releases[0]!.version;
 ---
 
 <footer class="ft">
-  <div class="shell ft-in">
-    <div class="ft-l">
-      <a href={localeConfig[locale].route} class="ft-brand">
-        <img src="/logo.svg?v=3" alt="" width="30" height="30" />
-        <span>CodeSesh</span>
-      </a>
-      <span class="ft-note">{t.note}</span>
+  <div class="ember-wash" aria-hidden="true"></div>
+
+  <div class="shell ft-inner">
+    {showInstall && (
+      <section id="install" class="ft-install" aria-labelledby="cta-heading">
+        <div class="ft-cta-copy">
+          <h2 id="cta-heading" class="ft-cta-title">
+            <HeadingText value={exp.installTitle} secondClass="" />
+          </h2>
+          <p class="ft-cta-lead">{exp.installBody}</p>
+        </div>
+        <InstallOptions locale={locale} id="cta-install" tone="monolith" />
+      </section>
+    )}
+
+    <div class="ft-dir">
+      <div class="ft-brand-col">
+        <a href={homeRoute} class="ft-brand">
+          <img src="/logo.svg?v=3" alt="" width="28" height="28" />
+          <span>CodeSesh</span>
+        </a>
+        <p class="ft-note">{t.note}</p>
+        <div class="ft-meta">
+          <span class="mono">v{version}</span>
+          <span aria-hidden="true">·</span>
+          <span class="ft-langs" role="group" aria-label={h.languageLabel}>
+            {locales.map((item) => (
+              <a
+                href={localeConfig[item].route}
+                aria-current={locale === item ? "page" : undefined}
+                lang={localeConfig[item].language}
+              >
+                {localeConfig[item].switchLabel}
+              </a>
+            ))}
+          </span>
+        </div>
+      </div>
+
+      <nav class="ft-col" aria-label={t.productHeading}>
+        <h3>{t.productHeading}</h3>
+        <ul>
+          <li>
+            <a href={`${homeRoute}#tour`}>{h.tour}</a>
+          </li>
+          <li>
+            <a href={`${homeRoute}#capabilities`}>{h.capabilities}</a>
+          </li>
+          <li>
+            <a href={`${homeRoute}#hub`}>{h.hub}</a>
+          </li>
+          <li>
+            <a href={`${homeRoute}#agents`}>{h.agents}</a>
+          </li>
+        </ul>
+      </nav>
+
+      <nav class="ft-col" aria-label={t.guidesHeading}>
+        <h3>{t.guidesHeading}</h3>
+        <ul>
+          <li>
+            <a href={guideRoutes("getting-started")[locale]}>{t.guideStart}</a>
+          </li>
+          <li>
+            <a href={guideRoutes("session-history")[locale]}>
+              {t.guideHistory}
+            </a>
+          </li>
+          <li>
+            <a href={guideRoutes("usage-and-costs")[locale]}>{t.guideUsage}</a>
+          </li>
+          <li>
+            <a href={guideRoutes("background-services")[locale]}>
+              {t.guideBackground}
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <nav class="ft-col" aria-label={t.openSourceHeading}>
+        <h3>{t.openSourceHeading}</h3>
+        <ul>
+          <li>
+            <a
+              href="https://github.com/xingkaixin/codesesh"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+            </a>
+          </li>
+          <li>
+            <a href={changelogRoutes[locale]}>{t.changelog}</a>
+          </li>
+          <li>
+            <a
+              href="https://github.com/xingkaixin/codesesh/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t.issues}
+            </a>
+          </li>
+          <li>
+            <a href={t.blogUrl} target="_blank" rel="noopener noreferrer">
+              {t.blog}
+            </a>
+          </li>
+        </ul>
+      </nav>
     </div>
-    <nav
-      class="ft-links"
-      aria-label={localeConfig[locale].footerNavigationLabel}
-    >
-      <a href={changelogRoutes[locale]}>{t.changelog}</a>
-      <a href={guideRoutes()[locale]}>{t.docs}</a>
-      <a href="https://github.com/xingkaixin/codesesh/issues">{t.issues}</a>
-      <a href="https://github.com/xingkaixin/codesesh">GitHub</a>
-      <a href={t.blogUrl}>{t.blog}</a>
-    </nav>
+  </div>
+
+  <div class="ft-wordmark-wrap" aria-hidden="true">
+    <span class="ft-wordmark">CodeSesh</span>
   </div>
 </footer>
 
 <style>
   .ft {
-    padding: 44px 0 36px;
+    position: relative;
+    overflow: hidden;
+    background: #0e0e11;
+    color: #f3f2ef;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
-  .ft-in {
+
+  .ember-wash {
+    position: absolute;
+    left: 50%;
+    bottom: -170px;
+    width: min(1160px, 120vw);
+    height: 380px;
+    transform: translateX(-50%);
+    background: radial-gradient(
+      ellipse at center,
+      rgba(232, 98, 46, 0.32) 0%,
+      rgba(163, 85, 44, 0.14) 48%,
+      rgba(14, 14, 17, 0) 74%
+    );
+    pointer-events: none;
+  }
+
+  .ft-inner {
+    position: relative;
+    z-index: 2;
+    padding-top: 72px;
+  }
+
+  .ft-install {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 48px 64px;
+    align-items: end;
+    padding-bottom: 56px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .ft-cta-title {
+    margin: 0;
+    color: #ffffff;
+    font-size: clamp(32px, 3.6vw, 44px);
+    font-weight: 500;
+    line-height: 1.12;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+    word-break: keep-all;
+  }
+
+  .ft-cta-lead {
+    margin: 16px 0 0;
+    color: #b6b5bd;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  .ft-dir {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) repeat(3, minmax(0, 1fr));
+    gap: 40px 48px;
+    padding: 52px 0 40px;
+  }
+
+  .ft-brand-col {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
+    flex-direction: column;
+    gap: 14px;
   }
-  .ft-l {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 16px;
-  }
+
   .ft-brand {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 10px;
-    font-size: 16px;
+    width: fit-content;
+    color: #ffffff;
+    font-size: 20px;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
   }
+
+  .ft-brand img {
+    display: block;
+    width: 28px;
+    height: 28px;
+  }
+
   .ft-note {
-    color: var(--muted);
-    font-size: 12.5px;
+    max-width: 300px;
+    margin: 0;
+    color: #9b9aa4;
+    font-size: 14px;
+    line-height: 1.65;
   }
-  .ft-links {
+
+  .ft-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+    color: #b6b5bd;
+    font-size: 13.5px;
   }
-  .ft-links a {
-    padding: 10px 11px;
-    border-radius: 9px;
-    color: var(--text-2);
-    font-size: 12.5px;
+
+  .ft-langs {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
   }
-  .ft-links a:hover {
-    background: var(--side-accent);
-    color: var(--text);
+
+  .ft-langs a {
+    color: #9b9aa4;
+    transition: color 0.16s var(--ease-out);
   }
-  @media (max-width: 760px) {
-    .ft-in {
-      flex-direction: column;
-      align-items: flex-start;
+
+  .ft-langs a:hover,
+  .ft-langs a[aria-current="page"] {
+    color: #ffffff;
+  }
+
+  .ft-col h3 {
+    margin: 0 0 18px;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .ft-col ul {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ft-col a {
+    color: #9b9aa4;
+    font-size: 14px;
+    transition: color 0.16s var(--ease-out);
+  }
+
+  .ft-col a:hover {
+    color: #ffffff;
+  }
+
+  .ft a:focus-visible {
+    outline-color: #ff7a45;
+  }
+
+  .ft-wordmark-wrap {
+    position: relative;
+    z-index: 2;
+    padding: 0 24px;
+    overflow: hidden;
+    line-height: 0.78;
+    user-select: none;
+  }
+
+  .ft-wordmark {
+    display: block;
+    text-align: center;
+    font-family: var(--sans);
+    font-size: clamp(64px, 16.5vw, 224px);
+    font-weight: 700;
+    letter-spacing: -0.055em;
+    color: transparent;
+    background: linear-gradient(
+      180deg,
+      rgba(243, 242, 239, 0.22) 0%,
+      rgba(255, 134, 78, 0.3) 62%,
+      rgba(255, 122, 69, 0.05) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    transform: translateY(14%);
+  }
+
+  @media (max-width: 960px) {
+    .ft-install {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
     }
-    .ft-links {
-      margin-left: -11px;
+    .ft-dir {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 36px 32px;
+    }
+    .ft-brand-col {
+      grid-column: span 2;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .ft-inner {
+      padding-top: 52px;
+    }
+    .ft-install {
+      padding-bottom: 40px;
+    }
+    .ft-dir {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 28px;
+      padding: 40px 0 32px;
+    }
+    .ft-brand-col {
+      grid-column: auto;
     }
   }
 </style>

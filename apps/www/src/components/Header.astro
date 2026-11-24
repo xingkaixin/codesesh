@@ -39,7 +39,7 @@ const themes = [
 ] as const;
 ---
 
-<header class="hdr">
+<header class:list={["hdr", page === "landing" && "hdr-landing"]}>
   <div class="shell hdr-in">
     <a href={homeRoute} class="brand">
       <img src="/logo.svg?v=3" alt="" width="30" height="30" />
@@ -148,6 +148,17 @@ const themes = [
     z-index: 30;
     background: color-mix(in oklab, var(--frame) 88%, transparent);
     backdrop-filter: blur(14px);
+    transition:
+      background-color 0.18s var(--ease-out),
+      border-color 0.18s var(--ease-out);
+  }
+  .hdr-landing {
+    background: color-mix(in oklab, #e6e4de 84%, transparent);
+    border-bottom: 1px solid rgba(22, 22, 26, 0.06);
+  }
+  :global(.dark) .hdr-landing {
+    background: color-mix(in oklab, #0f1014 84%, transparent);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
   }
   .hdr-in {
     display: flex;

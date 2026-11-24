@@ -72,6 +72,7 @@ interface LandingCopy {
     copied: string;
     copyFailed: string;
     copyCommand: string;
+    moreAgents: string;
   };
   tour: {
     sampleLabel: string;
@@ -99,6 +100,13 @@ interface LandingCopy {
   };
   footer: {
     note: string;
+    productHeading: string;
+    guidesHeading: string;
+    openSourceHeading: string;
+    guideStart: string;
+    guideHistory: string;
+    guideUsage: string;
+    guideBackground: string;
     changelog: string;
     docs: string;
     issues: string;
@@ -187,13 +195,14 @@ export const copy = {
     },
     hero: {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
-      title: ["搜索和回放", "你的\u00a0AI 编码历史。"],
-      body: `在本机统一搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用与文件变更。`,
+      title: ["把散落各处的 AI 会话，", "收进同一份本地索引"],
+      body: `自动发现本机 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用、文件变更与 Token 成本。`,
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
       copied: "已复制",
       copyFailed: "复制失败，请手动复制命令",
-      copyCommand: "复制",
+      copyCommand: "复制启动命令",
+      moreAgents: "+{count} 种 Agent",
     },
     tour: {
       sampleLabel: "示例数据",
@@ -347,7 +356,14 @@ export const copy = {
       github: "GitHub",
     },
     footer: {
-      note: "MIT 许可，会话数据与索引保留在本机",
+      note: "MIT 许可，会话数据与 SQLite 索引始终保留在本机。",
+      productHeading: "产品",
+      guidesHeading: "使用指南",
+      openSourceHeading: "开源",
+      guideStart: "快速开始",
+      guideHistory: "查找历史会话",
+      guideUsage: "用量与成本核算",
+      guideBackground: "后台服务与局域网",
       changelog: "更新日志",
       docs: "文档",
       issues: "问题反馈",
@@ -378,13 +394,14 @@ export const copy = {
     },
     hero: {
       eyebrow: `Local / Zero config / ${agentCount} agents`,
-      title: ["Search and replay", "your AI coding history."],
-      body: `Search and replay local history from Claude Code, Codex, Cursor, and ${agentCount - 3} other agents. Browse messages, tool calls, and file changes by project.`,
+      title: ["Every local AI session,", "indexed in one place"],
+      body: `Automatically discover local history from Claude Code, Codex, Cursor, and ${agentCount - 3} other agents. Browse messages, tool calls, file changes, and costs by project.`,
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
       copied: "Copied",
       copyFailed: "Copy failed. Copy the command manually.",
-      copyCommand: "Copy",
+      copyCommand: "Copy command",
+      moreAgents: "+{count} agents",
     },
     tour: {
       sampleLabel: "Sample data",
@@ -541,7 +558,14 @@ export const copy = {
       github: "GitHub",
     },
     footer: {
-      note: "MIT licensed, with session data and indexes kept local",
+      note: "MIT licensed. Session data and SQLite indexes stay on your machine.",
+      productHeading: "Product",
+      guidesHeading: "Guides",
+      openSourceHeading: "Open source",
+      guideStart: "Getting started",
+      guideHistory: "Session history",
+      guideUsage: "Usage and costs",
+      guideBackground: "Background services",
       changelog: "Changelog",
       docs: "Docs",
       issues: "Issues",
@@ -571,13 +595,14 @@ export const copy = {
     },
     hero: {
       eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
-      title: ["AIコーディングの履歴を、", "検索して読み返す。"],
-      body: `Claude Code、Codex、Cursorなど${agentCount}種類のツールの履歴をローカルで検索・再生。メッセージ、ツール呼び出し、ファイル変更をプロジェクト別に確認できます。`,
+      title: ["散らばる AI セッションを、", "ひとつのローカル索引へ"],
+      body: `Claude Code、Codex、Cursor など ${agentCount} 種類のローカル履歴を自動検出し、メッセージ、ツール呼び出し、ファイル変更、コストをプロジェクト別に整理します。`,
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
       copied: "コピーしました",
       copyFailed: "コピーできませんでした。コマンドを手動でコピーしてください。",
-      copyCommand: "コピー",
+      copyCommand: "コマンドをコピー",
+      moreAgents: "+{count} 種",
     },
     tour: {
       sampleLabel: "サンプルデータ",
@@ -744,7 +769,14 @@ export const copy = {
       github: "GitHub",
     },
     footer: {
-      note: "MITライセンス。セッションデータとインデックスはローカルに保持",
+      note: "MITライセンス。セッションデータと SQLite 索引はローカルに保持されます。",
+      productHeading: "製品",
+      guidesHeading: "使い方",
+      openSourceHeading: "オープンソース",
+      guideStart: "はじめ方",
+      guideHistory: "会話履歴の探し方",
+      guideUsage: "使用量とコスト",
+      guideBackground: "バックグラウンド実行",
       changelog: "更新履歴",
       docs: "ドキュメント",
       issues: "問題を報告",
