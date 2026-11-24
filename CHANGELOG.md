@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.5.1] - 2026-11-24
+
+This patch cuts end-to-end API latency, server CPU and memory overhead, and browser wire bytes across SQLite storage, HTTP transport, and the Web UI. It also compresses cached message text with zstd, reduces Worker-to-Hub sync overhead and service log noise, restores Kimi session message counts, and adds Claude Code and Codex session history guides to the product site. (#946–#952)
+
+### Bug Fixes
+
+- Preserve parsed message counts in Kimi session heads instead of resetting them to zero, and bump Kimi's parser version to `rust-parser-v7` so cached Kimi sessions reparse. (#946)
+- Demote fast (`< 200 ms`) `2xx` `/api/worker/hello` and `/api/worker/upload` request logs to `debug` while keeping slow, non-2xx, incompatible-version, and other route logs at `info`. Throttle repeated identical per-agent Worker scan failures to once every 10 minutes until the error changes or a full scan recovers, and rotate `services/{hub,worker}.log` to `.log.1` above 5 MiB when starting managed background services. (#947)
+
+### Performance
+
+- Compress compressible `messages.content_text` rows with zstd in resumable batches, and add `sessions.has_unmatched_pricing_meta` with a partial index so unmatched-pricing checks avoid full scans of `sessions.meta_json` (schema v40). (#948)
+- Inline single-chunk Worker snapshots (up to 256 KiB) inside `SnapshotCommit` to halve HTTP round trips and Hub write transactions for small updates while staying backward-compatible with older Workers (v1.1.1–v1.5.0). Skip redundant JSON re-serialization in Worker uploads and acknowledgments, reuse digest buffers, and avoid eager Antigravity `history.jsonl` parsing and SQLite blob copies. (#949)
+- Add `message_locator` and covering indexes for file activity and unpriced usage buckets (schema v41), filter FTS hits in SQLite with safe ASCII prefiltering for `/matches`, serve analytics with window-first scoped cost-fact lookups and zero-clone session references, share `Arc<SessionHead>` snapshots across runtime readers with an 8-reader CLI pool, and cache `state.db` aliases, unmatched-pricing checks, and paginated session cursors. (#952)
+- Embed precompressed Brotli/gzip Web assets and pre-built zstd/gzip HTML with inline `AppConfig` bootstrap to remove the initial unauthenticated `/api/config` round trip. Unify GET, HEAD, and 304 content negotiation with per-encoding strong ETags, add zstd dynamic API compression, lazy-load non-English i18n catalogs, replace entry-path menus with a lightweight accessible `PopupMenu`, and prevent redundant pricing hydration refetches. (#952)
+
+### Documentation
+
+- Add English, Chinese, and Japanese guides for Claude Code and Codex session history, expand the cross-agent session history hub, add guide FAQ sections with `FAQPage` JSON-LD, and add author blog links, JSON-LD person attribution, and Chinese further-reading links to the product site. (#950, #951)
+
+### Compatibility
+
+- The cache schema moves from version 39 to 41 in place without a full backup or table rebuild: existing `messages.content_text` rows are compressed with zstd in resumable batches, `sessions.has_unmatched_pricing_meta` is backfilled, and `message_locator` plus covering indexes are created. The first start can take longer on large histories. (#948, #952)
+- Cached Kimi sessions are reparsed on refresh to restore their message counts. (#946)
+- Hub remains backward-compatible with older Workers (v1.1.1–v1.5.0) sending separate `SnapshotChunk` and `SnapshotCommit` operations. (#949)
+
 ## [1.5.0] - 2026-11-20
 
 This release adds Find in Session, parent-child session navigation, URL-persisted global search, Markdown downloads, project sorting, and Dashboard chart drill-down. Search matches code identifiers by prefix and camelCase or snake_case parts. Session detail scrolling, incremental discovery, search, and long-running Hub and Worker processes do less repeated work, and the Web UI ships about 31% fewer asset bytes. (#922–#930, #932, #933, #935, #937, #939–#944)

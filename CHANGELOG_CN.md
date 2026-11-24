@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.5.1] - 2026-11-24
+
+本补丁从 SQLite 存储、HTTP 传输到 Web 前端全链路降低了接口延迟、服务端 CPU 与内存开销以及浏览器传输体积。同时使用 zstd 压缩已缓存的消息正文，减少 Worker 到 Hub 的同步开销与后台服务日志噪音，修复 Kimi 会话消息数显示为零的问题，并在产品站补充 Claude Code 与 Codex 会话历史指南。（#946–#952）
+
+### 修复
+
+- 保留 Kimi 会话头中的解析消息数而不再归零，并将 Kimi 解析器版本提升至 `rust-parser-v7`，使已缓存的 Kimi 会话重新解析。（#946）
+- 将耗时低于 200 ms 的 `2xx` `/api/worker/hello` 和 `/api/worker/upload` 请求日志降至 `debug` 级别，慢请求、非 2xx、版本不兼容及其他路由仍保留在 `info`。按 Agent 将相同的重复 Worker 扫描错误节流为每 10 分钟记录一次，直到报错变化或完整扫描恢复；启动托管后台服务时，超过 5 MiB 的 `services/{hub,worker}.log` 自动轮转为 `.log.1`。（#947）
+
+### 性能
+
+- 以可中断续做的分批方式使用 zstd 压缩可压缩的 `messages.content_text` 内容，并新增 `sessions.has_unmatched_pricing_meta` 字段与局部索引，使未匹配定价检查不再全表扫描 `sessions.meta_json`（schema v40）。（#948）
+- 将不超过 256 KiB 的单分片 Worker 快照直接内联到 `SnapshotCommit` 中，使小更新的 HTTP 往返和 Hub 写事务减半，同时向后兼容旧版 Worker（v1.1.1–v1.5.0）。跳过 Worker 上传与确认路径中的冗余 JSON 重序列化、复用摘要缓冲区，并避免 Antigravity 适配器提前解析 `history.jsonl` 及复制 SQLite 二进制块。（#949）
+- 新增 `message_locator` 查找表以及文件活动与未计价用量桶覆盖索引（schema v41）；在 SQLite 侧过滤 FTS 命中并为 `/matches` 加入安全的 ASCII 预过滤；分析查询改用时间窗口优先的范围费用查找与零克隆会话引用；运行时读连接共享 `Arc<SessionHead>` 快照并在 CLI 侧配置 8 读连接池；缓存 `state.db` 别名、未匹配定价检查结果与分页会话游标。（#952）
+- 打包内嵌预压缩的 Brotli/gzip 前端资源和预构建的 zstd/gzip HTML（内联 `AppConfig` 引导数据，消除未鉴权首次打开时的 `/api/config` 往返）；统一 GET、HEAD 和 304 的内容协商与按编码区分的强 ETag；新增动态接口 zstd 压缩；按需加载非英语语言包，以轻量可访问的 `PopupMenu` 替换入口路径菜单，并避免定价状态初始化时的重复请求。（#952）
+
+### 文档
+
+- 在产品站新增英文、中文、日文的 Claude Code 与 Codex 会话历史指南，扩展跨 Agent 会话历史总览，为指南补充 FAQ 与 `FAQPage` JSON-LD，并加入作者博客链接、JSON-LD 人物归属和中文延伸阅读链接。（#950、#951）
+
+### 兼容性
+
+- 缓存 schema 从 39 原地升级到 41（无需全库备份或重建数据表）：以可中断续做的分批方式压缩已有 `messages.content_text`、回填 `sessions.has_unmatched_pricing_meta`，并创建 `message_locator` 及覆盖索引；大历史首次启动可能耗时更长。（#948、#952）
+- 升级后刷新会重新解析已缓存的 Kimi 会话以恢复其消息计数。（#946）
+- Hub 继续向后兼容发送独立 `SnapshotChunk` 与 `SnapshotCommit` 操作的旧版 Worker（v1.1.1–v1.5.0）。（#949）
+
 ## [1.5.0] - 2026-11-20
 
 本版新增会话内查找、父子会话跳转、写入 URL 的全局搜索、Markdown 下载、项目排序和 Dashboard 图表下钻。搜索可按前缀以及 camelCase、snake_case 片段匹配代码标识符。会话详情滚动、增量发现、搜索和长时间运行的 Hub、Worker 减少了重复处理，Web 界面资源体积缩小约 31%。（#922–#930、#932、#933、#935、#937、#939–#944）
