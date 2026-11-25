@@ -17,7 +17,7 @@
     "deploy:cf": "pnpm build:cf && cf deploy --prebuilt"
   },
   "dependencies": {
-    "astro": "^7.4.12"
+    "astro": "^7.4.13"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
