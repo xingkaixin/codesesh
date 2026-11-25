@@ -26,7 +26,7 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
 ---
 
 <section class="hero" aria-labelledby="hero-title">
-  <div class="hero-stage">
+  <div class="hero-stage" data-hero-stage>
     <picture class="hero-art">
       <source srcset="/hero-topography.avif" type="image/avif" />
       <source srcset="/hero-topography.webp" type="image/webp" />
@@ -40,6 +40,24 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
         fetchpriority="high"
       />
     </picture>
+    <canvas
+      class="hero-canvas"
+      data-hero-canvas
+      data-mask-src="/hero-topography-mask.webp"
+      aria-hidden="true"
+    ></canvas>
+    <script is:inline>
+      (function () {
+        var stage =
+          document.currentScript && document.currentScript.parentElement;
+        if (!stage) return;
+        var reduced =
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        var still = window.location.search.indexOf("still") !== -1;
+        if (!reduced && !still) stage.dataset.heroAnim = "pending";
+      })();
+    </script>
     <div class="hero-veil" aria-hidden="true"></div>
 
     <div class="shell hero-content">
@@ -82,6 +100,7 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
     position: relative;
     display: flex;
     flex-direction: column;
+    min-height: calc(100svh - 69px);
     overflow: hidden;
     background: #0f1013;
   }
@@ -89,8 +108,9 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
   .hero-stage {
     position: relative;
     display: flex;
-    align-items: flex-start;
-    min-height: clamp(560px, 76vh, 740px);
+    flex: 1 0 auto;
+    align-items: center;
+    min-height: 520px;
     overflow: hidden;
     background: #e6e4de;
   }
@@ -103,6 +123,7 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
     position: absolute;
     inset: 0;
     pointer-events: none;
+    transition: opacity 0.35s ease;
   }
 
   .hero-art img {
@@ -113,10 +134,31 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
     object-position: center bottom;
   }
 
+  .hero-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .hero-stage[data-hero-anim="pending"] .hero-art,
+  .hero-stage[data-hero-anim="active"] .hero-art {
+    opacity: 0;
+  }
+
+  .hero-stage[data-hero-anim="active"] .hero-canvas {
+    opacity: 1;
+  }
+
   /* Directional veil keeps dark-mode stone sky deep obsidian while preserving the ember crest on the right */
   .hero-veil {
     position: absolute;
     inset: 0;
+    z-index: 2;
     pointer-events: none;
     background: linear-gradient(
       120deg,
@@ -138,9 +180,9 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
 
   .hero-content {
     position: relative;
-    z-index: 2;
-    padding-top: clamp(92px, 12vw, 148px);
-    padding-bottom: clamp(110px, 14vw, 176px);
+    z-index: 3;
+    padding-top: clamp(64px, 7vh, 112px);
+    padding-bottom: clamp(112px, 15vh, 210px);
   }
 
   .hero-copy {
@@ -270,7 +312,8 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
 
   @media (max-width: 760px) {
     .hero-stage {
-      min-height: 540px;
+      align-items: flex-start;
+      min-height: 460px;
     }
     .hero-art img {
       object-position: 72% bottom;
@@ -324,3 +367,9 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
     }
   }
 </style>
+
+<script>
+  import { initHeroStage } from "../scripts/hero-stage";
+
+  initHeroStage();
+</script>
