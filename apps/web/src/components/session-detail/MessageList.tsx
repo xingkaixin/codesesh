@@ -344,7 +344,8 @@ function VirtualizedMessageList({
   useEffect(() => {
     if (measurementAnchor === undefined) return;
     updateViewport();
-    setMeasurementAnchor(undefined);
+    const frame = requestAnimationFrame(() => setMeasurementAnchor(undefined));
+    return () => cancelAnimationFrame(frame);
   }, [measurementVersion, measurementAnchor, updateViewport]);
 
   const scrollToIndex = useCallback(

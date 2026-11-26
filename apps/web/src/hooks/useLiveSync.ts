@@ -39,22 +39,20 @@ export function useLiveSync({ applyLiveEvent, resyncLiveState, setScanStatus }: 
     }
   });
 
-  const scheduleFlush = useEffectEvent(() => {
+  // Events that arrive while an update runs stay merged in pendingEventRef.
+  const scheduleFlush = useEffectEvent(function schedule() {
     // A hidden tab only merges events; each applied event refreshes server-side aggregates.
     if (!pendingEventRef.current || document.visibilityState === "hidden") return;
-    pendingTimerRef.current ??= window.setTimeout(() => flushLiveUpdate(), LIVE_UPDATE_WINDOW_MS);
-  });
-
-  // Events that arrive while an update runs stay merged in pendingEventRef.
-  const flushLiveUpdate = useEffectEvent(() => {
-    pendingTimerRef.current = null;
-    const event = pendingEventRef.current;
-    if (!event || inFlightUpdateRef.current) return;
-    pendingEventRef.current = null;
-    inFlightUpdateRef.current = syncLiveUpdate(event).finally(() => {
-      inFlightUpdateRef.current = null;
-      scheduleFlush();
-    });
+    pendingTimerRef.current ??= window.setTimeout(() => {
+      pendingTimerRef.current = null;
+      const event = pendingEventRef.current;
+      if (!event || inFlightUpdateRef.current) return;
+      pendingEventRef.current = null;
+      inFlightUpdateRef.current = syncLiveUpdate(event).finally(() => {
+        inFlightUpdateRef.current = null;
+        schedule();
+      });
+    }, LIVE_UPDATE_WINDOW_MS);
   });
 
   const clearPendingLiveUpdate = useEffectEvent(() => {
