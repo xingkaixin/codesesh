@@ -23,7 +23,21 @@ pub(super) struct Step {
 #[derive(Clone, PartialEq, prost::Message)]
 pub(super) struct ToolExecution {
     #[prost(message, optional, tag = "2")]
-    pub result: Option<Text>,
+    pub result: Option<ToolResult>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct ToolResult {
+    #[prost(string, optional, tag = "1")]
+    pub text: Option<String>,
+    #[prost(message, optional, tag = "3")]
+    pub display: Option<ToolResultDisplay>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+pub(super) struct ToolResultDisplay {
+    #[prost(message, optional, tag = "10")]
+    pub detail: Option<Text>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]

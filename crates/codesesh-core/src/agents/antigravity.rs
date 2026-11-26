@@ -441,7 +441,7 @@ fn parse(
                 .input
                 .map(|input| serde_json::from_str(&input).unwrap_or(Value::String(input)));
             if error.is_none() {
-                subagent_id = swarm_child_id(&name, input.as_ref(), output.as_deref());
+                subagent_id = child_session_id(&name, input.as_ref(), output.as_deref());
             }
             if candidates.len() > 1
                 && let Some(input) = &input
@@ -463,11 +463,7 @@ fn parse(
                     title: None,
                     time_created: None,
                     state: Box::new(ToolState {
-                        status: if error.is_some() {
-                            ToolPartStatus::Error
-                        } else {
-                            ToolPartStatus::Unknown
-                        },
+                        status: tool_status(status, error.is_some()),
                         input,
                         output: output.map(Value::String),
                         error: error.map(Value::String),
@@ -557,17 +553,45 @@ fn parse(
         (!model_usage.is_empty()).then_some(model_usage),
         messages,
     );
-    let notice = format!(
-        "Partial Antigravity import: {unsupported} unsupported steps. Numeric tool statuses remain unknown; explicit results and errors are retained."
-    );
-    session.head.summary_files = Some(Value::String(notice));
-    session.detail.head = session.head.clone();
+    if unsupported > 0 {
+        let notice = format!("Partial Antigravity import: {unsupported} unsupported steps.");
+        session.head.summary_files = Some(Value::String(notice));
+        session.detail.head = session.head.clone();
+    }
     Ok(Some(session))
+}
+
+fn tool_status(status: i64, has_error: bool) -> ToolPartStatus {
+    if has_error {
+        return ToolPartStatus::Error;
+    }
+    match status {
+        2 => ToolPartStatus::Running,
+        3 => ToolPartStatus::Completed,
+        4 | 7 => ToolPartStatus::Error,
+        _ => ToolPartStatus::Unknown,
+    }
 }
 
 fn tool_output(step: &proto::Step, kind: i64) -> Option<String> {
     match kind {
-        132 => step.tool.as_ref()?.result.as_ref()?.text.clone(),
+        132 => {
+            let result = step.tool.as_ref()?.result.as_ref()?;
+            result
+                .text
+                .clone()
+                .filter(|text| !text.is_empty())
+                .or_else(|| {
+                    result
+                        .display
+                        .as_ref()?
+                        .detail
+                        .as_ref()?
+                        .text
+                        .clone()
+                        .filter(|text| !text.is_empty())
+                })
+        }
         8 => step.view_file.as_ref()?.content.clone(),
         21 => step.run_command.as_ref()?.output.as_ref()?.text.clone(),
         38 => step.mcp.as_ref()?.result.clone(),
@@ -586,26 +610,42 @@ fn tool_error(error: proto::ErrorDetails) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
-fn swarm_child_id(tool: &str, input: Option<&Value>, output: Option<&str>) -> Option<String> {
-    if tool != "swarm" || input?.get("action")?.as_str()? != "add" {
-        return None;
-    }
-    let output = output?;
-    let body = if output.starts_with("Created At: ") {
-        let (_, rest) = output.split_once('\n')?;
-        rest.strip_prefix("Completed At: ")?.split_once('\n')?.1
+fn strip_tool_timestamps(output: &str) -> &str {
+    if output.starts_with("Created At: ")
+        && let Some((_, rest)) = output.split_once('\n')
+        && let Some(after_completed) = rest.strip_prefix("Completed At: ")
+        && let Some((_, body)) = after_completed.split_once('\n')
+    {
+        body
     } else {
         output
-    };
-    let result: Value = serde_json::from_str(body).ok()?;
-    if result.get("status")?.as_str()? != "added" {
-        return None;
     }
-    result
-        .get("conversation_id")?
-        .as_str()
-        .filter(|id| !id.trim().is_empty())
-        .map(str::to_owned)
+}
+
+fn child_session_id(tool: &str, input: Option<&Value>, output: Option<&str>) -> Option<String> {
+    let body = strip_tool_timestamps(output?);
+    if tool == "swarm" && input?.get("action")?.as_str()? == "add" {
+        let result: Value = serde_json::from_str(body).ok()?;
+        if result.get("status")?.as_str()? != "added" {
+            return None;
+        }
+        return result
+            .get("conversation_id")?
+            .as_str()
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_owned);
+    }
+    if tool == "invoke_subagent" {
+        let json_start = body.strip_prefix("Created the following subagent:\n")?;
+        let mut stream = serde_json::Deserializer::from_str(json_start).into_iter::<Value>();
+        let result = stream.next()?.ok()?;
+        return result
+            .get("conversationId")?
+            .as_str()
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_owned);
+    }
+    None
 }
 
 fn user_prompt_text(user: proto::UserPrompt) -> Option<String> {
