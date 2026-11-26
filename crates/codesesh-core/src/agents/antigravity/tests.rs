@@ -768,7 +768,11 @@ fn multi_workspace_selection_inherits_parent_and_refreshes_from_history() {
         scan_path: conversations.clone(),
     };
     let history_path = temp.path().join("history.jsonl");
-    assert!(source.watch_roots().contains(&history_path));
+    assert!(
+        source
+            .watch_roots()
+            .contains(&crate::runtime::WatchRoot::recursive(history_path.clone()))
+    );
 
     let mut scanner = AgentScanner::new(
         source,

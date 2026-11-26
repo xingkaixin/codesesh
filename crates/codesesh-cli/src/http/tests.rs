@@ -1629,7 +1629,7 @@ async fn read_only_endpoints_support_weak_etag_304_and_invalidate_on_updates() {
     let p2 = second_path.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![],
+        roots: Default::default(),
         release_idle: None,
         scan: Arc::new(move |_| {
             let mut sessions = Vec::new();
@@ -2220,7 +2220,7 @@ async fn session_cursor_rejects_foreign_process_and_survives_mid_pagination_scan
     let scan_paths = paths.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![],
+        roots: Default::default(),
         release_idle: None,
         scan: Arc::new(move |_| {
             let count = stage.load(Ordering::Acquire);

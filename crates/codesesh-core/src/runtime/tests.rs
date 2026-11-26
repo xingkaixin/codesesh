@@ -48,7 +48,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
     let incremental = saw_incremental.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![root],
+        roots: vec![root].into(),
         scan: Arc::new(move |request| {
             if request.changed_paths.is_some() {
                 incremental.store(true, Ordering::Release);
@@ -126,7 +126,7 @@ async fn notify_rewrite_failure_delete_and_restore_publish_durable_snapshots() {
     let scan_path = path.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![path.parent().unwrap().to_owned()],
+        roots: vec![path.parent().unwrap().to_owned()].into(),
         scan: Arc::new(move |_| {
             if scan_path.exists() {
                 batch(&scan_path)
@@ -181,7 +181,7 @@ async fn writer_reprices_old_scan_inputs_before_committing_and_publishing() {
     let source_path = root.path().to_owned();
     let source = AgentSource {
         name: "pi".into(),
-        roots: vec![],
+        roots: vec![].into(),
         release_idle: None,
         scan: Arc::new(move |_| {
             let sessions = crate::agents::pi::scan(&source_path, &old.pricing)?;
@@ -323,7 +323,7 @@ async fn failed_transaction_never_publishes_and_retries_from_last_good_state() {
     let scan_rejected = rejected.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![],
+        roots: vec![].into(),
         scan: Arc::new(move |_| {
             let mut value = batch(&path)?;
             let rejected = scan_rejected.clone();
@@ -374,7 +374,7 @@ async fn backfill_resumes_a_durable_checkpoint_after_restart() {
     let database = temporary.path().join("cache.db");
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![],
+        roots: vec![].into(),
         scan: Arc::new(move |request| {
             if request.checkpoint.is_some() {
                 bail!("interrupted historical source");
@@ -397,7 +397,7 @@ async fn backfill_resumes_a_durable_checkpoint_after_restart() {
     runtime.shutdown().await.unwrap();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![],
+        roots: vec![].into(),
         scan: Arc::new(move |request| {
             assert_eq!(request.checkpoint, Some(serde_json::json!({"next":1})));
             batch(&second)
@@ -431,7 +431,7 @@ async fn removed_root_keeps_last_good_data_and_is_watched_after_recreation() {
     let source_path = path.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![root.clone()],
+        roots: vec![root.clone()].into(),
         scan: Arc::new(move |_| batch(&source_path)),
         release_idle: None,
     };
@@ -463,7 +463,7 @@ async fn sqlite_wal_commits_are_observed_while_writer_stays_open() {
     write_source(&transcript, "fixture");
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![database.clone()],
+        roots: vec![database.clone()].into(),
         scan: Arc::new(move |_| {
             let connection =
                 Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
@@ -566,7 +566,7 @@ async fn failed_scan_retries_automatically_and_recovers() {
     let scan_path = path.clone();
     let source = AgentSource {
         name: "codex".into(),
-        roots: vec![],
+        roots: vec![].into(),
         scan: Arc::new(move |_| {
             let attempt = scan_attempts.fetch_add(1, Ordering::AcqRel);
             if attempt < 2 {

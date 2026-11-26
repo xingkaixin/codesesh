@@ -130,7 +130,7 @@ impl Scanning {
         let marked = changes.clone();
         let notify = wake.clone();
         let watching = match codesesh_core::runtime::watch_paths(
-            sources.iter().map(AgentSource::watch_roots).collect(),
+            sources.iter().map(AgentSource::watch_spec).collect(),
             Arc::new(move |index, paths| {
                 if let Ok(mut slot) = marked[index].lock() {
                     slot.record(paths);

@@ -25,41 +25,86 @@ impl AgentSource {
         agents::database_path(&self.agent, &self.scan_path).is_some()
     }
 
-    pub fn watch_roots(&self) -> Vec<PathBuf> {
+    pub fn watch_roots(&self) -> Vec<runtime::WatchRoot> {
         let root = &self.scan_path;
-        let mut roots = match self.agent.as_str() {
-            "antigravity" | "antigravity-cli" => vec![
-                root.clone(),
-                self.data_root.join("conversation_summaries.db"),
-                self.data_root.join("history.jsonl"),
-            ],
+        let mut roots: Vec<runtime::WatchRoot> = match self.agent.as_str() {
+            "antigravity" | "antigravity-cli" => {
+                let mut roots = vec![
+                    runtime::WatchRoot::recursive(root.clone()),
+                    runtime::WatchRoot::recursive(self.data_root.join("conversation_summaries.db")),
+                    runtime::WatchRoot::recursive(self.data_root.join("history.jsonl")),
+                ];
+                if let Some(profiles) = &self.antigravity_profiles {
+                    // Watch the profiles container shallowly so new/removed profiles trigger
+                    // reconciliation without watching unrelated sibling trees like brain/ or log/.
+                    roots.push(runtime::WatchRoot::shallow(profiles.clone()));
+                    if let Ok(scan_roots) = self.scan_roots() {
+                        for conversations in scan_roots {
+                            if conversations == *root {
+                                continue;
+                            }
+                            if let Some(store) = conversations.parent() {
+                                roots.push(runtime::WatchRoot::recursive(conversations.clone()));
+                                roots.push(runtime::WatchRoot::recursive(
+                                    store.join("conversation_summaries.db"),
+                                ));
+                                roots.push(runtime::WatchRoot::recursive(
+                                    store.join("history.jsonl"),
+                                ));
+                            }
+                        }
+                    }
+                }
+                roots
+            }
             "cursor" => vec![
-                root.join("globalStorage/state.vscdb"),
-                root.join("workspaceStorage"),
+                runtime::WatchRoot::recursive(root.join("globalStorage/state.vscdb")),
+                runtime::WatchRoot::recursive(root.join("workspaceStorage")),
             ],
-            "droid" => vec![root.clone(), self.data_root.join("settings.json")],
-            "deepchat" => vec![root.join("app_db/agent.db")],
-            "cherrystudio" => vec![root.join("Data/cherrystudio.sqlite")],
-            "minimax-code" => vec![root.join("v2/sqlite/runtime-state.sqlite")],
-            "zcode" => vec![root.join("cli/db/db.sqlite")],
-            "dsh" => vec![root.join("sessions"), root.join("attachments/v1")],
+            "droid" => vec![
+                runtime::WatchRoot::recursive(root.clone()),
+                runtime::WatchRoot::recursive(self.data_root.join("settings.json")),
+            ],
+            "deepchat" => vec![runtime::WatchRoot::recursive(root.join("app_db/agent.db"))],
+            "cherrystudio" => vec![runtime::WatchRoot::recursive(
+                root.join("Data/cherrystudio.sqlite"),
+            )],
+            "minimax-code" => vec![runtime::WatchRoot::recursive(
+                root.join("v2/sqlite/runtime-state.sqlite"),
+            )],
+            "zcode" => vec![runtime::WatchRoot::recursive(root.join("cli/db/db.sqlite"))],
+            "dsh" => vec![
+                runtime::WatchRoot::recursive(root.join("sessions")),
+                runtime::WatchRoot::recursive(root.join("attachments/v1")),
+            ],
             "codex" => vec![
-                root.clone(),
-                self.data_root.join("archived_sessions"),
-                self.data_root.join("session_index.jsonl"),
+                runtime::WatchRoot::recursive(root.clone()),
+                runtime::WatchRoot::recursive(self.data_root.join("archived_sessions")),
+                runtime::WatchRoot::recursive(self.data_root.join("session_index.jsonl")),
             ],
-            "kimi-code" => vec![root.clone(), self.data_root.join("session_index.jsonl")],
+            "kimi-code" => vec![
+                runtime::WatchRoot::recursive(root.clone()),
+                runtime::WatchRoot::recursive(self.data_root.join("session_index.jsonl")),
+            ],
             "kimi" => vec![
-                root.clone(),
-                self.data_root.join("kimi.json"),
-                self.data_root.join("config.toml"),
+                runtime::WatchRoot::recursive(root.clone()),
+                runtime::WatchRoot::recursive(self.data_root.join("kimi.json")),
+                runtime::WatchRoot::recursive(self.data_root.join("config.toml")),
             ],
-            _ => vec![root.clone()],
+            _ => vec![runtime::WatchRoot::recursive(root.clone())],
         };
-        roots.extend(self.antigravity_profiles.iter().cloned());
         roots.sort();
         roots.dedup();
         roots
+    }
+
+    pub fn watch_spec(&self) -> runtime::WatchRoots {
+        if self.antigravity_profiles.is_some() {
+            let source = self.clone();
+            runtime::WatchRoots::Dynamic(Arc::new(move || source.watch_roots()))
+        } else {
+            runtime::WatchRoots::Static(self.watch_roots())
+        }
     }
 }
 
@@ -162,7 +207,7 @@ impl AgentScanner {
     }
     pub fn into_runtime_source(self) -> runtime::AgentSource {
         let name = self.source.agent.clone();
-        let roots = self.source.watch_roots();
+        let roots = self.source.watch_spec();
         let scanner = Arc::new(Mutex::new(self));
         let idle = scanner.clone();
         runtime::AgentSource {
@@ -719,6 +764,9 @@ impl AgentScanner {
         {
             let known: HashSet<&str> = self.file_fingerprints.keys().map(String::as_str).collect();
             if let Some(targeted) = super::backfill::targeted_items(&self.source, paths, &known)? {
+                if targeted.is_empty() {
+                    return Ok((ScanDelta::default(), None, true));
+                }
                 self.source_available = Some(true);
                 let changed: Vec<_> = targeted
                     .iter()
