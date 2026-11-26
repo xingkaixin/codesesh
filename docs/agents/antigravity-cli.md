@@ -14,10 +14,11 @@ entries. Legacy `.pb` histories are ignored. An IDE SQLite store in a different
 location can be selected explicitly with the Desktop override.
 
 Desktop 2.32.1 was checked locally on 2026-11-16 against five conversation databases
-(one root and four children). Their schema and parsed fields match the supported
-CLI subset: prompts, assistant text, tool calls and results, usage, model names,
-workspace metadata, and explicit parent relationships. Unrecognized steps and
-numeric tool statuses retain the same partial-support limits as the CLI.
+(one root and four children), and on 2026-11-27 across 780 local Desktop, CLI, and T3 ACP
+databases (69,803 steps). Their schema and parsed fields match the supported
+CLI subset: prompts, assistant text, tool calls, tool statuses and results, usage, model names,
+workspace metadata, and explicit parent relationships. Unrecognized steps retain the same
+partial-support compatibility notice.
 
 Automatic discovery also includes Antigravity ACP profiles hosted by T3 Code:
 
@@ -92,30 +93,40 @@ ACP workspace and model fallbacks were checked against one local conversation on
   When a child has no title update or summary title, the same summary row's
   nonempty `agent_name` supplies its display title before the prompt fallback.
   Names do not identify sessions or establish parent relationships.
-- Tool results were checked against local CLI and ACP databases on 2026-11-14.
-  Step type 132 carries text in payload `140/2/1`. Legacy `view_file` (step type
-  8) carries content in `14/4`, `run_command` (21) carries output in `28/21/1`,
-  and `call_mcp_tool` (38) carries its result text in `47/3`. The adapter retains
-  these strings without interpreting arbitrary output text as success or failure.
+- Tool results and numeric step statuses were checked across 780 local Desktop, CLI,
+  and ACP databases (42,566 tool calls) on 2026-11-27. Step type 132 carries text in
+  payload `140/2/1` and falls back to `140/2/3/10/1` (used by fired `schedule` timers).
+  Legacy `view_file` (step type 8) carries content in `14/4`, `run_command` (21)
+  carries output in `28/21/1`, and `call_mcp_tool` (38) carries its result text in
+  `47/3`. The adapter retains these strings without interpreting arbitrary output text
+  as success or failure.
 - Explicit errors come from `steps.error_details` fields 2/3, falling back to
   payload field 31 with the same structure. Duplicate message/detail text is
-  displayed once. These calls use `error` status; other calls remain `unknown`
-  because the complete numeric status mapping is not established. Native step
-  type/status remain in tool metadata.
-- A `swarm add` result with `status: "added"` and a `conversation_id` supplies
-  the existing message-level sub-session link. The summary's explicit parent
-  identity still owns the session hierarchy; names and task text are never
-  used to infer it.
+  displayed once. Tool status maps explicit errors and native step statuses `4`
+  (invalid) and `7` (error) to `error`, `3` (done) to `completed`, `2` (running)
+  to `running` (settled to `unknown` by `settle_interrupted` when superseded by a
+  later user turn), and pending/cleared/canceled/other statuses (`1`, `5`, `6`, ...)
+  to `unknown`. Native step type/status remain in tool metadata.
+- A `swarm add` result with `status: "added"` and a `conversation_id`, or an
+  `invoke_subagent` result with `conversationId`, supplies the existing message-level
+  sub-session link. The summary's explicit parent identity still owns the session
+  hierarchy; names and task text are never used to infer it.
 - Steps without a native creation time use the summary update time, falling back
   to the conversation database modification time. The session summary counts
-  unrecognized steps.
+  unrecognized steps when present.
 - Empty databases are omitted. Unsupported table schemas or malformed Protobuf
   fail the refresh, retaining the last committed cache. Unrecognized but valid
   steps are counted in the visible compatibility notice.
-- Read/view, command, write/edit and `swarm` calls have dedicated displays.
-  Native results and errors remain visible; requested file content and diffs are
-  labeled separately from execution evidence. Full tool input remains available.
-  Other tools retain a text result fallback. Resume commands remain unavailable.
+- Built-in Antigravity tools (file read/write/edit, `run_command`, `update_steps`,
+  `ask_question`, `invoke_subagent`, `manage_subagents`, `swarm`, `read_board`,
+  `post_message`, `swarm_wait`, `send_message`, `manage_task`, `schedule`,
+  `search_web`, `read_url_content`, `grep_search`, `find_by_name`, `list_dir`,
+  `webview_browser`, plan mode, `generate_image`, `run_workflow`, `finish`) and
+  MCP calls (`mcp_<server>_<tool>` / `call_mcp_tool`) have structured input/output
+  displays with envelope unwrapping. Native errors remain visible; failed or
+  unconfirmed edits/writes separate execution evidence from requested changes.
+  Other tools fall back to structured JSON or plain text after unwrapping timestamps.
+  Resume commands remain unavailable.
 
 SQLite is opened read-only in a transaction. Database/WAL, summary, and
 `history.jsonl` changes invalidate source fingerprints; the existing paged scanner

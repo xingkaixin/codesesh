@@ -30,7 +30,7 @@ fn bytes(tag: u32, value: impl AsRef<[u8]>) -> Vec<u8> {
 }
 
 #[test]
-fn native_tool_results_keep_new_and_legacy_evidence_without_guessing_success() {
+fn native_tool_results_and_numeric_statuses_map_accurately() {
     let temp = tempfile::tempdir().unwrap();
     let path = fixture(temp.path());
     let db = Connection::open(&path).unwrap();
@@ -38,12 +38,15 @@ fn native_tool_results_keep_new_and_legacy_evidence_without_guessing_success() {
     let cases = [
         (
             132,
+            3,
             "read_file",
             bytes(140, bytes(2, bytes(1, "10: const x = 1;"))),
-            "10: const x = 1;",
+            Some("10: const x = 1;"),
+            ToolPartStatus::Completed,
         ),
         (
             132,
+            3,
             "run_command",
             bytes(
                 140,
@@ -52,31 +55,93 @@ fn native_tool_results_keep_new_and_legacy_evidence_without_guessing_success() {
                     bytes(1, "Command exited with code 1.\nCommand output:\nfailed"),
                 ),
             ),
-            "Command exited with code 1.\nCommand output:\nfailed",
+            Some("Command exited with code 1.\nCommand output:\nfailed"),
+            ToolPartStatus::Completed,
+        ),
+        (
+            132,
+            3,
+            "schedule",
+            bytes(
+                140,
+                bytes(
+                    2,
+                    bytes(3, bytes(10, bytes(1, "> Check CI\n\n**Status**: Fired"))),
+                ),
+            ),
+            Some("> Check CI\n\n**Status**: Fired"),
+            ToolPartStatus::Completed,
         ),
         (
             8,
+            3,
             "view_file",
             bytes(14, bytes(4, "const pattern = /\\n/;")),
-            "const pattern = /\\n/;",
+            Some("const pattern = /\\n/;"),
+            ToolPartStatus::Completed,
         ),
         (
             21,
+            3,
             "run_command",
             bytes(28, [varint(6, 0), bytes(21, bytes(1, "done\r\n"))].concat()),
-            "done\r\n",
+            Some("done\r\n"),
+            ToolPartStatus::Completed,
         ),
         (
             38,
+            3,
             "call_mcp_tool",
             bytes(
                 47,
                 bytes(3, r#"{"width":728,"screenshot":{"mimeType":"image/png"}}"#),
             ),
-            r#"{"width":728,"screenshot":{"mimeType":"image/png"}}"#,
+            Some(r#"{"width":728,"screenshot":{"mimeType":"image/png"}}"#),
+            ToolPartStatus::Completed,
         ),
+        (
+            132,
+            2,
+            "run_command",
+            Vec::new(),
+            None,
+            ToolPartStatus::Running,
+        ),
+        (
+            132,
+            1,
+            "edit_file",
+            Vec::new(),
+            None,
+            ToolPartStatus::Unknown,
+        ),
+        (
+            132,
+            5,
+            "read_file",
+            Vec::new(),
+            None,
+            ToolPartStatus::Unknown,
+        ),
+        (
+            132,
+            6,
+            "run_command",
+            Vec::new(),
+            None,
+            ToolPartStatus::Unknown,
+        ),
+        (
+            132,
+            4,
+            "generate_image",
+            Vec::new(),
+            None,
+            ToolPartStatus::Error,
+        ),
+        (132, 7, "read_file", Vec::new(), None, ToolPartStatus::Error),
     ];
-    for (index, (kind, name, result, _)) in cases.iter().enumerate() {
+    for (index, (kind, status, name, result, _, _)) in cases.iter().enumerate() {
         let call = bytes(
             5,
             bytes(
@@ -85,23 +150,69 @@ fn native_tool_results_keep_new_and_legacy_evidence_without_guessing_success() {
             ),
         );
         db.execute(
-            "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (?1,?2,3,?3)",
-            rusqlite::params![index as i64, kind, [call, result.clone()].concat()],
+            "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (?1,?2,?3,?4)",
+            rusqlite::params![index as i64, kind, status, [call, result.clone()].concat()],
         )
         .unwrap();
     }
     let sessions = scan_paths(&Pricing::bundled(), &[path], "antigravity-cli").unwrap();
     let messages = &sessions[0].detail.messages;
     assert_eq!(messages.len(), cases.len());
-    for (message, (_, name, _, expected)) in messages.iter().zip(cases) {
+    assert!(sessions[0].head.summary_files.is_none());
+    for (message, (_, _, name, _, expected_output, expected_status)) in messages.iter().zip(cases) {
         let MessagePart::Tool { tool, state, .. } = &message.parts[0] else {
             panic!("missing tool");
         };
         assert_eq!(tool, name);
-        assert_eq!(state.status, ToolPartStatus::Unknown);
-        assert_eq!(state.output, Some(Value::String(expected.into())));
+        assert_eq!(state.status, expected_status);
+        assert_eq!(
+            state.output,
+            expected_output.map(|text| Value::String(text.into()))
+        );
         assert!(state.error.is_none());
     }
+}
+
+#[test]
+fn invoke_subagent_links_child_conversation_id() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = fixture(temp.path());
+    let db = Connection::open(&path).unwrap();
+    db.execute("DELETE FROM steps", []).unwrap();
+    let payload = [
+        bytes(
+            5,
+            bytes(
+                4,
+                [
+                    bytes(2, "invoke_subagent"),
+                    bytes(3, r#"{"Role":"Codebase Researcher","TypeName":"research"}"#),
+                ]
+                .concat(),
+            ),
+        ),
+        bytes(
+            140,
+            bytes(
+                2,
+                bytes(
+                    1,
+                    "Created At: 2026-11-19T15:47:21+08:00\nCompleted At: 2026-11-19T15:47:55+08:00\nCreated the following subagent:\n{\n  \"conversationId\": \"sub-123\"\n}\nThe subagent will send you a message.",
+                ),
+            ),
+        ),
+    ]
+    .concat();
+    db.execute(
+        "INSERT INTO steps (idx,step_type,status,step_payload) VALUES (0,132,3,?1)",
+        [payload],
+    )
+    .unwrap();
+    let sessions = scan_paths(&Pricing::bundled(), &[path], "antigravity").unwrap();
+    assert_eq!(
+        sessions[0].detail.messages[0].subagent_id.as_deref(),
+        Some("sub-123")
+    );
 }
 
 #[test]
@@ -443,7 +554,7 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
         panic!("missing tool")
     };
     assert_eq!(call_id.as_deref(), Some("call-1"));
-    assert_eq!(state.status, crate::model::ToolPartStatus::Unknown);
+    assert_eq!(state.status, crate::model::ToolPartStatus::Completed);
     assert_eq!(state.input, Some(json!({"path":"a"})));
     assert!(state.output.is_none());
     assert!(
@@ -467,7 +578,7 @@ fn native_steps_preserve_order_tools_and_unknown_usage() {
             |row| Ok(crate::storage::body::unpack(row.get_ref(0)?)?.into_owned()),
         )
         .unwrap();
-    assert!(stored.contains("unknown"));
+    assert!(stored.contains("completed"));
     assert_eq!(
         scan_paths(&Pricing::bundled(), &[path], "antigravity-cli")
             .unwrap()

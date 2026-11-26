@@ -8,12 +8,20 @@ use std::{
 
 fn kind(tool: &str) -> Option<&'static str> {
     match tool.trim().to_lowercase().as_str() {
-        "read" | "read_file" | "read_file_v2" | "read_text_file" | "readfile" | "view_image" => {
-            Some("read")
-        }
-        "apply_patch" | "edit" | "edit_file" | "edit_file_v2" | "editfile" | "multiedit"
-        | "notebookedit" | "patch" | "search_replace" | "str_replace" => Some("edit"),
-        "create_file" | "write" | "write_file" | "writefile" => Some("write"),
+        "read" | "read_file" | "read_file_v2" | "read_text_file" | "readfile" | "view_file"
+        | "view_image" => Some("read"),
+        "apply_patch"
+        | "edit"
+        | "edit_file"
+        | "edit_file_v2"
+        | "editfile"
+        | "multiedit"
+        | "notebookedit"
+        | "patch"
+        | "replace_file_content"
+        | "search_replace"
+        | "str_replace" => Some("edit"),
+        "create_file" | "write" | "write_file" | "write_to_file" | "writefile" => Some("write"),
         "delete" | "delete_file" => Some("delete"),
         _ => None,
     }
