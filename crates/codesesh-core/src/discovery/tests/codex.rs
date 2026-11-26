@@ -199,12 +199,9 @@ fn codex_archived_only_store_is_discovered_and_watched() {
         full.sessions[0].detail.messages
     );
     batch.on_reject.take();
-    assert!(
-        scanner
-            .into_runtime_source()
-            .roots
-            .contains(&root.join("archived_sessions"))
-    );
+    assert!(scanner.into_runtime_source().roots.resolve().contains(
+        &crate::runtime::WatchRoot::recursive(root.join("archived_sessions"))
+    ));
 }
 
 #[test]

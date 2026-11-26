@@ -22,14 +22,14 @@ use std::{
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot, watch};
 
 pub(crate) use status::ScanStatus;
-pub use watcher::watch_paths;
+pub use watcher::{WatchRoot, WatchRoots, watch_paths};
 pub use writer::release_unused_memory;
 
 pub(crate) type Scanner = dyn Fn(ScanRequest) -> Result<ScanBatch> + Send + Sync;
 
 pub struct AgentSource {
     pub name: String,
-    pub roots: Vec<PathBuf>,
+    pub roots: WatchRoots,
     pub scan: Arc<Scanner>,
     /// Drops parser state for files that stopped being written; runs once the source goes quiet.
     pub release_idle: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -180,7 +180,7 @@ struct Inner {
 struct Control {
     #[cfg(test)]
     name: String,
-    roots: Vec<PathBuf>,
+    roots: WatchRoots,
     generation: Arc<AtomicU64>,
     pending: watch::Sender<Pending>,
 }

@@ -366,3 +366,98 @@ fn updating_one_conversation_summary_does_not_invalidate_other_conversations() {
     assert_eq!(refreshed.sessions[0].head.title, "Title B Updated");
     commit(&mut cache, &mut refreshed, "antigravity");
 }
+
+#[test]
+fn antigravity_cli_watch_roots_scope_profiles_and_targeted_items_skip_non_db_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let env = environment(temp.path());
+    let source = env.source("antigravity-cli").unwrap();
+    let profiles = source.antigravity_profiles.as_ref().unwrap();
+    let acp = profiles.join("account-a/antigravity-acp");
+    let conversations = acp.join("conversations");
+    let db = write_session(&conversations, "acp-a");
+    let meta = conversations.join("acp-a.meta");
+    let pb = conversations.join("legacy.pb");
+    fs::write(&meta, "meta").unwrap();
+    fs::write(&pb, "pb").unwrap();
+    fs::create_dir_all(acp.join("brain/acp-a")).unwrap();
+    fs::create_dir_all(acp.join("log")).unwrap();
+
+    let roots = source.watch_roots();
+    assert!(roots.contains(&crate::runtime::WatchRoot::shallow(profiles.clone())));
+    assert!(!roots.contains(&crate::runtime::WatchRoot::recursive(profiles.clone())));
+    assert!(roots.contains(&crate::runtime::WatchRoot::recursive(conversations.clone())));
+    assert!(roots.contains(&crate::runtime::WatchRoot::recursive(
+        acp.join("conversation_summaries.db")
+    )));
+    assert!(roots.contains(&crate::runtime::WatchRoot::recursive(
+        acp.join("history.jsonl")
+    )));
+    assert!(!roots.iter().any(|r| r.path.starts_with(acp.join("brain"))));
+    assert!(!roots.iter().any(|r| r.path.starts_with(acp.join("log"))));
+
+    // Ignored non-.db regular files (including nested paths and batches > BATCH_SIZE) stay targeted.
+    let nested_meta = conversations.join("nested/ignored.meta");
+    fs::create_dir_all(nested_meta.parent().unwrap()).unwrap();
+    fs::write(&nested_meta, "nested").unwrap();
+    let mut many_meta = vec![meta, pb, nested_meta];
+    for i in 0..33 {
+        let extra = conversations.join(format!("extra-{i}.meta"));
+        fs::write(&extra, "m").unwrap();
+        many_meta.push(extra);
+    }
+    let known = std::collections::HashSet::new();
+    let ignored = super::super::backfill::targeted_items(&source, &many_meta, &known).unwrap();
+    assert_eq!(ignored.as_ref().map(Vec::len), Some(0));
+
+    // A regular .db alongside a non-.db file still targets only the .db.
+    let other_meta = conversations.join("other.meta");
+    fs::write(&other_meta, "m").unwrap();
+    let targeted =
+        super::super::backfill::targeted_items(&source, &[db.clone(), other_meta], &known)
+            .unwrap()
+            .expect("session db should remain targeted");
+    assert_eq!(targeted.len(), 1);
+    assert_eq!(targeted[0].path.as_deref(), Some(db.as_path()));
+
+    // Companion DB and deleted .db files still fall back to full inventory.
+    assert!(
+        super::super::backfill::targeted_items(
+            &source,
+            &[acp.join("conversation_summaries.db")],
+            &known,
+        )
+        .unwrap()
+        .is_none()
+    );
+    fs::remove_file(&db).unwrap();
+    assert!(
+        super::super::backfill::targeted_items(&source, &[db], &known)
+            .unwrap()
+            .is_none()
+    );
+
+    // An ignored .meta file in an empty profile must not flip source presence from NotFound to Available.
+    let empty_temp = tempfile::tempdir().unwrap();
+    let empty_env = environment(empty_temp.path());
+    let empty_source = empty_env.source("antigravity-cli").unwrap();
+    let empty_convo = empty_source
+        .antigravity_profiles
+        .as_ref()
+        .unwrap()
+        .join("empty-account/antigravity-acp/conversations");
+    fs::create_dir_all(&empty_convo).unwrap();
+    let cache_path = empty_temp.path().join("cache.db");
+    let mut cache = crate::storage::Cache::open(Some(&cache_path)).unwrap();
+    let mut scanner = AgentScanner::new(empty_source, cache_path, Arc::new(Pricing::bundled()));
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.source_presence, Some(SourcePresence::NotFound));
+    commit(&mut cache, &mut initial, "antigravity-cli");
+
+    let empty_meta = empty_convo.join("only.meta");
+    fs::write(&empty_meta, "meta").unwrap();
+    let mut after_meta = scanner.refresh(Some(&[empty_meta])).unwrap();
+    assert_eq!(after_meta.source_presence, Some(SourcePresence::NotFound));
+    assert!(after_meta.sessions.is_empty());
+    after_meta.on_reject.take();
+}

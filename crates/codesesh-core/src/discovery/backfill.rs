@@ -484,7 +484,10 @@ pub fn targeted_items(
     paths: &[PathBuf],
     known_keys: &std::collections::HashSet<&str>,
 ) -> Result<Option<Vec<Item>>> {
-    if paths.is_empty() || paths.len() > BATCH_SIZE {
+    if paths.is_empty()
+        || (!matches!(source.agent.as_str(), "antigravity" | "antigravity-cli")
+            && paths.len() > BATCH_SIZE)
+    {
         return Ok(None);
     }
     let empty_context = crate::hash::hex(&Sha256::digest(b"[]"));
@@ -656,6 +659,12 @@ pub fn targeted_items(
         "antigravity" | "antigravity-cli" => {
             let scan_roots = source.scan_roots()?;
             for path in paths {
+                let Some(scan_root) = scan_roots
+                    .iter()
+                    .find(|root| path_under_root(root, path).is_some())
+                else {
+                    return Ok(None);
+                };
                 let raw = path.to_string_lossy();
                 let db_path = raw
                     .strip_suffix("-wal")
@@ -663,13 +672,14 @@ pub fn targeted_items(
                     .map(PathBuf::from)
                     .unwrap_or_else(|| path.to_owned());
                 let name = db_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                let Some(scan_root) = db_path
-                    .parent()
-                    .and_then(|parent| scan_roots.iter().find(|root| root.as_path() == parent))
-                else {
-                    return Ok(None);
-                };
                 if !name.ends_with(".db") {
+                    if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+                    {
+                        continue;
+                    }
+                    return Ok(None);
+                }
+                if db_path.parent() != Some(scan_root.as_path()) {
                     return Ok(None);
                 }
                 let Some(db_path) = path_under_root(scan_root, &db_path) else {
@@ -684,6 +694,9 @@ pub fn targeted_items(
                 let key = db_path.to_string_lossy().into_owned();
                 if !seen.insert(key.clone()) {
                     continue;
+                }
+                if items.len() >= BATCH_SIZE {
+                    return Ok(None);
                 }
                 let (activity, mut fingerprint) = file_stamp(&metadata)?;
                 let Some(conversations) = db_path.parent() else {
