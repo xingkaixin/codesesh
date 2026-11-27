@@ -101,6 +101,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.5.2",
+        date: "2026-11-27",
+        title: "Clearer Antigravity tool replay and quieter profile watching",
+        summary:
+          "CodeSesh 1.5.2 shows real execution statuses and structured inputs and outputs for Antigravity built-in and MCP tools, links subagent child sessions, and stops background watchers from reacting to unrelated Antigravity scratch and log files. The product site also gets a redesigned landing hero and footer.",
+        direction:
+          "Make every supported agent's session replay readable without guesswork while keeping background discovery quiet even when agents write heavily to disk.",
+        highlights: [
+          {
+            title: "Accurate Antigravity tool statuses and structured cards",
+            description:
+              "Antigravity sessions now map running, completed, and failed tool statuses instead of leaving them unknown, render structured inputs and outputs for built-in and MCP tools, unwrap response timestamps, and separate requested edits from confirmed results when a write fails.",
+          },
+          {
+            title: "Subagent links and complete file activity",
+            description:
+              "Subagents launched through invoke_subagent link cleanly from their parent Antigravity session, file edits and reads appear in file activity summaries, and fully parsed sessions no longer show a partial-import banner.",
+          },
+          {
+            title: "Lower background watcher churn on Antigravity profiles",
+            description:
+              "Workers and standalone watchers now monitor only each profile's conversation databases and history files instead of recursively watching high-churn brain and log directories, avoiding unnecessary rescans.",
+          },
+        ],
+      },
+      {
         version: "1.5.1",
         date: "2026-11-24",
         title: "Faster page loads, smaller cache, and lighter background sync",
@@ -1139,6 +1165,32 @@ export const changelogCopy = {
     },
     releases: [
       {
+        version: "1.5.2",
+        date: "2026-11-27",
+        title: "Antigravity 工具回放更清晰，后台监听更克制",
+        summary:
+          "CodeSesh 1.5.2 为 Antigravity 内置工具与 MCP 工具补全了真实执行状态和结构化输入输出展示，打通子 Agent 会话关联，并让后台文件监听避开高频变动的缓存与日志目录。产品站首页首屏与页脚也同步完成了视觉改版。",
+        direction:
+          "让每个受支持 Agent 的本地 AI 编码历史回放都清晰可读，同时在工具频繁写盘时保持后台采集安静省资源。",
+        highlights: [
+          {
+            title: "Antigravity 工具状态与结构化卡片更完整",
+            description:
+              "Antigravity 会话现已正确显示运行中、已完成与失败状态，不再一律标为未知；内置工具与 MCP 调用支持结构化输入输出与时间戳解包，失败或未确认的编辑也会区分请求变更与实际执行结果。",
+          },
+          {
+            title: "补齐子会话关联与文件活动记录",
+            description:
+              "通过 invoke_subagent 启动的子会话可从父会话直接跳转，Antigravity 的文件读写与替换操作纳入文件活动统计，完整解析的会话也不再显示部分导入提示。",
+          },
+          {
+            title: "大幅减少 Antigravity 后台监听噪音",
+            description:
+              "单机与 Worker 不再递归监听整个 Antigravity profiles 目录，改为只跟踪会话数据库与历史索引文件，跳过高频变动的 brain 与 log 目录及无关非数据库文件，避免反复触发无意义重扫。",
+          },
+        ],
+      },
+      {
         version: "1.5.1",
         date: "2026-11-24",
         title: "打开更快、缓存更省空间，后台同步更轻",
@@ -2150,6 +2202,32 @@ export const changelogCopy = {
       itemsOne: "{count} 件",
     },
     releases: [
+      {
+        version: "1.5.2",
+        date: "2026-11-27",
+        title: "Antigravity ツール再生を明瞭化し、監視負荷を低減",
+        summary:
+          "CodeSesh 1.5.2 では、Antigravity の組み込みツールと MCP ツールに実際の実行ステータスと構造化された入出力表示を追加し、サブエージェントの子セッション連携にも対応しました。あわせてプロファイル監視の対象を絞り込んで不要な再スキャンを防ぎ、製品サイトのヒーローとフッターも刷新しています。",
+        direction:
+          "対応するすべてのエージェントのセッション履歴を推測なしで読み返せるようにしつつ、ディスク書き込みが多い環境でもバックグラウンド収集を静かに保ちます。",
+        highlights: [
+          {
+            title: "Antigravity のツール状態と構造化表示を改善",
+            description:
+              "実行中・完了・エラーのステータスを不明のままにせず正しく反映し、組み込みツールや MCP 呼び出しの入出力を構造化して表示します。タイムスタンプ層を取り除き、失敗や未確定の編集でも要求内容と実行結果を分けて確認できます。",
+          },
+          {
+            title: "サブエージェント連携とファイル活動を補完",
+            description:
+              "invoke_subagent で起動された子セッションを親セッションからたどれるようになり、ファイル閲覧・編集・作成もファイル活動に集計されます。未対応ステップがないセッションでは部分インポート通知を出さなくなりました。",
+          },
+          {
+            title: "Antigravity プロファイル監視の無駄な再スキャンを削減",
+            description:
+              "更新頻度の高い brain や log ディレクトリを含めて再帰監視するのをやめ、各プロファイルの会話データベースと履歴ファイルだけを動的に監視することで、バックグラウンド負荷を抑えています。",
+          },
+        ],
+      },
       {
         version: "1.5.1",
         date: "2026-11-24",

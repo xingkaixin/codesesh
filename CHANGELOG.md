@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.5.2] - 2026-11-27
+
+This patch maps Antigravity numeric tool statuses and adds structured Web UI input/output displays for Antigravity built-in and MCP tools, links `invoke_subagent` child sessions, and narrows Antigravity profile file watches to cut background watcher churn. It also redesigns the product site hero and footer with a WebGL topography reveal and refreshes Rust and JavaScript dependencies. (#954–#956, #958–#961)
+
+### Bug Fixes
+
+- Map Antigravity numeric tool statuses (`running`, `completed`, and `error`) while keeping unconfirmed codes `unknown` and explicit error details `error`, extract fallback native tool outputs such as fired `schedule` timers, link `invoke_subagent` child sessions alongside `swarm add`, map `view_file`, `replace_file_content`, and `write_to_file` into file activity tracking, and omit the partial-import notice when a session has no unsupported steps. Bump the Antigravity parser version to `rust-parser-v13`. (#961)
+- Render structured input and output views with timestamp and envelope unwrapping for Antigravity built-in tools and MCP tool calls in the Web UI, keeping native errors visible and separating execution evidence from requested changes on failed or unconfirmed edits and writes. (#961)
+
+### Performance
+
+- Stop recursively watching entire Antigravity profile directories (avoiding high-churn `brain/` and `log/` trees). Dynamically watch only each profile's `conversations/`, `conversation_summaries.db`, and `history.jsonl`, suppress directory metadata and `-shm` watcher noise, and keep incremental targeted rescans on the fast path when unrelated non-`.db` files change. (#960)
+
+### Build
+
+- Refresh Rust and npm dependencies, updating `clap` to 4.6.9, `url` to 2.5.9, `regex` to 1.13.2, `walkdir` to 2.5.1, `@tanstack/react-query` to 5.108.2, `react-router-dom` to 7.18.6, `tailwind-merge` to 3.7.1, `astro` to 7.4.13, and workspace lint, format, test, and build tooling. (#956, #958, #959)
+
+### Documentation
+
+- Redesign the product site landing hero and monolith footer with AVIF/WebP topography artwork, a WebGL hero reveal animation, full-viewport sizing, refreshed web font subsets, and updated getting-started guides. (#954, #955)
+- Update Antigravity parser documentation with verified tool status mappings and native output coverage. (#961)
+
+### Compatibility
+
+- Cached Antigravity Desktop, CLI, and T3 ACP sessions reparse on refresh (`rust-parser-v13`) to apply mapped tool statuses, extracted outputs, file activity, and `invoke_subagent` child links. (#961)
+
 ## [1.5.1] - 2026-11-24
 
 This patch cuts end-to-end API latency, server CPU and memory overhead, and browser wire bytes across SQLite storage, HTTP transport, and the Web UI. It also compresses cached message text with zstd, reduces Worker-to-Hub sync overhead and service log noise, restores Kimi session message counts, and adds Claude Code and Codex session history guides to the product site. (#946–#952)
