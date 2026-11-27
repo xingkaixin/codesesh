@@ -1,3 +1,7 @@
+import { trackEvent } from "./analytics";
+
+const INSTALL_COMMAND_RE = /\b(codesesh|install\.sh|brew\s+install|scoop\s+install)\b/;
+
 export async function copyText(value: string) {
   try {
     await navigator.clipboard.writeText(value);
@@ -38,11 +42,19 @@ export function bindCopyButtons() {
     let timer = 0;
 
     button.addEventListener("click", async () => {
-      const copied = await copyText(button.dataset.copyValue ?? "");
+      const value = button.dataset.copyValue ?? "";
+      const copied = await copyText(value);
       const feedback = (copied ? button.dataset.copiedLabel : button.dataset.copyFailedLabel) ?? "";
       if (text) text.textContent = feedback;
       if (status) status.textContent = feedback;
       showIcon(copied ? "done" : "idle");
+      if (copied) {
+        const isInstall = INSTALL_COMMAND_RE.test(value);
+        void trackEvent(isInstall ? "install-copy" : "guide-copy", {
+          method: isInstall ? "guide" : "command",
+          placement: window.location.pathname,
+        });
+      }
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (text) text.textContent = button.dataset.copyLabel ?? "";

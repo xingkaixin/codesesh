@@ -926,6 +926,8 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
 </section>
 
 <script>
+  import { trackEvent } from "../scripts/analytics";
+
   document.querySelectorAll<HTMLElement>("[data-tour]").forEach((tour) => {
     const tabs = [
       ...tour.querySelectorAll<HTMLButtonElement>("[data-tour-tab]"),
@@ -934,7 +936,8 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
     let current = 0;
     let timer = 0;
 
-    const select = (index: number, focus = false) => {
+    const select = (index: number, focus = false, manual = false) => {
+      const changed = index !== current;
       current = index;
       tabs.forEach((tab, i) => {
         const active = i === index;
@@ -943,6 +946,12 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
         panels[i]!.hidden = !active;
       });
       if (focus) tabs[index]!.focus();
+      if (manual && changed) {
+        void trackEvent("tour-interact", {
+          control: "tab",
+          value: tabs[index]?.dataset.tourTab ?? String(index),
+        });
+      }
     };
 
     const stopAuto = () => {
@@ -951,13 +960,13 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
     };
 
     tabs.forEach((tab, index) => {
-      tab.addEventListener("click", () => select(index));
+      tab.addEventListener("click", () => select(index, false, true));
       tab.addEventListener("keydown", (event) => {
         const step =
           event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
         if (!step) return;
         event.preventDefault();
-        select((index + step + tabs.length) % tabs.length, true);
+        select((index + step + tabs.length) % tabs.length, true, true);
       });
     });
 
@@ -986,6 +995,7 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
       ?.querySelectorAll<HTMLButtonElement>("[data-range]")
       .forEach((button, _, buttons) => {
         button.addEventListener("click", () => {
+          const changed = button.getAttribute("aria-pressed") !== "true";
           buttons.forEach((item) =>
             item.setAttribute("aria-pressed", String(item === button)),
           );
@@ -994,6 +1004,12 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
             .forEach((view) => {
               view.hidden = view.dataset.rangeView !== button.dataset.range;
             });
+          if (changed && button.dataset.range) {
+            void trackEvent("tour-interact", {
+              control: "range",
+              value: button.dataset.range,
+            });
+          }
         });
       });
 
