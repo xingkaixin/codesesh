@@ -20,19 +20,42 @@ export async function trackEvent(name: string, data: Record<string, string> = {}
 export function trackOutboundLinks() {
   document.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;
+
+    const demoTrigger = event.target.closest<HTMLElement>("[data-open-demo]");
+    if (demoTrigger) {
+      void trackEvent("open-demo", {
+        placement: demoTrigger.dataset.openDemo ?? "",
+        path: window.location.pathname,
+      });
+      return;
+    }
+
     const link = event.target.closest<HTMLAnchorElement>("a[href]");
     if (!link) return;
 
     const url = new URL(link.href);
-    if (url.hostname !== "github.com") return;
+    if (url.hostname === "github.com") {
+      if (url.pathname === "/xingkaixin/codesesh" && !url.hash) {
+        void trackEvent("github-click");
+      } else if (
+        url.pathname === "/xingkaixin/codesesh/releases" ||
+        url.pathname.startsWith("/xingkaixin/codesesh/releases/")
+      ) {
+        void trackEvent("download-click");
+      }
+      return;
+    }
 
-    if (url.pathname === "/xingkaixin/codesesh" && !url.hash) {
-      void trackEvent("github-click");
-    } else if (
-      url.pathname === "/xingkaixin/codesesh/releases" ||
-      url.pathname.startsWith("/xingkaixin/codesesh/releases/")
-    ) {
-      void trackEvent("download-click");
+    if (url.hostname === "agent-dump.xingkaixin.me") {
+      void trackEvent("ecosystem-click", {
+        target: "agent-dump",
+        placement: window.location.pathname,
+      });
+    } else if (url.hostname === "xingkaixin.me") {
+      void trackEvent("ecosystem-click", {
+        target: "blog",
+        placement: window.location.pathname,
+      });
     }
   });
 }

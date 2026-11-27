@@ -1036,14 +1036,25 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
           });
       };
       toggles.forEach((toggle) =>
-        toggle.addEventListener("click", () =>
-          setExpanded(toggle.getAttribute("aria-expanded") !== "true"),
-        ),
+        toggle.addEventListener("click", () => {
+          const next = toggle.getAttribute("aria-expanded") !== "true";
+          setExpanded(next);
+          void trackEvent("tour-interact", {
+            control: "sub-sessions",
+            value: next ? "expand" : "collapse",
+          });
+        }),
       );
       setButtons.forEach((button) =>
-        button.addEventListener("click", () =>
-          setExpanded(button.dataset.subSet === "true"),
-        ),
+        button.addEventListener("click", () => {
+          const next = button.dataset.subSet === "true";
+          if (button.getAttribute("aria-pressed") === "true") return;
+          setExpanded(next);
+          void trackEvent("tour-interact", {
+            control: "sub-sessions",
+            value: next ? "expand" : "collapse",
+          });
+        }),
       );
     }
 
@@ -1054,10 +1065,8 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
         replay.querySelectorAll<HTMLButtonElement>("[data-filter]");
       filterButtons.forEach((button) => {
         button.addEventListener("click", () => {
-          button.setAttribute(
-            "aria-pressed",
-            String(button.getAttribute("aria-pressed") !== "true"),
-          );
+          const active = button.getAttribute("aria-pressed") !== "true";
+          button.setAttribute("aria-pressed", String(active));
           const visible = new Set(
             [...filterButtons]
               .filter((item) => item.getAttribute("aria-pressed") === "true")
@@ -1076,6 +1085,12 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
               group.hidden = !group.querySelector("[data-step]:not([hidden])");
             });
           if (status) status.textContent = String(count);
+          if (button.dataset.filter) {
+            void trackEvent("tour-interact", {
+              control: "filter",
+              value: `${button.dataset.filter}:${active ? "on" : "off"}`,
+            });
+          }
         });
       });
 
@@ -1087,6 +1102,10 @@ const [visibleBefore, visibleAfter] = tour.visibleStatus.split("{count}");
         const open = toolToggle.getAttribute("aria-expanded") !== "true";
         toolToggle.setAttribute("aria-expanded", String(open));
         if (toolOutput) toolOutput.hidden = !open;
+        void trackEvent("tour-interact", {
+          control: "tool-output",
+          value: open ? "open" : "close",
+        });
       });
     }
   });
