@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.5.2] - 2026-11-27
+
+本补丁补全了 Antigravity 的工具执行状态映射与 Web UI 结构化输入输出展示，支持关联 `invoke_subagent` 子会话，并收窄 Antigravity profile 文件监听范围以降低后台扫描开销。同时重构了产品站首页首屏与页脚并加入 WebGL 地形渐显动效，更新了 Rust 与 JavaScript 依赖。（#954–#956、#958–#961）
+
+### 修复
+
+- 映射 Antigravity 数值型工具状态（`running`、`completed`、`error`），未确认状态保持 `unknown`，显式错误详情保持 `error`；补齐原生工具输出兜底提取（如触发的 `schedule` 定时器）；与 `swarm add` 一并关联 `invoke_subagent` 子会话；将 `view_file`、`replace_file_content` 和 `write_to_file` 纳入文件活动统计；当会话不存在未支持步骤时不再显示部分导入提示。Antigravity 解析器版本提升至 `rust-parser-v13`。（#961）
+- 在 Web UI 中为 Antigravity 内置工具与 MCP 工具调用提供结构化输入输出展示与时间戳/包装层解包，保留原生报错，并在失败或未确认的编辑/写入操作中区分执行结果与请求变更。（#961）
+
+### 性能
+
+- 不再递归监听整个 Antigravity profiles 目录（避开高频变动的 `brain/` 与 `log/` 目录），改为按 profile 动态监听 `conversations/`、`conversation_summaries.db` 与 `history.jsonl`，过滤目录元数据与 `-shm` 监听噪音，并在无关非 `.db` 文件变动时保持增量定向扫描走快速路径。（#960）
+
+### 构建
+
+- 更新 Rust 与 npm 依赖，升级 `clap` 至 4.6.9、`url` 至 2.5.9、`regex` 至 1.13.2、`walkdir` 至 2.5.1、`@tanstack/react-query` 至 5.108.2、`react-router-dom` 至 7.18.6、`tailwind-merge` 至 3.7.1、`astro` 至 7.4.13，以及工作区 lint、格式化、测试与构建工具链。（#956、#958、#959）
+
+### 文档
+
+- 重构产品站首页首屏与单体页脚，加入 AVIF/WebP 地形视觉、WebGL 首屏渐显动效、全视口尺寸适配、更新的字体子集以及同步后的快速开始指南。（#954、#955）
+- 更新 Antigravity 解析文档，补充已验证的工具状态映射与原生输出覆盖范围。（#961）
+
+### 兼容性
+
+- 已缓存的 Antigravity Desktop、CLI 与 T3 ACP 会话将在刷新时重新解析（`rust-parser-v13`），以应用工具状态映射、原生输出、文件活动记录与 `invoke_subagent` 子会话关联。（#961）
+
 ## [1.5.1] - 2026-11-24
 
 本补丁从 SQLite 存储、HTTP 传输到 Web 前端全链路降低了接口延迟、服务端 CPU 与内存开销以及浏览器传输体积。同时使用 zstd 压缩已缓存的消息正文，减少 Worker 到 Hub 的同步开销与后台服务日志噪音，修复 Kimi 会话消息数显示为零的问题，并在产品站补充 Claude Code 与 Codex 会话历史指南。（#946–#952）
