@@ -363,26 +363,31 @@ export const guides: Guide[] = [
     slug: "usage-and-costs",
     category: "understand",
     published: "2026-10-03",
-    updated: "2026-10-03",
+    updated: "2026-11-27",
     copy: {
       en: {
-        title: "Understand AI token usage and costs in CodeSesh",
+        title: "Track AI coding token usage and costs locally",
         description:
-          "Review AI coding token usage by project, model, and date in CodeSesh. Understand recorded versus estimated cost, cache tokens, and differences from provider bills.",
+          "Review Claude Code, Codex, and multi-agent token usage by project, model, and date in CodeSesh. Understand recorded versus estimated cost, cache tokens, and provider bill differences.",
       },
       zh: {
         title: "查看 AI 编码的 Token 用量和成本",
         description:
-          "用 CodeSesh 按项目、模型和时间查看 AI 编码用量，区分记录成本与估算成本，理解缓存 Token，以及统计与服务商账单的差异。",
+          "用 CodeSesh 按项目、模型和时间查看 Claude Code、Codex 等工具的 Token 用量，区分记录成本与估算成本，理解缓存 Token，以及统计与服务商账单的差异。",
       },
       ja: {
-        title: "CodeSesh で AI のトークン使用量とコストを確認する",
+        title: "AI コーディングのトークン消費量とコストを確認する",
         description:
-          "プロジェクト、モデル、期間ごとに AI コーディングの使用量を確認します。記録された費用と推定額、キャッシュトークン、請求書との差を説明します。",
+          "Claude Code や Codex のトークン消費量と費用をプロジェクト・モデル・期間別にローカルで可視化。記録された費用と推定額、キャッシュトークン、請求書との差を説明します。",
       },
     },
   },
 ];
+
+export const agentGuideSlugs: Partial<Record<string, string>> = {
+  "Claude Code": "claude-code-session-history",
+  Codex: "codex-session-history",
+};
 
 export const guideCopy = {
   en: {
@@ -411,6 +416,10 @@ export const guideCopy = {
     categories: "Guide categories",
     breadcrumb: "Breadcrumb",
     read: "Read",
+    ctaTitle: "Browse your local history in one Web UI",
+    ctaBody:
+      "MIT open source and read-only on your machine. Search conversations, tool calls, file changes, and token costs with one command.",
+    ctaPreview: "Explore live preview",
   },
   zh: {
     title: "CodeSesh 使用指南",
@@ -438,6 +447,10 @@ export const guideCopy = {
     categories: "指南分类",
     breadcrumb: "面包屑",
     read: "阅读",
+    ctaTitle: "在一个本地 Web 界面里搜索和回放历史会话",
+    ctaBody:
+      "MIT 开源、纯本地只读运行。一条命令按项目检索对话正文、工具调用、文件改动与 Token 成本。",
+    ctaPreview: "查看交互预览",
   },
   ja: {
     title: "CodeSesh の使い方",
@@ -465,6 +478,10 @@ export const guideCopy = {
     categories: "ガイドの分類",
     breadcrumb: "パンくずリスト",
     read: "読む",
+    ctaTitle: "ローカルの会話履歴をひとつの Web UI で検索・再生",
+    ctaBody:
+      "MIT オープンソース・読み取り専用。コマンドひとつで会話本文、ツール出力、ファイル変更、トークン消費量を横断検索できます。",
+    ctaPreview: "デモ画面を見る",
   },
 } satisfies Record<Locale, Record<string, string>>;
 

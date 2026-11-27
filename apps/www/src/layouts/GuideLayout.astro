@@ -3,6 +3,7 @@ import type { MarkdownLayoutProps } from "astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import Icon from "../components/Icon.astro";
+import InstallOptions from "../components/InstallOptions.astro";
 import { experience } from "../data/experience";
 import { localeConfig, type Locale } from "../data/landing";
 import {
@@ -96,6 +97,26 @@ const toc = [
             <div class="prose">
               <slot />
             </div>
+            <section class="gcta" aria-labelledby="guide-cta-heading">
+              <div class="gcta-top">
+                <div>
+                  <h2 id="guide-cta-heading">{t.ctaTitle}</h2>
+                  <p>{t.ctaBody}</p>
+                </div>
+                <a
+                  class="gcta-link"
+                  href={`${localeConfig[locale].route}#tour`}
+                >
+                  <span>{t.ctaPreview}</span>
+                  <Icon name="arrow" class="size-4" />
+                </a>
+              </div>
+              <InstallOptions
+                locale={locale}
+                id="guide-install"
+                tone="monolith"
+              />
+            </section>
             {faqItems.length > 0 && (
               <section class="gfaq" aria-labelledby="faq">
                 <h2 id="faq">{t.faq}</h2>
@@ -423,6 +444,59 @@ const toc = [
   }
   .prose :global(td) {
     color: var(--text-2);
+  }
+  .gcta {
+    margin-top: 56px;
+    padding: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    background: #111115;
+    box-shadow: var(--sh-raised);
+    color: #f3f2ef;
+  }
+  .gcta-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px 24px;
+    margin-bottom: 20px;
+  }
+  .gcta h2 {
+    margin: 0;
+    color: #ffffff;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .gcta p {
+    max-width: 54ch;
+    margin: 8px 0 0;
+    color: #b6b5bd;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .gcta-link {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s,
+      border-color 0.15s;
+  }
+  .gcta-link:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.12);
   }
   .gfaq {
     margin-top: 64px;

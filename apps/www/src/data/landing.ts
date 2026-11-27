@@ -72,6 +72,9 @@ interface LandingCopy {
     copied: string;
     copyFailed: string;
     copyCommand: string;
+    previewCta: string;
+    trustNote: string;
+    otherInstalls: string;
     moreAgents: string;
   };
   tour: {
@@ -105,6 +108,8 @@ interface LandingCopy {
     openSourceHeading: string;
     guideStart: string;
     guideHistory: string;
+    guideClaude: string;
+    guideCodex: string;
     guideUsage: string;
     guideBackground: string;
     changelog: string;
@@ -115,7 +120,7 @@ interface LandingCopy {
   };
 }
 
-export const landingUpdated = "2026-11-24";
+export const landingUpdated = "2026-11-27";
 
 export const siteUrl = "https://codesesh.xingkaixin.me";
 
@@ -175,8 +180,8 @@ export const agents = AGENT_CATALOG.map((entry) => ({
 export const copy = {
   zh: {
     meta: {
-      title: "Claude Code 与 Codex 历史会话查看器 | CodeSesh",
-      description: `在本机搜索和回放 Claude Code、Codex、Cursor 等 ${agentCount} 种 AI 编码工具的历史。按项目查找对话、工具调用和文件变更，免费开源，无需账号。`,
+      title: "Claude Code、Codex 与 Cursor 历史会话查看器 | CodeSesh",
+      description: `免费开源的本地 AI 编码历史搜索、回放与 Token 成本查看器。支持 Claude Code、Codex、Cursor 等 ${agentCount} 种工具，按项目归档，无需账号。`,
     },
     header: {
       tour: "产品导览",
@@ -195,13 +200,16 @@ export const copy = {
     },
     hero: {
       eyebrow: `本地运行 / 零配置 / ${agentCount} 个 Agent`,
-      title: ["把散落各处的 AI 会话，", "收进同一份本地索引"],
+      title: ["搜索并回放本机所有", "AI 编码历史会话"],
       body: `自动发现本机 Claude Code、Codex、Cursor 等 ${agentCount} 种工具的历史会话，按项目整理消息、工具调用、文件变更与 Token 成本。`,
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
       copied: "已复制",
       copyFailed: "复制失败，请手动复制命令",
       copyCommand: "复制启动命令",
+      previewCta: "查看交互预览",
+      trustNote: "MIT 开源 · 纯本地只读 · 无需 Node 可用",
+      otherInstalls: "brew / curl / Scoop",
       moreAgents: "+{count} 种 Agent",
     },
     tour: {
@@ -362,6 +370,8 @@ export const copy = {
       openSourceHeading: "开源",
       guideStart: "快速开始",
       guideHistory: "查找历史会话",
+      guideClaude: "Claude Code 历史",
+      guideCodex: "Codex 历史",
       guideUsage: "用量与成本核算",
       guideBackground: "后台服务",
       changelog: "更新日志",
@@ -373,8 +383,8 @@ export const copy = {
   },
   en: {
     meta: {
-      title: "Claude Code & Codex Session History Viewer | CodeSesh",
-      description: `Search local session history from Claude Code, Codex, Cursor, and ${agentCount - 3} other AI coding agents. Find conversations, tool calls, and file changes by project. Free and open source, no account needed.`,
+      title: "Claude Code, Codex & Cursor Session Viewer | CodeSesh",
+      description: `Search, replay, and track token costs for Claude Code, Codex, Cursor, and ${agentCount - 3} local AI coding agents. Open-source local Web UI, no account.`,
     },
     header: {
       tour: "Tour",
@@ -393,13 +403,16 @@ export const copy = {
     },
     hero: {
       eyebrow: `Local / Zero config / ${agentCount} agents`,
-      title: ["Every local AI session,", "indexed in one place"],
+      title: ["Search & replay every", "local AI coding session"],
       body: `Automatically discover local history from Claude Code, Codex, Cursor, and ${agentCount - 3} other agents. Browse messages, tool calls, file changes, and costs by project.`,
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
       copied: "Copied",
       copyFailed: "Copy failed. Copy the command manually.",
       copyCommand: "Copy command",
+      previewCta: "Explore live preview",
+      trustNote: "MIT open source · 100% local & read-only · No Node?",
+      otherInstalls: "brew / curl / Scoop",
       moreAgents: "+{count} agents",
     },
     tour: {
@@ -563,6 +576,8 @@ export const copy = {
       openSourceHeading: "Open source",
       guideStart: "Getting started",
       guideHistory: "Session history",
+      guideClaude: "Claude Code history",
+      guideCodex: "Codex history",
       guideUsage: "Usage and costs",
       guideBackground: "Background services",
       changelog: "Changelog",
@@ -574,8 +589,8 @@ export const copy = {
   },
   ja: {
     meta: {
-      title: "Claude Code・Codex の会話履歴ビューアー | CodeSesh",
-      description: `Claude Code、Codex、Cursor など${agentCount}種類のAIコーディング履歴をローカルで検索・再生。会話、ツール呼び出し、ファイル変更をプロジェクト別に確認できます。無料・オープンソース、アカウント不要。`,
+      title: "Claude Code・Codex・Cursor 会話履歴検索ビューアー | CodeSesh",
+      description: `Claude Code、Codex、Cursorなど${agentCount}種のAIコーディング履歴をローカルで横断検索・再生。トークン消費量やコストも可視化。無料・オープンソース・アカウント不要。`,
     },
     header: {
       tour: "製品ツアー",
@@ -594,13 +609,16 @@ export const copy = {
     },
     hero: {
       eyebrow: `ローカル実行 / 設定不要 / ${agentCount}エージェント`,
-      title: ["散らばる AI セッションを、", "ひとつのローカル索引へ"],
+      title: ["ローカルの AI 開発履歴を、", "横断検索・再生する"],
       body: `Claude Code、Codex、Cursor など ${agentCount} 種類のローカル履歴を自動検出し、メッセージ、ツール呼び出し、ファイル変更、コストをプロジェクト別に整理します。`,
       command: "npx codesesh",
       endpoint: "http://localhost:4521",
       copied: "コピーしました",
       copyFailed: "コピーできませんでした。コマンドを手動でコピーしてください。",
       copyCommand: "コマンドをコピー",
+      previewCta: "デモ画面を見る",
+      trustNote: "MIT オープンソース · ローカル読み取り専用 · Node 不要版:",
+      otherInstalls: "brew / curl / Scoop",
       moreAgents: "+{count} 種",
     },
     tour: {
@@ -774,6 +792,8 @@ export const copy = {
       openSourceHeading: "オープンソース",
       guideStart: "はじめ方",
       guideHistory: "会話履歴の探し方",
+      guideClaude: "Claude Code 履歴",
+      guideCodex: "Codex 履歴",
       guideUsage: "使用量とコスト",
       guideBackground: "バックグラウンド実行",
       changelog: "更新履歴",

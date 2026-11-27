@@ -1,8 +1,10 @@
 ---
+import { agentGuideSlugs, guideRoutes } from "../data/guides";
 import { agents, copy, type Locale } from "../data/landing";
 import { fill } from "../data/showcase";
 import AgentIcon from "./AgentIcon.astro";
 import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
 import InstallCommand from "./InstallCommand.astro";
 
 interface Props {
@@ -67,12 +69,21 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
         </h1>
         <p class="hero-lead">{t.body}</p>
         <div class="hero-action">
-          <InstallCommand
-            locale={locale}
-            method="npm"
-            placement="hero"
-            tone="hero"
-          />
+          <div class="hero-cta-row">
+            <InstallCommand
+              locale={locale}
+              method="npm"
+              placement="hero"
+              tone="hero"
+            />
+            <a class="hero-preview-btn" href="#tour">
+              <span>{t.previewCta}</span>
+              <Icon name="arrow" class="size-4" />
+            </a>
+          </div>
+          <p class="hero-note">
+            <span>{t.trustNote}</span> <a href="#install">{t.otherInstalls}</a>
+          </p>
         </div>
       </div>
     </div>
@@ -80,14 +91,18 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
 
   <div class="agent-strip" aria-label={copy[locale].header.agents}>
     <div class="agent-grid">
-      {featuredAgents.map((agent) => (
-        <a class="agent-cell" href="#agents">
-          <span class="agent-ic" aria-hidden="true">
-            <AgentIcon name={agent.name} size={20} />
-          </span>
-          <span>{agent.name}</span>
-        </a>
-      ))}
+      {featuredAgents.map((agent) => {
+        const slug = agentGuideSlugs[agent.name];
+        const href = slug ? guideRoutes(slug)[locale] : "#agents";
+        return (
+          <a class="agent-cell" href={href}>
+            <span class="agent-ic" aria-hidden="true">
+              <AgentIcon name={agent.name} size={20} />
+            </span>
+            <span>{agent.name}</span>
+          </a>
+        );
+      })}
       <a class="agent-cell agent-more" href="#agents">
         <span>{fill(t.moreAgents, { count: remainingCount })}</span>
       </a>
@@ -226,6 +241,70 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
     margin-top: 36px;
   }
 
+  .hero-cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .hero-preview-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 56px;
+    padding: 0 22px;
+    border: 1px solid rgba(20, 21, 25, 0.22);
+    background: rgba(243, 242, 239, 0.78);
+    backdrop-filter: blur(8px);
+    color: #121318;
+    font: 600 14px/1 var(--sans);
+    white-space: nowrap;
+    transition:
+      background-color 0.16s var(--ease-out),
+      border-color 0.16s var(--ease-out);
+  }
+
+  .hero-preview-btn:hover {
+    border-color: rgba(20, 21, 25, 0.42);
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  :global(.dark) .hero-preview-btn {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(20, 21, 25, 0.72);
+    color: #f3f2ef;
+  }
+
+  :global(.dark) .hero-preview-btn:hover {
+    border-color: rgba(255, 255, 255, 0.38);
+    background: rgba(30, 31, 38, 0.9);
+  }
+
+  .hero-note {
+    margin: 14px 0 0;
+    color: #363942;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .hero-note a {
+    color: #121318;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  :global(.dark) .hero-note {
+    color: #b6b5bd;
+  }
+
+  :global(.dark) .hero-note a {
+    color: #f3f2ef;
+  }
+
   /* Crisp full-bleed dark 7-column supported-agents anchor bar */
   .agent-strip {
     position: relative;
@@ -345,6 +424,10 @@ const remainingCount = Math.max(0, agents.length - featuredAgents.length);
     }
     .hero-action {
       margin-top: 28px;
+    }
+    .hero-preview-btn {
+      width: 100%;
+      min-height: 48px;
     }
     .agent-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
