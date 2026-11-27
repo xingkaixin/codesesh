@@ -6,7 +6,7 @@ slug: session-history
 
 大多数本地 AI 编码 Agent 会把历史会话保存在用户主目录下的隐藏 JSONL 文件夹或 SQLite 数据库中：Claude Code 将完整对话保存在 `~/.claude/projects/`（输入历史在 `~/.claude/history.jsonl`），Codex 将 `rollout-*.jsonl` 保存在 `~/.codex/sessions/`，而 Cursor、OpenCode、Gemini CLI 也各有独立存储路径。CodeSesh 可以把这些本地记录聚合到一个可全文搜索的 Web 界面中，默认不上传任何数据。
 
-如果需要具体工具的目录结构、原生恢复命令和清理机制排查，可直接阅读 [Claude Code 历史会话指南](/zh/guides/claude-code-session-history/) 和 [Codex 历史会话指南](/zh/guides/codex-session-history/)。
+如果需要具体工具的目录结构、原生恢复命令和清理机制排查，可直接阅读 [Claude Code](/zh/guides/claude-code-session-history/)、[Codex](/zh/guides/codex-session-history/)、[Cursor](/zh/guides/cursor-session-history/)、[OpenCode](/zh/guides/opencode-session-history/) 和 [Gemini CLI](/zh/guides/gemini-cli-session-history/) 专题指南。
 
 ## 常见 Agent 的默认历史存储位置
 

@@ -6,7 +6,7 @@ slug: session-history
 
 Most local AI coding agents store session history in hidden JSONL directories or SQLite databases under your home directory. Claude Code writes transcripts to `~/.claude/projects/` (and prompt history to `~/.claude/history.jsonl`), Codex writes `rollout-*.jsonl` files under `~/.codex/sessions/`, and tools like Cursor, OpenCode, and Gemini CLI each keep separate stores. CodeSesh indexes these local locations into one searchable Web UI without uploading your data.
 
-For tool-specific commands, directory layouts, and retention rules, read the dedicated guides for [Claude Code session history](/guides/claude-code-session-history/) and [Codex session history](/guides/codex-session-history/).
+For tool-specific commands, directory layouts, and retention rules, read the dedicated guides for [Claude Code](/guides/claude-code-session-history/), [Codex](/guides/codex-session-history/), [Cursor](/guides/cursor-session-history/), [OpenCode](/guides/opencode-session-history/), and [Gemini CLI](/guides/gemini-cli-session-history/).
 
 ## Default local storage locations
 

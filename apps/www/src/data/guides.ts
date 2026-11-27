@@ -42,7 +42,7 @@ export const guides: Guide[] = [
     slug: "session-history",
     category: "start",
     published: "2026-10-03",
-    updated: "2026-11-22",
+    updated: "2026-11-27",
     copy: {
       en: {
         title: "How to find AI coding session history locally",
@@ -291,6 +291,273 @@ export const guides: Guide[] = [
     },
   },
   {
+    slug: "cursor-session-history",
+    category: "start",
+    published: "2026-11-27",
+    updated: "2026-11-27",
+    copy: {
+      en: {
+        title: "Cursor chat history: state.vscdb location & viewer",
+        description:
+          "Find where Cursor stores Composer and chat history in state.vscdb on macOS, Linux, and Windows, and search or replay past Cursor conversations locally with CodeSesh.",
+        faq: [
+          {
+            question: "Where does Cursor store chat and Composer history?",
+            answer:
+              "Cursor stores local chat and Composer sessions inside globalStorage/state.vscdb under ~/Library/Application Support/Cursor/User on macOS, ~/.config/Cursor/User on Linux, and %APPDATA%\\Cursor\\User on Windows. Export CURSOR_DATA_PATH if you use a custom data directory.",
+          },
+          {
+            question: "How do I search Cursor chat history across projects?",
+            answer:
+              "Run npx codesesh --agent cursor --days 0. CodeSesh reads Cursor's state.vscdb in read-only mode, parses Composer conversations and tool calls, and lets you search prompts, replies, tool outputs, and file paths across all workspaces in a local Web UI.",
+          },
+          {
+            question: "Does CodeSesh modify Cursor's state.vscdb database?",
+            answer:
+              "No. CodeSesh opens globalStorage/state.vscdb strictly in read-only mode and writes its search index to a separate local SQLite database. Your Cursor editor data is never altered.",
+          },
+          {
+            question: "Can I view Cursor history together with Claude Code and Codex?",
+            answer:
+              "Yes. Run npx codesesh --days 0 without the --agent flag to index Cursor alongside Claude Code, Codex, OpenCode, Gemini CLI, and all other supported local agents in one project-aware timeline.",
+          },
+        ],
+      },
+      zh: {
+        title: "Cursor 历史对话指南：state.vscdb 位置与本地搜索查看器",
+        description:
+          "查找 Cursor 在 macOS、Linux 与 Windows 上的 state.vscdb 聊天记录位置，并用 CodeSesh 只读解析和跨项目搜索回放 Cursor Composer 历史会话。",
+        faq: [
+          {
+            question: "Cursor 的聊天和 Composer 历史保存在本地哪里？",
+            answer:
+              "Cursor 将对话记录保存在用户数据目录下的 globalStorage/state.vscdb 中：macOS 为 ~/Library/Application Support/Cursor/User，Linux 为 ~/.config/Cursor/User，Windows 为 %APPDATA%\\Cursor\\User。自定义目录可通过 CURSOR_DATA_PATH 指定。",
+          },
+          {
+            question: "如何跨项目全文搜索 Cursor 的历史对话？",
+            answer:
+              "运行 npx codesesh --agent cursor --days 0。CodeSesh 会以只读模式解析 state.vscdb 中的 Composer 会话和工具调用，支持在本地 Web 界面跨仓库检索提示词、回复、工具输出和文件路径。",
+          },
+          {
+            question: "CodeSesh 会修改 Cursor 的 SQLite 数据库吗？",
+            answer:
+              "不会。CodeSesh 始终以只读模式打开 state.vscdb，并把搜索索引保存在独立的本地 SQLite 数据库中，绝不会改动 Cursor 原始文件。",
+          },
+          {
+            question: "可以把 Cursor 历史和 Claude Code、Codex 放一起查看吗？",
+            answer:
+              "可以。直接运行 npx codesesh --days 0，CodeSesh 会把 Cursor 与 Claude Code、Codex、OpenCode、Gemini CLI 等工具的记录按项目聚合到同一个界面中。",
+          },
+        ],
+      },
+      ja: {
+        title: "Cursor のチャット履歴：state.vscdb の保存場所と検索ビューアー",
+        description:
+          "macOS・Linux・Windows での Cursor の Composer / チャット履歴（state.vscdb）の保存先と、CodeSesh による読み取り専用の横断検索・再生手順を解説します。",
+        faq: [
+          {
+            question: "Cursor のチャットや Composer の履歴はどこに保存されますか？",
+            answer:
+              "macOS では ~/Library/Application Support/Cursor/User、Linux では ~/.config/Cursor/User、Windows では %APPDATA%\\Cursor\\User 配下の globalStorage/state.vscdb に保存されます。独自パスを使う場合は CURSOR_DATA_PATH を設定します。",
+          },
+          {
+            question: "複数プロジェクトをまたいで Cursor の履歴を検索するには？",
+            answer:
+              "npx codesesh --agent cursor --days 0 を実行してください。state.vscdb を読み取り専用で解析し、すべてのワークスペースの会話本文、ツール出力、ファイルパスをローカル Web UI で横断検索できます。",
+          },
+          {
+            question: "CodeSesh は Cursor の state.vscdb を書き換えますか？",
+            answer:
+              "いいえ。CodeSesh は常に読み取り専用で state.vscdb を開き、検索インデックスは別のローカル SQLite ファイルに保存するため、Cursor の元データには一切変更を加えません。",
+          },
+          {
+            question: "Claude Code や Codex の履歴と一緒に閲覧できますか？",
+            answer:
+              "はい。--agent を指定せず npx codesesh --days 0 を実行すると、Cursor、Claude Code、Codex、OpenCode、Gemini CLI などの履歴を同じプロジェクトツリーに統合できます。",
+          },
+        ],
+      },
+    },
+  },
+  {
+    slug: "opencode-session-history",
+    category: "start",
+    published: "2026-11-27",
+    updated: "2026-11-27",
+    copy: {
+      en: {
+        title: "OpenCode session history: opencode.db, resume & viewer",
+        description:
+          "Locate ~/.local/share/opencode/opencode.db, override paths with OPENCODE_DB, reopen threads via opencode -s, and search OpenCode sessions and costs locally with CodeSesh.",
+        faq: [
+          {
+            question: "Where does OpenCode store local session history?",
+            answer:
+              "OpenCode stores sessions, messages, tool calls, reasoning, and recorded costs in an SQLite database at ~/.local/share/opencode/opencode.db (or $XDG_DATA_HOME/opencode/opencode.db). Set OPENCODE_DB to point to a custom database file.",
+          },
+          {
+            question: "How do I resume a previous OpenCode session from the CLI?",
+            answer:
+              "Run opencode -s <session-id> in your terminal. CodeSesh lets you search past OpenCode conversations across repositories and copy the exact worktree-aware opencode -s command from the session detail view.",
+          },
+          {
+            question: "Does CodeSesh support both OpenCode V1 and V2 databases?",
+            answer:
+              "Yes. CodeSesh reads OpenCode V1 (session), V2 (session_v2 and session_message), and databases mid-way through V1-to-V2 migration in read-only mode.",
+          },
+          {
+            question: "Can CodeSesh show OpenCode token usage and recorded costs?",
+            answer:
+              "Yes. OpenCode records token totals and cost metadata in opencode.db, which CodeSesh surfaces by project, model, and date alongside full conversation replay.",
+          },
+        ],
+      },
+      zh: {
+        title: "OpenCode 历史会话指南：opencode.db 位置、恢复与搜索",
+        description:
+          "定位 ~/.local/share/opencode/opencode.db 与 OPENCODE_DB 覆盖方式，用 opencode -s 恢复会话，并通过 CodeSesh 本地搜索回放 OpenCode 对话与成本。",
+        faq: [
+          {
+            question: "OpenCode 的本地会话历史保存在哪里？",
+            answer:
+              "OpenCode 将会话、消息、工具调用、推理步骤与记录成本保存在 ~/.local/share/opencode/opencode.db（设置 XDG_DATA_HOME 时位于 $XDG_DATA_HOME/opencode/opencode.db），也可以通过 OPENCODE_DB 指定自定义路径。",
+          },
+          {
+            question: "如何在终端恢复之前的 OpenCode 会话？",
+            answer:
+              "在终端运行 opencode -s <session-id>。你可以先用 CodeSesh 跨仓库检索历史对话，再从会话详情页一键复制带工作目录上下文的恢复命令。",
+          },
+          {
+            question: "CodeSesh 支持 OpenCode V1 和 V2 数据库吗？",
+            answer:
+              "支持。CodeSesh 以只读模式兼容 OpenCode V1（session）、V2（session_v2 / session_message）以及正在从 V1 迁移到 V2 的数据库。",
+          },
+          {
+            question: "CodeSesh 能查看 OpenCode 的 Token 用量和费用吗？",
+            answer:
+              "可以。OpenCode 会在 opencode.db 中记录 Token 和成本信息，CodeSesh 会按项目、模型和日期汇总展示，并关联到完整会话回放。",
+          },
+        ],
+      },
+      ja: {
+        title: "OpenCode のセッション履歴：opencode.db の場所・再開・検索",
+        description:
+          "~/.local/share/opencode/opencode.db の構成と OPENCODE_DB による上書き、opencode -s での再開手順、CodeSesh での検索とコスト確認を解説します。",
+        faq: [
+          {
+            question: "OpenCode のセッション履歴はどこに保存されますか？",
+            answer:
+              "~/.local/share/opencode/opencode.db（XDG_DATA_HOME 設定時は $XDG_DATA_HOME/opencode/opencode.db）に SQLite 形式で保存されます。OPENCODE_DB で任意のデータベースパスを指定することもできます。",
+          },
+          {
+            question: "過去の OpenCode セッションを CLI から再開するには？",
+            answer:
+              "ターミナルで opencode -s <session-id> を実行します。CodeSesh で履歴を検索したあと、詳細画面からディレクトリ情報付きの再開コマンドをそのままコピーできます。",
+          },
+          {
+            question: "OpenCode の V1 と V2 の両方のデータベースに対応していますか？",
+            answer:
+              "はい。V1（session）、V2（session_v2 / session_message）、および V1 から V2 へ移行途中のデータベースを読み取り専用でサポートしています。",
+          },
+          {
+            question: "OpenCode のトークン消費量や費用も確認できますか？",
+            answer:
+              "はい。opencode.db に記録されたトークン数とコストをプロジェクト・モデル・期間別に集計し、会話の再生画面とあわせて確認できます。",
+          },
+        ],
+      },
+    },
+  },
+  {
+    slug: "gemini-cli-session-history",
+    category: "start",
+    published: "2026-11-27",
+    updated: "2026-11-27",
+    copy: {
+      en: {
+        title: "Gemini CLI session history: storage, resume & viewer",
+        description:
+          "Find where Gemini CLI stores chat logs under ~/.gemini/tmp/, reopen past sessions with gemini --resume, and search Gemini CLI transcripts across projects with CodeSesh.",
+        faq: [
+          {
+            question: "Where does Gemini CLI store local chat history?",
+            answer:
+              "Gemini CLI stores local chat transcripts as JSON and JSONL files under ~/.gemini/tmp/<project-hash>/chats/. If GEMINI_CLI_HOME is set, both Gemini CLI and CodeSesh read from $GEMINI_CLI_HOME/.gemini/tmp/ instead.",
+          },
+          {
+            question: "How do I reopen a previous Gemini CLI session?",
+            answer:
+              "Run gemini --resume inside the project directory, or pass a specific ID with gemini --resume <session-id>. CodeSesh lets you copy the exact resume command from any indexed Gemini CLI session.",
+          },
+          {
+            question: "Why are folders under ~/.gemini/tmp/ named with hashes?",
+            answer:
+              "Gemini CLI groups chat files by a project hash instead of the repository name. CodeSesh parses each transcript's project metadata so you can browse and search by readable repository names.",
+          },
+          {
+            question: "How do I search Gemini CLI history across all repositories?",
+            answer:
+              "Run npx codesesh --agent gemini-cli --days 0. CodeSesh indexes every transcript under ~/.gemini/tmp/*/chats/ into a local SQLite database so you can search prompts, tool calls, reasoning, and touched file paths.",
+          },
+        ],
+      },
+      zh: {
+        title: "Gemini CLI 历史会话指南：存储路径、恢复命令与本地搜索",
+        description:
+          "定位 ~/.gemini/tmp/ 下的 Gemini CLI 对话记录，掌握 gemini --resume 恢复方法，并用 CodeSesh 跨项目搜索回放对话、工具调用和 Token 用量。",
+        faq: [
+          {
+            question: "Gemini CLI 的本地历史对话保存在哪里？",
+            answer:
+              "Gemini CLI 将对话记录以 JSON 和 JSONL 文件保存在 ~/.gemini/tmp/<project-hash>/chats/。如果设置了 GEMINI_CLI_HOME，则读取 $GEMINI_CLI_HOME/.gemini/tmp/。",
+          },
+          {
+            question: "如何在命令行恢复之前的 Gemini CLI 会话？",
+            answer:
+              "在原项目目录中运行 gemini --resume，或运行 gemini --resume <session-id> 直接恢复指定会话。在 CodeSesh 的会话详情页也可以直接复制恢复命令。",
+          },
+          {
+            question: "为什么 ~/.gemini/tmp/ 里的文件夹名是哈希值？",
+            answer:
+              "Gemini CLI 使用项目哈希而非可读的仓库名来区分目录。CodeSesh 会解析记录中的项目元数据，让你按真实项目名浏览和检索。",
+          },
+          {
+            question: "如何跨仓库全文搜索 Gemini CLI 历史会话？",
+            answer:
+              "运行 npx codesesh --agent gemini-cli --days 0。CodeSesh 会将 ~/.gemini/tmp/*/chats/ 下的记录建立本地 SQLite 索引，支持搜索提示词、工具输出、推理过程和文件路径。",
+          },
+        ],
+      },
+      ja: {
+        title: "Gemini CLI の会話履歴：保存場所・再開コマンド・検索ビューアー",
+        description:
+          "~/.gemini/tmp/ 配下の Gemini CLI ログの保存先、gemini --resume での再開手順、CodeSesh によるプロジェクト横断検索と再生方法を解説します。",
+        faq: [
+          {
+            question: "Gemini CLI の会話履歴はどこに保存されますか？",
+            answer:
+              "~/.gemini/tmp/<project-hash>/chats/ 配下に JSON / JSONL ファイルとして保存されます。GEMINI_CLI_HOME を設定している場合は $GEMINI_CLI_HOME/.gemini/tmp/ が参照されます。",
+          },
+          {
+            question: "過去の Gemini CLI セッションを再開するには？",
+            answer:
+              "プロジェクトディレクトリで gemini --resume を実行するか、セッション ID を指定して gemini --resume <session-id> を実行します。CodeSesh の詳細画面からも再開コマンドをコピーできます。",
+          },
+          {
+            question: "~/.gemini/tmp/ 配下のフォルダ名がハッシュ値なのはなぜですか？",
+            answer:
+              "Gemini CLI はリポジトリ名ではなくプロジェクトハッシュごとにチャットを分類するためです。CodeSesh がメタデータを解析し、わかりやすいプロジェクト単位に整理して表示します。",
+          },
+          {
+            question: "複数プロジェクトをまたいで Gemini CLI の履歴を検索するには？",
+            answer:
+              "npx codesesh --agent gemini-cli --days 0 を実行してください。~/.gemini/tmp/*/chats/ の記録をローカル SQLite に索引化し、本文、ツール出力、推論、ファイルパスを横断検索できます。",
+          },
+        ],
+      },
+    },
+  },
+  {
     slug: "lan-access",
     category: "connect",
     published: "2026-10-03",
@@ -387,6 +654,9 @@ export const guides: Guide[] = [
 export const agentGuideSlugs: Partial<Record<string, string>> = {
   "Claude Code": "claude-code-session-history",
   Codex: "codex-session-history",
+  Cursor: "cursor-session-history",
+  OpenCode: "opencode-session-history",
+  "Gemini CLI": "gemini-cli-session-history",
 };
 
 export const guideCopy = {

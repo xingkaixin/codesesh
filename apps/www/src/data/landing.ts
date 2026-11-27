@@ -110,6 +110,7 @@ interface LandingCopy {
     guideHistory: string;
     guideClaude: string;
     guideCodex: string;
+    guideCursor: string;
     guideUsage: string;
     guideBackground: string;
     changelog: string;
@@ -372,6 +373,7 @@ export const copy = {
       guideHistory: "查找历史会话",
       guideClaude: "Claude Code 历史",
       guideCodex: "Codex 历史",
+      guideCursor: "Cursor 历史",
       guideUsage: "用量与成本核算",
       guideBackground: "后台服务",
       changelog: "更新日志",
@@ -578,6 +580,7 @@ export const copy = {
       guideHistory: "Session history",
       guideClaude: "Claude Code history",
       guideCodex: "Codex history",
+      guideCursor: "Cursor history",
       guideUsage: "Usage and costs",
       guideBackground: "Background services",
       changelog: "Changelog",
@@ -794,6 +797,7 @@ export const copy = {
       guideHistory: "会話履歴の探し方",
       guideClaude: "Claude Code 履歴",
       guideCodex: "Codex 履歴",
+      guideCursor: "Cursor 履歴",
       guideUsage: "使用量とコスト",
       guideBackground: "バックグラウンド実行",
       changelog: "更新履歴",
