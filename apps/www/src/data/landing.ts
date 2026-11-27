@@ -118,6 +118,7 @@ interface LandingCopy {
     issues: string;
     blog: string;
     blogUrl: string;
+    agentDump: string;
   };
 }
 
@@ -181,7 +182,7 @@ export const agents = AGENT_CATALOG.map((entry) => ({
 export const copy = {
   zh: {
     meta: {
-      title: "Claude Code、Codex 与 Cursor 历史会话查看器 | CodeSesh",
+      title: "CodeSesh — 免费本地会话查看与成本统计（Claude Code、Codex 与 Cursor）",
       description: `免费开源的本地 AI 编码历史搜索、回放与 Token 成本查看器。支持 Claude Code、Codex、Cursor 等 ${agentCount} 种工具，按项目归档，无需账号。`,
     },
     header: {
@@ -381,11 +382,12 @@ export const copy = {
       issues: "问题反馈",
       blog: "XingKaiXin 的博客",
       blogUrl: "https://xingkaixin.me/",
+      agentDump: "Agent Dump",
     },
   },
   en: {
     meta: {
-      title: "Claude Code, Codex & Cursor Session Viewer | CodeSesh",
+      title: "CodeSesh — Free Local Session Viewer & Cost Tracker for Claude Code, Codex & Cursor",
       description: `Search, replay, and track token costs for Claude Code, Codex, Cursor, and ${agentCount - 3} local AI coding agents. Open-source local Web UI, no account.`,
     },
     header: {
@@ -588,11 +590,12 @@ export const copy = {
       issues: "Issues",
       blog: "XingKaiXin's Blog",
       blogUrl: "https://xingkaixin.me/en/",
+      agentDump: "Agent Dump",
     },
   },
   ja: {
     meta: {
-      title: "Claude Code・Codex・Cursor 会話履歴検索ビューアー | CodeSesh",
+      title: "CodeSesh — Claude Code・Codex・Cursor 無料ローカル履歴・コストビューアー",
       description: `Claude Code、Codex、Cursorなど${agentCount}種のAIコーディング履歴をローカルで横断検索・再生。トークン消費量やコストも可視化。無料・オープンソース・アカウント不要。`,
     },
     header: {
@@ -805,6 +808,7 @@ export const copy = {
       issues: "問題を報告",
       blog: "XingKaiXin のブログ",
       blogUrl: "https://xingkaixin.me/en/",
+      agentDump: "Agent Dump",
     },
   },
 } satisfies Record<Locale, LandingCopy>;

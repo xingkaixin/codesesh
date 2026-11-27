@@ -8,6 +8,7 @@ interface Props {
 
 const { value, secondClass = "dim" } = Astro.props;
 const lines = Array.isArray(value) ? value : [value];
+const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
 // CJK headings use keep-all, so each phrase ending in punctuation stays on one
 // line instead of leaving one or two characters orphaned. Only ASCII spaces
 // split words, so a no-break space keeps a phrase such as 你的 AI together.
@@ -15,18 +16,33 @@ const phrases = (line: string) =>
   line.split(/ +/).map((word) => word.split(/(?<=[、，。：；！？])/u));
 ---
 
-{lines.map((line, index) => (
-  <>
-    {index > 0 && <br />}
-    <span class:list={[index > 0 && secondClass]}>
-      {phrases(line).map((word, w) => (
+{lines.map((line, index) => {
+  const lineClass = index > 0 ? secondClass : "";
+  const needsCjkWrap = CJK_RE.test(line);
+  return (
+    <>
+      {index > 0 && (
         <>
-          {w > 0 && " "}
-          {word.map((part) => (
-            <span class="nw">{part}</span>
-          ))}
+          {" "}
+          <br />
         </>
-      ))}
-    </span>
-  </>
-))}
+      )}
+      {needsCjkWrap ? (
+        <span class:list={[lineClass]}>
+          {phrases(line).map((word, w) => (
+            <>
+              {w > 0 && " "}
+              {word.map((part) => (
+                <span class="nw">{part}</span>
+              ))}
+            </>
+          ))}
+        </span>
+      ) : lineClass ? (
+        <span class={lineClass}>{line}</span>
+      ) : (
+        line
+      )}
+    </>
+  );
+})}
