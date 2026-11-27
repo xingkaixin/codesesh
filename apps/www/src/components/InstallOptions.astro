@@ -136,6 +136,8 @@ const methods = [
 </div>
 
 <script>
+  import { trackEvent } from "../scripts/analytics";
+
   document
     .querySelectorAll<HTMLElement>("[data-install-options]")
     .forEach((group) => {
@@ -146,15 +148,22 @@ const methods = [
         "[data-install-panel]",
       );
       function selectTab(selected: HTMLButtonElement) {
+        const method = selected.dataset.installMethod ?? "";
+        const changed = selected.getAttribute("aria-selected") !== "true";
         tabs.forEach((tab) => {
           const active = tab === selected;
           tab.setAttribute("aria-selected", String(active));
           tab.tabIndex = active ? 0 : -1;
         });
         panels.forEach((panel) => {
-          panel.hidden =
-            panel.dataset.installPanel !== selected.dataset.installMethod;
+          panel.hidden = panel.dataset.installPanel !== method;
         });
+        if (changed && method) {
+          void trackEvent("install-tab", {
+            method,
+            placement: window.location.pathname,
+          });
+        }
       }
 
       tabs.forEach((tab, index) => {

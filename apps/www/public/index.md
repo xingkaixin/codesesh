@@ -114,6 +114,9 @@ The initial scan persists backfill progress. Later starts restore from the SQLit
 - Session history: https://codesesh.xingkaixin.me/guides/session-history/
 - Claude Code session history: https://codesesh.xingkaixin.me/guides/claude-code-session-history/
 - Codex session history: https://codesesh.xingkaixin.me/guides/codex-session-history/
+- Cursor chat history: https://codesesh.xingkaixin.me/guides/cursor-session-history/
+- OpenCode session history: https://codesesh.xingkaixin.me/guides/opencode-session-history/
+- Gemini CLI session history: https://codesesh.xingkaixin.me/guides/gemini-cli-session-history/
 - LAN access: https://codesesh.xingkaixin.me/guides/lan-access/
 - Multi-machine sync: https://codesesh.xingkaixin.me/guides/multi-machine-sync/
 - Background services: https://codesesh.xingkaixin.me/guides/background-services/

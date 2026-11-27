@@ -6,7 +6,7 @@ slug: session-history
 
 多くのローカル AI コーディングエージェントは、ホームディレクトリ配下の隠し JSONL フォルダや SQLite データベースに会話履歴を保存します。Claude Code は `~/.claude/projects/`（入力履歴は `~/.claude/history.jsonl`）、Codex は `~/.codex/sessions/` の `rollout-*.jsonl` に保存し、Cursor、OpenCode、Gemini CLI などもそれぞれ独自の保存先を持ちます。CodeSesh はこれらのローカル記録を 1 つの Web UI に集約し、データを外部へ送信せずに検索・再生できます。
 
-ツール別の詳細な保存構成や再開コマンドは、[Claude Code の会話履歴ガイド](/ja/guides/claude-code-session-history/)および [Codex のセッション履歴ガイド](/ja/guides/codex-session-history/)を参照してください。
+ツール別の詳細な保存構成や再開コマンドは、[Claude Code](/ja/guides/claude-code-session-history/)、[Codex](/ja/guides/codex-session-history/)、[Cursor](/ja/guides/cursor-session-history/)、[OpenCode](/ja/guides/opencode-session-history/)、[Gemini CLI](/ja/guides/gemini-cli-session-history/) の各専用ガイドを参照してください。
 
 ## 主なエージェントの標準保存場所
 

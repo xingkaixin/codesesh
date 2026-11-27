@@ -1,9 +1,11 @@
 ---
 import { experience } from "../data/experience";
+import { agentGuideSlugs, guideRoutes } from "../data/guides";
 import { agents, type Locale } from "../data/landing";
 import { showcase, splitTitle } from "../data/showcase";
 import AgentIcon from "./AgentIcon.astro";
 import HeadingText from "./HeadingText.astro";
+import Icon from "./Icon.astro";
 
 interface Props {
   locale: Locale;
@@ -27,13 +29,27 @@ const a = showcase[locale].agents;
     </div>
     <div data-reveal>
       <ul class="keys" aria-label={t.agentsList}>
-        {agents.map((agent) => (
-          <li class="key">
-            <AgentIcon name={agent.name} size={20} />
-            <span data-agent-name>{agent.name}</span>
-            {agent.partial && <span class="partial">{a.partial}</span>}
-          </li>
-        ))}
+        {agents.map((agent) => {
+          const slug = agentGuideSlugs[agent.name];
+          return slug ? (
+            <li>
+              <a class="key key-link" href={guideRoutes(slug)[locale]}>
+                <AgentIcon name={agent.name} size={20} />
+                <span data-agent-name>{agent.name}</span>
+                {agent.partial && <span class="partial">{a.partial}</span>}
+                <span class="key-arrow" aria-hidden="true">
+                  <Icon name="arrow-up-right" class="size-3.5" />
+                </span>
+              </a>
+            </li>
+          ) : (
+            <li class="key">
+              <AgentIcon name={agent.name} size={20} />
+              <span data-agent-name>{agent.name}</span>
+              {agent.partial && <span class="partial">{a.partial}</span>}
+            </li>
+          );
+        })}
       </ul>
     </div>
   </div>
@@ -91,6 +107,18 @@ const a = showcase[locale].agents;
   .key:hover {
     box-shadow: 0 1px 0 var(--border-strong);
     transform: translateY(2px);
+  }
+  .key-link:hover {
+    border-color: var(--brand-line);
+    box-shadow: 0 1px 0 var(--brand-line);
+  }
+  .key-arrow {
+    display: inline-flex;
+    color: var(--muted);
+    transition: color 0.12s var(--ease-out);
+  }
+  .key-link:hover .key-arrow {
+    color: var(--brand-ink);
   }
   .partial {
     padding: 3px 5px;
