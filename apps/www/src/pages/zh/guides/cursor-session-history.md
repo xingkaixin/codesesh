@@ -48,6 +48,6 @@ Cursor 是桌面端 IDE，不提供命令行恢复参数，因此 CodeSesh 专�
 
 如果你同时使用命令行工具，可查看 [Claude Code 历史会话指南](/zh/guides/claude-code-session-history/)、[Codex 历史会话指南](/zh/guides/codex-session-history/) 或 [本地历史会话总览](/zh/guides/session-history/)。
 
-## 安全保留 Cursor 原始记录
+## 安全保留原始记录与导出分工
 
-CodeSesh 始终以只读模式访问 `state.vscdb`，不会修改或删除 Cursor 数据。如需在重装或清理数据前做长期备份，请先关闭 Cursor，再直接备份 `Cursor/User/globalStorage/state.vscdb`。
+CodeSesh 始终以只读模式访问 `state.vscdb`，不会修改或删除 Cursor 数据。如需在重装或清理数据前做长期备份，请先关闭 Cursor，再直接备份 `Cursor/User/globalStorage/state.vscdb`。CodeSesh 专注本地搜索、回放与用量复盘；如需将 Cursor 对话导出为独立文件分享或归档，可搭配 [Agent Dump](https://agent-dump.xingkaixin.me/) 使用。

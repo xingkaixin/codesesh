@@ -67,7 +67,7 @@ npx codesesh --agent claudecode --days 0 --cwd .
 In the Web UI, you can:
 
 - **Search across projects:** Match user messages, assistant replies, tool outputs, and file paths in one query, then jump directly to the matching message inside the replay timeline.
-- **Inspect nested subagents:** View parent and child agent runs together with rolled-up token usage and estimated costs.
+- **Inspect nested subagents and costs:** View parent and child agent runs together with rolled-up input, output, cache-read tokens, and estimated costs by project or model. See the [usage and costs guide](/guides/usage-and-costs/) for how token accounting and cost estimates work.
 - **Track file activity:** Look up a path such as `src/auth.ts` to find every Claude Code session that read, edited, or created it.
 - **Copy worktree-aware resume commands:** Click copy on any session detail page to get the exact `claude --resume <session-id>` command for that workspace.
 
@@ -75,4 +75,4 @@ If you use both Claude Code and Codex, see the [Codex session history guide](/gu
 
 ## Preserve transcripts safely
 
-CodeSesh never modifies or deletes your `~/.claude/projects/` files. If you want to keep Claude Code transcripts beyond the default retention period, increase `cleanupPeriodDays` in `~/.claude/settings.json` and back up `~/.claude/projects/` directly.
+CodeSesh never modifies or deletes your `~/.claude/projects/` files. If you want to keep Claude Code transcripts beyond the default retention period, increase `cleanupPeriodDays` in `~/.claude/settings.json` and back up `~/.claude/projects/` directly. If you want to export individual conversations into standalone files for sharing or archiving, pair CodeSesh with [Agent Dump](https://agent-dump.xingkaixin.me/).

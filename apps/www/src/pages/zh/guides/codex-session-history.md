@@ -4,7 +4,7 @@ locale: zh
 slug: codex-session-history
 ---
 
-Codex 将本地活跃会话按日期保存为 `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`，在 `~/.codex/session_index.jsonl` 中记录会话标题索引，并将归档会话移到 `~/.codex/archived_sessions/`。在命令行中可用 `codex resume` 或 `codex resume --last` 列出并恢复旧会话；如需在本地 Web 界面跨仓库搜索和回放 Codex 历史，可运行 `npx codesesh --agent codex --days 0`。
+OpenAI Codex CLI 将本地活跃会话按日期保存为 `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`，在 `~/.codex/session_index.jsonl` 中记录会话标题索引，并将归档会话移到 `~/.codex/archived_sessions/`。在命令行中可用 `codex resume` 或 `codex resume --last` 列出并恢复旧会话；如需在本地 Web 界面跨仓库搜索和回放 Codex CLI 历史，可运行 `npx codesesh --agent codex --days 0`。
 
 ## Codex 会话目录结构
 
@@ -68,4 +68,4 @@ npx codesesh --agent codex --days 0 --cwd .
 - **核对 `CODEX_HOME`：** 确认启动 CodeSesh 的终端与运行 Codex 时使用相同的 `CODEX_HOME` 环境变量。
 - **等待首次索引完成：** 历史较多时首次扫描在后台运行，请等索引完成后再进行全文检索。
 
-如果你还使用 Claude Code 或其他工具，可继续查看 [Claude Code 历史会话指南](/zh/guides/claude-code-session-history/)和[本地历史查找总览](/zh/guides/session-history/)；独立二进制安装方式见[安装指南](/zh/guides/getting-started/)。
+如果你还使用 Claude Code 或其他工具，可继续查看 [Claude Code 历史会话指南](/zh/guides/claude-code-session-history/)和[本地历史查找总览](/zh/guides/session-history/)；独立二进制安装方式见[安装指南](/zh/guides/getting-started/)。如果需要把 Codex 会话导出为独立文档分享或归档，可配合 [Agent Dump](https://agent-dump.xingkaixin.me/) 使用。

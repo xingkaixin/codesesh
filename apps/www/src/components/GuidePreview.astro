@@ -1,0 +1,393 @@
+---
+import type { Locale } from "../data/landing";
+import AgentIcon from "./AgentIcon.astro";
+import Icon from "./Icon.astro";
+
+export type AgentPreviewKey =
+  "claude-code" | "codex" | "cursor" | "opencode" | "gemini-cli";
+
+interface Props {
+  locale: Locale;
+  agent: AgentPreviewKey;
+}
+
+interface PreviewSpec {
+  agentName: string;
+  sourcePath: string;
+  project: string;
+  title: Record<Locale, string>;
+  meta: Record<Locale, string>;
+  toolName: string;
+  toolTarget: string;
+  toolResult: string;
+  tokens: string;
+  cost: string;
+  resumeCommand?: string;
+}
+
+const specs: Record<AgentPreviewKey, PreviewSpec> = {
+  "claude-code": {
+    agentName: "Claude Code",
+    sourcePath: "~/.claude/projects/",
+    project: "web-app",
+    title: {
+      en: "Fix OAuth refresh race condition & add tests",
+      zh: "修复 OAuth 刷新竞态并补充回归测试",
+      ja: "OAuth リフレッシュ競合の修正とテスト追加",
+    },
+    meta: {
+      en: "42 messages · 2 subagents · claude-sonnet-4-6",
+      zh: "42 条消息 · 2 个子 Agent · claude-sonnet-4-6",
+      ja: "42 件のメッセージ · サブ 2 · claude-sonnet-4-6",
+    },
+    toolName: "edit",
+    toolTarget: "src/auth/refresh.ts",
+    toolResult: "+18 −6",
+    tokens: "6.1M tokens",
+    cost: "$4.12",
+    resumeCommand: "claude --resume 7c41e0a2",
+  },
+  codex: {
+    agentName: "Codex",
+    sourcePath: "~/.codex/sessions/",
+    project: "api-server",
+    title: {
+      en: "Refactor query builder & verify pool timeouts",
+      zh: "重构查询构建器并验证连接池超时",
+      ja: "クエリビルダーのリファクタと接続タイムアウト検証",
+    },
+    meta: {
+      en: "31 messages · 6 shell calls · gpt-5.4",
+      zh: "31 条消息 · 6 次终端命令 · gpt-5.4",
+      ja: "31 件のメッセージ · 6 回の実行 · gpt-5.4",
+    },
+    toolName: "bash",
+    toolTarget: "cargo test pool::timeout",
+    toolResult: "24 passed",
+    tokens: "4.4M tokens",
+    cost: "$2.86",
+    resumeCommand: "codex resume 019d8f3a",
+  },
+  cursor: {
+    agentName: "Cursor",
+    sourcePath: "globalStorage/state.vscdb",
+    project: "dashboard-ui",
+    title: {
+      en: "Composer: virtualize session timeline list",
+      zh: "Composer：会话时间线列表虚拟化优化",
+      ja: "Composer：セッションタイムラインの仮想化",
+    },
+    meta: {
+      en: "19 messages · 4 files changed · Composer",
+      zh: "19 条消息 · 4 个文件变更 · Composer",
+      ja: "19 件のメッセージ · 4 ファイル変更 · Composer",
+    },
+    toolName: "edit",
+    toolTarget: "src/components/Timeline.tsx",
+    toolResult: "+42 −19",
+    tokens: "1.8M tokens",
+    cost: "$1.14",
+  },
+  opencode: {
+    agentName: "OpenCode",
+    sourcePath: "~/.local/share/opencode/opencode.db",
+    project: "worker-cli",
+    title: {
+      en: "Migrate SQLite index to WAL batching",
+      zh: "将 SQLite 索引迁移为 WAL 批量写入",
+      ja: "SQLite インデックスの WAL バッチ書き込み対応",
+    },
+    meta: {
+      en: "27 messages · 1 subagent · recorded cost",
+      zh: "27 条消息 · 1 个子会话 · 原生记录成本",
+      ja: "27 件のメッセージ · サブ 1 · 記録済みコスト",
+    },
+    toolName: "bash",
+    toolTarget: "pnpm test storage",
+    toolResult: "18 passed",
+    tokens: "3.2M tokens",
+    cost: "$1.94",
+    resumeCommand: "opencode -s ses_4a9f2c",
+  },
+  "gemini-cli": {
+    agentName: "Gemini CLI",
+    sourcePath: "~/.gemini/tmp/",
+    project: "docs-site",
+    title: {
+      en: "Audit sitemap hreflang & structured data",
+      zh: "检查站点地图 hreflang 与结构化数据",
+      ja: "サイトマップの hreflang と構造化データを検証",
+    },
+    meta: {
+      en: "22 messages · 5 tool calls · gemini-2.5-pro",
+      zh: "22 条消息 · 5 次工具调用 · gemini-2.5-pro",
+      ja: "22 件のメッセージ · 5 回のツール実行 · gemini-2.5-pro",
+    },
+    toolName: "read",
+    toolTarget: "src/pages/sitemap.xml.ts",
+    toolResult: "OK",
+    tokens: "2.1M tokens",
+    cost: "$0.98",
+    resumeCommand: "gemini --resume 9b2e1d",
+  },
+};
+
+const labels = {
+  en: {
+    aria: "Sample CodeSesh local Web UI preview",
+    badge: "Sample UI",
+    readOnly: "Read-only index",
+    tokensLabel: "Usage",
+    resumeLabel: "Resume",
+  },
+  zh: {
+    aria: "CodeSesh 本地 Web 界面示例预览",
+    badge: "界面示例",
+    readOnly: "只读索引",
+    tokensLabel: "用量与成本",
+    resumeLabel: "恢复命令",
+  },
+  ja: {
+    aria: "CodeSesh ローカル Web UI プレビュー",
+    badge: "UI プレビュー",
+    readOnly: "読み取り専用",
+    tokensLabel: "使用量・コスト",
+    resumeLabel: "再開コマンド",
+  },
+};
+
+const { locale, agent } = Astro.props;
+const spec = specs[agent];
+const l = labels[locale];
+---
+
+<figure class="gp" aria-label={l.aria}>
+  <div class="gp-bar">
+    <div class="gp-crumb">
+      <span class="gp-dot" aria-hidden="true"></span>
+      <span class="mono">localhost:4521</span>
+      <span class="gp-sep" aria-hidden="true">
+        /
+      </span>
+      <span>{spec.project}</span>
+    </div>
+    <div class="gp-badges">
+      <span class="gp-source mono">{spec.sourcePath}</span>
+      <span class="gp-sample">{l.badge}</span>
+    </div>
+  </div>
+
+  <div class="gp-body">
+    <div class="gp-head">
+      <div class="gp-agent">
+        <AgentIcon name={spec.agentName} size={18} />
+        <span class="gp-agent-name">{spec.agentName}</span>
+        <span class="gp-ro">{l.readOnly}</span>
+      </div>
+      <div class="gp-usage" aria-label={l.tokensLabel}>
+        <span class="mono">{spec.tokens}</span>
+        <span class="gp-cost mono">{spec.cost}</span>
+      </div>
+    </div>
+
+    <div class="gp-title">{spec.title[locale]}</div>
+    <div class="gp-meta">{spec.meta[locale]}</div>
+
+    <div class="gp-foot">
+      <div class="gp-tool">
+        <Icon
+          name={
+            spec.toolName === "bash"
+              ? "terminal"
+              : spec.toolName === "edit"
+                ? "pencil"
+                : "file"
+          }
+          class="size-3.5"
+        />
+        <span class="gp-tname">{spec.toolName}</span>
+        <code class="gp-target">{spec.toolTarget}</code>
+        <span class="gp-res mono">{spec.toolResult}</span>
+      </div>
+      {spec.resumeCommand && (
+        <div class="gp-resume" aria-label={l.resumeLabel}>
+          <Icon name="copy" class="size-3.5" />
+          <code>{spec.resumeCommand}</code>
+        </div>
+      )}
+    </div>
+  </div>
+</figure>
+
+<style>
+  .gp {
+    margin: 0 0 36px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--sh-raised);
+  }
+  .gp-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--muted-bg);
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .gp-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+  }
+  .gp-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--brand);
+  }
+  .gp-sep {
+    color: var(--muted);
+  }
+  .gp-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .gp-source {
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+  .gp-sample {
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .gp-body {
+    padding: 18px 20px 20px;
+  }
+  .gp-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+  }
+  .gp-agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .gp-ro {
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--pos-soft);
+    color: var(--pos-ink);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .gp-usage {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .gp-cost {
+    padding: 3px 8px;
+    border-radius: 7px;
+    background: var(--brand-soft);
+    color: var(--brand-ink);
+    font-weight: 600;
+  }
+  .gp-title {
+    margin-top: 12px;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+  .gp-meta {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .gp-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 12px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .gp-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--text-2);
+    font-size: 12.5px;
+  }
+  .gp-tname {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .gp-target {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .gp-res {
+    flex: none;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: var(--muted-bg);
+    color: var(--pos-ink);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .gp-resume {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--muted-bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+  @media (max-width: 640px) {
+    .gp-body {
+      padding: 16px;
+    }
+    .gp-source {
+      display: none;
+    }
+    .gp-tool {
+      max-width: 100%;
+    }
+  }
+</style>

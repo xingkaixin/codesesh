@@ -87,7 +87,7 @@ npx codesesh --days 0 --agent claudecode,codex
 
 CodeSesh 是只读查看器和搜索索引，不是原始记录的备份工具。它会在来源暂时消失时保留已入库记录，但无法恢复在扫描前已被删除的历史文件；`--json` 输出的也只是会话元数据，而非完整对话归档。
 
-如果需要长期留存历史，请妥善备份 Agent 原始数据目录。其他受支持工具与能力可在 [CodeSesh 产品介绍](/zh/)查看。
+如果需要长期留存历史，请妥善备份 Agent 原始数据目录；如需将 Claude Code、Codex 或 Cursor 会话导出为独立文档，可配合 [Agent Dump](https://agent-dump.xingkaixin.me/) 使用（导出用 Agent Dump，检索回放与成本分析用 CodeSesh）。其他受支持工具与能力可在 [CodeSesh 产品介绍](/zh/)查看。
 
 ## 延伸阅读
 

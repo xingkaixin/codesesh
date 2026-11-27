@@ -1,3 +1,4 @@
+import type { AgentPreviewKey } from "../components/GuidePreview.astro";
 import { localeConfig, locales, siteUrl, type FAQItem, type Locale } from "./landing";
 
 interface GuideLocaleCopy {
@@ -11,6 +12,8 @@ interface Guide {
   category: "start" | "connect" | "understand";
   published: string;
   updated: string;
+  quickCommand?: string;
+  previewAgent?: AgentPreviewKey;
   copy: Record<Locale, GuideLocaleCopy>;
 }
 
@@ -43,6 +46,7 @@ export const guides: Guide[] = [
     category: "start",
     published: "2026-10-03",
     updated: "2026-11-27",
+    quickCommand: "npx codesesh --days 0",
     copy: {
       en: {
         title: "How to find AI coding session history locally",
@@ -116,12 +120,14 @@ export const guides: Guide[] = [
     slug: "claude-code-session-history",
     category: "start",
     published: "2026-11-22",
-    updated: "2026-11-22",
+    updated: "2026-11-27",
+    quickCommand: "npx codesesh --agent claudecode --days 0",
+    previewAgent: "claude-code",
     copy: {
       en: {
-        title: "Claude Code session history: storage & resume",
+        title: "Claude Code Session History & Cost Viewer",
         description:
-          "Find where Claude Code stores JSONL transcripts and history.jsonl, reopen previous sessions with claude --resume, check why old sessions disappear, and search across projects with CodeSesh.",
+          "Browse ~/.claude/projects/ JSONL transcripts, replay previous Claude Code sessions by project, track token usage and costs, and resume with claude --resume.",
         faq: [
           {
             question: "Where is Claude Code history stored on disk?",
@@ -146,9 +152,9 @@ export const guides: Guide[] = [
         ],
       },
       zh: {
-        title: "Claude Code 历史会话指南：存储位置、恢复与搜索",
+        title: "Claude Code 历史会话与成本查看器：目录、回放与恢复",
         description:
-          "查看 Claude Code 的 JSONL 会话文件和 history.jsonl 保存位置，用 claude --resume 打开旧对话，排查老会话消失原因，并用 CodeSesh 跨项目搜索回放。",
+          "查找 ~/.claude/projects/ 与 history.jsonl，按项目回放 Claude Code 历史会话、统计 Token 与估算成本，并一键复制 claude --resume 命令。",
         faq: [
           {
             question: "Claude Code 的历史对话保存在本地哪里？",
@@ -173,9 +179,9 @@ export const guides: Guide[] = [
         ],
       },
       ja: {
-        title: "Claude Code の会話履歴：保存場所・再開・検索ガイド",
+        title: "Claude Code 会話履歴・コストビューアー：保存場所と再開ガイド",
         description:
-          "Claude Code の JSONL ログと history.jsonl の保存先、claude --resume での再開方法、古い履歴が消える原因、CodeSesh でのプロジェクト横断検索を解説します。",
+          "~/.claude/projects/ の JSONL ログをプロジェクト別に横断検索・再生し、トークン使用量と推定コストの確認、claude --resume での再開手順を解説します。",
         faq: [
           {
             question: "Claude Code の会話履歴はどこに保存されていますか？",
@@ -205,12 +211,14 @@ export const guides: Guide[] = [
     slug: "codex-session-history",
     category: "start",
     published: "2026-11-22",
-    updated: "2026-11-22",
+    updated: "2026-11-27",
+    quickCommand: "npx codesesh --agent codex --days 0",
+    previewAgent: "codex",
     copy: {
       en: {
-        title: "Codex session history: folder, resume & viewer",
+        title: "OpenAI Codex CLI Session Viewer & Replay",
         description:
-          "Locate ~/.codex/sessions/ rollout JSONL files and archived_sessions, list and reopen threads with codex resume, and browse Codex history locally with CodeSesh.",
+          "Locate ~/.codex/sessions/ rollout JSONL files and archived_sessions, reopen threads with codex resume, and search, replay, and track Codex CLI costs locally with CodeSesh.",
         faq: [
           {
             question: "Where does Codex store session history files?",
@@ -235,9 +243,9 @@ export const guides: Guide[] = [
         ],
       },
       zh: {
-        title: "Codex 历史会话指南：目录结构、恢复命令与本地查看器",
+        title: "Codex CLI 历史会话查看与回放指南：目录与恢复命令",
         description:
-          "定位 ~/.codex/sessions/ 下的 rollout JSONL 与 archived_sessions，掌握 codex resume 列出和恢复会话的方法，并用 CodeSesh 跨仓库搜索和回放 Codex 历史。",
+          "定位 ~/.codex/sessions/ 下的 rollout JSONL 与 archived_sessions，掌握 codex resume 恢复方法，并用 CodeSesh 跨仓库搜索、回放和统计 Codex CLI 成本。",
         faq: [
           {
             question: "Codex 的会话历史文件保存在哪个目录？",
@@ -262,9 +270,9 @@ export const guides: Guide[] = [
         ],
       },
       ja: {
-        title: "Codex のセッション履歴：保存先・再開コマンド・ビューアー",
+        title: "Codex CLI セッション履歴ビューアー・再生ガイド",
         description:
-          "~/.codex/sessions/ の rollout JSONL や archived_sessions の構成、codex resume での一覧・再開手順、CodeSesh によるローカル検索と再生を解説します。",
+          "~/.codex/sessions/ の rollout JSONL や archived_sessions の構成、codex resume での一覧・再開手順、CodeSesh によるローカル検索・再生・コスト確認を解説します。",
         faq: [
           {
             question: "Codex のセッション履歴はどこに保存されますか？",
@@ -295,9 +303,11 @@ export const guides: Guide[] = [
     category: "start",
     published: "2026-11-27",
     updated: "2026-11-27",
+    quickCommand: "npx codesesh --agent cursor --days 0",
+    previewAgent: "cursor",
     copy: {
       en: {
-        title: "Cursor chat history: state.vscdb location & viewer",
+        title: "Cursor Chat History Search & Viewer (state.vscdb)",
         description:
           "Find where Cursor stores Composer and chat history in state.vscdb on macOS, Linux, and Windows, and search or replay past Cursor conversations locally with CodeSesh.",
         faq: [
@@ -324,7 +334,7 @@ export const guides: Guide[] = [
         ],
       },
       zh: {
-        title: "Cursor 历史对话指南：state.vscdb 位置与本地搜索查看器",
+        title: "Cursor 历史对话搜索与查看器：state.vscdb 解析指南",
         description:
           "查找 Cursor 在 macOS、Linux 与 Windows 上的 state.vscdb 聊天记录位置，并用 CodeSesh 只读解析和跨项目搜索回放 Cursor Composer 历史会话。",
         faq: [
@@ -351,7 +361,7 @@ export const guides: Guide[] = [
         ],
       },
       ja: {
-        title: "Cursor のチャット履歴：state.vscdb の保存場所と検索ビューアー",
+        title: "Cursor チャット履歴の検索ビューアー（state.vscdb 解析）",
         description:
           "macOS・Linux・Windows での Cursor の Composer / チャット履歴（state.vscdb）の保存先と、CodeSesh による読み取り専用の横断検索・再生手順を解説します。",
         faq: [
@@ -384,6 +394,8 @@ export const guides: Guide[] = [
     category: "start",
     published: "2026-11-27",
     updated: "2026-11-27",
+    quickCommand: "npx codesesh --agent opencode --days 0",
+    previewAgent: "opencode",
     copy: {
       en: {
         title: "OpenCode session history: opencode.db, resume & viewer",
@@ -473,6 +485,8 @@ export const guides: Guide[] = [
     category: "start",
     published: "2026-11-27",
     updated: "2026-11-27",
+    quickCommand: "npx codesesh --agent gemini-cli --days 0",
+    previewAgent: "gemini-cli",
     copy: {
       en: {
         title: "Gemini CLI session history: storage, resume & viewer",
@@ -631,6 +645,7 @@ export const guides: Guide[] = [
     category: "understand",
     published: "2026-10-03",
     updated: "2026-11-27",
+    quickCommand: "npx codesesh --days 0",
     copy: {
       en: {
         title: "Track AI coding token usage and costs locally",

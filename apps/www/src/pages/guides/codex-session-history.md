@@ -4,7 +4,7 @@ locale: en
 slug: codex-session-history
 ---
 
-Codex stores active local session transcripts as `rollout-*.jsonl` files in date folders under `~/.codex/sessions/YYYY/MM/DD/`, keeps thread titles in `~/.codex/session_index.jsonl`, and moves archived conversations into `~/.codex/archived_sessions/`. To reopen a thread in the CLI, run `codex resume` or `codex resume --last`. To browse, search, and replay Codex sessions across repositories in a local Web UI, run `npx codesesh --agent codex --days 0`.
+OpenAI Codex CLI stores active local session transcripts as `rollout-*.jsonl` files in date folders under `~/.codex/sessions/YYYY/MM/DD/`, keeps thread titles in `~/.codex/session_index.jsonl`, and moves archived conversations into `~/.codex/archived_sessions/`. To reopen a thread in the CLI, run `codex resume` or `codex resume --last`. To browse, search, and replay Codex CLI sessions across repositories in a local Web UI, run `npx codesesh --agent codex --days 0`.
 
 ## Codex sessions folder layout
 
@@ -68,4 +68,4 @@ In the Web UI at `http://localhost:4521`, you can:
 - **Match `CODEX_HOME`.** Make sure the terminal launching CodeSesh exports the same `CODEX_HOME` value used when running Codex.
 - **Allow initial backfill to finish.** Large histories index in the background on first launch; wait for indexing to complete before searching older message text.
 
-If you also use Claude Code or other agents, see the [Claude Code session history guide](/guides/claude-code-session-history/) and the [cross-agent session history overview](/guides/session-history/). For standalone binary installation, see [getting started](/guides/getting-started/).
+If you also use Claude Code or other agents, see the [Claude Code session history guide](/guides/claude-code-session-history/) and the [cross-agent session history overview](/guides/session-history/). For standalone binary installation, see [getting started](/guides/getting-started/). Need to export a Codex session to standalone files instead of browsing locally? Use [Agent Dump](https://agent-dump.xingkaixin.me/) alongside CodeSesh.

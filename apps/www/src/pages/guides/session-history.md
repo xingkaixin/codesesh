@@ -87,4 +87,4 @@ Replay reads recorded conversations and tool output without re-running commands 
 
 CodeSesh is a read-only viewer and search index, not a backup tool. It retains sessions already stored in its SQLite index if a source temporarily disappears, but it cannot recover files deleted before scanning. Its `--json` output emits session metadata rather than a full transcript archive.
 
-Keep your agent data directories backed up if you need long-term retention. For the complete list of supported tools, return to the [CodeSesh overview](/).
+Keep your agent data directories backed up if you need long-term retention. To export sessions from Claude Code, Codex, or Cursor into standalone files for sharing, pair CodeSesh with [Agent Dump](https://agent-dump.xingkaixin.me/). For the complete list of supported tools, return to the [CodeSesh overview](/).
