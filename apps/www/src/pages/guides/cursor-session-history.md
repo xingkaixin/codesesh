@@ -48,6 +48,6 @@ Cursor is a desktop IDE and does not expose a CLI session resume flag, so CodeSe
 
 For terminal-based agents, see the [Claude Code session history guide](/guides/claude-code-session-history/), [Codex session history guide](/guides/codex-session-history/), or the [cross-agent session history overview](/guides/session-history/).
 
-## Keep Cursor data safe
+## Keep Cursor data safe and export when needed
 
-CodeSesh always opens `state.vscdb` in read-only mode and never writes to Cursor's database. If you want a long-term backup before reinstalling or clearing Cursor storage, close Cursor and copy the `Cursor/User/globalStorage/state.vscdb` file directly.
+CodeSesh always opens `state.vscdb` in read-only mode and never writes to Cursor's database. If you want a long-term backup before reinstalling or clearing Cursor storage, close Cursor and copy the `Cursor/User/globalStorage/state.vscdb` file directly. CodeSesh focuses on local search, replay, and usage review; if you need to export Cursor chats into standalone files for sharing or archiving, use [Agent Dump](https://agent-dump.xingkaixin.me/).

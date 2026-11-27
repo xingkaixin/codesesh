@@ -67,7 +67,7 @@ npx codesesh --agent claudecode --days 0 --cwd .
 打开 Web 界面后，你可以：
 
 - **跨项目全文搜索：** 一次检索标题、消息正文、工具输出和文件路径，点击命中结果直接定位到对应消息。
-- **查看嵌套子 Agent：** 在同一个会话树里展开父会话与子 Agent，并汇总各层级的 Token 与估算成本。
+- **查看嵌套子 Agent 与成本：** 在同一个会话树里展开父会话与子 Agent，按项目和模型汇总输入、输出、缓存读取 Token 与估算成本，详见 [Token 用量与成本指南](/zh/guides/usage-and-costs/)。
 - **按文件反查历史：** 输入 `src/auth.ts` 这类路径，列出所有读取、修改或创建过该文件的 Claude Code 会话。
 - **一键复制恢复命令：** 在会话详情页复制带工作目录上下文的 `claude --resume <session-id>` 命令，直接回到终端继续。
 
@@ -75,4 +75,4 @@ npx codesesh --agent claudecode --days 0 --cwd .
 
 ## 安全保留原始记录
 
-CodeSesh 只读不写，不会修改或删除 `~/.claude/projects/` 下的任何原始文件。如果需要长期保留历史，可以在 `~/.claude/settings.json` 中调大 `cleanupPeriodDays`，并定期备份 `~/.claude/projects/`。
+CodeSesh 只读不写，不会修改或删除 `~/.claude/projects/` 下的任何原始文件。如果需要长期保留历史，可以在 `~/.claude/settings.json` 中调大 `cleanupPeriodDays`，并定期备份 `~/.claude/projects/`；如需将单次对话导出为独立文件用于分享或归档，可配合 [Agent Dump](https://agent-dump.xingkaixin.me/) 使用。

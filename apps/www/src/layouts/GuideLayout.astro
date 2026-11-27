@@ -2,7 +2,9 @@
 import type { MarkdownLayoutProps } from "astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
+import GuidePreview from "../components/GuidePreview.astro";
 import Icon from "../components/Icon.astro";
+import InstallCommand from "../components/InstallCommand.astro";
 import InstallOptions from "../components/InstallOptions.astro";
 import { experience } from "../data/experience";
 import { localeConfig, type Locale } from "../data/landing";
@@ -70,6 +72,25 @@ const toc = [
                   <time datetime={guide.updated}>{guide.updated}</time>
                 </span>
               </p>
+              {guide.quickCommand && (
+                <div class="ar-quick">
+                  <InstallCommand
+                    locale={locale}
+                    command={guide.quickCommand}
+                    method="npm"
+                    placement={`guide-hero:${slug}`}
+                    tone="hero"
+                  />
+                  <a
+                    class="ar-preview-btn"
+                    href={`${localeConfig[locale].route}#tour`}
+                    data-open-demo="guide-hero"
+                  >
+                    <span>{t.ctaPreview}</span>
+                    <Icon name="arrow" class="size-4" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -94,6 +115,9 @@ const toc = [
             </nav>
           </aside>
           <article class="min-w-0">
+            {guide.previewAgent && (
+              <GuidePreview locale={locale} agent={guide.previewAgent} />
+            )}
             <div class="prose">
               <slot />
             </div>
@@ -106,6 +130,7 @@ const toc = [
                 <a
                   class="gcta-link"
                   href={`${localeConfig[locale].route}#tour`}
+                  data-open-demo="guide-cta"
                 >
                   <span>{t.ctaPreview}</span>
                   <Icon name="arrow" class="size-4" />
@@ -263,6 +288,33 @@ const toc = [
     margin: 28px 0 0;
     color: var(--muted);
     font: 500 12px/1 var(--mono);
+  }
+  .ar-quick {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 28px;
+  }
+  .ar-preview-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 56px;
+    padding: 0 20px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    font: 600 14px/1 var(--sans);
+    white-space: nowrap;
+    transition:
+      background-color 0.16s var(--ease-out),
+      border-color 0.16s var(--ease-out);
+  }
+  .ar-preview-btn:hover {
+    border-color: var(--brand-line);
+    background: var(--muted-bg);
   }
   .ar-body {
     padding: 56px 0 96px;
@@ -662,6 +714,10 @@ const toc = [
     }
     .ar-body {
       padding: 40px 0 72px;
+    }
+    .ar-preview-btn {
+      width: 100%;
+      min-height: 48px;
     }
     .prose {
       font-size: 15px;

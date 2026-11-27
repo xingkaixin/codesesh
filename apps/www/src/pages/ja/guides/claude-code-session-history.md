@@ -67,7 +67,7 @@ npx codesesh --agent claudecode --days 0 --cwd .
 Web UI では次の操作ができます。
 
 - **プロジェクト横断検索：** 会話本文、ツール出力、ファイルパスをまとめて検索し、一致箇所へ直接移動できます。
-- **サブエージェントの階層表示：** 親セッションと子セッションをまとめて確認し、トークン数や推定コストを合算表示します。
+- **サブエージェントとコストの集計：** 親セッションと子セッションをまとめて確認し、入力・出力・キャッシュトークンや推定コストをプロジェクト・モデル別に確認できます（詳細は[使用量とコストガイド](/ja/guides/usage-and-costs/)）。
 - **ファイル起点の逆引き：** `src/auth.ts` などのパスから、読み取り・編集・作成を行った会話を一覧できます。
 - **再開コマンドのコピー：** 詳細画面から作業ディレクトリに対応した `claude --resume <session-id>` をそのままコピーできます。
 
@@ -75,4 +75,4 @@ Codex も併用している場合は [Codex のセッション履歴ガイド](/
 
 ## 元の履歴ファイルを安全に保つ
 
-CodeSesh は読み取り専用であり、`~/.claude/projects/` のファイルを変更・削除しません。長期間保持したい場合は `~/.claude/settings.json` の `cleanupPeriodDays` を見直し、`~/.claude/projects/` をバックアップしてください。
+CodeSesh は読み取り専用であり、`~/.claude/projects/` のファイルを変更・削除しません。長期間保持したい場合は `~/.claude/settings.json` の `cleanupPeriodDays` を見直し、`~/.claude/projects/` をバックアップしてください。共有やアーカイブ用に個別の会話を書き出したい場合は、姉妹ツールの [Agent Dump](https://agent-dump.xingkaixin.me/) と併用できます。

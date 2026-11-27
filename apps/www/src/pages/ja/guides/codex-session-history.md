@@ -4,7 +4,7 @@ locale: ja
 slug: codex-session-history
 ---
 
-Codex はアクティブなローカルセッションを `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` として日付別に保存し、タイトル索引を `~/.codex/session_index.jsonl`、アーカイブ済みスレッドを `~/.codex/archived_sessions/` に置きます。CLI から過去のセッションを再開するには `codex resume` または `codex resume --last` を使います。複数リポジトリをまたいでローカル検索・再生したい場合は `npx codesesh --agent codex --days 0` を実行してください。
+OpenAI Codex CLI はアクティブなローカルセッションを `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` として日付別に保存し、タイトル索引を `~/.codex/session_index.jsonl`、アーカイブ済みスレッドを `~/.codex/archived_sessions/` に置きます。CLI から過去のセッションを再開するには `codex resume` または `codex resume --last` を使います。複数リポジトリをまたいでローカル検索・再生したい場合は `npx codesesh --agent codex --days 0` を実行してください。
 
 ## Codex のセッション保存フォルダ構成
 
@@ -68,4 +68,4 @@ npx codesesh --agent codex --days 0 --cwd .
 - **`CODEX_HOME` を揃える：** Codex 実行時と同じ `CODEX_HOME` 環境変数が CodeSesh 起動シェルにも設定されているか確認してください。
 - **初回インデックス完了を待つ：** 履歴が多い場合、初回取り込みはバックグラウンドで進みます。完了後に全文検索が可能になります。
 
-Claude Code などの他ツールも使っている場合は [Claude Code の会話履歴ガイド](/ja/guides/claude-code-session-history/)および[ローカル会話履歴の探し方](/ja/guides/session-history/)、Node.js 不要の導入手順は[インストールガイド](/ja/guides/getting-started/)を参照してください。
+Claude Code などの他ツールも使っている場合は [Claude Code の会話履歴ガイド](/ja/guides/claude-code-session-history/)および[ローカル会話履歴の探し方](/ja/guides/session-history/)、Node.js 不要の導入手順は[インストールガイド](/ja/guides/getting-started/)を参照してください。Codex セッションを独立したファイルとして書き出したい場合は [Agent Dump](https://agent-dump.xingkaixin.me/) と併用できます。

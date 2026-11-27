@@ -48,6 +48,6 @@ Cursor はデスクトップ IDE のため CLI 再開コマンドは提供され
 
 他のツールの詳細は [Claude Code 会話履歴ガイド](/ja/guides/claude-code-session-history/)、[Codex セッション履歴ガイド](/ja/guides/codex-session-history/)、または[ローカル会話履歴の全体ガイド](/ja/guides/session-history/)を参照してください。
 
-## 元データを安全に保つ
+## 元データを安全に保つ・書き出しとの使い分け
 
-CodeSesh は常に読み取り専用で `state.vscdb` にアクセスし、Cursor のデータベースを変更しません。再インストール前などにバックアップを取りたい場合は、Cursor を終了してから `state.vscdb` ファイルを直接コピーしてください。
+CodeSesh は常に読み取り専用で `state.vscdb` にアクセスし、Cursor のデータベースを変更しません。再インストール前などにバックアップを取りたい場合は、Cursor を終了してから `state.vscdb` ファイルを直接コピーしてください。CodeSesh はローカル検索・再生・コスト分析に特化しており、Cursor の会話を独立したファイルとして書き出したい場合は [Agent Dump](https://agent-dump.xingkaixin.me/) と併用できます。
