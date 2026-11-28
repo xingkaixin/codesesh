@@ -263,7 +263,7 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
         scan_path: root.join("projects"),
     };
 
-    // Targeted items produce the exact same fingerprint as full inventory.
+    // Targeted items produce the exact same fingerprint as full inventory (with and without summary).
     let full: std::collections::HashMap<_, _> = super::super::backfill::inventory(&source)
         .unwrap()
         .into_iter()
@@ -271,13 +271,15 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
         .collect();
     let targeted = super::super::backfill::targeted_items(
         &source,
-        std::slice::from_ref(&first),
+        &[first.clone(), second.clone()],
         &std::collections::HashSet::new(),
     )
     .unwrap()
-    .expect("regular Claude transcript should take targeted fast path");
-    assert_eq!(targeted.len(), 1);
-    assert_eq!(targeted[0].fingerprint, full[&targeted[0].key]);
+    .expect("regular Claude transcripts should take targeted fast path");
+    assert_eq!(targeted.len(), 2);
+    for item in &targeted {
+        assert_eq!(item.fingerprint, full[&item.key]);
+    }
 
     // Companion files, directories, and missing paths fall back to full inventory.
     assert!(
