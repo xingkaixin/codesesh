@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 
 #[derive(Default)]
 pub struct DatabaseSnapshot {
+    pub present: bool,
     pub sessions: Vec<ParsedSession>,
     pub upserts: Vec<ParsedSession>,
     pub removed: Vec<SessionReference>,
@@ -256,6 +257,7 @@ pub(super) fn refresh_scoped(
     let decoded = changed.into_iter().map(|id| reference(agent, id)).collect();
     db.execute_batch("COMMIT")?;
     Ok(DatabaseSnapshot {
+        present: true,
         sessions,
         upserts,
         removed,
@@ -334,6 +336,62 @@ fn fingerprints(
     }
     Ok(hashes)
 }
+fn value_as_cow(value: ValueRef<'_>) -> std::borrow::Cow<'_, str> {
+    match value {
+        ValueRef::Null => std::borrow::Cow::Borrowed(""),
+        ValueRef::Text(bytes) => String::from_utf8_lossy(bytes),
+        ValueRef::Integer(n) => std::borrow::Cow::Owned(n.to_string()),
+        ValueRef::Real(n) => std::borrow::Cow::Owned(n.to_string()),
+        ValueRef::Blob(bytes) => {
+            let value = Value::Array(bytes.iter().copied().map(Value::from).collect());
+            std::borrow::Cow::Owned(value.to_string())
+        }
+    }
+}
+
+fn value_as_opt_string(value: ValueRef<'_>) -> Option<String> {
+    match value {
+        ValueRef::Text(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+        _ => None,
+    }
+}
+
+fn hash_row(
+    hash: &mut Sha256,
+    tag: u8,
+    names: &[String],
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<()> {
+    hash.update([tag]);
+    hash.update((names.len() as u64).to_le_bytes());
+    for (index, name) in names.iter().enumerate() {
+        hash.update((name.len() as u64).to_le_bytes());
+        hash.update(name.as_bytes());
+        match row.get_ref(index)? {
+            ValueRef::Null => hash.update([0]),
+            ValueRef::Integer(value) => {
+                hash.update([1]);
+                hash.update(value.to_le_bytes());
+            }
+            ValueRef::Real(value) => {
+                hash.update([2]);
+                hash.update(value.to_bits().to_le_bytes());
+            }
+            ValueRef::Text(bytes) => {
+                hash.update([3]);
+                hash.update((bytes.len() as u64).to_le_bytes());
+                hash.update(bytes);
+            }
+            ValueRef::Blob(bytes) => {
+                hash.update([4]);
+                hash.update((bytes.len() as u64).to_le_bytes());
+                hash.update(bytes);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn table_fingerprints(
     db: &Connection,
     v2: bool,
@@ -342,29 +400,62 @@ fn table_fingerprints(
 ) -> Result<HashMap<String, String>> {
     let mut hashes = HashMap::new();
     let session_table = if v2 { "session_v2" } else { "session" };
-    let session_rows = paging::scoped_rows(
+    let mut session_meta = Vec::new();
+    let mut parent_column = false;
+    let mut session_columns: Option<(Option<usize>, Option<usize>, Option<usize>)> = None;
+    paging::scoped_query(
         db,
         &format!("SELECT * FROM {session_table} ORDER BY id"),
         "id",
         scope,
+        |names, row| {
+            let (id_index, parent_index, task_type_index) =
+                *session_columns.get_or_insert_with(|| {
+                    let parent_index = names.iter().rposition(|name| name == "parent_id");
+                    parent_column = parent_index.is_some();
+                    (
+                        names.iter().rposition(|name| name == "id"),
+                        parent_index,
+                        names.iter().rposition(|name| name == "task_type"),
+                    )
+                });
+            let id = id_index
+                .map(|index| {
+                    Ok::<_, rusqlite::Error>(value_as_cow(row.get_ref(index)?).into_owned())
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let parent = parent_index
+                .map(|index| Ok::<_, rusqlite::Error>(value_as_opt_string(row.get_ref(index)?)))
+                .transpose()?
+                .flatten();
+            let is_subagent_child = task_type_index
+                .map(|index| {
+                    Ok::<_, rusqlite::Error>(matches!(
+                        row.get_ref(index)?,
+                        ValueRef::Text(b"subagent_child")
+                    ))
+                })
+                .transpose()?
+                .unwrap_or(false);
+            let mut hash = Sha256::new();
+            hash.update(if v2 {
+                b"opencode-v2".as_slice()
+            } else {
+                b"opencode-v1".as_slice()
+            });
+            hash_row(&mut hash, 0, names, row)?;
+            hashes.insert(id.clone(), hash);
+            session_meta.push(SessionSelectionRow {
+                id,
+                parent_id: parent,
+                is_subagent_child,
+            });
+            Ok(())
+        },
     )?;
-    let parent_column = rows(db, &format!("PRAGMA table_info({session_table})"))?
-        .iter()
-        .any(|row| row["name"] == "parent_id");
-    let selected = selected_ids(&session_rows, v2_selection, parent_column);
-    for row in session_rows
-        .into_iter()
-        .filter(|row| selected.contains(&string(&row["id"])))
-    {
-        let mut hash = Sha256::new();
-        hash.update(if v2 {
-            b"opencode-v2".as_slice()
-        } else {
-            b"opencode-v1".as_slice()
-        });
-        hash.update(serde_json::to_vec(&row)?);
-        hashes.insert(string(&row["id"]), hash);
-    }
+    let selected = selected_ids_from_rows(&session_meta, v2_selection, parent_column);
+    hashes.retain(|id, _| selected.contains(id));
     let message_table = if v2 { "session_message" } else { "message" };
     if table(db, message_table)? {
         let order = if v2 {
@@ -373,31 +464,62 @@ fn table_fingerprints(
             "session_id,time_created,id"
         };
         let mut message_sessions = HashMap::new();
-        for row in paging::scoped_rows(
+        let mut message_columns: Option<(Option<usize>, Option<usize>)> = None;
+        paging::scoped_query(
             db,
             &format!("SELECT * FROM {message_table} ORDER BY {order}"),
             "session_id",
             scope,
-        )? {
-            let id = string(&row["session_id"]);
-            if let Some(hash) = hashes.get_mut(&id) {
-                hash.update(serde_json::to_vec(&row)?);
-                message_sessions.insert(string(&row["id"]), id);
-            }
-        }
+            |names, row| {
+                let (session_index, id_index) = *message_columns.get_or_insert_with(|| {
+                    (
+                        names.iter().rposition(|name| name == "session_id"),
+                        names.iter().rposition(|name| name == "id"),
+                    )
+                });
+                let session_id = match session_index {
+                    Some(index) => value_as_cow(row.get_ref(index)?),
+                    None => std::borrow::Cow::Borrowed(""),
+                };
+                if let Some(hash) = hashes.get_mut(session_id.as_ref()) {
+                    hash_row(hash, 1, names, row)?;
+                    if !v2 {
+                        let message_id = id_index
+                            .map(|index| {
+                                Ok::<_, rusqlite::Error>(
+                                    value_as_cow(row.get_ref(index)?).into_owned(),
+                                )
+                            })
+                            .transpose()?
+                            .unwrap_or_default();
+                        message_sessions.insert(message_id, session_id.into_owned());
+                    }
+                }
+                Ok(())
+            },
+        )?;
         if !v2 {
-            for row in paging::scoped_rows(
+            let mut part_column: Option<Option<usize>> = None;
+            paging::scoped_query(
                 db,
                 "SELECT * FROM part ORDER BY message_id,time_created,id",
                 "part",
                 scope,
-            )? {
-                if let Some(id) = message_sessions.get(&string(&row["message_id"]))
-                    && let Some(hash) = hashes.get_mut(id)
-                {
-                    hash.update(serde_json::to_vec(&row)?);
-                }
-            }
+                |names, row| {
+                    let message_id_index = *part_column
+                        .get_or_insert_with(|| names.iter().rposition(|name| name == "message_id"));
+                    let message_id = match message_id_index {
+                        Some(index) => value_as_cow(row.get_ref(index)?),
+                        None => std::borrow::Cow::Borrowed(""),
+                    };
+                    if let Some(id) = message_sessions.get(message_id.as_ref())
+                        && let Some(hash) = hashes.get_mut(id)
+                    {
+                        hash_row(hash, 2, names, row)?;
+                    }
+                    Ok(())
+                },
+            )?;
         }
     }
     Ok(hashes

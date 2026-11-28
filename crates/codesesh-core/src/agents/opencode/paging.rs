@@ -142,6 +142,37 @@ pub(super) fn scoped_rows(
     let Some(scope) = scope else {
         return rows(db, query);
     };
+    let (sql, ids) = scoped_sql(query, column, scope)?;
+    bound_rows(db, &sql, [ids])
+}
+
+pub(super) fn scoped_query(
+    db: &Connection,
+    query: &str,
+    column: &str,
+    scope: Option<&HashSet<String>>,
+    mut visit: impl FnMut(&[String], &rusqlite::Row<'_>) -> Result<()>,
+) -> Result<()> {
+    let (sql, ids) = if let Some(scope) = scope {
+        let (sql, ids) = scoped_sql(query, column, scope)?;
+        (sql, Some(ids))
+    } else {
+        (query.to_owned(), None)
+    };
+    let mut stmt = db.prepare(&sql)?;
+    let names: Vec<String> = stmt.column_names().map(str::to_owned).collect();
+    let mut rows = if let Some(ids) = ids.as_deref() {
+        stmt.query([ids])?
+    } else {
+        stmt.query([])?
+    };
+    while let Some(row) = rows.next()? {
+        visit(&names, row)?;
+    }
+    Ok(())
+}
+
+fn scoped_sql(query: &str, column: &str, scope: &HashSet<String>) -> Result<(String, String)> {
     let ids = serde_json::to_string(&scope.iter().collect::<Vec<_>>())?;
     let predicate = if column == "part" {
         "message_id IN (SELECT id FROM message WHERE session_id IN (SELECT value FROM json_each(?1)))".to_owned()
@@ -149,7 +180,7 @@ pub(super) fn scoped_rows(
         format!("{column} IN (SELECT value FROM json_each(?1))")
     };
     let (select, order) = query.split_once(" ORDER BY ").unwrap_or((query, ""));
-    let query = format!(
+    let sql = format!(
         "{select} WHERE {predicate}{}",
         if order.is_empty() {
             String::new()
@@ -157,5 +188,5 @@ pub(super) fn scoped_rows(
             format!(" ORDER BY {order}")
         }
     );
-    bound_rows(db, &query, [ids])
+    Ok((sql, ids))
 }

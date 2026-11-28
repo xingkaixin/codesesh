@@ -60,7 +60,7 @@ pub fn scan_page(
     let mut db = open_readonly_sqlite(&path)?;
     let tx = db.transaction()?;
     let composers = load_selected_composers(&tx, selected)?;
-    let directories = workspace_paths(root);
+    let directories = workspace_paths(root)?;
     let mut session_fingerprints = HashMap::with_capacity(composers.len());
     let mut output = Vec::new();
     let mut bubble_query = tx.prepare(
@@ -155,7 +155,7 @@ impl CursorSync {
             .map(|key| (key.id, key.composer_key))
             .collect();
         let composers = load_selected_composers(&tx, &keys)?;
-        let directories = workspace_paths(root);
+        let directories = workspace_paths(root)?;
         let owners = child_owners(&self.composers);
         let mut fingerprints = HashMap::new();
         let mut dirty = self.dirty.clone();
