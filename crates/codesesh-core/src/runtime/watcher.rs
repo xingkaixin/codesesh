@@ -622,13 +622,32 @@ fn reconcile_watches(
         }
     }
     for path in optional {
-        if let std::collections::btree_map::Entry::Vacant(entry) = watched.entry(path)
-            && watcher
-                .watch(entry.key(), RecursiveMode::NonRecursive)
-                .is_ok()
-        {
-            entry.insert(RecursiveMode::NonRecursive);
-            expanded = true;
+        if let std::collections::btree_map::Entry::Vacant(entry) = watched.entry(path) {
+            // Skip unreadable/vanished ancestor-symlink parents before touching the watcher so
+            // traverse-only dirs do not fail startup, while still propagating backend failures.
+            if std::fs::read_dir(entry.key()).is_err() {
+                continue;
+            }
+            match watcher.watch(entry.key(), RecursiveMode::NonRecursive) {
+                Ok(()) => {
+                    entry.insert(RecursiveMode::NonRecursive);
+                    expanded = true;
+                }
+                #[cfg(not(target_os = "macos"))]
+                Err(error)
+                    if matches!(
+                        error.kind,
+                        notify::ErrorKind::Io(ref io)
+                            if matches!(
+                                io.kind(),
+                                std::io::ErrorKind::PermissionDenied
+                                    | std::io::ErrorKind::NotFound
+                            )
+                    ) => {}
+                Err(error) => {
+                    return Err(error).with_context(|| format!("watch {}", entry.key().display()));
+                }
+            }
         }
     }
     Ok(expanded)
