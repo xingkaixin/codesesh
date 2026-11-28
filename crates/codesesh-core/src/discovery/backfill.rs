@@ -301,7 +301,7 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     } else {
         Default::default()
     };
-    let mut index_stamps = std::collections::HashMap::new();
+    let mut index_summaries = HashMap::new();
     for entry in &entries {
         if !entry.file_type().is_file()
             || !crate::agents::is_session_file(&source.agent, &root, entry)?
@@ -328,25 +328,12 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             );
         }
         if claude_layout {
-            let project = match crate::agents::claudecode::subagents_dir(entry.path()) {
-                Some(subagents) => subagents
-                    .parent()
-                    .and_then(Path::parent)
-                    .unwrap_or(subagents),
-                None => entry.path().parent().unwrap(),
-            };
-            let index = project.join("sessions-index.json");
-            if files.contains(index.as_path()) {
-                if !index_stamps.contains_key(&index) {
-                    let value = stamp(&index)?.1;
-                    index_stamps.insert(index.clone(), value);
-                }
-                fingerprint.push_str(&index_stamps[&index]);
-            }
-            let meta = entry.path().with_extension("meta.json");
-            if files.contains(meta.as_path()) {
-                fingerprint.push_str(&stamp(&meta)?.1);
-            }
+            append_claude_companions(
+                entry.path(),
+                |candidate| Ok(files.contains(candidate)),
+                &mut index_summaries,
+                &mut fingerprint,
+            )?;
         }
         let path = if matches!(source.agent.as_str(), "kimi" | "kimi-code") {
             crate::agents::kimi::helpers::session_directory(&root, entry.path()).unwrap()
@@ -406,6 +393,64 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
         item.fingerprint.push_str(&context);
     }
     Ok(items)
+}
+
+fn claude_project_dir(path: &Path) -> &Path {
+    match crate::agents::claudecode::subagents_dir(path) {
+        Some(subagents) => subagents
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or(subagents),
+        None => path.parent().unwrap(),
+    }
+}
+
+fn claude_index_summaries(path: &Path) -> HashMap<String, Option<serde_json::Value>> {
+    let mut summaries = HashMap::new();
+    let Ok(bytes) = std::fs::read(path) else {
+        return summaries;
+    };
+    let Ok(index) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return summaries;
+    };
+    for entry in index["entries"].as_array().into_iter().flatten() {
+        let Some(session_id) = entry["sessionId"].as_str() else {
+            continue;
+        };
+        // Match claudecode.rs `.find(|e| e["sessionId"] == id)`: keep only the first entry per id.
+        summaries
+            .entry(session_id.to_owned())
+            .or_insert_with(|| entry.get("summary").cloned());
+    }
+    summaries
+}
+
+fn append_claude_companions(
+    path: &Path,
+    exists: impl Fn(&Path) -> Result<bool>,
+    index_summaries: &mut HashMap<PathBuf, HashMap<String, Option<serde_json::Value>>>,
+    fingerprint: &mut String,
+) -> Result<()> {
+    let index = claude_project_dir(path).join("sessions-index.json");
+    let summary = if exists(&index)? {
+        let summaries = index_summaries
+            .entry(index.clone())
+            .or_insert_with(|| claude_index_summaries(&index));
+        summaries
+            .get(&crate::agents::claudecode::session_id(path))
+            .and_then(Option::as_ref)
+    } else {
+        None
+    };
+    fingerprint.push(':');
+    fingerprint.push_str(&crate::hash::hex(&Sha256::digest(serde_json::to_vec(
+        &summary,
+    )?)));
+    let meta = path.with_extension("meta.json");
+    if exists(&meta)? {
+        fingerprint.push_str(&stamp(&meta)?.1);
+    }
+    Ok(())
 }
 
 fn codex_titles(data_root: &Path) -> Result<HashMap<String, String>> {
@@ -496,7 +541,7 @@ pub fn targeted_items(
     match source.agent.as_str() {
         "claudecode" | "qoder" | "qoder-cn" => {
             let root = crate::agents::session_root(&source.agent, &source.scan_path);
-            let mut index_stamps = HashMap::new();
+            let mut index_summaries = HashMap::new();
             for path in paths {
                 let Some(path) = path_under_root(&root, path) else {
                     return Ok(None);
@@ -518,24 +563,12 @@ pub fn targeted_items(
                     continue;
                 }
                 let (activity, mut fingerprint) = file_stamp(&metadata)?;
-                let project = match crate::agents::claudecode::subagents_dir(&path) {
-                    Some(subagents) => subagents
-                        .parent()
-                        .and_then(Path::parent)
-                        .unwrap_or(subagents),
-                    None => path.parent().unwrap(),
-                };
-                let index = project.join("sessions-index.json");
-                if index.try_exists()? {
-                    if !index_stamps.contains_key(&index) {
-                        index_stamps.insert(index.clone(), stamp(&index)?.1);
-                    }
-                    fingerprint.push_str(&index_stamps[&index]);
-                }
-                let meta = path.with_extension("meta.json");
-                if meta.try_exists()? {
-                    fingerprint.push_str(&stamp(&meta)?.1);
-                }
+                append_claude_companions(
+                    &path,
+                    |candidate| Ok(candidate.try_exists()?),
+                    &mut index_summaries,
+                    &mut fingerprint,
+                )?;
                 fingerprint.push_str(&empty_context);
                 items.push(Item {
                     cursor_composer_key: None,

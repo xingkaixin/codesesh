@@ -251,7 +251,11 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
     };
     write_claude(&first, "11111111-1111-4111-8111-000000000001", "First");
     write_claude(&second, "11111111-1111-4111-8111-000000000002", "Second");
-    std::fs::write(&index, r#"{"entries":[]}"#).unwrap();
+    std::fs::write(
+        &index,
+        r#"{"entries":[{"sessionId":"11111111-1111-4111-8111-000000000002","summary":"Second summary"}]}"#,
+    )
+    .unwrap();
     let source = AgentSource {
         antigravity_profiles: None,
         agent: "claudecode".into(),
@@ -259,7 +263,7 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
         scan_path: root.join("projects"),
     };
 
-    // Targeted items produce the exact same fingerprint as full inventory.
+    // Targeted items produce the exact same fingerprint as full inventory (with and without summary).
     let full: std::collections::HashMap<_, _> = super::super::backfill::inventory(&source)
         .unwrap()
         .into_iter()
@@ -267,13 +271,15 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
         .collect();
     let targeted = super::super::backfill::targeted_items(
         &source,
-        std::slice::from_ref(&first),
+        &[first.clone(), second.clone()],
         &std::collections::HashSet::new(),
     )
     .unwrap()
-    .expect("regular Claude transcript should take targeted fast path");
-    assert_eq!(targeted.len(), 1);
-    assert_eq!(targeted[0].fingerprint, full[&targeted[0].key]);
+    .expect("regular Claude transcripts should take targeted fast path");
+    assert_eq!(targeted.len(), 2);
+    for item in &targeted {
+        assert_eq!(item.fingerprint, full[&item.key]);
+    }
 
     // Companion files, directories, and missing paths fall back to full inventory.
     assert!(
@@ -452,4 +458,205 @@ fn unchanged_live_refresh_omits_source_state_until_files_change() {
     let mut warm = restarted.refresh(None).unwrap();
     assert!(warm.sessions.is_empty());
     warm.on_reject.take();
+}
+
+#[test]
+fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("claude");
+    let project = root.join("projects/-work-demo");
+    std::fs::create_dir_all(&project).unwrap();
+    let first_id = "11111111-1111-4111-8111-000000000001";
+    let second_id = "11111111-1111-4111-8111-000000000002";
+    let subagent_id = "custom-subagent-id";
+    let subagents = project.join(first_id).join("subagents");
+    std::fs::create_dir_all(&subagents).unwrap();
+    let first = project.join(format!("{first_id}.jsonl"));
+    let second = project.join(format!("{second_id}.jsonl"));
+    let subagent = subagents.join("agent-worker.jsonl");
+    let subagent_meta = subagent.with_extension("meta.json");
+    let index = project.join("sessions-index.json");
+    let write_claude = |path: &Path, id: &str, text: &str| {
+        std::fs::write(
+            path,
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "type": "user",
+                    "uuid": "u1",
+                    "timestamp": "2026-10-01T00:00:00.000Z",
+                    "cwd": "/work/demo",
+                    "sessionId": id,
+                    "message": { "role": "user", "content": text }
+                })
+            ),
+        )
+        .unwrap();
+    };
+    write_claude(&first, first_id, "First prompt");
+    write_claude(&second, second_id, "Second prompt");
+    write_claude(&subagent, subagent_id, "Subagent prompt");
+    std::fs::write(&subagent_meta, format!(r#"{{"agentId":"{subagent_id}"}}"#)).unwrap();
+    std::fs::write(
+        &index,
+        serde_json::json!({
+            "entries": [
+                { "sessionId": first_id, "summary": "Initial summary" },
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Initial subagent summary" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "claudecode".into(),
+        data_root: root.clone(),
+        scan_path: root.join("projects"),
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source, db, pricing);
+
+    let commit = |cache: &mut crate::storage::Cache, batch: &mut crate::runtime::ScanBatch| {
+        cache
+            .apply_checkpoint(
+                &mut batch.sessions,
+                &batch.removed,
+                "claudecode",
+                &batch.checkpoint,
+                batch.complete,
+            )
+            .unwrap();
+        batch.on_reject.take();
+    };
+
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 3);
+    commit(&mut cache, &mut initial);
+
+    // Updating one summary in sessions-index.json refreshes only that session.
+    std::fs::write(
+        &index,
+        serde_json::json!({
+            "entries": [
+                { "sessionId": first_id, "summary": "Updated summary" },
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Initial subagent summary" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut updated = scanner.refresh(Some(std::slice::from_ref(&index))).unwrap();
+    assert_eq!(updated.sessions.len(), 1);
+    assert_eq!(updated.sessions[0].head.reference.session_id, first_id);
+    assert_eq!(updated.sessions[0].head.title, "Updated summary");
+    assert!(updated.removed.is_empty());
+    commit(&mut cache, &mut updated);
+
+    // Updating a subagent summary whose meta.json `agentId` differs from its filename refreshes it.
+    std::fs::write(
+        &index,
+        serde_json::json!({
+            "entries": [
+                { "sessionId": first_id, "summary": "Updated summary" },
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Updated subagent summary" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut subagent_updated = scanner.refresh(Some(std::slice::from_ref(&index))).unwrap();
+    let subagent_session = subagent_updated
+        .sessions
+        .iter()
+        .find(|session| session.head.reference.session_id == subagent_id)
+        .expect("subagent session should refresh when its agentId summary changes");
+    assert_eq!(subagent_session.head.title, "Updated subagent summary");
+    assert!(
+        !subagent_updated
+            .sessions
+            .iter()
+            .any(|session| session.head.reference.session_id == second_id)
+    );
+    commit(&mut cache, &mut subagent_updated);
+
+    // Unrelated edits and trailing duplicate entries do not re-parse any existing session.
+    std::fs::write(
+        &index,
+        serde_json::json!({
+            "entries": [
+                { "sessionId": first_id, "summary": "Updated summary" },
+                { "sessionId": first_id, "summary": "Ignored duplicate" },
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Updated subagent summary" },
+                { "sessionId": "other-session", "summary": "Other summary" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut unchanged = scanner.refresh(Some(std::slice::from_ref(&index))).unwrap();
+    assert!(unchanged.sessions.is_empty());
+    assert!(unchanged.removed.is_empty());
+    commit(&mut cache, &mut unchanged);
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_file_stamp_ignores_permission_changes_and_tracks_content_mtime_and_inode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("session.jsonl");
+    std::fs::write(&path, "initial").unwrap();
+    let original = crate::hash::file_stamp(&std::fs::metadata(&path).unwrap())
+        .unwrap()
+        .1;
+
+    // Permission-only chmod updates ctime without changing content, mtime, or inode.
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let after_chmod = crate::hash::file_stamp(&std::fs::metadata(&path).unwrap())
+        .unwrap()
+        .1;
+    assert_eq!(after_chmod, original);
+
+    // Changing file content updates the stamp.
+    std::fs::write(&path, "updated content").unwrap();
+    let after_content = crate::hash::file_stamp(&std::fs::metadata(&path).unwrap())
+        .unwrap()
+        .1;
+    assert_ne!(after_content, original);
+
+    // Changing mtime alone updates the stamp.
+    let earlier = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(earlier)
+        .unwrap();
+    let after_mtime = crate::hash::file_stamp(&std::fs::metadata(&path).unwrap())
+        .unwrap()
+        .1;
+    assert_ne!(after_mtime, after_content);
+
+    // Replacing with a new file of identical size and mtime still changes the stamp via inode.
+    let replacement = temporary.path().join("replacement.jsonl");
+    std::fs::write(&replacement, "updated content").unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_modified(earlier)
+        .unwrap();
+    std::fs::rename(&replacement, &path).unwrap();
+    let after_inode = crate::hash::file_stamp(&std::fs::metadata(&path).unwrap())
+        .unwrap()
+        .1;
+    assert_ne!(after_inode, after_mtime);
 }
