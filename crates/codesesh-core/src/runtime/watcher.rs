@@ -401,6 +401,8 @@ pub fn watch_paths(
                         }
                         true
                     };
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = expanded;
                     #[cfg(target_os = "macos")]
                     {
                         poll_roots = required_watch_targets(&roots);
