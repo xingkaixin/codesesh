@@ -363,3 +363,65 @@ fn scan_page_fingerprints_match_inventory_with_bubbles_subagents_and_workspaces(
     assert_eq!(page_fingerprints.get("a"), Some(&key.fingerprint));
     assert!(!page_fingerprints.contains_key("b"));
 }
+
+#[test]
+fn workspace_paths_cache_reuses_unchanged_and_tracks_updates_and_deletions() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("workspaceStorage/w1");
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(
+        workspace.join("workspace.json"),
+        r#"{"folder":"file:///repo-one"}"#,
+    )
+    .unwrap();
+    let db = Connection::open(workspace.join("state.vscdb")).unwrap();
+    db.execute_batch(
+        "CREATE TABLE ItemTable(key TEXT,value TEXT); INSERT INTO ItemTable VALUES ('composer.composerData','{\"allComposers\":[{\"composerId\":\"c1\"}]}')",
+    )
+    .unwrap();
+
+    assert_eq!(
+        workspace_paths(root.path()).get("c1"),
+        Some(&normalize_path("/repo-one"))
+    );
+
+    // Hold an exclusive lock while unchanged; cache hit returns without querying state.vscdb.
+    db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    assert_eq!(
+        workspace_paths(root.path()).get("c1"),
+        Some(&normalize_path("/repo-one"))
+    );
+    db.execute_batch("ROLLBACK").unwrap();
+
+    // Updating workspace.json invalidates the cached directory path.
+    std::fs::write(
+        workspace.join("workspace.json"),
+        r#"{"folder":"file:///repo-two-updated"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        workspace_paths(root.path()).get("c1"),
+        Some(&normalize_path("/repo-two-updated"))
+    );
+
+    // Updating state.vscdb invalidates the cached composer list.
+    db.execute(
+        "UPDATE ItemTable SET value=?1 WHERE key='composer.composerData'",
+        [r#"{"allComposers":[{"composerId":"c1"},{"composerId":"c2"}]}"#],
+    )
+    .unwrap();
+    let updated = workspace_paths(root.path());
+    assert_eq!(
+        updated.get("c1"),
+        Some(&normalize_path("/repo-two-updated"))
+    );
+    assert_eq!(
+        updated.get("c2"),
+        Some(&normalize_path("/repo-two-updated"))
+    );
+
+    // Removing the workspace directory drops its mappings and prunes the cache.
+    drop(db);
+    std::fs::remove_dir_all(&workspace).unwrap();
+    assert!(workspace_paths(root.path()).is_empty());
+}

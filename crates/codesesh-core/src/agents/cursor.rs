@@ -10,7 +10,11 @@ use crate::{
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
+};
 
 mod text;
 use text::{clean, title};
@@ -169,60 +173,127 @@ fn internal(value: &Value) -> bool {
         "progress" | "file history snapshot" | "queue operation" | "last prompt"
     )
 }
+type WorkspaceMapping = (String, Vec<String>);
+
+#[derive(Clone)]
+struct CachedWorkspace {
+    stamp: String,
+    mappings: Option<WorkspaceMapping>,
+}
+
+static WORKSPACE_CACHE: LazyLock<Mutex<HashMap<PathBuf, CachedWorkspace>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn workspace_dir_stamp(dir: &Path) -> String {
+    let mut stamp = String::new();
+    for name in [
+        "workspace.json",
+        "state.vscdb",
+        "state.vscdb-wal",
+        "state.vscdb-journal",
+    ] {
+        let path = dir.join(name);
+        if let Ok(metadata) = std::fs::metadata(&path)
+            && let Ok((_, file_stamp)) = crate::hash::file_stamp(&metadata)
+        {
+            stamp.push('|');
+            stamp.push_str(name);
+            stamp.push(':');
+            stamp.push_str(&file_stamp);
+        }
+    }
+    stamp
+}
+
+fn read_workspace_dir(dir: &Path) -> Option<WorkspaceMapping> {
+    let value = std::fs::read(dir.join("workspace.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
+    let uri = string(&value, "folder")
+        .or_else(|| string(&value, "workspace"))
+        .filter(|v| !v.is_empty())?;
+    let path = normalize_path(&decode_uri(uri.strip_prefix("file://").unwrap_or(uri))?);
+    let db = open_readonly_sqlite(dir.join("state.vscdb")).ok()?;
+    let raw = db
+        .query_row(
+            "SELECT value FROM ItemTable WHERE key = 'composer.composerData'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()?;
+    let composers = serde_json::from_str::<Value>(&raw).ok()?;
+    let composers = composers["allComposers"]
+        .as_array()
+        .or_else(|| composers.as_array())?;
+    let ids = composers
+        .iter()
+        .filter_map(|composer| {
+            string(composer, "composerId")
+                .or_else(|| string(composer, "id"))
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        })
+        .collect();
+    Some((path, ids))
+}
+
 fn workspace_paths(root: &Path) -> HashMap<String, String> {
     let mut result = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(root.join("workspaceStorage")) else {
+    let storage = root.join("workspaceStorage");
+    let Ok(entries) = std::fs::read_dir(&storage) else {
+        let mut cache = WORKSPACE_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache.retain(|path, _| !path.starts_with(&storage));
         return result;
     };
     let mut entries = entries.flatten().collect::<Vec<_>>();
     entries.sort_by_key(|e| e.file_name());
+    let mut dirs = Vec::new();
+    let mut live_dirs = HashSet::new();
     for entry in entries {
         if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
         }
         let dir = entry.path();
-        let Some(value) = std::fs::read(dir.join("workspace.json"))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        else {
-            continue;
-        };
-        let Some(uri) = string(&value, "folder")
-            .or_else(|| string(&value, "workspace"))
-            .filter(|v| !v.is_empty())
-        else {
-            continue;
-        };
-        let Some(path) = decode_uri(uri.strip_prefix("file://").unwrap_or(uri)) else {
-            continue;
-        };
-        let path = normalize_path(&path);
-        let Ok(db) = open_readonly_sqlite(dir.join("state.vscdb")) else {
-            continue;
-        };
-        let Ok(raw) = db.query_row(
-            "SELECT value FROM ItemTable WHERE key = 'composer.composerData'",
-            [],
-            |row| row.get::<_, String>(0),
-        ) else {
-            continue;
-        };
-        let Ok(composers) = serde_json::from_str::<Value>(&raw) else {
-            continue;
-        };
-        let Some(composers) = composers["allComposers"]
-            .as_array()
-            .or_else(|| composers.as_array())
-        else {
-            continue;
-        };
-        for composer in composers {
-            if let Some(id) = string(composer, "composerId")
-                .or_else(|| string(composer, "id"))
-                .filter(|s| !s.is_empty())
-            {
-                result.insert(id.into(), path.clone());
-            }
+        let stamp = workspace_dir_stamp(&dir);
+        live_dirs.insert(dir.clone());
+        dirs.push((dir, stamp));
+    }
+    let mut resolved: Vec<Option<Option<WorkspaceMapping>>> = Vec::with_capacity(dirs.len());
+    {
+        let mut cache = WORKSPACE_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache.retain(|path, _| !path.starts_with(&storage) || live_dirs.contains(path));
+        for (dir, stamp) in &dirs {
+            let hit = cache
+                .get(dir)
+                .filter(|entry| entry.stamp == *stamp)
+                .map(|entry| entry.mappings.clone());
+            resolved.push(hit);
+        }
+    }
+    let mut updates = Vec::new();
+    for ((dir, stamp), slot) in dirs.into_iter().zip(&mut resolved) {
+        if slot.is_none() {
+            let mappings = read_workspace_dir(&dir);
+            *slot = Some(mappings.clone());
+            updates.push((dir, CachedWorkspace { stamp, mappings }));
+        }
+    }
+    if !updates.is_empty() {
+        let mut cache = WORKSPACE_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for (dir, entry) in updates {
+            cache.insert(dir, entry);
+        }
+    }
+    for mappings in resolved.into_iter().flatten().flatten() {
+        let (path, ids) = mappings;
+        for id in ids {
+            result.insert(id, path.clone());
         }
     }
     result
