@@ -789,13 +789,6 @@ fn trajectory_workspaces(db: &Connection, path: &Path) -> Result<Vec<String>> {
     Ok(Vec::new())
 }
 
-#[derive(serde::Deserialize)]
-struct HistoryWorkspaceEntry {
-    #[serde(rename = "conversationId")]
-    conversation_id: Option<String>,
-    workspace: Option<String>,
-}
-
 fn history_workspaces(root: &Path) -> Result<HashMap<String, String>> {
     let path = root.join("history.jsonl");
     let file = match std::fs::File::open(&path) {
@@ -808,14 +801,13 @@ fn history_workspaces(root: &Path) -> Result<HashMap<String, String>> {
         let Ok(line) = line else {
             continue;
         };
-        let Ok(entry) = serde_json::from_str::<HistoryWorkspaceEntry>(&line) else {
+        let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
-        if let (Some(id), Some(workspace)) = (
-            entry.conversation_id.filter(|s| !s.is_empty()),
-            entry.workspace.filter(|s| !s.is_empty()),
-        ) {
-            workspaces.insert(id, workspace);
+        let id = entry["conversationId"].as_str().filter(|s| !s.is_empty());
+        let workspace = entry["workspace"].as_str().filter(|s| !s.is_empty());
+        if let (Some(id), Some(workspace)) = (id, workspace) {
+            workspaces.insert(id.to_owned(), workspace.to_owned());
         }
     }
     Ok(workspaces)

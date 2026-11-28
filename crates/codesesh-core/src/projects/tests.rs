@@ -317,9 +317,11 @@ fn real_fs_direct_git_matches_git_cli_for_repos_worktrees_and_includes() {
         resolved.replace('\\', "/")
     };
 
-    // Repo and worktree without origin match git rev-parse --git-common-dir and return no origin.
+    // Repo and worktree without local origin fall back to git CLI for config (preserving global/includeIf)
+    // and match git rev-parse --git-common-dir.
     for dir in [&root, &worktree] {
         let dir_str = dir.to_str().unwrap();
+        assert!(direct_git(&["config", "--get", "remote.origin.url"], dir_str).is_none());
         let expected_origin = git_output(dir, &["config", "--get", "remote.origin.url"]);
         let actual_origin = fs.git(&["config", "--get", "remote.origin.url"], dir_str);
         assert_eq!(actual_origin, expected_origin);
@@ -333,9 +335,45 @@ fn real_fs_direct_git_matches_git_cli_for_repos_worktrees_and_includes() {
         );
     }
 
-    // Multiple origin urls, comments, and quoted values match git config --get (last value wins).
+    // Continuation lines in unrelated sections and relative/malformed gitdir files fall back to git.
     let config_path = root.join(".git/config");
     let base_config = std::fs::read_to_string(&config_path).unwrap();
+    std::fs::write(
+        &config_path,
+        format!("{base_config}\n[core]\n\tcomment = line1\\\n[remote \"origin\"]\n\turl = https://github.com/acme/fake.git\n"),
+    )
+    .unwrap();
+    assert!(direct_git(&["config", "--get", "remote.origin.url"], root_str).is_none());
+    let relative_wt = canonical.join("rel-wt");
+    std::fs::create_dir(&relative_wt).unwrap();
+    std::fs::write(
+        relative_wt.join(".git"),
+        "gitdir: ../repo/.git/worktrees/wt\n",
+    )
+    .unwrap();
+    assert!(
+        direct_git(
+            &["rev-parse", "--git-common-dir"],
+            relative_wt.to_str().unwrap()
+        )
+        .is_none()
+    );
+    let malformed_wt = canonical.join("bad-wt");
+    std::fs::create_dir(&malformed_wt).unwrap();
+    std::fs::write(
+        malformed_wt.join(".git"),
+        format!("gitdir:{}/.git/worktrees/wt\n", root.display()),
+    )
+    .unwrap();
+    assert!(
+        direct_git(
+            &["rev-parse", "--git-common-dir"],
+            malformed_wt.to_str().unwrap()
+        )
+        .is_none()
+    );
+
+    // Multiple origin urls, comments, and quoted values match git config --get (last value wins).
     std::fs::write(
         &config_path,
         format!(

@@ -61,7 +61,7 @@ impl IdentityFs for RealFs {
     }
     fn git(&self, args: &[&str], cwd: &str) -> Option<String> {
         if let Some(result) = direct_git(args, cwd) {
-            return result;
+            return Some(result);
         }
         let mut child = Command::new("git")
             .args(args)
@@ -108,13 +108,16 @@ struct DirectGitDirs {
     common_dir_normalized: String,
 }
 
-fn direct_git(args: &[&str], cwd: &str) -> Option<Option<String>> {
+fn direct_git(args: &[&str], cwd: &str) -> Option<String> {
     match args {
         ["rev-parse", "--git-common-dir"] => {
             let dirs = resolve_direct_git_dirs(cwd)?;
-            Some(Some(dirs.common_dir_normalized))
+            Some(dirs.common_dir_normalized)
         }
         ["config", "--get", "remote.origin.url"] => {
+            if std::env::var_os("GIT_CONFIG").is_some() {
+                return None;
+            }
             let dirs = resolve_direct_git_dirs(cwd)?;
             parse_origin_url(&dirs)
         }
@@ -141,15 +144,11 @@ fn resolve_direct_git_dirs(cwd: &str) -> Option<DirectGitDirs> {
     } else if meta.file_type().is_file() {
         let raw = std::fs::read_to_string(&dot_git).ok()?;
         let trimmed = raw.strip_prefix('\u{feff}').unwrap_or(&raw).trim();
-        let target = trimmed.strip_prefix("gitdir:")?.trim();
-        if target.is_empty() {
+        let target = trimmed.strip_prefix("gitdir: ")?.trim();
+        if target.is_empty() || !(target.starts_with('/') || path::windows(target)) {
             return None;
         }
-        if target.starts_with('/') || path::windows(target) {
-            path::normalize(target)
-        } else {
-            path::join(cwd, target)
-        }
+        path::normalize(target)
     } else {
         return None;
     };
@@ -195,7 +194,7 @@ fn resolve_direct_git_dirs(cwd: &str) -> Option<DirectGitDirs> {
     })
 }
 
-fn parse_origin_url(dirs: &DirectGitDirs) -> Option<Option<String>> {
+fn parse_origin_url(dirs: &DirectGitDirs) -> Option<String> {
     if dirs.git_dir.join("config.worktree").try_exists().ok()? {
         return None;
     }
@@ -207,7 +206,6 @@ fn parse_origin_url(dirs: &DirectGitDirs) -> Option<Option<String>> {
         || lower.contains("[include\t")
         || lower.contains("[include.")
         || lower.contains("[includeif")
-        || lower.contains("insteadof")
         || lower.contains("worktreeconfig")
     {
         return None;
@@ -216,6 +214,9 @@ fn parse_origin_url(dirs: &DirectGitDirs) -> Option<Option<String>> {
     let mut in_origin = false;
     let mut last_url = None;
     for raw_line in content.lines() {
+        if raw_line.trim_end_matches('\r').ends_with('\\') {
+            return None;
+        }
         let mut line = raw_line.trim_start_matches([' ', '\t']);
         if line.is_empty() || line.starts_with(['#', ';']) {
             continue;
@@ -235,7 +236,7 @@ fn parse_origin_url(dirs: &DirectGitDirs) -> Option<Option<String>> {
             last_url = Some(url);
         }
     }
-    Some(last_url)
+    last_url
 }
 
 fn parse_git_config_section(after_open: &str) -> Option<(bool, &str)> {
