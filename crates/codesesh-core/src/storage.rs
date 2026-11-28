@@ -14,6 +14,7 @@ mod schema;
 pub(crate) use schema::{COMPACT_MIN_FREE_PAGES, sparse_pages};
 mod search_text;
 mod snapshot;
+pub(crate) mod source_fingerprints;
 use crate::{
     agents::ParsedSession,
     model::{CostSource, Role, SessionDetail, SessionHead, SessionReference},
@@ -22,7 +23,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, sync::Arc};
 
-pub(crate) const CACHE_SCHEMA_VERSION: i64 = 41;
+pub(crate) const CACHE_SCHEMA_VERSION: i64 = 42;
 
 pub struct StorageProgress {
     pub phase: String,
@@ -533,12 +534,28 @@ impl Cache {
             cursors.push(cursor::encode(session.detail.messages.len(), &digest)?);
         }
         if let Some((agent, checkpoint, complete)) = checkpoint {
-            if let Some(state) = checkpoint
-                .as_ref()
-                .and_then(|value| value.get("sourceState"))
-            {
-                transaction.execute("INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                    params![format!("rust_source_state:{agent}"), json::stringify(state)?])?;
+            if let Some(checkpoint) = checkpoint.as_ref() {
+                if let Some(state) = checkpoint.get("sourceState") {
+                    let metadata = source_fingerprints::strip_metadata_state(state);
+                    transaction.execute(
+                        "INSERT INTO cache_meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
+                        params![
+                            format!("rust_source_state:{agent}"),
+                            json::stringify(metadata.as_ref())?
+                        ],
+                    )?;
+                }
+                if let Some(delta) = checkpoint.get("sourceStateDelta") {
+                    let delta: source_fingerprints::SourceStateDelta =
+                        serde_json::from_value(delta.clone())?;
+                    source_fingerprints::apply(
+                        transaction,
+                        "source_fingerprints",
+                        "agent_name",
+                        agent,
+                        &delta,
+                    )?;
+                }
             }
 
             let key = format!("rust_sync_checkpoint:{agent}");
@@ -548,7 +565,8 @@ impl Cache {
                 transaction.execute("INSERT INTO agent_cache VALUES(?,?) ON CONFLICT(agent_name) DO UPDATE SET timestamp=excluded.timestamp",params![agent,now])?;
                 transaction.execute("INSERT INTO cache_initialization VALUES(?,?,'session-cache-v2',?) ON CONFLICT(agent_name) DO UPDATE SET index_version=excluded.index_version,last_sync_at=excluded.last_sync_at",params![agent,now,now])?;
             } else if let Some(checkpoint) = checkpoint {
-                transaction.execute("INSERT INTO cache_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![key,json::stringify(checkpoint)?])?;
+                let stored = source_fingerprints::strip_checkpoint_delta(checkpoint);
+                transaction.execute("INSERT INTO cache_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![key,json::stringify(stored.as_ref())?])?;
             }
         }
         if !sessions.is_empty() || !removed.is_empty() {

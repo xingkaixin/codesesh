@@ -528,3 +528,155 @@ fn targeted_items_batch_matches_inventory_and_falls_back_for_parents() {
             .is_none()
     );
 }
+
+#[test]
+fn summary_wal_diff_refreshes_only_changed_conversation_and_falls_back_when_needed() {
+    let temp = tempfile::tempdir().unwrap();
+    let env = environment(temp.path());
+    let source = env.source("antigravity").unwrap();
+    let conversations = source.scan_path.clone();
+    write_session(&conversations, "conv-a");
+    let conv_b = write_session(&conversations, "conv-b");
+
+    let summary_path = source.data_root.join("conversation_summaries.db");
+    let summary_wal = PathBuf::from(format!("{}-wal", summary_path.display()));
+    let summary_db = Connection::open(&summary_path).unwrap();
+    summary_db
+        .execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT, agent_name TEXT);",
+        )
+        .unwrap();
+    let upsert_summary = |id: &str, title: &str| {
+        summary_db
+            .execute(
+                "INSERT OR REPLACE INTO conversation_summaries (conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id,agent_name) VALUES (?1,?2,'[]','','','')",
+                [id, title],
+            )
+            .unwrap();
+    };
+    upsert_summary("conv-a", "Title A");
+    upsert_summary("conv-b", "Title B");
+
+    let cache_path = temp.path().join("cache.db");
+    let pricing = Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&cache_path)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), cache_path, pricing);
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 2);
+    commit(&mut cache, &mut initial, "antigravity");
+
+    // Add a sibling .db without notifying the scanner; any fallback to full inventory would surface it.
+    write_session(&conversations, "unnotified-sibling");
+
+    // 1. No-op summary WAL write does 0 work and does not walk conversations/.
+    upsert_summary("conv-a", "Title A");
+    let mut noop = scanner
+        .refresh(Some(std::slice::from_ref(&summary_wal)))
+        .unwrap();
+    assert!(noop.sessions.is_empty());
+    assert!(noop.removed.is_empty());
+    commit(&mut cache, &mut noop, "antigravity");
+
+    // 2. Orphan summary (no .db on disk) also does 0 work and does not walk conversations/.
+    upsert_summary("orphan-only", "Orphan title");
+    let mut orphan = scanner
+        .refresh(Some(std::slice::from_ref(&summary_wal)))
+        .unwrap();
+    assert!(orphan.sessions.is_empty());
+    assert!(orphan.removed.is_empty());
+    commit(&mut cache, &mut orphan, "antigravity");
+
+    // 3. Updating conv-b's summary alongside conv-b.db-wal refreshes ONLY conv-b (not conv-a or sibling).
+    upsert_summary("conv-b", "Title B v2");
+    let conv_b_wal = PathBuf::from(format!("{}-wal", conv_b.display()));
+    let mut targeted = scanner
+        .refresh(Some(&[summary_wal.clone(), conv_b_wal]))
+        .unwrap();
+    assert_eq!(targeted.sessions.len(), 1);
+    assert_eq!(targeted.sessions[0].head.reference.session_id, "conv-b");
+    assert_eq!(targeted.sessions[0].head.title, "Title B v2");
+    commit(&mut cache, &mut targeted, "antigravity");
+
+    // 4. Updating > BATCH_SIZE summaries falls back to full inventory (and surfaces unnotified-sibling).
+    for i in 0..=super::super::backfill::BATCH_SIZE {
+        upsert_summary(&format!("bulk-{i}"), &format!("Bulk {i}"));
+    }
+    let mut bulk = scanner
+        .refresh(Some(std::slice::from_ref(&summary_wal)))
+        .unwrap();
+    assert!(
+        bulk.sessions
+            .iter()
+            .any(|session| session.head.reference.session_id == "unnotified-sibling"),
+        "more than BATCH_SIZE summary changes must fall back to full inventory"
+    );
+    commit(&mut cache, &mut bulk, "antigravity");
+}
+
+#[test]
+fn summary_wal_falls_back_when_summary_cache_is_unprimed_then_stays_targeted() {
+    let temp = tempfile::tempdir().unwrap();
+    let env = environment(temp.path());
+    let source = env.source("antigravity").unwrap();
+    let conversations = source.scan_path.clone();
+    write_session(&conversations, "conv-a");
+
+    let cache_path = temp.path().join("cache.db");
+    let pricing = Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&cache_path)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), cache_path, pricing);
+    // Initial inventory runs before conversation_summaries.db exists, leaving the summary cache unprimed.
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 1);
+    commit(&mut cache, &mut initial, "antigravity");
+
+    write_session(&conversations, "unnotified-before-prime");
+    write_summary(&conversations, "conv-a", "Primed Title");
+    let summary_wal = PathBuf::from(format!(
+        "{}-wal",
+        source.data_root.join("conversation_summaries.db").display()
+    ));
+
+    // Unprimed store falls back cleanly to full inventory (finding both conv-a update and sibling) and primes cache.
+    let mut primed = scanner
+        .refresh(Some(std::slice::from_ref(&summary_wal)))
+        .unwrap();
+    let ids: std::collections::HashSet<_> = primed
+        .sessions
+        .iter()
+        .map(|session| session.head.reference.session_id.as_str())
+        .collect();
+    assert!(ids.contains("conv-a"));
+    assert!(ids.contains("unnotified-before-prime"));
+    commit(&mut cache, &mut primed, "antigravity");
+
+    // Subsequent summary update uses the primed cache and avoids walking conversations/.
+    write_session(&conversations, "unnotified-after-prime");
+    write_summary(&conversations, "conv-a", "Targeted Title");
+    let mut targeted = scanner
+        .refresh(Some(std::slice::from_ref(&summary_wal)))
+        .unwrap();
+    assert_eq!(targeted.sessions.len(), 1);
+    assert_eq!(targeted.sessions[0].head.reference.session_id, "conv-a");
+    assert_eq!(targeted.sessions[0].head.title, "Targeted Title");
+    commit(&mut cache, &mut targeted, "antigravity");
+
+    // A changed summary whose conversation .db is a symlink falls back to full inventory.
+    #[cfg(unix)]
+    {
+        let external = temp.path().join("external");
+        let real_parent = write_session(&external, "parent-target");
+        std::os::unix::fs::symlink(&real_parent, conversations.join("linked-parent.db")).unwrap();
+        write_summary(&conversations, "linked-parent", "Linked Parent Title");
+        let mut fallback = scanner.refresh(Some(&[summary_wal])).unwrap();
+        assert!(
+            fallback
+                .sessions
+                .iter()
+                .any(|session| session.head.reference.session_id == "unnotified-after-prime"),
+            "symlinked conversation .db for a changed summary must fall back to full inventory"
+        );
+        commit(&mut cache, &mut fallback, "antigravity");
+    }
+}

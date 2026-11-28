@@ -33,6 +33,7 @@ impl WorkerStore {
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM worker_sessions", [])?;
         tx.execute("DELETE FROM worker_sources", [])?;
+        tx.execute("DELETE FROM worker_source_fingerprints", [])?;
         let mut count = 0;
         for agent in crate::agents::catalog(0) {
             for head in
@@ -87,6 +88,19 @@ impl WorkerStore {
             tx.execute(
                 "INSERT INTO worker_sources VALUES(?,?,?,?)",
                 params![agent.name, state, checkpoint, complete],
+            )?;
+            let fingerprints = crate::storage::source_fingerprints::load(
+                &snapshot,
+                "source_fingerprints",
+                "agent_name",
+                &agent.name,
+            )?;
+            crate::storage::source_fingerprints::insert_all(
+                &tx,
+                "worker_source_fingerprints",
+                "agent",
+                &agent.name,
+                &fingerprints,
             )?;
         }
         tx.execute("INSERT INTO worker_meta VALUES('history_choice',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [HistoryChoice::Local.as_str()])?;

@@ -50,7 +50,11 @@ impl Cache {
             for agent in crate::agents::catalog(0) {
                 let baseline = worker.baseline(&agent.name)?;
                 let checkpoint = worker.checkpoint(&agent.name)?;
-                if baseline.state.is_none() && checkpoint.is_none() && !baseline.complete {
+                if baseline.state.is_none()
+                    && checkpoint.is_none()
+                    && !baseline.complete
+                    && baseline.fingerprints.is_empty()
+                {
                     continue;
                 }
                 let mut checkpoint = checkpoint.unwrap_or_else(|| serde_json::json!({}));
@@ -59,6 +63,12 @@ impl Cache {
                     state["sourceNodeId"] = grant.node_id.clone().into();
                     checkpoint["sourceState"] = state;
                 }
+                checkpoint["sourceStateDelta"] = serde_json::to_value(
+                    crate::storage::source_fingerprints::SourceStateDelta::from_fingerprints(
+                        baseline.fingerprints,
+                        true,
+                    ),
+                )?;
                 Self::write_sessions(
                     &tx,
                     &[],

@@ -173,6 +173,13 @@ fn session_fingerprints(source: &AgentSource) -> Result<HashMap<String, String>>
     }
 }
 pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
+    inventory_with_antigravity_summaries(source, None)
+}
+
+pub(crate) fn inventory_with_antigravity_summaries(
+    source: &AgentSource,
+    mut summaries: Option<&mut HashMap<PathBuf, HashMap<String, String>>>,
+) -> Result<Vec<Item>> {
     if source.antigravity_profiles.is_some() {
         let mut items = Vec::new();
         for root in source.scan_roots()? {
@@ -180,7 +187,10 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
             store.antigravity_profiles = None;
             store.data_root = root.parent().unwrap_or(&root).to_owned();
             store.scan_path = root;
-            items.extend(inventory(&store)?);
+            items.extend(inventory_with_antigravity_summaries(
+                &store,
+                summaries.as_deref_mut(),
+            )?);
         }
         return Ok(items);
     }
@@ -260,9 +270,13 @@ pub fn inventory(source: &AgentSource) -> Result<Vec<Item>> {
     };
     let antigravity_context = if matches!(source.agent.as_str(), "antigravity" | "antigravity-cli")
     {
-        Some(crate::agents::antigravity::ContextFingerprints::load(
-            &source.data_root,
-        )?)
+        let context = crate::agents::antigravity::ContextFingerprints::load(&source.data_root)?;
+        if let Some(out) = summaries
+            && let Some(fingerprints) = context.summary_fingerprints()
+        {
+            out.insert(source.data_root.clone(), fingerprints);
+        }
+        Some(context)
     } else {
         None
     };

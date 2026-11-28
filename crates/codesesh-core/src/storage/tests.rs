@@ -1201,3 +1201,245 @@ fn schema39_upgrades_in_place_to_schema40_without_backup() {
         assert_eq!(stats[0].model_key, "acme/v39-missing");
     }
 }
+
+#[test]
+fn schema41_migrates_source_fingerprints_in_place_and_live_edits_write_only_changed_key() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = root.path().join(".codex").join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let file_a = sessions.join("rollout-a.jsonl");
+    let file_b = sessions.join("rollout-b.jsonl");
+    let empty = sessions.join("rollout-empty.jsonl");
+    let write_rollout = |path: &Path, text: &str| {
+        std::fs::write(
+            path,
+            format!(
+                "{}\n{}\n",
+                serde_json::json!({"timestamp":"2026-09-01T10:00:00Z","type":"session_meta","payload":{"cwd":"/fixture"}}),
+                serde_json::json!({"timestamp":"2026-09-01T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":text}]}}),
+            ),
+        )
+        .unwrap();
+    };
+    write_rollout(&file_a, "First");
+    write_rollout(&file_b, "Second");
+    std::fs::write(&empty, "").unwrap();
+
+    let env = crate::discovery::PathEnvironment {
+        home: root.path().into(),
+        cwd: root.path().into(),
+        platform: "linux".into(),
+        variables: Default::default(),
+    };
+    let source = env.source("codex").unwrap();
+    let db_path = root.path().join("cache.db");
+    let pricing = Arc::new(crate::pricing::Pricing::bundled());
+    let mut cache = Cache::open(Some(&db_path)).unwrap();
+    let mut scanner =
+        crate::discovery::AgentScanner::new(source.clone(), db_path.clone(), pricing.clone());
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 2);
+    cache
+        .apply_checkpoint(
+            &mut initial.sessions,
+            &initial.removed,
+            "codex",
+            &initial.checkpoint,
+            initial.complete,
+        )
+        .unwrap();
+    initial.on_reject.take();
+
+    // Downgrade to schema 41 with inline files/databaseSessions/emptySources in cache_meta.
+    let saved_fps = source_fingerprints::load(
+        cache.connection(),
+        "source_fingerprints",
+        "agent_name",
+        "codex",
+    )
+    .unwrap();
+    assert_eq!(saved_fps.files.len(), 3);
+    assert!(
+        saved_fps
+            .empty_sources
+            .contains(&empty.to_string_lossy().into_owned())
+    );
+
+    let state_raw: String = cache
+        .connection()
+        .query_row(
+            "SELECT value FROM cache_meta WHERE key='rust_source_state:codex'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut legacy_state: serde_json::Value = serde_json::from_str(&state_raw).unwrap();
+    assert!(legacy_state.get("files").is_none());
+    assert!(legacy_state.get("databaseSessions").is_none());
+    assert!(legacy_state.get("emptySources").is_none());
+    legacy_state["files"] = serde_json::to_value(&saved_fps.files).unwrap();
+    legacy_state["databaseSessions"] = serde_json::json!({"db-session-1": "db-fp-1"});
+    legacy_state["emptySources"] = serde_json::to_value(&saved_fps.empty_sources).unwrap();
+    cache
+        .connection()
+        .execute(
+            "UPDATE cache_meta SET value=?1 WHERE key='rust_source_state:codex'",
+            [legacy_state.to_string()],
+        )
+        .unwrap();
+    cache
+        .connection()
+        .execute_batch(
+            "DROP TABLE source_fingerprints;
+             DELETE FROM cache_meta WHERE key='source_fingerprints_v1';
+             PRAGMA user_version=41;
+             UPDATE cache_meta SET value='41' WHERE key='version';",
+        )
+        .unwrap();
+    drop(cache);
+
+    let mut cache = Cache::open(Some(&db_path)).unwrap();
+    assert_eq!(
+        cache
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        CACHE_SCHEMA_VERSION
+    );
+    assert!(
+        !std::fs::read_dir(root.path())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .contains("cache-migration")),
+        "v41 -> v42 must upgrade in place without creating a backup file"
+    );
+    let migrated_raw: String = cache
+        .connection()
+        .query_row(
+            "SELECT value FROM cache_meta WHERE key='rust_source_state:codex'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let migrated_state: serde_json::Value = serde_json::from_str(&migrated_raw).unwrap();
+    assert!(migrated_state.get("files").is_none());
+    assert!(migrated_state.get("databaseSessions").is_none());
+    assert!(migrated_state.get("emptySources").is_none());
+    assert_eq!(migrated_state["historyComplete"], serde_json::json!(true));
+
+    let migrated_fps = source_fingerprints::load(
+        cache.connection(),
+        "source_fingerprints",
+        "agent_name",
+        "codex",
+    )
+    .unwrap();
+    assert_eq!(migrated_fps.files, saved_fps.files);
+    assert_eq!(
+        migrated_fps
+            .database_sessions
+            .get("db-session-1")
+            .map(String::as_str),
+        Some("db-fp-1")
+    );
+    assert_eq!(migrated_fps.empty_sources, saved_fps.empty_sources);
+
+    // Warm restart sees all migrated fingerprints and parses nothing.
+    let mut restarted = crate::discovery::AgentScanner::new(source, db_path, pricing);
+    let mut warm = restarted.refresh(None).unwrap();
+    assert!(warm.sessions.is_empty());
+    assert!(
+        warm.checkpoint
+            .as_ref()
+            .and_then(|v| v.get("sourceStateDelta"))
+            .is_none()
+    );
+    cache
+        .apply_checkpoint(
+            &mut warm.sessions,
+            &warm.removed,
+            "codex",
+            &warm.checkpoint,
+            warm.complete,
+        )
+        .unwrap();
+    warm.on_reject.take();
+
+    // A 1-file live edit writes ONLY the changed entry_key to source_fingerprints.
+    cache
+        .connection()
+        .execute_batch(
+            "CREATE TEMP TABLE fp_writes(entry_key TEXT NOT NULL);
+             CREATE TEMP TRIGGER track_fp_ins AFTER INSERT ON source_fingerprints BEGIN INSERT INTO fp_writes VALUES(NEW.entry_key); END;
+             CREATE TEMP TRIGGER track_fp_upd AFTER UPDATE ON source_fingerprints BEGIN INSERT INTO fp_writes VALUES(NEW.entry_key); END;
+             CREATE TEMP TRIGGER track_fp_del AFTER DELETE ON source_fingerprints BEGIN INSERT INTO fp_writes VALUES(OLD.entry_key); END;",
+        )
+        .unwrap();
+    write_rollout(&file_a, "Updated prompt content for file A");
+    let mut edited = restarted
+        .refresh(Some(std::slice::from_ref(&file_a)))
+        .unwrap();
+    assert_eq!(edited.sessions.len(), 1);
+    let delta: source_fingerprints::SourceStateDelta = serde_json::from_value(
+        edited
+            .checkpoint
+            .as_ref()
+            .unwrap()
+            .get("sourceStateDelta")
+            .unwrap()
+            .clone(),
+    )
+    .unwrap();
+    assert!(!delta.reset);
+    assert_eq!(delta.file_upserts.len(), 1);
+    assert!(
+        delta
+            .file_upserts
+            .contains_key(&file_a.to_string_lossy().into_owned())
+    );
+
+    cache
+        .apply_checkpoint(
+            &mut edited.sessions,
+            &edited.removed,
+            "codex",
+            &edited.checkpoint,
+            edited.complete,
+        )
+        .unwrap();
+    edited.on_reject.take();
+
+    let written_keys: Vec<String> = cache
+        .connection()
+        .prepare("SELECT entry_key FROM fp_writes")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(written_keys, vec![file_a.to_string_lossy().into_owned()]);
+
+    // Non-complete checkpoint must strip sourceStateDelta before persisting rust_sync_checkpoint.
+    let partial = serde_json::json!({
+        "offset": 1,
+        "total": 2,
+        "sourceState": {"version": 1},
+        "sourceStateDelta": {"fileUpserts": {"k": "v"}}
+    });
+    cache
+        .apply_checkpoint(&mut [], &[], "codex", &Some(partial), false)
+        .unwrap();
+    let stored_checkpoint: String = cache
+        .connection()
+        .query_row(
+            "SELECT value FROM cache_meta WHERE key='rust_sync_checkpoint:codex'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let stored_checkpoint: serde_json::Value = serde_json::from_str(&stored_checkpoint).unwrap();
+    assert!(stored_checkpoint.get("sourceStateDelta").is_none());
+}

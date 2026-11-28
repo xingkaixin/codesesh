@@ -7,7 +7,10 @@ use crate::{
     agents::{self, ParsedSession, ScanDelta, SessionRecord, opencode::DatabaseSnapshot},
     pricing::{PriceDependencies, Pricing, PricingController, capture_dependencies},
     runtime,
-    storage::Cache,
+    storage::{
+        Cache,
+        source_fingerprints::{self, SourceFingerprints, SourceStateDelta},
+    },
 };
 use anyhow::Result;
 use rusqlite::OptionalExtension;
@@ -111,6 +114,170 @@ impl AgentSource {
     }
 }
 
+struct AntigravitySummaryExpansion {
+    paths: Vec<PathBuf>,
+    updated_summaries: Vec<(PathBuf, HashMap<String, String>)>,
+}
+
+#[derive(Default)]
+struct TrackedFingerprints {
+    files: HashMap<String, String>,
+    database: HashMap<String, String>,
+    empty: HashSet<String>,
+    pending: SourceStateDelta,
+}
+
+impl TrackedFingerprints {
+    fn reset_from_persisted(&mut self, persisted: SourceFingerprints) {
+        self.files = persisted.files;
+        self.database = persisted.database_sessions;
+        self.empty = persisted.empty_sources;
+        self.pending = SourceStateDelta::default();
+    }
+
+    fn discard_and_mark_reset(&mut self) {
+        self.files.clear();
+        self.database.clear();
+        self.empty.clear();
+        self.pending = SourceStateDelta {
+            reset: true,
+            ..Default::default()
+        };
+    }
+
+    fn file(&self, key: &str) -> Option<&str> {
+        self.files.get(key).map(String::as_str)
+    }
+
+    fn file_keys(&self) -> impl Iterator<Item = &str> {
+        self.files.keys().map(String::as_str)
+    }
+
+    fn database(&self, key: &str) -> Option<&str> {
+        self.database.get(key).map(String::as_str)
+    }
+
+    fn is_empty_source(&self, key: &str) -> bool {
+        self.empty.contains(key)
+    }
+
+    fn set_file(&mut self, key: String, fingerprint: String) -> bool {
+        if self.files.get(&key).map(String::as_str) == Some(fingerprint.as_str()) {
+            return false;
+        }
+        self.files.insert(key.clone(), fingerprint.clone());
+        self.pending.file_removes.remove(&key);
+        self.pending.file_upserts.insert(key, fingerprint);
+        true
+    }
+
+    fn remove_file(&mut self, key: &str) -> bool {
+        if self.files.remove(key).is_none() {
+            return false;
+        }
+        self.pending.file_upserts.remove(key);
+        if !self.pending.reset {
+            self.pending.file_removes.insert(key.to_owned());
+        }
+        true
+    }
+
+    fn retain_files(&mut self, mut keep: impl FnMut(&str) -> bool) -> bool {
+        let removed: Vec<String> = self
+            .files
+            .keys()
+            .filter(|key| !keep(key.as_str()))
+            .cloned()
+            .collect();
+        let changed = !removed.is_empty();
+        for key in removed {
+            self.remove_file(&key);
+        }
+        changed
+    }
+
+    fn set_database(&mut self, key: String, fingerprint: String) -> bool {
+        if self.database.get(&key).map(String::as_str) == Some(fingerprint.as_str()) {
+            return false;
+        }
+        self.database.insert(key.clone(), fingerprint.clone());
+        self.pending.database_removes.remove(&key);
+        self.pending.database_upserts.insert(key, fingerprint);
+        true
+    }
+
+    fn remove_database(&mut self, key: &str) -> bool {
+        if self.database.remove(key).is_none() {
+            return false;
+        }
+        self.pending.database_upserts.remove(key);
+        if !self.pending.reset {
+            self.pending.database_removes.insert(key.to_owned());
+        }
+        true
+    }
+
+    fn add_empty(&mut self, key: String) -> bool {
+        if !self.empty.insert(key.clone()) {
+            return false;
+        }
+        self.pending.empty_removes.remove(&key);
+        self.pending.empty_adds.insert(key);
+        true
+    }
+
+    fn remove_empty(&mut self, key: &str) -> bool {
+        if !self.empty.remove(key) {
+            return false;
+        }
+        self.pending.empty_adds.remove(key);
+        if !self.pending.reset {
+            self.pending.empty_removes.insert(key.to_owned());
+        }
+        true
+    }
+
+    fn retain_empty_in_files(&mut self) -> bool {
+        let removed: Vec<String> = self
+            .empty
+            .iter()
+            .filter(|key| !self.files.contains_key(*key))
+            .cloned()
+            .collect();
+        let changed = !removed.is_empty();
+        for key in removed {
+            self.remove_empty(&key);
+        }
+        changed
+    }
+
+    fn replace_all_desktop(&mut self, current: &HashMap<String, String>) -> bool {
+        let mut changed = self.retain_files(|key| current.contains_key(key));
+        let removed_db: Vec<String> = self
+            .database
+            .keys()
+            .filter(|key| !current.contains_key(*key))
+            .cloned()
+            .collect();
+        for key in removed_db {
+            changed |= self.remove_database(&key);
+        }
+        for (id, hash) in current {
+            if self.files.get(id) != Some(hash) {
+                changed |= self.set_file(id.clone(), hash.clone());
+            }
+            if self.database.get(id) != Some(hash) {
+                changed |= self.set_database(id.clone(), hash.clone());
+            }
+        }
+        changed
+    }
+
+    fn take_delta(&mut self) -> Option<SourceStateDelta> {
+        (!self.pending.is_empty()).then(|| std::mem::take(&mut self.pending))
+    }
+}
+
 pub struct AgentScanner {
     source: AgentSource,
     source_available: Option<bool>,
@@ -138,14 +305,13 @@ pub struct AgentScanner {
     codex: agents::codex::Checkpoints,
     claude: agents::claudecode::Checkpoints,
     opencode: Option<DatabaseSnapshot>,
-    fingerprints: HashMap<String, String>,
+    fingerprints: TrackedFingerprints,
     price_dependencies: Option<PriceDependencies>,
-    file_fingerprints: HashMap<String, String>,
-    empty_sources: HashSet<String>,
     persisted_database_stamp: Option<String>,
     backfill_database_stamp: Option<String>,
     source_state_dirty: bool,
     database_inventory: Option<(String, Vec<Item>)>,
+    antigravity_summaries: HashMap<PathBuf, HashMap<String, String>>,
 }
 impl AgentScanner {
     pub(crate) fn new(source: AgentSource, cache_path: PathBuf, pricing: Arc<Pricing>) -> Self {
@@ -172,14 +338,13 @@ impl AgentScanner {
             codex: Default::default(),
             claude: Default::default(),
             opencode: None,
-            fingerprints: HashMap::new(),
+            fingerprints: TrackedFingerprints::default(),
             price_dependencies: Some(HashMap::new()),
-            file_fingerprints: HashMap::new(),
-            empty_sources: HashSet::new(),
             persisted_database_stamp: None,
             backfill_database_stamp: None,
             source_state_dirty: true,
             database_inventory: None,
+            antigravity_summaries: HashMap::new(),
         }
     }
     pub fn with_source_node(mut self, node: &str) -> Self {
@@ -287,9 +452,13 @@ impl AgentScanner {
             self.backfill = None;
             self.backfill_database_stamp = None;
             self.opencode = None;
-            self.fingerprints.clear();
+            self.fingerprints.discard_and_mark_reset();
             self.persisted_database_stamp = None;
             self.source_state_dirty = true;
+            self.antigravity_summaries.clear();
+        }
+        if pricing_changed || !self.initialized {
+            self.antigravity_summaries.clear();
         }
         if pricing_changed
             || !self.initialized
@@ -386,14 +555,15 @@ impl AgentScanner {
         }
         self.durable_references = self.baseline.keys().cloned().collect();
         self.initialized = true;
-        let empty_before = self.empty_sources.len();
-        self.empty_sources
-            .retain(|key| self.file_fingerprints.contains_key(key));
-        if self.empty_sources.len() != empty_before {
+        if self.fingerprints.retain_empty_in_files() {
             self.source_state_dirty = true;
         }
         let next_history_complete = self.history_complete || complete;
         if next_history_complete != self.history_complete {
+            self.source_state_dirty = true;
+        }
+        let fingerprint_delta = self.fingerprints.take_delta();
+        if fingerprint_delta.is_some() {
             self.source_state_dirty = true;
         }
         let checkpoint = next_checkpoint.get_or_insert_with(|| serde_json::json!({}));
@@ -408,12 +578,12 @@ impl AgentScanner {
                 "priceDependencies": self.price_dependencies,
                 "root": self.source.scan_path,
                 "antigravityProfiles": self.source.antigravity_profiles,
-                "files": self.file_fingerprints,
-                "databaseSessions": self.fingerprints,
                 "databaseStamp": self.persisted_database_stamp,
-                "emptySources": self.empty_sources,
             });
             self.source_state_dirty = false;
+        }
+        if let Some(fingerprint_delta) = fingerprint_delta {
+            checkpoint["sourceStateDelta"] = serde_json::to_value(fingerprint_delta)?;
         }
         if complete {
             self.history_complete = true;
@@ -490,10 +660,7 @@ impl AgentScanner {
             let mut items = self.inventory()?;
             self.source_available = Some(!items.is_empty() || has_sources(&self.source)?);
             let present: HashSet<_> = items.iter().map(|item| item.key.as_str()).collect();
-            let fingerprints_before = self.file_fingerprints.len();
-            self.file_fingerprints
-                .retain(|key, _| present.contains(key.as_str()));
-            if self.file_fingerprints.len() != fingerprints_before {
+            if self.fingerprints.retain_files(|key| present.contains(key)) {
                 self.source_state_dirty = true;
             }
             if let Some(target) = &self.target {
@@ -658,6 +825,18 @@ impl AgentScanner {
         self.update_persisted_database_stamp(verified);
     }
     fn inventory(&mut self) -> Result<Vec<Item>> {
+        if matches!(
+            self.source.agent.as_str(),
+            "antigravity" | "antigravity-cli"
+        ) {
+            let mut summaries = HashMap::new();
+            let items = super::backfill::inventory_with_antigravity_summaries(
+                &self.source,
+                Some(&mut summaries),
+            )?;
+            self.antigravity_summaries = summaries;
+            return Ok(items);
+        }
         // Enumerating a database reads every session row; an unchanged file lists the same sessions.
         let Some(stamp) = database_stamp(&self.source)? else {
             return inventory(&self.source);
@@ -774,7 +953,7 @@ impl AgentScanner {
                     .iter()
                     .filter(|item| {
                         eligible.contains(&item.key)
-                            && self.file_fingerprints.get(&item.key) != Some(&item.fingerprint)
+                            && self.fingerprints.file(&item.key) != Some(item.fingerprint.as_str())
                     })
                     .cloned()
                     .collect();
@@ -816,10 +995,8 @@ impl AgentScanner {
         for item in current {
             if item.path.as_ref().is_some_and(|path| parsed.contains(path))
                 && self
-                    .file_fingerprints
-                    .insert(item.key.clone(), item.fingerprint.clone())
-                    .as_deref()
-                    != Some(item.fingerprint.as_str())
+                    .fingerprints
+                    .set_file(item.key.clone(), item.fingerprint.clone())
             {
                 self.source_state_dirty = true;
             }
@@ -831,6 +1008,95 @@ impl AgentScanner {
         }
         plan.items.retain(|item| !missing.contains(&item.key));
         Ok(delta)
+    }
+    fn expand_antigravity_summary_paths(
+        &self,
+        paths: &[PathBuf],
+        known: &HashSet<&str>,
+    ) -> Result<Option<AntigravitySummaryExpansion>> {
+        let store_to_conversations: HashMap<PathBuf, PathBuf> = self
+            .source
+            .scan_roots()?
+            .into_iter()
+            .filter_map(|conversations| {
+                let store = conversations.parent()?.to_path_buf();
+                Some((store, conversations))
+            })
+            .collect();
+        let mut expanded = Vec::with_capacity(paths.len());
+        let mut stores_to_diff = Vec::new();
+        let mut seen_stores = HashSet::new();
+        for path in paths {
+            let is_summary = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    matches!(
+                        name,
+                        "conversation_summaries.db"
+                            | "conversation_summaries.db-wal"
+                            | "conversation_summaries.db-journal"
+                            | "conversation_summaries.db-shm"
+                    )
+                });
+            if is_summary
+                && let Some(store) = path.parent()
+                && store_to_conversations.contains_key(store)
+            {
+                if seen_stores.insert(store.to_path_buf()) {
+                    stores_to_diff.push(store.to_path_buf());
+                }
+                continue;
+            }
+            expanded.push(path.clone());
+        }
+        if stores_to_diff.is_empty() {
+            return Ok(Some(AntigravitySummaryExpansion {
+                paths: expanded,
+                updated_summaries: Vec::new(),
+            }));
+        }
+        let mut total_changed = 0usize;
+        let mut updated_summaries = Vec::with_capacity(stores_to_diff.len());
+        for store in stores_to_diff {
+            let Some(prev_map) = self.antigravity_summaries.get(&store) else {
+                return Ok(None);
+            };
+            let Some(next_map) = agents::antigravity::summary_fingerprints(&store)? else {
+                return Ok(None);
+            };
+            let conversations = &store_to_conversations[&store];
+            let mut changed_ids = Vec::new();
+            for (id, fp) in &next_map {
+                if prev_map.get(id) != Some(fp) {
+                    changed_ids.push(id.as_str());
+                }
+            }
+            for id in prev_map.keys() {
+                if !next_map.contains_key(id) {
+                    changed_ids.push(id.as_str());
+                }
+            }
+            total_changed += changed_ids.len();
+            if total_changed > BATCH_SIZE {
+                return Ok(None);
+            }
+            for id in changed_ids {
+                let db_path = conversations.join(format!("{id}.db"));
+                match std::fs::symlink_metadata(&db_path) {
+                    Ok(meta) if meta.file_type().is_file() => expanded.push(db_path),
+                    // Child sessions follow symlinks to parent DBs, so fall back to full inventory.
+                    Ok(meta) if meta.file_type().is_symlink() => return Ok(None),
+                    _ if known.contains(db_path.to_string_lossy().as_ref()) => return Ok(None),
+                    _ => {}
+                }
+            }
+            updated_summaries.push((store, next_map));
+        }
+        Ok(Some(AntigravitySummaryExpansion {
+            paths: expanded,
+            updated_summaries,
+        }))
     }
     fn read_live(
         &mut self,
@@ -867,40 +1133,75 @@ impl AgentScanner {
         if let Some(paths) = paths
             && !paths.is_empty()
         {
-            let known: HashSet<&str> = self.file_fingerprints.keys().map(String::as_str).collect();
-            if let Some(targeted) = super::backfill::targeted_items(&self.source, paths, &known)? {
-                if targeted.is_empty() {
+            let known: HashSet<&str> = self.fingerprints.file_keys().collect();
+            let expanded = if matches!(
+                self.source.agent.as_str(),
+                "antigravity" | "antigravity-cli"
+            ) {
+                self.expand_antigravity_summary_paths(paths, &known)?
+            } else {
+                Some(AntigravitySummaryExpansion {
+                    paths: paths.to_vec(),
+                    updated_summaries: Vec::new(),
+                })
+            };
+            if let Some(AntigravitySummaryExpansion {
+                paths: effective_paths,
+                updated_summaries,
+            }) = expanded
+            {
+                if effective_paths.is_empty() {
+                    for (store, map) in updated_summaries {
+                        self.antigravity_summaries.insert(store, map);
+                    }
                     return Ok((ScanDelta::default(), None, true));
                 }
-                self.source_available = Some(true);
-                let changed: Vec<_> = targeted
-                    .iter()
-                    .filter(|item| self.file_fingerprints.get(&item.key) != Some(&item.fingerprint))
-                    .collect();
-                if changed.len() > BATCH_SIZE
-                    || (changed.len() > 1
-                        && changed.iter().map(|item| item.bytes).sum::<u64>() > 16 * 1024 * 1024)
+                if let Some(targeted) =
+                    super::backfill::targeted_items(&self.source, &effective_paths, &known)?
                 {
-                    return self.page(None, None);
-                }
-                let (mut delta, mut retained, _) = self.read_page(&targeted, false)?;
-                retained.extend(
-                    delta
-                        .upserts
+                    if targeted.is_empty() {
+                        for (store, map) in updated_summaries {
+                            self.antigravity_summaries.insert(store, map);
+                        }
+                        return Ok((ScanDelta::default(), None, true));
+                    }
+                    self.source_available = Some(true);
+                    let changed: Vec<_> = targeted
                         .iter()
-                        .map(|session| session.head.reference.clone()),
-                );
-                let scope = ItemScope::new(&targeted);
-                delta.removed.extend(
-                    self.baseline
-                        .iter()
-                        .filter(|(reference, _)| {
-                            !retained.contains(*reference) && self.matches_scope(reference, &scope)
+                        .filter(|item| {
+                            self.fingerprints.file(&item.key) != Some(item.fingerprint.as_str())
                         })
-                        .map(|(reference, _)| reference.clone()),
-                );
-                delta.complete = false;
-                return Ok((delta, None, true));
+                        .collect();
+                    if changed.len() > BATCH_SIZE
+                        || (changed.len() > 1
+                            && changed.iter().map(|item| item.bytes).sum::<u64>()
+                                > 16 * 1024 * 1024)
+                    {
+                        return self.page(None, None);
+                    }
+                    let (mut delta, mut retained, _) = self.read_page(&targeted, false)?;
+                    for (store, map) in updated_summaries {
+                        self.antigravity_summaries.insert(store, map);
+                    }
+                    retained.extend(
+                        delta
+                            .upserts
+                            .iter()
+                            .map(|session| session.head.reference.clone()),
+                    );
+                    let scope = ItemScope::new(&targeted);
+                    delta.removed.extend(
+                        self.baseline
+                            .iter()
+                            .filter(|(reference, _)| {
+                                !retained.contains(*reference)
+                                    && self.matches_scope(reference, &scope)
+                            })
+                            .map(|(reference, _)| reference.clone()),
+                    );
+                    delta.complete = false;
+                    return Ok((delta, None, true));
+                }
             }
         }
         let current = self.inventory()?;
@@ -913,7 +1214,7 @@ impl AgentScanner {
         }
         let changed: Vec<_> = current
             .iter()
-            .filter(|item| self.file_fingerprints.get(&item.key) != Some(&item.fingerprint))
+            .filter(|item| self.fingerprints.file(&item.key) != Some(item.fingerprint.as_str()))
             .collect();
         if changed.len() > BATCH_SIZE
             || (changed.len() > 1
@@ -932,10 +1233,7 @@ impl AgentScanner {
             .removed
             .extend(self.durable_references.difference(&retained).cloned());
         let present: HashSet<_> = current.iter().map(|item| item.key.as_str()).collect();
-        let fingerprints_before = self.file_fingerprints.len();
-        self.file_fingerprints
-            .retain(|key, _| present.contains(key.as_str()));
-        if self.file_fingerprints.len() != fingerprints_before {
+        if self.fingerprints.retain_files(|key| present.contains(key)) {
             self.source_state_dirty = true;
         }
         Ok((delta, None, true))
@@ -978,8 +1276,8 @@ impl AgentScanner {
                 Some(path) => by_source.get(path),
                 None => by_key.get(&item.key),
             };
-            let current = (records.is_some() || self.empty_sources.contains(&item.key))
-                && self.file_fingerprints.get(&item.key) == Some(&item.fingerprint)
+            let current = (records.is_some() || self.fingerprints.is_empty_source(&item.key))
+                && self.fingerprints.file(&item.key) == Some(item.fingerprint.as_str())
                 && records
                     .into_iter()
                     .flatten()
@@ -1020,26 +1318,21 @@ impl AgentScanner {
                 Some(path) => path == &session.source,
                 None => session.head.reference.session_id == item.key,
             }) {
-                if self.empty_sources.remove(&item.key) {
+                if self.fingerprints.remove_empty(&item.key) {
                     self.source_state_dirty = true;
                 }
-            } else if self.empty_sources.insert(item.key.clone()) {
+            } else if self.fingerprints.add_empty(item.key.clone()) {
                 self.source_state_dirty = true;
             }
             let fingerprint = if item.path.is_none() {
                 self.fingerprints
-                    .get(&item.key)
-                    .cloned()
+                    .database(&item.key)
+                    .map(str::to_owned)
                     .unwrap_or_else(|| item.fingerprint.clone())
             } else {
                 item.fingerprint.clone()
             };
-            if self
-                .file_fingerprints
-                .insert(item.key.clone(), fingerprint.clone())
-                .as_ref()
-                != Some(&fingerprint)
-            {
+            if self.fingerprints.set_file(item.key.clone(), fingerprint) {
                 self.source_state_dirty = true;
             }
         }
@@ -1097,7 +1390,7 @@ impl AgentScanner {
                     _ => agents::minimax_code::scan_page(root, &self.pricing, &ids)?,
                 };
                 for (id, hash) in fingerprints {
-                    if self.fingerprints.insert(id, hash.clone()).as_ref() != Some(&hash) {
+                    if self.fingerprints.set_database(id, hash) {
                         self.source_state_dirty = true;
                     }
                 }
@@ -1121,20 +1414,24 @@ impl AgentScanner {
         self.previous_identities.clear();
         self.durable_references.clear();
         self.baseline.clear();
-        self.file_fingerprints.clear();
-        self.empty_sources.clear();
+        self.fingerprints.discard_and_mark_reset();
         self.persisted_database_stamp = None;
         self.backfill_database_stamp = None;
         self.history_complete = false;
         self.price_dependencies = Some(HashMap::new());
         self.source_state_dirty = true;
         if !self.cache_path.exists() {
+            self.antigravity_summaries.clear();
             return Ok(());
         }
         if self.worker {
             let baseline = crate::sync::WorkerStore::open_read_only(&self.cache_path)?
                 .baseline(&self.source.agent)?;
-            self.restore_source_state(baseline.state.as_ref(), baseline.complete);
+            self.restore_source_state(
+                baseline.state.as_ref(),
+                Some(baseline.fingerprints),
+                baseline.complete,
+            );
             for record in baseline.sessions {
                 self.durable_references
                     .insert(record.head.reference.clone());
@@ -1176,7 +1473,17 @@ impl AgentScanner {
             [&self.source.agent],
             |row| row.get(0),
         )?;
-        self.restore_source_state(state.as_ref(), complete);
+        let table_fingerprints = if self.source_state_matches(state.as_ref()) {
+            Some(source_fingerprints::load(
+                cache.connection(),
+                "source_fingerprints",
+                "agent_name",
+                &self.source.agent,
+            )?)
+        } else {
+            None
+        };
+        self.restore_source_state(state.as_ref(), table_fingerprints, complete);
         if pricing_changed {
             self.persisted_database_stamp = None;
             self.backfill_database_stamp = None;
@@ -1205,16 +1512,12 @@ impl AgentScanner {
                 ),
             );
             if pricing_changed && !has_cost_inputs {
-                let mut removed = self
-                    .file_fingerprints
-                    .remove(&head.reference.session_id)
-                    .is_some();
+                let mut removed = self.fingerprints.remove_file(&head.reference.session_id);
                 removed |= self
                     .fingerprints
-                    .remove(&head.reference.session_id)
-                    .is_some();
+                    .remove_database(&head.reference.session_id);
                 if let Some(source) = &source {
-                    removed |= self.file_fingerprints.remove(source).is_some();
+                    removed |= self.fingerprints.remove_file(source);
                 }
                 if removed {
                     self.source_state_dirty = true;
@@ -1237,31 +1540,41 @@ impl AgentScanner {
         }
         Ok(())
     }
-    fn restore_source_state(&mut self, state: Option<&serde_json::Value>, complete: bool) {
-        if let Some(state) = state
-            && state["sourceNodeId"]
+    fn source_state_matches(&self, state: Option<&serde_json::Value>) -> bool {
+        state.is_some_and(|state| {
+            state["sourceNodeId"]
                 .as_str()
                 .unwrap_or(crate::model::LOCAL_SOURCE_NODE_ID)
                 == self.source_node_id
-            && state["version"] == 1
-            && state["parserVersion"].as_str() == Some(agents::parser_version(&self.source.agent))
-            && state["root"].as_str() == self.source.scan_path.to_str()
-            && state["antigravityProfiles"].as_str()
-                == self
-                    .source
-                    .antigravity_profiles
-                    .as_deref()
-                    .and_then(|path| path.to_str())
+                && state["version"] == 1
+                && state["parserVersion"].as_str()
+                    == Some(agents::parser_version(&self.source.agent))
+                && state["root"].as_str() == self.source.scan_path.to_str()
+                && state["antigravityProfiles"].as_str()
+                    == self
+                        .source
+                        .antigravity_profiles
+                        .as_deref()
+                        .and_then(|path| path.to_str())
+        })
+    }
+    fn restore_source_state(
+        &mut self,
+        state: Option<&serde_json::Value>,
+        table_fingerprints: Option<SourceFingerprints>,
+        complete: bool,
+    ) {
+        if let Some(state) = state
+            && self.source_state_matches(Some(state))
         {
             self.price_dependencies =
                 serde_json::from_value(state["priceDependencies"].clone()).ok();
             self.history_complete = state["historyComplete"].as_bool().unwrap_or(complete);
-            self.file_fingerprints =
-                serde_json::from_value(state["files"].clone()).unwrap_or_default();
-            self.empty_sources =
-                serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
-            self.fingerprints =
-                serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
+            let mut merged = source_fingerprints::parse_inline_fields(state);
+            if let Some(persisted) = table_fingerprints {
+                merged.merge_from(persisted);
+            }
+            self.fingerprints.reset_from_persisted(merged);
             self.persisted_database_stamp = state["databaseStamp"]
                 .as_str()
                 .filter(|stamp| {
@@ -1273,6 +1586,8 @@ impl AgentScanner {
             {
                 self.source_state_dirty = false;
             }
+        } else {
+            self.antigravity_summaries.clear();
         }
     }
 
@@ -1434,7 +1749,7 @@ impl AgentScanner {
             .iter()
             .filter(|(id, hash)| {
                 eligible.is_none_or(|eligible| eligible.contains(*id))
-                    && self.fingerprints.get(*id) != Some(*hash)
+                    && self.fingerprints.database(id) != Some(hash.as_str())
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -1481,46 +1796,36 @@ impl AgentScanner {
                 .iter()
                 .any(|session| session.head.reference.session_id == *id)
             {
-                if self.empty_sources.remove(id) {
+                if self.fingerprints.remove_empty(id) {
                     self.source_state_dirty = true;
                 }
-            } else if self.empty_sources.insert(id.clone()) {
+            } else if self.fingerprints.add_empty(id.clone()) {
                 self.source_state_dirty = true;
             }
         }
         if let Some(eligible) = eligible {
             for id in eligible {
                 if let Some(hash) = current.get(id) {
-                    if self.fingerprints.insert(id.clone(), hash.clone()).as_ref() != Some(hash) {
+                    if self.fingerprints.set_database(id.clone(), hash.clone()) {
                         self.source_state_dirty = true;
                     }
-                    if self
-                        .file_fingerprints
-                        .insert(id.clone(), hash.clone())
-                        .as_ref()
-                        != Some(hash)
-                    {
+                    if self.fingerprints.set_file(id.clone(), hash.clone()) {
                         self.source_state_dirty = true;
                     }
                 } else {
-                    let mut removed = self.fingerprints.remove(id).is_some();
-                    removed |= self.file_fingerprints.remove(id).is_some();
-                    removed |= self.empty_sources.remove(id);
+                    let mut removed = self.fingerprints.remove_database(id);
+                    removed |= self.fingerprints.remove_file(id);
+                    removed |= self.fingerprints.remove_empty(id);
                     if removed {
                         self.source_state_dirty = true;
                     }
                 }
             }
         } else {
-            if self.file_fingerprints != current || self.fingerprints != current {
+            if self.fingerprints.replace_all_desktop(&current) {
                 self.source_state_dirty = true;
             }
-            self.file_fingerprints = current.clone();
-            self.fingerprints = current;
-            let empty_before = self.empty_sources.len();
-            self.empty_sources
-                .retain(|id| self.file_fingerprints.contains_key(id));
-            if self.empty_sources.len() != empty_before {
+            if self.fingerprints.retain_empty_in_files() {
                 self.source_state_dirty = true;
             }
         }
