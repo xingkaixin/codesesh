@@ -658,6 +658,7 @@ pub fn targeted_items(
         }
         "antigravity" | "antigravity-cli" => {
             let scan_roots = source.scan_roots()?;
+            let mut resolved = Vec::new();
             for path in paths {
                 let Some(scan_root) = scan_roots
                     .iter()
@@ -695,18 +696,20 @@ pub fn targeted_items(
                 if !seen.insert(key.clone()) {
                     continue;
                 }
-                if items.len() >= BATCH_SIZE {
+                if resolved.len() >= BATCH_SIZE {
                     return Ok(None);
                 }
+                resolved.push((key, db_path, metadata));
+            }
+            let mut contexts = crate::agents::antigravity::LeafContextBatch::default();
+            for (key, db_path, metadata) in resolved {
                 let (activity, mut fingerprint) = file_stamp(&metadata)?;
                 let Some(conversations) = db_path.parent() else {
                     return Ok(None);
                 };
                 let id = db_path.file_stem().unwrap_or_default().to_string_lossy();
                 fingerprint.push(':');
-                let Some(context) =
-                    crate::agents::antigravity::leaf_context_fingerprint(conversations, &id)?
-                else {
+                let Some(context) = contexts.fingerprint(conversations, &id)? else {
                     return Ok(None);
                 };
                 fingerprint.push_str(&context);

@@ -149,40 +149,79 @@ impl ContextFingerprints {
     }
 }
 
-pub(crate) fn leaf_context_fingerprint(conversations: &Path, id: &str) -> Result<Option<String>> {
-    let root = conversations
-        .parent()
-        .context("conversation directory has no store")?;
-    let mut summaries = HashMap::new();
-    let summary_path = root.join("conversation_summaries.db");
-    if summary_path.try_exists()? {
-        let db = open_readonly_sqlite(summary_path)?;
-        db.execute_batch("BEGIN")?;
-        let has_table: bool = db.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
-            [],
-            |row| row.get(0),
-        )?;
-        if has_table {
-            if db.query_row("SELECT EXISTS(SELECT 1 FROM conversation_summaries WHERE parent_conversation_id=?1)", [id], |row| row.get::<_, bool>(0))? {
+struct LeafStore {
+    summaries_db: Option<Connection>,
+    summaries: HashMap<String, Option<Summary>>,
+    history: Option<HashMap<String, String>>,
+}
+
+#[derive(Default)]
+pub(crate) struct LeafContextBatch {
+    stores: HashMap<PathBuf, LeafStore>,
+}
+
+impl LeafContextBatch {
+    pub(crate) fn fingerprint(&mut self, conversations: &Path, id: &str) -> Result<Option<String>> {
+        let root = conversations
+            .parent()
+            .context("conversation directory has no store")?;
+        let store = match self.stores.entry(root.to_path_buf()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let summary_path = root.join("conversation_summaries.db");
+                let summaries_db = if summary_path.try_exists()? {
+                    let db = open_readonly_sqlite(summary_path)?;
+                    db.execute_batch("BEGIN")?;
+                    let has_table: bool = db.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    has_table.then_some(db)
+                } else {
+                    None
+                };
+                entry.insert(LeafStore {
+                    summaries_db,
+                    summaries: HashMap::new(),
+                    history: None,
+                })
+            }
+        };
+        if let Some(db) = &store.summaries_db {
+            if db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversation_summaries WHERE parent_conversation_id=?1)",
+                [id],
+                |row| row.get::<_, bool>(0),
+            )? {
                 return Ok(None);
             }
             let mut current = Some(id.to_owned());
             while let Some(key) = current.take() {
-                if summaries.contains_key(&key) {
+                if store.summaries.contains_key(&key) {
                     break;
                 }
-                if let Some(summary) = query_summary(&db, &key)? {
-                    let next = (!summary.parent.is_empty() && summary.parent != key)
-                        .then(|| summary.parent.clone());
-                    summaries.insert(key, summary);
-                    current = next;
-                }
+                let summary = query_summary(db, &key)?;
+                let next = summary
+                    .as_ref()
+                    .filter(|summary| !summary.parent.is_empty() && summary.parent != key)
+                    .map(|summary| summary.parent.clone());
+                store.summaries.insert(key, summary);
+                current = next;
             }
         }
+        if store.history.is_none() {
+            store.history = Some(history_workspaces(root)?);
+        }
+        let history = store.history.as_ref().expect("history initialized above");
+        hash_conversation_context(
+            conversations,
+            id,
+            |key| store.summaries.get(key).and_then(Option::as_ref),
+            history,
+        )
+        .map(Some)
     }
-    let history = history_workspaces(root)?;
-    hash_conversation_context(conversations, id, |key| summaries.get(key), &history).map(Some)
 }
 
 fn hash_str(hash: &mut Sha256, value: &str) {

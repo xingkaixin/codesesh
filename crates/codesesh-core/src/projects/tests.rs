@@ -262,6 +262,167 @@ fn real_git_worktree_shares_common_directory() {
     );
 }
 
+#[test]
+fn real_fs_direct_git_matches_git_cli_for_repos_worktrees_and_includes() {
+    let temp = tempfile::tempdir().unwrap();
+    let canonical = temp.path().canonicalize().unwrap();
+    #[cfg(windows)]
+    let canonical = {
+        let path = canonical.to_str().unwrap();
+        if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
+            std::path::PathBuf::from(format!(r"\\{path}"))
+        } else {
+            std::path::PathBuf::from(path.strip_prefix(r"\\?\").unwrap_or(path))
+        }
+    };
+    let root = canonical.join("repo");
+    let worktree = canonical.join("wt");
+    std::fs::create_dir(&root).unwrap();
+    let git_output = |cwd: &std::path::Path, args: &[&str]| -> Option<String> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    let run = |args: &[&str]| {
+        assert!(git_output(&root, args).is_some(), "git {args:?} failed");
+    };
+    run(&["init"]);
+    run(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Initial",
+    ]);
+    run(&["worktree", "add", "-b", "wt", worktree.to_str().unwrap()]);
+
+    let fs = RealFs::default();
+    let root_str = root.to_str().unwrap();
+    let wt_str = worktree.to_str().unwrap();
+    let resolve_common = |cwd: &str, raw: &str| -> String {
+        let resolved = if raw.starts_with('/') || path::windows(raw) {
+            path::normalize(raw)
+        } else {
+            path::join(cwd, raw)
+        };
+        resolved.replace('\\', "/")
+    };
+
+    // Repo and worktree without local origin fall back to git CLI for config (preserving global/includeIf)
+    // and match git rev-parse --git-common-dir.
+    for dir in [&root, &worktree] {
+        let dir_str = dir.to_str().unwrap();
+        assert!(direct_git(&["config", "--get", "remote.origin.url"], dir_str).is_none());
+        let expected_origin = git_output(dir, &["config", "--get", "remote.origin.url"]);
+        let actual_origin = fs.git(&["config", "--get", "remote.origin.url"], dir_str);
+        assert_eq!(actual_origin, expected_origin);
+        assert_eq!(actual_origin, None);
+
+        let expected_common = git_output(dir, &["rev-parse", "--git-common-dir"]).unwrap();
+        let actual_common = fs.git(&["rev-parse", "--git-common-dir"], dir_str).unwrap();
+        assert_eq!(
+            resolve_common(dir_str, &actual_common),
+            resolve_common(dir_str, &expected_common)
+        );
+    }
+
+    // Continuation lines in unrelated sections and relative/malformed gitdir files fall back to git.
+    let config_path = root.join(".git/config");
+    let base_config = std::fs::read_to_string(&config_path).unwrap();
+    std::fs::write(
+        &config_path,
+        format!("{base_config}\n[core]\n\tcomment = line1\\\n[remote \"origin\"]\n\turl = https://github.com/acme/fake.git\n"),
+    )
+    .unwrap();
+    assert!(direct_git(&["config", "--get", "remote.origin.url"], root_str).is_none());
+    let relative_wt = canonical.join("rel-wt");
+    std::fs::create_dir(&relative_wt).unwrap();
+    std::fs::write(
+        relative_wt.join(".git"),
+        "gitdir: ../repo/.git/worktrees/wt\n",
+    )
+    .unwrap();
+    assert!(
+        direct_git(
+            &["rev-parse", "--git-common-dir"],
+            relative_wt.to_str().unwrap()
+        )
+        .is_none()
+    );
+    let malformed_wt = canonical.join("bad-wt");
+    std::fs::create_dir(&malformed_wt).unwrap();
+    std::fs::write(
+        malformed_wt.join(".git"),
+        format!("gitdir:{}/.git/worktrees/wt\n", root.display()),
+    )
+    .unwrap();
+    assert!(
+        direct_git(
+            &["rev-parse", "--git-common-dir"],
+            malformed_wt.to_str().unwrap()
+        )
+        .is_none()
+    );
+
+    // Multiple origin urls, comments, and quoted values match git config --get (last value wins).
+    std::fs::write(
+        &config_path,
+        format!(
+            "{base_config}\n[remote \"Origin\"]\n\turl = https://github.com/wrong/case.git\n[REMOTE \"origin\"]\n\turl = https://github.com/acme/first.git # trailing comment\n[remote \"origin\"]\n\tURL = \"https://github.com/acme/second#frag.git\" ; comment\n"
+        ),
+    )
+    .unwrap();
+    for dir in [&root, &worktree] {
+        let dir_str = dir.to_str().unwrap();
+        let expected = git_output(dir, &["config", "--get", "remote.origin.url"]);
+        let actual = fs
+            .git(&["config", "--get", "remote.origin.url"], dir_str)
+            .map(|v| v.trim().to_owned());
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual.as_deref(),
+            Some("https://github.com/acme/second#frag.git")
+        );
+    }
+    let root_id = resolve_identity_projection(root_str, &fs, "/unused-home", "v1");
+    let wt_id = resolve_identity_projection(wt_str, &fs, "/unused-home", "v1");
+    assert_eq!(root_id.identity.kind, "git_remote");
+    assert_eq!(root_id.identity, wt_id.identity);
+
+    // [include] triggers fallback to git CLI and still matches git output.
+    let included = canonical.join("included.gitconfig");
+    std::fs::write(
+        &included,
+        "[remote \"origin\"]\n\turl = git@github.com:acme/included.git\n",
+    )
+    .unwrap();
+    let included_escaped = included.to_str().unwrap().replace('\\', "/");
+    std::fs::write(
+        &config_path,
+        format!("{base_config}\n[include]\n\tpath = {included_escaped}\n"),
+    )
+    .unwrap();
+    assert!(direct_git(&["config", "--get", "remote.origin.url"], root_str).is_none());
+    for dir in [&root, &worktree] {
+        let dir_str = dir.to_str().unwrap();
+        let expected = git_output(dir, &["config", "--get", "remote.origin.url"]);
+        let actual = fs
+            .git(&["config", "--get", "remote.origin.url"], dir_str)
+            .map(|v| v.trim().to_owned());
+        assert_eq!(actual, expected);
+        assert_eq!(actual.as_deref(), Some("git@github.com:acme/included.git"));
+    }
+}
+
 fn session(id: &str, parent: Option<&str>, time: i64) -> crate::model::SessionHead {
     let mut value = serde_json::json!({
         "reference": {"agentName":"codex","sessionId":id},

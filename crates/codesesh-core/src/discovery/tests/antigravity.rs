@@ -461,3 +461,68 @@ fn antigravity_cli_watch_roots_scope_profiles_and_targeted_items_skip_non_db_fil
     assert!(after_meta.sessions.is_empty());
     after_meta.on_reject.take();
 }
+
+#[test]
+fn targeted_items_batch_matches_inventory_and_falls_back_for_parents() {
+    let temp = tempfile::tempdir().unwrap();
+    let env = environment(temp.path());
+    let source = env.source("antigravity").unwrap();
+    let conversations = source.scan_path.clone();
+    let parent_db = write_session(&conversations, "parent");
+    let child_a_db = write_session(&conversations, "child-a");
+    let child_b_db = write_session(&conversations, "child-b");
+
+    let summary_db = Connection::open(source.data_root.join("conversation_summaries.db")).unwrap();
+    summary_db
+        .execute_batch(
+            "CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, workspace_uris TEXT, last_modified_time TEXT, parent_conversation_id TEXT, agent_name TEXT);",
+        )
+        .unwrap();
+    for (id, title, parent) in [
+        ("parent", "Parent", ""),
+        ("child-a", "Child A", "parent"),
+        ("child-b", "Child B", "parent"),
+    ] {
+        summary_db
+            .execute(
+                "INSERT INTO conversation_summaries (conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id) VALUES (?1,?2,'[]','',?3)",
+                [id, title, parent],
+            )
+            .unwrap();
+    }
+    fs::write(
+        source.data_root.join("history.jsonl"),
+        format!(
+            "{}\nnot-json\n{}\n{}\n",
+            serde_json::json!({"conversationId": "parent", "workspace": "/work/root", "extra": {"nested": [1, 2, 3]}}),
+            serde_json::json!({"conversationId": "child-a", "workspace": "/work/a", "ignored": true}),
+            serde_json::json!({"conversationId": "", "workspace": "/work/empty"}),
+        ),
+    )
+    .unwrap();
+
+    let inventory_fps: std::collections::HashMap<_, _> = super::super::backfill::inventory(&source)
+        .unwrap()
+        .into_iter()
+        .map(|item| (item.key, item.fingerprint))
+        .collect();
+    let known = std::collections::HashSet::new();
+    let child_a_wal = PathBuf::from(format!("{}-wal", child_a_db.display()));
+    let batch = super::super::backfill::targeted_items(
+        &source,
+        &[child_a_db.clone(), child_a_wal, child_b_db.clone()],
+        &known,
+    )
+    .unwrap()
+    .expect("leaf conversations should stay targeted");
+    assert_eq!(batch.len(), 2);
+    for item in &batch {
+        assert_eq!(inventory_fps.get(&item.key), Some(&item.fingerprint));
+    }
+
+    assert!(
+        super::super::backfill::targeted_items(&source, &[parent_db], &known)
+            .unwrap()
+            .is_none()
+    );
+}

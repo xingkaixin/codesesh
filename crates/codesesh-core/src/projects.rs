@@ -60,6 +60,9 @@ impl IdentityFs for RealFs {
         std::fs::read_to_string(path).ok()
     }
     fn git(&self, args: &[&str], cwd: &str) -> Option<String> {
+        if let Some(result) = direct_git(args, cwd) {
+            return Some(result);
+        }
         let mut child = Command::new("git")
             .args(args)
             .current_dir(cwd)
@@ -97,6 +100,265 @@ impl IdentityFs for RealFs {
     fn timed_out(&self) -> bool {
         self.timed_out.get()
     }
+}
+
+struct DirectGitDirs {
+    git_dir: std::path::PathBuf,
+    common_dir: std::path::PathBuf,
+    common_dir_normalized: String,
+}
+
+fn direct_git(args: &[&str], cwd: &str) -> Option<String> {
+    match args {
+        ["rev-parse", "--git-common-dir"] => {
+            let dirs = resolve_direct_git_dirs(cwd)?;
+            Some(dirs.common_dir_normalized)
+        }
+        ["config", "--get", "remote.origin.url"] => {
+            if std::env::var_os("GIT_CONFIG").is_some() {
+                return None;
+            }
+            let dirs = resolve_direct_git_dirs(cwd)?;
+            parse_origin_url(&dirs)
+        }
+        _ => None,
+    }
+}
+
+fn resolve_direct_git_dirs(cwd: &str) -> Option<DirectGitDirs> {
+    if [
+        "GIT_DIR",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_COUNT",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some())
+    {
+        return None;
+    }
+    let dot_git = std::path::Path::new(cwd).join(".git");
+    let meta = std::fs::symlink_metadata(&dot_git).ok()?;
+    let git_dir_normalized = if meta.file_type().is_dir() {
+        path::join(cwd, ".git")
+    } else if meta.file_type().is_file() {
+        let raw = std::fs::read_to_string(&dot_git).ok()?;
+        let trimmed = raw.strip_prefix('\u{feff}').unwrap_or(&raw).trim();
+        let target = trimmed.strip_prefix("gitdir: ")?.trim();
+        if target.is_empty() || !(target.starts_with('/') || path::windows(target)) {
+            return None;
+        }
+        path::normalize(target)
+    } else {
+        return None;
+    };
+    let git_dir = std::path::PathBuf::from(&git_dir_normalized);
+    if !std::fs::symlink_metadata(&git_dir)
+        .ok()
+        .is_some_and(|m| m.file_type().is_dir())
+        || !std::fs::metadata(git_dir.join("HEAD")).is_ok_and(|m| m.is_file())
+    {
+        return None;
+    }
+    let commondir_path = git_dir.join("commondir");
+    let (common_dir, common_dir_normalized) = match std::fs::symlink_metadata(&commondir_path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            (git_dir.clone(), git_dir_normalized)
+        }
+        Ok(meta) if meta.file_type().is_file() => {
+            let raw = std::fs::read_to_string(&commondir_path).ok()?;
+            let target = raw.strip_prefix('\u{feff}').unwrap_or(&raw).trim();
+            if target.is_empty() {
+                return None;
+            }
+            let normalized = if target.starts_with('/') || path::windows(target) {
+                path::normalize(target)
+            } else {
+                path::join(&git_dir_normalized, target)
+            };
+            let dir = std::path::PathBuf::from(&normalized);
+            if !std::fs::symlink_metadata(&dir)
+                .ok()
+                .is_some_and(|m| m.file_type().is_dir())
+            {
+                return None;
+            }
+            (dir, normalized)
+        }
+        _ => return None,
+    };
+    Some(DirectGitDirs {
+        git_dir,
+        common_dir,
+        common_dir_normalized,
+    })
+}
+
+fn parse_origin_url(dirs: &DirectGitDirs) -> Option<String> {
+    if dirs.git_dir.join("config.worktree").try_exists().ok()? {
+        return None;
+    }
+    let raw = std::fs::read_to_string(dirs.common_dir.join("config")).ok()?;
+    let content = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
+    let lower = content.to_ascii_lowercase();
+    if lower.contains("[include]")
+        || lower.contains("[include ")
+        || lower.contains("[include\t")
+        || lower.contains("[include.")
+        || lower.contains("[includeif")
+        || lower.contains("worktreeconfig")
+    {
+        return None;
+    }
+
+    let mut in_origin = false;
+    let mut last_url = None;
+    for raw_line in content.lines() {
+        if raw_line.trim_end_matches('\r').ends_with('\\') {
+            return None;
+        }
+        let mut line = raw_line.trim_start_matches([' ', '\t']);
+        if line.is_empty() || line.starts_with(['#', ';']) {
+            continue;
+        }
+        if let Some(after_open) = line.strip_prefix('[') {
+            let (section_origin, rest) = parse_git_config_section(after_open)?;
+            in_origin = section_origin;
+            line = rest.trim_start_matches([' ', '\t']);
+            if line.is_empty() || line.starts_with(['#', ';']) {
+                continue;
+            }
+        }
+        if !in_origin {
+            continue;
+        }
+        if let Some(url) = parse_git_config_origin_line(line)? {
+            last_url = Some(url);
+        }
+    }
+    last_url
+}
+
+fn parse_git_config_section(after_open: &str) -> Option<(bool, &str)> {
+    let bytes = after_open.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-') {
+        i += 1;
+    }
+    if i == 0 || i >= bytes.len() {
+        return None;
+    }
+    let section = &after_open[..i];
+    match bytes[i] {
+        b']' => Some((false, &after_open[i + 1..])),
+        b'.' => {
+            let rest = &after_open[i + 1..];
+            let close = rest.find(']')?;
+            let subsection = &rest[..close];
+            let is_origin =
+                section.eq_ignore_ascii_case("remote") && subsection.eq_ignore_ascii_case("origin");
+            Some((is_origin, &rest[close + 1..]))
+        }
+        b' ' | b'\t' => {
+            let rest = after_open[i..].trim_start_matches([' ', '\t']);
+            let mut chars = rest.strip_prefix('"')?.char_indices();
+            let mut subsection = String::new();
+            let close_quote_end = loop {
+                let (idx, ch) = chars.next()?;
+                match ch {
+                    '"' => break idx + 1,
+                    '\\' => {
+                        let (_, escaped) = chars.next()?;
+                        subsection.push(escaped);
+                    }
+                    _ => subsection.push(ch),
+                }
+            };
+            let after_quote = &rest[1 + close_quote_end..];
+            let rest = after_quote.strip_prefix(']')?;
+            let is_origin = section.eq_ignore_ascii_case("remote") && subsection == "origin";
+            Some((is_origin, rest))
+        }
+        _ => None,
+    }
+}
+
+fn parse_git_config_origin_line(line: &str) -> Option<Option<String>> {
+    let Some((key, raw_value)) = line.split_once('=') else {
+        let key = line.split(['#', ';']).next().unwrap_or(line).trim();
+        if key.eq_ignore_ascii_case("url") {
+            return None;
+        }
+        return Some(None);
+    };
+    let key = key.trim();
+    let value = parse_git_config_value(raw_value)?;
+    if key.eq_ignore_ascii_case("url") {
+        Some(Some(value))
+    } else {
+        Some(None)
+    }
+}
+
+fn parse_git_config_value(raw: &str) -> Option<String> {
+    let mut chars = raw.trim_start_matches([' ', '\t']).chars();
+    let mut in_quotes = false;
+    let mut out = String::new();
+    let mut trailing_ws = String::new();
+    while let Some(ch) = chars.next() {
+        if in_quotes {
+            match ch {
+                '"' => in_quotes = false,
+                '\\' => match chars.next()? {
+                    '\\' => out.push('\\'),
+                    '"' => out.push('"'),
+                    'n' => out.push('\n'),
+                    't' => out.push('\t'),
+                    'b' => out.push('\x08'),
+                    _ => return None,
+                },
+                _ => out.push(ch),
+            }
+        } else {
+            match ch {
+                '#' | ';' => break,
+                '"' => {
+                    if !trailing_ws.is_empty() {
+                        out.push_str(&trailing_ws);
+                        trailing_ws.clear();
+                    }
+                    in_quotes = true;
+                }
+                ' ' | '\t' => trailing_ws.push(ch),
+                '\\' => {
+                    let escaped = chars.next()?;
+                    if !trailing_ws.is_empty() {
+                        out.push_str(&trailing_ws);
+                        trailing_ws.clear();
+                    }
+                    match escaped {
+                        '\\' => out.push('\\'),
+                        '"' => out.push('"'),
+                        'n' => out.push('\n'),
+                        't' => out.push('\t'),
+                        'b' => out.push('\x08'),
+                        _ => return None,
+                    }
+                }
+                _ => {
+                    if !trailing_ws.is_empty() {
+                        out.push_str(&trailing_ws);
+                        trailing_ws.clear();
+                    }
+                    out.push(ch);
+                }
+            }
+        }
+    }
+    if in_quotes {
+        return None;
+    }
+    Some(out)
 }
 
 #[derive(Clone)]
