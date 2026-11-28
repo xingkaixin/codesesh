@@ -569,6 +569,12 @@ impl AgentScanner {
         let result = self.read_page(&items[offset..], true);
         self.backfill.as_mut().unwrap().items = items;
         let (mut delta, reused, consumed) = result?;
+        if self.source.is_database_source() && self.source_available == Some(false) {
+            self.backfill = None;
+            self.backfill_database_stamp = None;
+            self.update_persisted_database_stamp(None);
+            return Ok((ScanDelta::default(), None, true));
+        }
         let end = offset + consumed;
         let selected = self.backfill.as_ref().unwrap().items[offset..end].to_vec();
         let refs: HashSet<_> = delta
@@ -737,6 +743,7 @@ impl AgentScanner {
                     self.source_available = Some(false);
                     return Ok(ScanDelta::default());
                 }
+                self.source_available = Some(true);
                 let mut delta = ScanDelta {
                     upserts: std::mem::take(&mut snapshot.upserts),
                     removed: std::mem::take(&mut snapshot.removed),
@@ -994,7 +1001,17 @@ impl AgentScanner {
             }
             consumed += 1;
         }
+        if self.source.is_database_source() {
+            let available = has_sources(&self.source)?;
+            self.source_available = Some(available);
+            if !available {
+                return Ok((ScanDelta::default(), reused, consumed));
+            }
+        }
         let delta = self.read_selected(&changed)?;
+        if self.source.is_database_source() && self.source_available == Some(false) {
+            return Ok((ScanDelta::default(), reused, consumed));
+        }
         for item in &changed {
             if delta.upserts.iter().any(|session| match &item.path {
                 Some(path) => path == &session.source,
@@ -1046,6 +1063,11 @@ impl AgentScanner {
                     &ids,
                     self.opencode.as_ref(),
                 )?;
+                if !snapshot.present {
+                    self.source_available = Some(false);
+                    return Ok(ScanDelta::default());
+                }
+                self.source_available = Some(true);
                 let upserts = std::mem::take(&mut snapshot.upserts);
                 snapshot.release_bodies();
                 self.opencode = Some(snapshot);
@@ -1303,6 +1325,7 @@ impl AgentScanner {
                     self.source_available = Some(false);
                     return Ok(ScanDelta::default());
                 }
+                self.source_available = Some(true);
                 let present: HashSet<_> = snapshot
                     .sessions
                     .iter()

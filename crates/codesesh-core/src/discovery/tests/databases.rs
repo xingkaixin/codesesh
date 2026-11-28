@@ -643,6 +643,58 @@ fn mid_backfill_database_write_does_not_persist_new_stamp_and_partial_warm_snaps
         .unwrap();
     deleted.on_reject.take();
     assert_eq!(cache.snapshot().unwrap().len(), 32);
+
+    // Moving away the ZCode database mid-backfill preserves cached sessions with zero removals.
+    database
+        .execute(
+            "INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('s33','Extra',1033,10001,'/project')",
+            [],
+        )
+        .unwrap();
+    database
+        .execute("UPDATE session SET title = title || ' v2'", [])
+        .unwrap();
+    let mut vanish_scanner = AgentScanner::new(
+        AgentSource {
+            antigravity_profiles: None,
+            agent: "zcode".into(),
+            data_root: file
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .to_path_buf(),
+            scan_path: file
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .to_path_buf(),
+        },
+        temporary.path().join("cache.db"),
+        std::sync::Arc::new(Pricing::bundled()),
+    );
+    let mut p1 = vanish_scanner.refresh(None).unwrap();
+    assert!(!p1.complete);
+    cache
+        .apply_checkpoint(
+            &mut p1.sessions,
+            &p1.removed,
+            "zcode",
+            &p1.checkpoint,
+            p1.complete,
+        )
+        .unwrap();
+    p1.on_reject.take();
+    drop(database);
+    std::fs::remove_file(&file).unwrap();
+    let p2 = vanish_scanner.refresh(None).unwrap();
+    assert!(p2.removed.is_empty());
+    assert_eq!(p2.source_presence, Some(SourcePresence::Missing));
 }
 
 fn database_scanner(
