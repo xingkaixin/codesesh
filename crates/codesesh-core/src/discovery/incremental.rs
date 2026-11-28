@@ -260,8 +260,12 @@ impl TrackedFingerprints {
             changed |= self.remove_database(&key);
         }
         for (id, hash) in current {
-            changed |= self.set_file(id.clone(), hash.clone());
-            changed |= self.set_database(id.clone(), hash.clone());
+            if self.files.get(id) != Some(hash) {
+                changed |= self.set_file(id.clone(), hash.clone());
+            }
+            if self.database.get(id) != Some(hash) {
+                changed |= self.set_database(id.clone(), hash.clone());
+            }
         }
         changed
     }
@@ -1076,11 +1080,12 @@ impl AgentScanner {
             }
             for id in changed_ids {
                 let db_path = conversations.join(format!("{id}.db"));
-                if std::fs::symlink_metadata(&db_path).is_ok_and(|meta| meta.file_type().is_file())
-                {
-                    expanded.push(db_path);
-                } else if known.contains(db_path.to_string_lossy().as_ref()) {
-                    return Ok(None);
+                match std::fs::symlink_metadata(&db_path) {
+                    Ok(meta) if meta.file_type().is_file() => expanded.push(db_path),
+                    // Child sessions follow symlinks to parent DBs, so fall back to full inventory.
+                    Ok(meta) if meta.file_type().is_symlink() => return Ok(None),
+                    _ if known.contains(db_path.to_string_lossy().as_ref()) => return Ok(None),
+                    _ => {}
                 }
             }
             updated_summaries.push((store, next_map));

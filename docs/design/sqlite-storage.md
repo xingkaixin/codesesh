@@ -4,7 +4,7 @@
 Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校验。
 
 <!-- repo-fact:cache-schema-version:start -->
-- 当前 schema：`CACHE_SCHEMA_VERSION = 41`
+- 当前 schema：`CACHE_SCHEMA_VERSION = 42`
 <!-- repo-fact:cache-schema-version:end -->
 
 入口是 `crates/codesesh-core/src/storage.rs`，建表定义在
@@ -13,11 +13,12 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 
 ## 表和索引
 
-持久 schema 包含 15 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
+持久 schema 包含 17 张表，其中三张为 FTS5 虚表，另有一个项目聚合视图。
 
 | 对象 | 用途 |
 |------|------|
 | `cache_meta` | 版本、迁移标记和运行时 checkpoint |
+| `source_fingerprints` | 按 Agent、类型和键增量保存的文件/数据库/空来源指纹 |
 | `agent_cache` | Agent 缓存写入状态 |
 | `cache_initialization` | 初始化版本和全历史同步状态 |
 | `pending_reindex` | 需要重新物化的会话 |
@@ -29,6 +30,7 @@ Rust 使用 rusqlite 和随二进制构建的 SQLite，开启 WAL 与外键校�
 | `message_tools` | 消息工具名，用于结构化过滤 |
 | `session_file_activity` | 文件路径、操作类型、次数和最近活动时间 |
 | `session_documents` | 标题、内容签名和已索引消息数 |
+| `message_locator` | 从消息 rowid 定位会话 rowid 与消息序号的索引表 |
 | `message_fts` | 消息全文检索，无内容表，含 `code_tokens` 拆词列，rowid 对应 `messages.rowid` |
 | `session_title_fts` | 会话标题全文检索，无内容表，含 `code_tokens` 拆词列，rowid 对应 `sessions.rowid` |
 | `session_file_activity_path_fts` | 文件路径 trigram 检索 |
@@ -64,6 +66,9 @@ schema 40 对 `messages.content_text` 复用相同的 zstd BLOB/文本混合压�
 并在 `sessions` 上新增 `has_unmatched_pricing_meta` 列及部分索引 `idx_sessions_unmatched_pricing_meta`，
 使 `GET /api/pricing/unmatched` 仅访问存在未匹配 head 定价输入的会话，避免全表扫描 `meta_json`。
 
+schema 42 新增 `source_fingerprints` 表，将原本内联在 `cache_meta` 中 `rust_source_state:<agent>` JSON 里的
+`files`、`databaseSessions` 和 `emptySources` 拆出按单键增量更新，避免每次单文件增量扫描或分页回填都重写整份大 JSON。
+
 现行时区偏移都是 15 分钟的整数倍，Web 窗口和对比窗口从本地自然日边界开始，因此按桶归因与
 逐条消息归因结果一致；直接调用 API 传入非对齐边界时，误差不超过一个桶。
 
@@ -95,12 +100,12 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 
 打开数据库时先读取 `PRAGMA user_version`，兼容旧库的 `cache_meta.version`：
 
-1. 新库直接创建 schema 40。
+1. 新库直接创建 schema 42。
 2. schema 35 及更早的旧库升级前通过 `VACUUM INTO` 创建带时间戳的备份；迁移重建带来源维度的键，早于 schema 35 的库同时回填 `head_meta_json`。
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
 5. 缺失或旧结构的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做，完成后重建 `session_title_fts`。
-6. schema 36、37、38、39 升级到 40 不重建表：先写入新版本号、按需添加列与部分索引，删除冗余索引，按需分批就地回填 `has_unmatched_pricing_meta`、压缩旧的文本 `parts_json` 与 `content_text`、回填 `session_usage_bucket`，并通过可中断续做机制重建 `message_fts` 与 `session_title_fts`。
+6. schema 36–41 升级到 42 不重建表：先写入新版本号、按需添加列、部分索引、`message_locator` 与 `source_fingerprints` 表（并将 `rust_source_state:*` 中内联的指纹迁入 `source_fingerprints` 后剥离），删除冗余索引，按需分批就地回填 `has_unmatched_pricing_meta`、压缩旧的文本 `parts_json` 与 `content_text`、回填 `session_usage_bucket`，并通过可中断续做机制重建 `message_fts` 与 `session_title_fts`。
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。schema 36 不支持

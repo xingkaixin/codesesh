@@ -652,9 +652,29 @@ fn summary_wal_falls_back_when_summary_cache_is_unprimed_then_stays_targeted() {
     // Subsequent summary update uses the primed cache and avoids walking conversations/.
     write_session(&conversations, "unnotified-after-prime");
     write_summary(&conversations, "conv-a", "Targeted Title");
-    let mut targeted = scanner.refresh(Some(&[summary_wal])).unwrap();
+    let mut targeted = scanner
+        .refresh(Some(std::slice::from_ref(&summary_wal)))
+        .unwrap();
     assert_eq!(targeted.sessions.len(), 1);
     assert_eq!(targeted.sessions[0].head.reference.session_id, "conv-a");
     assert_eq!(targeted.sessions[0].head.title, "Targeted Title");
     commit(&mut cache, &mut targeted, "antigravity");
+
+    // A changed summary whose conversation .db is a symlink falls back to full inventory.
+    #[cfg(unix)]
+    {
+        let external = temp.path().join("external");
+        let real_parent = write_session(&external, "parent-target");
+        std::os::unix::fs::symlink(&real_parent, conversations.join("linked-parent.db")).unwrap();
+        write_summary(&conversations, "linked-parent", "Linked Parent Title");
+        let mut fallback = scanner.refresh(Some(&[summary_wal])).unwrap();
+        assert!(
+            fallback
+                .sessions
+                .iter()
+                .any(|session| session.head.reference.session_id == "unnotified-after-prime"),
+            "symlinked conversation .db for a changed summary must fall back to full inventory"
+        );
+        commit(&mut cache, &mut fallback, "antigravity");
+    }
 }
