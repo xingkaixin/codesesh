@@ -111,6 +111,11 @@ impl AgentSource {
     }
 }
 
+struct AntigravitySummaryExpansion {
+    paths: Vec<PathBuf>,
+    updated_summaries: Vec<(PathBuf, HashMap<String, String>)>,
+}
+
 #[derive(Default)]
 struct TrackedFingerprints {
     files: HashMap<String, String>,
@@ -299,6 +304,7 @@ pub struct AgentScanner {
     backfill_database_stamp: Option<String>,
     source_state_dirty: bool,
     database_inventory: Option<(String, Vec<Item>)>,
+    antigravity_summaries: HashMap<PathBuf, HashMap<String, String>>,
 }
 impl AgentScanner {
     pub(crate) fn new(source: AgentSource, cache_path: PathBuf, pricing: Arc<Pricing>) -> Self {
@@ -331,6 +337,7 @@ impl AgentScanner {
             backfill_database_stamp: None,
             source_state_dirty: true,
             database_inventory: None,
+            antigravity_summaries: HashMap::new(),
         }
     }
     pub fn with_source_node(mut self, node: &str) -> Self {
@@ -441,6 +448,10 @@ impl AgentScanner {
             self.fingerprints.discard_and_mark_reset();
             self.persisted_database_stamp = None;
             self.source_state_dirty = true;
+            self.antigravity_summaries.clear();
+        }
+        if pricing_changed || !self.initialized {
+            self.antigravity_summaries.clear();
         }
         if pricing_changed
             || !self.initialized
@@ -807,6 +818,18 @@ impl AgentScanner {
         self.update_persisted_database_stamp(verified);
     }
     fn inventory(&mut self) -> Result<Vec<Item>> {
+        if matches!(
+            self.source.agent.as_str(),
+            "antigravity" | "antigravity-cli"
+        ) {
+            let mut summaries = HashMap::new();
+            let items = super::backfill::inventory_with_antigravity_summaries(
+                &self.source,
+                Some(&mut summaries),
+            )?;
+            self.antigravity_summaries = summaries;
+            return Ok(items);
+        }
         // Enumerating a database reads every session row; an unchanged file lists the same sessions.
         let Some(stamp) = database_stamp(&self.source)? else {
             return inventory(&self.source);
@@ -979,6 +1002,94 @@ impl AgentScanner {
         plan.items.retain(|item| !missing.contains(&item.key));
         Ok(delta)
     }
+    fn expand_antigravity_summary_paths(
+        &self,
+        paths: &[PathBuf],
+        known: &HashSet<&str>,
+    ) -> Result<Option<AntigravitySummaryExpansion>> {
+        let store_to_conversations: HashMap<PathBuf, PathBuf> = self
+            .source
+            .scan_roots()?
+            .into_iter()
+            .filter_map(|conversations| {
+                let store = conversations.parent()?.to_path_buf();
+                Some((store, conversations))
+            })
+            .collect();
+        let mut expanded = Vec::with_capacity(paths.len());
+        let mut stores_to_diff = Vec::new();
+        let mut seen_stores = HashSet::new();
+        for path in paths {
+            let is_summary = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    matches!(
+                        name,
+                        "conversation_summaries.db"
+                            | "conversation_summaries.db-wal"
+                            | "conversation_summaries.db-journal"
+                            | "conversation_summaries.db-shm"
+                    )
+                });
+            if is_summary
+                && let Some(store) = path.parent()
+                && store_to_conversations.contains_key(store)
+            {
+                if seen_stores.insert(store.to_path_buf()) {
+                    stores_to_diff.push(store.to_path_buf());
+                }
+                continue;
+            }
+            expanded.push(path.clone());
+        }
+        if stores_to_diff.is_empty() {
+            return Ok(Some(AntigravitySummaryExpansion {
+                paths: expanded,
+                updated_summaries: Vec::new(),
+            }));
+        }
+        let mut total_changed = 0usize;
+        let mut updated_summaries = Vec::with_capacity(stores_to_diff.len());
+        for store in stores_to_diff {
+            let Some(prev_map) = self.antigravity_summaries.get(&store) else {
+                return Ok(None);
+            };
+            let Some(next_map) = agents::antigravity::summary_fingerprints(&store)? else {
+                return Ok(None);
+            };
+            let conversations = &store_to_conversations[&store];
+            let mut changed_ids = Vec::new();
+            for (id, fp) in &next_map {
+                if prev_map.get(id) != Some(fp) {
+                    changed_ids.push(id.as_str());
+                }
+            }
+            for id in prev_map.keys() {
+                if !next_map.contains_key(id) {
+                    changed_ids.push(id.as_str());
+                }
+            }
+            total_changed += changed_ids.len();
+            if total_changed > BATCH_SIZE {
+                return Ok(None);
+            }
+            for id in changed_ids {
+                let db_path = conversations.join(format!("{id}.db"));
+                if std::fs::symlink_metadata(&db_path).is_ok_and(|meta| meta.file_type().is_file())
+                {
+                    expanded.push(db_path);
+                } else if known.contains(db_path.to_string_lossy().as_ref()) {
+                    return Ok(None);
+                }
+            }
+            updated_summaries.push((store, next_map));
+        }
+        Ok(Some(AntigravitySummaryExpansion {
+            paths: expanded,
+            updated_summaries,
+        }))
+    }
     fn read_live(
         &mut self,
         paths: Option<&[PathBuf]>,
@@ -1015,41 +1126,74 @@ impl AgentScanner {
             && !paths.is_empty()
         {
             let known: HashSet<&str> = self.fingerprints.file_keys().collect();
-            if let Some(targeted) = super::backfill::targeted_items(&self.source, paths, &known)? {
-                if targeted.is_empty() {
+            let expanded = if matches!(
+                self.source.agent.as_str(),
+                "antigravity" | "antigravity-cli"
+            ) {
+                self.expand_antigravity_summary_paths(paths, &known)?
+            } else {
+                Some(AntigravitySummaryExpansion {
+                    paths: paths.to_vec(),
+                    updated_summaries: Vec::new(),
+                })
+            };
+            if let Some(AntigravitySummaryExpansion {
+                paths: effective_paths,
+                updated_summaries,
+            }) = expanded
+            {
+                if effective_paths.is_empty() {
+                    for (store, map) in updated_summaries {
+                        self.antigravity_summaries.insert(store, map);
+                    }
                     return Ok((ScanDelta::default(), None, true));
                 }
-                self.source_available = Some(true);
-                let changed: Vec<_> = targeted
-                    .iter()
-                    .filter(|item| {
-                        self.fingerprints.file(&item.key) != Some(item.fingerprint.as_str())
-                    })
-                    .collect();
-                if changed.len() > BATCH_SIZE
-                    || (changed.len() > 1
-                        && changed.iter().map(|item| item.bytes).sum::<u64>() > 16 * 1024 * 1024)
+                if let Some(targeted) =
+                    super::backfill::targeted_items(&self.source, &effective_paths, &known)?
                 {
-                    return self.page(None, None);
-                }
-                let (mut delta, mut retained, _) = self.read_page(&targeted, false)?;
-                retained.extend(
-                    delta
-                        .upserts
+                    if targeted.is_empty() {
+                        for (store, map) in updated_summaries {
+                            self.antigravity_summaries.insert(store, map);
+                        }
+                        return Ok((ScanDelta::default(), None, true));
+                    }
+                    self.source_available = Some(true);
+                    let changed: Vec<_> = targeted
                         .iter()
-                        .map(|session| session.head.reference.clone()),
-                );
-                let scope = ItemScope::new(&targeted);
-                delta.removed.extend(
-                    self.baseline
-                        .iter()
-                        .filter(|(reference, _)| {
-                            !retained.contains(*reference) && self.matches_scope(reference, &scope)
+                        .filter(|item| {
+                            self.fingerprints.file(&item.key) != Some(item.fingerprint.as_str())
                         })
-                        .map(|(reference, _)| reference.clone()),
-                );
-                delta.complete = false;
-                return Ok((delta, None, true));
+                        .collect();
+                    if changed.len() > BATCH_SIZE
+                        || (changed.len() > 1
+                            && changed.iter().map(|item| item.bytes).sum::<u64>()
+                                > 16 * 1024 * 1024)
+                    {
+                        return self.page(None, None);
+                    }
+                    let (mut delta, mut retained, _) = self.read_page(&targeted, false)?;
+                    for (store, map) in updated_summaries {
+                        self.antigravity_summaries.insert(store, map);
+                    }
+                    retained.extend(
+                        delta
+                            .upserts
+                            .iter()
+                            .map(|session| session.head.reference.clone()),
+                    );
+                    let scope = ItemScope::new(&targeted);
+                    delta.removed.extend(
+                        self.baseline
+                            .iter()
+                            .filter(|(reference, _)| {
+                                !retained.contains(*reference)
+                                    && self.matches_scope(reference, &scope)
+                            })
+                            .map(|(reference, _)| reference.clone()),
+                    );
+                    delta.complete = false;
+                    return Ok((delta, None, true));
+                }
             }
         }
         let current = self.inventory()?;
@@ -1269,6 +1413,7 @@ impl AgentScanner {
         self.price_dependencies = Some(HashMap::new());
         self.source_state_dirty = true;
         if !self.cache_path.exists() {
+            self.antigravity_summaries.clear();
             return Ok(());
         }
         if self.worker {
@@ -1433,6 +1578,8 @@ impl AgentScanner {
             {
                 self.source_state_dirty = false;
             }
+        } else {
+            self.antigravity_summaries.clear();
         }
     }
 

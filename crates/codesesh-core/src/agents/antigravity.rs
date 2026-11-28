@@ -104,44 +104,91 @@ struct Summary {
 }
 
 pub(crate) struct ContextFingerprints {
+    has_summary_db: bool,
     summaries: HashMap<String, Summary>,
     history: HashMap<String, String>,
 }
 
+fn read_summary_rows(db: &Connection) -> Result<Option<HashMap<String, Summary>>> {
+    let has_table: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_table {
+        return Ok(None);
+    }
+    let mut query = db.prepare(
+        "SELECT conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries",
+    )?;
+    let mut rows = query.query([])?;
+    let mut summaries = HashMap::new();
+    while let Some(row) = rows.next()? {
+        let id: String = row.get(0)?;
+        summaries.insert(
+            id,
+            Summary {
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                workspaces: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                modified: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                parent: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                agent_name: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+            },
+        );
+    }
+    Ok(Some(summaries))
+}
+
+pub(crate) fn summary_fingerprints(store_root: &Path) -> Result<Option<HashMap<String, String>>> {
+    let summary_path = store_root.join("conversation_summaries.db");
+    if !summary_path.try_exists()? {
+        return Ok(None);
+    }
+    let Ok(db) = open_readonly_sqlite(summary_path) else {
+        return Ok(None);
+    };
+    if db.execute_batch("BEGIN").is_err() {
+        return Ok(None);
+    }
+    let Ok(Some(summaries)) = read_summary_rows(&db) else {
+        return Ok(None);
+    };
+    Ok(Some(
+        summaries
+            .into_iter()
+            .map(|(id, summary)| (id, summary_row_fingerprint(&summary)))
+            .collect(),
+    ))
+}
+
 impl ContextFingerprints {
     pub(crate) fn load(root: &Path) -> Result<Self> {
+        let mut has_summary_db = false;
         let mut summaries = HashMap::new();
         let summary_path = root.join("conversation_summaries.db");
         if summary_path.try_exists()? {
             let db = open_readonly_sqlite(summary_path)?;
             db.execute_batch("BEGIN")?;
-            let has_table: bool = db.query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_summaries')",
-                [],
-                |row| row.get(0),
-            )?;
-            if has_table {
-                let mut query = db.prepare(
-                    "SELECT conversation_id,title,workspace_uris,last_modified_time,parent_conversation_id,agent_name FROM conversation_summaries",
-                )?;
-                let mut rows = query.query([])?;
-                while let Some(row) = rows.next()? {
-                    let id: String = row.get(0)?;
-                    summaries.insert(
-                        id,
-                        Summary {
-                            title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                            workspaces: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                            modified: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                            parent: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                            agent_name: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                        },
-                    );
-                }
+            if let Some(loaded) = read_summary_rows(&db)? {
+                has_summary_db = true;
+                summaries = loaded;
             }
         }
         let history = history_workspaces(root)?;
-        Ok(Self { summaries, history })
+        Ok(Self {
+            has_summary_db,
+            summaries,
+            history,
+        })
+    }
+
+    pub(crate) fn summary_fingerprints(&self) -> Option<HashMap<String, String>> {
+        self.has_summary_db.then(|| {
+            self.summaries
+                .iter()
+                .map(|(id, summary)| (id.clone(), summary_row_fingerprint(summary)))
+                .collect()
+        })
     }
 
     pub(crate) fn fingerprint(&self, root: &Path, id: &str) -> Result<String> {
@@ -261,6 +308,20 @@ fn hash_conversation_files(hash: &mut Sha256, conversations: &Path, id: &str) ->
     Ok(())
 }
 
+fn hash_summary_fields(hash: &mut Sha256, summary: &Summary) {
+    hash_str(hash, &summary.title);
+    hash_str(hash, &summary.workspaces);
+    hash_str(hash, &summary.modified);
+    hash_str(hash, &summary.parent);
+    hash_str(hash, &summary.agent_name);
+}
+
+fn summary_row_fingerprint(summary: &Summary) -> String {
+    let mut hash = Sha256::new();
+    hash_summary_fields(&mut hash, summary);
+    crate::hash::hex(&hash.finalize())
+}
+
 fn hash_conversation_context<'a>(
     root: &Path,
     id: &str,
@@ -273,11 +334,7 @@ fn hash_conversation_context<'a>(
     match own {
         Some(summary) => {
             hash.update([1]);
-            hash_str(&mut hash, &summary.title);
-            hash_str(&mut hash, &summary.workspaces);
-            hash_str(&mut hash, &summary.modified);
-            hash_str(&mut hash, &summary.parent);
-            hash_str(&mut hash, &summary.agent_name);
+            hash_summary_fields(&mut hash, summary);
         }
         None => hash.update([0]),
     }
