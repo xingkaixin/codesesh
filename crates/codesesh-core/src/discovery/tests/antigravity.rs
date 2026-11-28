@@ -386,7 +386,9 @@ fn antigravity_cli_watch_roots_scope_profiles_and_targeted_items_skip_non_db_fil
     let roots = source.watch_roots();
     assert!(roots.contains(&crate::runtime::WatchRoot::shallow(profiles.clone())));
     assert!(!roots.contains(&crate::runtime::WatchRoot::recursive(profiles.clone())));
-    assert!(roots.contains(&crate::runtime::WatchRoot::recursive(conversations.clone())));
+    assert!(roots.contains(
+        &crate::runtime::WatchRoot::recursive(conversations.clone()).with_sqlite_polling()
+    ));
     assert!(roots.contains(&crate::runtime::WatchRoot::recursive(
         acp.join("conversation_summaries.db")
     )));

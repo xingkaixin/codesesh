@@ -16,7 +16,7 @@ use std::{
 const CHECKPOINT_MIN_BYTES: u64 = 1024 * 1024;
 #[cfg(test)]
 const CHECKPOINT_MIN_BYTES: u64 = 1;
-const CHECKPOINT_LIMIT: usize = 2;
+const CHECKPOINT_LIMIT: usize = 6;
 const CHECKPOINT_TAIL_BYTES: usize = 64;
 
 /// Parser state for the few large transcripts still being written.

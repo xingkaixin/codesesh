@@ -36,6 +36,11 @@ pub struct AgentSource {
 }
 
 #[cfg(not(test))]
+const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1000);
+#[cfg(test)]
+const CHANGE_DEBOUNCE: Duration = Duration::from_millis(150);
+
+#[cfg(not(test))]
 const IDLE_RELEASE_DELAY: Duration = crate::agents::jsonl::ACTIVE_WINDOW;
 #[cfg(test)]
 const IDLE_RELEASE_DELAY: Duration = Duration::from_millis(50);
@@ -278,7 +283,7 @@ impl Runtime {
                 shutdown,
             }),
         };
-        let scanners = Arc::new(Semaphore::new(concurrency));
+        let scanners = Arc::new(Semaphore::new(concurrency.min(3)));
         for (index, source) in sources.into_iter().enumerate() {
             let runtime = runtime.clone();
             let scans = scanners.clone();
@@ -515,7 +520,7 @@ impl Runtime {
                     WaitOutcome::Shutdown => return,
                     WaitOutcome::Changed => {
                         tokio::select! {
-                            _ = tokio::time::sleep(Duration::from_millis(150)) => (),
+                            _ = tokio::time::sleep(CHANGE_DEBOUNCE) => (),
                             _ = shutdown.changed() => return,
                         }
                     }

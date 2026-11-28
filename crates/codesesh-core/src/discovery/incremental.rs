@@ -30,7 +30,7 @@ impl AgentSource {
         let mut roots: Vec<runtime::WatchRoot> = match self.agent.as_str() {
             "antigravity" | "antigravity-cli" => {
                 let mut roots = vec![
-                    runtime::WatchRoot::recursive(root.clone()),
+                    runtime::WatchRoot::recursive(root.clone()).with_sqlite_polling(),
                     runtime::WatchRoot::recursive(self.data_root.join("conversation_summaries.db")),
                     runtime::WatchRoot::recursive(self.data_root.join("history.jsonl")),
                 ];
@@ -44,7 +44,10 @@ impl AgentSource {
                                 continue;
                             }
                             if let Some(store) = conversations.parent() {
-                                roots.push(runtime::WatchRoot::recursive(conversations.clone()));
+                                roots.push(
+                                    runtime::WatchRoot::recursive(conversations.clone())
+                                        .with_sqlite_polling(),
+                                );
                                 roots.push(runtime::WatchRoot::recursive(
                                     store.join("conversation_summaries.db"),
                                 ));
@@ -59,7 +62,7 @@ impl AgentSource {
             }
             "cursor" => vec![
                 runtime::WatchRoot::recursive(root.join("globalStorage/state.vscdb")),
-                runtime::WatchRoot::recursive(root.join("workspaceStorage")),
+                runtime::WatchRoot::recursive(root.join("workspaceStorage")).with_sqlite_polling(),
             ],
             "droid" => vec![
                 runtime::WatchRoot::recursive(root.clone()),
