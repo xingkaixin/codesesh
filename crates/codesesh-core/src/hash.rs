@@ -22,13 +22,9 @@ pub(crate) fn file_stamp(metadata: &std::fs::Metadata) -> std::io::Result<(f64, 
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        stamp.push_str(&format!(
-            ":{}:{}:{}:{}",
-            metadata.dev(),
-            metadata.ino(),
-            metadata.ctime(),
-            metadata.ctime_nsec()
-        ));
+        // APFS assigns st_dev dynamically on macOS reboot (invalidating all cached file
+        // fingerprints), and ctime changes on metadata-only xattr/chmod updates.
+        write!(stamp, ":{}", metadata.ino()).unwrap();
     }
     #[cfg(windows)]
     {
