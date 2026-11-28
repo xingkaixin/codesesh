@@ -45,6 +45,7 @@ fn migrate(
 ) -> Result<()> {
     let tables = [
         "cache_meta",
+        "source_fingerprints",
         "agent_cache",
         "cache_initialization",
         "pending_reindex",
@@ -126,7 +127,7 @@ fn migrate(
         }
         // A full table migration drops the indexes installed by this patch and resets derived flags.
         db.execute(
-            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1','unmatched_pricing_meta_index_v1','unmatched_pricing_meta_v1','unmatched_pricing_meta_v1_cursor','message_locator_v1','unpriced_bucket_index_v1','pricing_flags_v1','pricing_flags_v1_cursor')",
+            "DELETE FROM cache_meta WHERE key IN ('covering_read_indexes_v1','visible_sessions_index_v1','unmatched_pricing_meta_index_v1','unmatched_pricing_meta_v1','unmatched_pricing_meta_v1_cursor','message_locator_v1','unpriced_bucket_index_v1','pricing_flags_v1','pricing_flags_v1_cursor','source_fingerprints_v1')",
             [],
         )?;
         super::search_text::reset_index(db)?;
@@ -223,10 +224,10 @@ pub fn ensure_with_progress(
             [super::CACHE_SCHEMA_VERSION.to_string()],
         )?;
         db.execute_batch("COMMIT")?;
-    } else if matches!(version, 36..=40) {
-        // Schemas 37-41 add compressed message bodies/search text, usage buckets,
-        // code-token FTS, unmatched pricing metadata indexing, and message_locator in place.
-        db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
+    } else if matches!(version, 36..=41) {
+        // Schemas 37-42 add compressed message bodies/search text, usage buckets,
+        // code-token FTS, unmatched pricing metadata indexing, message_locator,
+        // and source_fingerprints in place below.
     } else if version < super::CACHE_SCHEMA_VERSION {
         if let Some(path) = path {
             let backup = path.with_extension(format!(
@@ -322,8 +323,26 @@ pub fn ensure_with_progress(
         if columns(db, "session_cost_summary")?.contains("revision") {
             db.execute_batch("ALTER TABLE session_cost_summary DROP COLUMN revision; DELETE FROM cache_meta WHERE key='cost_facts_revision';")?;
         }
-        if !exists(db, "session_usage_bucket")? || !exists(db, "message_locator")? {
+        if !exists(db, "session_usage_bucket")?
+            || !exists(db, "message_locator")?
+            || !exists(db, "source_fingerprints")?
+        {
             db.execute_batch(&missing_objects_schema())?;
+        }
+        let fingerprints_migrated = db
+            .query_row(
+                "SELECT 1 FROM cache_meta WHERE key='source_fingerprints_v1'",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if version < 42 || !fingerprints_migrated {
+            migrate_source_fingerprints(db)?;
+            db.execute(
+                "INSERT OR REPLACE INTO cache_meta VALUES('source_fingerprints_v1','1')",
+                [],
+            )?;
         }
         for (key, sql) in [
             ("covering_read_indexes_v1", include_str!("read-indexes.sql")),
@@ -383,6 +402,9 @@ pub fn ensure_with_progress(
             }
         }
         db.execute("INSERT INTO cache_meta VALUES('version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",params![super::CACHE_SCHEMA_VERSION.to_string()])?;
+        if version != super::CACHE_SCHEMA_VERSION {
+            db.pragma_update(None, "user_version", super::CACHE_SCHEMA_VERSION)?;
+        }
         db.execute_batch("COMMIT")?;
         Ok(())
     })();
@@ -413,6 +435,55 @@ fn missing_objects_schema() -> String {
         )
         .replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ")
         .replace("CREATE VIEW ", "CREATE VIEW IF NOT EXISTS ")
+}
+
+fn migrate_source_fingerprints(db: &Connection) -> Result<()> {
+    let rows = db
+        .prepare("SELECT key,value FROM cache_meta WHERE key LIKE 'rust_source_state:%'")?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (key, raw) in rows {
+        let Some(agent) = key.strip_prefix("rust_source_state:") else {
+            continue;
+        };
+        let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        if let Some(fingerprints) = super::source_fingerprints::extract_inline_fields(&mut value) {
+            super::source_fingerprints::insert_all(
+                db,
+                "source_fingerprints",
+                "agent_name",
+                agent,
+                &fingerprints,
+            )?;
+            db.execute(
+                "UPDATE cache_meta SET value=?1 WHERE key=?2",
+                params![super::json::stringify(&value)?, key],
+            )?;
+        }
+    }
+    let checkpoints = db
+        .prepare("SELECT key,value FROM cache_meta WHERE key LIKE 'rust_sync_checkpoint:%'")?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (key, raw) in checkpoints {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let cleaned = super::source_fingerprints::strip_checkpoint_delta(&value);
+        if matches!(cleaned, std::borrow::Cow::Owned(_)) {
+            db.execute(
+                "UPDATE cache_meta SET value=?1 WHERE key=?2",
+                params![super::json::stringify(cleaned.as_ref())?, key],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 const USAGE_BUCKETS_KEY: &str = "usage_buckets_v1";

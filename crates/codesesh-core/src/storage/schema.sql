@@ -3,6 +3,14 @@ CREATE TABLE cache_meta (
       value TEXT NOT NULL
     );
 
+CREATE TABLE source_fingerprints (
+      agent_name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      entry_key TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      PRIMARY KEY (agent_name, kind, entry_key)
+    );
+
 CREATE TABLE agent_cache (
       agent_name TEXT PRIMARY KEY,
       timestamp INTEGER NOT NULL

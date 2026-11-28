@@ -4,6 +4,7 @@ use super::{Operation, PAYLOAD_VERSION, capture::CapturedSessionRef};
 use crate::{
     agents::{SessionRecord, dsh::AttachmentReferences},
     runtime::ScanBatch,
+    storage::source_fingerprints::{self, SourceFingerprints, SourceStateDelta},
 };
 use anyhow::{Context, Result, ensure};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -13,6 +14,7 @@ use sha2::{Digest, Sha256};
 use std::{path::Path, time::Duration};
 
 pub(crate) const CHUNK_BYTES: usize = 256 * 1024;
+const WORKER_SCHEMA_VERSION: i64 = 3;
 
 pub struct WorkerStore {
     db: Connection,
@@ -67,6 +69,7 @@ pub struct QueueStatus {
 
 pub(crate) struct SourceBaseline {
     pub state: Option<Value>,
+    pub fingerprints: SourceFingerprints,
     pub complete: bool,
     pub sessions: Vec<SessionRecord>,
 }
@@ -116,7 +119,7 @@ impl WorkerStore {
         )?;
         let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         ensure!(
-            (0..=2).contains(&version),
+            (0..=WORKER_SCHEMA_VERSION).contains(&version),
             "Unsupported Worker state schema {version}"
         );
         // A drained backlog leaves the queue file at its high-water mark; compaction is best effort.
@@ -127,9 +130,10 @@ impl WorkerStore {
             let tx = db.unchecked_transaction()?;
             tx.execute_batch("CREATE TABLE worker_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
                 CREATE TABLE worker_sources(agent TEXT PRIMARY KEY,state TEXT,checkpoint TEXT,complete INTEGER NOT NULL);
+                CREATE TABLE worker_source_fingerprints(agent TEXT NOT NULL,kind TEXT NOT NULL,entry_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(agent,kind,entry_key));
                 CREATE TABLE worker_sessions(agent TEXT NOT NULL,session_id TEXT NOT NULL,head TEXT NOT NULL,source TEXT NOT NULL,attachments TEXT NOT NULL,content_hash TEXT NOT NULL,metadata_hash TEXT NOT NULL,message_digests BLOB,PRIMARY KEY(agent,session_id));
                 CREATE TABLE worker_outbox(sequence INTEGER PRIMARY KEY AUTOINCREMENT,payload_version INTEGER NOT NULL,payload BLOB NOT NULL,digest TEXT NOT NULL,created_at INTEGER NOT NULL);
-                PRAGMA user_version=2;")?;
+                PRAGMA user_version=3;")?;
             tx.execute(
                 "INSERT INTO worker_meta VALUES('stream_id',?)",
                 [uuid::Uuid::new_v4().to_string()],
@@ -139,12 +143,25 @@ impl WorkerStore {
                 [],
             )?;
             tx.commit()?;
-        } else if version == 1 {
-            // Schema 2 adds per-message digests; releases before it refuse the file.
-            db.execute_batch(
-                "BEGIN IMMEDIATE; ALTER TABLE worker_sessions ADD COLUMN message_digests BLOB; PRAGMA user_version=2; COMMIT;",
+        } else if version < WORKER_SCHEMA_VERSION {
+            let mut db = db;
+            let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            if version == 1 {
+                // Schema 2 adds per-message digests; releases before it refuse the file.
+                tx.execute_batch("ALTER TABLE worker_sessions ADD COLUMN message_digests BLOB;")?;
+            }
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS worker_source_fingerprints(agent TEXT NOT NULL,kind TEXT NOT NULL,entry_key TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(agent,kind,entry_key));",
             )?;
+            migrate_worker_source_fingerprints(&tx)?;
+            tx.pragma_update(None, "user_version", WORKER_SCHEMA_VERSION)?;
+            tx.commit()?;
+            return Self::finish_open(db, path);
         }
+        Self::finish_open(db, path)
+    }
+
+    fn finish_open(db: Connection, path: &Path) -> Result<Self> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -155,6 +172,7 @@ impl WorkerStore {
                 }
             }
         }
+        let _ = path;
         Ok(Self { db })
     }
 
@@ -163,8 +181,8 @@ impl WorkerStore {
         db.busy_timeout(Duration::from_secs(5))?;
         let version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         ensure!(
-            version == 2,
-            "Read-only Worker state requires schema 2, found {version}"
+            version == WORKER_SCHEMA_VERSION,
+            "Read-only Worker state requires schema {WORKER_SCHEMA_VERSION}, found {version}"
         );
         Ok(Self { db })
     }
@@ -322,6 +340,10 @@ impl WorkerStore {
         if progress.error.is_none() {
             for agent in &agents {
                 tx.execute("DELETE FROM worker_sources WHERE agent=?", [agent])?;
+                tx.execute(
+                    "DELETE FROM worker_source_fingerprints WHERE agent=?",
+                    [agent],
+                )?;
                 tx.execute(
                     "UPDATE worker_sessions SET content_hash='',metadata_hash='',message_digests=NULL WHERE agent=?",
                     [agent],
@@ -504,8 +526,20 @@ impl WorkerStore {
                 })
             })
             .collect::<Result<_>>()?;
+        let state: Option<Value> = state.map(|s| serde_json::from_str(&s)).transpose()?;
+        let mut fingerprints = state
+            .as_ref()
+            .map(source_fingerprints::parse_inline_fields)
+            .unwrap_or_default();
+        fingerprints.merge_from(source_fingerprints::load(
+            &self.db,
+            "worker_source_fingerprints",
+            "agent",
+            agent,
+        )?);
         Ok(SourceBaseline {
-            state: state.map(|s| serde_json::from_str(&s)).transpose()?,
+            state,
+            fingerprints,
             complete,
             sessions,
         })
@@ -575,15 +609,29 @@ impl WorkerStore {
             .checkpoint
             .as_ref()
             .and_then(|v| v.get("sourceState"))
-            .map(serde_json::to_string)
+            .map(|state| {
+                serde_json::to_string(source_fingerprints::strip_metadata_state(state).as_ref())
+            })
             .transpose()?;
+        if let Some(delta) = batch
+            .checkpoint
+            .as_ref()
+            .and_then(|v| v.get("sourceStateDelta"))
+        {
+            let delta: SourceStateDelta = serde_json::from_value(delta.clone())?;
+            source_fingerprints::apply(&tx, "worker_source_fingerprints", "agent", agent, &delta)?;
+        }
         let checkpoint = if batch.complete {
             None
         } else {
             batch
                 .checkpoint
                 .as_ref()
-                .map(serde_json::to_string)
+                .map(|checkpoint| {
+                    serde_json::to_string(
+                        source_fingerprints::strip_checkpoint_delta(checkpoint).as_ref(),
+                    )
+                })
                 .transpose()?
         };
         // Idle rounds resend the same state; skipping the no-op update avoids rewriting it.
@@ -727,6 +775,49 @@ fn reset_queue(tx: &rusqlite::Transaction<'_>, stream: &str) -> Result<()> {
         "UPDATE worker_meta SET value='0' WHERE key='confirmed_sequence'",
         [],
     )?;
+    Ok(())
+}
+
+fn migrate_worker_source_fingerprints(tx: &Transaction<'_>) -> Result<()> {
+    let rows = tx
+        .prepare("SELECT agent,state,checkpoint FROM worker_sources")?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (agent, state, checkpoint) in rows {
+        if let Some(raw) = state
+            && let Ok(mut value) = serde_json::from_str::<Value>(&raw)
+            && let Some(fingerprints) = source_fingerprints::extract_inline_fields(&mut value)
+        {
+            source_fingerprints::insert_all(
+                tx,
+                "worker_source_fingerprints",
+                "agent",
+                &agent,
+                &fingerprints,
+            )?;
+            tx.execute(
+                "UPDATE worker_sources SET state=?1 WHERE agent=?2",
+                params![serde_json::to_string(&value)?, agent],
+            )?;
+        }
+        if let Some(raw) = checkpoint
+            && let Ok(value) = serde_json::from_str::<Value>(&raw)
+        {
+            let cleaned = source_fingerprints::strip_checkpoint_delta(&value);
+            if matches!(cleaned, std::borrow::Cow::Owned(_)) {
+                tx.execute(
+                    "UPDATE worker_sources SET checkpoint=?1 WHERE agent=?2",
+                    params![serde_json::to_string(cleaned.as_ref())?, agent],
+                )?;
+            }
+        }
+    }
     Ok(())
 }
 

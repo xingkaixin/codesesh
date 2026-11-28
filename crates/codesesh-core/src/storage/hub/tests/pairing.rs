@@ -380,3 +380,114 @@ fn adopted_history_is_incomplete_while_a_backfill_is_in_flight() {
     assert!(!worker.collection_complete(&["codex".into()]).unwrap());
     assert!(worker.checkpoint("codex").unwrap().is_some());
 }
+
+#[test]
+fn adopt_local_history_and_resume_local_worker_preserve_source_fingerprints() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = Cache::open(None).unwrap();
+    let mut session = crate::storage::tests::source(dir.path(), "existing");
+    let initial_checkpoint = serde_json::json!({
+        "sourceState": {
+            "version": 1,
+            "sourceNodeId": "local",
+            "historyComplete": true,
+            "parserVersion": crate::agents::parser_version("codex"),
+            "root": dir.path(),
+        },
+        "sourceStateDelta": {
+            "reset": true,
+            "fileUpserts": {"/path/a.jsonl": "fp-a"},
+            "databaseUpserts": {"db-1": "fp-db-1"},
+            "emptyAdds": ["/path/empty.jsonl"],
+        }
+    });
+    cache
+        .apply_checkpoint(
+            std::slice::from_mut(&mut session),
+            &[],
+            "codex",
+            &Some(initial_checkpoint),
+            true,
+        )
+        .unwrap();
+    cache.initialize_hub("hub").unwrap();
+    cache.configure_local_worker("private-local-key").unwrap();
+
+    let mut worker = WorkerStore::open(&dir.path().join("worker.db")).unwrap();
+    let stream = worker.stream_id().unwrap();
+    let token = cache.create_pairing_token().unwrap();
+    let proof = crate::sync::local_worker_proof("private-local-key", "hub", &token, &stream);
+    let grant = cache
+        .pair_worker_with_origin(&token, "Local", "1.1.1", &stream, Some(("hub", &proof)))
+        .unwrap();
+    worker.bind("http://127.0.0.1/", &grant).unwrap();
+
+    assert_eq!(worker.adopt_local_history(&cache, &grant).unwrap(), Some(1));
+    let adopted = worker.baseline("codex").unwrap().fingerprints;
+    assert_eq!(
+        adopted.files.get("/path/a.jsonl").map(String::as_str),
+        Some("fp-a")
+    );
+    assert_eq!(
+        adopted.database_sessions.get("db-1").map(String::as_str),
+        Some("fp-db-1")
+    );
+    assert!(adopted.empty_sources.contains("/path/empty.jsonl"));
+
+    // Update a fingerprint on the worker and resume back into standalone Cache.
+    let mut batch = crate::runtime::ScanBatch {
+        source_presence: None,
+        sessions: Vec::new(),
+        removed: Vec::new(),
+        checkpoint: Some(serde_json::json!({
+            "sourceState": {
+                "version": 1,
+                "sourceNodeId": "local",
+                "historyComplete": true,
+                "parserVersion": crate::agents::parser_version("codex"),
+                "root": dir.path(),
+            },
+            "sourceStateDelta": {
+                "fileUpserts": {"/path/b.jsonl": "fp-b"},
+                "emptyRemoves": ["/path/empty.jsonl"],
+            }
+        })),
+        complete: true,
+        completion: None,
+        on_reject: None,
+        pricing: None,
+    };
+    worker.save_batch("codex", &mut batch).unwrap();
+
+    cache
+        .connection()
+        .execute(
+            "DELETE FROM cache_meta WHERE key='local_worker_baseline'",
+            [],
+        )
+        .unwrap();
+    cache
+        .resume_local_worker(&mut worker, "hub", &Pricing::bundled())
+        .unwrap();
+
+    let resumed = crate::storage::source_fingerprints::load(
+        cache.connection(),
+        "source_fingerprints",
+        "agent_name",
+        "codex",
+    )
+    .unwrap();
+    assert_eq!(
+        resumed.files.get("/path/a.jsonl").map(String::as_str),
+        Some("fp-a")
+    );
+    assert_eq!(
+        resumed.files.get("/path/b.jsonl").map(String::as_str),
+        Some("fp-b")
+    );
+    assert_eq!(
+        resumed.database_sessions.get("db-1").map(String::as_str),
+        Some("fp-db-1")
+    );
+    assert!(!resumed.empty_sources.contains("/path/empty.jsonl"));
+}

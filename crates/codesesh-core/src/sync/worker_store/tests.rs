@@ -285,3 +285,146 @@ fn worker_store_acknowledges_round_trip_metadata_digests_and_rejects_raw_digest(
         .unwrap();
     assert_eq!(store.queue_status().unwrap().batches, 0);
 }
+
+#[test]
+fn schema2_worker_migrates_source_fingerprints_in_place_and_updates_incrementally() {
+    let dir = tempfile::tempdir().unwrap();
+    let sessions = dir.path().join(".codex/sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let file_a = sessions.join("rollout-a.jsonl");
+    let file_b = sessions.join("rollout-b.jsonl");
+    let write_rollout = |path: &Path, text: &str| {
+        std::fs::write(
+            path,
+            format!(
+                "{}\n{}\n",
+                json!({"timestamp":"2026-09-01T10:00:00Z","type":"session_meta","payload":{"cwd":"/fixture"}}),
+                json!({"timestamp":"2026-09-01T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"text":text}]}}),
+            ),
+        )
+        .unwrap();
+    };
+    write_rollout(&file_a, "First");
+    write_rollout(&file_b, "Second");
+
+    let env = PathEnvironment {
+        home: dir.path().into(),
+        cwd: dir.path().into(),
+        platform: "linux".into(),
+        variables: Default::default(),
+    };
+    let source = env.source("codex").unwrap();
+    let db_path = dir.path().join("worker.db");
+    let mut store = WorkerStore::open(&db_path).unwrap();
+    let mut scanner = AgentScanner::for_worker(source.clone(), db_path.clone());
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 2);
+    store.save_batch("codex", &mut initial).unwrap();
+
+    // Rewrite worker.db back to schema 2 with inline files/databaseSessions/emptySources.
+    let baseline = store.baseline("codex").unwrap();
+    assert_eq!(baseline.fingerprints.files.len(), 2);
+    let mut legacy_state = baseline.state.unwrap();
+    legacy_state["files"] = serde_json::to_value(&baseline.fingerprints.files).unwrap();
+    legacy_state["databaseSessions"] = json!({"db-1": "fp-db-1"});
+    legacy_state["emptySources"] = json!(["empty-1"]);
+    let legacy_checkpoint = json!({
+        "offset": 1,
+        "total": 2,
+        "sourceState": legacy_state.clone()
+    });
+    store
+        .db
+        .execute(
+            "UPDATE worker_sources SET state=?1, checkpoint=?2 WHERE agent='codex'",
+            params![legacy_state.to_string(), legacy_checkpoint.to_string()],
+        )
+        .unwrap();
+    store
+        .db
+        .execute_batch("DROP TABLE worker_source_fingerprints; PRAGMA user_version=2;")
+        .unwrap();
+    drop(store);
+
+    let mut store = WorkerStore::open(&db_path).unwrap();
+    assert_eq!(
+        store
+            .db
+            .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+            .unwrap(),
+        WORKER_SCHEMA_VERSION
+    );
+    let migrated_state: String = store
+        .db
+        .query_row(
+            "SELECT state FROM worker_sources WHERE agent='codex'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let migrated_state: Value = serde_json::from_str(&migrated_state).unwrap();
+    assert!(migrated_state.get("files").is_none());
+    assert!(migrated_state.get("databaseSessions").is_none());
+    assert!(migrated_state.get("emptySources").is_none());
+    let migrated_checkpoint = store.checkpoint("codex").unwrap().unwrap();
+    assert!(migrated_checkpoint["sourceState"].get("files").is_none());
+    let migrated = store.baseline("codex").unwrap();
+    assert_eq!(migrated.fingerprints.files, baseline.fingerprints.files);
+    assert_eq!(
+        migrated
+            .fingerprints
+            .database_sessions
+            .get("db-1")
+            .map(String::as_str),
+        Some("fp-db-1")
+    );
+    assert!(migrated.fingerprints.empty_sources.contains("empty-1"));
+
+    // Clear the test checkpoint so the restarted scanner performs a warm scan, then a 1-file edit.
+    store
+        .db
+        .execute(
+            "UPDATE worker_sources SET checkpoint=NULL WHERE agent='codex'",
+            [],
+        )
+        .unwrap();
+    let mut restarted = AgentScanner::for_worker(source, db_path);
+    let mut warm = restarted.refresh(None).unwrap();
+    assert!(warm.sessions.is_empty());
+    store.save_batch("codex", &mut warm).unwrap();
+
+    store
+        .db
+        .execute_batch(
+            "CREATE TEMP TABLE fp_writes(entry_key TEXT NOT NULL);
+             CREATE TEMP TRIGGER track_wfp_ins AFTER INSERT ON worker_source_fingerprints BEGIN INSERT INTO fp_writes VALUES(NEW.entry_key); END;
+             CREATE TEMP TRIGGER track_wfp_upd AFTER UPDATE ON worker_source_fingerprints BEGIN INSERT INTO fp_writes VALUES(NEW.entry_key); END;
+             CREATE TEMP TRIGGER track_wfp_del AFTER DELETE ON worker_source_fingerprints BEGIN INSERT INTO fp_writes VALUES(OLD.entry_key); END;",
+        )
+        .unwrap();
+    write_rollout(&file_a, "Updated worker file A");
+    let mut edited = restarted
+        .refresh(Some(std::slice::from_ref(&file_a)))
+        .unwrap();
+    assert_eq!(edited.sessions.len(), 1);
+    edited.complete = false;
+    store.save_batch("codex", &mut edited).unwrap();
+
+    let written: Vec<String> = store
+        .db
+        .prepare("SELECT entry_key FROM fp_writes")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(written, vec![file_a.to_string_lossy().into_owned()]);
+    assert!(
+        store
+            .checkpoint("codex")
+            .unwrap()
+            .unwrap()
+            .get("sourceStateDelta")
+            .is_none()
+    );
+}
