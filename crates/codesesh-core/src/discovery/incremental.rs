@@ -139,6 +139,7 @@ pub struct AgentScanner {
     price_dependencies: Option<PriceDependencies>,
     file_fingerprints: HashMap<String, String>,
     empty_sources: HashSet<String>,
+    persisted_database_stamp: Option<String>,
     source_state_dirty: bool,
     database_inventory: Option<(String, Vec<Item>)>,
 }
@@ -171,6 +172,7 @@ impl AgentScanner {
             price_dependencies: Some(HashMap::new()),
             file_fingerprints: HashMap::new(),
             empty_sources: HashSet::new(),
+            persisted_database_stamp: None,
             source_state_dirty: true,
             database_inventory: None,
         }
@@ -273,11 +275,13 @@ impl AgentScanner {
             }
             self.pricing = Arc::new(ticket.pricing.clone());
         }
-        if self.rejected.swap(false, Ordering::AcqRel) {
+        let was_rejected = self.rejected.swap(false, Ordering::AcqRel);
+        if was_rejected {
             self.initialized = false;
             self.backfill = None;
             self.opencode = None;
             self.fingerprints.clear();
+            self.persisted_database_stamp = None;
             self.source_state_dirty = true;
         }
         if pricing_changed
@@ -285,6 +289,9 @@ impl AgentScanner {
             || self.baseline.is_empty() && !self.durable_references.is_empty()
         {
             self.restore()?;
+        }
+        if pricing_changed || was_rejected {
+            self.persisted_database_stamp = None;
         }
         let page_mode =
             self.backfill.is_some() || !self.initialized || paths.is_none() || checkpoint.is_some();
@@ -395,6 +402,7 @@ impl AgentScanner {
                 "antigravityProfiles": self.source.antigravity_profiles,
                 "files": self.file_fingerprints,
                 "databaseSessions": self.fingerprints,
+                "databaseStamp": self.persisted_database_stamp,
                 "emptySources": self.empty_sources,
             });
             self.source_state_dirty = false;
@@ -450,6 +458,20 @@ impl AgentScanner {
     ) -> Result<(ScanDelta, Option<serde_json::Value>, bool)> {
         let hints = paths.is_some_and(|paths| !paths.is_empty());
         if self.backfill.is_none() {
+            if checkpoint.is_none()
+                && self.source.is_database_source()
+                && self.history_complete
+                && self.persisted_database_stamp.is_some()
+                && database_stamp(&self.source)?
+                    .as_deref()
+                    .is_some_and(|stamp| {
+                        !stamp.is_empty() && self.persisted_database_stamp.as_deref() == Some(stamp)
+                    })
+                && self.all_previous_identities_current()
+            {
+                self.source_available = Some(true);
+                return Ok((ScanDelta::default(), None, true));
+            }
             let local = self.backfill.as_ref().map(Backfill::checkpoint);
             let saved = checkpoint.or(local.as_ref());
             let mut items = self.inventory()?;
@@ -522,6 +544,7 @@ impl AgentScanner {
             let checkpoint = (!complete).then(|| plan.checkpoint());
             if complete {
                 self.backfill = None;
+                self.record_database_stamp()?;
             }
             return Ok((delta, checkpoint, complete));
         }
@@ -576,10 +599,26 @@ impl AgentScanner {
             );
             if complete {
                 self.backfill = None;
+                self.record_database_stamp()?;
             }
         }
         delta.complete = false;
         Ok((delta, checkpoint, complete))
+    }
+    fn all_previous_identities_current(&self) -> bool {
+        self.previous.iter().all(record_identity_current)
+    }
+    fn record_database_stamp(&mut self) -> Result<()> {
+        if !self.source.is_database_source() || self.source_available != Some(true) {
+            return Ok(());
+        }
+        if let Some(stamp) = database_stamp(&self.source)?.filter(|s| !s.is_empty())
+            && self.persisted_database_stamp.as_deref() != Some(stamp.as_str())
+        {
+            self.persisted_database_stamp = Some(stamp);
+            self.source_state_dirty = true;
+        }
+        Ok(())
     }
     fn inventory(&mut self) -> Result<Vec<Item>> {
         // Enumerating a database reads every session row; an unchanged file lists the same sessions.
@@ -756,8 +795,25 @@ impl AgentScanner {
         paths: Option<&[PathBuf]>,
     ) -> Result<(ScanDelta, Option<serde_json::Value>, bool)> {
         if self.source.is_database_source() {
+            let current_stamp = database_stamp(&self.source)?;
+            if self.history_complete
+                && current_stamp.as_deref().is_some_and(|s| !s.is_empty())
+                && current_stamp == self.persisted_database_stamp
+                && self.all_previous_identities_current()
+            {
+                self.source_available = Some(true);
+                return Ok((ScanDelta::default(), None, true));
+            }
             self.source_available = Some(has_sources(&self.source)?);
-            return Ok((self.read(paths)?, None, true));
+            let delta = self.read(paths)?;
+            if self.source_available == Some(true)
+                && current_stamp.as_deref().is_some_and(|s| !s.is_empty())
+                && current_stamp != self.persisted_database_stamp
+            {
+                self.persisted_database_stamp = current_stamp;
+                self.source_state_dirty = true;
+            }
+            return Ok((delta, None, true));
         }
         if let Some(paths) = paths
             && !paths.is_empty()
@@ -875,21 +931,10 @@ impl AgentScanner {
             };
             let current = (records.is_some() || self.empty_sources.contains(&item.key))
                 && self.file_fingerprints.get(&item.key) == Some(&item.fingerprint)
-                && records.into_iter().flatten().all(|record| {
-                    let projection = crate::projects::compute_identity_projection_with_context(
-                        &record.head.directory,
-                        &record.head.recorded_git_remotes,
-                        Some((
-                            &record.head.project_identity,
-                            record.head.project_identity_input_signature.as_deref(),
-                        )),
-                    );
-                    projection.identity == record.head.project_identity
-                        && record.head.project_identity_input_signature.as_ref()
-                            == Some(&projection.input_signature)
-                        && record.head.project_identity_resolver_revision.as_ref()
-                            == Some(&projection.resolver_revision)
-                });
+                && records
+                    .into_iter()
+                    .flatten()
+                    .all(|record| record_identity_current(record));
             if current {
                 reused.extend(
                     records
@@ -1014,6 +1059,7 @@ impl AgentScanner {
         self.baseline.clear();
         self.file_fingerprints.clear();
         self.empty_sources.clear();
+        self.persisted_database_stamp = None;
         self.history_complete = false;
         self.price_dependencies = Some(HashMap::new());
         self.source_state_dirty = true;
@@ -1066,6 +1112,9 @@ impl AgentScanner {
             |row| row.get(0),
         )?;
         self.restore_source_state(state.as_ref(), complete);
+        if pricing_changed {
+            self.persisted_database_stamp = None;
+        }
 
         for (mut head, source, has_cost_inputs) in
             cache.source_agent_restore_rows(&self.source_node_id, &self.source.agent)?
@@ -1147,6 +1196,12 @@ impl AgentScanner {
                 serde_json::from_value(state["emptySources"].clone()).unwrap_or_default();
             self.fingerprints =
                 serde_json::from_value(state["databaseSessions"].clone()).unwrap_or_default();
+            self.persisted_database_stamp = state["databaseStamp"]
+                .as_str()
+                .filter(|stamp| {
+                    self.history_complete && self.source.is_database_source() && !stamp.is_empty()
+                })
+                .map(str::to_owned);
             if state["generation"].as_u64() == Some(self.pricing.generation())
                 && self.history_complete
             {
@@ -1206,7 +1261,7 @@ impl AgentScanner {
                 let delta = ScanDelta {
                     upserts: std::mem::take(&mut snapshot.upserts),
                     removed: std::mem::take(&mut snapshot.removed),
-                    complete: false,
+                    complete: self.opencode.is_none(),
                 };
                 snapshot.release_bodies();
                 self.opencode = Some(snapshot);
@@ -1392,6 +1447,21 @@ impl AgentScanner {
             complete: false,
         })
     }
+}
+fn record_identity_current(record: &SessionRecord) -> bool {
+    let projection = crate::projects::compute_identity_projection_with_context(
+        &record.head.directory,
+        &record.head.recorded_git_remotes,
+        Some((
+            &record.head.project_identity,
+            record.head.project_identity_input_signature.as_deref(),
+        )),
+    );
+    projection.identity == record.head.project_identity
+        && record.head.project_identity_input_signature.as_ref()
+            == Some(&projection.input_signature)
+        && record.head.project_identity_resolver_revision.as_ref()
+            == Some(&projection.resolver_revision)
 }
 fn selected_delta(
     upserts: Vec<ParsedSession>,

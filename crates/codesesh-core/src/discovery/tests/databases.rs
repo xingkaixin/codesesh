@@ -360,6 +360,148 @@ fn paged_cursor_backfill_uses_the_refreshed_storage_key() {
     );
 }
 
+#[test]
+fn unchanged_database_stamp_skips_opening_sqlite_on_warm_restart_and_live_refresh() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("zcode");
+    let file = root.join("cli/db/db.sqlite");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database
+        .execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT); \
+             INSERT INTO session(id,title,time_created,time_updated,directory) VALUES('s1','Initial',1000,2000,'/project');",
+        )
+        .unwrap();
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "zcode".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut initial = scanner.refresh(None).unwrap();
+    assert_eq!(initial.sessions.len(), 1);
+    let stamp = initial.checkpoint.as_ref().unwrap()["sourceState"]["databaseStamp"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!stamp.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut initial.sessions,
+            &initial.removed,
+            "zcode",
+            &initial.checkpoint,
+            initial.complete,
+        )
+        .unwrap();
+    initial.on_reject.take();
+
+    // Hold an exclusive lock without mutating the DB file; any SQLite read would block and fail.
+    database.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+    let mut warm = scanner.refresh(None).unwrap();
+    assert!(warm.complete);
+    assert!(warm.sessions.is_empty());
+    assert!(warm.removed.is_empty());
+    assert_eq!(warm.source_presence, Some(SourcePresence::Available));
+    cache
+        .apply_checkpoint(
+            &mut warm.sessions,
+            &warm.removed,
+            "zcode",
+            &warm.checkpoint,
+            warm.complete,
+        )
+        .unwrap();
+    warm.on_reject.take();
+
+    let mut live_unchanged = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert!(live_unchanged.complete);
+    assert!(live_unchanged.sessions.is_empty());
+    assert!(live_unchanged.removed.is_empty());
+    assert_eq!(
+        live_unchanged.source_presence,
+        Some(SourcePresence::Available)
+    );
+    cache
+        .apply_checkpoint(
+            &mut live_unchanged.sessions,
+            &live_unchanged.removed,
+            "zcode",
+            &live_unchanged.checkpoint,
+            live_unchanged.complete,
+        )
+        .unwrap();
+    live_unchanged.on_reject.take();
+
+    // Subsequent write invalidates the persisted stamp and refreshes accurately.
+    database
+        .execute_batch(
+            "UPDATE session SET title='Updated', time_updated=3000 WHERE id='s1'; COMMIT;",
+        )
+        .unwrap();
+    let mut live_updated = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert!(live_updated.complete);
+    assert_eq!(live_updated.sessions.len(), 1);
+    assert_eq!(live_updated.sessions[0].head.title, "Updated");
+    assert!(live_updated.removed.is_empty());
+    let updated_stamp = live_updated.checkpoint.as_ref().unwrap()["sourceState"]["databaseStamp"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(updated_stamp, stamp);
+    cache
+        .apply_checkpoint(
+            &mut live_updated.sessions,
+            &live_updated.removed,
+            "zcode",
+            &live_updated.checkpoint,
+            live_updated.complete,
+        )
+        .unwrap();
+    live_updated.on_reject.take();
+
+    // Subsequent deletion after warm restart removes the deleted session cleanly.
+    scanner = AgentScanner::new(source, db, pricing);
+    let mut warm_after_update = scanner.refresh(None).unwrap();
+    assert!(warm_after_update.sessions.is_empty());
+    assert!(warm_after_update.removed.is_empty());
+    cache
+        .apply_checkpoint(
+            &mut warm_after_update.sessions,
+            &warm_after_update.removed,
+            "zcode",
+            &warm_after_update.checkpoint,
+            warm_after_update.complete,
+        )
+        .unwrap();
+    warm_after_update.on_reject.take();
+
+    database
+        .execute("DELETE FROM session WHERE id='s1'", [])
+        .unwrap();
+    let mut live_deleted = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert!(live_deleted.sessions.is_empty());
+    assert_eq!(live_deleted.removed.len(), 1);
+    assert_eq!(live_deleted.removed[0].session_id, "s1");
+    cache
+        .apply_checkpoint(
+            &mut live_deleted.sessions,
+            &live_deleted.removed,
+            "zcode",
+            &live_deleted.checkpoint,
+            live_deleted.complete,
+        )
+        .unwrap();
+    live_deleted.on_reject.take();
+    assert!(cache.snapshot().unwrap().is_empty());
+}
+
 fn database_scanner(
     directory: &Path,
     source: AgentSource,
