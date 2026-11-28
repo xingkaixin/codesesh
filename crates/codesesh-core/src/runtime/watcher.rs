@@ -568,40 +568,43 @@ fn reconcile_watches(
     roots: &[NormalizedWatchRoot],
     watched: &mut std::collections::BTreeMap<PathBuf, RecursiveMode>,
 ) -> Result<bool> {
-    let mut desired = std::collections::BTreeMap::new();
+    let mut required = std::collections::BTreeMap::new();
+    let mut optional = std::collections::BTreeSet::new();
     for entry in roots {
         let root = &entry.root;
         if root.path.is_dir() {
             if root.recursive {
-                desired.insert(entry.canonical.clone(), RecursiveMode::Recursive);
+                required.insert(entry.canonical.clone(), RecursiveMode::Recursive);
             } else {
-                desired
+                required
                     .entry(entry.canonical.clone())
                     .or_insert(RecursiveMode::NonRecursive);
             }
             if let Some(parent) = root.path.parent() {
-                desired
+                required
                     .entry(normalize_watch_path(parent))
                     .or_insert(RecursiveMode::NonRecursive);
             }
         } else {
-            desired
+            required
                 .entry(normalize_watch_path(&existing_watch_root(&root.path)?))
                 .or_insert(RecursiveMode::NonRecursive);
         }
-        // Watch the parent of any symlinked ancestor (e.g. CODEX_HOME symlink) so retargeting it reconciles.
+        // Best-effort watch on parents of symlinked ancestors (e.g. CODEX_HOME symlink) so
+        // retargeting reconciles without failing startup when a traverse-only parent returns EACCES.
         for ancestor in &entry.symlink_ancestors {
             if let Some(parent) = ancestor.parent()
                 && parent.parent().is_some()
             {
-                desired
-                    .entry(normalize_watch_path(parent))
-                    .or_insert(RecursiveMode::NonRecursive);
+                optional.insert(normalize_watch_path(parent));
             }
         }
     }
+    optional.retain(|path| !required.contains_key(path));
     watched.retain(|path, mode| {
-        if desired.get(path) == Some(mode) {
+        let keep = required.get(path) == Some(mode)
+            || (optional.contains(path) && *mode == RecursiveMode::NonRecursive);
+        if keep {
             true
         } else {
             let _ = watcher.unwatch(path);
@@ -609,12 +612,22 @@ fn reconcile_watches(
         }
     });
     let mut expanded = false;
-    for (path, mode) in desired {
+    for (path, mode) in required {
         if let std::collections::btree_map::Entry::Vacant(entry) = watched.entry(path) {
             watcher
                 .watch(entry.key(), mode)
                 .with_context(|| format!("watch {}", entry.key().display()))?;
             entry.insert(mode);
+            expanded = true;
+        }
+    }
+    for path in optional {
+        if let std::collections::btree_map::Entry::Vacant(entry) = watched.entry(path)
+            && watcher
+                .watch(entry.key(), RecursiveMode::NonRecursive)
+                .is_ok()
+        {
+            entry.insert(RecursiveMode::NonRecursive);
             expanded = true;
         }
     }
@@ -1248,7 +1261,8 @@ mod tests {
         let moved_root = watched_dir.join("db-dir");
         let staging_dir = temp.path().join("staging-db");
         let symlink_root = watched_dir.join("linked-sessions");
-        let ancestor_link = watched_dir.join("codex-home");
+        let ancestor_parent = temp.path().join("isolated-codex-parent");
+        let ancestor_link = ancestor_parent.join("codex-home");
         let ancestor_sessions = ancestor_link.join("sessions");
         let target_a = temp.path().join("target-a");
         let target_b = temp.path().join("target-b");
@@ -1256,6 +1270,7 @@ mod tests {
         let home_b = temp.path().join("home-b");
         let ag_conversations = watched_dir.join("conversations");
         std::fs::create_dir_all(&watched_dir).unwrap();
+        std::fs::create_dir_all(&ancestor_parent).unwrap();
         std::fs::create_dir_all(&staging_dir).unwrap();
         std::fs::create_dir_all(&target_a).unwrap();
         std::fs::create_dir_all(&target_b).unwrap();
@@ -1336,8 +1351,8 @@ mod tests {
         drop(cold_conn);
         events.lock().unwrap().clear();
 
-        // Retarget symlinked ancestor (CODEX_HOME) and verify writes in home_b/sessions are observed.
-        let ancestor_tmp = watched_dir.join("codex-home.tmp");
+        // Retarget symlinked ancestor (CODEX_HOME) in an isolated parent and verify home_b/sessions is observed.
+        let ancestor_tmp = ancestor_parent.join("codex-home.tmp");
         std::os::unix::fs::symlink(&home_b, &ancestor_tmp).unwrap();
         std::fs::rename(&ancestor_tmp, &ancestor_link).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
