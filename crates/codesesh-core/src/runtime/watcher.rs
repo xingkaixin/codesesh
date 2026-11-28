@@ -245,11 +245,15 @@ pub fn watch_paths(
     let registration = started.elapsed();
     let started = Instant::now();
     #[cfg(target_os = "macos")]
-    let mut observed = metadata_snapshot(&watched);
+    let mut poll_roots = required_watch_targets(&initial_roots);
+    #[cfg(target_os = "macos")]
+    let mut observed = metadata_snapshot(&poll_roots);
     #[cfg(target_os = "macos")]
     let mut ticks = 0_u32;
     #[cfg(target_os = "macos")]
     let mut force_full_poll = false;
+    #[cfg(target_os = "macos")]
+    let mut reconcile_pending = false;
     let snapshot = started.elapsed();
     let mut polling = tokio::time::interval_at(
         tokio::time::Instant::now() + std::time::Duration::from_secs(2),
@@ -263,7 +267,29 @@ pub fn watch_paths(
                 _ = polling.tick(), if cfg!(target_os = "macos") => {
                     #[cfg(target_os = "macos")]
                     {
-                        let paths = watched.clone();
+                        if reconcile_pending {
+                            let current = (**shared_sources
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner()))
+                                .clone();
+                            let roots: Vec<NormalizedWatchRoot> =
+                                current.iter().flatten().cloned().collect();
+                            let retry_handler = handle_event.clone();
+                            if let Ok(mut rebuilt) =
+                                notify::recommended_watcher(move |event| retry_handler(event, false))
+                            {
+                                let mut rebuilt_watched = std::collections::BTreeMap::new();
+                                if reconcile_watches(&mut rebuilt, &roots, &mut rebuilt_watched, false)
+                                    .is_ok()
+                                {
+                                    watcher = rebuilt;
+                                    watched = rebuilt_watched;
+                                    reconcile_pending = false;
+                                    force_full_poll = true;
+                                }
+                            }
+                        }
+                        let paths = poll_roots.clone();
                         let mut known = std::mem::take(&mut observed);
                         let touched = touched.lock().map(|mut touched| std::mem::take(&mut *touched)).unwrap_or_default();
                         let poll_targets = poll_scope.clone();
@@ -337,23 +363,46 @@ pub fn watch_paths(
                     }
                     let roots: Vec<NormalizedWatchRoot> = current.iter().flatten().cloned().collect();
                     let expanded = match reconcile_watches(&mut watcher, &roots, &mut watched, true) {
-                        Ok(expanded) => expanded,
-                        Err(_) => {
-                            // Rebuild the watcher on failure so a stopped macOS FSEvents stream
-                            // cannot leave required watches dead; drop optional parents on retry.
-                            let retry_handler = handle_event.clone();
-                            if let Ok(mut rebuilt) =
-                                notify::recommended_watcher(move |event| retry_handler(event, false))
+                        Ok(expanded) => {
+                            #[cfg(target_os = "macos")]
                             {
-                                watched.clear();
-                                let _ = reconcile_watches(&mut rebuilt, &roots, &mut watched, false);
+                                reconcile_pending = false;
+                            }
+                            expanded
+                        }
+                        Err(_) => {
+                            // Only swap in a rebuilt watcher if required watches succeed, so an
+                            // exhausted Linux inotify quota never drops existing watches.
+                            let retry_handler = handle_event.clone();
+                            let recovered = notify::recommended_watcher(move |event| {
+                                retry_handler(event, false)
+                            })
+                            .ok()
+                            .and_then(|mut rebuilt| {
+                                let mut rebuilt_watched = std::collections::BTreeMap::new();
+                                reconcile_watches(&mut rebuilt, &roots, &mut rebuilt_watched, false)
+                                    .ok()
+                                    .map(|_| (rebuilt, rebuilt_watched))
+                            });
+                            if let Some((rebuilt, rebuilt_watched)) = recovered {
                                 watcher = rebuilt;
+                                watched = rebuilt_watched;
+                                #[cfg(target_os = "macos")]
+                                {
+                                    reconcile_pending = false;
+                                }
+                            } else {
+                                #[cfg(target_os = "macos")]
+                                {
+                                    reconcile_pending = true;
+                                }
                             }
                             true
                         }
                     };
                     #[cfg(target_os = "macos")]
                     {
+                        poll_roots = required_watch_targets(&roots);
                         if updated_sources || expanded {
                             poll_scope = poll_scope_for_sources(&current);
                         }
@@ -578,6 +627,35 @@ fn normalize_link_path(path: &Path) -> PathBuf {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn required_watch_targets(
+    roots: &[NormalizedWatchRoot],
+) -> std::collections::BTreeMap<PathBuf, RecursiveMode> {
+    let mut required = std::collections::BTreeMap::new();
+    for entry in roots {
+        let root = &entry.root;
+        if root.path.is_dir() {
+            if root.recursive {
+                required.insert(entry.canonical.clone(), RecursiveMode::Recursive);
+            } else {
+                required
+                    .entry(entry.canonical.clone())
+                    .or_insert(RecursiveMode::NonRecursive);
+            }
+            if let Some(parent) = root.path.parent() {
+                required
+                    .entry(normalize_watch_path(parent))
+                    .or_insert(RecursiveMode::NonRecursive);
+            }
+        } else if let Ok(existing) = existing_watch_root(&root.path) {
+            required
+                .entry(normalize_watch_path(&existing))
+                .or_insert(RecursiveMode::NonRecursive);
+        }
+    }
+    required
+}
+
 fn reconcile_watches(
     watcher: &mut notify::RecommendedWatcher,
     roots: &[NormalizedWatchRoot],
@@ -652,17 +730,8 @@ fn reconcile_watches(
                     expanded = true;
                 }
                 #[cfg(not(target_os = "macos"))]
-                Err(error)
-                    if matches!(error.kind, notify::ErrorKind::PathNotFound)
-                        || matches!(
-                            &error.kind,
-                            notify::ErrorKind::Io(io)
-                                if matches!(
-                                    io.kind(),
-                                    std::io::ErrorKind::PermissionDenied
-                                        | std::io::ErrorKind::NotFound
-                                )
-                        ) => {}
+                Err(_) => {}
+                #[cfg(target_os = "macos")]
                 Err(error) => {
                     return Err(error).with_context(|| format!("watch {}", entry.key().display()));
                 }
