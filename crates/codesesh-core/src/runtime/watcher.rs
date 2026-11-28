@@ -362,43 +362,44 @@ pub fn watch_paths(
                         watched.clear();
                     }
                     let roots: Vec<NormalizedWatchRoot> = current.iter().flatten().cloned().collect();
-                    let expanded = match reconcile_watches(&mut watcher, &roots, &mut watched, true) {
-                        Ok(expanded) => {
+                    #[cfg(target_os = "macos")]
+                    let needs_rebuild = reconcile_pending;
+                    #[cfg(not(target_os = "macos"))]
+                    let needs_rebuild = false;
+                    let expanded = if !needs_rebuild
+                        && let Ok(expanded) =
+                            reconcile_watches(&mut watcher, &roots, &mut watched, true)
+                    {
+                        expanded
+                    } else {
+                        // Rebuild into a fresh watcher when reconciling fails or macOS FSEvents
+                        // may be stopped; swap only on success so an exhausted Linux inotify quota
+                        // never drops existing watches.
+                        let retry_handler = handle_event.clone();
+                        let recovered = notify::recommended_watcher(move |event| {
+                            retry_handler(event, false)
+                        })
+                        .ok()
+                        .and_then(|mut rebuilt| {
+                            let mut rebuilt_watched = std::collections::BTreeMap::new();
+                            reconcile_watches(&mut rebuilt, &roots, &mut rebuilt_watched, false)
+                                .ok()
+                                .map(|_| (rebuilt, rebuilt_watched))
+                        });
+                        if let Some((rebuilt, rebuilt_watched)) = recovered {
+                            watcher = rebuilt;
+                            watched = rebuilt_watched;
                             #[cfg(target_os = "macos")]
                             {
                                 reconcile_pending = false;
                             }
-                            expanded
-                        }
-                        Err(_) => {
-                            // Only swap in a rebuilt watcher if required watches succeed, so an
-                            // exhausted Linux inotify quota never drops existing watches.
-                            let retry_handler = handle_event.clone();
-                            let recovered = notify::recommended_watcher(move |event| {
-                                retry_handler(event, false)
-                            })
-                            .ok()
-                            .and_then(|mut rebuilt| {
-                                let mut rebuilt_watched = std::collections::BTreeMap::new();
-                                reconcile_watches(&mut rebuilt, &roots, &mut rebuilt_watched, false)
-                                    .ok()
-                                    .map(|_| (rebuilt, rebuilt_watched))
-                            });
-                            if let Some((rebuilt, rebuilt_watched)) = recovered {
-                                watcher = rebuilt;
-                                watched = rebuilt_watched;
-                                #[cfg(target_os = "macos")]
-                                {
-                                    reconcile_pending = false;
-                                }
-                            } else {
-                                #[cfg(target_os = "macos")]
-                                {
-                                    reconcile_pending = true;
-                                }
+                        } else {
+                            #[cfg(target_os = "macos")]
+                            {
+                                reconcile_pending = true;
                             }
-                            true
                         }
+                        true
                     };
                     #[cfg(target_os = "macos")]
                     {
