@@ -105,7 +105,7 @@ HTTP 读取使用独立只读连接，并在读取事务内完成查询，避免
 3. 在事务中迁移公共列、旧会话头和必要派生信息，重建索引，检查外键，再写入版本。
 4. 迁移失败回滚；未来版本拒绝打开，避免用旧实现覆盖未知格式。
 5. 缺失或旧结构的 FTS 虚表通过建表和 rebuild 恢复；`message_fts` 从 `messages` 分批重建，可中断续做，完成后重建 `session_title_fts`。
-6. schema 36–41 升级到 42 不重建表：先写入新版本号、按需添加列、部分索引、`message_locator` 与 `source_fingerprints` 表（并将 `rust_source_state:*` 中内联的指纹迁入 `source_fingerprints` 后剥离），删除冗余索引，按需分批就地回填 `has_unmatched_pricing_meta`、压缩旧的文本 `parts_json` 与 `content_text`、回填 `session_usage_bucket`，并通过可中断续做机制重建 `message_fts` 与 `session_title_fts`。
+6. schema 36–41 升级到 42 不重建表：先按需添加列、部分索引、`message_locator` 与 `source_fingerprints` 表（并将 `rust_source_state:*` 中内联的指纹迁入 `source_fingerprints` 后剥离）、删除冗余索引并写入新版本号，再按需分批就地回填 `has_unmatched_pricing_meta`、压缩旧的文本 `parts_json` 与 `content_text`、回填 `session_usage_bucket`，并通过可中断续做机制重建 `message_fts` 与 `session_title_fts`。
 7. 打开文件库时，若空闲页至少占四分之一且超过 64 MB，执行一次 `VACUUM`；磁盘空间不足等失败只报告进度，不阻止打开。
 
 具体支持范围和一次性内容修复以 `storage/schema.rs` 和迁移测试为准。schema 36 不支持
