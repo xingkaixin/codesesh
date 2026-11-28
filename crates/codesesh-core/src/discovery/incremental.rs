@@ -560,7 +560,7 @@ impl AgentScanner {
             let complete = plan.offset == plan.items.len() && plan.dirty.is_empty();
             let checkpoint = (!complete).then(|| plan.checkpoint());
             if complete {
-                self.finish_database_backfill()?;
+                self.finish_database_backfill();
             }
             return Ok((delta, checkpoint, complete));
         }
@@ -614,7 +614,7 @@ impl AgentScanner {
                     .map(|(reference, _)| reference.clone()),
             );
             if complete {
-                self.finish_database_backfill()?;
+                self.finish_database_backfill();
             }
         }
         delta.complete = false;
@@ -629,21 +629,24 @@ impl AgentScanner {
             self.source_state_dirty = true;
         }
     }
-    fn finish_database_backfill(&mut self) -> Result<()> {
+    fn finish_database_backfill(&mut self) {
         self.backfill = None;
         let expected = self.backfill_database_stamp.take();
         if !self.source.is_database_source() {
-            return Ok(());
+            return;
         }
         if self.source_available != Some(true) {
             self.update_persisted_database_stamp(None);
-            return Ok(());
+            return;
         }
-        let current = database_stamp(&self.source)?.filter(|s| !s.is_empty());
+        // Never discard an already-read batch on a post-read stat error; just leave the stamp uncertified.
+        let current = database_stamp(&self.source)
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
         let verified =
             expected.filter(|stamp| !stamp.is_empty() && Some(stamp) == current.as_ref());
         self.update_persisted_database_stamp(verified);
-        Ok(())
     }
     fn inventory(&mut self) -> Result<Vec<Item>> {
         // Enumerating a database reads every session row; an unchanged file lists the same sessions.
@@ -730,6 +733,10 @@ impl AgentScanner {
                     &eligible,
                     self.opencode.as_ref(),
                 )?;
+                if !snapshot.present {
+                    self.source_available = Some(false);
+                    return Ok(ScanDelta::default());
+                }
                 let mut delta = ScanDelta {
                     upserts: std::mem::take(&mut snapshot.upserts),
                     removed: std::mem::take(&mut snapshot.removed),
@@ -831,7 +838,11 @@ impl AgentScanner {
             }
             self.source_available = Some(has_sources(&self.source)?);
             let delta = self.read(paths)?;
-            let after_stamp = database_stamp(&self.source)?.filter(|s| !s.is_empty());
+            // Never discard an already-read batch on a post-read stat error; just clear the stamp.
+            let after_stamp = database_stamp(&self.source)
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty());
             let verified = if self.source_available == Some(true)
                 && before_stamp.is_some()
                 && before_stamp == after_stamp
@@ -1288,6 +1299,10 @@ impl AgentScanner {
                     pricing,
                     self.opencode.as_ref(),
                 )?;
+                if !snapshot.present {
+                    self.source_available = Some(false);
+                    return Ok(ScanDelta::default());
+                }
                 let present: HashSet<_> = snapshot
                     .sessions
                     .iter()

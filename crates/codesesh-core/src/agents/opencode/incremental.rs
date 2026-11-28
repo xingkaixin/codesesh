@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 
 #[derive(Default)]
 pub struct DatabaseSnapshot {
+    pub present: bool,
     pub sessions: Vec<ParsedSession>,
     pub upserts: Vec<ParsedSession>,
     pub removed: Vec<SessionReference>,
@@ -256,6 +257,7 @@ pub(super) fn refresh_scoped(
     let decoded = changed.into_iter().map(|id| reference(agent, id)).collect();
     db.execute_batch("COMMIT")?;
     Ok(DatabaseSnapshot {
+        present: true,
         sessions,
         upserts,
         removed,
