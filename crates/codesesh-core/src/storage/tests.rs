@@ -1205,7 +1205,7 @@ fn schema39_upgrades_in_place_to_schema40_without_backup() {
 #[test]
 fn schema41_migrates_source_fingerprints_in_place_and_live_edits_write_only_changed_key() {
     let root = tempfile::tempdir().unwrap();
-    let sessions = root.path().join(".codex/sessions");
+    let sessions = root.path().join(".codex").join("sessions");
     std::fs::create_dir_all(&sessions).unwrap();
     let file_a = sessions.join("rollout-a.jsonl");
     let file_b = sessions.join("rollout-b.jsonl");

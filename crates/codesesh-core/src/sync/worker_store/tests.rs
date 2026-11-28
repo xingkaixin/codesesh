@@ -9,7 +9,7 @@ use serde_json::json;
 
 fn setup() -> (tempfile::TempDir, WorkerStore, AgentScanner) {
     let dir = tempfile::tempdir().unwrap();
-    let sessions = dir.path().join(".codex/sessions");
+    let sessions = dir.path().join(".codex").join("sessions");
     std::fs::create_dir_all(&sessions).unwrap();
     std::fs::write(sessions.join("rollout-one.jsonl"), concat!(
         "{\"timestamp\":\"2026-09-01T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"cwd\":\"/fixture\"}}\n",
@@ -289,7 +289,7 @@ fn worker_store_acknowledges_round_trip_metadata_digests_and_rejects_raw_digest(
 #[test]
 fn schema2_worker_migrates_source_fingerprints_in_place_and_updates_incrementally() {
     let dir = tempfile::tempdir().unwrap();
-    let sessions = dir.path().join(".codex/sessions");
+    let sessions = dir.path().join(".codex").join("sessions");
     std::fs::create_dir_all(&sessions).unwrap();
     let file_a = sessions.join("rollout-a.jsonl");
     let file_b = sessions.join("rollout-b.jsonl");
