@@ -116,22 +116,13 @@ pub(super) fn session_fingerprint(
     crate::hash::hex(&hash.finalize())
 }
 
-fn borrowed_text(
-    value: rusqlite::types::ValueRef<'_>,
-) -> rusqlite::Result<std::borrow::Cow<'_, str>> {
-    match value {
-        rusqlite::types::ValueRef::Text(bytes) => Ok(String::from_utf8_lossy(bytes)),
-        other => Ok(std::borrow::Cow::Borrowed(other.as_str()?)),
-    }
-}
-
 fn has_own_messages(db: &rusqlite::Connection, id: &str) -> Result<bool> {
     let mut query =
         db.prepare_cached("SELECT value FROM cursorDiskKV WHERE key >= ?1 AND key < ?2")?;
     let mut rows = query.query([format!("bubbleId:{id}:"), format!("bubbleId:{id};")])?;
     while let Some(row) = rows.next()? {
-        let raw = borrowed_text(row.get_ref(0)?)?;
-        if let Ok(bubble) = serde_json::from_str::<Value>(&raw)
+        let raw = row.get_ref(0)?.as_str()?;
+        if let Ok(bubble) = serde_json::from_str::<Value>(raw)
             && super::messages::bubble_parts(&bubble, 0.0).is_some_and(|parts| !parts.is_empty())
         {
             return Ok(true);
@@ -156,11 +147,11 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
     let mut bubble_hashers: HashMap<String, Sha256> = HashMap::new();
     let mut child_hashes: HashMap<String, [u8; 32]> = HashMap::new();
     while let Some(row) = rows.next()? {
-        let key = borrowed_text(row.get_ref(0)?)?;
-        let raw = borrowed_text(row.get_ref(1)?)?;
-        let hash = super::sync::fingerprint(row.get(2)?, &raw);
+        let key = row.get_ref(0)?.as_str()?;
+        let raw = row.get_ref(1)?.as_str()?;
+        let hash = super::sync::fingerprint(row.get(2)?, raw);
         if key.starts_with("composerData:") {
-            if let Some(entry) = index_entry(&raw) {
+            if let Some(entry) = index_entry(raw) {
                 if !entry.has_subagents
                     && composers
                         .get(&entry.id)
@@ -176,7 +167,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
                         continue;
                     }
                 }
-                composers.insert(entry.id.clone(), (key.into_owned(), hash, entry));
+                composers.insert(entry.id.clone(), (key.to_owned(), hash, entry));
             }
         } else if key.starts_with("bubbleId:") {
             if let Some(id) = key.split(':').nth(1) {
@@ -185,7 +176,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
                 } else {
                     bubble_hashers.entry(id.to_owned()).or_default()
                 };
-                hash_bubble_row(hasher, &key, &hash);
+                hash_bubble_row(hasher, key, &hash);
             }
         } else if let Some(child_id) = key.strip_prefix("bubble:") {
             child_hashes.insert(child_id.to_owned(), hash);
@@ -194,7 +185,7 @@ pub fn enumerate_session_keys(root: &Path) -> Result<Vec<SessionKey>> {
     drop(rows);
     drop(query);
     db.execute_batch("COMMIT")?;
-    let directories = workspace_paths(root);
+    let directories = workspace_paths(root)?;
     let empty_bubbles: [u8; 32] = Sha256::new().finalize().into();
     let mut keys = Vec::with_capacity(composers.len());
     for (composer_key, composer_hash, entry) in composers.into_values() {

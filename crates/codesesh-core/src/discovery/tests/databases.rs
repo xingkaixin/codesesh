@@ -502,6 +502,149 @@ fn unchanged_database_stamp_skips_opening_sqlite_on_warm_restart_and_live_refres
     assert!(cache.snapshot().unwrap().is_empty());
 }
 
+#[test]
+fn mid_backfill_database_write_does_not_persist_new_stamp_and_partial_warm_snapshot_detects_deletes()
+ {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("zcode");
+    let file = root.join("cli/db/db.sqlite");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let database = rusqlite::Connection::open(&file).unwrap();
+    database
+        .execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,directory TEXT,version TEXT,summary_files TEXT,slug TEXT);",
+        )
+        .unwrap();
+    for index in 0..33 {
+        database
+            .execute(
+                "INSERT INTO session(id,title,time_created,time_updated,directory) VALUES(?1,?2,?3,?4,'/project')",
+                rusqlite::params![
+                    format!("s{index:02}"),
+                    format!("Title {index:02}"),
+                    1000 + index,
+                    2000 + index,
+                ],
+            )
+            .unwrap();
+    }
+    let source = AgentSource {
+        antigravity_profiles: None,
+        agent: "zcode".into(),
+        data_root: root.clone(),
+        scan_path: root,
+    };
+    let db = temporary.path().join("cache.db");
+    let pricing = std::sync::Arc::new(Pricing::bundled());
+    let mut cache = crate::storage::Cache::open(Some(&db)).unwrap();
+    let mut scanner = AgentScanner::new(source.clone(), db.clone(), pricing.clone());
+
+    // Page 1 reads 32 of 33 sessions.
+    let mut page1 = scanner.refresh(None).unwrap();
+    assert!(!page1.complete);
+    assert_eq!(page1.sessions.len(), 32);
+    cache
+        .apply_checkpoint(
+            &mut page1.sessions,
+            &page1.removed,
+            "zcode",
+            &page1.checkpoint,
+            page1.complete,
+        )
+        .unwrap();
+    page1.on_reject.take();
+
+    // Mutate an already-read session before page 2 completes.
+    database
+        .execute(
+            "UPDATE session SET title='Mid-backfill update', time_updated=9999 WHERE id='s32'",
+            [],
+        )
+        .unwrap();
+    let mut page2 = scanner.refresh(None).unwrap();
+    assert!(page2.complete);
+    assert!(
+        page2.checkpoint.as_ref().unwrap()["sourceState"]["databaseStamp"].is_null(),
+        "mid-backfill write must prevent certifying the changed stamp"
+    );
+    cache
+        .apply_checkpoint(
+            &mut page2.sessions,
+            &page2.removed,
+            "zcode",
+            &page2.checkpoint,
+            page2.complete,
+        )
+        .unwrap();
+    page2.on_reject.take();
+
+    // Live refresh sees the uncertified write instead of skipping it.
+    let mut live = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert_eq!(live.sessions.len(), 1);
+    assert_eq!(live.sessions[0].head.reference.session_id, "s32");
+    assert_eq!(live.sessions[0].head.title, "Mid-backfill update");
+    assert!(
+        live.checkpoint.as_ref().unwrap()["sourceState"]["databaseStamp"]
+            .as_str()
+            .is_some_and(|stamp| !stamp.is_empty())
+    );
+    cache
+        .apply_checkpoint(
+            &mut live.sessions,
+            &live.removed,
+            "zcode",
+            &live.checkpoint,
+            live.complete,
+        )
+        .unwrap();
+    live.on_reject.take();
+
+    // Warm restart where only s32 changed leaves s00 reused (absent from in-memory opencode snapshot).
+    database
+        .execute(
+            "UPDATE session SET title='Warm change', time_updated=10000 WHERE id='s32'",
+            [],
+        )
+        .unwrap();
+    scanner = AgentScanner::new(source, db, pricing);
+    for _ in 0..2 {
+        let mut batch = scanner.refresh(None).unwrap();
+        let complete = batch.complete;
+        cache
+            .apply_checkpoint(
+                &mut batch.sessions,
+                &batch.removed,
+                "zcode",
+                &batch.checkpoint,
+                batch.complete,
+            )
+            .unwrap();
+        batch.on_reject.take();
+        if complete {
+            break;
+        }
+    }
+
+    // Deleting s00 (reused during warm restart) must be reported by the next live refresh.
+    database
+        .execute("DELETE FROM session WHERE id='s00'", [])
+        .unwrap();
+    let mut deleted = scanner.refresh(Some(std::slice::from_ref(&file))).unwrap();
+    assert_eq!(deleted.removed.len(), 1);
+    assert_eq!(deleted.removed[0].session_id, "s00");
+    cache
+        .apply_checkpoint(
+            &mut deleted.sessions,
+            &deleted.removed,
+            "zcode",
+            &deleted.checkpoint,
+            deleted.complete,
+        )
+        .unwrap();
+    deleted.on_reject.take();
+    assert_eq!(cache.snapshot().unwrap().len(), 32);
+}
+
 fn database_scanner(
     directory: &Path,
     source: AgentSource,

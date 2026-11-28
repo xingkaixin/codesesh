@@ -235,35 +235,55 @@ fn sort(details: &mut [SessionDetail]) {
             })
     });
 }
-fn selected_ids(sessions: &[Value], v2: bool, parent_column: bool) -> HashSet<String> {
-    let known: HashSet<_> = sessions.iter().map(|s| string(&s["id"])).collect();
-    let mut children: HashMap<String, Vec<String>> = HashMap::new();
+pub(super) struct SessionSelectionRow {
+    pub(super) id: String,
+    pub(super) parent_id: Option<String>,
+    pub(super) is_subagent_child: bool,
+}
+
+pub(super) fn selected_ids_from_rows(
+    sessions: &[SessionSelectionRow],
+    v2: bool,
+    parent_column: bool,
+) -> HashSet<String> {
+    let known: HashSet<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+    let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut selected = HashSet::new();
     for row in sessions {
-        let id = string(&row["id"]);
-        let parent = optional_string(&row["parent_id"]);
-        let child = parent.as_ref().filter(|parent| {
+        let child = row.parent_id.as_deref().filter(|parent| {
             if v2 {
-                *parent != &id && known.contains(*parent) && !parent.is_empty()
+                *parent != row.id && known.contains(parent) && !parent.is_empty()
             } else {
                 parent_column
             }
         });
         if let Some(parent) = child {
-            children.entry(parent.clone()).or_default().push(id);
-        } else if v2 || parent_column || row["task_type"].as_str() != Some("subagent_child") {
-            selected.insert(id);
+            children.entry(parent).or_default().push(row.id.as_str());
+        } else if v2 || parent_column || !row.is_subagent_child {
+            selected.insert(row.id.clone());
         }
     }
     let mut pending: Vec<_> = selected.iter().cloned().collect();
     while let Some(id) = pending.pop() {
-        for child in children.get(&id).into_iter().flatten() {
-            if selected.insert(child.clone()) {
-                pending.push(child.clone());
+        for child in children.get(id.as_str()).into_iter().flatten() {
+            if selected.insert((*child).to_owned()) {
+                pending.push((*child).to_owned());
             }
         }
     }
     selected
+}
+
+fn selected_ids(sessions: &[Value], v2: bool, parent_column: bool) -> HashSet<String> {
+    let rows: Vec<_> = sessions
+        .iter()
+        .map(|row| SessionSelectionRow {
+            id: string(&row["id"]),
+            parent_id: optional_string(&row["parent_id"]),
+            is_subagent_child: row["task_type"].as_str() == Some("subagent_child"),
+        })
+        .collect();
+    selected_ids_from_rows(&rows, v2, parent_column)
 }
 fn read_v1(
     db: &Connection,

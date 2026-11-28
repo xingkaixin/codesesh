@@ -122,7 +122,7 @@ fn workspace_mapping_decodes_uri_and_ignores_symlinks() {
         std::os::unix::fs::symlink(external.path(), root.path().join("workspaceStorage/z-link"))
             .unwrap();
         assert_eq!(
-            workspace_paths(root.path()).get("c"),
+            workspace_paths(root.path()).unwrap().get("c"),
             Some(&normalize_path("/project one"))
         );
     }
@@ -380,15 +380,20 @@ fn workspace_paths_cache_reuses_unchanged_and_tracks_updates_and_deletions() {
     )
     .unwrap();
 
+    // A transient lock on an uncached workspace DB propagates an error without poisoning the cache.
+    db.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    assert!(workspace_paths(root.path()).is_err());
+    db.execute_batch("ROLLBACK").unwrap();
+
     assert_eq!(
-        workspace_paths(root.path()).get("c1"),
+        workspace_paths(root.path()).unwrap().get("c1"),
         Some(&normalize_path("/repo-one"))
     );
 
     // Hold an exclusive lock while unchanged; cache hit returns without querying state.vscdb.
     db.execute_batch("BEGIN EXCLUSIVE").unwrap();
     assert_eq!(
-        workspace_paths(root.path()).get("c1"),
+        workspace_paths(root.path()).unwrap().get("c1"),
         Some(&normalize_path("/repo-one"))
     );
     db.execute_batch("ROLLBACK").unwrap();
@@ -400,7 +405,7 @@ fn workspace_paths_cache_reuses_unchanged_and_tracks_updates_and_deletions() {
     )
     .unwrap();
     assert_eq!(
-        workspace_paths(root.path()).get("c1"),
+        workspace_paths(root.path()).unwrap().get("c1"),
         Some(&normalize_path("/repo-two-updated"))
     );
 
@@ -410,7 +415,7 @@ fn workspace_paths_cache_reuses_unchanged_and_tracks_updates_and_deletions() {
         [r#"{"allComposers":[{"composerId":"c1"},{"composerId":"c2"}]}"#],
     )
     .unwrap();
-    let updated = workspace_paths(root.path());
+    let updated = workspace_paths(root.path()).unwrap();
     assert_eq!(
         updated.get("c1"),
         Some(&normalize_path("/repo-two-updated"))
@@ -423,5 +428,5 @@ fn workspace_paths_cache_reuses_unchanged_and_tracks_updates_and_deletions() {
     // Removing the workspace directory drops its mappings and prunes the cache.
     drop(db);
     std::fs::remove_dir_all(&workspace).unwrap();
-    assert!(workspace_paths(root.path()).is_empty());
+    assert!(workspace_paths(root.path()).unwrap().is_empty());
 }

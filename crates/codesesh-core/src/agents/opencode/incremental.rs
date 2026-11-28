@@ -390,39 +390,6 @@ fn hash_row(
     Ok(())
 }
 
-fn selected_session_ids(
-    sessions: &[(String, Option<String>, bool)],
-    v2: bool,
-    parent_column: bool,
-) -> HashSet<String> {
-    let known: HashSet<&str> = sessions.iter().map(|(id, ..)| id.as_str()).collect();
-    let mut children: HashMap<String, Vec<String>> = HashMap::new();
-    let mut selected = HashSet::new();
-    for (id, parent, is_subagent_child) in sessions {
-        let child = parent.as_ref().filter(|parent| {
-            if v2 {
-                *parent != id && known.contains(parent.as_str()) && !parent.is_empty()
-            } else {
-                parent_column
-            }
-        });
-        if let Some(parent) = child {
-            children.entry(parent.clone()).or_default().push(id.clone());
-        } else if v2 || parent_column || !is_subagent_child {
-            selected.insert(id.clone());
-        }
-    }
-    let mut pending: Vec<_> = selected.iter().cloned().collect();
-    while let Some(id) = pending.pop() {
-        for child in children.get(&id).into_iter().flatten() {
-            if selected.insert(child.clone()) {
-                pending.push(child.clone());
-            }
-        }
-    }
-    selected
-}
-
 fn table_fingerprints(
     db: &Connection,
     v2: bool,
@@ -477,11 +444,15 @@ fn table_fingerprints(
             });
             hash_row(&mut hash, 0, names, row)?;
             hashes.insert(id.clone(), hash);
-            session_meta.push((id, parent, is_subagent_child));
+            session_meta.push(SessionSelectionRow {
+                id,
+                parent_id: parent,
+                is_subagent_child,
+            });
             Ok(())
         },
     )?;
-    let selected = selected_session_ids(&session_meta, v2_selection, parent_column);
+    let selected = selected_ids_from_rows(&session_meta, v2_selection, parent_column);
     hashes.retain(|id, _| selected.contains(id));
     let message_table = if v2 { "session_message" } else { "message" };
     if table(db, message_table)? {

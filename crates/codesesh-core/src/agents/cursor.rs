@@ -205,26 +205,63 @@ fn workspace_dir_stamp(dir: &Path) -> String {
     stamp
 }
 
-fn read_workspace_dir(dir: &Path) -> Option<WorkspaceMapping> {
-    let value = std::fs::read(dir.join("workspace.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())?;
-    let uri = string(&value, "folder")
-        .or_else(|| string(&value, "workspace"))
-        .filter(|v| !v.is_empty())?;
-    let path = normalize_path(&decode_uri(uri.strip_prefix("file://").unwrap_or(uri))?);
-    let db = open_readonly_sqlite(dir.join("state.vscdb")).ok()?;
-    let raw = db
-        .query_row(
-            "SELECT value FROM ItemTable WHERE key = 'composer.composerData'",
-            [],
-            |row| row.get::<_, String>(0),
+fn is_sqlite_busy_or_locked(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked,
+                ..
+            },
+            _,
         )
-        .ok()?;
-    let composers = serde_json::from_str::<Value>(&raw).ok()?;
-    let composers = composers["allComposers"]
+    )
+}
+
+fn read_workspace_dir(dir: &Path) -> Result<Option<WorkspaceMapping>> {
+    let Some(value) = std::fs::read(dir.join("workspace.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(uri) = string(&value, "folder")
+        .or_else(|| string(&value, "workspace"))
+        .filter(|v| !v.is_empty())
+    else {
+        return Ok(None);
+    };
+    let Some(decoded) = decode_uri(uri.strip_prefix("file://").unwrap_or(uri)) else {
+        return Ok(None);
+    };
+    let path = normalize_path(&decoded);
+    let db_path = dir.join("state.vscdb");
+    if !db_path.exists() {
+        return Ok(None);
+    }
+    let db = match open_readonly_sqlite(&db_path) {
+        Ok(db) => db,
+        Err(error) if is_sqlite_busy_or_locked(&error) => return Err(error.into()),
+        Err(_) => return Ok(None),
+    };
+    let raw = match db.query_row(
+        "SELECT value FROM ItemTable WHERE key = 'composer.composerData'",
+        [],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(raw) => raw,
+        Err(error) if is_sqlite_busy_or_locked(&error) => return Err(error.into()),
+        Err(_) => return Ok(None),
+    };
+    let Ok(composers) = serde_json::from_str::<Value>(&raw) else {
+        return Ok(None);
+    };
+    let Some(composers) = composers["allComposers"]
         .as_array()
-        .or_else(|| composers.as_array())?;
+        .or_else(|| composers.as_array())
+    else {
+        return Ok(None);
+    };
     let ids = composers
         .iter()
         .filter_map(|composer| {
@@ -234,10 +271,10 @@ fn read_workspace_dir(dir: &Path) -> Option<WorkspaceMapping> {
                 .map(str::to_owned)
         })
         .collect();
-    Some((path, ids))
+    Ok(Some((path, ids)))
 }
 
-fn workspace_paths(root: &Path) -> HashMap<String, String> {
+fn workspace_paths(root: &Path) -> Result<HashMap<String, String>> {
     let mut result = HashMap::new();
     let storage = root.join("workspaceStorage");
     let Ok(entries) = std::fs::read_dir(&storage) else {
@@ -245,7 +282,7 @@ fn workspace_paths(root: &Path) -> HashMap<String, String> {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         cache.retain(|path, _| !path.starts_with(&storage));
-        return result;
+        return Ok(result);
     };
     let mut entries = entries.flatten().collect::<Vec<_>>();
     entries.sort_by_key(|e| e.file_name());
@@ -277,7 +314,7 @@ fn workspace_paths(root: &Path) -> HashMap<String, String> {
     let mut updates = Vec::new();
     for ((dir, stamp), slot) in dirs.into_iter().zip(&mut resolved) {
         if slot.is_none() {
-            let mappings = read_workspace_dir(&dir);
+            let mappings = read_workspace_dir(&dir)?;
             *slot = Some(mappings.clone());
             updates.push((dir, CachedWorkspace { stamp, mappings }));
         }
@@ -296,7 +333,7 @@ fn workspace_paths(root: &Path) -> HashMap<String, String> {
             result.insert(id, path.clone());
         }
     }
-    result
+    Ok(result)
 }
 fn decode_uri(value: &str) -> Option<String> {
     let mut bytes = Vec::with_capacity(value.len());

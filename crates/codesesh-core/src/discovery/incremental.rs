@@ -140,6 +140,7 @@ pub struct AgentScanner {
     file_fingerprints: HashMap<String, String>,
     empty_sources: HashSet<String>,
     persisted_database_stamp: Option<String>,
+    backfill_database_stamp: Option<String>,
     source_state_dirty: bool,
     database_inventory: Option<(String, Vec<Item>)>,
 }
@@ -173,6 +174,7 @@ impl AgentScanner {
             file_fingerprints: HashMap::new(),
             empty_sources: HashSet::new(),
             persisted_database_stamp: None,
+            backfill_database_stamp: None,
             source_state_dirty: true,
             database_inventory: None,
         }
@@ -222,6 +224,7 @@ impl AgentScanner {
                     .map_err(|_| anyhow::anyhow!("agent scanner lock poisoned"))?;
                 if request.retry {
                     scanner.backfill = None;
+                    scanner.backfill_database_stamp = None;
                 }
                 let batch = scanner.refresh_with_checkpoint(
                     request.changed_paths.as_deref(),
@@ -279,6 +282,7 @@ impl AgentScanner {
         if was_rejected {
             self.initialized = false;
             self.backfill = None;
+            self.backfill_database_stamp = None;
             self.opencode = None;
             self.fingerprints.clear();
             self.persisted_database_stamp = None;
@@ -292,6 +296,7 @@ impl AgentScanner {
         }
         if pricing_changed || was_rejected {
             self.persisted_database_stamp = None;
+            self.backfill_database_stamp = None;
         }
         let page_mode =
             self.backfill.is_some() || !self.initialized || paths.is_none() || checkpoint.is_some();
@@ -474,6 +479,11 @@ impl AgentScanner {
             }
             let local = self.backfill.as_ref().map(Backfill::checkpoint);
             let saved = checkpoint.or(local.as_ref());
+            let start_database_stamp = if self.source.is_database_source() {
+                database_stamp(&self.source)?
+            } else {
+                None
+            };
             let mut items = self.inventory()?;
             self.source_available = Some(!items.is_empty() || has_sources(&self.source)?);
             let present: HashSet<_> = items.iter().map(|item| item.key.as_str()).collect();
@@ -508,14 +518,21 @@ impl AgentScanner {
                 saved["sourceState"]["parserVersion"].as_str()
                     != Some(agents::parser_version(&self.source.agent))
             });
-            self.backfill = Some(Backfill::new(
+            let backfill = Backfill::new(
                 items,
                 self.startup_from,
                 self.startup_to,
                 self.pricing.generation(),
                 saved,
                 restart,
-            ));
+            );
+            // Only a fresh full-pass backfill can certify the database stamp on completion.
+            self.backfill_database_stamp = if backfill.offset == 0 {
+                start_database_stamp
+            } else {
+                None
+            };
+            self.backfill = Some(backfill);
         }
         if hints {
             self.backfill
@@ -543,8 +560,7 @@ impl AgentScanner {
             let complete = plan.offset == plan.items.len() && plan.dirty.is_empty();
             let checkpoint = (!complete).then(|| plan.checkpoint());
             if complete {
-                self.backfill = None;
-                self.record_database_stamp()?;
+                self.finish_database_backfill()?;
             }
             return Ok((delta, checkpoint, complete));
         }
@@ -598,8 +614,7 @@ impl AgentScanner {
                     .map(|(reference, _)| reference.clone()),
             );
             if complete {
-                self.backfill = None;
-                self.record_database_stamp()?;
+                self.finish_database_backfill()?;
             }
         }
         delta.complete = false;
@@ -608,16 +623,26 @@ impl AgentScanner {
     fn all_previous_identities_current(&self) -> bool {
         self.previous.iter().all(record_identity_current)
     }
-    fn record_database_stamp(&mut self) -> Result<()> {
-        if !self.source.is_database_source() || self.source_available != Some(true) {
-            return Ok(());
-        }
-        if let Some(stamp) = database_stamp(&self.source)?.filter(|s| !s.is_empty())
-            && self.persisted_database_stamp.as_deref() != Some(stamp.as_str())
-        {
-            self.persisted_database_stamp = Some(stamp);
+    fn update_persisted_database_stamp(&mut self, stamp: Option<String>) {
+        if self.persisted_database_stamp != stamp {
+            self.persisted_database_stamp = stamp;
             self.source_state_dirty = true;
         }
+    }
+    fn finish_database_backfill(&mut self) -> Result<()> {
+        self.backfill = None;
+        let expected = self.backfill_database_stamp.take();
+        if !self.source.is_database_source() {
+            return Ok(());
+        }
+        if self.source_available != Some(true) {
+            self.update_persisted_database_stamp(None);
+            return Ok(());
+        }
+        let current = database_stamp(&self.source)?.filter(|s| !s.is_empty());
+        let verified =
+            expected.filter(|stamp| !stamp.is_empty() && Some(stamp) == current.as_ref());
+        self.update_persisted_database_stamp(verified);
         Ok(())
     }
     fn inventory(&mut self) -> Result<Vec<Item>> {
@@ -795,10 +820,10 @@ impl AgentScanner {
         paths: Option<&[PathBuf]>,
     ) -> Result<(ScanDelta, Option<serde_json::Value>, bool)> {
         if self.source.is_database_source() {
-            let current_stamp = database_stamp(&self.source)?;
+            let before_stamp = database_stamp(&self.source)?.filter(|s| !s.is_empty());
             if self.history_complete
-                && current_stamp.as_deref().is_some_and(|s| !s.is_empty())
-                && current_stamp == self.persisted_database_stamp
+                && before_stamp.is_some()
+                && before_stamp == self.persisted_database_stamp
                 && self.all_previous_identities_current()
             {
                 self.source_available = Some(true);
@@ -806,13 +831,16 @@ impl AgentScanner {
             }
             self.source_available = Some(has_sources(&self.source)?);
             let delta = self.read(paths)?;
-            if self.source_available == Some(true)
-                && current_stamp.as_deref().is_some_and(|s| !s.is_empty())
-                && current_stamp != self.persisted_database_stamp
+            let after_stamp = database_stamp(&self.source)?.filter(|s| !s.is_empty());
+            let verified = if self.source_available == Some(true)
+                && before_stamp.is_some()
+                && before_stamp == after_stamp
             {
-                self.persisted_database_stamp = current_stamp;
-                self.source_state_dirty = true;
-            }
+                before_stamp
+            } else {
+                None
+            };
+            self.update_persisted_database_stamp(verified);
             return Ok((delta, None, true));
         }
         if let Some(paths) = paths
@@ -1060,6 +1088,7 @@ impl AgentScanner {
         self.file_fingerprints.clear();
         self.empty_sources.clear();
         self.persisted_database_stamp = None;
+        self.backfill_database_stamp = None;
         self.history_complete = false;
         self.price_dependencies = Some(HashMap::new());
         self.source_state_dirty = true;
@@ -1114,6 +1143,7 @@ impl AgentScanner {
         self.restore_source_state(state.as_ref(), complete);
         if pricing_changed {
             self.persisted_database_stamp = None;
+            self.backfill_database_stamp = None;
         }
 
         for (mut head, source, has_cost_inputs) in
@@ -1258,10 +1288,22 @@ impl AgentScanner {
                     pricing,
                     self.opencode.as_ref(),
                 )?;
+                let present: HashSet<_> = snapshot
+                    .sessions
+                    .iter()
+                    .map(|session| &session.head.reference)
+                    .collect();
+                let mut removed = std::mem::take(&mut snapshot.removed);
+                removed.extend(
+                    self.durable_references
+                        .iter()
+                        .filter(|reference| !present.contains(*reference))
+                        .cloned(),
+                );
                 let delta = ScanDelta {
                     upserts: std::mem::take(&mut snapshot.upserts),
-                    removed: std::mem::take(&mut snapshot.removed),
-                    complete: self.opencode.is_none(),
+                    removed,
+                    complete: false,
                 };
                 snapshot.release_bodies();
                 self.opencode = Some(snapshot);

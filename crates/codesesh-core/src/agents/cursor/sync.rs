@@ -120,7 +120,7 @@ impl CursorSync {
                 }
             }
         }
-        let directories = workspace_paths(root);
+        let directories = workspace_paths(root)?;
         for id in directories.keys().chain(self.directories.keys()) {
             if directories.get(id) != self.directories.get(id) {
                 affected.insert(id.clone());
