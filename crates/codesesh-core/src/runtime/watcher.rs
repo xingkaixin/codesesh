@@ -91,12 +91,44 @@ impl Runtime {
 struct NormalizedWatchRoot {
     root: WatchRoot,
     canonical: PathBuf,
+    literal: PathBuf,
+    symlink_ancestors: Vec<PathBuf>,
 }
 
 impl NormalizedWatchRoot {
     fn new(root: WatchRoot) -> Self {
         let canonical = normalize_watch_path(&root.path);
-        Self { root, canonical }
+        let literal = normalize_link_path(&root.path);
+        let mut symlink_ancestors = Vec::new();
+        let mut ancestor = root.path.parent();
+        while let Some(path) = ancestor {
+            if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink()) {
+                symlink_ancestors.push(normalize_link_path(path));
+            }
+            ancestor = path.parent();
+        }
+        Self {
+            root,
+            canonical,
+            literal,
+            symlink_ancestors,
+        }
+    }
+
+    fn matches_structural_path(&self, normalized: &Path, literal: &Path) -> bool {
+        self.canonical.starts_with(normalized)
+            || self.literal.starts_with(literal)
+            || self
+                .symlink_ancestors
+                .iter()
+                .any(|ancestor| ancestor == literal)
+            || (!self.root.recursive
+                && (normalized
+                    .strip_prefix(&self.canonical)
+                    .is_ok_and(|suffix| suffix.components().count() <= 1)
+                    || literal
+                        .strip_prefix(&self.literal)
+                        .is_ok_and(|suffix| suffix.components().count() <= 1)))
     }
 }
 
@@ -117,17 +149,21 @@ pub fn watch_paths(
         .collect();
     let initial_roots: Vec<NormalizedWatchRoot> =
         initial_sources.iter().flatten().cloned().collect();
+    #[cfg(target_os = "macos")]
+    let mut always_poll = always_poll_paths(&initial_sources);
     let shared_sources = Arc::new(std::sync::Mutex::new(Arc::new(initial_sources)));
     let handler_sources = shared_sources.clone();
     let (reconcile, mut changes) = watch::channel(0_u64);
     let reset_watches = Arc::new(AtomicBool::new(false));
     let reset_requested = reset_watches.clone();
     #[cfg(target_os = "macos")]
-    let created = Arc::new(std::sync::Mutex::new(Vec::<PathBuf>::new()));
+    let touched = Arc::new(std::sync::Mutex::new(
+        std::collections::HashSet::<PathBuf>::new(),
+    ));
     #[cfg(target_os = "macos")]
-    let created_by_events = created.clone();
+    let touched_by_events = touched.clone();
     let dispatch_change = on_change.clone();
-    let handler = move |event: notify::Result<notify::Event>| match event {
+    let handle_event = move |event: notify::Result<notify::Event>, from_poll: bool| match event {
         Ok(event) if !matches!(event.kind, EventKind::Access(_)) => {
             let rescan = event.need_rescan();
             let non_shm: Vec<PathBuf> = event
@@ -144,35 +180,35 @@ pub fn watch_paths(
                 .map(|path| normalize_watch_path(path))
                 .collect();
             #[cfg(target_os = "macos")]
-            if !normalized_paths.is_empty() {
-                let track_all = matches!(event.kind, EventKind::Create(_));
-                let track_sidecars = matches!(event.kind, EventKind::Modify(_) | EventKind::Any);
-                if (track_all
-                    || (track_sidecars
-                        && normalized_paths.iter().any(|path| is_sqlite_sidecar(path))))
-                    && let Ok(mut created) = created_by_events.lock()
-                {
-                    if track_all {
-                        created.extend(normalized_paths.iter().cloned());
-                    } else {
-                        created.extend(
-                            normalized_paths
-                                .iter()
-                                .filter(|path| is_sqlite_sidecar(path))
-                                .cloned(),
-                        );
-                    }
-                }
+            if !from_poll
+                && !normalized_paths.is_empty()
+                && matches!(
+                    event.kind,
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Any
+                )
+                && let Ok(mut touched) = touched_by_events.lock()
+            {
+                // Native FSEvents wake cold files so subsequent open-handle appends enter fast polling.
+                touched.extend(normalized_paths.iter().cloned());
             }
+            #[cfg(not(target_os = "macos"))]
+            let _ = from_poll;
             let current = handler_sources
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
-            let reset = needs_watch_reset(&current, &event, &normalized_paths);
+            let literal_paths = (!is_data_or_metadata_modify(event.kind)).then(|| {
+                non_shm
+                    .iter()
+                    .map(|path| normalize_link_path(path))
+                    .collect::<Vec<_>>()
+            });
+            let literal_slice = literal_paths.as_deref().unwrap_or(&[]);
+            let reset = needs_watch_reset(&current, &event, &normalized_paths, literal_slice);
             if reset {
                 reset_requested.store(true, Ordering::Release);
             }
-            if reset || needs_reconcile(&current, &event, &normalized_paths) {
+            if reset || needs_reconcile(&current, &event, &normalized_paths, literal_slice) {
                 reconcile.send_modify(|revision| *revision = revision.wrapping_add(1));
             }
             dispatch_normalized(
@@ -194,9 +230,10 @@ pub fn watch_paths(
         }
         _ => (),
     };
-    let mut watcher = notify::recommended_watcher(handler.clone())?;
+    let native_handler = handle_event.clone();
+    let mut watcher = notify::recommended_watcher(move |event| native_handler(event, false))?;
     let mut watched = std::collections::BTreeMap::new();
-    reconcile_watches(&mut watcher, &initial_roots, &mut watched)?;
+    let _ = reconcile_watches(&mut watcher, &initial_roots, &mut watched)?;
     let registration = started.elapsed();
     let started = Instant::now();
     #[cfg(target_os = "macos")]
@@ -220,7 +257,8 @@ pub fn watch_paths(
                     {
                         let paths = watched.clone();
                         let mut known = std::mem::take(&mut observed);
-                        let created = created.lock().map(|mut created| std::mem::take(&mut *created)).unwrap_or_default();
+                        let touched = touched.lock().map(|mut touched| std::mem::take(&mut *touched)).unwrap_or_default();
+                        let poll_targets = always_poll.clone();
                         ticks = ticks.wrapping_add(1);
                         let full = std::mem::take(&mut force_full_poll)
                             || ticks.is_multiple_of(FULL_POLL_TICKS)
@@ -232,13 +270,13 @@ pub fn watch_paths(
                                 known = current;
                                 events
                             } else {
-                                refresh_recent(&mut known, created)
+                                refresh_recent(&mut known, touched, &poll_targets)
                             };
                             (known, events)
                         }).await {
                             for (kind, paths) in events {
                                 if !paths.is_empty() {
-                                    handler(Ok(notify::Event { kind, paths, attrs: Default::default() }));
+                                    handle_event(Ok(notify::Event { kind, paths, attrs: Default::default() }), true);
                                 }
                             }
                             observed = known;
@@ -256,25 +294,25 @@ pub fn watch_paths(
                     for (index, source) in sources.iter().enumerate() {
                         if source.is_dynamic() {
                             let next = normalize_watch_roots(source.resolve());
-                            let roots_changed = current[index].len() != next.len()
-                                || current[index]
-                                    .iter()
-                                    .zip(&next)
-                                    .any(|(old, new)| old.root != new.root);
-                            if roots_changed {
-                                changed_sources.push(index);
-                            }
                             if next != current[index] {
+                                changed_sources.push(index);
                                 current[index] = next;
                                 updated_sources = true;
                             }
                         } else {
+                            let mut target_changed = false;
                             for entry in &mut current[index] {
-                                let canonical = normalize_watch_path(&entry.root.path);
-                                if canonical != entry.canonical {
-                                    entry.canonical = canonical;
+                                let next = NormalizedWatchRoot::new(entry.root.clone());
+                                if next != *entry {
+                                    if next.canonical != entry.canonical {
+                                        target_changed = true;
+                                    }
+                                    *entry = next;
                                     updated_sources = true;
                                 }
+                            }
+                            if target_changed {
+                                changed_sources.push(index);
                             }
                         }
                     }
@@ -284,18 +322,22 @@ pub fn watch_paths(
                             .unwrap_or_else(|poisoned| poisoned.into_inner()) =
                             Arc::new(current.clone());
                     }
-                    if !changed_sources.is_empty() {
-                        #[cfg(target_os = "macos")]
-                        {
-                            force_full_poll = true;
-                        }
-                    }
-                    if reset_watches.swap(false, Ordering::AcqRel) {
+                    let did_reset = reset_watches.swap(false, Ordering::AcqRel);
+                    if did_reset {
                         for path in watched.keys() { let _ = watcher.unwatch(path); }
                         watched.clear();
                     }
-                    let roots: Vec<NormalizedWatchRoot> = current.into_iter().flatten().collect();
-                    let _ = reconcile_watches(&mut watcher, &roots, &mut watched);
+                    let roots: Vec<NormalizedWatchRoot> = current.iter().flatten().cloned().collect();
+                    let expanded = reconcile_watches(&mut watcher, &roots, &mut watched).unwrap_or(false);
+                    #[cfg(target_os = "macos")]
+                    {
+                        if updated_sources || expanded {
+                            always_poll = always_poll_paths(&current);
+                        }
+                        if !changed_sources.is_empty() || expanded || did_reset {
+                            force_full_poll = true;
+                        }
+                    }
                     for index in changed_sources {
                         on_change(index, None);
                     }
@@ -310,6 +352,7 @@ fn needs_watch_reset(
     sources: &[Vec<NormalizedWatchRoot>],
     event: &notify::Event,
     normalized_paths: &[PathBuf],
+    literal_paths: &[PathBuf],
 ) -> bool {
     if !matches!(
         event.kind,
@@ -328,25 +371,23 @@ fn needs_watch_reset(
         event.kind,
         EventKind::Remove(notify::event::RemoveKind::Folder)
     );
-    normalized_paths.iter().any(|path| {
-        let is_dir = folder_removed || path.is_dir();
-        sources.iter().flatten().any(|entry| {
-            let root = &entry.root;
-            let canonical = &entry.canonical;
-            canonical.starts_with(path)
-                || (!root.recursive
-                    && path
-                        .strip_prefix(canonical)
-                        .is_ok_and(|suffix| suffix.components().count() <= 1))
-                || (is_dir && root.recursive && path.starts_with(canonical))
+    normalized_paths
+        .iter()
+        .zip(literal_paths)
+        .any(|(path, literal)| {
+            let is_dir = folder_removed || path.is_dir();
+            sources.iter().flatten().any(|entry| {
+                entry.matches_structural_path(path, literal)
+                    || (is_dir && entry.root.recursive && path.starts_with(&entry.canonical))
+            })
         })
-    })
 }
 
 fn needs_reconcile(
     sources: &[Vec<NormalizedWatchRoot>],
     event: &notify::Event,
     normalized_paths: &[PathBuf],
+    literal_paths: &[PathBuf],
 ) -> bool {
     if event.need_rescan() {
         return true;
@@ -360,17 +401,15 @@ fn needs_reconcile(
     if normalized_paths.is_empty() {
         return false;
     }
-    normalized_paths.iter().any(|path| {
-        sources.iter().flatten().any(|entry| {
-            let root = &entry.root;
-            let canonical = &entry.canonical;
-            canonical.starts_with(path)
-                || (!root.recursive
-                    && path
-                        .strip_prefix(canonical)
-                        .is_ok_and(|suffix| suffix.components().count() <= 1))
+    normalized_paths
+        .iter()
+        .zip(literal_paths)
+        .any(|(path, literal)| {
+            sources
+                .iter()
+                .flatten()
+                .any(|entry| entry.matches_structural_path(path, literal))
         })
-    })
 }
 
 fn is_shm(path: &Path) -> bool {
@@ -509,11 +548,18 @@ fn normalize_watch_path(path: &Path) -> PathBuf {
     }
 }
 
+fn normalize_link_path(path: &Path) -> PathBuf {
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => normalize_watch_path(parent).join(name),
+        _ => normalize_watch_path(path),
+    }
+}
+
 fn reconcile_watches(
     watcher: &mut notify::RecommendedWatcher,
     roots: &[NormalizedWatchRoot],
     watched: &mut std::collections::BTreeMap<PathBuf, RecursiveMode>,
-) -> Result<()> {
+) -> Result<bool> {
     let mut desired = std::collections::BTreeMap::new();
     for entry in roots {
         let root = &entry.root;
@@ -544,43 +590,42 @@ fn reconcile_watches(
             false
         }
     });
+    let mut expanded = false;
     for (path, mode) in desired {
         if let std::collections::btree_map::Entry::Vacant(entry) = watched.entry(path) {
             watcher
                 .watch(entry.key(), mode)
                 .with_context(|| format!("watch {}", entry.key().display()))?;
             entry.insert(mode);
+            expanded = true;
         }
     }
-    Ok(())
+    Ok(expanded)
 }
 
 // FSEvents reports creates promptly but defers writes to open files until close, so live
-// rollouts and SQLite database/WAL files are polled. Between full passes every 10 minutes,
-// only recently modified files, tracked SQLite files, and newly created paths are stat'ed.
+// rollouts and explicit database/file watch roots are polled. Between full passes every 10
+// minutes, only recently modified files, explicit file roots (and SQLite sidecars), and
+// natively touched paths are stat'ed.
 #[cfg(target_os = "macos")]
 const FULL_POLL_TICKS: u32 = 300;
 #[cfg(target_os = "macos")]
 const HOT_FILE_WINDOW: Duration = Duration::from_secs(10 * 60);
 
 #[cfg(target_os = "macos")]
-fn is_sqlite_sidecar(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| {
-        let name = name.to_string_lossy();
-        name.ends_with("-wal") || name.ends_with("-journal")
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn is_tracked_sqlite_file(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| {
-        let name = name.to_string_lossy();
-        name.ends_with(".db")
-            || name.ends_with(".sqlite")
-            || name.ends_with(".vscdb")
-            || name.ends_with("-wal")
-            || name.ends_with("-journal")
-    })
+fn always_poll_paths(sources: &[Vec<NormalizedWatchRoot>]) -> std::collections::HashSet<PathBuf> {
+    let mut paths = std::collections::HashSet::new();
+    for entry in sources.iter().flatten() {
+        if !entry.canonical.is_dir() {
+            paths.insert(entry.canonical.clone());
+            for suffix in ["-wal", "-journal"] {
+                let mut sidecar = entry.canonical.as_os_str().to_os_string();
+                sidecar.push(suffix);
+                paths.insert(PathBuf::from(sidecar));
+            }
+        }
+    }
+    paths
 }
 
 #[cfg(target_os = "macos")]
@@ -677,13 +722,24 @@ fn snapshot_changes(
 #[cfg(target_os = "macos")]
 fn refresh_recent(
     known: &mut std::collections::HashMap<PathBuf, FileStamp>,
-    created: Vec<PathBuf>,
+    touched: std::collections::HashSet<PathBuf>,
+    always_poll: &std::collections::HashSet<PathBuf>,
 ) -> PollEvents {
-    for path in created {
-        if !known.contains_key(&path)
-            && let Ok(metadata) = std::fs::symlink_metadata(&path)
+    for path in &touched {
+        if !known.contains_key(path)
+            && let Ok(metadata) = std::fs::symlink_metadata(path)
         {
-            known.insert(path, FileStamp::new(&metadata));
+            known.insert(path.clone(), FileStamp::new(&metadata));
+        }
+    }
+    let mut created = Vec::new();
+    for path in always_poll {
+        if !known.contains_key(path)
+            && let Ok(metadata) = std::fs::symlink_metadata(path)
+            && !metadata.is_dir()
+        {
+            known.insert(path.clone(), FileStamp::new(&metadata));
+            created.push(path.clone());
         }
     }
     let hot_since = std::time::SystemTime::now() - HOT_FILE_WINDOW;
@@ -691,7 +747,8 @@ fn refresh_recent(
     let mut removed = Vec::new();
     for (path, stamp) in known.iter_mut().filter(|(path, stamp)| {
         !stamp.is_dir
-            && (is_tracked_sqlite_file(path)
+            && (always_poll.contains(*path)
+                || touched.contains(*path)
                 || stamp.modified.is_some_and(|time| time >= hot_since))
     }) {
         match std::fs::symlink_metadata(path) {
@@ -709,6 +766,7 @@ fn refresh_recent(
         known.remove(path);
     }
     vec![
+        (EventKind::Create(notify::event::CreateKind::Any), created),
         (EventKind::Remove(notify::event::RemoveKind::Any), removed),
         (
             EventKind::Modify(notify::event::ModifyKind::Data(
@@ -764,13 +822,22 @@ mod tests {
             WatchRoot::recursive(sessions.clone()),
             WatchRoot::recursive(db.clone()),
         ]]);
-        let normalize = |event: &notify::Event| -> Vec<PathBuf> {
-            event
+        let normalize = |event: &notify::Event| -> (Vec<PathBuf>, Vec<PathBuf>) {
+            let non_shm: Vec<PathBuf> = event
                 .paths
                 .iter()
                 .filter(|path| !is_shm(path))
+                .cloned()
+                .collect();
+            let normalized = non_shm
+                .iter()
                 .map(|path| normalize_watch_path(path))
-                .collect()
+                .collect();
+            let literal = non_shm
+                .iter()
+                .map(|path| normalize_link_path(path))
+                .collect();
+            (normalized, literal)
         };
 
         let atomic_rename = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Name(
@@ -778,66 +845,67 @@ mod tests {
         )))
         .add_path(tmp_file)
         .add_path(transcript);
-        assert!(!needs_watch_reset(
-            &sources,
-            &atomic_rename,
-            &normalize(&atomic_rename)
-        ));
+        let (norm, lit) = normalize(&atomic_rename);
+        assert!(!needs_watch_reset(&sources, &atomic_rename, &norm, &lit));
 
         let journal_removed = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::Any))
             .add_path(PathBuf::from(format!("{}-journal", db.display())));
-        assert!(!needs_watch_reset(
-            &sources,
-            &journal_removed,
-            &normalize(&journal_removed)
-        ));
+        let (norm, lit) = normalize(&journal_removed);
+        assert!(!needs_watch_reset(&sources, &journal_removed, &norm, &lit));
 
         // Renaming or removing an unrelated sibling directory or -shm file must not reset or reconcile.
         let sibling_renamed = notify::Event::new(EventKind::Modify(
             notify::event::ModifyKind::Name(notify::event::RenameMode::To),
         ))
         .add_path(sibling_dir.clone());
-        let sibling_norm = normalize(&sibling_renamed);
+        let (sibling_norm, sibling_lit) = normalize(&sibling_renamed);
         assert!(!needs_watch_reset(
             &sources,
             &sibling_renamed,
-            &sibling_norm
+            &sibling_norm,
+            &sibling_lit
         ));
-        assert!(!needs_reconcile(&sources, &sibling_renamed, &sibling_norm));
+        assert!(!needs_reconcile(
+            &sources,
+            &sibling_renamed,
+            &sibling_norm,
+            &sibling_lit
+        ));
 
         let shm_created = notify::Event::new(EventKind::Create(notify::event::CreateKind::File))
             .add_path(PathBuf::from(format!("{}-shm", db.display())));
-        let shm_norm = normalize(&shm_created);
-        assert!(!needs_watch_reset(&sources, &shm_created, &shm_norm));
-        assert!(!needs_reconcile(&sources, &shm_created, &shm_norm));
+        let (shm_norm, shm_lit) = normalize(&shm_created);
+        assert!(!needs_watch_reset(
+            &sources,
+            &shm_created,
+            &shm_norm,
+            &shm_lit
+        ));
+        assert!(!needs_reconcile(
+            &sources,
+            &shm_created,
+            &shm_norm,
+            &shm_lit
+        ));
 
         let dir_rename = notify::Event::new(EventKind::Modify(notify::event::ModifyKind::Name(
             notify::event::RenameMode::To,
         )))
         .add_path(subdir);
-        assert!(needs_watch_reset(
-            &sources,
-            &dir_rename,
-            &normalize(&dir_rename)
-        ));
+        let (norm, lit) = normalize(&dir_rename);
+        assert!(needs_watch_reset(&sources, &dir_rename, &norm, &lit));
 
         let root_removed = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::Any))
             .add_path(sessions);
-        assert!(needs_watch_reset(
-            &sources,
-            &root_removed,
-            &normalize(&root_removed)
-        ));
+        let (norm, lit) = normalize(&root_removed);
+        assert!(needs_watch_reset(&sources, &root_removed, &norm, &lit));
 
         let ancestor_renamed = notify::Event::new(EventKind::Modify(
             notify::event::ModifyKind::Name(notify::event::RenameMode::Any),
         ))
         .add_path(db.parent().unwrap().to_path_buf());
-        assert!(needs_watch_reset(
-            &sources,
-            &ancestor_renamed,
-            &normalize(&ancestor_renamed)
-        ));
+        let (norm, lit) = normalize(&ancestor_renamed);
+        assert!(needs_watch_reset(&sources, &ancestor_renamed, &norm, &lit));
     }
 
     #[test]
@@ -982,7 +1050,11 @@ mod tests {
 
         // Updating a real file still triggers Modify(Data) via refresh_recent.
         std::fs::write(&db, "v2-longer").unwrap();
-        let recent = refresh_recent(&mut before, Vec::new());
+        let recent = refresh_recent(
+            &mut before,
+            std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
+        );
         let recent_modified: Vec<_> = recent
             .iter()
             .filter(|(kind, _)| matches!(kind, EventKind::Modify(_)))
@@ -993,17 +1065,17 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_refresh_recent_polls_cold_sqlite_files_while_skipping_cold_jsonl() {
+    fn macos_refresh_recent_polls_explicit_roots_and_touched_files_while_skipping_cold_dir_files() {
         let temp = tempfile::tempdir().unwrap();
-        let db = temp.path().join("session.db");
-        let sqlite = temp.path().join("state.sqlite");
-        let vscdb = temp.path().join("workspace.vscdb");
-        let wal = temp.path().join("session.db-wal");
-        let journal = temp.path().join("state.sqlite-journal");
-        let cold_jsonl = temp.path().join("cold.jsonl");
+        let custom_db = temp.path().join("opencode_store");
+        let custom_wal = temp.path().join("opencode_store-wal");
+        let dir_root = temp.path().join("conversations");
+        std::fs::create_dir_all(&dir_root).unwrap();
+        let cold_dir_db = dir_root.join("historical.db");
+        let cold_jsonl = dir_root.join("cold.jsonl");
 
         let cold_time = std::time::SystemTime::now() - HOT_FILE_WINDOW - Duration::from_secs(60);
-        for path in [&db, &sqlite, &vscdb, &wal, &journal, &cold_jsonl] {
+        for path in [&custom_db, &custom_wal, &cold_dir_db, &cold_jsonl] {
             std::fs::write(path, "v1").unwrap();
             std::fs::OpenOptions::new()
                 .write(true)
@@ -1013,47 +1085,209 @@ mod tests {
                 .unwrap();
         }
 
+        let sources = normalize_watch_sources(&[vec![
+            WatchRoot::recursive(custom_db.clone()),
+            WatchRoot::recursive(dir_root.clone()),
+        ]]);
+        let always_poll = always_poll_paths(&sources);
+
         let mut watched = std::collections::BTreeMap::new();
-        watched.insert(normalize_watch_path(temp.path()), RecursiveMode::Recursive);
+        watched.insert(
+            normalize_watch_path(temp.path()),
+            RecursiveMode::NonRecursive,
+        );
+        watched.insert(normalize_watch_path(&dir_root), RecursiveMode::Recursive);
         let mut known = metadata_snapshot(&watched);
 
-        for path in [&db, &sqlite, &vscdb, &wal, &journal, &cold_jsonl] {
+        for path in [&custom_db, &custom_wal, &cold_dir_db, &cold_jsonl] {
             std::fs::write(path, "v2-updated").unwrap();
         }
 
-        let events = refresh_recent(&mut known, Vec::new());
+        let events = refresh_recent(&mut known, std::collections::HashSet::new(), &always_poll);
         let modified: std::collections::BTreeSet<PathBuf> = events
             .into_iter()
             .filter(|(kind, _)| matches!(kind, EventKind::Modify(_)))
             .flat_map(|(_, paths)| paths)
             .collect();
 
-        for expected in [&db, &sqlite, &vscdb, &wal, &journal] {
+        for expected in [&custom_db, &custom_wal] {
             assert!(
                 modified.contains(&normalize_watch_path(expected)),
-                "expected cold SQLite file {} to be polled",
+                "expected explicit file root {} to be polled even without extension",
                 expected.display()
             );
         }
+        assert!(
+            !modified.contains(&normalize_watch_path(&cold_dir_db)),
+            "cold .db under directory root should be skipped between full polls"
+        );
         assert!(
             !modified.contains(&normalize_watch_path(&cold_jsonl)),
             "cold jsonl should be skipped between full polls"
         );
 
-        // Newly created -wal sidecars fed via `created` are tracked and polled on later writes.
-        let new_wal = temp.path().join("workspace.vscdb-wal");
-        std::fs::write(&new_wal, "wal-v1").unwrap();
-        let canonical_new_wal = normalize_watch_path(&new_wal);
-        let _ = refresh_recent(&mut known, vec![canonical_new_wal.clone()]);
-        assert!(known.contains_key(&canonical_new_wal));
-        std::fs::write(&new_wal, "wal-v2-longer").unwrap();
-        let events = refresh_recent(&mut known, Vec::new());
+        // A native modify event on a cold jsonl promotes it to hot so later writes are polled.
+        let canonical_cold_jsonl = normalize_watch_path(&cold_jsonl);
+        let events = refresh_recent(
+            &mut known,
+            std::collections::HashSet::from([canonical_cold_jsonl.clone()]),
+            &always_poll,
+        );
         let modified: Vec<PathBuf> = events
             .into_iter()
             .filter(|(kind, _)| matches!(kind, EventKind::Modify(_)))
             .flat_map(|(_, paths)| paths)
             .collect();
-        assert_eq!(modified, vec![canonical_new_wal]);
+        assert_eq!(modified, vec![canonical_cold_jsonl.clone()]);
+
+        std::fs::write(&cold_jsonl, "v3-open-handle-append").unwrap();
+        let events = refresh_recent(&mut known, std::collections::HashSet::new(), &always_poll);
+        let modified: Vec<PathBuf> = events
+            .into_iter()
+            .filter(|(kind, _)| matches!(kind, EventKind::Modify(_)))
+            .flat_map(|(_, paths)| paths)
+            .collect();
+        assert_eq!(modified, vec![canonical_cold_jsonl]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_static_root_moved_in_with_open_wal_and_symlink_root_changes_are_observed() {
+        let temp = tempfile::tempdir().unwrap();
+        let watched_dir = temp.path().join("watched");
+        let moved_root = watched_dir.join("db-dir");
+        let staging_dir = temp.path().join("staging-db");
+        let symlink_root = watched_dir.join("linked-sessions");
+        let target_a = temp.path().join("target-a");
+        let target_b = temp.path().join("target-b");
+        std::fs::create_dir_all(&watched_dir).unwrap();
+        std::fs::create_dir_all(&staging_dir).unwrap();
+        std::fs::create_dir_all(&target_a).unwrap();
+        std::fs::create_dir_all(&target_b).unwrap();
+
+        let staging_db = staging_dir.join("app.db");
+        let conn = rusqlite::Connection::open(&staging_db).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, val TEXT)", [])
+            .unwrap();
+        conn.execute("INSERT INTO items (val) VALUES ('initial')", [])
+            .unwrap();
+
+        let events = Arc::new(std::sync::Mutex::new(
+            Vec::<(usize, Option<Vec<PathBuf>>)>::new(),
+        ));
+        let recorded = events.clone();
+        let (stop, shutdown) = watch::channel(false);
+        watch_paths(
+            vec![
+                WatchRoots::from(vec![moved_root.clone()]),
+                WatchRoots::from(vec![symlink_root.clone()]),
+            ],
+            Arc::new(move |index, paths| {
+                recorded.lock().unwrap().push((index, paths));
+            }),
+            shutdown,
+        )
+        .unwrap();
+
+        // Move a directory with an open SQLite DB + WAL into a static watch root.
+        std::fs::rename(&staging_dir, &moved_root).unwrap();
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+        events.lock().unwrap().clear();
+
+        for step in ["commit-1", "commit-2"] {
+            conn.execute("INSERT INTO items (val) VALUES (?1)", [step])
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if events.lock().unwrap().iter().any(|(index, _)| *index == 0) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            assert!(
+                events.lock().unwrap().iter().any(|(index, _)| *index == 0),
+                "expected open-handle WAL {step} to emit callback for moved-in static root"
+            );
+            events.lock().unwrap().clear();
+        }
+        drop(conn);
+
+        // Create symlink at watch root and verify writes inside target_a are observed.
+        std::os::unix::fs::symlink(&target_a, &symlink_root).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(index, paths)| *index == 1 && paths.is_none())
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(index, paths)| *index == 1 && paths.is_none()),
+            "expected creating symlink watch root to trigger refresh"
+        );
+        events.lock().unwrap().clear();
+        std::fs::write(target_a.join("a.jsonl"), "{}\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events.lock().unwrap().iter().any(|(index, _)| *index == 1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events.lock().unwrap().iter().any(|(index, _)| *index == 1),
+            "expected file in symlink target_a to be observed"
+        );
+        events.lock().unwrap().clear();
+
+        // Replace symlink at watch root to target_b and verify target_b is observed.
+        let replacement = watched_dir.join("linked-sessions.tmp");
+        std::os::unix::fs::symlink(&target_b, &replacement).unwrap();
+        std::fs::rename(&replacement, &symlink_root).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(index, paths)| *index == 1 && paths.is_none())
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(index, paths)| *index == 1 && paths.is_none()),
+            "expected replacing symlink watch root to trigger refresh"
+        );
+        events.lock().unwrap().clear();
+        std::fs::write(target_b.join("b.jsonl"), "{}\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events.lock().unwrap().iter().any(|(index, _)| *index == 1) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events.lock().unwrap().iter().any(|(index, _)| *index == 1),
+            "expected file in replaced symlink target_b to be observed"
+        );
+        let _ = stop.send(true);
     }
 
     #[tokio::test]
