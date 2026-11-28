@@ -17,6 +17,7 @@ pub type WatchCallback = dyn Fn(usize, Option<Vec<PathBuf>>) + Send + Sync;
 pub struct WatchRoot {
     pub path: PathBuf,
     pub recursive: bool,
+    pub(crate) poll_sqlite: bool,
 }
 
 impl WatchRoot {
@@ -24,6 +25,7 @@ impl WatchRoot {
         Self {
             path,
             recursive: true,
+            poll_sqlite: false,
         }
     }
 
@@ -31,7 +33,13 @@ impl WatchRoot {
         Self {
             path,
             recursive: false,
+            poll_sqlite: false,
         }
+    }
+
+    pub(crate) fn with_sqlite_polling(mut self) -> Self {
+        self.poll_sqlite = true;
+        self
     }
 }
 
@@ -150,7 +158,7 @@ pub fn watch_paths(
     let initial_roots: Vec<NormalizedWatchRoot> =
         initial_sources.iter().flatten().cloned().collect();
     #[cfg(target_os = "macos")]
-    let mut always_poll = always_poll_paths(&initial_sources);
+    let mut poll_scope = poll_scope_for_sources(&initial_sources);
     let shared_sources = Arc::new(std::sync::Mutex::new(Arc::new(initial_sources)));
     let handler_sources = shared_sources.clone();
     let (reconcile, mut changes) = watch::channel(0_u64);
@@ -258,7 +266,7 @@ pub fn watch_paths(
                         let paths = watched.clone();
                         let mut known = std::mem::take(&mut observed);
                         let touched = touched.lock().map(|mut touched| std::mem::take(&mut *touched)).unwrap_or_default();
-                        let poll_targets = always_poll.clone();
+                        let poll_targets = poll_scope.clone();
                         ticks = ticks.wrapping_add(1);
                         let full = std::mem::take(&mut force_full_poll)
                             || ticks.is_multiple_of(FULL_POLL_TICKS)
@@ -332,7 +340,7 @@ pub fn watch_paths(
                     #[cfg(target_os = "macos")]
                     {
                         if updated_sources || expanded {
-                            always_poll = always_poll_paths(&current);
+                            poll_scope = poll_scope_for_sources(&current);
                         }
                         if !changed_sources.is_empty() || expanded || did_reset {
                             force_full_poll = true;
@@ -581,6 +589,16 @@ fn reconcile_watches(
                 .entry(normalize_watch_path(&existing_watch_root(&root.path)?))
                 .or_insert(RecursiveMode::NonRecursive);
         }
+        // Watch the parent of any symlinked ancestor (e.g. CODEX_HOME symlink) so retargeting it reconciles.
+        for ancestor in &entry.symlink_ancestors {
+            if let Some(parent) = ancestor.parent()
+                && parent.parent().is_some()
+            {
+                desired
+                    .entry(normalize_watch_path(parent))
+                    .or_insert(RecursiveMode::NonRecursive);
+            }
+        }
     }
     watched.retain(|path, mode| {
         if desired.get(path) == Some(mode) {
@@ -613,19 +631,50 @@ const FULL_POLL_TICKS: u32 = 300;
 const HOT_FILE_WINDOW: Duration = Duration::from_secs(10 * 60);
 
 #[cfg(target_os = "macos")]
-fn always_poll_paths(sources: &[Vec<NormalizedWatchRoot>]) -> std::collections::HashSet<PathBuf> {
-    let mut paths = std::collections::HashSet::new();
+#[derive(Clone, Default)]
+struct PollScope {
+    exact_files: std::collections::HashSet<PathBuf>,
+    sqlite_dirs: Vec<PathBuf>,
+}
+
+#[cfg(target_os = "macos")]
+impl PollScope {
+    fn includes(&self, path: &Path) -> bool {
+        self.exact_files.contains(path)
+            || (is_sqlite_dir_file(path)
+                && self.sqlite_dirs.iter().any(|dir| path.starts_with(dir)))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn poll_scope_for_sources(sources: &[Vec<NormalizedWatchRoot>]) -> PollScope {
+    let mut scope = PollScope::default();
     for entry in sources.iter().flatten() {
-        if !entry.canonical.is_dir() {
-            paths.insert(entry.canonical.clone());
+        if entry.root.poll_sqlite {
+            scope.sqlite_dirs.push(entry.canonical.clone());
+        } else if !entry.canonical.is_dir() {
+            scope.exact_files.insert(entry.canonical.clone());
             for suffix in ["-wal", "-journal"] {
                 let mut sidecar = entry.canonical.as_os_str().to_os_string();
                 sidecar.push(suffix);
-                paths.insert(PathBuf::from(sidecar));
+                scope.exact_files.insert(PathBuf::from(sidecar));
             }
         }
     }
-    paths
+    scope
+}
+
+#[cfg(target_os = "macos")]
+fn is_sqlite_dir_file(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| {
+        let name = name.to_string_lossy();
+        name.ends_with(".db")
+            || name.ends_with(".db-wal")
+            || name.ends_with(".db-journal")
+            || name.ends_with(".vscdb")
+            || name.ends_with(".vscdb-wal")
+            || name.ends_with(".vscdb-journal")
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -723,7 +772,7 @@ fn snapshot_changes(
 fn refresh_recent(
     known: &mut std::collections::HashMap<PathBuf, FileStamp>,
     touched: std::collections::HashSet<PathBuf>,
-    always_poll: &std::collections::HashSet<PathBuf>,
+    poll_scope: &PollScope,
 ) -> PollEvents {
     for path in &touched {
         if !known.contains_key(path)
@@ -733,7 +782,7 @@ fn refresh_recent(
         }
     }
     let mut created = Vec::new();
-    for path in always_poll {
+    for path in &poll_scope.exact_files {
         if !known.contains_key(path)
             && let Ok(metadata) = std::fs::symlink_metadata(path)
             && !metadata.is_dir()
@@ -747,7 +796,7 @@ fn refresh_recent(
     let mut removed = Vec::new();
     for (path, stamp) in known.iter_mut().filter(|(path, stamp)| {
         !stamp.is_dir
-            && (always_poll.contains(*path)
+            && (poll_scope.includes(path)
                 || touched.contains(*path)
                 || stamp.modified.is_some_and(|time| time >= hot_since))
     }) {
@@ -1053,7 +1102,7 @@ mod tests {
         let recent = refresh_recent(
             &mut before,
             std::collections::HashSet::new(),
-            &std::collections::HashSet::new(),
+            &PollScope::default(),
         );
         let recent_modified: Vec<_> = recent
             .iter()
@@ -1065,17 +1114,35 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_refresh_recent_polls_explicit_roots_and_touched_files_while_skipping_cold_dir_files() {
+    fn macos_refresh_recent_polls_explicit_roots_sqlite_dirs_and_touched_files_while_skipping_cold_other_dirs()
+     {
         let temp = tempfile::tempdir().unwrap();
         let custom_db = temp.path().join("opencode_store");
         let custom_wal = temp.path().join("opencode_store-wal");
-        let dir_root = temp.path().join("conversations");
-        std::fs::create_dir_all(&dir_root).unwrap();
-        let cold_dir_db = dir_root.join("historical.db");
-        let cold_jsonl = dir_root.join("cold.jsonl");
+        let ag_dir = temp.path().join("conversations");
+        let cursor_ws = temp.path().join("workspaceStorage/w1");
+        let plain_dir = temp.path().join("sessions");
+        std::fs::create_dir_all(&ag_dir).unwrap();
+        std::fs::create_dir_all(&cursor_ws).unwrap();
+        std::fs::create_dir_all(&plain_dir).unwrap();
+        let ag_db = ag_dir.join("conv.db");
+        let ag_wal = ag_dir.join("conv.db-wal");
+        let cursor_db = cursor_ws.join("state.vscdb");
+        let cursor_wal = cursor_ws.join("state.vscdb-wal");
+        let cold_plain_db = plain_dir.join("ignored.db");
+        let cold_jsonl = plain_dir.join("cold.jsonl");
 
         let cold_time = std::time::SystemTime::now() - HOT_FILE_WINDOW - Duration::from_secs(60);
-        for path in [&custom_db, &custom_wal, &cold_dir_db, &cold_jsonl] {
+        for path in [
+            &custom_db,
+            &custom_wal,
+            &ag_db,
+            &ag_wal,
+            &cursor_db,
+            &cursor_wal,
+            &cold_plain_db,
+            &cold_jsonl,
+        ] {
             std::fs::write(path, "v1").unwrap();
             std::fs::OpenOptions::new()
                 .write(true)
@@ -1087,39 +1154,62 @@ mod tests {
 
         let sources = normalize_watch_sources(&[vec![
             WatchRoot::recursive(custom_db.clone()),
-            WatchRoot::recursive(dir_root.clone()),
+            WatchRoot::recursive(ag_dir.clone()).with_sqlite_polling(),
+            WatchRoot::recursive(temp.path().join("workspaceStorage")).with_sqlite_polling(),
+            WatchRoot::recursive(plain_dir.clone()),
         ]]);
-        let always_poll = always_poll_paths(&sources);
+        let poll_scope = poll_scope_for_sources(&sources);
 
         let mut watched = std::collections::BTreeMap::new();
         watched.insert(
             normalize_watch_path(temp.path()),
             RecursiveMode::NonRecursive,
         );
-        watched.insert(normalize_watch_path(&dir_root), RecursiveMode::Recursive);
+        watched.insert(normalize_watch_path(&ag_dir), RecursiveMode::Recursive);
+        watched.insert(
+            normalize_watch_path(&temp.path().join("workspaceStorage")),
+            RecursiveMode::Recursive,
+        );
+        watched.insert(normalize_watch_path(&plain_dir), RecursiveMode::Recursive);
         let mut known = metadata_snapshot(&watched);
 
-        for path in [&custom_db, &custom_wal, &cold_dir_db, &cold_jsonl] {
+        for path in [
+            &custom_db,
+            &custom_wal,
+            &ag_db,
+            &ag_wal,
+            &cursor_db,
+            &cursor_wal,
+            &cold_plain_db,
+            &cold_jsonl,
+        ] {
             std::fs::write(path, "v2-updated").unwrap();
         }
 
-        let events = refresh_recent(&mut known, std::collections::HashSet::new(), &always_poll);
+        let events = refresh_recent(&mut known, std::collections::HashSet::new(), &poll_scope);
         let modified: std::collections::BTreeSet<PathBuf> = events
             .into_iter()
             .filter(|(kind, _)| matches!(kind, EventKind::Modify(_)))
             .flat_map(|(_, paths)| paths)
             .collect();
 
-        for expected in [&custom_db, &custom_wal] {
+        for expected in [
+            &custom_db,
+            &custom_wal,
+            &ag_db,
+            &ag_wal,
+            &cursor_db,
+            &cursor_wal,
+        ] {
             assert!(
                 modified.contains(&normalize_watch_path(expected)),
-                "expected explicit file root {} to be polled even without extension",
+                "expected {} to be polled",
                 expected.display()
             );
         }
         assert!(
-            !modified.contains(&normalize_watch_path(&cold_dir_db)),
-            "cold .db under directory root should be skipped between full polls"
+            !modified.contains(&normalize_watch_path(&cold_plain_db)),
+            "cold .db under non-sqlite directory root should be skipped between full polls"
         );
         assert!(
             !modified.contains(&normalize_watch_path(&cold_jsonl)),
@@ -1131,7 +1221,7 @@ mod tests {
         let events = refresh_recent(
             &mut known,
             std::collections::HashSet::from([canonical_cold_jsonl.clone()]),
-            &always_poll,
+            &poll_scope,
         );
         let modified: Vec<PathBuf> = events
             .into_iter()
@@ -1141,7 +1231,7 @@ mod tests {
         assert_eq!(modified, vec![canonical_cold_jsonl.clone()]);
 
         std::fs::write(&cold_jsonl, "v3-open-handle-append").unwrap();
-        let events = refresh_recent(&mut known, std::collections::HashSet::new(), &always_poll);
+        let events = refresh_recent(&mut known, std::collections::HashSet::new(), &poll_scope);
         let modified: Vec<PathBuf> = events
             .into_iter()
             .filter(|(kind, _)| matches!(kind, EventKind::Modify(_)))
@@ -1158,12 +1248,21 @@ mod tests {
         let moved_root = watched_dir.join("db-dir");
         let staging_dir = temp.path().join("staging-db");
         let symlink_root = watched_dir.join("linked-sessions");
+        let ancestor_link = watched_dir.join("codex-home");
+        let ancestor_sessions = ancestor_link.join("sessions");
         let target_a = temp.path().join("target-a");
         let target_b = temp.path().join("target-b");
+        let home_a = temp.path().join("home-a");
+        let home_b = temp.path().join("home-b");
+        let ag_conversations = watched_dir.join("conversations");
         std::fs::create_dir_all(&watched_dir).unwrap();
         std::fs::create_dir_all(&staging_dir).unwrap();
         std::fs::create_dir_all(&target_a).unwrap();
         std::fs::create_dir_all(&target_b).unwrap();
+        std::fs::create_dir_all(home_a.join("sessions")).unwrap();
+        std::fs::create_dir_all(home_b.join("sessions")).unwrap();
+        std::fs::create_dir_all(&ag_conversations).unwrap();
+        std::os::unix::fs::symlink(&home_a, &ancestor_link).unwrap();
 
         let staging_db = staging_dir.join("app.db");
         let conn = rusqlite::Connection::open(&staging_db).unwrap();
@@ -1172,6 +1271,31 @@ mod tests {
             .unwrap();
         conn.execute("INSERT INTO items (val) VALUES ('initial')", [])
             .unwrap();
+
+        // Prepare a cold Antigravity DB + WAL kept open across watcher startup.
+        let cold_ag_db = ag_conversations.join("cold.db");
+        let cold_conn = rusqlite::Connection::open(&cold_ag_db).unwrap();
+        cold_conn
+            .pragma_update(None, "journal_mode", "WAL")
+            .unwrap();
+        cold_conn
+            .execute("CREATE TABLE steps (id INTEGER PRIMARY KEY, val TEXT)", [])
+            .unwrap();
+        cold_conn
+            .execute("INSERT INTO steps (val) VALUES ('init')", [])
+            .unwrap();
+        let cold_time = std::time::SystemTime::now() - HOT_FILE_WINDOW - Duration::from_secs(60);
+        for path in [
+            cold_ag_db.clone(),
+            PathBuf::from(format!("{}-wal", cold_ag_db.display())),
+        ] {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(cold_time)
+                .unwrap();
+        }
 
         let events = Arc::new(std::sync::Mutex::new(
             Vec::<(usize, Option<Vec<PathBuf>>)>::new(),
@@ -1182,6 +1306,10 @@ mod tests {
             vec![
                 WatchRoots::from(vec![moved_root.clone()]),
                 WatchRoots::from(vec![symlink_root.clone()]),
+                WatchRoots::from(vec![ancestor_sessions.clone()]),
+                WatchRoots::Static(vec![
+                    WatchRoot::recursive(ag_conversations.clone()).with_sqlite_polling(),
+                ]),
             ],
             Arc::new(move |index, paths| {
                 recorded.lock().unwrap().push((index, paths));
@@ -1189,6 +1317,63 @@ mod tests {
             shutdown,
         )
         .unwrap();
+
+        // Commit to cold Antigravity WAL while keeping connection open.
+        cold_conn
+            .execute("INSERT INTO steps (val) VALUES ('cold-commit')", [])
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events.lock().unwrap().iter().any(|(index, _)| *index == 3) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events.lock().unwrap().iter().any(|(index, _)| *index == 3),
+            "expected open-handle commit to cold Antigravity WAL to emit callback"
+        );
+        drop(cold_conn);
+        events.lock().unwrap().clear();
+
+        // Retarget symlinked ancestor (CODEX_HOME) and verify writes in home_b/sessions are observed.
+        let ancestor_tmp = watched_dir.join("codex-home.tmp");
+        std::os::unix::fs::symlink(&home_b, &ancestor_tmp).unwrap();
+        std::fs::rename(&ancestor_tmp, &ancestor_link).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(index, paths)| *index == 2 && paths.is_none())
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(index, paths)| *index == 2 && paths.is_none()),
+            "expected retargeting ancestor symlink to trigger refresh"
+        );
+        events.lock().unwrap().clear();
+        std::fs::write(home_b.join("sessions/switched.jsonl"), "{}\n").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if events.lock().unwrap().iter().any(|(index, _)| *index == 2) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            events.lock().unwrap().iter().any(|(index, _)| *index == 2),
+            "expected file in switched ancestor symlink target to be observed"
+        );
+        events.lock().unwrap().clear();
 
         // Move a directory with an open SQLite DB + WAL into a static watch root.
         std::fs::rename(&staging_dir, &moved_root).unwrap();
