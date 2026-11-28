@@ -307,13 +307,49 @@ pub fn fingerprints(
     use sha2::{Digest, Sha256};
     use std::collections::HashMap;
     let mut hashes: HashMap<String, Sha256> = HashMap::new();
-    for (sql, key) in queries {
-        for row in rows(db, sql)? {
-            if let Some(id) = row[*key].as_str() {
-                let bytes = serde_json::to_vec(&row)?;
-                let hash = hashes.entry(id.into()).or_default();
-                hash.update((bytes.len() as u64).to_le_bytes());
-                hash.update(bytes);
+    for (query_index, (sql, key)) in queries.iter().enumerate() {
+        let mut statement = db.prepare(sql)?;
+        let names: Vec<String> = statement.column_names().map(str::to_owned).collect();
+        let Some(key_index) = names.iter().rposition(|name| name == key) else {
+            continue;
+        };
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let ValueRef::Text(id_bytes) = row.get_ref(key_index)? else {
+                continue;
+            };
+            let id = String::from_utf8_lossy(id_bytes);
+            let hash = if let Some(hash) = hashes.get_mut(id.as_ref()) {
+                hash
+            } else {
+                hashes.entry(id.into_owned()).or_default()
+            };
+            hash.update((query_index as u64).to_le_bytes());
+            hash.update((names.len() as u64).to_le_bytes());
+            for (i, name) in names.iter().enumerate() {
+                hash.update((name.len() as u64).to_le_bytes());
+                hash.update(name.as_bytes());
+                match row.get_ref(i)? {
+                    ValueRef::Null => hash.update([0]),
+                    ValueRef::Integer(n) => {
+                        hash.update([1]);
+                        hash.update(n.to_le_bytes());
+                    }
+                    ValueRef::Real(n) => {
+                        hash.update([2]);
+                        hash.update(n.to_bits().to_le_bytes());
+                    }
+                    ValueRef::Text(bytes) => {
+                        hash.update([3]);
+                        hash.update((bytes.len() as u64).to_le_bytes());
+                        hash.update(bytes);
+                    }
+                    ValueRef::Blob(bytes) => {
+                        hash.update([4]);
+                        hash.update((bytes.len() as u64).to_le_bytes());
+                        hash.update(bytes);
+                    }
+                }
             }
         }
     }
