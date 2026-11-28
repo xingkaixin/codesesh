@@ -241,7 +241,7 @@ pub fn watch_paths(
     let native_handler = handle_event.clone();
     let mut watcher = notify::recommended_watcher(move |event| native_handler(event, false))?;
     let mut watched = std::collections::BTreeMap::new();
-    let _ = reconcile_watches(&mut watcher, &initial_roots, &mut watched)?;
+    let _ = reconcile_watches(&mut watcher, &initial_roots, &mut watched, true)?;
     let registration = started.elapsed();
     let started = Instant::now();
     #[cfg(target_os = "macos")]
@@ -336,7 +336,22 @@ pub fn watch_paths(
                         watched.clear();
                     }
                     let roots: Vec<NormalizedWatchRoot> = current.iter().flatten().cloned().collect();
-                    let expanded = reconcile_watches(&mut watcher, &roots, &mut watched).unwrap_or(false);
+                    let expanded = match reconcile_watches(&mut watcher, &roots, &mut watched, true) {
+                        Ok(expanded) => expanded,
+                        Err(_) => {
+                            // Rebuild the watcher on failure so a stopped macOS FSEvents stream
+                            // cannot leave required watches dead; drop optional parents on retry.
+                            let retry_handler = handle_event.clone();
+                            if let Ok(mut rebuilt) =
+                                notify::recommended_watcher(move |event| retry_handler(event, false))
+                            {
+                                watched.clear();
+                                let _ = reconcile_watches(&mut rebuilt, &roots, &mut watched, false);
+                                watcher = rebuilt;
+                            }
+                            true
+                        }
+                    };
                     #[cfg(target_os = "macos")]
                     {
                         if updated_sources || expanded {
@@ -567,6 +582,7 @@ fn reconcile_watches(
     watcher: &mut notify::RecommendedWatcher,
     roots: &[NormalizedWatchRoot],
     watched: &mut std::collections::BTreeMap<PathBuf, RecursiveMode>,
+    include_optional: bool,
 ) -> Result<bool> {
     let mut required = std::collections::BTreeMap::new();
     let mut optional = std::collections::BTreeSet::new();
@@ -592,11 +608,13 @@ fn reconcile_watches(
         }
         // Best-effort watch on parents of symlinked ancestors (e.g. CODEX_HOME symlink) so
         // retargeting reconciles without failing startup when a traverse-only parent returns EACCES.
-        for ancestor in &entry.symlink_ancestors {
-            if let Some(parent) = ancestor.parent()
-                && parent.parent().is_some()
-            {
-                optional.insert(normalize_watch_path(parent));
+        if include_optional {
+            for ancestor in &entry.symlink_ancestors {
+                if let Some(parent) = ancestor.parent()
+                    && parent.parent().is_some()
+                {
+                    optional.insert(normalize_watch_path(parent));
+                }
             }
         }
     }
@@ -635,15 +653,16 @@ fn reconcile_watches(
                 }
                 #[cfg(not(target_os = "macos"))]
                 Err(error)
-                    if matches!(
-                        error.kind,
-                        notify::ErrorKind::Io(ref io)
-                            if matches!(
-                                io.kind(),
-                                std::io::ErrorKind::PermissionDenied
-                                    | std::io::ErrorKind::NotFound
-                            )
-                    ) => {}
+                    if matches!(error.kind, notify::ErrorKind::PathNotFound)
+                        || matches!(
+                            &error.kind,
+                            notify::ErrorKind::Io(io)
+                                if matches!(
+                                    io.kind(),
+                                    std::io::ErrorKind::PermissionDenied
+                                        | std::io::ErrorKind::NotFound
+                                )
+                        ) => {}
                 Err(error) => {
                     return Err(error).with_context(|| format!("watch {}", entry.key().display()));
                 }
