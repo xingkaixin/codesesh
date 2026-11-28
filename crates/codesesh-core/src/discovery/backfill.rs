@@ -405,30 +405,7 @@ fn claude_project_dir(path: &Path) -> &Path {
     }
 }
 
-fn claude_session_id(path: &Path) -> String {
-    let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    if crate::agents::claudecode::subagents_dir(path).is_some() {
-        stem.strip_prefix("agent-").unwrap_or(&stem).into()
-    } else {
-        stem.into_owned()
-    }
-}
-
-fn claude_summary_text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => String::new(),
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Object(_) => "[object Object]".into(),
-        serde_json::Value::Array(a) => a
-            .iter()
-            .map(claude_summary_text)
-            .collect::<Vec<_>>()
-            .join(","),
-        _ => value.to_string(),
-    }
-}
-
-fn claude_index_summaries(path: &Path) -> HashMap<String, Option<String>> {
+fn claude_index_summaries(path: &Path) -> HashMap<String, Option<serde_json::Value>> {
     let mut summaries = HashMap::new();
     let Ok(bytes) = std::fs::read(path) else {
         return summaries;
@@ -441,12 +418,9 @@ fn claude_index_summaries(path: &Path) -> HashMap<String, Option<String>> {
             continue;
         };
         // Match claudecode.rs `.find(|e| e["sessionId"] == id)`: keep only the first entry per id.
-        summaries.entry(session_id.to_owned()).or_insert_with(|| {
-            entry
-                .get("summary")
-                .filter(|v| !v.is_null() && **v != false && **v != "")
-                .map(claude_summary_text)
-        });
+        summaries
+            .entry(session_id.to_owned())
+            .or_insert_with(|| entry.get("summary").cloned());
     }
     summaries
 }
@@ -454,7 +428,7 @@ fn claude_index_summaries(path: &Path) -> HashMap<String, Option<String>> {
 fn append_claude_companions(
     path: &Path,
     exists: impl Fn(&Path) -> Result<bool>,
-    index_summaries: &mut HashMap<PathBuf, HashMap<String, Option<String>>>,
+    index_summaries: &mut HashMap<PathBuf, HashMap<String, Option<serde_json::Value>>>,
     fingerprint: &mut String,
 ) -> Result<()> {
     let index = claude_project_dir(path).join("sessions-index.json");
@@ -463,8 +437,8 @@ fn append_claude_companions(
             .entry(index.clone())
             .or_insert_with(|| claude_index_summaries(&index));
         summaries
-            .get(&claude_session_id(path))
-            .and_then(Option::as_deref)
+            .get(&crate::agents::claudecode::session_id(path))
+            .and_then(Option::as_ref)
     } else {
         None
     };

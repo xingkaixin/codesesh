@@ -43,6 +43,15 @@ pub fn subagents_dir(path: &Path) -> Option<&Path> {
     .then_some(subagents)
 }
 
+pub(crate) fn session_id(path: &Path) -> String {
+    child(path).map(|child| child.id).unwrap_or_else(|| {
+        path.file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+
 fn child(path: &Path) -> Option<Child> {
     let parent = subagents_dir(path)?.parent()?;
     let project = parent.parent()?.to_owned();

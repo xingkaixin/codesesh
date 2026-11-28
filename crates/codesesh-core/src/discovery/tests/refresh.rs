@@ -251,7 +251,11 @@ fn targeted_live_refresh_matches_inventory_fingerprints_and_falls_back_on_compan
     };
     write_claude(&first, "11111111-1111-4111-8111-000000000001", "First");
     write_claude(&second, "11111111-1111-4111-8111-000000000002", "Second");
-    std::fs::write(&index, r#"{"entries":[]}"#).unwrap();
+    std::fs::write(
+        &index,
+        r#"{"entries":[{"sessionId":"11111111-1111-4111-8111-000000000002","summary":"Second summary"}]}"#,
+    )
+    .unwrap();
     let source = AgentSource {
         antigravity_profiles: None,
         agent: "claudecode".into(),
@@ -462,8 +466,13 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
     std::fs::create_dir_all(&project).unwrap();
     let first_id = "11111111-1111-4111-8111-000000000001";
     let second_id = "11111111-1111-4111-8111-000000000002";
+    let subagent_id = "custom-subagent-id";
+    let subagents = project.join(first_id).join("subagents");
+    std::fs::create_dir_all(&subagents).unwrap();
     let first = project.join(format!("{first_id}.jsonl"));
     let second = project.join(format!("{second_id}.jsonl"));
+    let subagent = subagents.join("agent-worker.jsonl");
+    let subagent_meta = subagent.with_extension("meta.json");
     let index = project.join("sessions-index.json");
     let write_claude = |path: &Path, id: &str, text: &str| {
         std::fs::write(
@@ -484,12 +493,15 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
     };
     write_claude(&first, first_id, "First prompt");
     write_claude(&second, second_id, "Second prompt");
+    write_claude(&subagent, subagent_id, "Subagent prompt");
+    std::fs::write(&subagent_meta, format!(r#"{{"agentId":"{subagent_id}"}}"#)).unwrap();
     std::fs::write(
         &index,
         serde_json::json!({
             "entries": [
                 { "sessionId": first_id, "summary": "Initial summary" },
-                { "sessionId": second_id, "summary": "Sibling summary" }
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Initial subagent summary" }
             ]
         })
         .to_string(),
@@ -520,7 +532,7 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
     };
 
     let mut initial = scanner.refresh(None).unwrap();
-    assert_eq!(initial.sessions.len(), 2);
+    assert_eq!(initial.sessions.len(), 3);
     commit(&mut cache, &mut initial);
 
     // Updating one summary in sessions-index.json refreshes only that session.
@@ -529,7 +541,8 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
         serde_json::json!({
             "entries": [
                 { "sessionId": first_id, "summary": "Updated summary" },
-                { "sessionId": second_id, "summary": "Sibling summary" }
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Initial subagent summary" }
             ]
         })
         .to_string(),
@@ -542,6 +555,34 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
     assert!(updated.removed.is_empty());
     commit(&mut cache, &mut updated);
 
+    // Updating a subagent summary whose meta.json `agentId` differs from its filename refreshes it.
+    std::fs::write(
+        &index,
+        serde_json::json!({
+            "entries": [
+                { "sessionId": first_id, "summary": "Updated summary" },
+                { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Updated subagent summary" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let mut subagent_updated = scanner.refresh(Some(std::slice::from_ref(&index))).unwrap();
+    let subagent_session = subagent_updated
+        .sessions
+        .iter()
+        .find(|session| session.head.reference.session_id == subagent_id)
+        .expect("subagent session should refresh when its agentId summary changes");
+    assert_eq!(subagent_session.head.title, "Updated subagent summary");
+    assert!(
+        !subagent_updated
+            .sessions
+            .iter()
+            .any(|session| session.head.reference.session_id == second_id)
+    );
+    commit(&mut cache, &mut subagent_updated);
+
     // Unrelated edits and trailing duplicate entries do not re-parse any existing session.
     std::fs::write(
         &index,
@@ -550,6 +591,7 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
                 { "sessionId": first_id, "summary": "Updated summary" },
                 { "sessionId": first_id, "summary": "Ignored duplicate" },
                 { "sessionId": second_id, "summary": "Sibling summary" },
+                { "sessionId": subagent_id, "summary": "Updated subagent summary" },
                 { "sessionId": "other-session", "summary": "Other summary" }
             ]
         })
@@ -560,95 +602,6 @@ fn claude_sessions_index_summary_change_only_refreshes_affected_session() {
     assert!(unchanged.sessions.is_empty());
     assert!(unchanged.removed.is_empty());
     commit(&mut cache, &mut unchanged);
-}
-
-#[test]
-fn claude_targeted_and_inventory_fingerprints_match_with_and_without_summaries() {
-    let temporary = tempfile::tempdir().unwrap();
-    let root = temporary.path().join("claude");
-    let project = root.join("projects/-work-demo");
-    let first_id = "11111111-1111-4111-8111-000000000001";
-    let second_id = "11111111-1111-4111-8111-000000000002";
-    let subagents = project.join(first_id).join("subagents");
-    std::fs::create_dir_all(&subagents).unwrap();
-    let first = project.join(format!("{first_id}.jsonl"));
-    let second = project.join(format!("{second_id}.jsonl"));
-    let subagent = subagents.join("agent-worker.jsonl");
-    let subagent_meta = subagent.with_extension("meta.json");
-    let record = serde_json::json!({
-        "type": "user",
-        "uuid": "u1",
-        "timestamp": "2026-10-01T00:00:00.000Z",
-        "cwd": "/work/demo",
-        "message": { "role": "user", "content": "Hello" }
-    })
-    .to_string();
-    for path in [&first, &second, &subagent] {
-        std::fs::write(path, format!("{record}\n")).unwrap();
-    }
-    std::fs::write(&subagent_meta, r#"{"agentId":"worker","name":"Worker"}"#).unwrap();
-
-    let source = AgentSource {
-        antigravity_profiles: None,
-        agent: "claudecode".into(),
-        data_root: root.clone(),
-        scan_path: root.join("projects"),
-    };
-    let all_paths = vec![first.clone(), second.clone(), subagent.clone()];
-
-    // Without sessions-index.json.
-    let without_index_full: std::collections::HashMap<_, _> =
-        super::super::backfill::inventory(&source)
-            .unwrap()
-            .into_iter()
-            .map(|item| (item.key, item.fingerprint))
-            .collect();
-    let without_index_targeted = super::super::backfill::targeted_items(
-        &source,
-        &all_paths,
-        &std::collections::HashSet::new(),
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(without_index_targeted.len(), 3);
-    for item in &without_index_targeted {
-        assert_eq!(item.fingerprint, without_index_full[&item.key]);
-    }
-
-    // With sessions-index.json containing a summary only for `first`.
-    let index = project.join("sessions-index.json");
-    std::fs::write(
-        &index,
-        serde_json::json!({
-            "entries": [{ "sessionId": first_id, "summary": "Indexed summary" }]
-        })
-        .to_string(),
-    )
-    .unwrap();
-    let with_index_full: std::collections::HashMap<_, _> =
-        super::super::backfill::inventory(&source)
-            .unwrap()
-            .into_iter()
-            .map(|item| (item.key, item.fingerprint))
-            .collect();
-    let with_index_targeted = super::super::backfill::targeted_items(
-        &source,
-        &all_paths,
-        &std::collections::HashSet::new(),
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(with_index_targeted.len(), 3);
-    for item in &with_index_targeted {
-        assert_eq!(item.fingerprint, with_index_full[&item.key]);
-    }
-    let first_key = first.to_string_lossy().into_owned();
-    let second_key = second.to_string_lossy().into_owned();
-    assert_ne!(with_index_full[&first_key], without_index_full[&first_key]);
-    assert_eq!(
-        with_index_full[&second_key],
-        without_index_full[&second_key]
-    );
 }
 
 #[cfg(unix)]
